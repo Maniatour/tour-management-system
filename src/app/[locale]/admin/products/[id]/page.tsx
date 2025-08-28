@@ -19,7 +19,10 @@ import {
   MessageCircle,
   Image,
   Tag,
-  ArrowLeft
+  ArrowLeft,
+  TrendingUp,
+  Clock,
+  Percent
 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
@@ -51,6 +54,11 @@ interface ProductOption {
   isMultiple: boolean
   choices: ProductOptionChoice[]
   linkedOptionId?: string
+  priceAdjustment?: {
+    adult: number
+    child: number
+    infant: number
+  }
 }
 
 interface ChannelPricing {
@@ -59,6 +67,32 @@ interface ChannelPricing {
   pricingType: 'percentage' | 'fixed' | 'multiplier'
   adjustment: number
   description: string
+  isActive: boolean
+}
+
+interface SeasonalPricing {
+  id: string
+  name: string
+  startDate: string
+  endDate: string
+  pricingType: 'percentage' | 'fixed' | 'multiplier'
+  adjustment: number
+  description: string
+  isActive: boolean
+}
+
+interface Coupon {
+  id: string
+  code: string
+  discountType: 'percentage' | 'fixed'
+  discountValue: number
+  minAmount: number
+  maxDiscount: number
+  validFrom: string
+  validTo: string
+  usageLimit: number
+  currentUsage: number
+  isActive: boolean
 }
 
 interface GlobalOption {
@@ -97,9 +131,9 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     duration: number
     basePrice: { adult: number; child: number; infant: number }
     channelPricing: ChannelPricing[]
-    minParticipants: number
+    seasonalPricing: SeasonalPricing[]
+    coupons: Coupon[]
     maxParticipants: number
-    difficulty: 'easy' | 'medium' | 'hard'
     status: 'active' | 'inactive' | 'draft'
     tags: string[]
     productOptions: ProductOption[]
@@ -114,16 +148,22 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       infant: 0
     },
     channelPricing: [
-      { channelId: '1', channelName: '직접 방문', pricingType: 'fixed' as const, adjustment: 0, description: '기본 가격' },
-      { channelId: '2', channelName: '네이버 여행', pricingType: 'percentage' as const, adjustment: -10, description: '10% 할인' },
-      { channelId: '3', channelName: '카카오 여행', pricingType: 'percentage' as const, adjustment: -8, description: '8% 할인' },
-      { channelId: '4', channelName: '마이리얼트립', pricingType: 'fixed' as const, adjustment: 5, description: '5달러 추가' },
-      { channelId: '5', channelName: '제휴 호텔', pricingType: 'percentage' as const, adjustment: -15, description: '15% 할인' },
-      { channelId: '6', channelName: '제휴 카페', pricingType: 'percentage' as const, adjustment: -12, description: '12% 할인' }
+      { channelId: '1', channelName: '직접 방문', pricingType: 'fixed' as const, adjustment: 0, description: '기본 가격', isActive: true },
+      { channelId: '2', channelName: '네이버 여행', pricingType: 'percentage' as const, adjustment: -10, description: '10% 할인', isActive: true },
+      { channelId: '3', channelName: '카카오 여행', pricingType: 'percentage' as const, adjustment: -8, description: '8% 할인', isActive: true },
+      { channelId: '4', channelName: '마이리얼트립', pricingType: 'fixed' as const, adjustment: 5, description: '5달러 추가', isActive: true },
+      { channelId: '5', channelName: '제휴 호텔', pricingType: 'percentage' as const, adjustment: -15, description: '15% 할인', isActive: true },
+      { channelId: '6', channelName: '제휴 카페', pricingType: 'percentage' as const, adjustment: -12, description: '12% 할인', isActive: true }
     ],
-    minParticipants: 1,
+    seasonalPricing: [
+      { id: '1', name: '성수기 (7-8월)', startDate: '2024-07-01', endDate: '2024-08-31', pricingType: 'percentage' as const, adjustment: 20, description: '성수기 20% 추가', isActive: true },
+      { id: '2', name: '비수기 (1-2월)', startDate: '2024-01-01', endDate: '2024-02-28', pricingType: 'percentage' as const, adjustment: -15, description: '비수기 15% 할인', isActive: true }
+    ],
+    coupons: [
+      { id: '1', code: 'WELCOME10', discountType: 'percentage' as const, discountValue: 10, minAmount: 100, maxDiscount: 50, validFrom: '2024-01-01', validTo: '2024-12-31', usageLimit: 1000, currentUsage: 0, isActive: true },
+      { id: '2', code: 'SAVE20', discountType: 'fixed' as const, discountValue: 20, minAmount: 200, maxDiscount: 20, validFrom: '2024-01-01', validTo: '2024-12-31', usageLimit: 500, currentUsage: 0, isActive: true }
+    ],
     maxParticipants: 10,
-    difficulty: 'medium' as const,
     status: 'active' as const,
     tags: [],
     productOptions: []
@@ -191,16 +231,22 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         duration: 1,
         basePrice: { adult: 0, child: 0, infant: 0 },
         channelPricing: [
-          { channelId: '1', channelName: '직접 방문', pricingType: 'fixed', adjustment: 0, description: '기본 가격' },
-          { channelId: '2', channelName: '네이버 여행', pricingType: 'percentage', adjustment: -10, description: '10% 할인' },
-          { channelId: '3', channelName: '카카오 여행', pricingType: 'percentage', adjustment: -8, description: '8% 할인' },
-          { channelId: '4', channelName: '마이리얼트립', pricingType: 'fixed', adjustment: 5, description: '5달러 추가' },
-          { channelId: '5', channelName: '제휴 호텔', pricingType: 'percentage', adjustment: -15, description: '15% 할인' },
-          { channelId: '6', channelName: '제휴 카페', pricingType: 'percentage', adjustment: -12, description: '12% 할인' }
+          { channelId: '1', channelName: '직접 방문', pricingType: 'fixed', adjustment: 0, description: '기본 가격', isActive: true },
+          { channelId: '2', channelName: '네이버 여행', pricingType: 'percentage', adjustment: -10, description: '10% 할인', isActive: true },
+          { channelId: '3', channelName: '카카오 여행', pricingType: 'percentage', adjustment: -8, description: '8% 할인', isActive: true },
+          { channelId: '4', channelName: '마이리얼트립', pricingType: 'fixed', adjustment: 5, description: '5달러 추가', isActive: true },
+          { channelId: '5', channelName: '제휴 호텔', pricingType: 'percentage', adjustment: -15, description: '15% 할인', isActive: true },
+          { channelId: '6', channelName: '제휴 카페', pricingType: 'percentage', adjustment: -12, description: '12% 할인', isActive: true }
         ],
-        minParticipants: 1,
+        seasonalPricing: [
+          { id: '1', name: '성수기 (7-8월)', startDate: '2024-07-01', endDate: '2024-08-31', pricingType: 'percentage' as const, adjustment: 20, description: '성수기 20% 추가', isActive: true },
+          { id: '2', name: '비수기 (1-2월)', startDate: '2024-01-01', endDate: '2024-02-28', pricingType: 'percentage' as const, adjustment: -15, description: '비수기 15% 할인', isActive: true }
+        ],
+        coupons: [
+          { id: '1', code: 'WELCOME10', discountType: 'percentage' as const, discountValue: 10, minAmount: 100, maxDiscount: 50, validFrom: '2024-01-01', validTo: '2024-12-31', usageLimit: 1000, currentUsage: 0, isActive: true },
+          { id: '2', code: 'SAVE20', discountType: 'fixed' as const, discountValue: 20, minAmount: 200, maxDiscount: 20, validFrom: '2024-01-01', validTo: '2024-12-31', usageLimit: 500, currentUsage: 0, isActive: true }
+        ],
         maxParticipants: 10,
-        difficulty: 'medium',
         status: 'active',
         tags: [],
         productOptions: []
@@ -290,9 +336,63 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     }
   }
 
+  // 통합 가격 관련 함수들
+  const addChannel = () => {
+    const newChannel: ChannelPricing = {
+      channelId: `channel_${Date.now()}`,
+      channelName: '새 채널',
+      pricingType: 'percentage',
+      adjustment: 0,
+      description: '새로운 채널',
+      isActive: true
+    }
+    setFormData({
+      ...formData,
+      channelPricing: [...formData.channelPricing, newChannel]
+    })
+  }
+
+  const addSeason = () => {
+    const newSeason: SeasonalPricing = {
+      id: `season_${Date.now()}`,
+      name: '새 시즌',
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0],
+      pricingType: 'percentage',
+      adjustment: 0,
+      description: '새로운 시즌',
+      isActive: true
+    }
+    setFormData({
+      ...formData,
+      seasonalPricing: [...formData.seasonalPricing, newSeason]
+    })
+  }
+
+  const addCoupon = () => {
+    const newCoupon: Coupon = {
+      id: `coupon_${Date.now()}`,
+      code: 'NEW' + Math.random().toString(36).substr(2, 5).toUpperCase(),
+      discountType: 'percentage',
+      discountValue: 10,
+      minAmount: 100,
+      maxDiscount: 50,
+      validFrom: new Date().toISOString().split('T')[0],
+      validTo: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      usageLimit: 1000,
+      currentUsage: 0,
+      isActive: true
+    }
+    setFormData({
+      ...formData,
+      coupons: [...formData.coupons, newCoupon]
+    })
+  }
+
   const tabs = [
     { id: 'basic', label: '기본정보', icon: Info },
     { id: 'pricing', label: '가격관리', icon: DollarSign },
+    { id: 'integrated-pricing', label: '통합 가격', icon: TrendingUp },
     { id: 'options', label: '옵션관리', icon: Settings },
     { id: 'details', label: '세부정보', icon: Tag },
     { id: 'schedule', label: '일정', icon: Calendar },
@@ -401,17 +501,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">최소 참가자 *</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={formData.minParticipants}
-                  onChange={(e) => setFormData({ ...formData, minParticipants: parseInt(e.target.value) || 1 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">최대 참가자 *</label>
                 <input
@@ -425,33 +515,18 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">난이도 *</label>
-                <select
-                  value={formData.difficulty}
-                  onChange={(e) => setFormData({ ...formData, difficulty: e.target.value as 'easy' | 'medium' | 'hard' })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="easy">쉬움</option>
-                  <option value="medium">보통</option>
-                  <option value="hard">어려움</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">상태 *</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'draft' })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="active">활성</option>
-                  <option value="inactive">비활성</option>
-                  <option value="draft">초안</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">상태 *</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'draft' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              >
+                <option value="active">활성</option>
+                <option value="inactive">비활성</option>
+                <option value="draft">초안</option>
+              </select>
             </div>
 
             <div>
@@ -557,6 +632,567 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
               <p className="text-sm text-gray-500 text-center">
                 채널별 가격 설정 UI는 추후 구현 예정입니다.
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* 통합 가격 탭 */}
+        {activeTab === 'integrated-pricing' && (
+          <div className="space-y-8">
+            {/* 1. 옵션별 가격 조정 */}
+            <div className="border border-gray-200 rounded-lg p-6">
+              <h3 className="text-lg font-medium text-gray-900 flex items-center mb-4">
+                <Settings className="h-5 w-5 text-purple-600 mr-2" />
+                {t('integratedPricing.optionPricing.title')}
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                {t('integratedPricing.optionPricing.description')}
+              </p>
+              
+              {formData.productOptions.length === 0 ? (
+                <div className="text-center py-6 text-gray-500 bg-gray-50 rounded-lg">
+                  <Settings className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                  <p>{t('integratedPricing.optionPricing.noOptions')}</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {formData.productOptions.map((option) => (
+                    <div key={option.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-medium text-gray-900">{option.name}</h4>
+                        <div className="flex items-center space-x-2">
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            option.isRequired ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {option.isRequired ? t('integratedPricing.optionPricing.required') : t('integratedPricing.optionPricing.optional')}
+                          </span>
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            option.isMultiple ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {option.isMultiple ? t('integratedPricing.optionPricing.multiple') : t('integratedPricing.optionPricing.single')}
+                          </span>
+                        </div>
+                      </div>
+                      
+                                                                      <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('integratedPricing.optionPricing.adultAdjustment')}</label>
+                            <input
+                              type="number"
+                              value={option.priceAdjustment?.adult || 0}
+                              onChange={(e) => {
+                                const newProductOptions = [...formData.productOptions]
+                                const optionIndex = newProductOptions.findIndex(opt => opt.id === option.id)
+                                if (optionIndex !== -1) {
+                                  newProductOptions[optionIndex] = {
+                                    ...newProductOptions[optionIndex],
+                                    priceAdjustment: {
+                                      adult: parseInt(e.target.value) || 0,
+                                      child: newProductOptions[optionIndex].priceAdjustment?.child || 0,
+                                      infant: newProductOptions[optionIndex].priceAdjustment?.infant || 0
+                                    } as { adult: number; child: number; infant: number }
+                                  }
+                                  setFormData({ ...formData, productOptions: newProductOptions })
+                                }
+                              }}
+                              placeholder="0"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('integratedPricing.optionPricing.childAdjustment')}</label>
+                            <input
+                              type="number"
+                              value={option.priceAdjustment?.child || 0}
+                              onChange={(e) => {
+                                const newProductOptions = [...formData.productOptions]
+                                const optionIndex = newProductOptions.findIndex(opt => opt.id === option.id)
+                                if (optionIndex !== -1) {
+                                  newProductOptions[optionIndex] = {
+                                    ...newProductOptions[optionIndex],
+                                    priceAdjustment: {
+                                      adult: newProductOptions[optionIndex].priceAdjustment?.adult || 0,
+                                      child: parseInt(e.target.value) || 0,
+                                      infant: newProductOptions[optionIndex].priceAdjustment?.infant || 0
+                                    } as { adult: number; child: number; infant: number }
+                                  }
+                                  setFormData({ ...formData, productOptions: newProductOptions })
+                                }
+                              }}
+                              placeholder="0"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('integratedPricing.optionPricing.infantAdjustment')}</label>
+                            <input
+                              type="number"
+                              value={option.priceAdjustment?.infant || 0}
+                              onChange={(e) => {
+                                const newProductOptions = [...formData.productOptions]
+                                const optionIndex = newProductOptions.findIndex(opt => opt.id === option.id)
+                                if (optionIndex !== -1) {
+                                  newProductOptions[optionIndex] = {
+                                    ...newProductOptions[optionIndex],
+                                    priceAdjustment: {
+                                      adult: newProductOptions[optionIndex].priceAdjustment?.adult || 0,
+                                      child: newProductOptions[optionIndex].priceAdjustment?.child || 0,
+                                      infant: parseInt(e.target.value) || 0
+                                    } as { adult: number; child: number; infant: number }
+                                  }
+                                  setFormData({ ...formData, productOptions: newProductOptions })
+                                }
+                              }}
+                              placeholder="0"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 2. 채널별 가격 정책 */}
+            <div className="border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                  <DollarSign className="h-5 w-5 text-blue-600 mr-2" />
+                  {t('integratedPricing.channelPricing.title')}
+                </h3>
+                <button
+                  type="button"
+                  onClick={addChannel}
+                  className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+                >
+                  <Plus size={16} />
+                  <span>{t('integratedPricing.channelPricing.addChannel')}</span>
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {formData.channelPricing.map((channel, index) => (
+                  <div key={channel.channelId} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={channel.isActive}
+                          onChange={(e) => {
+                            const newChannelPricing = [...formData.channelPricing]
+                            newChannelPricing[index].isActive = e.target.checked
+                            setFormData({ ...formData, channelPricing: newChannelPricing })
+                          }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <h4 className="font-medium text-gray-900">{channel.channelName}</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newChannelPricing = formData.channelPricing.filter((_, i) => i !== index)
+                          setFormData({ ...formData, channelPricing: newChannelPricing })
+                        }}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">가격 유형</label>
+                        <select
+                          value={channel.pricingType}
+                          onChange={(e) => {
+                            const newChannelPricing = [...formData.channelPricing]
+                            newChannelPricing[index].pricingType = e.target.value as 'percentage' | 'fixed' | 'multiplier'
+                            setFormData({ ...formData, channelPricing: newChannelPricing })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="percentage">백분율 (%)</option>
+                          <option value="fixed">고정 금액</option>
+                          <option value="multiplier">배수</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">조정값</label>
+                        <input
+                          type="number"
+                          value={channel.adjustment}
+                          onChange={(e) => {
+                            const newChannelPricing = [...formData.channelPricing]
+                            newChannelPricing[index].adjustment = parseInt(e.target.value) || 0
+                            setFormData({ ...formData, channelPricing: newChannelPricing })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">설명</label>
+                        <input
+                          type="text"
+                          value={channel.description}
+                          onChange={(e) => {
+                            const newChannelPricing = [...formData.channelPricing]
+                            newChannelPricing[index].description = e.target.value
+                            setFormData({ ...formData, channelPricing: newChannelPricing })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <div className="text-sm text-gray-600">
+                          {channel.pricingType === 'percentage' && (
+                            <span className={`font-medium ${channel.adjustment >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {channel.adjustment >= 0 ? '+' : ''}{channel.adjustment}%
+                            </span>
+                          )}
+                          {channel.pricingType === 'fixed' && (
+                            <span className={`font-medium ${channel.adjustment >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {channel.adjustment >= 0 ? '+' : ''}${channel.adjustment}
+                            </span>
+                          )}
+                          {channel.pricingType === 'multiplier' && (
+                            <span className="font-medium text-blue-600">
+                              ×{channel.adjustment}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 3. 시즌별 가격 설정 */}
+            <div className="border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                  <Calendar className="h-5 w-5 text-green-600 mr-2" />
+                  {t('integratedPricing.seasonalPricing.title')}
+                </h3>
+                <button
+                  type="button"
+                  onClick={addSeason}
+                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+                >
+                  <Plus size={16} />
+                  <span>{t('integratedPricing.seasonalPricing.addSeason')}</span>
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {formData.seasonalPricing.map((season, index) => (
+                  <div key={season.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={season.isActive}
+                          onChange={(e) => {
+                            const newSeasonalPricing = [...formData.seasonalPricing]
+                            newSeasonalPricing[index].isActive = e.target.checked
+                            setFormData({ ...formData, seasonalPricing: newSeasonalPricing })
+                          }}
+                          className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                        />
+                        <h4 className="font-medium text-gray-900">{season.name}</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newSeasonalPricing = formData.seasonalPricing.filter((_, i) => i !== index)
+                          setFormData({ ...formData, seasonalPricing: newSeasonalPricing })
+                        }}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-5 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">시작일</label>
+                        <input
+                          type="date"
+                          value={season.startDate}
+                          onChange={(e) => {
+                            const newSeasonalPricing = [...formData.seasonalPricing]
+                            newSeasonalPricing[index].startDate = e.target.value
+                            setFormData({ ...formData, seasonalPricing: newSeasonalPricing })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">종료일</label>
+                        <input
+                          type="date"
+                          value={season.endDate}
+                          onChange={(e) => {
+                            const newSeasonalPricing = [...formData.seasonalPricing]
+                            newSeasonalPricing[index].endDate = e.target.value
+                            setFormData({ ...formData, seasonalPricing: newSeasonalPricing })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">가격 유형</label>
+                        <select
+                          value={season.pricingType}
+                          onChange={(e) => {
+                            const newSeasonalPricing = [...formData.seasonalPricing]
+                            newSeasonalPricing[index].pricingType = e.target.value as 'percentage' | 'fixed' | 'multiplier'
+                            setFormData({ ...formData, seasonalPricing: newSeasonalPricing })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          <option value="percentage">백분율 (%)</option>
+                          <option value="fixed">고정 금액</option>
+                          <option value="multiplier">배수</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">조정값</label>
+                        <input
+                          type="number"
+                          value={season.adjustment}
+                          onChange={(e) => {
+                            const newSeasonalPricing = [...formData.seasonalPricing]
+                            newSeasonalPricing[index].adjustment = parseInt(e.target.value) || 0
+                            setFormData({ ...formData, seasonalPricing: newSeasonalPricing })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">설명</label>
+                        <input
+                          type="text"
+                          value={season.description}
+                          onChange={(e) => {
+                            const newSeasonalPricing = [...formData.seasonalPricing]
+                            newSeasonalPricing[index].description = e.target.value
+                            setFormData({ ...formData, seasonalPricing: newSeasonalPricing })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 4. 쿠폰 관리 */}
+            <div className="border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                  <Percent className="h-5 w-5 text-orange-600 mr-2" />
+                  {t('integratedPricing.couponManagement.title')}
+                </h3>
+                <button
+                  type="button"
+                  onClick={addCoupon}
+                  className="bg-orange-600 text-white px-3 py-2 rounded-lg hover:bg-orange-700 flex items-center space-x-2"
+                >
+                  <Plus size={16} />
+                  <span>{t('integratedPricing.couponManagement.addCoupon')}</span>
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {formData.coupons.map((coupon, index) => (
+                  <div key={coupon.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={coupon.isActive}
+                          onChange={(e) => {
+                            const newCoupons = [...formData.coupons]
+                            newCoupons[index].isActive = e.target.checked
+                            setFormData({ ...formData, coupons: newCoupons })
+                          }}
+                          className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+                        />
+                        <h4 className="font-medium text-gray-900">{coupon.code}</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newCoupons = formData.coupons.filter((_, i) => i !== index)
+                          setFormData({ ...formData, coupons: newCoupons })
+                        }}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">할인 유형</label>
+                        <select
+                          value={coupon.discountType}
+                          onChange={(e) => {
+                            const newCoupons = [...formData.coupons]
+                            newCoupons[index].discountType = e.target.value as 'percentage' | 'fixed'
+                            setFormData({ ...formData, coupons: newCoupons })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        >
+                          <option value="percentage">백분율 (%)</option>
+                          <option value="fixed">고정 금액</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">할인값</label>
+                        <input
+                          type="number"
+                          value={coupon.discountValue}
+                          onChange={(e) => {
+                            const newCoupons = [...formData.coupons]
+                            newCoupons[index].discountValue = parseInt(e.target.value) || 0
+                            setFormData({ ...formData, coupons: newCoupons })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">최소 주문 금액</label>
+                        <input
+                          type="number"
+                          value={coupon.minAmount}
+                          onChange={(e) => {
+                            const newCoupons = [...formData.coupons]
+                            newCoupons[index].minAmount = parseInt(e.target.value) || 0
+                            setFormData({ ...formData, coupons: newCoupons })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">최대 할인 금액</label>
+                        <input
+                          type="number"
+                          value={coupon.maxDiscount}
+                          onChange={(e) => {
+                            const newCoupons = [...formData.coupons]
+                            newCoupons[index].maxDiscount = parseInt(e.target.value) || 0
+                            setFormData({ ...formData, coupons: newCoupons })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4 mt-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">유효 시작일</label>
+                        <input
+                          type="date"
+                          value={coupon.validFrom}
+                          onChange={(e) => {
+                            const newCoupons = [...formData.coupons]
+                            newCoupons[index].validFrom = e.target.value
+                            setFormData({ ...formData, coupons: newCoupons })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">유효 종료일</label>
+                        <input
+                          type="date"
+                          value={coupon.validTo}
+                          onChange={(e) => {
+                            const newCoupons = [...formData.coupons]
+                            newCoupons[index].validTo = e.target.value
+                            setFormData({ ...formData, coupons: newCoupons })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">사용 제한</label>
+                        <input
+                          type="number"
+                          value={coupon.usageLimit}
+                          onChange={(e) => {
+                            const newCoupons = [...formData.coupons]
+                            newCoupons[index].usageLimit = parseInt(e.target.value) || 0
+                            setFormData({ ...formData, coupons: newCoupons })
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 5. 가격 미리보기 */}
+            <div className="border border-gray-200 rounded-lg p-6 bg-blue-50">
+              <h3 className="text-lg font-medium text-gray-900 flex items-center mb-4">
+                <TrendingUp className="h-5 w-5 text-blue-600 mr-2" />
+                {t('integratedPricing.pricePreview.title')}
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                {t('integratedPricing.pricePreview.description')}
+              </p>
+              
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-3">{t('integratedPricing.pricePreview.basePrice')}</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>{t('integratedPricing.pricePreview.adult')}:</span>
+                      <span className="font-medium">${formData.basePrice.adult}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>{t('integratedPricing.pricePreview.child')}:</span>
+                      <span className="font-medium">${formData.basePrice.child}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>{t('integratedPricing.pricePreview.infant')}:</span>
+                      <span className="font-medium">${formData.basePrice.infant}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-3">{t('integratedPricing.pricePreview.activeChannels')}</h4>
+                  <div className="text-sm">
+                    <span className="font-medium text-blue-600">
+                      {formData.channelPricing.filter(c => c.isActive).length}개
+                    </span>
+                    <span className="text-gray-600 ml-2">{t('integratedPricing.pricePreview.channels')}</span>
+                  </div>
+                  
+                  <h4 className="font-medium text-gray-900 mb-3 mt-4">{t('integratedPricing.pricePreview.activeSeasons')}</h4>
+                  <div className="text-sm">
+                    <span className="font-medium text-green-600">
+                      {formData.seasonalPricing.filter(c => c.isActive).length}개
+                    </span>
+                    <span className="text-gray-600 ml-2">{t('integratedPricing.pricePreview.seasons')}</span>
+                  </div>
+                  
+                  <h4 className="font-medium text-gray-900 mb-3 mt-4">{t('integratedPricing.pricePreview.activeCoupons')}</h4>
+                  <div className="text-sm">
+                    <span className="font-medium text-orange-600">
+                      {formData.coupons.filter(c => c.isActive).length}개
+                    </span>
+                    <span className="text-gray-600 ml-2">{t('integratedPricing.pricePreview.coupons')}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

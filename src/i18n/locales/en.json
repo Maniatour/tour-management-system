@@ -333,14 +333,73 @@
       "description": "Description",
       "duration": "Duration",
       "basePrice": "Base Price",
-      "minParticipants": "Min Participants",
       "maxParticipants": "Max Participants",
-      "difficulty": "Difficulty",
       "status": "Status",
       "tags": "Tags",
       "tagPlaceholder": "Enter tag",
       "addTag": "Add Tag",
       "availableOptions": "Available Options"
+    },
+    "integratedPricing": {
+      "title": "Integrated Pricing Settings",
+      "optionPricing": {
+        "title": "Option Price Adjustments",
+        "description": "Adjust prices for options connected to the product",
+        "noOptions": "Please add product options in the Options tab first",
+        "adultAdjustment": "Adult Price Adjustment",
+        "childAdjustment": "Child Price Adjustment",
+        "infantAdjustment": "Infant Price Adjustment",
+        "required": "Required",
+        "optional": "Optional",
+        "single": "Single",
+        "multiple": "Multiple"
+      },
+      "channelPricing": {
+        "title": "Channel Pricing Policy",
+        "addChannel": "Add Channel",
+        "newChannel": "New Channel",
+        "pricingType": "Pricing Type",
+        "percentage": "Percentage (%)",
+        "fixed": "Fixed Amount",
+        "multiplier": "Multiplier",
+        "adjustment": "Adjustment Value",
+        "description": "Description"
+      },
+      "seasonalPricing": {
+        "title": "Seasonal Pricing Settings",
+        "addSeason": "Add Season",
+        "newSeason": "New Season",
+        "startDate": "Start Date",
+        "endDate": "End Date",
+        "pricingType": "Pricing Type",
+        "adjustment": "Adjustment Value",
+        "description": "Description"
+      },
+      "couponManagement": {
+        "title": "Coupon Management",
+        "addCoupon": "Add Coupon",
+        "discountType": "Discount Type",
+        "discountValue": "Discount Value",
+        "minAmount": "Minimum Order Amount",
+        "maxDiscount": "Maximum Discount Amount",
+        "validFrom": "Valid From",
+        "validTo": "Valid To",
+        "usageLimit": "Usage Limit"
+      },
+      "pricePreview": {
+        "title": "Integrated Price Preview",
+        "description": "View the final price combining all configured pricing elements",
+        "basePrice": "Base Price",
+        "adult": "Adult",
+        "child": "Child",
+        "infant": "Infant",
+        "activeChannels": "Active Channels",
+        "activeSeasons": "Active Seasons",
+        "activeCoupons": "Active Coupons",
+        "channels": "channels",
+        "seasons": "seasons",
+        "coupons": "coupons"
+      }
     }
   },
   "options": {
@@ -366,13 +425,17 @@
       "insurance": "Insurance",
       "equipment": "Equipment",
       "activity": "Activity",
-      "other": "Other"
+      "other": "Other",
+      "식사": "Meal",
+      "장비": "Equipment",
+      "교통수단": "Transportation"
     },
     "priceTypes": {
       "perPerson": "Per Person",
       "perTour": "Per Tour",
       "perHour": "Per Hour",
-      "fixed": "Fixed"
+      "fixed": "Fixed",
+      "per_person": "Per Person"
     },
     "status": {
       "active": "Active",
@@ -479,5 +542,38 @@
       "createdAt": "Created At"
     },
     "close": "Close"
+  },
+  "audit": {
+    "title": "Audit Trail",
+    "subtitle": "Track and record all database changes",
+    "export": "Export",
+    "filters": "Filters",
+    "table": "Table",
+    "action": "Action",
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "applyFilters": "Apply Filters",
+    "resetFilters": "Reset Filters",
+    "allTables": "All Tables",
+    "allActions": "All Actions",
+    "insert": "Insert",
+    "update": "Update",
+    "delete": "Delete",
+    "dateTime": "Date/Time",
+    "record": "Record",
+    "user": "User",
+    "ipAddress": "IP Address",
+    "details": "Details",
+    "viewChanges": "View Changes",
+    "viewCreated": "View Created Data",
+    "viewDeleted": "View Deleted Data",
+    "previousValues": "Previous Values",
+    "newValues": "New Values",
+    "changedFields": "Changed Fields",
+    "noAuditLogs": "No audit logs available",
+    "loadingAuditLogs": "Loading audit logs...",
+    "searchPlaceholder": "Search...",
+    "auditLogs": "Audit Logs",
+    "records": "records"
   }
 }

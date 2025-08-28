@@ -12,7 +12,8 @@ import {
   BarChart3,
   LogOut,
   Menu,
-  X
+  X,
+  History
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -39,6 +40,7 @@ export default function AdminLayout({ children, params }: AdminLayoutProps) {
     { name: '옵션 관리', href: `/${locale}/admin/options`, icon: Settings },
     { name: '투어 관리', href: `/${locale}/admin/tours`, icon: MapPin },
     { name: '채널 관리', href: `/${locale}/admin/channels`, icon: Settings },
+    { name: '감사 추적', href: `/${locale}/admin/audit-logs`, icon: History },
   ]
 
   return (

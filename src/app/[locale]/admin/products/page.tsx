@@ -88,14 +88,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     return categoryLabels[category] || category
   }
 
-  const getDifficultyLabel = (difficulty: string) => {
-    const difficultyLabels: { [key: string]: string } = {
-      easy: '쉬움',
-      medium: '보통',
-      hard: '어려움'
-    }
-    return difficultyLabels[difficulty] || difficulty
-  }
+
 
   const getStatusLabel = (status: string) => {
     const statusLabels: { [key: string]: string } = {
@@ -172,8 +165,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상품명</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">카테고리</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">가격</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">참가자</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">난이도</th>
+
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">옵션</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
@@ -208,25 +200,11 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                     <div className="text-sm text-gray-900">
                       <div className="font-medium">{getPriceDisplay(product)}</div>
                       <div className="text-xs text-gray-500 mt-1">
-                        최소 {product.min_participants}명, 최대 {product.max_participants}명
+                        최대 {product.max_participants}명
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <div className="flex items-center">
-                      <Users className="h-4 w-4 text-gray-400 mr-2" />
-                      {product.min_participants} - {product.max_participants}명
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      product.difficulty === 'easy' ? 'bg-green-100 text-green-800' :
-                      product.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {getDifficultyLabel(product.difficulty)}
-                    </span>
-                  </td>
+
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
                       <div className="flex items-center">
