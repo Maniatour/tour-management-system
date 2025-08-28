@@ -1,0 +1,579 @@
+{
+  "common": {
+    "home": "Home",
+    "schedule": "Guide Schedule",
+    "customers": "Customer Management",
+    "reservations": "Reservation Management",
+    "tours": "Tour Management",
+    "channels": "Channel Management",
+    "products": "Product Management",
+    "options": "Option Management",
+    "employees": "Employee Management",
+    "courses": "Tour Courses",
+    "add": "Add",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "search": "Search",
+    "loading": "Loading...",
+    "noData": "No data available",
+    "confirm": "Confirm",
+    "back": "Back",
+    "actions": "Actions",
+    "systemTitle": "Tour Management System",
+    "toggleMobileMenu": "Toggle mobile menu",
+    "menu": "Menu",
+    "expandMenu": "Expand menu",
+    "collapseMenu": "Collapse menu",
+    "sidebarFooter": "Tour Management System v1.0"
+  },
+  "home": {
+    "title": "Welcome to Tour Management System",
+    "subtitle": "Tour schedule and customer management system for guides",
+    "stats": {
+      "todayTours": "Today's Tours",
+      "weeklyTours": "This Week's Tours",
+      "totalCustomers": "Total Customers",
+      "activeTours": "Active Tours"
+    },
+    "quickActions": {
+      "title": "Quick Actions",
+      "checkSchedule": "Check Guide Schedule",
+      "newReservation": "New Reservation",
+      "customerInfo": "Customer Information",
+      "tourManagement": "Tour Management"
+    },
+    "recentActivity": {
+      "title": "Recent Activity",
+      "newReservation": "New reservation has been registered",
+      "newCustomer": "New customer has been registered",
+      "tourCompleted": "Tour has been completed"
+    }
+  },
+  "schedule": {
+    "title": "Guide Schedule",
+    "dateSelection": "Check Schedule by Date",
+    "summary": {
+      "totalTours": "Total Tours",
+      "confirmedTours": "Confirmed Tours",
+      "totalParticipants": "Total Participants",
+      "expectedRevenue": "Expected Revenue"
+    },
+    "details": "Tour Schedule Details",
+    "noTours": "No tours scheduled for the selected date",
+    "actions": {
+      "customerInfo": "Customer Info",
+      "tourReport": "Tour Report",
+      "completeTour": "Complete Tour"
+    }
+  },
+  "customers": {
+    "title": "Customer Management",
+    "addCustomer": "Add New Customer",
+    "searchPlaceholder": "Search by name, email, or phone...",
+    "columns": {
+      "name": "Customer Name",
+      "email": "Email",
+      "phone": "Phone",
+      "channel": "Source Channel",
+      "language": "Language",
+      "createdAt": "Created At",
+      "actions": "Actions"
+    },
+    "form": {
+      "title": "Add New Customer",
+      "editTitle": "Edit Customer Information",
+      "name": "Customer Name",
+      "email": "Email",
+      "phone": "Phone Number",
+      "channel": "Source Channel",
+      "language": "Language"
+    },
+    "languages": {
+      "ko": "Korean",
+      "en": "English"
+    }
+  },
+  "reservations": {
+    "title": "Reservation Management",
+    "addReservation": "Add New Reservation",
+    "searchPlaceholder": "Search by customer name, product name, date, or channel RN#...",
+    "deleteConfirm": "Are you sure you want to delete this reservation?",
+    "filter": {
+      "allStatus": "All Status"
+    },
+    "columns": {
+      "id": "ID",
+      "customer": "Customer",
+      "product": "Product",
+      "tourSchedule": "Tour Schedule",
+      "tourInfo": "Tour Info",
+      "pickupInfo": "Pickup Info",
+      "participants": "Participants",
+      "channel": "Channel",
+      "status": "Status",
+      "registrationInfo": "Registration Info",
+      "actions": "Actions"
+    },
+    "status": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "form": {
+      "title": "Add New Reservation",
+      "editTitle": "Edit Reservation Information",
+      "customerSelection": "Customer Selection",
+      "productSelection": "Product Selection",
+      "tourDate": "Tour Date",
+      "tourTime": "Tour Time",
+      "pickupHotel": "Pickup Hotel",
+      "pickupTime": "Pickup Time",
+      "adults": "Adults",
+      "child": "Child",
+      "infant": "Infant",
+      "totalPeople": "Total People",
+      "channelSelection": "Channel Selection",
+      "channelRN": "Channel RN#",
+      "addedBy": "Added By",
+      "status": "Status",
+      "eventNote": "Special Requests"
+    }
+  },
+  "tours": {
+    "title": "Tour Management",
+    "addTour": "Add New Tour",
+    "searchPlaceholder": "Search by tour ID, product ID, or tour guide...",
+    "deleteConfirm": "Are you sure you want to delete this tour?",
+    "filter": {
+      "allStatus": "All Status"
+    },
+    "viewMode": {
+      "calendar": "Calendar View",
+      "table": "Table View"
+    },
+    "columns": {
+      "id": "ID",
+      "productId": "Product ID",
+      "tourDate": "Tour Date",
+      "tourGuideId": "Tour Guide ID",
+      "assistantId": "Assistant ID",
+      "tourCarId": "Tour Car ID",
+      "reservationIds": "Reservation IDs",
+      "tourStatus": "Tour Status",
+      "tourStartDateTime": "Tour Start DateTime",
+      "tourEndDateTime": "Tour End DateTime",
+      "guideFee": "Guide Fee",
+      "assistantFee": "Assistant Fee",
+      "tourInfo": "Tour Info",
+      "staff": "Staff",
+      "reservations": "Reservations",
+      "fees": "Fees",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "viewDetails": "View Details",
+    "status": {
+      "scheduled": "Scheduled",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "delayed": "Delayed"
+    },
+    "form": {
+      "title": "Add New Tour",
+      "editTitle": "Edit Tour Information",
+      "productId": "Product ID",
+      "tourDate": "Tour Date",
+      "tourGuideId": "Tour Guide ID (Email)",
+      "assistantId": "Assistant ID (Email)",
+      "tourCarId": "Tour Car ID",
+      "reservationIds": "Reservation IDs",
+      "tourStatus": "Tour Status",
+      "tourStartDateTime": "Tour Start DateTime",
+      "tourEndDateTime": "Tour End DateTime",
+      "guideFee": "Guide Fee (USD)",
+      "assistantFee": "Assistant Fee (USD)"
+    },
+    "detail": {
+      "title": "Tour Details",
+      "tourInfo": "Tour Information",
+      "participants": "Participant Information",
+      "schedule": "Schedule Information",
+      "financial": "Financial Information",
+      "backToList": "Back to List",
+      "editTour": "Edit Tour",
+      "deleteTour": "Delete Tour",
+      "viewDetails": "View Details"
+    }
+  },
+  "tourReport": {
+    "title": "Create Tour Report",
+    "tourInfo": "Tour Information",
+    "tourName": "Tour Name",
+    "customer": "Customer",
+    "date": "Date",
+    "participants": "Participants",
+    "weather": "Weather",
+    "highlights": "Highlights",
+    "challenges": "Challenges",
+    "customerFeedback": "Customer Feedback",
+    "saveReport": "Save Report",
+    "placeholders": {
+      "weather": "Sunny, cloudy, rainy, etc.",
+      "highlights": "Record special moments or highlights during the tour",
+      "challenges": "Record any difficulties or areas for improvement during the tour",
+      "feedback": "Record customer opinions or feedback"
+    }
+  },
+  "customerInfo": {
+    "title": "Customer Information",
+    "name": "Customer Name",
+    "email": "Email",
+    "phone": "Phone Number"
+  },
+  "channels": {
+    "title": "Channel Management",
+    "addChannel": "Add New Channel",
+    "searchPlaceholder": "Search by channel name, type, or description...",
+    "deleteConfirm": "Are you sure you want to delete this channel?",
+    "basePrice": "Base Price",
+    "markup": "Markup",
+    "columns": {
+      "name": "Channel Name",
+      "type": "Type",
+      "pricing": "Pricing",
+      "commission": "Commission",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "types": {
+      "OTA": "OTA",
+      "Direct": "Direct",
+      "Partner": "Partner"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "form": {
+      "title": "Add New Channel",
+      "editTitle": "Edit Channel Information",
+      "name": "Channel Name",
+      "type": "Type",
+      "website": "Website",
+      "commission": "Commission Rate",
+      "basePrice": "Base Price",
+      "markup": "Markup",
+      "status": "Status",
+      "description": "Description"
+    }
+  },
+  "admin": {
+    "dashboard": "Dashboard",
+    "products": "Product Management",
+    "customers": "Customer Management",
+    "reservations": "Reservation Management",
+    "employees": "Employee Management",
+    "options": "Option Management",
+    "tours": "Tour Management",
+    "channels": "Channel Management",
+    "stats": {
+      "totalProducts": "Total Products",
+      "totalCustomers": "Total Customers",
+      "monthlyReservations": "Monthly Reservations",
+      "monthlyRevenue": "Monthly Revenue"
+    },
+    "quickActions": {
+      "addProduct": "Add New Product",
+      "checkReservations": "Check Reservations",
+      "manageCustomers": "Manage Customers",
+      "manageOptions": "Manage Options"
+    }
+  },
+  "products": {
+    "title": "Product Management",
+    "addProduct": "Add New Product",
+    "searchPlaceholder": "Search by product name, category, description, or tags...",
+    "deleteConfirm": "Are you sure you want to delete this product?",
+    "columns": {
+      "name": "Product Name",
+      "category": "Category",
+      "pricing": "Pricing",
+      "participants": "Participants",
+      "difficulty": "Difficulty",
+      "options": "Options",
+      "status": "Status"
+    },
+    "categories": {
+      "city": "City",
+      "nature": "Nature",
+      "culture": "Culture",
+      "adventure": "Adventure",
+      "food": "Food"
+    },
+    "difficulty": {
+      "easy": "Easy",
+      "medium": "Medium",
+      "hard": "Hard"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "draft": "Draft"
+    },
+    "form": {
+      "title": "Add New Product",
+      "editTitle": "Edit Product Information",
+      "name": "Product Name",
+      "category": "Category",
+      "description": "Description",
+      "duration": "Duration",
+      "basePrice": "Base Price",
+      "maxParticipants": "Max Participants",
+      "status": "Status",
+      "tags": "Tags",
+      "tagPlaceholder": "Enter tag",
+      "addTag": "Add Tag",
+      "availableOptions": "Available Options"
+    },
+    "integratedPricing": {
+      "title": "Integrated Pricing Settings",
+      "optionPricing": {
+        "title": "Option Price Adjustments",
+        "description": "Adjust prices for options connected to the product",
+        "noOptions": "Please add product options in the Options tab first",
+        "adultAdjustment": "Adult Price Adjustment",
+        "childAdjustment": "Child Price Adjustment",
+        "infantAdjustment": "Infant Price Adjustment",
+        "required": "Required",
+        "optional": "Optional",
+        "single": "Single",
+        "multiple": "Multiple"
+      },
+      "channelPricing": {
+        "title": "Channel Pricing Policy",
+        "addChannel": "Add Channel",
+        "newChannel": "New Channel",
+        "pricingType": "Pricing Type",
+        "percentage": "Percentage (%)",
+        "fixed": "Fixed Amount",
+        "multiplier": "Multiplier",
+        "adjustment": "Adjustment Value",
+        "description": "Description"
+      },
+      "seasonalPricing": {
+        "title": "Seasonal Pricing Settings",
+        "addSeason": "Add Season",
+        "newSeason": "New Season",
+        "startDate": "Start Date",
+        "endDate": "End Date",
+        "pricingType": "Pricing Type",
+        "adjustment": "Adjustment Value",
+        "description": "Description"
+      },
+      "couponManagement": {
+        "title": "Coupon Management",
+        "addCoupon": "Add Coupon",
+        "discountType": "Discount Type",
+        "discountValue": "Discount Value",
+        "minAmount": "Minimum Order Amount",
+        "maxDiscount": "Maximum Discount Amount",
+        "validFrom": "Valid From",
+        "validTo": "Valid To",
+        "usageLimit": "Usage Limit"
+      },
+      "pricePreview": {
+        "title": "Integrated Price Preview",
+        "description": "View the final price combining all configured pricing elements",
+        "basePrice": "Base Price",
+        "adult": "Adult",
+        "child": "Child",
+        "infant": "Infant",
+        "activeChannels": "Active Channels",
+        "activeSeasons": "Active Seasons",
+        "activeCoupons": "Active Coupons",
+        "channels": "channels",
+        "seasons": "seasons",
+        "coupons": "coupons"
+      }
+    }
+  },
+  "options": {
+    "title": "Option Management",
+    "addOption": "Add New Option",
+    "searchPlaceholder": "Search by option name, category, description, or tags...",
+    "deleteConfirm": "Are you sure you want to delete this option?",
+    "columns": {
+      "name": "Option Name",
+      "category": "Category",
+      "description": "Description",
+      "pricing": "Pricing",
+      "price": "Price",
+      "priceType": "Price Type",
+      "quantity": "Quantity",
+      "tags": "Tags",
+      "status": "Status"
+    },
+    "categories": {
+      "guide": "Guide",
+      "transportation": "Transportation",
+      "meal": "Meal",
+      "insurance": "Insurance",
+      "equipment": "Equipment",
+      "activity": "Activity",
+      "other": "Other",
+      "식사": "Meal",
+      "장비": "Equipment",
+      "교통수단": "Transportation"
+    },
+    "priceTypes": {
+      "perPerson": "Per Person",
+      "perTour": "Per Tour",
+      "perHour": "Per Hour",
+      "fixed": "Fixed",
+      "per_person": "Per Person"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "seasonal": "Seasonal"
+    },
+    "form": {
+      "title": "Add New Option",
+      "editTitle": "Edit Option Information",
+      "name": "Option Name",
+      "category": "Category",
+      "description": "Description",
+      "basePrice": "Base Price",
+      "priceType": "Price Type",
+      "minQuantity": "Min Quantity",
+      "maxQuantity": "Max Quantity",
+      "status": "Status",
+      "tags": "Tags",
+      "tagPlaceholder": "Enter tag",
+      "addTag": "Add Tag"
+    }
+  },
+  "employees": {
+    "title": "Employee Management",
+    "addEmployee": "Add New Employee",
+    "searchPlaceholder": "Search by email, name, or phone...",
+    "deleteConfirm": "Are you sure you want to delete this employee?",
+    "columns": {
+      "email": "Email",
+      "name": "Name",
+      "language": "Language",
+      "type": "Employee Type",
+      "phone": "Phone",
+      "contact": "Contact",
+      "status": "Status",
+      "certifications": "Certifications",
+      "emergencyContact": "Emergency Contact",
+      "isActive": "Active Status",
+      "dateOfBirth": "Date of Birth",
+      "address": "Address",
+      "ssn": "SSN",
+      "photo": "Photo",
+      "personalCar": "Personal Car",
+      "bankInfo": "Bank Information",
+      "cpr": "CPR Certification",
+      "medicalReport": "Medical Report",
+      "actions": "Actions"
+    },
+    "types": {
+      "guide": "Guide",
+      "assistant": "Assistant",
+      "driver": "Driver",
+      "manager": "Manager",
+      "admin": "Admin"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "valid": "Valid"
+    },
+    "viewDetails": "View Details",
+    "details": {
+      "basicInfo": "Basic Information",
+      "personalInfo": "Personal Information",
+      "vehicleInfo": "Vehicle Information",
+      "bankInfo": "Bank Information",
+      "certifications": "Certifications",
+      "status": "Status"
+    },
+    "languages": {
+      "ko": "Korean",
+      "en": "English",
+      "both": "Korean/English"
+    },
+    "form": {
+      "title": "Add New Employee",
+      "editTitle": "Edit Employee Information",
+      "email": "Email",
+      "nameKo": "Korean Name",
+      "nameEn": "English Name",
+      "language": "Language",
+      "type": "Employee Type",
+      "phone": "Phone",
+      "emergencyContact": "Emergency Contact",
+      "isActive": "Active Status",
+      "dateOfBirth": "Date of Birth",
+      "address": "Address",
+      "ssn": "SSN",
+      "photo": "Photo",
+      "personalCarModel": "Personal Car Model",
+      "carYear": "Car Year",
+      "carPlate": "Car Plate",
+      "bankName": "Bank Name",
+      "accountHolder": "Account Holder",
+      "bankNumber": "Bank Number",
+      "routingNumber": "Routing Number",
+      "cpr": "CPR Certification",
+      "cprAcquired": "CPR Date Acquired",
+      "cprExpired": "CPR Date Expired",
+      "medicalReport": "Medical Report",
+      "medicalAcquired": "Medical Report Date Acquired",
+      "medicalExpired": "Medical Report Date Expired",
+      "status": "Status",
+      "createdAt": "Created At"
+    },
+    "close": "Close"
+  },
+  "audit": {
+    "title": "Audit Trail",
+    "subtitle": "Track and record all database changes",
+    "export": "Export",
+    "filters": "Filters",
+    "table": "Table",
+    "action": "Action",
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "applyFilters": "Apply Filters",
+    "resetFilters": "Reset Filters",
+    "allTables": "All Tables",
+    "allActions": "All Actions",
+    "insert": "Insert",
+    "update": "Update",
+    "delete": "Delete",
+    "dateTime": "Date/Time",
+    "record": "Record",
+    "user": "User",
+    "ipAddress": "IP Address",
+    "details": "Details",
+    "viewChanges": "View Changes",
+    "viewCreated": "View Created Data",
+    "viewDeleted": "View Deleted Data",
+    "previousValues": "Previous Values",
+    "newValues": "New Values",
+    "changedFields": "Changed Fields",
+    "noAuditLogs": "No audit logs available",
+    "loadingAuditLogs": "Loading audit logs...",
+    "searchPlaceholder": "Search...",
+    "auditLogs": "Audit Logs",
+    "records": "records"
+  }
+}
