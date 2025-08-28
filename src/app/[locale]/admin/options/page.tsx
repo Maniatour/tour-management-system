@@ -122,15 +122,19 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
   }
 
   const getCategoryLabel = (category: string) => {
-    return t(`options.categories.${category}`)
+    console.log('getCategoryLabel called with category:', category)
+    console.log('Translation key:', `options.categories.${category}`)
+    const result = t(`categories.${category}`)
+    console.log('Translation result:', result)
+    return result
   }
 
   const getPriceTypeLabel = (priceType: string) => {
-    return t(`options.priceTypes.${priceType}`)
+    return t(`priceTypes.${priceType}`)
   }
 
   const getStatusLabel = (status: string) => {
-    return t(`options.status.${status}`)
+    return t(`status.${status}`)
   }
 
   const getStatusColor = (status: string) => {

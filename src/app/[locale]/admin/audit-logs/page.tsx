@@ -35,6 +35,7 @@ export default function AdminAuditLogs() {
   // const t = useTranslations('audit')
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedTable, setSelectedTable] = useState('all')
   const [selectedAction, setSelectedAction] = useState('all')
@@ -75,13 +76,32 @@ export default function AdminAuditLogs() {
       const { data, error } = await query
 
       if (error) {
-        console.error('감사 로그 조회 오류:', error)
+        console.error('감사 로그 조회 오류:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        })
+        
+        // 에러 상태 설정
+        let errorMessage = ''
+        if (error.code === 'PGRST116') {
+          errorMessage = '감사 로그 뷰가 존재하지 않습니다. 데이터베이스에 audit_logs_view를 생성해주세요.'
+        } else if (error.code === '42501') {
+          errorMessage = '감사 로그에 대한 접근 권한이 없습니다. 관리자에게 문의하세요.'
+        } else {
+          errorMessage = `감사 로그 조회 중 오류가 발생했습니다: ${error.message}`
+        }
+        
+        setError(errorMessage)
         return
       }
 
       setAuditLogs(data || [])
+      setError(null) // 에러 상태 초기화
     } catch (error) {
-      console.error('감사 로그 조회 중 오류:', error)
+      console.error('감사 로그 조회 중 예상치 못한 오류:', error)
+      setError('감사 로그 조회 중 예상치 못한 오류가 발생했습니다. 다시 시도해주세요.')
     } finally {
       setLoading(false)
     }
@@ -143,7 +163,10 @@ export default function AdminAuditLogs() {
       'tours': '투어',
       'reservations': '예약',
       'channels': '채널',
-      'product_options': '상품옵션'
+      'product_options': '상품옵션',
+      'dynamic_pricing_rules': '동적 가격 규칙',
+      'weekday_pricing': '요일별 가격',
+      'required_option_pricing': '필수 옵션 가격'
     }
     return tableNames[tableName] || tableName
   }
@@ -248,6 +271,37 @@ export default function AdminAuditLogs() {
         </button>
       </div>
 
+      {/* 에러 메시지 */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">오류 발생</h3>
+              <div className="mt-2 text-sm text-red-700">
+                <p>{error}</p>
+              </div>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null)
+                    fetchAuditLogs()
+                  }}
+                  className="bg-red-100 text-red-800 px-3 py-2 rounded-md text-sm font-medium hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                >
+                  다시 시도
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 필터 섹션 */}
       <div className="bg-white p-6 rounded-lg shadow">
         <div className="flex items-center space-x-4 mb-4">
@@ -273,6 +327,9 @@ export default function AdminAuditLogs() {
               <option value="reservations">예약</option>
               <option value="channels">채널</option>
               <option value="product_options">상품옵션</option>
+              <option value="dynamic_pricing_rules">동적 가격 규칙</option>
+              <option value="weekday_pricing">요일별 가격</option>
+              <option value="required_option_pricing">필수 옵션 가격</option>
             </select>
           </div>
 
