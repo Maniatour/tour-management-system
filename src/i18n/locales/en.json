@@ -151,9 +151,13 @@
     "filter": {
       "allStatus": "All Status"
     },
-    "viewMode": {
+    "view": {
       "calendar": "Calendar View",
       "table": "Table View"
+    },
+    "calendar": {
+      "title": "Tour Calendar",
+      "legend": "Tour Status Legend"
     },
     "columns": {
       "id": "ID",
@@ -428,7 +432,23 @@
       "other": "Other",
       "식사": "Meal",
       "장비": "Equipment",
-      "교통수단": "Transportation"
+      "교통수단": "Transportation",
+      "Entrance Fee": "Entrance Fee",
+      "entrance fee": "Entrance Fee",
+      "accommodation": "Accommodation",
+      "Accommodation": "Accommodation",
+      "hotel": "Hotel",
+      "Hotel": "Hotel",
+      "transport": "Transport",
+      "Transport": "Transport",
+      "meal plan": "Meal Plan",
+      "Meal Plan": "Meal Plan",
+      "tour guide": "Tour Guide",
+      "Tour Guide": "Tour Guide",
+      "admission": "Admission",
+      "Admission": "Admission",
+      "ticket": "Ticket",
+      "Ticket": "Ticket"
     },
     "priceTypes": {
       "perPerson": "Per Person",
@@ -445,6 +465,7 @@
     "form": {
       "title": "Add New Option",
       "editTitle": "Edit Option Information",
+      "copyTitle": "Copy Option",
       "name": "Option Name",
       "category": "Category",
       "description": "Description",
@@ -456,6 +477,30 @@
       "tags": "Tags",
       "tagPlaceholder": "Enter tag",
       "addTag": "Add Tag"
+    },
+    "actions": {
+      "copy": "Copy",
+      "copyOption": "Copy Option",
+      "copySuccess": "Option copied successfully"
+    },
+    "productOptions": {
+      "addFromGlobal": "Add from Global Options",
+      "createNew": "Create New Option",
+      "globalOptionModal": {
+        "title": "Add Product Options from Global Options",
+        "description": "Select options from below to add to this product. Selected options will be automatically added to product options and can be modified as needed.",
+        "noOptions": "No global options available.",
+        "goToOptions": "Please register options in the Options Management page first.",
+        "loading": "Loading options...",
+        "addThisOption": "Add This Option",
+        "close": "Close"
+      },
+      "globalOptionLink": {
+        "title": "Link to Global Option",
+        "refresh": "Refresh Options List",
+        "loading": "Loading options...",
+        "noOptions": "No global options available. Please register options in the Options Management page first."
+      }
     }
   },
   "employees": {

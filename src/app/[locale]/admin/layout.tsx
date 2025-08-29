@@ -13,7 +13,8 @@ import {
   LogOut,
   Menu,
   X,
-  History
+  History,
+  Ticket
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -36,10 +37,11 @@ export default function AdminLayout({ children, params }: AdminLayoutProps) {
     { name: '상품 관리', href: `/${locale}/admin/products`, icon: Package },
     { name: '고객 관리', href: `/${locale}/admin/customers`, icon: Users },
     { name: '예약 관리', href: `/${locale}/admin/reservations`, icon: Calendar },
-    { name: '직원 관리', href: `/${locale}/admin/employees`, icon: UserCheck },
+    { name: '팀 관리', href: `/${locale}/admin/team`, icon: Users },
     { name: '옵션 관리', href: `/${locale}/admin/options`, icon: Settings },
     { name: '투어 관리', href: `/${locale}/admin/tours`, icon: MapPin },
     { name: '채널 관리', href: `/${locale}/admin/channels`, icon: Settings },
+    { name: '쿠폰 관리', href: `/${locale}/admin/coupons`, icon: Ticket },
     { name: '감사 추적', href: `/${locale}/admin/audit-logs`, icon: History },
   ]
 

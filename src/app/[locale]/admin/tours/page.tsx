@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Search, Calendar, User, Car, DollarSign, Edit, Trash2, Clock, Grid, Eye } from 'lucide-react'
+import { Plus, Search, Calendar, User, Car, DollarSign, Edit, Trash2, Clock, Grid, Eye, CalendarDays } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import TourCalendar from '@/components/TourCalendar'
+import { sanitizeTimeInput } from '@/lib/utils'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type TourInsert = Database['public']['Tables']['tours']['Insert']
@@ -23,6 +25,7 @@ export default function AdminTours() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [tours, setTours] = useState<Tour[]>([])
   const [loading, setLoading] = useState(true)
+  const [viewMode, setViewMode] = useState<'table' | 'calendar'>('calendar')
 
   // Supabase에서 데이터 가져오기
   useEffect(() => {
@@ -148,6 +151,11 @@ export default function AdminTours() {
     }
   }
 
+  const handleTourClick = (tour: Tour) => {
+    // 달력에서 투어 클릭 시 상세 페이지로 이동
+    window.location.href = `/${params.locale}/admin/tours/${tour.id}`
+  }
+
   const getStatusLabel = (status: string) => {
     return t(`status.${status}`)
   }
@@ -231,123 +239,158 @@ export default function AdminTours() {
         </select>
       </div>
 
-      {/* 투어 목록 */}
-      <div className="bg-white rounded-lg shadow-md border">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.id')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.tourInfo')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.staff')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.reservations')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.fees')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.status')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tCommon('actions')}</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredTours.map((tour) => (
-                <tr key={tour.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{tour.id}</div>
-                                         <div className="text-sm text-gray-500">상품: {tour.product_id}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2 text-sm">
-                        <Calendar className="h-3 w-3 text-gray-400" />
-                                                 <span className="text-gray-900">{tour.tour_date}</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-sm">
-                        <Clock className="h-3 w-3 text-gray-400" />
-                                                 <span className="text-gray-500">
-                           {formatDateTime(tour.tour_start_datetime)} - {formatDateTime(tour.tour_end_datetime)}
-                         </span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-sm">
-                        <Car className="h-3 w-3 text-gray-400" />
-                                                 <span className="text-gray-500">차량: {tour.tour_car_id}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2 text-sm">
-                        <User className="h-3 w-3 text-gray-400" />
-                        <span className="text-gray-600">가이드:</span>
-                                                 <span className="text-gray-900">{getGuideName(tour.tour_guide_id)}</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-sm">
-                        <User className="h-3 w-3 text-gray-400" />
-                        <span className="text-gray-600">어시스턴트:</span>
-                                                 <span className="text-gray-900">{getAssistantName(tour.assistant_id)}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                                         <div className="text-sm text-gray-900">
-                       {tour.reservation_ids.length}개 예약
-                     </div>
-                     <div className="text-xs text-gray-500">
-                       {tour.reservation_ids.join(', ')}
-                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2 text-sm">
-                        <DollarSign className="h-3 w-3 text-gray-400" />
-                        <span className="text-gray-600">가이드:</span>
-                        <span className="text-gray-900">₩{tour.guide_fee.toLocaleString()}</span>
-                      </div>
-                      {tour.assistant_fee > 0 && (
-                        <div className="flex items-center space-x-2 text-sm">
-                          <DollarSign className="h-3 w-3 text-gray-400" />
-                          <span className="text-gray-600">어시스턴트:</span>
-                          <span className="text-gray-900">₩{tour.assistant_fee.toLocaleString()}</span>
-                        </div>
-                      )}
-                      <div className="text-xs text-gray-500">
-                        총: ₩{(tour.guide_fee + tour.assistant_fee).toLocaleString()}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
-                      {getStatusLabel(tour.tour_status)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
-                      <Link
-                        href={`/${params.locale}/admin/tours/${tour.id}`}
-                        className="text-blue-600 hover:text-blue-900"
-                        title={t('viewDetails')}
-                      >
-                        <Eye size={16} />
-                      </Link>
-                      <button
-                        onClick={() => setEditingTour(tour)}
-                        className="text-blue-600 hover:text-blue-900"
-                        title={tCommon('edit')}
-                      >
-                        <Edit size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTour(tour.id)}
-                        className="text-red-600 hover:text-red-900"
-                        title={tCommon('delete')}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* 뷰 모드 전환 버튼 */}
+      <div className="flex justify-between items-center">
+        <div className="flex space-x-2">
+          <button
+            onClick={() => setViewMode('table')}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
+              viewMode === 'table'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <Grid size={20} />
+            <span>{t('view.table')}</span>
+          </button>
+          <button
+            onClick={() => setViewMode('calendar')}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
+              viewMode === 'calendar'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <CalendarDays size={20} />
+            <span>{t('view.calendar')}</span>
+          </button>
         </div>
       </div>
+
+      {/* 달력 보기 */}
+      {viewMode === 'calendar' && (
+        <TourCalendar tours={filteredTours} onTourClick={handleTourClick} />
+      )}
+
+      {/* 테이블 보기 */}
+      {viewMode === 'table' && (
+        <div className="bg-white rounded-lg shadow-md border">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.id')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.tourInfo')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.staff')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.reservations')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.fees')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.status')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tCommon('actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredTours.map((tour) => (
+                  <tr key={tour.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">{tour.id}</div>
+                      <div className="text-sm text-gray-500">상품: {tour.product_id}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2 text-sm">
+                          <Calendar className="h-3 w-3 text-gray-400" />
+                          <span className="text-gray-900">{tour.tour_date}</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-sm">
+                          <Clock className="h-3 w-3 text-gray-400" />
+                          <span className="text-gray-500">
+                            {formatDateTime(tour.tour_start_datetime)} - {formatDateTime(tour.tour_end_datetime)}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-sm">
+                          <Car className="h-3 w-3 text-gray-400" />
+                          <span className="text-gray-500">차량: {tour.tour_car_id}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2 text-sm">
+                          <User className="h-3 w-3 text-gray-400" />
+                          <span className="text-gray-600">가이드:</span>
+                          <span className="text-gray-900">{getGuideName(tour.tour_guide_id)}</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-sm">
+                          <User className="h-3 w-3 text-gray-400" />
+                          <span className="text-gray-600">어시스턴트:</span>
+                          <span className="text-gray-900">{getAssistantName(tour.assistant_id)}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {tour.reservation_ids.length}개 예약
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {tour.reservation_ids.join(', ')}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2 text-sm">
+                          <DollarSign className="h-3 w-3 text-gray-400" />
+                          <span className="text-gray-600">가이드:</span>
+                          <span className="text-gray-900">₩{tour.guide_fee.toLocaleString()}</span>
+                        </div>
+                        {tour.assistant_fee > 0 && (
+                          <div className="flex items-center space-x-2 text-sm">
+                            <DollarSign className="h-3 w-3 text-gray-400" />
+                            <span className="text-gray-600">어시스턴트:</span>
+                            <span className="text-gray-900">₩{tour.assistant_fee.toLocaleString()}</span>
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-500">
+                          총: ₩{(tour.guide_fee + tour.assistant_fee).toLocaleString()}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
+                        {getStatusLabel(tour.tour_status)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex space-x-2">
+                        <Link
+                          href={`/${params.locale}/admin/tours/${tour.id}`}
+                          className="text-blue-600 hover:text-blue-900"
+                          title={t('viewDetails')}
+                        >
+                          <Eye size={16} />
+                        </Link>
+                        <button
+                          onClick={() => setEditingTour(tour)}
+                          className="text-blue-600 hover:text-blue-900"
+                          title={tCommon('edit')}
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTour(tour.id)}
+                          className="text-red-600 hover:text-red-900"
+                          title={tCommon('delete')}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* 투어 추가/편집 모달 */}
       {(showAddForm || editingTour) && (
@@ -460,7 +503,19 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
               <input
                 type="datetime-local"
                 value={formData.tour_start_datetime}
-                onChange={(e) => setFormData({ ...formData, tour_start_datetime: e.target.value })}
+                onChange={(e) => {
+                  try {
+                    // datetime-local 입력값 검증
+                    const dateTime = new Date(e.target.value);
+                    if (isNaN(dateTime.getTime())) {
+                      console.warn('Invalid datetime input:', e.target.value);
+                      return;
+                    }
+                    setFormData({ ...formData, tour_start_datetime: e.target.value });
+                  } catch (error) {
+                    console.error('Error parsing datetime:', error);
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />
@@ -470,7 +525,19 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
               <input
                 type="datetime-local"
                 value={formData.tour_end_datetime}
-                onChange={(e) => setFormData({ ...formData, tour_end_datetime: e.target.value })}
+                onChange={(e) => {
+                  try {
+                    // datetime-local 입력값 검증
+                    const dateTime = new Date(e.target.value);
+                    if (isNaN(dateTime.getTime())) {
+                      console.warn('Invalid datetime input:', e.target.value);
+                      return;
+                    }
+                    setFormData({ ...formData, tour_end_datetime: e.target.value });
+                  } catch (error) {
+                    console.error('Error parsing datetime:', error);
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />

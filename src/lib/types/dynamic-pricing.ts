@@ -1,9 +1,9 @@
 // 동적 가격 시스템을 위한 TypeScript 타입 정의
 
 export interface DynamicPricingRule {
-  id: string;
-  product_id: string;
-  channel_id: string;
+  id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  product_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  channel_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   rule_name: string;
   start_date: string;
   end_date: string;
@@ -19,8 +19,8 @@ export interface DynamicPricingRule {
 }
 
 export interface WeekdayPricing {
-  id: string;
-  pricing_rule_id: string;
+  id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  pricing_rule_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   day_of_week: number; // 0=일요일, 1=월요일, ..., 6=토요일
   adult_price: number;
   child_price: number;
@@ -33,9 +33,9 @@ export interface WeekdayPricing {
 }
 
 export interface RequiredOptionPricing {
-  id: string;
-  pricing_rule_id: string;
-  option_id: string;
+  id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  pricing_rule_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  option_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   adult_price: number;
   child_price: number;
   infant_price: number;
@@ -48,9 +48,9 @@ export interface RequiredOptionPricing {
 }
 
 export interface ReservationPricing {
-  id: string;
-  reservation_id: string;
-  pricing_rule_id: string;
+  id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  reservation_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  pricing_rule_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   
   // 기본 가격
   base_adult_price: number;
@@ -79,9 +79,9 @@ export interface ReservationPricing {
 }
 
 export interface PricingCalculationLog {
-  id: string;
-  reservation_id: string;
-  pricing_rule_id?: string;
+  id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  reservation_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  pricing_rule_id?: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   calculation_type: 'base_price' | 'option_price' | 'total_price';
   input_data: Record<string, any>;
   calculation_result: Record<string, any>;
@@ -105,8 +105,8 @@ export interface PriceCalculationResult {
 
 // 가격 규칙 생성/수정을 위한 DTO
 export interface CreatePricingRuleDto {
-  product_id: string;
-  channel_id: string;
+  product_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  channel_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   rule_name: string;
   start_date: string;
   end_date: string;
@@ -122,7 +122,7 @@ export interface CreateWeekdayPricingDto {
 }
 
 export interface CreateRequiredOptionPricingDto {
-  option_id: string;
+  option_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   adult_price: number;
   child_price: number;
   infant_price: number;
@@ -130,13 +130,13 @@ export interface CreateRequiredOptionPricingDto {
 
 // 가격 계산을 위한 DTO
 export interface CalculatePriceDto {
-  product_id: string;
-  channel_id: string;
+  product_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  channel_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   tour_date: string;
   adults: number;
   children: number;
   infants: number;
-  option_ids: string[];
+  option_ids: string[]; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
 }
 
 // 요일별 가격 설정을 위한 DTO
@@ -151,7 +151,7 @@ export interface WeekdayPricingDto {
 
 // 기존 타입들 (참조용)
 export interface Product {
-  id: string;
+  id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   name: string;
   category: string;
   description?: string;
@@ -166,7 +166,7 @@ export interface Product {
 }
 
 export interface Channel {
-  id: string;
+  id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   name: string;
   type: string;
   website?: string;
@@ -179,7 +179,7 @@ export interface Channel {
 }
 
 export interface ProductOption {
-  id: string;
+  id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   name: string;
   category: string;
   description?: string;
@@ -193,9 +193,9 @@ export interface ProductOption {
 }
 
 export interface Reservation {
-  id: string;
-  customer_id: string;
-  product_id: string;
+  id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  customer_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  product_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   tour_date: string;
   tour_time?: string;
   pickup_hotel?: string;

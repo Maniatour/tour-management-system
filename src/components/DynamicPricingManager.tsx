@@ -18,7 +18,8 @@ import {
   Percent,
   Tag,
   Eye,
-  Loader2
+  Loader2,
+  TrendingUp
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -31,20 +32,24 @@ import {
 import ChangeHistory from './ChangeHistory';
 
 interface DynamicPricingManagerProps {
-  productId: string;
+  productId: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   onSave?: (rule: DynamicPricingRule) => void;
   onCancel?: () => void;
+  isNewProduct?: boolean;
 }
 
 export default function DynamicPricingManager({ 
   productId, 
   onSave, 
-  onCancel 
+  onCancel,
+  isNewProduct = false
 }: DynamicPricingManagerProps) {
   const [selectedChannel, setSelectedChannel] = useState<string>('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [pricingRules, setPricingRules] = useState<DynamicPricingRule[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
   
   // 새 규칙 생성 폼 상태
   const [newRule, setNewRule] = useState<CreatePricingRuleDto>({
@@ -65,12 +70,14 @@ export default function DynamicPricingManager({
     is_sale_available: true,
     commission_percent: 0,
     markup_amount: 0,
-    coupon_percent: 0,
+    coupon_fixed_discount: 0, // 고정 할인 금액 ($)
+    coupon_percentage_discount: 0, // 퍼센트 할인 (%)
+    discount_priority: 'fixed_first' as 'fixed_first' | 'percentage_first', // 할인 우선순위
     adult_price: 0,
     child_price: 0,
     infant_price: 0,
     required_options: [] as Array<{
-      option_id: string;
+      option_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
       adult_price: number;
       child_price: number;
       infant_price: number;
@@ -79,7 +86,7 @@ export default function DynamicPricingManager({
 
   // 채널 목록 및 상품 판매 여부
   const [channels, setChannels] = useState<Array<{
-    id: string;
+    id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
     name: string;
     type: string;
     is_selling_product: boolean;
@@ -88,9 +95,9 @@ export default function DynamicPricingManager({
 
   // 옵션 목록 (실제로는 API에서 가져와야 함)
   const [options] = useState([
-    { id: '1', name: 'Antelope X Canyon', category: '앤텔롭캐년', base_price: 369 },
-    { id: '2', name: 'Lower Antelope Canyon', category: '앤텔롭캐년', base_price: 335 },
-    { id: '3', name: 'Upper Antelope Canyon', category: '앤텔롭캐년', base_price: 320 }
+    { id: '1', name: 'Antelope X Canyon', category: '앤텔롭캐년', base_price: 369 }, // id는 text 타입
+    { id: '2', name: 'Lower Antelope Canyon', category: '앤텔롭캐년', base_price: 335 }, // id는 text 타입
+    { id: '3', name: 'Upper Antelope Canyon', category: '앤텔롭캐년', base_price: 320 } // id는 text 타입
   ]);
 
   // 선택된 필수 옵션
@@ -218,20 +225,38 @@ export default function DynamicPricingManager({
     }));
   };
 
+  // 쿠폰 할인 계산 함수
+  const calculateCouponDiscount = (basePrice: number, fixedDiscount: number, percentageDiscount: number, priority: 'fixed_first' | 'percentage_first' = 'fixed_first') => {
+    let result = basePrice;
+    
+    if (priority === 'fixed_first') {
+      // 고정 할인을 먼저 적용한 후 퍼센트 할인
+      result = result - fixedDiscount;
+      if (result < 0) result = 0; // 음수 방지
+      result = result * (1 - percentageDiscount / 100);
+    } else {
+      // 퍼센트 할인을 먼저 적용한 후 고정 할인
+      result = result * (1 - percentageDiscount / 100);
+      result = result - fixedDiscount;
+      if (result < 0) result = 0; // 음수 방지
+    }
+    
+    return Math.max(0, result); // 최종적으로 음수 방지
+  };
+
   // 가격 계산 (미리보기용)
   const calculatePreviewPrices = () => {
-    const { adult_price, child_price, infant_price, markup_amount, coupon_percent, commission_percent } = pricingConfig;
+    const { adult_price, child_price, infant_price, markup_amount, coupon_fixed_discount, coupon_percentage_discount, discount_priority, commission_percent } = pricingConfig;
     
     // 최대 판매가 계산
     const maxAdultPrice = adult_price + markup_amount;
     const maxChildPrice = child_price + markup_amount;
     const maxInfantPrice = infant_price + markup_amount;
 
-    // 쿠폰 할인 적용
-    const discountMultiplier = (100 - coupon_percent) / 100;
-    const discountedAdultPrice = maxAdultPrice * discountMultiplier;
-    const discountedChildPrice = maxChildPrice * discountMultiplier;
-    const discountedInfantPrice = maxInfantPrice * discountMultiplier;
+    // 쿠폰 할인 적용 (할인 우선순위 고려)
+    const discountedAdultPrice = calculateCouponDiscount(maxAdultPrice, coupon_fixed_discount, coupon_percentage_discount, discount_priority);
+    const discountedChildPrice = calculateCouponDiscount(maxChildPrice, coupon_fixed_discount, coupon_percentage_discount, discount_priority);
+    const discountedInfantPrice = calculateCouponDiscount(maxInfantPrice, coupon_fixed_discount, coupon_percentage_discount, discount_priority);
 
     // 커미션 적용 (Net Price)
     const commissionMultiplier = (100 - commission_percent) / 100;
@@ -306,16 +331,17 @@ export default function DynamicPricingManager({
     const selectedOption = options.find(opt => opt.id === selectedRequiredOption);
     if (!selectedOption) return null;
 
-    const basePrice = selectedOption.base_price;
-    const markup = 0; // 업차지 금액
-    const couponDiscount = 0; // 쿠폰 할인
-    const commission = 32; // 커미션 (32%로 설정)
+         const basePrice = selectedOption.base_price;
+     const markup = 0; // 업차지 금액
+     const couponFixedDiscount = 0; // 쿠폰 고정 할인
+     const couponPercentageDiscount = 0; // 쿠폰 퍼센트 할인
+     const commission = 32; // 커미션 (32%로 설정)
 
-    // 손님 지불 금액 (기본가 + 업차지)
-    const customerPayment = basePrice + markup;
-    
-    // 할인 적용 후 금액
-    const discountedPrice = customerPayment * (1 - couponDiscount / 100);
+     // 손님 지불 금액 (기본가 + 업차지)
+     const customerPayment = basePrice + markup;
+     
+     // 할인 적용 후 금액 (할인 우선순위 고려)
+     const discountedPrice = calculateCouponDiscount(customerPayment, couponFixedDiscount, couponPercentageDiscount, 'fixed_first');
     
     // 우리 수령 금액 (커미션 제외)
     const ourReceivedAmount = discountedPrice * (1 - commission / 100);
@@ -382,6 +408,65 @@ export default function DynamicPricingManager({
       alert('가격 규칙 저장에 실패했습니다. 다시 시도해주세요.');
     }
   };
+
+  const handleSaveDynamicPricing = async () => {
+    if (isNewProduct) {
+      setSaveMessage('새 상품은 전체 저장을 사용해주세요.')
+      return
+    }
+
+    setSaving(true)
+    setSaveMessage('')
+
+    try {
+      // 기존 동적 가격 규칙들 삭제
+      const { error: deleteError } = await supabase
+        .from('dynamic_pricing')
+        .delete()
+        .eq('product_id', productId)
+
+      if (deleteError) throw deleteError
+
+      // 새 동적 가격 규칙들 추가
+      for (const rule of pricingRules) {
+        // weekday_pricing에서 가격 정보 추출
+        const weekdayPricing = rule.weekday_pricing?.[0]
+        const adultPrice = weekdayPricing?.adult_price || 0
+        const childPrice = weekdayPricing?.child_price || 0
+        const infantPrice = weekdayPricing?.infant_price || 0
+
+        const { error: ruleError } = await supabase
+          .from('dynamic_pricing')
+          .insert({
+            product_id: productId,
+            channel_id: rule.channel_id,
+            date: rule.start_date,
+            adult_price: adultPrice,
+            child_price: childPrice,
+            infant_price: infantPrice,
+            options_pricing: rule.required_option_pricing || {},
+            commission_percent: 0, // 기본값
+            markup_amount: 0, // 기본값
+                         coupon_fixed_discount: 0, // 기본값
+             coupon_percentage_discount: 0, // 기본값
+             discount_priority: 'fixed_first', // 기본값
+            is_sale_available: true
+          })
+
+        if (ruleError) throw ruleError
+      }
+
+      setSaveMessage('동적 가격 정보가 성공적으로 저장되었습니다!')
+      setTimeout(() => setSaveMessage(''), 3000)
+            } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
+          console.error('동적 가격 저장 오류:', errorMessage)
+          setSaveMessage(`동적 가격 저장에 실패했습니다: ${errorMessage}`)
+          setTimeout(() => setSaveMessage(''), 3000)
+        } finally {
+      setSaving(false)
+    }
+  }
 
   const daysInMonth = getDaysInMonth(currentMonth);
   const previewPrices = calculatePreviewPrices();
@@ -664,20 +749,23 @@ export default function DynamicPricingManager({
                 </button>
               </div>
 
-              {/* 수수료 및 할인 설정 */}
-              <div className="grid grid-cols-3 gap-6">
+                             {/* 수수료 및 할인 설정 */}
+               <div className="grid grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     커미션 (%)
                   </label>
                   <div className="relative">
-                    <input
-                      type="number"
-                      value={pricingConfig.commission_percent}
-                      onChange={(e) => setPricingConfig(prev => ({ ...prev, commission_percent: parseFloat(e.target.value) || 0 }))}
-                      className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="0"
-                    />
+                                         <input
+                       type="number"
+                       min="0"
+                       max="100"
+                       step="0.01"
+                       value={pricingConfig.commission_percent}
+                       onChange={(e) => setPricingConfig(prev => ({ ...prev, commission_percent: parseFloat(e.target.value) || 0 }))}
+                       className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                       placeholder="0"
+                     />
                     <Percent className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                   </div>
                 </div>
@@ -686,31 +774,66 @@ export default function DynamicPricingManager({
                     업차지 금액 ($)
                   </label>
                   <div className="relative">
-                    <input
-                      type="number"
-                      value={pricingConfig.markup_amount}
-                      onChange={(e) => setPricingConfig(prev => ({ ...prev, markup_amount: parseFloat(e.target.value) || 0 }))}
-                      className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="0"
-                    />
+                                         <input
+                       type="number"
+                       min="0"
+                       step="0.01"
+                       value={pricingConfig.markup_amount}
+                       onChange={(e) => setPricingConfig(prev => ({ ...prev, markup_amount: parseFloat(e.target.value) || 0 }))}
+                       className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                       placeholder="0"
+                     />
                     <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    쿠폰 할인 (%)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={pricingConfig.coupon_percent}
-                      onChange={(e) => setPricingConfig(prev => ({ ...prev, coupon_percent: parseFloat(e.target.value) || 0 }))}
-                      className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="0"
-                    />
-                    <Tag className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                  </div>
-                </div>
+                                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                     쿠폰 고정 할인 ($)
+                   </label>
+                   <div className="relative">
+                     <input
+                       type="number"
+                       min="0"
+                       step="0.01"
+                       value={pricingConfig.coupon_fixed_discount}
+                       onChange={(e) => setPricingConfig(prev => ({ ...prev, coupon_fixed_discount: parseFloat(e.target.value) || 0 }))}
+                       className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                       placeholder="0"
+                     />
+                     <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                   </div>
+                 </div>
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                     쿠폰 퍼센트 할인 (%)
+                   </label>
+                   <div className="relative">
+                     <input
+                       type="number"
+                       min="0"
+                       max="100"
+                       step="0.01"
+                       value={pricingConfig.coupon_percentage_discount}
+                       onChange={(e) => setPricingConfig(prev => ({ ...prev, coupon_percentage_discount: parseFloat(e.target.value) || 0 }))}
+                       className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                       placeholder="0"
+                     />
+                     <Percent className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                   </div>
+                 </div>
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                     할인 우선순위
+                   </label>
+                   <select
+                     value={pricingConfig.discount_priority || 'fixed_first'}
+                     onChange={(e) => setPricingConfig(prev => ({ ...prev, discount_priority: e.target.value as 'fixed_first' | 'percentage_first' }))}
+                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                   >
+                     <option value="fixed_first">고정 할인 우선</option>
+                     <option value="percentage_first">퍼센트 할인 우선</option>
+                   </select>
+                 </div>
               </div>
 
               {/* 기본 판매가 */}
@@ -945,7 +1068,7 @@ export default function DynamicPricingManager({
                     if (!selectedOption) return null;
 
                     const optionMaxPrice = option.adult_price + pricingConfig.markup_amount;
-                    const optionDiscountedPrice = optionMaxPrice * ((100 - pricingConfig.coupon_percent) / 100);
+                                         const optionDiscountedPrice = calculateCouponDiscount(optionMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
                     const optionNetPrice = optionDiscountedPrice * ((100 - pricingConfig.commission_percent) / 100);
 
                     return (
@@ -972,6 +1095,43 @@ export default function DynamicPricingManager({
               </div>
             )}
           </div>
+        )}
+      </div>
+
+      {/* 동적 가격 저장 버튼 */}
+      <div className="border-t pt-6 mt-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <TrendingUp className="h-5 w-5 text-green-600" />
+            <h3 className="text-lg font-medium text-gray-900">동적 가격 관리</h3>
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveDynamicPricing}
+            disabled={saving || isNewProduct}
+            className={`px-6 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
+              saving || isNewProduct
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            }`}
+          >
+            <Save className="h-4 w-4" />
+            <span>{saving ? '저장 중...' : '동적 가격 저장'}</span>
+          </button>
+        </div>
+        {saveMessage && (
+          <div className={`mt-3 p-3 rounded-lg text-sm ${
+            saveMessage.includes('성공') 
+              ? 'bg-green-100 text-green-800 border border-green-200' 
+              : 'bg-red-100 text-red-800 border border-red-200'
+          }`}>
+            {saveMessage}
+          </div>
+        )}
+        {isNewProduct && (
+          <p className="mt-2 text-sm text-gray-500">
+            새 상품은 전체 저장을 사용해주세요.
+          </p>
         )}
       </div>
     </div>

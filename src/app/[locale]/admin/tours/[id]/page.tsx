@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, Trash2, Calendar, User, Car, DollarSign, Users, Clock, MapPin } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { sanitizeTimeInput } from '@/lib/utils'
 
 interface Tour {
   id: string
@@ -391,7 +392,19 @@ function TourForm({ tour, onSubmit, onCancel }: TourFormProps) {
               <input
                 type="datetime-local"
                 value={formData.tourStartDateTime}
-                onChange={(e) => setFormData({ ...formData, tourStartDateTime: e.target.value })}
+                onChange={(e) => {
+                  try {
+                    // datetime-local 입력값 검증
+                    const dateTime = new Date(e.target.value);
+                    if (isNaN(dateTime.getTime())) {
+                      console.warn('Invalid datetime input:', e.target.value);
+                      return;
+                    }
+                    setFormData({ ...formData, tourStartDateTime: e.target.value });
+                  } catch (error) {
+                    console.error('Error parsing datetime:', error);
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />
@@ -401,7 +414,19 @@ function TourForm({ tour, onSubmit, onCancel }: TourFormProps) {
               <input
                 type="datetime-local"
                 value={formData.tourEndDateTime}
-                onChange={(e) => setFormData({ ...formData, tourEndDateTime: e.target.value })}
+                onChange={(e) => {
+                  try {
+                    // datetime-local 입력값 검증
+                    const dateTime = new Date(e.target.value);
+                    if (isNaN(dateTime.getTime())) {
+                      console.warn('Invalid datetime input:', e.target.value);
+                      return;
+                    }
+                    setFormData({ ...formData, tourEndDateTime: e.target.value });
+                  } catch (error) {
+                    console.error('Error parsing datetime:', error);
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />

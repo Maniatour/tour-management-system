@@ -3,6 +3,7 @@
 import { useState, use } from 'react'
 import { Plus, Search, Edit, Trash2, Calendar, Clock, MapPin, Users, User, FileText } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { sanitizeTimeInput } from '@/lib/utils'
 
 interface Reservation {
   id: string
@@ -496,7 +497,7 @@ function ReservationForm({ reservation, customers, products, channels, onSubmit,
               <input
                 type="time"
                 value={formData.tourTime}
-                onChange={(e) => setFormData({ ...formData, tourTime: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, tourTime: sanitizeTimeInput(e.target.value) })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />
@@ -519,7 +520,7 @@ function ReservationForm({ reservation, customers, products, channels, onSubmit,
               <input
                 type="time"
                 value={formData.pickUpTime}
-                onChange={(e) => setFormData({ ...formData, pickUpTime: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, pickUpTime: sanitizeTimeInput(e.target.value) })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />

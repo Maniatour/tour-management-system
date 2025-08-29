@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE audit_logs (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   table_name VARCHAR(100) NOT NULL,
-  record_id UUID NOT NULL,
+  record_id TEXT NOT NULL,
   action VARCHAR(20) NOT NULL CHECK (action IN ('INSERT', 'UPDATE', 'DELETE')),
   old_values JSONB,
   new_values JSONB,
@@ -145,8 +145,11 @@ CREATE TABLE customers (
 
 -- Products table
 CREATE TABLE products (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  id TEXT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
+  name_en VARCHAR(255) NOT NULL,
+  name_ko VARCHAR(255) NOT NULL,
+  display_name JSONB,
   category VARCHAR(100) NOT NULL,
   description TEXT,
   duration VARCHAR(100),
@@ -245,16 +248,18 @@ CREATE TABLE reservations (
 
 -- Channels table
 CREATE TABLE channels (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  id TEXT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   type VARCHAR(100) NOT NULL,
+  category VARCHAR(50) NOT NULL DEFAULT 'Own',
   website VARCHAR(500),
   commission DECIMAL(5,2) DEFAULT 0,
   base_price DECIMAL(10,2) DEFAULT 0,
   markup DECIMAL(5,2) DEFAULT 0,
   status VARCHAR(50) DEFAULT 'active',
   description TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  CONSTRAINT chk_channel_category CHECK (category IN ('Own', 'OTA', 'Partner'))
 );
 
 -- Product Options table (Many-to-Many relationship)

@@ -40,6 +40,7 @@ const Sidebar = () => {
     { href: `/${locale}/options`, label: t('options'), icon: Settings },
     { href: `/${locale}/employees`, label: t('employees'), icon: UserCheck },
     { href: `/${locale}/courses`, label: t('courses'), icon: FileText },
+
   ]
 
   const toggleSidebar = () => {

@@ -1,0 +1,499 @@
+'use client'
+
+import React, { useState } from 'react'
+import { Info, Calendar, MessageCircle, Image, Tag, Clock, Save } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+
+interface BasicInfoTabProps {
+  formData: {
+    name: string
+    productCode: string
+    category: string
+    subCategory: string
+    description: string
+    duration: number
+    maxParticipants: number
+    tags: string[]
+    departureCity: string
+    arrivalCity: string
+    departureCountry: string
+    arrivalCountry: string
+    languages: string[]
+    groupSize: 'private' | 'small' | 'big'
+    adultAge: number
+    childAgeMin: number
+    childAgeMax: number
+    infantAge: number
+    status: 'active' | 'inactive' | 'draft'
+  }
+  setFormData: (data: any) => void
+  newTag: string
+  setNewTag: (tag: string) => void
+  addTag: () => void
+  removeTag: (tag: string) => void
+  productId: string
+  isNewProduct: boolean
+}
+
+export default function BasicInfoTab({
+  formData,
+  setFormData,
+  newTag,
+  setNewTag,
+  addTag,
+  removeTag,
+  productId,
+  isNewProduct
+}: BasicInfoTabProps) {
+  const [saving, setSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState('')
+
+  const handleSaveBasicInfo = async () => {
+    if (isNewProduct) {
+      setSaveMessage('새 상품은 전체 저장을 사용해주세요.')
+      return
+    }
+
+    setSaving(true)
+    setSaveMessage('')
+
+    try {
+      // 기본 정보만 업데이트
+      const { error } = await supabase
+        .from('products')
+        .update({
+          name: formData.name,
+          product_code: formData.productCode,
+          category: formData.category,
+          sub_category: formData.subCategory,
+          description: formData.description,
+          duration: formData.duration.toString(),
+          max_participants: formData.maxParticipants,
+          tags: formData.tags,
+          departure_city: formData.departureCity,
+          arrival_city: formData.arrivalCity,
+          departure_country: formData.departureCountry,
+          arrival_country: formData.arrivalCountry,
+          languages: formData.languages,
+          group_size: formData.groupSize,
+          adult_age: formData.adultAge,
+          child_age_min: formData.childAgeMin,
+          child_age_max: formData.childAgeMax,
+          infant_age: formData.infantAge,
+          status: formData.status
+        })
+        .eq('id', productId)
+
+      if (error) throw error
+
+      setSaveMessage('기본 정보가 성공적으로 저장되었습니다!')
+      setTimeout(() => setSaveMessage(''), 3000)
+            } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
+          console.error('기본 정보 저장 오류:', errorMessage)
+          setSaveMessage(`기본 정보 저장에 실패했습니다: ${errorMessage}`)
+          setTimeout(() => setSaveMessage(''), 3000)
+        } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      {/* 상품 기본 정보 */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">상품명 *</label>
+          <input
+            type="text"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">상품 코드 *</label>
+          <input
+            type="text"
+            value={formData.productCode || ''}
+            onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="예: ANT-001"
+            required
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">판매 상태 *</label>
+          <select
+            value={formData.status}
+            onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'draft' })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          >
+            <option value="active">판매 중</option>
+            <option value="inactive">판매 중단</option>
+            <option value="draft">임시 저장</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">카테고리 *</label>
+          <select
+            value={formData.category}
+            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          >
+            <option value="">카테고리 선택</option>
+            <option value="city">도시 투어</option>
+            <option value="nature">자연/야외</option>
+            <option value="culture">문화/역사</option>
+            <option value="adventure">모험/액티비티</option>
+            <option value="food">음식/요리</option>
+            <option value="shopping">쇼핑</option>
+            <option value="entertainment">엔터테인먼트</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">서브 카테고리</label>
+        <input
+          type="text"
+          value={formData.subCategory || ''}
+          onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          placeholder="예: 캐년 투어, 도시 관광"
+        />
+      </div>
+
+      {/* 출발/도착 정보 */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">출발 도시 *</label>
+          <input
+            type="text"
+            value={formData.departureCity || ''}
+            onChange={(e) => setFormData({ ...formData, departureCity: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="예: 라스베가스"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">도착 도시 *</label>
+          <input
+            type="text"
+            value={formData.arrivalCity || ''}
+            onChange={(e) => setFormData({ ...formData, arrivalCity: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="예: 앤텔롭 캐년"
+            required
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">출발 국가 *</label>
+          <select
+            value={formData.departureCountry || ''}
+            onChange={(e) => setFormData({ ...formData, departureCountry: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          >
+            <option value="">국가 선택</option>
+            <option value="US">미국</option>
+            <option value="KR">한국</option>
+            <option value="JP">일본</option>
+            <option value="CN">중국</option>
+            <option value="TH">태국</option>
+            <option value="VN">베트남</option>
+            <option value="SG">싱가포르</option>
+            <option value="MY">말레이시아</option>
+            <option value="ID">인도네시아</option>
+            <option value="PH">필리핀</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">도착 국가 *</label>
+          <select
+            value={formData.arrivalCountry || ''}
+            onChange={(e) => setFormData({ ...formData, arrivalCountry: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          >
+            <option value="">국가 선택</option>
+            <option value="US">미국</option>
+            <option value="KR">한국</option>
+            <option value="JP">일본</option>
+            <option value="CN">중국</option>
+            <option value="TH">태국</option>
+            <option value="VN">베트남</option>
+            <option value="SG">싱가포르</option>
+            <option value="MY">말레이시아</option>
+            <option value="ID">인도네시아</option>
+            <option value="PH">필리핀</option>
+          </select>
+        </div>
+      </div>
+      
+      {/* 투어 언어 및 그룹 크기 */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">투어 언어 *</label>
+          <div className="space-y-2">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={formData.languages?.includes('ko') || false}
+                onChange={(e) => {
+                  const languages = formData.languages || [];
+                  if (e.target.checked) {
+                    setFormData({ ...formData, languages: [...languages, 'ko'] });
+                  } else {
+                    setFormData({ ...formData, languages: languages.filter(lang => lang !== 'ko') });
+                  }
+                }}
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              한국어
+            </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={formData.languages?.includes('en') || false}
+                onChange={(e) => {
+                  const languages = formData.languages || [];
+                  if (e.target.checked) {
+                    setFormData({ ...formData, languages: [...languages, 'en'] });
+                  } else {
+                    setFormData({ ...formData, languages: languages.filter(lang => lang !== 'en') });
+                  }
+                }}
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              영어
+            </label>
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">그룹 크기 *</label>
+          <div className="space-y-2">
+            <label className="flex items-center">
+              <input
+                type="radio"
+                name="groupSize"
+                value="private"
+                checked={formData.groupSize === 'private'}
+                onChange={(e) => setFormData({ ...formData, groupSize: e.target.value as 'private' | 'small' | 'big' })}
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+              />
+              Private (개인/가족)
+            </label>
+            <label className="flex items-center">
+              <input
+                type="radio"
+                name="groupSize"
+                value="small"
+                checked={formData.groupSize === 'small'}
+                onChange={(e) => setFormData({ ...formData, groupSize: e.target.value as 'private' | 'small' | 'big' })}
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+              />
+              Small Group (소규모 그룹)
+            </label>
+            <label className="flex items-center">
+              <input
+                type="radio"
+                name="groupSize"
+                value="big"
+                checked={formData.groupSize === 'big'}
+                onChange={(e) => setFormData({ ...formData, groupSize: e.target.value as 'private' | 'small' | 'big' })}
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+              />
+              Big Group (대규모 그룹)
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      {/* 연령 기준 */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">성인 기준 (이상) *</label>
+          <input
+            type="number"
+            min="0"
+            value={formData.adultAge || ''}
+            onChange={(e) => setFormData({ ...formData, adultAge: parseInt(e.target.value) || 0 })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="예: 13"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">세 이상</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">아동 기준 (이상) *</label>
+          <input
+            type="number"
+            min="0"
+            value={formData.childAgeMin || ''}
+            onChange={(e) => setFormData({ ...formData, childAgeMin: parseInt(e.target.value) || 0 })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="예: 3"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">세 이상</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">아동 기준 (이하) *</label>
+          <input
+            type="number"
+            min="0"
+            value={formData.childAgeMax || ''}
+            onChange={(e) => setFormData({ ...formData, childAgeMax: parseInt(e.target.value) || 0 })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="예: 12"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">세 이하</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">유아 기준 (이하) *</label>
+          <input
+            type="number"
+            min="0"
+            value={formData.infantAge || ''}
+            onChange={(e) => setFormData({ ...formData, infantAge: parseInt(e.target.value) || 0 })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="예: 2"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">세 이하</p>
+        </div>
+      </div>
+      
+      {/* 기존 필드들 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">설명 *</label>
+        <textarea
+          value={formData.description}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          rows={3}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          required
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">총 투어 시간 (시간) *</label>
+          <input
+            type="number"
+            min="0.5"
+            step="0.5"
+            value={formData.duration}
+            onChange={(e) => setFormData({ ...formData, duration: parseFloat(e.target.value) || 0.5 })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="예: 3.5"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">시간 단위로 입력 (0.5시간 = 30분)</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">최대 참가자 *</label>
+          <input
+            type="number"
+            min="1"
+            value={formData.maxParticipants}
+            onChange={(e) => setFormData({ ...formData, maxParticipants: parseInt(e.target.value) || 1 })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">태그</label>
+        <div className="flex space-x-2 mb-2">
+          <input
+            type="text"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+            placeholder="태그 입력 후 Enter"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <button
+            type="button"
+            onClick={addTag}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            추가
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {formData.tags.map((tag) => (
+            <span
+              key={tag}
+              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+            >
+              {tag}
+              <button
+                type="button"
+                onClick={() => removeTag(tag)}
+                className="ml-1 text-blue-600 hover:text-blue-800"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* 기본 정보 저장 버튼 */}
+      <div className="border-t pt-6 mt-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Info className="h-5 w-5 text-blue-600" />
+            <h3 className="text-lg font-medium text-gray-900">기본 정보</h3>
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveBasicInfo}
+            disabled={saving || isNewProduct}
+            className={`px-6 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
+              saving || isNewProduct
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            <Save className="h-4 w-4" />
+            <span>{saving ? '저장 중...' : '기본 정보 저장'}</span>
+          </button>
+        </div>
+        {saveMessage && (
+          <div className={`mt-3 p-3 rounded-lg text-sm ${
+            saveMessage.includes('성공') 
+              ? 'bg-green-100 text-green-800 border border-green-200' 
+              : 'bg-red-100 text-red-800 border border-red-200'
+          }`}>
+            {saveMessage}
+          </div>
+        )}
+        {isNewProduct && (
+          <p className="mt-2 text-sm text-gray-500">
+            새 상품은 전체 저장을 사용해주세요.
+          </p>
+        )}
+      </div>
+    </>
+  )
+}
