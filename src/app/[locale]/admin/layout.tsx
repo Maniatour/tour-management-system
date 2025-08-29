@@ -149,7 +149,7 @@ export default function AdminLayout({ children, params }: AdminLayoutProps) {
 
                                      {/* 페이지 콘텐츠 */}
            <main className="py-6">
-             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+             <div className="max-w-full mx-auto px-2 sm:px-4 lg:px-6">
                {children}
              </div>
            </main>

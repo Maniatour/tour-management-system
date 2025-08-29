@@ -39,15 +39,19 @@ export default function ChangeHistory({
     try {
       setLoading(true)
       
-      // 감사 로그 시스템이 준비되었는지 확인
-      const { data: systemCheck, error: systemError } = await supabase
-        .from('information_schema.tables')
-        .select('table_name')
-        .eq('table_schema', 'public')
-        .eq('table_name', 'audit_logs')
-        .single()
+      // 감사 로그 시스템이 준비되었는지 확인 (더 안전한 방법)
+      try {
+        const { data: systemCheck, error: systemError } = await supabase
+          .from('audit_logs')
+          .select('id')
+          .limit(1)
 
-      if (systemError || !systemCheck) {
+        if (systemError) {
+          console.log('감사 로그 시스템이 아직 준비되지 않았습니다. 시스템 초기화 중...')
+          setChanges([])
+          return
+        }
+      } catch (error) {
         console.log('감사 로그 시스템이 아직 준비되지 않았습니다. 시스템 초기화 중...')
         setChanges([])
         return

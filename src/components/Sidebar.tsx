@@ -38,7 +38,7 @@ const Sidebar = () => {
     { href: `/${locale}/channels`, label: t('channels'), icon: Globe },
     { href: `/${locale}/products`, label: t('products'), icon: Package },
     { href: `/${locale}/options`, label: t('options'), icon: Settings },
-    { href: `/${locale}/employees`, label: t('employees'), icon: UserCheck },
+    { href: `/${locale}/team`, label: t('team'), icon: UserCheck },
     { href: `/${locale}/courses`, label: t('courses'), icon: FileText },
 
   ]

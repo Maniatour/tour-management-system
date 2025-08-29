@@ -397,14 +397,20 @@ export default function BasicInfoTab({
           <input
             type="number"
             min="0.5"
+            max="24"
             step="0.5"
             value={formData.duration}
-            onChange={(e) => setFormData({ ...formData, duration: parseFloat(e.target.value) || 0.5 })}
+            onChange={(e) => {
+              const value = parseFloat(e.target.value);
+              if (value >= 0.5 && value <= 24) {
+                setFormData({ ...formData, duration: value });
+              }
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="예: 3.5"
             required
           />
-          <p className="text-xs text-gray-500 mt-1">시간 단위로 입력 (0.5시간 = 30분)</p>
+          <p className="text-xs text-gray-500 mt-1">시간 단위로 입력 (0.5시간 = 30분, 최대 24시간)</p>
         </div>
 
         <div>

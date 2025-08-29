@@ -14,7 +14,7 @@ type Tour = Database['public']['Tables']['tours']['Row']
 type TourInsert = Database['public']['Tables']['tours']['Insert']
 type TourUpdate = Database['public']['Tables']['tours']['Update']
 
-type Employee = Database['public']['Tables']['employees']['Row']
+type Employee = Database['public']['Tables']['team']['Row']
 
 export default function AdminTours() {
   const params = useParams()
@@ -36,7 +36,7 @@ export default function AdminTours() {
   const fetchEmployees = async () => {
     try {
       const { data, error } = await supabase
-        .from('employees')
+        .from('team')
         .select('*')
         .eq('is_active', true)
         .order('name_ko')
@@ -464,8 +464,8 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
     }
   }
 
-  const guides = employees.filter(e => e.type === 'guide')
-  const assistants = employees.filter(e => e.type === 'assistant')
+  const guides = employees.filter(e => e.position === '투어 가이드')
+  const assistants = employees.filter(e => e.position === '투어 가이드' || e.position === '어시스턴트')
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -556,7 +556,7 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
                 <option value="">{t('form.selectGuide')}</option>
                 {guides.map(guide => (
                   <option key={guide.email} value={guide.email}>
-                    {guide.name_ko} ({guide.language})
+                    {guide.name_ko} ({guide.languages?.join(', ') || 'ko'})
                   </option>
                 ))}
               </select>
@@ -571,7 +571,7 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
                 <option value="">{t('form.noAssistant')}</option>
                 {assistants.map(assistant => (
                   <option key={assistant.email} value={assistant.email}>
-                    {assistant.name_ko} ({assistant.language})
+                    {assistant.name_ko} ({assistant.languages?.join(', ') || 'ko'})
                   </option>
                 ))}
               </select>

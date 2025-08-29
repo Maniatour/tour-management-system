@@ -19,7 +19,10 @@ import {
   Tag,
   Eye,
   Loader2,
-  TrendingUp
+  TrendingUp,
+  Globe,
+  Users,
+  Building
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -37,6 +40,9 @@ interface DynamicPricingManagerProps {
   onCancel?: () => void;
   isNewProduct?: boolean;
 }
+
+// 채널 타입 정의
+type ChannelType = 'OTA' | 'Self' | 'Partner';
 
 export default function DynamicPricingManager({ 
   productId, 
@@ -88,10 +94,13 @@ export default function DynamicPricingManager({
   const [channels, setChannels] = useState<Array<{
     id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
     name: string;
-    type: string;
+    type: string | null;
     is_selling_product: boolean;
   }>>([]);
   const [isLoadingChannels, setIsLoadingChannels] = useState(true);
+
+  // 선택된 채널 타입 탭
+  const [selectedChannelType, setSelectedChannelType] = useState<ChannelType>('OTA');
 
   // 옵션 목록 (실제로는 API에서 가져와야 함)
   const [options] = useState([
@@ -130,11 +139,10 @@ export default function DynamicPricingManager({
     try {
       setIsLoadingChannels(true);
       
-      // channels 테이블에서 데이터 로드
+      // channels 테이블에서 데이터 로드 (status 필드가 없을 수 있으므로 제거)
       const { data: channelsData, error } = await supabase
         .from('channels')
         .select('id, name, type')
-        .eq('status', 'active')
         .order('name');
 
       if (error) {
@@ -154,6 +162,20 @@ export default function DynamicPricingManager({
     } finally {
       setIsLoadingChannels(false);
     }
+  };
+
+  // 채널 타입별로 필터링
+  const getChannelsByType = (type: ChannelType) => {
+    return channels.filter(channel => {
+      if (type === 'OTA') {
+        return channel.type === 'OTA' || channel.type === 'ota' || channel.name.toLowerCase().includes('ota') || channel.name.toLowerCase().includes('getyourguide') || channel.name.toLowerCase().includes('viator');
+      } else if (type === 'Self') {
+        return channel.type === 'Self' || channel.type === 'self' || channel.name.toLowerCase().includes('self') || channel.name.toLowerCase().includes('직영') || channel.name.toLowerCase().includes('자체');
+      } else if (type === 'Partner') {
+        return channel.type === 'Partner' || channel.type === 'partner' || channel.name.toLowerCase().includes('partner') || channel.name.toLowerCase().includes('파트너') || channel.name.toLowerCase().includes('협력사');
+      }
+      return false;
+    });
   };
 
   // 상품 판매 여부 토글 (로컬 상태만 변경, 부모 컴포넌트 상태 변경하지 않음)
@@ -180,6 +202,11 @@ export default function DynamicPricingManager({
       }));
     }
   }, [selectedChannel]);
+
+  // 채널 타입이 변경될 때 선택된 채널 초기화
+  useEffect(() => {
+    setSelectedChannel('');
+  }, [selectedChannelType]);
 
   // 요일 선택/해제
   const handleWeekdayToggle = (dayOfWeek: number) => {
@@ -477,14 +504,63 @@ export default function DynamicPricingManager({
       <div className="w-64 bg-white border-r border-gray-200 p-4">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">채널 관리</h3>
         
-                 {isLoadingChannels ? (
+        {/* 채널 타입 탭 */}
+        <div className="flex space-x-1 mb-4 bg-gray-100 p-1 rounded-lg">
+          <button
+            type="button"
+            onClick={() => setSelectedChannelType('OTA')}
+            className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              selectedChannelType === 'OTA'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            <Globe className="h-4 w-4 mr-1" />
+            OTA
+            <span className="ml-1 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+              {getChannelsByType('OTA').length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedChannelType('Self')}
+            className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              selectedChannelType === 'Self'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            <Users className="h-4 w-4 mr-1" />
+            Self
+            <span className="ml-1 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+              {getChannelsByType('Self').length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedChannelType('Partner')}
+            className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              selectedChannelType === 'Partner'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            <Building className="h-4 w-4 mr-1" />
+            Partner
+            <span className="ml-1 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+              {getChannelsByType('Partner').length}
+            </span>
+          </button>
+        </div>
+        
+        {isLoadingChannels ? (
            <div className="flex items-center justify-center py-8">
              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
              <span className="ml-2 text-gray-600">채널 로딩 중...</span>
            </div>
          ) : (
            <div className="space-y-2">
-             {channels.map(channel => (
+             {getChannelsByType('OTA').map(channel => (
                <div
                  key={channel.id}
                  className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${
@@ -520,6 +596,18 @@ export default function DynamicPricingManager({
                  </button>
                </div>
              ))}
+             
+             {/* 해당 타입에 채널이 없을 때 */}
+             {getChannelsByType(selectedChannelType).length === 0 && (
+               <div className="text-center py-8 text-gray-500">
+                 <div className="text-4xl mb-2">
+                   {selectedChannelType === 'OTA' && <Globe className="h-8 w-8 mx-auto text-gray-300" />}
+                   {selectedChannelType === 'Self' && <Users className="h-8 w-8 mx-auto text-gray-300" />}
+                   {selectedChannelType === 'Partner' && <Building className="h-8 w-8 mx-auto text-gray-300" />}
+                 </div>
+                 <p className="text-sm">해당 타입의 채널이 없습니다</p>
+               </div>
+             )}
            </div>
          )}
         
@@ -655,29 +743,24 @@ export default function DynamicPricingManager({
       {/* 3. 가운데 가격 설정 섹션 */}
       <div className="flex-1 bg-white p-6 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">가격 설정</h2>
-          
-          {!selectedChannel ? (
-            <div className="text-center py-12">
-              <AlertCircle className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">채널을 선택해주세요</h3>
-              <p className="text-gray-600">가격을 설정하려면 왼쪽에서 채널을 선택하세요.</p>
-            </div>
-          ) : !channels.find(c => c.id === selectedChannel)?.is_selling_product ? (
-            <div className="text-center py-12">
-              <AlertCircle className="h-12 w-12 mx-auto mb-4 text-yellow-400" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">선택된 채널에서 상품을 판매하지 않습니다</h3>
-              <p className="text-gray-600">가격을 설정하려면 채널의 상품 판매를 활성화하세요.</p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* 기본 정보 */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="font-medium text-gray-900 mb-3">선택된 채널</h3>
-                <p className="text-gray-600">
-                  {channels.find(c => c.id === selectedChannel)?.name}
-                </p>
-              </div>
+                     <h2 className="text-2xl font-bold text-gray-900 mb-6">
+             {selectedChannel ? `${channels.find(c => c.id === selectedChannel)?.name} 가격 설정` : '가격 설정'}
+           </h2>
+           
+           {!selectedChannel ? (
+             <div className="text-center py-12">
+               <AlertCircle className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+               <h3 className="text-lg font-medium text-gray-900 mb-2">채널을 선택해주세요</h3>
+               <p className="text-gray-600">가격을 설정하려면 왼쪽에서 채널을 선택하세요.</p>
+             </div>
+           ) : !channels.find(c => c.id === selectedChannel)?.is_selling_product ? (
+             <div className="text-center py-12">
+               <AlertCircle className="h-12 w-12 mx-auto mb-4 text-yellow-400" />
+               <h3 className="text-lg font-medium text-gray-900 mb-2">선택된 채널에서 상품을 판매하지 않습니다</h3>
+               <p className="text-gray-600">가격을 설정하려면 채널의 상품 판매를 활성화하세요.</p>
+             </div>
+           ) : (
+             <div className="space-y-6">
 
               {/* 기간 설정 */}
               <div className="grid grid-cols-2 gap-6">
@@ -951,6 +1034,43 @@ export default function DynamicPricingManager({
                  </button>
                </div>
 
+               {/* 동적 가격 저장 버튼 */}
+               <div className="mt-8 pt-6 border-t border-gray-200">
+                 <div className="flex items-center justify-between">
+                   <div className="flex items-center space-x-2">
+                     <TrendingUp className="h-5 w-5 text-green-600" />
+                     <h4 className="text-lg font-medium text-gray-900">동적 가격 관리</h4>
+                   </div>
+                   <button
+                     type="button"
+                     onClick={handleSaveDynamicPricing}
+                     disabled={saving || isNewProduct}
+                     className={`px-6 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
+                       saving || isNewProduct
+                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                         : 'bg-green-600 text-white hover:bg-green-700'
+                     }`}
+                   >
+                     <Save className="h-4 w-4" />
+                     <span>{saving ? '저장 중...' : '동적 가격 저장'}</span>
+                   </button>
+                 </div>
+                 {saveMessage && (
+                   <div className={`mt-3 p-3 rounded-lg text-sm ${
+                     saveMessage.includes('성공') 
+                       ? 'bg-green-100 text-green-800 border border-green-200' 
+                       : 'bg-red-100 text-red-800 border border-green-200'
+                   }`}>
+                     {saveMessage}
+                   </div>
+                 )}
+                 {isNewProduct && (
+                   <p className="mt-2 text-sm text-gray-500">
+                     새 상품은 전체 저장을 사용해주세요.
+                   </p>
+                 )}
+               </div>
+
                {/* 변경 내역 */}
                <div className="mt-8 pt-6 border-t border-gray-200">
                  <h4 className="text-lg font-medium text-gray-900 mb-4">가격 규칙 변경 내역</h4>
@@ -1098,42 +1218,7 @@ export default function DynamicPricingManager({
         )}
       </div>
 
-      {/* 동적 가격 저장 버튼 */}
-      <div className="border-t pt-6 mt-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <TrendingUp className="h-5 w-5 text-green-600" />
-            <h3 className="text-lg font-medium text-gray-900">동적 가격 관리</h3>
-          </div>
-          <button
-            type="button"
-            onClick={handleSaveDynamicPricing}
-            disabled={saving || isNewProduct}
-            className={`px-6 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
-              saving || isNewProduct
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700'
-            }`}
-          >
-            <Save className="h-4 w-4" />
-            <span>{saving ? '저장 중...' : '동적 가격 저장'}</span>
-          </button>
-        </div>
-        {saveMessage && (
-          <div className={`mt-3 p-3 rounded-lg text-sm ${
-            saveMessage.includes('성공') 
-              ? 'bg-green-100 text-green-800 border border-green-200' 
-              : 'bg-red-100 text-red-800 border border-red-200'
-          }`}>
-            {saveMessage}
-          </div>
-        )}
-        {isNewProduct && (
-          <p className="mt-2 text-sm text-gray-500">
-            새 상품은 전체 저장을 사용해주세요.
-          </p>
-        )}
-      </div>
+
     </div>
   );
 }

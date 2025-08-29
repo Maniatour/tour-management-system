@@ -157,7 +157,7 @@ export default function AdminAuditLogs() {
   const getTableName = (tableName: string) => {
     const tableNames: { [key: string]: string } = {
       'customers': '고객',
-      'employees': '직원',
+      'team': '팀원',
       'products': '상품',
       'options': '옵션',
       'tours': '투어',
@@ -320,7 +320,7 @@ export default function AdminAuditLogs() {
             >
               <option value="all">모든 테이블</option>
               <option value="customers">고객</option>
-              <option value="employees">직원</option>
+              <option value="team">팀원</option>
               <option value="products">상품</option>
               <option value="options">옵션</option>
               <option value="tours">투어</option>

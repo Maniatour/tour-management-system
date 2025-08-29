@@ -3,22 +3,14 @@
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Plus, Edit, Trash2, Search, Filter } from 'lucide-react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { supabase } from '@/lib/supabase'
+import type { Database } from '@/lib/supabase'
 
-interface Coupon {
-  id: string
-  code: string
-  description: string | null
-  fixed_discount_amount: number
-  percentage_discount: number
-  discount_priority: 'fixed_first' | 'percentage_first'
-  status: 'active' | 'inactive'
-  created_at: string
-}
+type Coupon = Database['public']['Tables']['coupons']['Row']
 
 export default function CouponsPage() {
   const t = useTranslations('admin')
-  const supabase = createClientComponentClient()
+
   const [coupons, setCoupons] = useState<Coupon[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -49,7 +41,7 @@ export default function CouponsPage() {
   }, [])
 
   // 쿠폰 추가
-  const handleAddCoupon = async (id: string, couponData: Omit<Coupon, 'id' | 'created_at'>) => {
+  const handleAddCoupon = async (couponData: Omit<Coupon, 'id' | 'created_at'>) => {
     try {
       const { error } = await supabase
         .from('coupons')
@@ -65,14 +57,11 @@ export default function CouponsPage() {
   }
 
   // 쿠폰 수정
-  const handleEditCoupon = async (id: string, couponData: Partial<Coupon>) => {
+  const handleEditCoupon = async (id: string, couponData: Partial<Omit<Coupon, 'id' | 'created_at'>>) => {
     try {
-      // id를 제외한 데이터만 추출
-      const { id: _, ...updateData } = couponData
-      
       const { error } = await supabase
         .from('coupons')
-        .update(updateData)
+        .update(couponData)
         .eq('id', id)
 
       if (error) throw error

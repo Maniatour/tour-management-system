@@ -485,7 +485,7 @@ function TeamMemberForm({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               사용 언어
             </label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="flex flex-wrap gap-2">
               {[
                 { value: 'ko', label: '한국어' },
                 { value: 'en', label: '영어' },
