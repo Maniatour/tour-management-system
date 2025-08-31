@@ -140,7 +140,12 @@
       "channelRN": "Channel RN#",
       "addedBy": "Added By",
       "status": "Status",
-      "eventNote": "Special Requests"
+      "eventNote": "Special Requests",
+      "requiredOptions": "Required Options",
+      "noRequiredOptions": "This product has no required options",
+      "optionSelection": "Option Selection",
+      "priceAdjustment": "Price Adjustment",
+      "price": "Price"
     }
   },
   "tours": {

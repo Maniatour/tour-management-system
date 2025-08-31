@@ -29,6 +29,9 @@ export default function AdminTeam() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active')
+  const [sortField, setSortField] = useState<keyof TeamMember>('name_ko')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [showForm, setShowForm] = useState(false)
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
@@ -126,18 +129,92 @@ export default function AdminTeam() {
     }
   }
 
+  // 팀원 활성/비활성 상태 토글
+  const handleToggleActive = async (email: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('team')
+        .update({ is_active: !currentStatus })
+        .eq('email', email)
+
+      if (error) {
+        console.error('Error toggling team member status:', error)
+        alert('팀원 상태 변경 중 오류가 발생했습니다.')
+        return
+      }
+
+      alert(`팀원이 ${!currentStatus ? '활성화' : '비활성화'}되었습니다!`)
+      fetchTeamMembers()
+    } catch (error) {
+      console.error('Error toggling team member status:', error)
+      alert('팀원 상태 변경 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 정렬 처리 함수
+  const handleSort = (field: keyof TeamMember) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+
+  // 정렬된 팀원 목록
+  const getSortedMembers = (members: TeamMember[]) => {
+    return [...members].sort((a, b) => {
+      let aValue = a[sortField]
+      let bValue = b[sortField]
+
+      // null/undefined 값 처리
+      if (aValue === null || aValue === undefined) aValue = ''
+      if (bValue === null || bValue === undefined) bValue = ''
+
+      // 문자열 비교
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.localeCompare(bValue, 'ko')
+        return sortDirection === 'asc' ? comparison : -comparison
+      }
+
+      // 숫자 비교
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue
+      }
+
+      // 불린 비교
+      if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
+        const comparison = aValue === bValue ? 0 : aValue ? 1 : -1
+        return sortDirection === 'asc' ? comparison : -comparison
+      }
+
+      return 0
+    })
+  }
+
   // 컴포넌트 마운트 시 팀원 목록 불러오기
   useEffect(() => {
     fetchTeamMembers()
   }, [])
 
   // 검색된 팀원 목록
-  const filteredMembers = teamMembers.filter(member =>
-    member.name_ko.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.name_en?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.position?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredMembers = teamMembers.filter(member => {
+    // 상태 필터 적용
+    if (statusFilter === 'active' && !member.is_active) return false
+    if (statusFilter === 'inactive' && member.is_active) return false
+    
+    // 검색어 필터 적용
+    return (
+      member.name_ko.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      member.name_en?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      member.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (member.is_active ? '활성' : '비활성').includes(searchTerm.toLowerCase())
+    )
+  })
+
+  // 정렬된 팀원 목록
+  const sortedMembers = getSortedMembers(filteredMembers)
 
   return (
     <div className="space-y-6">
@@ -168,6 +245,40 @@ export default function AdminTeam() {
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
+        
+        {/* 상태 필터 버튼들 */}
+        <div className="flex space-x-2">
+          <button
+            onClick={() => setStatusFilter('active')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              statusFilter === 'active'
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            활성 리스트
+          </button>
+          <button
+            onClick={() => setStatusFilter('inactive')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              statusFilter === 'inactive'
+                ? 'bg-red-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            비활성 리스트
+          </button>
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              statusFilter === 'all'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            전체 리스트
+          </button>
+        </div>
       </div>
 
       {/* 팀원 목록 */}
@@ -177,107 +288,195 @@ export default function AdminTeam() {
           <p className="mt-4 text-gray-600">팀원 목록을 불러오는 중...</p>
         </div>
       ) : (
-        <div className="bg-white shadow rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.name')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.email')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.phone')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.position')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.status')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {t('columns.actions')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredMembers.map((member) => (
-                  <tr key={member.email} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10">
-                          {member.avatar_url ? (
-                            <img
-                              className="h-10 w-10 rounded-full"
-                              src={member.avatar_url}
-                              alt={member.name_ko}
-                            />
-                          ) : (
-                            <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
-                              <User className="h-6 w-6 text-gray-600" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {member.name_ko}
-                          </div>
-                          {member.name_en && (
-                            <div className="text-sm text-gray-500">{member.name_en}</div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {member.email}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {member.phone}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {member.position || '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(member.status || 'active')}`}>
-                        {getStatusLabel(member.status || 'active')}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => {
-                            setSelectedMember(member)
-                            setShowDetailModal(true)
-                          }}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingMember(member)
-                            setShowForm(true)
-                          }}
-                          className="text-indigo-600 hover:text-indigo-900"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMember(member.email)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <>
+          {/* 필터 정보 표시 */}
+          <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
+            <div>
+              {statusFilter === 'active' && '활성 팀원'}
+              {statusFilter === 'inactive' && '비활성 팀원'}
+              {statusFilter === 'all' && '전체 팀원'}
+              : {sortedMembers.length}명
+            </div>
+            <div>
+              전체: {teamMembers.length}명
+            </div>
           </div>
-        </div>
+          
+          <div className="bg-white shadow rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => handleSort('name_ko')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>{t('columns.name')}</span>
+                        {sortField === 'name_ko' && (
+                          <span className="text-blue-600">
+                            {sortDirection === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => handleSort('email')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>{t('columns.email')}</span>
+                        {sortField === 'email' && (
+                          <span className="text-blue-600">
+                            {sortDirection === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => handleSort('phone')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>{t('columns.phone')}</span>
+                        {sortField === 'phone' && (
+                          <span className="text-blue-600">
+                            {sortDirection === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => handleSort('position')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>{t('columns.position')}</span>
+                        {sortField === 'position' && (
+                          <span className="text-blue-600">
+                            {sortDirection === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => handleSort('address')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>주소</span>
+                        {sortField === 'address' && (
+                          <span className="text-blue-600">
+                            {sortDirection === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => handleSort('is_active')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>상태</span>
+                        {sortField === 'is_active' && (
+                          <span className="text-blue-600">
+                            {sortDirection === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('columns.actions')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {sortedMembers.map((member) => (
+                    <tr key={member.email} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            {member.avatar_url ? (
+                              <img
+                                className="h-10 w-10 rounded-full"
+                                src={member.avatar_url}
+                                alt={member.name_ko}
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                                <User className="h-6 w-6 text-gray-600" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">
+                              {member.name_ko}
+                            </div>
+                            {member.name_en && (
+                              <div className="text-sm text-gray-500">{member.name_en}</div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {member.email}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {member.phone}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {member.position || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {member.address || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => handleToggleActive(member.email, member.is_active ?? true)}
+                          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                            member.is_active 
+                              ? 'bg-green-100 text-green-800 hover:bg-green-200' 
+                              : 'bg-red-100 text-red-800 hover:bg-red-200'
+                          }`}
+                        >
+                          {member.is_active ? '활성' : '비활성'}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => {
+                              setSelectedMember(member)
+                              setShowDetailModal(true)
+                            }}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingMember(member)
+                              setShowForm(true)
+                            }}
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteMember(member.email)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
       {/* 팀원 추가/편집 폼 */}
@@ -330,7 +529,7 @@ function TeamMemberForm({
     avatar_url: member?.avatar_url || '',
     is_active: member?.is_active ?? true,
     hire_date: member?.hire_date || '',
-    status: member?.status || 'active',
+    address: member?.address || '',
     emergency_contact: member?.emergency_contact || '',
     date_of_birth: member?.date_of_birth || '',
     ssn: member?.ssn || '',
@@ -377,7 +576,7 @@ function TeamMemberForm({
         
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 기본 정보 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 한국어 이름 *
@@ -402,21 +601,6 @@ function TeamMemberForm({
                 className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                이메일 *
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
-                required
-              />
-            </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -435,21 +619,33 @@ function TeamMemberForm({
                 <option value="op">운영자</option>
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                이메일 *
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                required
+              />
+            </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                상태
+                주소
               </label>
-              <select
-                value={formData.status || 'active'}
-                onChange={(e) => setFormData({...formData, status: e.target.value})}
+              <input
+                type="text"
+                value={formData.address || ''}
+                onChange={(e) => setFormData({...formData, address: e.target.value})}
                 className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
-              >
-                <option value="active">활성</option>
-                <option value="inactive">비활성</option>
-                <option value="vacation">휴가</option>
-                <option value="terminated">퇴사</option>
-              </select>
+                placeholder="주소를 입력하세요"
+              />
             </div>
           </div>
 
@@ -856,6 +1052,12 @@ function TeamMemberDetailModal({
                   <p className="text-gray-900">{member.hire_date}</p>
                 </div>
               )}
+              {member.address && (
+                <div>
+                  <span className="text-sm font-medium text-gray-500">주소</span>
+                  <p className="text-gray-900">{member.address}</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -967,23 +1169,4 @@ function TeamMemberDetailModal({
   )
 }
 
-// 헬퍼 함수들
-function getStatusLabel(status: string): string {
-  const statusMap: Record<string, string> = {
-    'active': '활성',
-    'inactive': '비활성',
-    'vacation': '휴가',
-    'terminated': '퇴사'
-  }
-  return statusMap[status] || status
-}
 
-function getStatusColor(status: string): string {
-  const colorMap: Record<string, string> = {
-    'active': 'bg-green-100 text-green-800',
-    'inactive': 'bg-gray-100 text-gray-800',
-    'vacation': 'bg-yellow-100 text-yellow-800',
-    'terminated': 'bg-red-100 text-red-800'
-  }
-  return colorMap[status] || 'bg-gray-100 text-gray-800'
-}

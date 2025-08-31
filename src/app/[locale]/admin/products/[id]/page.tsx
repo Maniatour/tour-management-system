@@ -313,21 +313,21 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             category: productData.category || 'nature',
             subCategory: productData.sub_category || '',
             description: productData.description || '',
-            duration: productData.duration || 1,
+            duration: typeof productData.duration === 'string' ? parseInt(productData.duration) || 1 : productData.duration || 1,
             basePrice: {
               adult: productData.base_price || 0,
-              child: productData.child_base_price || 0,
-              infant: productData.infant_base_price || 0
+              child: 0, // child_base_price 필드가 데이터베이스에 없음
+              infant: 0, // infant_base_price 필드가 데이터베이스에 없음
             },
             maxParticipants: productData.max_participants || 10,
-            status: productData.status || 'active',
+            status: (productData.status as 'active' | 'inactive' | 'draft') || 'active',
             tags: productData.tags || [],
             departureCity: productData.departure_city || '',
             arrivalCity: productData.arrival_city || '',
             departureCountry: productData.departure_country || '',
             arrivalCountry: productData.arrival_country || '',
             languages: productData.languages || ['ko'],
-            groupSize: productData.group_size || 'private',
+            groupSize: (productData.group_size as 'private' | 'small' | 'big') || 'private',
             adultAge: productData.adult_age || 13,
             childAgeMin: productData.child_age_min || 3,
             childAgeMax: productData.child_age_max || 12,
@@ -421,10 +421,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             category: formData.category,
             sub_category: formData.subCategory.trim(),
             description: formData.description.trim(),
-            duration: formData.duration,
+            duration: formData.duration.toString(),
             base_price: formData.basePrice.adult,
-            child_base_price: formData.basePrice.child,
-            infant_base_price: formData.basePrice.infant,
             max_participants: formData.maxParticipants,
             status: formData.status,
             tags: formData.tags,
@@ -433,7 +431,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             departure_country: formData.departureCountry,
             arrival_country: formData.arrivalCountry,
             languages: formData.languages,
-            group_size: formData.groupSize,
+            group_size: formData.groupSize.toString(),
             adult_age: formData.adultAge,
             child_age_min: formData.childAgeMin,
             child_age_max: formData.childAgeMax,
@@ -451,7 +449,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         console.log('새 상품 생성됨:', productId)
       } else {
         // 기존 상품 업데이트
-        const { error: productError } = await supabase
+        const { data: updatedProduct, error: productError } = await supabase
           .from('products')
           .update({
             name: formData.name.trim(),
@@ -459,10 +457,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             category: formData.category,
             sub_category: formData.subCategory.trim(),
             description: formData.description.trim(),
-            duration: formData.duration,
+            duration: formData.duration.toString(),
             base_price: formData.basePrice.adult,
-            child_base_price: formData.basePrice.child,
-            infant_base_price: formData.basePrice.infant,
             max_participants: formData.maxParticipants,
             status: formData.status,
             tags: formData.tags,
@@ -471,13 +467,15 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             departure_country: formData.departureCountry,
             arrival_country: formData.arrivalCountry,
             languages: formData.languages,
-            group_size: formData.groupSize,
+            group_size: formData.groupSize.toString(),
             adult_age: formData.adultAge,
             child_age_min: formData.childAgeMin,
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge
           })
           .eq('id', productId)
+          .select()
+          .single()
 
         if (productError) {
           console.error('상품 업데이트 오류:', productError)
@@ -602,41 +600,41 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         return
       }
 
-    const newOption: ProductOption = {
+      const newOption: ProductOption = {
         id: `opt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: globalOption.name || '새 옵션',
         description: globalOption.description || '',
-      isRequired: false,
-      isMultiple: false,
-      choices: [{
+        isRequired: false,
+        isMultiple: false,
+        choices: [{
           id: `choice-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: globalOption.name || '새 선택 항목',
           description: globalOption.description || '',
-        priceAdjustment: {
+          priceAdjustment: {
             adult: Number(globalOption.adultPrice) || 0,
             child: Number(globalOption.childPrice) || 0,
             infant: Number(globalOption.infantPrice) || 0
-        },
-        isDefault: true
-      }],
-      linkedOptionId: globalOption.id
-    }
+          },
+          isDefault: true
+        }],
+        linkedOptionId: globalOption.id
+      }
 
-      // 폼 데이터 업데이트
+      // 폼 데이터 업데이트 (상품 저장 없이)
       setFormData(prevData => {
         const updatedData = {
           ...prevData,
           productOptions: [...prevData.productOptions, newOption]
         }
-        console.log('Updated form data:', updatedData)
+        console.log('글로벌 옵션 추가됨 - 폼 데이터만 업데이트:', updatedData)
         return updatedData
       })
 
       // 모달 닫기
-    setShowAddOptionModal(false)
+      setShowAddOptionModal(false)
 
-      // 성공 메시지
-      console.log('글로벌 옵션이 성공적으로 추가되었습니다:', newOption)
+      // 성공 메시지 (상품 저장 없음)
+      console.log('글로벌 옵션이 성공적으로 추가되었습니다 (상품 저장 없음):', newOption)
     } catch (error) {
       console.error('글로벌 옵션 추가 중 오류 발생:', error)
       alert('글로벌 옵션 추가 중 오류가 발생했습니다. 다시 시도해주세요.')

@@ -170,6 +170,7 @@ export default function OptionsTab({
         </div>
         <div className="flex space-x-2">
           <button
+            type="button"
             onClick={() => setShowAddOptionModal(true)}
             className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-2"
           >
@@ -177,6 +178,7 @@ export default function OptionsTab({
             <span>글로벌 옵션 추가</span>
           </button>
           <button
+            type="button"
             onClick={() => setShowManualModal(true)}
             className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center space-x-2"
           >
@@ -196,12 +198,14 @@ export default function OptionsTab({
           </p>
           <div className="flex justify-center space-x-3">
             <button
+              type="button"
               onClick={() => setShowAddOptionModal(true)}
               className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
             >
               글로벌 옵션 추가
             </button>
             <button
+              type="button"
               onClick={() => setShowManualModal(true)}
               className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
             >
@@ -210,19 +214,19 @@ export default function OptionsTab({
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {formData.productOptions.map((option, optionIndex) => (
-            <div key={option.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-              {/* 옵션 헤더 */}
-              <div className="p-6 border-b border-gray-100">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <h4 className="text-lg font-semibold text-gray-900">{option.name}</h4>
+            <div key={option.id} className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+              {/* 옵션 헤더 - 컴팩하게 */}
+              <div className="p-4 border-b border-gray-100">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <h4 className="text-base font-semibold text-gray-900 truncate">{option.name}</h4>
                       {option.linkedOptionId && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 flex-shrink-0">
                           <Link className="h-3 w-3 mr-1" />
-                          글로벌 옵션 연결됨
+                          글로벌
                         </span>
                       )}
                     </div>
@@ -230,116 +234,120 @@ export default function OptionsTab({
                       value={option.description}
                       onChange={(e) => updateProductOption(option.id, { description: e.target.value })}
                       placeholder="옵션 설명을 입력하세요"
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                      rows={1}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
                     />
                   </div>
                   <button
+                    type="button"
                     onClick={() => removeProductOption(option.id)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    className="p-1 text-red-600 hover:bg-red-50 rounded ml-2 flex-shrink-0"
                     title="옵션 삭제"
                   >
-                    <Trash2 className="h-5 w-5" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
 
-                {/* 옵션 설정 */}
-                <div className="grid grid-cols-2 gap-4">
-                  <label className="flex items-center space-x-3">
+                {/* 옵션 설정 - 한 줄로 */}
+                <div className="flex items-center space-x-4 text-sm">
+                  <label className="flex items-center space-x-2">
                     <input
                       type="checkbox"
                       checked={option.isRequired}
                       onChange={(e) => updateProductOption(option.id, { isRequired: e.target.checked })}
-                      className="h-5 w-5 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
                     />
-                    <span className="text-sm font-medium text-gray-700">필수 선택</span>
+                    <span className="text-gray-700">필수</span>
                   </label>
-                  <label className="flex items-center space-x-3">
+                  <label className="flex items-center space-x-2">
                     <input
                       type="checkbox"
                       checked={option.isMultiple}
                       onChange={(e) => updateProductOption(option.id, { isMultiple: e.target.checked })}
-                      className="h-5 w-5 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                      className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
                     />
-                    <span className="text-sm font-medium text-gray-700">다중 선택</span>
+                    <span className="text-gray-700">다중</span>
                   </label>
                 </div>
 
-                {/* 글로벌 옵션 연결 */}
+                {/* 글로벌 옵션 연결 - 컴팩하게 */}
                 {option.linkedOptionId && (
-                  <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <Link className="h-4 w-4 text-blue-600" />
-                        <span className="text-sm font-medium text-blue-900">글로벌 옵션 연결됨</span>
+                        <Link className="h-3 w-3 text-blue-600" />
+                        <span className="text-xs font-medium text-blue-900">글로벌 옵션 연결됨</span>
                       </div>
                       <button
+                        type="button"
                         onClick={() => updateProductOption(option.id, { linkedOptionId: undefined })}
-                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                        className="text-blue-600 hover:text-blue-800 text-xs font-medium"
                       >
-                        연결 해제
+                        해제
                       </button>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* 선택 항목들 */}
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h5 className="text-md font-medium text-gray-900 flex items-center">
-                    <Tag className="h-4 w-4 text-gray-500 mr-2" />
+              {/* 선택 항목들 - 컴팩하게 */}
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h5 className="text-sm font-medium text-gray-900 flex items-center">
+                    <Tag className="h-3 w-3 text-gray-500 mr-2" />
                     선택 항목 ({option.choices.length}개)
                   </h5>
                   <button
+                    type="button"
                     onClick={() => addOptionChoice(option.id)}
-                    className="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm font-medium"
+                    className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs hover:bg-purple-200"
                   >
-                    <Plus className="h-4 w-4 mr-1" />
-                    선택 항목 추가
+                    <Plus className="h-3 w-3 mr-1" />
+                    추가
                   </button>
                 </div>
 
                 {option.choices.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    선택 항목이 없습니다. 선택 항목을 추가해주세요.
+                  <div className="text-center py-4 text-gray-500 text-sm">
+                    선택 항목이 없습니다
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {option.choices.map((choice, choiceIndex) => (
-                      <div key={choice.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
+                      <div key={choice.id} className="bg-gray-50 rounded border border-gray-200 p-3">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1 min-w-0">
                             <input
                               type="text"
                               value={choice.name}
                               onChange={(e) => updateOptionChoice(option.id, choice.id, { name: e.target.value })}
                               placeholder="선택 항목명"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent mb-2"
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent mb-2"
                             />
                             <textarea
                               value={choice.description}
                               onChange={(e) => updateOptionChoice(option.id, choice.id, { description: e.target.value })}
                               placeholder="선택 항목 설명"
-                              rows={2}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                              rows={1}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
                             />
                           </div>
                           <button
+                            type="button"
                             onClick={() => removeOptionChoice(option.id, choice.id)}
-                            className="p-1 text-red-600 hover:bg-red-100 rounded ml-2"
+                            className="p-1 text-red-600 hover:bg-red-100 rounded ml-2 flex-shrink-0"
                             title="선택 항목 삭제"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3 w-3" />
                           </button>
                         </div>
 
-                        {/* 가격 설정 */}
-                        <div className="grid grid-cols-3 gap-3">
+                        {/* 가격 설정 - 컴팩하게 */}
+                        <div className="grid grid-cols-3 gap-2 mb-2">
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">성인 가격 조정</label>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">성인</label>
                             <div className="relative">
-                              <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₩</span>
+                              <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">₩</span>
                               <input
                                 type="number"
                                 value={choice.priceAdjustment.adult}
@@ -349,15 +357,15 @@ export default function OptionsTab({
                                     adult: parseFloat(e.target.value) || 0
                                   }
                                 })}
-                                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                className="w-full pl-6 pr-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                 placeholder="0"
                               />
                             </div>
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">아동 가격 조정</label>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">아동</label>
                             <div className="relative">
-                              <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₩</span>
+                              <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">₩</span>
                               <input
                                 type="number"
                                 value={choice.priceAdjustment.child}
@@ -367,15 +375,15 @@ export default function OptionsTab({
                                     child: parseFloat(e.target.value) || 0
                                   }
                                 })}
-                                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                className="w-full pl-6 pr-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                 placeholder="0"
                               />
                             </div>
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">유아 가격 조정</label>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">유아</label>
                             <div className="relative">
-                              <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₩</span>
+                              <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">₩</span>
                               <input
                                 type="number"
                                 value={choice.priceAdjustment.infant}
@@ -385,30 +393,30 @@ export default function OptionsTab({
                                     infant: parseFloat(e.target.value) || 0
                                   }
                                 })}
-                                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                className="w-full pl-6 pr-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                 placeholder="0"
                               />
                             </div>
                           </div>
                         </div>
 
-                        {/* 기본값 설정 */}
-                        <div className="mt-3">
+                        {/* 기본값 설정 - 컴팩하게 */}
+                        <div className="flex items-center justify-between">
                           <label className="flex items-center space-x-2">
                             <input
                               type="checkbox"
                               checked={choice.isDefault || false}
                               onChange={(e) => updateOptionChoice(option.id, choice.id, { isDefault: e.target.checked })}
-                              className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                              className="h-3 w-3 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
                             />
-                            <span className="text-sm text-gray-700">기본값</span>
-                            {choice.isDefault && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                <Star className="h-3 w-3 mr-1" />
-                                기본값
-                              </span>
-                            )}
+                            <span className="text-xs text-gray-700">기본값</span>
                           </label>
+                          {choice.isDefault && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              <Star className="h-3 w-3 mr-1" />
+                              기본
+                            </span>
+                          )}
                         </div>
                       </div>
                     ))}

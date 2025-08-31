@@ -174,7 +174,12 @@
       "addedBy": "등록자",
       "status": "상태",
       "eventNote": "특별 요청사항",
-      "eventNotePlaceholder": "특별 요청사항이나 메모를 입력하세요"
+      "eventNotePlaceholder": "특별 요청사항이나 메모를 입력하세요",
+      "requiredOptions": "필수 선택 옵션",
+      "noRequiredOptions": "이 상품에는 필수 선택 옵션이 없습니다",
+      "optionSelection": "옵션 선택",
+      "priceAdjustment": "가격 조정",
+      "price": "가격"
     }
   },
   "tours": {
