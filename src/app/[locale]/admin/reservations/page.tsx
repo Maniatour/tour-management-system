@@ -394,11 +394,26 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
     )
   }
 
-  // 상품의 필수 선택 옵션 가져오기
+  // 상품의 필수 선택 옵션을 카테고리별로 그룹화하여 가져오기
   const getRequiredOptionsForProduct = (productId: string) => {
-    return productOptions.filter(option => 
+    const requiredOptions = productOptions.filter(option => 
       option.product_id === productId && option.is_required === true
     )
+    
+    // 카테고리별로 그룹화 (options 테이블의 category 사용)
+    const groupedOptions = requiredOptions.reduce((groups, option) => {
+      // linked_option_id를 통해 options 테이블의 category 가져오기
+      const linkedOption = options.find(opt => opt.id === option.linked_option_id)
+      const category = linkedOption?.category || '기타'
+      
+      if (!groups[category]) {
+        groups[category] = []
+      }
+      groups[category].push(option)
+      return groups
+    }, {} as Record<string, ProductOption[]>)
+    
+    return groupedOptions
   }
 
   // 옵션의 선택지 가져오기
@@ -651,6 +666,7 @@ function ReservationForm({ reservation, customers, products, channels, productOp
     showCustomerDropdown: boolean
     productId: string
     selectedProductCategory: string
+    selectedProductSubCategory: string
     productSearch: string
     tourDate: string
     tourTime: string
@@ -678,6 +694,7 @@ function ReservationForm({ reservation, customers, products, channels, productOp
     showCustomerDropdown: false,
     productId: reservation?.productId || '',
     selectedProductCategory: '',
+    selectedProductSubCategory: '',
     productSearch: '',
     tourDate: reservation?.tourDate || '',
     tourTime: reservation?.tourTime || '',
@@ -725,14 +742,17 @@ function ReservationForm({ reservation, customers, products, channels, productOp
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     
-    // 필수 옵션이 모두 선택되었는지 확인
+    // 필수 옵션이 모두 선택되었는지 확인 (카테고리별로 하나씩)
     const requiredOptions = getRequiredOptionsForProduct(formData.productId)
-    const missingOptions = requiredOptions.filter(option => 
-      !formData.selectedOptions[option.id] || formData.selectedOptions[option.id].length === 0
-    )
+    const missingCategories = Object.entries(requiredOptions).filter(([category, options]) => {
+      // 해당 카테고리에서 선택된 옵션이 있는지 확인
+      return !options.some(option => 
+        formData.selectedOptions[option.id] && formData.selectedOptions[option.id].length > 0
+      )
+    })
     
-    if (missingOptions.length > 0) {
-      alert(`다음 필수 옵션을 선택해주세요:\n${missingOptions.map(opt => opt.name).join('\n')}`)
+    if (missingCategories.length > 0) {
+      alert(`다음 카테고리에서 필수 옵션을 선택해주세요:\n${missingCategories.map(([category]) => category).join('\n')}`)
       return
     }
     
@@ -968,7 +988,7 @@ function ReservationForm({ reservation, customers, products, channels, productOp
 
                {/* 네 번째 행: 참가자 수 설정 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('form.participants')}</label>
+            
                  <div className="grid grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs text-gray-600 mb-1">{t('form.adults')}</label>
@@ -1042,7 +1062,11 @@ function ReservationForm({ reservation, customers, products, channels, productOp
                       <button
                         key={category}
                         type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, selectedProductCategory: category || '' }))}
+                        onClick={() => setFormData(prev => ({ 
+                          ...prev, 
+                          selectedProductCategory: category || '',
+                          selectedProductSubCategory: '' // 카테고리 변경 시 서브카테고리 초기화
+                        }))}
                         className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                           (formData.selectedProductCategory || '') === category
                             ? 'bg-white text-blue-600 border-b-2 border-blue-600'
@@ -1053,6 +1077,41 @@ function ReservationForm({ reservation, customers, products, channels, productOp
                       </button>
                     ))}
                   </div>
+                  
+                  {/* 서브카테고리 선택 (카테고리가 선택된 경우에만 표시) */}
+                  {formData.selectedProductCategory && (
+                    <div className="flex bg-gray-100 border-b border-gray-200">
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, selectedProductSubCategory: '' }))}
+                        className={`px-3 py-2 text-sm font-medium transition-colors ${
+                          !formData.selectedProductSubCategory
+                            ? 'bg-white text-blue-600 border-b-2 border-blue-600'
+                            : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                        }`}
+                      >
+                        {t('form.allCategories')}
+                      </button>
+                      {Array.from(new Set(
+                        products
+                          .filter(p => p.category === formData.selectedProductCategory && p.sub_category)
+                          .map(p => p.sub_category)
+                      )).filter(Boolean).map((subCategory) => (
+                        <button
+                          key={subCategory}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, selectedProductSubCategory: subCategory || '' }))}
+                          className={`px-3 py-2 text-sm font-medium transition-colors ${
+                            formData.selectedProductSubCategory === subCategory
+                              ? 'bg-white text-blue-600 border-b-2 border-blue-600'
+                              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                          }`}
+                        >
+                          {subCategory}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   
                   {/* 상품명 검색 */}
                   <div className="p-3 bg-white border-b border-gray-200">
@@ -1069,10 +1128,11 @@ function ReservationForm({ reservation, customers, products, channels, productOp
                     {products
                       .filter(product => {
                         const matchesCategory = !formData.selectedProductCategory || product.category === formData.selectedProductCategory
+                        const matchesSubCategory = !formData.selectedProductSubCategory || product.sub_category === formData.selectedProductSubCategory
                         const matchesSearch = !formData.productSearch || 
                           product.name?.toLowerCase().includes(formData.productSearch.toLowerCase()) ||
                           product.sub_category?.toLowerCase().includes(formData.productSearch.toLowerCase())
-                        return matchesCategory && matchesSearch
+                        return matchesCategory && matchesSubCategory && matchesSearch
                       })
                       .map(product => (
                         <div
@@ -1086,141 +1146,161 @@ function ReservationForm({ reservation, customers, products, channels, productOp
                             formData.productId === product.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
                           }`}
                         >
-                          <div className="font-medium text-gray-900">{product.name}</div>
-                          {product.sub_category && (
-                            <div className="text-sm text-gray-500">({product.sub_category})</div>
-                          )}
+                          <div className="text-sm text-gray-900">{product.name}</div>
                         </div>
                       ))}
                   </div>
                 </div>
                 
+                {/* 선택된 상품 정보 표시 */}
+                {formData.productId && (
+                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 className="text-sm font-semibold text-blue-800 mb-2">{t('form.selectedProduct')}</h4>
+                    {(() => {
+                      const selectedProduct = products.find(p => p.id === formData.productId)
+                      return selectedProduct ? (
+                        <div className="space-y-2">
+                          <div className="font-medium text-gray-900">{selectedProduct.name}</div>
+                          <div className="flex items-center gap-2 text-sm">
+                            {selectedProduct.category && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                {selectedProduct.category}
+                              </span>
+                            )}
+                            {selectedProduct.sub_category && (
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                                {selectedProduct.sub_category}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ) : null
+                    })()}
+                  </div>
+                )}
+                
                 {/* 선택된 상품의 필수 옵션 표시 */}
                 {formData.productId && (
                   <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('form.requiredOptions')}</label>
-                    <div className="space-y-3">
-                      {getRequiredOptionsForProduct(formData.productId).map((option) => {
-                        const choices = getChoicesForOption(option.id)
-                        return (
-                          <div key={option.id} className="border border-gray-200 rounded-lg p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <label className="text-sm font-medium text-gray-700">
-                                {option.name}
-                                {option.is_required && <span className="text-red-500 ml-1">*</span>}
-                              </label>
-                              {option.description && (
-                                <span className="text-xs text-gray-500">{option.description}</span>
-                              )}
-                            </div>
-                            
-                            {choices.length > 0 ? (
-                              <div className="space-y-2">
-                                {choices.map((choice) => (
-                                  <div key={choice.id} className="border border-gray-200 rounded-lg p-3 bg-white hover:bg-gray-50">
-                                    <div className="flex items-center space-x-3 mb-2">
-                                      <input
-                                        type="radio"
-                                        name={`option_${option.id}`}
-                                        value={choice.id}
-                                        checked={formData.selectedOptions[option.id]?.includes(choice.id) || false}
-                                        onChange={(e) => {
-                                          if (e.target.checked) {
-                                            setFormData(prev => ({
-                                              ...prev,
-                                              selectedOptions: {
-                                                ...prev.selectedOptions,
-                                                [option.id]: [choice.id]
-                                              }
-                                            }))
-                                          }
-                                        }}
-                                        className="text-blue-600 focus:ring-blue-500"
-                                      />
-                                      <div className="flex-1">
-                                        <div className="text-sm font-medium text-gray-900">{choice.name}</div>
-                                        {choice.description && (
-                                          <div className="text-xs text-gray-500">{choice.description}</div>
-                                        )}
-                                      </div>
-                                    </div>
-                                    
-                                    {/* 요금 입력칸 */}
-                                    <div className="grid grid-cols-3 gap-2">
-                                      <div>
-                                        <label className="block text-xs text-gray-600 mb-1">성인</label>
-                                        <input
-                                          type="number"
-                                          placeholder="0"
-                                          defaultValue={choice.adult_price_adjustment || 0}
-                                          onChange={(e) => {
-                                            const value = Number(e.target.value) || 0
-                                            setFormData(prev => ({
-                                              ...prev,
-                                              selectedOptionPrices: {
-                                                ...prev.selectedOptionPrices,
-                                                [`${option.id}_${choice.id}_adult`]: value
-                                              }
-                                            }))
-                                          }}
-                                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="block text-xs text-gray-600 mb-1">아동</label>
-                                        <input
-                                          type="number"
-                                          placeholder="0"
-                                          defaultValue={choice.child_price_adjustment || 0}
-                                          onChange={(e) => {
-                                            const value = Number(e.target.value) || 0
-                                            setFormData(prev => ({
-                                              ...prev,
-                                              selectedOptionPrices: {
-                                                ...prev.selectedOptionPrices,
-                                                [`${option.id}_${choice.id}_child`]: value
-                                              }
-                                            }))
-                                          }}
-                                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="block text-xs text-gray-600 mb-1">유아</label>
-                                        <input
-                                          type="number"
-                                          placeholder="0"
-                                          defaultValue={choice.infant_price_adjustment || 0}
-                                          onChange={(e) => {
-                                            const value = Number(e.target.value) || 0
-                                            setFormData(prev => ({
-                                              ...prev,
-                                              selectedOptionPrices: {
-                                                ...prev.selectedOptionPrices,
-                                                [`${option.id}_${choice.id}_infant`]: value
-                                              }
-                                            }))
-                                          }}
-                                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-sm text-gray-500">선택 가능한 옵션이 없습니다.</div>
-                            )}
-                          </div>
-                        )
-                      })}
-                      
-                      {getRequiredOptionsForProduct(formData.productId).length === 0 && (
-                                                  <div className="text-sm text-gray-500 text-center py-4 border border-gray-200 rounded-lg">
-                            {t('form.noRequiredOptions')}
-                          </div>
-                      )}
-                    </div>
+                    
+                                         <div className="space-y-4">
+                       {Object.entries(getRequiredOptionsForProduct(formData.productId)).map(([category, options]) => (
+                         <div key={category} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                           <h4 className="text-sm font-semibold text-gray-800 mb-3 border-b pb-2">
+                             {category} 카테고리 (하나 선택 필수)
+                           </h4>
+                           <div className="space-y-3">
+                             {options.map((option) => {
+                               const choices = getChoicesForOption(option.id)
+                               return choices.map((choice) => (
+                                 <div key={choice.id} className="border border-gray-200 rounded-lg p-3 bg-white hover:bg-gray-50">
+                                   <div className="flex items-center space-x-3 mb-2">
+                                     <input
+                                       type="radio"
+                                       name={`category_${category}`}
+                                       value={choice.id}
+                                       checked={formData.selectedOptions[option.id]?.includes(choice.id) || false}
+                                       onChange={(e) => {
+                                         if (e.target.checked) {
+                                           // 같은 카테고리의 다른 옵션들은 선택 해제
+                                           const updatedSelectedOptions = { ...formData.selectedOptions }
+                                           options.forEach(opt => {
+                                             if (opt.id !== option.id) {
+                                               updatedSelectedOptions[opt.id] = []
+                                             }
+                                           })
+                                           
+                                           setFormData(prev => ({
+                                             ...prev,
+                                             selectedOptions: {
+                                               ...updatedSelectedOptions,
+                                               [option.id]: [choice.id]
+                                             }
+                                           }))
+                                         }
+                                       }}
+                                       className="text-blue-600 focus:ring-blue-500"
+                                     />
+                                     <div className="flex-1">
+                                                                               <div className="text-sm font-medium text-gray-900">
+                                          {choice.name}
+                                        </div>
+                                     </div>
+                                   </div>
+                                   
+                                   {/* 요금 입력칸 */}
+                                   <div className="grid grid-cols-3 gap-2">
+                                     <div>
+                                       <label className="block text-xs text-gray-600 mb-1">성인</label>
+                                       <input
+                                         type="number"
+                                         placeholder="0"
+                                         defaultValue={choice.adult_price_adjustment || 0}
+                                         onChange={(e) => {
+                                           const value = Number(e.target.value) || 0
+                                           setFormData(prev => ({
+                                             ...prev,
+                                             selectedOptionPrices: {
+                                               ...prev.selectedOptionPrices,
+                                               [`${option.id}_${choice.id}_adult`]: value
+                                             }
+                                           }))
+                                         }}
+                                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                       />
+                                     </div>
+                                     <div>
+                                       <label className="block text-xs text-gray-600 mb-1">아동</label>
+                                       <input
+                                         type="number"
+                                         placeholder="0"
+                                         defaultValue={choice.child_price_adjustment || 0}
+                                         onChange={(e) => {
+                                           const value = Number(e.target.value) || 0
+                                           setFormData(prev => ({
+                                             ...prev,
+                                             selectedOptionPrices: {
+                                               ...prev.selectedOptionPrices,
+                                               [`${option.id}_${choice.id}_child`]: value
+                                             }
+                                           }))
+                                         }}
+                                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                       />
+                                     </div>
+                                     <div>
+                                       <label className="block text-xs text-gray-600 mb-1">유아</label>
+                                       <input
+                                         type="number"
+                                         placeholder="0"
+                                         defaultValue={choice.infant_price_adjustment || 0}
+                                         onChange={(e) => {
+                                           const value = Number(e.target.value) || 0
+                                           setFormData(prev => ({
+                                             ...prev,
+                                             selectedOptionPrices: {
+                                               ...prev.selectedOptionPrices,
+                                               [`${option.id}_${choice.id}_infant`]: value
+                                             }
+                                           }))
+                                         }}
+                                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                       />
+                                     </div>
+                                   </div>
+                                 </div>
+                               ))
+                             })}
+                           </div>
+                         </div>
+                       ))}
+                       
+                       {Object.keys(getRequiredOptionsForProduct(formData.productId)).length === 0 && (
+                         <div className="text-sm text-gray-500 text-center py-4 border border-gray-200 rounded-lg">
+                           {t('form.noRequiredOptions')}
+                         </div>
+                       )}
+                     </div>
                   </div>
                 )}
               </div>
@@ -1277,7 +1357,7 @@ function ReservationForm({ reservation, customers, products, channels, productOp
                             formData.channelId === channel.id ? 'bg-blue-500 border-l-4 border-l-blue-500' : ''
                           }`}
                         >
-                          <div className="font-medium text-gray-900">{channel.name}</div>
+                                                     <div className="text-sm text-gray-900">{channel.name}</div>
                         </div>
                       ))}
                   </div>

@@ -48,7 +48,7 @@ interface OptionsTabProps {
   formData: {
     productOptions: ProductOption[]
   }
-  setFormData: (data: any) => void
+  setFormData: (data: { productOptions: ProductOption[] }) => void
   globalOptions: GlobalOption[]
   loadingOptions: boolean
   showManualModal: boolean
