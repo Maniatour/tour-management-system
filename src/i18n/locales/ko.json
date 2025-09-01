@@ -96,8 +96,37 @@
       "en": "영어"
     }
   },
+  "pickupHotels": {
+    "title": "픽업 호텔 관리",
+    "addHotel": "호텔 추가",
+    "searchPlaceholder": "호텔명, 위치, 주소로 검색...",
+    "form": {
+      "title": "새 호텔 추가",
+      "editTitle": "호텔 수정",
+      "hotel": "호텔명",
+      "pickUpLocation": "픽업 위치",
+      "descriptionKo": "한국어 설명",
+      "descriptionEn": "영어 설명",
+      "address": "주소",
+      "pin": "좌표 (위도,경도)",
+      "link": "구글 맵 링크",
+      "media": "미디어 파일 (사진, 동영상)"
+    },
+    "columns": {
+      "hotel": "호텔명",
+      "pickUpLocation": "픽업 위치",
+      "description": "설명",
+      "address": "주소",
+      "coordinates": "좌표",
+      "mapLink": "구글 맵",
+      "media": "미디어",
+      "createdAt": "생성일",
+      "actions": "작업"
+    }
+  },
   "admin": {
     "dashboard": "대시보드",
+    "pickupHotels": "픽업 호텔 관리",
     "products": "상품 관리",
     "customers": "고객 관리",
     "reservations": "예약 관리",
@@ -477,7 +506,8 @@
       "admission": "입장",
       "Admission": "입장",
       "ticket": "티켓",
-      "Ticket": "티켓"
+      "Ticket": "티켓",
+      "Tour Hotel": "투어 호텔"
     },
     "priceTypes": {
       "perPerson": "인당",

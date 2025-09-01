@@ -88,8 +88,20 @@ END $$;
 
 -- 7. 재발 방지를 위한 제약 조건 추가
 -- language 컬럼에 배열 형태 데이터가 들어가지 않도록 체크 제약 조건 추가
-ALTER TABLE customers ADD CONSTRAINT check_language_not_array 
-CHECK (language IS NULL OR language NOT LIKE '[%]');
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'check_language_not_array' 
+        AND table_name = 'customers'
+    ) THEN
+        ALTER TABLE customers ADD CONSTRAINT check_language_not_array 
+        CHECK (language IS NULL OR language NOT LIKE '[%]');
+        RAISE NOTICE '배열 방지 제약 조건이 추가되었습니다.';
+    ELSE
+        RAISE NOTICE '배열 방지 제약 조건이 이미 존재합니다.';
+    END IF;
+END $$;
 
 -- 8. 제약 조건 확인
 DO $$

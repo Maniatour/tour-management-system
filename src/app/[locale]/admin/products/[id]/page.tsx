@@ -13,7 +13,8 @@ import {
   TrendingUp,
   Clock,
   Info,
-  Settings
+  Settings,
+  Trash2
 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
@@ -116,6 +117,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   const [activeTab, setActiveTab] = useState('basic')
   const [showManualModal, setShowManualModal] = useState(false)
   const [showAddOptionModal, setShowAddOptionModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [formData, setFormData] = useState<{
     name: string
     productCode: string
@@ -137,7 +140,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     departureCountry: string
     arrivalCountry: string
     languages: string[]
-    groupSize: 'private' | 'small' | 'big'
+    groupSize: string[]
     adultAge: number
     childAgeMin: number
     childAgeMax: number
@@ -180,7 +183,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     departureCountry: '',
     arrivalCountry: '',
     languages: ['ko'],
-    groupSize: 'private' as const,
+    groupSize: ['private'],
     adultAge: 13,
     childAgeMin: 3,
     childAgeMax: 12,
@@ -294,6 +297,15 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
 
           if (productError) throw productError
 
+          // 디버깅: 데이터베이스에서 가져온 모든 필드 확인
+          console.log('=== Product Data Debug ===')
+          console.log('Full productData:', productData)
+          console.log('Available fields:', Object.keys(productData))
+          console.log('departure_country:', productData.departure_country)
+          console.log('arrival_country:', productData.arrival_country)
+          console.log('departure_city:', productData.departure_city)
+          console.log('arrival_city:', productData.arrival_city)
+
           // 2. 상품 옵션 정보 로드
           const { data: optionsData, error: optionsError } = await supabase
             .from('product_options')
@@ -304,6 +316,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             .eq('product_id', id)
 
           if (optionsError) throw optionsError
+
+
 
           // 3. 폼 데이터 설정
           setFormData(prevData => ({
@@ -326,9 +340,9 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             arrivalCity: productData.arrival_city || '',
             departureCountry: productData.departure_country || '',
             arrivalCountry: productData.arrival_country || '',
-            languages: productData.languages || ['ko'],
-            groupSize: (productData.group_size as 'private' | 'small' | 'big') || 'private',
-            adultAge: productData.adult_age || 13,
+                         languages: productData.languages || ['ko'],
+             groupSize: productData.group_size ? productData.group_size.split(',').filter(Boolean) : ['private'],
+             adultAge: productData.adult_age || 13,
             childAgeMin: productData.child_age_min || 3,
             childAgeMax: productData.child_age_max || 12,
             infantAge: productData.infant_age || 2,
@@ -561,6 +575,49 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       console.error('상품 저장 중 오류 발생:', error)
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
       alert(`상품 저장 중 오류가 발생했습니다.\n\n오류 내용: ${errorMessage}\n\n다시 시도해주세요.`)
+    }
+  }
+
+  // 상품 삭제 함수
+  const handleDeleteProduct = async () => {
+    if (isNewProduct) return
+    
+    try {
+      setDeleting(true)
+      
+      // 1. 상품 옵션 삭제
+      const { error: optionsError } = await supabase
+        .from('product_options')
+        .delete()
+        .eq('product_id', id)
+      
+      if (optionsError) {
+        console.error('상품 옵션 삭제 오류:', optionsError)
+        throw new Error(`상품 옵션 삭제 실패: ${optionsError.message}`)
+      }
+
+      // 2. 상품 삭제
+      const { error: productError } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', id)
+
+      if (productError) {
+        console.error('상품 삭제 오류:', productError)
+        throw new Error(`상품 삭제 실패: ${productError.message}`)
+      }
+
+      console.log('상품 삭제 완료!')
+      alert('상품이 성공적으로 삭제되었습니다!')
+      router.push(`/${locale}/admin/products`)
+      
+    } catch (error) {
+      console.error('상품 삭제 중 오류 발생:', error)
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
+      alert(`상품 삭제 중 오류가 발생했습니다.\n\n오류 내용: ${errorMessage}`)
+    } finally {
+      setDeleting(false)
+      setShowDeleteModal(false)
     }
   }
 
@@ -807,6 +864,17 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             </p>
           </div>
         </div>
+        
+        {/* 삭제 버튼 (기존 상품인 경우에만 표시) */}
+        {!isNewProduct && (
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center space-x-2 transition-colors"
+          >
+            <Trash2 size={20} />
+            <span>상품 삭제</span>
+          </button>
+        )}
       </div>
 
       {/* 탭 네비게이션 */}
@@ -864,10 +932,9 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
               productId={id} 
               isNewProduct={isNewProduct}
               onSave={(rule) => {
-                console.log('가격 규칙 저장됨:', rule);
-                // 여기서는 가격 규칙만 저장하고, 상품 자체는 저장하지 않음
-                // 상품 저장은 별도의 저장 버튼을 통해서만 실행
-                // 채널 토글 상태는 DynamicPricingManager 내부에서만 관리
+                console.log('통합 가격 정보 저장됨:', rule);
+                // 동적 가격 정보가 성공적으로 저장되었음을 알림
+                // 상품 자체의 저장은 하단의 "변경사항 저장" 버튼을 통해 처리
               }}
             />
           </div>
@@ -976,6 +1043,42 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         locale={locale}
         onSelectOption={addProductOptionFromGlobal}
       />
+
+      {/* 삭제 확인 모달 */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900">상품 삭제 확인</h3>
+            </div>
+            
+            <p className="text-gray-600 mb-6">
+              이 상품을 정말로 삭제하시겠습니까? 이 작업은 되돌릴 수 없으며, 
+              상품과 관련된 모든 옵션 정보도 함께 삭제됩니다.
+            </p>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                disabled={deleting}
+              >
+                취소
+              </button>
+              <button
+                onClick={handleDeleteProduct}
+                className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                disabled={deleting}
+              >
+                {deleting ? '삭제 중...' : '삭제'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

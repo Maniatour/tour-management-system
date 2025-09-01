@@ -1,31 +1,31 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Info, Calendar, MessageCircle, Image, Tag, Clock, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-interface BasicInfoTabProps {
-  formData: {
-    name: string
-    productCode: string
-    category: string
-    subCategory: string
-    description: string
-    duration: number
-    maxParticipants: number
-    tags: string[]
-    departureCity: string
-    arrivalCity: string
-    departureCountry: string
-    arrivalCountry: string
-    languages: string[]
-    groupSize: 'private' | 'small' | 'big'
-    adultAge: number
-    childAgeMin: number
-    childAgeMax: number
-    infantAge: number
-    status: 'active' | 'inactive' | 'draft'
-  }
+  interface BasicInfoTabProps {
+    formData: {
+      name: string
+      productCode: string
+      category: string
+      subCategory: string
+      description: string
+      duration: number
+      maxParticipants: number
+      tags: string[]
+      departureCity: string
+      arrivalCity: string
+      departureCountry: string
+      arrivalCountry: string
+      languages: string[]
+      groupSize: string[]
+      adultAge: number
+      childAgeMin: number
+      childAgeMax: number
+      infantAge: number
+      status: 'active' | 'inactive' | 'draft'
+    }
   setFormData: (data: any) => void
   newTag: string
   setNewTag: (tag: string) => void
@@ -47,6 +47,82 @@ export default function BasicInfoTab({
 }: BasicInfoTabProps) {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+  const [categories, setCategories] = useState<{ value: string; label: string; count: number }[]>([])
+  const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
+  const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
+
+  // 카테고리와 서브카테고리 데이터 가져오기
+  useEffect(() => {
+    fetchCategoriesAndSubCategories()
+  }, [])
+
+
+
+  // 카테고리 선택 시 서브카테고리 필터링
+  useEffect(() => {
+    if (formData.category) {
+      // 현재 선택된 카테고리에 해당하는 서브카테고리만 필터링
+      const filteredSubCategories = allSubCategories.filter(
+        subCat => {
+          // 해당 서브카테고리가 현재 선택된 카테고리의 상품에 포함되어 있는지 확인
+          return true // 모든 서브카테고리를 표시 (카테고리별 필터링은 나중에 구현)
+        }
+      )
+      setSubCategories(filteredSubCategories)
+    } else {
+      setSubCategories([])
+    }
+  }, [formData.category, allSubCategories])
+
+  const fetchCategoriesAndSubCategories = async () => {
+    try {
+      // 상품 데이터에서 카테고리와 서브카테고리 추출
+      const { data: products, error } = await supabase
+        .from('products')
+        .select('category, sub_category')
+
+      if (error) throw error
+
+      // 카테고리 통계 계산
+      const categoryCounts: { [key: string]: number } = {}
+      const subCategoryCounts: { [key: string]: number } = {}
+
+      products?.forEach(product => {
+        if (product.category) {
+          categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1
+        }
+        if (product.sub_category) {
+          subCategoryCounts[product.sub_category] = (subCategoryCounts[product.sub_category] || 0) + 1
+        }
+      })
+
+      // 카테고리 목록 생성
+      const categoryList = Object.keys(categoryCounts).map(category => ({
+        value: category,
+        label: category,
+        count: categoryCounts[category]
+      }))
+
+      // 서브카테고리 목록 생성
+      const subCategoryList = Object.keys(subCategoryCounts).map(subCategory => ({
+        value: subCategory,
+        label: subCategory,
+        count: subCategoryCounts[subCategory]
+      }))
+
+      console.log('=== Categories and SubCategories Debug ===')
+      console.log('Categories found:', categoryList)
+      console.log('SubCategories found:', subCategoryList)
+      console.log('Current formData.category:', formData.category)
+      console.log('Current formData.subCategory:', formData.subCategory)
+      
+      setCategories(categoryList)
+      setAllSubCategories(subCategoryList)
+      setSubCategories(subCategoryList)
+    } catch (error) {
+      console.error('카테고리 및 서브카테고리 데이터 가져오기 오류:', error)
+    }
+  }
 
   const handleSaveBasicInfo = async () => {
     if (isNewProduct) {
@@ -72,11 +148,11 @@ export default function BasicInfoTab({
           tags: formData.tags,
           departure_city: formData.departureCity,
           arrival_city: formData.arrivalCity,
-          departure_country: formData.departureCountry,
-          arrival_country: formData.arrivalCountry,
-          languages: formData.languages,
-          group_size: formData.groupSize,
-          adult_age: formData.adultAge,
+                     departure_country: formData.departureCountry,
+           arrival_country: formData.arrivalCountry,
+           languages: formData.languages,
+           group_size: formData.groupSize.join(','),
+           adult_age: formData.adultAge,
           child_age_min: formData.childAgeMin,
           child_age_max: formData.childAgeMax,
           infant_age: formData.infantAge,
@@ -148,27 +224,42 @@ export default function BasicInfoTab({
             required
           >
             <option value="">카테고리 선택</option>
-            <option value="city">도시 투어</option>
-            <option value="nature">자연/야외</option>
-            <option value="culture">문화/역사</option>
-            <option value="adventure">모험/액티비티</option>
-            <option value="food">음식/요리</option>
-            <option value="shopping">쇼핑</option>
-            <option value="entertainment">엔터테인먼트</option>
+            {categories.map((category) => (
+              <option key={category.value} value={category.value}>
+                {category.label} ({category.count})
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">서브 카테고리</label>
-        <input
-          type="text"
-          value={formData.subCategory || ''}
-          onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          placeholder="예: 캐년 투어, 도시 관광"
-        />
-      </div>
+              <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">서브 카테고리</label>
+          {/* 디버깅: 현재 값들 확인 */}
+          <div className="text-xs text-gray-500 mb-1">
+            Debug: formData.subCategory = "{formData.subCategory}", 
+            subCategories.length = {subCategories.length}
+          </div>
+          <select
+            value={formData.subCategory || ''}
+            onChange={(e) => {
+              console.log('서브카테고리 변경:', e.target.value)
+              setFormData({ ...formData, subCategory: e.target.value })
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            disabled={!formData.category}
+          >
+            <option value="">서브 카테고리 선택</option>
+            {subCategories.map((subCategory) => (
+              <option key={subCategory.value} value={subCategory.value}>
+                {subCategory.label} ({subCategory.count})
+              </option>
+            ))}
+          </select>
+          {!formData.category && (
+            <p className="text-xs text-gray-500 mt-1">먼저 카테고리를 선택해주세요</p>
+          )}
+        </div>
 
       {/* 출발/도착 정보 */}
       <div className="grid grid-cols-2 gap-4">
@@ -206,7 +297,8 @@ export default function BasicInfoTab({
             required
           >
             <option value="">국가 선택</option>
-            <option value="US">미국</option>
+            <option value="USA">미국</option>
+            <option value="US">미국 (US)</option>
             <option value="KR">한국</option>
             <option value="JP">일본</option>
             <option value="CN">중국</option>
@@ -227,7 +319,8 @@ export default function BasicInfoTab({
             required
           >
             <option value="">국가 선택</option>
-            <option value="US">미국</option>
+            <option value="USA">미국</option>
+            <option value="US">미국 (US)</option>
             <option value="KR">한국</option>
             <option value="JP">일본</option>
             <option value="CN">중국</option>
@@ -285,34 +378,49 @@ export default function BasicInfoTab({
           <div className="space-y-2">
             <label className="flex items-center">
               <input
-                type="radio"
-                name="groupSize"
-                value="private"
-                checked={formData.groupSize === 'private'}
-                onChange={(e) => setFormData({ ...formData, groupSize: e.target.value as 'private' | 'small' | 'big' })}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                type="checkbox"
+                checked={formData.groupSize?.includes('private') || false}
+                onChange={(e) => {
+                  const groupSizes = formData.groupSize || [];
+                  if (e.target.checked) {
+                    setFormData({ ...formData, groupSize: [...groupSizes, 'private'] });
+                  } else {
+                    setFormData({ ...formData, groupSize: groupSizes.filter(size => size !== 'private') });
+                  }
+                }}
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
               Private (개인/가족)
             </label>
             <label className="flex items-center">
               <input
-                type="radio"
-                name="groupSize"
-                value="small"
-                checked={formData.groupSize === 'small'}
-                onChange={(e) => setFormData({ ...formData, groupSize: e.target.value as 'private' | 'small' | 'big' })}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                type="checkbox"
+                checked={formData.groupSize?.includes('small') || false}
+                onChange={(e) => {
+                  const groupSizes = formData.groupSize || [];
+                  if (e.target.checked) {
+                    setFormData({ ...formData, groupSize: [...groupSizes, 'small'] });
+                  } else {
+                    setFormData({ ...formData, groupSize: groupSizes.filter(size => size !== 'small') });
+                  }
+                }}
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
               Small Group (소규모 그룹)
             </label>
             <label className="flex items-center">
               <input
-                type="radio"
-                name="groupSize"
-                value="big"
-                checked={formData.groupSize === 'big'}
-                onChange={(e) => setFormData({ ...formData, groupSize: e.target.value as 'private' | 'small' | 'big' })}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                type="checkbox"
+                checked={formData.groupSize?.includes('big') || false}
+                onChange={(e) => {
+                  const groupSizes = formData.groupSize || [];
+                  if (e.target.checked) {
+                    setFormData({ ...formData, groupSize: [...groupSizes, 'big'] });
+                  } else {
+                    setFormData({ ...formData, groupSize: groupSizes.filter(size => size !== 'big') });
+                  }
+                }}
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
               Big Group (대규모 그룹)
             </label>

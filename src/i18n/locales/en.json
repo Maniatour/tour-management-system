@@ -96,6 +96,34 @@
       "en": "English"
     }
   },
+  "pickupHotels": {
+    "title": "Pickup Hotel Management",
+    "addHotel": "Add Hotel",
+    "searchPlaceholder": "Search by hotel name, location, or address...",
+    "form": {
+      "title": "Add New Hotel",
+      "editTitle": "Edit Hotel",
+      "hotel": "Hotel Name",
+      "pickUpLocation": "Pickup Location",
+      "descriptionKo": "Korean Description",
+      "descriptionEn": "English Description",
+      "address": "Address",
+      "pin": "Coordinates (Latitude,Longitude)",
+      "link": "Google Maps Link",
+      "media": "Media Files (Photos, Videos)"
+    },
+    "columns": {
+      "hotel": "Hotel Name",
+      "pickUpLocation": "Pickup Location",
+      "description": "Description",
+      "address": "Address",
+      "coordinates": "Coordinates",
+      "mapLink": "Google Maps",
+      "media": "Media",
+      "createdAt": "Created At",
+      "actions": "Actions"
+    }
+  },
   "reservations": {
     "title": "Reservation Management",
     "addReservation": "Add New Reservation",
@@ -455,7 +483,8 @@
       "admission": "Admission",
       "Admission": "Admission",
       "ticket": "Ticket",
-      "Ticket": "Ticket"
+      "Ticket": "Ticket",
+      "Tour Hotel": "Tour Hotel"
     },
     "priceTypes": {
       "perPerson": "Per Person",

@@ -2,14 +2,13 @@
 
 import React, { useState, use, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Edit, Trash2, Package, Users, DollarSign, Settings, Star, CheckCircle, Link as LinkIcon } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import ProductCard from '@/components/ProductCard'
 
 type Product = Database['public']['Tables']['products']['Row']
-type ProductInsert = Database['public']['Tables']['products']['Insert']
-type ProductUpdate = Database['public']['Tables']['products']['Update']
 
 interface AdminProductsProps {
   params: Promise<{ locale: string }>
@@ -23,6 +22,11 @@ export default function AdminProducts({ params }: AdminProductsProps) {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string>('all')
+  const [categories, setCategories] = useState<{ value: string; label: string; count: number }[]>([])
+  const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
+  const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
 
   // Supabase에서 상품 데이터 가져오기
   useEffect(() => {
@@ -33,7 +37,6 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     try {
       setLoading(true)
       
-      // 테이블 존재 여부 확인을 건너뛰고 직접 데이터 조회 시도
       console.log('Products 데이터 조회 시작...')
       
       const { data, error } = await supabase
@@ -50,7 +53,6 @@ export default function AdminProducts({ params }: AdminProductsProps) {
           code: error.code
         })
         
-        // 테이블이 존재하지 않는 경우를 특별히 처리
         if (error.code === '42P01') {
           console.error('Products 테이블이 존재하지 않습니다. 데이터베이스 마이그레이션이 필요합니다.')
         }
@@ -61,6 +63,49 @@ export default function AdminProducts({ params }: AdminProductsProps) {
 
       console.log('Products 데이터 조회 성공:', data?.length || 0, '개')
       setProducts(data || [])
+      
+      // 카테고리별 상품 수 계산
+      if (data && data.length > 0) {
+        const categoryCounts: { [key: string]: number } = {}
+        const subCategoryCounts: { [key: string]: number } = {}
+        
+        data.forEach(product => {
+          if (product.category) {
+            categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1
+          }
+          if (product.sub_category) {
+            subCategoryCounts[product.sub_category] = (subCategoryCounts[product.sub_category] || 0) + 1
+          }
+        })
+        
+        // 카테고리 목록 생성 (전체 + 실제 존재하는 카테고리들)
+        const categoryList = [
+          { value: 'all', label: '전체', count: data.length }
+        ]
+        
+        // 실제 존재하는 카테고리들을 상품 수 순으로 정렬하여 추가
+        Object.entries(categoryCounts)
+          .sort(([,a], [,b]) => b - a) // 상품 수 내림차순 정렬
+          .forEach(([category, count]) => {
+            categoryList.push({ value: category, label: category, count })
+          })
+        
+        // 서브카테고리 목록 생성 (전체 + 실제 존재하는 서브카테고리들)
+        const subCategoryList = [
+          { value: 'all', label: '전체', count: data.length }
+        ]
+        
+        // 실제 존재하는 서브카테고리들을 상품 수 순으로 정렬하여 추가
+        Object.entries(subCategoryCounts)
+          .sort(([,a], [,b]) => b - a) // 상품 수 내림차순 정렬
+          .forEach(([subCategory, count]) => {
+            subCategoryList.push({ value: subCategory, label: subCategory, count })
+          })
+        
+        setCategories(categoryList)
+        setAllSubCategories(subCategoryList)
+        setSubCategories(subCategoryList)
+      }
     } catch (error) {
       console.error('Products 조회 중 예상치 못한 오류:', error)
       setProducts([])
@@ -69,71 +114,61 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     }
   }
 
-  const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (product.description && product.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (product.tags && product.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
-  )
 
-  const handleDeleteProduct = async (id: string) => {
-    if (confirm(t('deleteConfirm'))) {
-      try {
-        const { error } = await supabase
-          .from('products')
-          .delete()
-          .eq('id', id)
 
-        if (error) {
-          console.error('Error deleting product:', error)
-          return
-        }
-
-        setProducts(products.filter(p => p.id !== id))
-      } catch (error) {
-        console.error('Error deleting product:', error)
-      }
+  // 카테고리 선택 시 서브카테고리 필터링
+  const handleCategorySelect = (categoryValue: string) => {
+    setSelectedCategory(categoryValue)
+    setSelectedSubCategory('all') // 서브카테고리 초기화
+    
+    if (categoryValue === 'all') {
+      // 전체 선택 시 모든 서브카테고리 표시
+      setSubCategories(allSubCategories)
+    } else {
+      // 특정 카테고리 선택 시 해당 카테고리의 서브카테고리만 표시
+      const filteredSubCategories = products
+        .filter(product => product.category === categoryValue && product.sub_category)
+        .reduce((acc, product) => {
+          const subCategory = product.sub_category!
+          const existing = acc.find((item: { value: string; label: string; count: number }) => item.value === subCategory)
+          if (existing) {
+            existing.count++
+          } else {
+            acc.push({ value: subCategory, label: subCategory, count: 1 })
+          }
+          return acc
+        }, [] as { value: string; label: string; count: number }[])
+      
+      // 전체 옵션 추가
+      const categorySubCategories = [
+        { value: 'all', label: '전체', count: products.filter(p => p.category === categoryValue).length },
+        ...filteredSubCategories.sort((a: { value: string; label: string; count: number }, b: { value: string; label: string; count: number }) => b.count - a.count)
+      ]
+      
+      setSubCategories(categorySubCategories)
     }
   }
 
-  const getCategoryLabel = (category: string) => {
-    const categoryLabels: { [key: string]: string } = {
-      city: '도시',
-      nature: '자연',
-      culture: '문화',
-      adventure: '모험',
-      food: '음식'
-    }
-    return categoryLabels[category] || category
-  }
+  // 필터링된 상품 목록
+  const filteredProducts = products.filter(product => {
+    const matchesSearch = 
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (product.category && product.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (product.sub_category && product.sub_category.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (product.description && product.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (product.tags && product.tags.some((tag: string) => tag.toLowerCase().includes(searchTerm.toLowerCase())))
+    
+    const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory
+    const matchesSubCategory = selectedSubCategory === 'all' || product.sub_category === selectedSubCategory
+    
+    return matchesSearch && matchesCategory && matchesSubCategory
+  })
 
-
-
-  const getStatusLabel = (status: string) => {
-    const statusLabels: { [key: string]: string } = {
-      active: '활성',
-      inactive: '비활성',
-      draft: '초안'
-    }
-    return statusLabels[status] || status
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'bg-green-100 text-green-800'
-      case 'inactive': return 'bg-red-100 text-red-800'
-      case 'draft': return 'bg-yellow-100 text-yellow-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getPriceDisplay = (product: Product) => {
-    return `$${product.base_price}`
-  }
-
-  const getOptionsSummary = (product: Product) => {
-    // TODO: product_options 테이블에서 연관된 옵션 정보를 가져와서 표시
-    return '옵션 정보 로딩 중...'
+  const clearFilters = () => {
+    setSearchTerm('')
+    setSelectedCategory('all')
+    setSelectedSubCategory('all')
+    setSubCategories(allSubCategories) // 서브카테고리를 전체 목록으로 복원
   }
 
   if (loading) {
@@ -206,105 +241,138 @@ export default function AdminProducts({ params }: AdminProductsProps) {
         </Link>
       </div>
 
-      {/* 검색 */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+      {/* 검색 및 필터 섹션 */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+        {/* 카테고리와 서브카테고리 탭 */}
+        <div className="space-y-0">
+          {/* 카테고리 탭 */}
+          {categories.length > 1 && (
+            <div className="border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <nav className="flex space-x-4 overflow-x-auto">
+                  {categories.map((category) => (
+                    <button
+                      key={category.value}
+                      onClick={() => handleCategorySelect(category.value)}
+                      className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
+                        selectedCategory === category.value
+                          ? 'border-blue-500 text-blue-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <span>{category.label}</span>
+                      <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+                        selectedCategory === category.value
+                          ? 'bg-blue-100 text-blue-600'
+                          : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {category.count}
+                      </span>
+                    </button>
+                  ))}
+                </nav>
+                
+                {/* 검색창 */}
+                <div className="relative flex-shrink-0">
+                  <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
         <input
           type="text"
-          placeholder="상품명, 카테고리, 설명으로 검색..."
+                    placeholder="상품명, 카테고리, 서브카테고리, 설명으로 검색..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-56 pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
         />
       </div>
+                        </div>
+                      </div>
+          )}
+
+          {/* 서브카테고리 탭 */}
+          {subCategories.length > 1 && (
+            <div className="border-b border-gray-200">
+              <nav className="flex space-x-4 overflow-x-auto px-3">
+                {subCategories.map((subCategory) => (
+                  <button
+                    key={subCategory.value}
+                    onClick={() => setSelectedSubCategory(subCategory.value)}
+                    className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
+                      selectedSubCategory === subCategory.value
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <span>{subCategory.label}</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+                      selectedSubCategory === subCategory.value
+                        ? 'bg-blue-100 text-blue-600'
+                        : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {subCategory.count}
+                    </span>
+                  </button>
+                ))}
+              </nav>
+                        </div>
+          )}
+                      </div>
+                    </div>
+
+      {/* 결과 요약 */}
+      <div className="flex items-center justify-between text-sm text-gray-600">
+        <span>
+          총 {filteredProducts.length}개의 상품
+          {selectedCategory !== 'all' && ` (${categories.find(c => c.value === selectedCategory)?.label})`}
+          {selectedSubCategory !== 'all' && ` (${subCategories.find(c => c.value === selectedSubCategory)?.label})`}
+                    </span>
+        {searchTerm && (
+          <span>&ldquo;<strong>{searchTerm}</strong>&rdquo; 검색 결과</span>
+        )}
+        {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all') && (
+          <button
+            onClick={clearFilters}
+            className="text-blue-600 hover:text-blue-800 underline"
+          >
+            필터 초기화
+          </button>
+        )}
+                    </div>
 
       {/* 상품 목록 */}
-      <div className="bg-white rounded-lg shadow-md border">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상품명</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">카테고리</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">가격</th>
-
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">옵션</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredProducts.map((product) => (
-                <tr key={product.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 h-10 w-10">
-                        <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                          <Package className="h-6 w-6 text-blue-600" />
-                        </div>
+      {filteredProducts.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+          <div className="text-gray-400 mb-4">
+            <Search className="mx-auto h-12 w-12" />
                       </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                        <div className="text-sm text-gray-500">{product.description}</div>
-                        <div className="flex items-center mt-1">
-                          <Star className="h-3 w-3 text-yellow-400 mr-1" />
-                          <span className="text-xs text-gray-500">{product.duration}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      {getCategoryLabel(product.category)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      <div className="font-medium">{getPriceDisplay(product)}</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        최대 {product.max_participants}명
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      <div className="flex items-center">
-                        <Settings className="h-4 w-4 text-gray-400 mr-2" />
-                        {getOptionsSummary(product)}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        옵션 정보 로딩 중...
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(product.status)}`}>
-                      {getStatusLabel(product.status)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
-                      <Link
-                        href={`/${locale}/admin/products/${product.id}`}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        <Edit size={16} />
-                      </Link>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">검색 결과가 없습니다</h3>
+          <p className="text-gray-600 mb-4">
+            검색어나 카테고리를 변경해보세요.
+          </p>
                       <button
-                        onClick={() => handleDeleteProduct(product.id)}
-                        className="text-red-600 hover:text-red-900"
+            onClick={clearFilters}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
                       >
-                        <Trash2 size={16} />
+            필터 초기화
                       </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                     {filteredProducts.map((product) => (
+             <ProductCard
+               key={product.id}
+               product={product}
+               locale={locale}
+               onStatusChange={(productId, newStatus) => {
+                 // 로컬 상태 업데이트
+                 setProducts(prevProducts => 
+                   prevProducts.map(p => 
+                     p.id === productId ? { ...p, status: newStatus } : p
+                   )
+                 )
+               }}
+             />
+           ))}
         </div>
-      </div>
+      )}
     </div>
   )
 }

@@ -162,7 +162,7 @@ CREATE TABLE products (
 
 -- Options table
 CREATE TABLE options (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  id TEXT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   category VARCHAR(100) NOT NULL,
   description TEXT,
