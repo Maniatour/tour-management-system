@@ -1,315 +1,59 @@
 'use client'
 
-import { useState, use, useCallback, useEffect, useRef } from 'react'
-import { Plus, Search, Edit, Trash2, Calendar, Clock, MapPin, Users, User, FileText } from 'lucide-react'
+import { useState, useCallback } from 'react'
+import { Plus, Search, Calendar, MapPin, Users } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
-import { sanitizeTimeInput } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
-
-type Customer = Database['public']['Tables']['customers']['Row']
-type Product = Database['public']['Tables']['products']['Row']
-type Channel = Database['public']['Tables']['channels']['Row']
-type ProductOption = Database['public']['Tables']['product_options']['Row']
-type ProductOptionChoice = Database['public']['Tables']['product_option_choices']['Row']
-type Option = Database['public']['Tables']['options']['Row']
-
-interface PickupHotel {
-  id: string
-  hotel: string
-  pick_up_location: string
-  description_ko: string | null
-  description_en: string | null
-  address: string
-  pin: string | null
-  link: string | null
-  media: string[] | null
-  created_at: string | null
-  updated_at: string | null
-}
-
-interface Reservation {
-  id: string
-  customerId: string
-  productId: string
-  tourDate: string
-  tourTime: string
-  eventNote: string
-  pickUpHotel: string
-  pickUpTime: string
-  adults: number
-  child: number
-  infant: number
-  totalPeople: number
-  channelId: string
-  channelRN: string
-  addedBy: string
-  addedTime: string
-  tourId: string
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
-  selectedOptions?: { [optionId: string]: string[] } // 선택된 옵션들
-  selectedOptionPrices?: { [key: string]: number } // 선택된 옵션의 사용자 정의 요금
-}
+import ReservationForm from '@/components/reservation/ReservationForm'
+import PricingInfoModal from '@/components/reservation/PricingInfoModal'
+import { useReservationData } from '@/hooks/useReservationData'
+import { 
+  getPickupHotelDisplay, 
+  getCustomerName, 
+  getProductName, 
+  getChannelName, 
+  getStatusLabel, 
+  getStatusColor, 
+  calculateTotalPrice 
+} from '@/utils/reservationUtils'
+import type { 
+  Customer, 
+  Reservation 
+} from '@/types/reservation'
 
 interface AdminReservationsProps {
   params: Promise<{ locale: string }>
 }
 
-export default function AdminReservations({ params }: AdminReservationsProps) {
-  const { locale } = use(params)
+export default function AdminReservations({ }: AdminReservationsProps) {
   const t = useTranslations('reservations')
-  const tCommon = useTranslations('common')
   
-  // 예약 데이터
-  const [reservations, setReservations] = useState<Reservation[]>([])
-  
-  // 고객 데이터
-  const [customers, setCustomers] = useState<Customer[]>([])
-  
-  // 상품 데이터
-  const [products, setProducts] = useState<Product[]>([])
-  
-  // 채널 데이터
-  const [channels, setChannels] = useState<Channel[]>([])
-  
-  // 상품 옵션 데이터
-  const [productOptions, setProductOptions] = useState<ProductOption[]>([])
-  
-  // 옵션 선택지 데이터
-  const [optionChoices, setOptionChoices] = useState<ProductOptionChoice[]>([])
-  
-  // 기본 옵션 데이터
-  const [options, setOptions] = useState<Option[]>([])
-  
-  // 픽업 호텔 데이터
-  const [pickupHotels, setPickupHotels] = useState<PickupHotel[]>([])
-  const [coupons, setCoupons] = useState<Database['public']['Tables']['coupons']['Row'][]>([])
-  
-  const [loading, setLoading] = useState(true)
+  // 커스텀 훅으로 데이터 관리
+  const {
+    reservations,
+    customers,
+    products,
+    channels,
+    productOptions,
+    optionChoices,
+    options,
+    pickupHotels,
+    coupons,
+    loading,
+    refreshReservations,
+    refreshCustomers
+  } = useReservationData()
 
-  // Supabase에서 데이터 가져오기
-  const fetchCustomers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error fetching customers:', error)
-        return
-      }
-
-      setCustomers(data || [])
-    } catch (error) {
-      console.error('Error fetching customers:', error)
-    }
-  }
-
-  const fetchProducts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching products:', error)
-        return
-      }
-
-      setProducts(data || [])
-    } catch (error) {
-      console.error('Error fetching products:', error)
-    }
-  }
-
-  const fetchChannels = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('channels')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching channels:', error)
-        return
-      }
-
-      setChannels(data || [])
-    } catch (error) {
-      console.error('Error fetching channels:', error)
-    }
-  }
-
-  const fetchProductOptions = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('product_options')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching product options:', error)
-        return
-      }
-
-      setProductOptions(data || [])
-    } catch (error) {
-      console.error('Error fetching product options:', error)
-    }
-  }
-
-  const fetchOptionChoices = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('product_option_choices')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching option choices:', error)
-        return
-      }
-
-      setOptionChoices(data || [])
-    } catch (error) {
-      console.error('Error fetching option choices:', error)
-    }
-  }
-
-  const fetchOptions = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('options')
-        .select('*')
-        .order('name', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching options:', error)
-        return
-      }
-
-      setOptions(data || [])
-    } catch (error) {
-      console.error('Error fetching options:', error)
-    }
-  }
-
-  const fetchPickupHotels = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('pickup_hotels')
-        .select('*')
-        .order('hotel', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching pickup hotels:', error)
-        return
-      }
-
-      setPickupHotels(data || [])
-    } catch (error) {
-      console.error('Error fetching pickup hotels:', error)
-    }
-  }
-
-  // 쿠폰 데이터 가져오기
-  const fetchCoupons = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('coupons')
-        .select('*')
-        .eq('status', 'active') // 활성 상태인 쿠폰만 가져오기
-        .order('coupon_code', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching coupons:', error)
-        return
-      }
-
-      console.log('가져온 쿠폰 데이터:', data) // 디버깅용
-      setCoupons(data || [])
-    } catch (error) {
-      console.error('Error fetching coupons:', error)
-    }
-  }
-
-  // 픽업 호텔 ID로 호텔 정보를 찾는 헬퍼 함수
-  const getPickupHotelDisplay = (hotelId: string) => {
-    const hotel = pickupHotels.find(h => h.id === hotelId)
-    return hotel ? `${hotel.hotel} - ${hotel.pick_up_location}` : hotelId
-  }
-
-  const fetchReservations = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('reservations')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error fetching reservations:', error)
-        return
-      }
-
-      // Supabase 데이터를 로컬 Reservation 타입으로 변환
-      const mappedReservations: Reservation[] = (data || []).map(item => ({
-        id: item.id,
-        customerId: item.customer_id || '',
-        productId: item.product_id || '',
-        tourDate: item.tour_date || '',
-        tourTime: item.tour_time || '',
-        eventNote: item.event_note || '',
-        pickUpHotel: item.pickup_hotel || '',
-        pickUpTime: item.pickup_time || '',
-        adults: item.adults || 0,
-        child: item.child || 0,
-        infant: item.infant || 0,
-        totalPeople: item.total_people || 0,
-        channelId: item.channel_id || '',
-        channelRN: item.channel_rn || '',
-        addedBy: item.added_by || '',
-        addedTime: item.created_at || '',
-        tourId: item.tour_id || '',
-        status: (item.status as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
-        selectedOptions: (item.selected_options as { [optionId: string]: string[] }) || {},
-        selectedOptionPrices: (item.selected_option_prices as { [key: string]: number }) || {}
-      }))
-
-      setReservations(mappedReservations)
-    } catch (error) {
-      console.error('Error fetching reservations:', error)
-    }
-  }
-
-  // 컴포넌트 마운트 시 데이터 불러오기
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true)
-      await Promise.all([
-        fetchCustomers(),
-        fetchProducts(),
-        fetchChannels(),
-        fetchProductOptions(),
-        fetchOptionChoices(),
-        fetchOptions(),
-        fetchPickupHotels(),
-        fetchCoupons(),
-        fetchReservations()
-      ])
-      setLoading(false)
-    }
-    
-    loadData()
-  }, [])
-
+  // 상태 관리
   const [searchTerm, setSearchTerm] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [pricingModalReservation, setPricingModalReservation] = useState<Reservation | null>(null)
+  const [showPricingModal, setShowPricingModal] = useState(false)
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
 
@@ -317,8 +61,8 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
     const matchesSearch = 
       reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.channelRN.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customers.find(c => c.id === reservation.customerId)?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      products.find(p => p.id === reservation.productId)?.name.toLowerCase().includes(searchTerm.toLowerCase())
+      getCustomerName(reservation.customerId, customers).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getProductName(reservation.productId, products).toLowerCase().includes(searchTerm.toLowerCase())
     
     const matchesStatus = selectedStatus === 'all' || reservation.status === selectedStatus
     
@@ -349,10 +93,11 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
         selected_option_prices: reservation.selectedOptionPrices
       }
 
-      const { data, error } = await supabase
+      const { data: newReservation, error } = await supabase
         .from('reservations')
         .insert(reservationData)
         .select()
+        .single()
 
       if (error) {
         console.error('Error adding reservation:', error)
@@ -360,8 +105,53 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
         return
       }
 
+      // 가격 정보가 있으면 저장
+      if (reservation.pricingInfo && newReservation) {
+        try {
+          const pricingData = {
+            id: crypto.randomUUID(),
+            reservation_id: newReservation.id,
+            adult_product_price: reservation.pricingInfo.adultProductPrice,
+            child_product_price: reservation.pricingInfo.childProductPrice,
+            infant_product_price: reservation.pricingInfo.infantProductPrice,
+            product_price_total: reservation.pricingInfo.productPriceTotal,
+            required_options: reservation.pricingInfo.requiredOptions,
+            required_option_total: reservation.pricingInfo.requiredOptionTotal,
+            subtotal: reservation.pricingInfo.subtotal,
+            coupon_code: reservation.pricingInfo.couponCode,
+            coupon_discount: reservation.pricingInfo.couponDiscount,
+            additional_discount: reservation.pricingInfo.additionalDiscount,
+            additional_cost: reservation.pricingInfo.additionalCost,
+            card_fee: reservation.pricingInfo.cardFee,
+            tax: reservation.pricingInfo.tax,
+            prepayment_cost: reservation.pricingInfo.prepaymentCost,
+            prepayment_tip: reservation.pricingInfo.prepaymentTip,
+            selected_options: reservation.pricingInfo.selectedOptionalOptions,
+            option_total: reservation.pricingInfo.optionTotal,
+            total_price: reservation.pricingInfo.totalPrice,
+            deposit_amount: reservation.pricingInfo.depositAmount,
+            balance_amount: reservation.pricingInfo.balanceAmount,
+            is_private_tour: reservation.pricingInfo.isPrivateTour,
+            private_tour_additional_cost: reservation.pricingInfo.privateTourAdditionalCost
+          }
+
+          const { error: pricingError } = await supabase
+            .from('reservation_pricing')
+            .insert([pricingData])
+
+          if (pricingError) {
+            console.error('Error saving pricing info:', pricingError)
+            // 가격 정보 저장 실패는 예약 성공에 영향을 주지 않음
+          } else {
+            console.log('가격 정보가 성공적으로 저장되었습니다.')
+          }
+        } catch (pricingError) {
+          console.error('Error saving pricing info:', pricingError)
+        }
+      }
+
       // 성공 시 예약 목록 새로고침
-      await fetchReservations()
+      await refreshReservations()
       setShowAddForm(false)
       alert('예약이 성공적으로 추가되었습니다!')
     } catch (error) {
@@ -406,8 +196,52 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
           return
         }
 
+        // 가격 정보가 있으면 업데이트
+        if (reservation.pricingInfo) {
+          try {
+            const pricingData = {
+              adult_product_price: reservation.pricingInfo.adultProductPrice,
+              child_product_price: reservation.pricingInfo.childProductPrice,
+              infant_product_price: reservation.pricingInfo.infantProductPrice,
+              product_price_total: reservation.pricingInfo.productPriceTotal,
+              required_options: reservation.pricingInfo.requiredOptions,
+              required_option_total: reservation.pricingInfo.requiredOptionTotal,
+              subtotal: reservation.pricingInfo.subtotal,
+              coupon_code: reservation.pricingInfo.couponCode,
+              coupon_discount: reservation.pricingInfo.couponDiscount,
+              additional_discount: reservation.pricingInfo.additionalDiscount,
+              additional_cost: reservation.pricingInfo.additionalCost,
+              card_fee: reservation.pricingInfo.cardFee,
+              tax: reservation.pricingInfo.tax,
+              prepayment_cost: reservation.pricingInfo.prepaymentCost,
+              prepayment_tip: reservation.pricingInfo.prepaymentTip,
+              selected_options: reservation.pricingInfo.selectedOptionalOptions,
+              option_total: reservation.pricingInfo.optionTotal,
+              total_price: reservation.pricingInfo.totalPrice,
+              deposit_amount: reservation.pricingInfo.depositAmount,
+              balance_amount: reservation.pricingInfo.balanceAmount,
+              is_private_tour: reservation.pricingInfo.isPrivateTour,
+              private_tour_additional_cost: reservation.pricingInfo.privateTourAdditionalCost
+            }
+
+            const { error: pricingError } = await supabase
+              .from('reservation_pricing')
+              .update(pricingData)
+              .eq('reservation_id', editingReservation.id)
+
+            if (pricingError) {
+              console.error('Error updating pricing info:', pricingError)
+              // 가격 정보 업데이트 실패는 예약 수정 성공에 영향을 주지 않음
+            } else {
+              console.log('가격 정보가 성공적으로 업데이트되었습니다.')
+            }
+          } catch (pricingError) {
+            console.error('Error updating pricing info:', pricingError)
+          }
+        }
+
         // 성공 시 예약 목록 새로고침
-        await fetchReservations()
+        await refreshReservations()
         setEditingReservation(null)
         alert('예약이 성공적으로 수정되었습니다!')
       } catch (error) {
@@ -415,6 +249,23 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
         alert('예약 수정 중 오류가 발생했습니다.')
       }
     }
+  }
+
+  // 예약 편집 모달 열기
+  const handleEditReservationClick = (reservation: Reservation) => {
+    setEditingReservation(reservation)
+  }
+
+  // 가격 정보 모달 열기
+  const handlePricingInfoClick = (reservation: Reservation) => {
+    setPricingModalReservation(reservation)
+    setShowPricingModal(true)
+  }
+
+  // 가격 정보 모달 닫기
+  const handleClosePricingModal = () => {
+    setShowPricingModal(false)
+    setPricingModalReservation(null)
   }
 
   const handleDeleteReservation = async (id: string) => {
@@ -432,7 +283,7 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
         }
 
         // 성공 시 예약 목록 새로고침
-        await fetchReservations()
+        await refreshReservations()
         alert('예약이 성공적으로 삭제되었습니다!')
       } catch (error) {
         console.error('Error deleting reservation:', error)
@@ -457,7 +308,7 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
       }
 
       // 성공 시 고객 목록 새로고침
-      await fetchCustomers()
+      await refreshCustomers()
       setShowCustomerForm(false)
       alert('고객이 성공적으로 추가되었습니다!')
       
@@ -470,120 +321,7 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
       console.error('Error adding customer:', error)
       alert('고객 추가 중 오류가 발생했습니다.')
     }
-  }, [showAddForm])
-
-  const getCustomerName = (customerId: string) => {
-    return customers.find(c => c.id === customerId)?.name || 'Unknown'
-  }
-
-  const getProductName = (productId: string) => {
-    return products.find(p => p.id === productId)?.name || 'Unknown'
-  }
-
-  const getChannelName = (channelId: string) => {
-    return channels.find(c => c.id === channelId)?.name || 'Unknown'
-  }
-
-  const getStatusLabel = (status: string) => {
-    return t(`status.${status}`)
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'confirmed': return 'bg-green-100 text-green-800'
-      case 'pending': return 'bg-yellow-100 text-yellow-800'
-      case 'completed': return 'bg-blue-100 text-blue-800'
-      case 'cancelled': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const calculateTotalPrice = (reservation: Reservation) => {
-    const product = products.find(p => p.id === reservation.productId)
-    if (!product || !product.base_price) return 0
-    
-    // 기본 가격을 성인/아동/유아로 나누어 계산 (간단한 계산)
-    let adultPrice = product.base_price
-    let childPrice = product.base_price * 0.7 // 아동은 성인의 70%
-    let infantPrice = product.base_price * 0.3 // 유아는 성인의 30%
-    
-    // 선택된 옵션의 가격 조정 적용
-    if (reservation.selectedOptions) {
-      Object.entries(reservation.selectedOptions).forEach(([optionId, choiceIds]) => {
-        if (Array.isArray(choiceIds)) {
-          choiceIds.forEach(choiceId => {
-            const choice = optionChoices.find(c => c.id === choiceId)
-            if (choice) {
-              if (choice.adult_price_adjustment !== null) {
-                adultPrice += choice.adult_price_adjustment
-              }
-              if (choice.child_price_adjustment !== null) {
-                childPrice += choice.child_price_adjustment
-              }
-              if (choice.infant_price_adjustment !== null) {
-                infantPrice += choice.infant_price_adjustment
-              }
-            }
-          })
-        }
-      })
-    }
-    
-    // 사용자가 입력한 요금 정보 적용
-    if (reservation.selectedOptionPrices) {
-      Object.entries(reservation.selectedOptionPrices).forEach(([key, value]) => {
-        if (typeof value === 'number') {
-          if (key.includes('_adult')) {
-            adultPrice += value
-          } else if (key.includes('_child')) {
-            childPrice += value
-          } else if (key.includes('_infant')) {
-            infantPrice += value
-          }
-        }
-      })
-    }
-    
-    return (
-      reservation.adults * adultPrice +
-      reservation.child * childPrice +
-      reservation.infant * infantPrice
-    )
-  }
-
-  // 상품의 필수 선택 옵션을 카테고리별로 그룹화하여 가져오기
-  const getRequiredOptionsForProduct = (productId: string) => {
-    const requiredOptions = productOptions.filter(option => 
-      option.product_id === productId && option.is_required === true
-    )
-    
-    // 카테고리별로 그룹화 (options 테이블의 category 사용)
-    const groupedOptions = requiredOptions.reduce((groups, option) => {
-      // linked_option_id를 통해 options 테이블의 category 가져오기
-      const linkedOption = options.find(opt => opt.id === option.linked_option_id)
-      const category = linkedOption?.category || '기타'
-      
-      if (!groups[category]) {
-        groups[category] = []
-      }
-      groups[category].push(option)
-      return groups
-    }, {} as Record<string, ProductOption[]>)
-    
-    return groupedOptions
-  }
-
-  // 상품의 선택 옵션 (필수가 아닌 옵션) 가져오기
-  const getOptionalOptionsForProduct = (productId: string) => {
-    return productOptions.filter(option => 
-      option.product_id === productId && option.is_required === false
-    )
-  }
-
-  // 옵션의 선택지 가져오기
-  const getChoicesForOption = (optionId: string) => {
-    return optionChoices.filter(choice => choice.product_option_id === optionId)
-  }
+  }, [showAddForm, refreshCustomers])
 
   return (
     <div className="space-y-6">
@@ -623,155 +361,169 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
         </select>
       </div>
 
-             {/* 예약 목록 */}
-       {loading ? (
-         <div className="text-center py-12">
-           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-           <p className="mt-4 text-gray-600">데이터를 불러오는 중...</p>
-         </div>
-       ) : (
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-           {filteredReservations.map((reservation) => (
-             <div
-               key={reservation.id}
-               onClick={() => setEditingReservation(reservation)}
-               className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 cursor-pointer group"
-             >
-               {/* 카드 헤더 - 상태 표시 */}
-               <div className="p-4 border-b border-gray-100">
-                 <div className="flex justify-between items-start mb-3">
-                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
-                     {getStatusLabel(reservation.status)}
-                   </span>
-                   <div className="text-xs text-gray-400">RN: {reservation.channelRN}</div>
-                 </div>
-                 
-                                   {/* 고객 이름 */}
-                  <div className="mb-2">
-                    <div 
-                      className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const customer = customers.find(c => c.id === reservation.customerId);
-                        if (customer) {
-                          setEditingCustomer(customer);
-                        }
-                      }}
-                    >
-                                             {/* 언어별 국기 아이콘 */}
-                       {(() => {
-                         const customer = customers.find(c => c.id === reservation.customerId);
-                         if (!customer?.language) return null;
-                         
-                         const language = customer.language.toLowerCase();
-                         if (language === 'kr' || language === 'ko' || language === '한국어') {
-                           return <ReactCountryFlag countryCode="KR" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                         } else if (language === 'en' || language === '영어') {
-                           return <ReactCountryFlag countryCode="US" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                         } else if (language === 'jp' || language === '일본어') {
-                           return <ReactCountryFlag countryCode="JP" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                         } else if (language === 'cn' || language === '중국어') {
-                           return <ReactCountryFlag countryCode="CN" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                         }
-                         return null;
-                       })()}
-                      <span>{getCustomerName(reservation.customerId)}</span>
+      {/* 예약 목록 */}
+      {loading ? (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">데이터를 불러오는 중...</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filteredReservations.map((reservation) => (
+            <div
+              key={reservation.id}
+              onClick={() => handleEditReservationClick(reservation)}
+              className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 cursor-pointer group"
+            >
+              {/* 카드 헤더 - 상태 표시 */}
+              <div className="p-4 border-b border-gray-100">
+                <div className="flex justify-between items-start mb-3">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
+                    {getStatusLabel(reservation.status, t)}
+                  </span>
+                  <div className="text-xs text-gray-400">RN: {reservation.channelRN}</div>
+                </div>
+                
+                {/* 고객 이름 */}
+                <div className="mb-2">
+                  <div 
+                    className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const customer = customers.find(c => c.id === reservation.customerId);
+                      if (customer) {
+                        setEditingCustomer(customer);
+                      }
+                    }}
+                  >
+                    {/* 언어별 국기 아이콘 */}
+                    {(() => {
+                      const customer = customers.find(c => c.id === reservation.customerId);
+                      if (!customer?.language) return null;
+                      
+                      const language = customer.language.toLowerCase();
+                      if (language === 'kr' || language === 'ko' || language === '한국어') {
+                        return <ReactCountryFlag countryCode="KR" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
+                      } else if (language === 'en' || language === '영어') {
+                        return <ReactCountryFlag countryCode="US" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
+                      } else if (language === 'jp' || language === '일본어') {
+                        return <ReactCountryFlag countryCode="JP" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
+                      } else if (language === 'cn' || language === '중국어') {
+                        return <ReactCountryFlag countryCode="CN" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
+                      }
+                      return null;
+                    })()}
+                    <span>{getCustomerName(reservation.customerId, customers)}</span>
+                  </div>
+                  <div className="text-xs text-gray-500">{customers.find(c => c.id === reservation.customerId)?.email}</div>
+                </div>
+              </div>
+
+              {/* 카드 본문 */}
+              <div className="p-4 space-y-3">
+                {/* 상품 정보 */}
+                <div>
+                  <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products)}</div>
+                  {/* 선택된 옵션들 표시 */}
+                  {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
+                    <div className="mt-1 space-y-1">
+                      {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
+                        if (!choiceIds || choiceIds.length === 0) return null;
+                        
+                        const option = productOptions.find(opt => opt.id === optionId);
+                        const choices = choiceIds.map(choiceId => 
+                          optionChoices.find(c => c.id === choiceId)
+                        ).filter(Boolean);
+                        
+                        if (!option || choices.length === 0) return null;
+                        
+                        // 옵션명과 선택지명이 같은 경우 선택지명만 표시
+                        const displayText = choices.map(c => c?.name).join(', ');
+                        const isOptionNameSame = option.name === displayText;
+                        
+                        return (
+                          <div key={optionId} className="text-xs text-gray-600">
+                            {isOptionNameSame ? (
+                              <span className="font-medium">{displayText}</span>
+                            ) : (
+                              <>
+                                <span className="font-medium">{option.name}:</span> {displayText}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="text-xs text-gray-500">{customers.find(c => c.id === reservation.customerId)?.email}</div>
-                  </div>
-               </div>
+                  )}
+                </div>
 
-               {/* 카드 본문 */}
-               <div className="p-4 space-y-3">
-                                   {/* 상품 정보 */}
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId)}</div>
-                                         {/* 선택된 옵션들 표시 */}
-                     {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
-                       <div className="mt-1 space-y-1">
-                         {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
-                           if (!choiceIds || choiceIds.length === 0) return null;
-                           
-                           const option = productOptions.find(opt => opt.id === optionId);
-                           const choices = choiceIds.map(choiceId => 
-                             optionChoices.find(c => c.id === choiceId)
-                           ).filter(Boolean);
-                           
-                           if (!option || choices.length === 0) return null;
-                           
-                           // 옵션명과 선택지명이 같은 경우 선택지명만 표시
-                           const displayText = choices.map(c => c?.name).join(', ');
-                           const isOptionNameSame = option.name === displayText;
-                           
-                           return (
-                             <div key={optionId} className="text-xs text-gray-600">
-                               {isOptionNameSame ? (
-                                 <span className="font-medium">{displayText}</span>
-                               ) : (
-                                 <>
-                                   <span className="font-medium">{option.name}:</span> {displayText}
-                                 </>
-                               )}
-                             </div>
-                           );
-                         })}
-                       </div>
-                     )}
-                  </div>
+                {/* 투어 날짜 */}
+                <div className="flex items-center space-x-2">
+                  <Calendar className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm text-gray-900">{reservation.tourDate}</span>
+                </div>
 
-                 {/* 투어 날짜 */}
-                 <div className="flex items-center space-x-2">
-                   <Calendar className="h-4 w-4 text-gray-400" />
-                   <span className="text-sm text-gray-900">{reservation.tourDate}</span>
-                 </div>
-
-                 {/* 인원 정보 */}
-                 <div className="flex items-center space-x-2">
-                   <Users className="h-4 w-4 text-gray-400" />
-                   <div className="text-sm text-gray-900">
-                     성인 {reservation.adults}명, 아동 {reservation.child}명, 유아 {reservation.infant}명
-                   </div>
-                 </div>
-
-                 {/* 픽업 호텔 정보 */}
-                 {reservation.pickUpHotel && (
-                   <div className="flex items-center space-x-2">
-                     <MapPin className="h-4 w-4 text-gray-400" />
-                     <span className="text-sm text-gray-900">{getPickupHotelDisplay(reservation.pickUpHotel)}</span>
-                   </div>
-                 )}
-
-                 {/* 채널 정보 */}
-                 <div className="flex items-center space-x-2">
-                   <div className="h-4 w-4 rounded-full bg-blue-100 flex items-center justify-center">
-                     <div className="h-2 w-2 rounded-full bg-blue-500"></div>
-                   </div>
-                   <div className="text-sm text-gray-900">{getChannelName(reservation.channelId)}</div>
-                   <div className="text-xs text-gray-500">({channels.find(c => c.id === reservation.channelId)?.type})</div>
-                 </div>
-
-                 {/* 가격 정보 */}
-                 <div className="pt-2 border-t border-gray-100">
-                   <div className="text-lg font-bold text-blue-600">
-                     {calculateTotalPrice(reservation).toLocaleString()}원
-                   </div>
-                 </div>
-               </div>
-
-                               {/* 카드 푸터 - 편집 안내 */}
-                <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 rounded-b-lg">
-                  <div className="text-center">
-                    
+                {/* 인원 정보 */}
+                <div className="flex items-center space-x-2">
+                  <Users className="h-4 w-4 text-gray-400" />
+                  <div className="text-sm text-gray-900">
+                    성인 {reservation.adults}명, 아동 {reservation.child}명, 유아 {reservation.infant}명
                   </div>
                 </div>
-             </div>
-           ))}
-         </div>
-       )}
 
-             {/* 예약 추가/편집 모달 */}
-       {(showAddForm || editingReservation) && (
-                 <ReservationForm
+                {/* 픽업 호텔 정보 */}
+                {reservation.pickUpHotel && (
+                  <div className="flex items-center space-x-2">
+                    <MapPin className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm text-gray-900">{getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels)}</span>
+                  </div>
+                )}
+
+                {/* 채널 정보 */}
+                <div className="flex items-center space-x-2">
+                  <div className="h-4 w-4 rounded-full bg-blue-100 flex items-center justify-center">
+                    <div className="h-2 w-2 rounded-full bg-blue-500"></div>
+                  </div>
+                  <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels)}</div>
+                  <div className="text-xs text-gray-500">({channels.find(c => c.id === reservation.channelId)?.type})</div>
+                </div>
+
+                {/* 가격 정보 */}
+                <div className="pt-2 border-t border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div className="text-lg font-bold text-blue-600">
+                      {calculateTotalPrice(reservation, products, optionChoices).toLocaleString()}원
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePricingInfoClick(reservation);
+                      }}
+                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                      </svg>
+                      <span>가격</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 카드 푸터 - 편집 안내 */}
+              <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 rounded-b-lg">
+                <div className="text-center">
+                  
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 예약 추가/편집 모달 */}
+      {(showAddForm || editingReservation) && (
+        <ReservationForm
           reservation={editingReservation}
           customers={customers}
           products={products}
@@ -786,1684 +538,10 @@ export default function AdminReservations({ params }: AdminReservationsProps) {
             setShowAddForm(false)
             setEditingReservation(null)
           }}
-          onRefreshCustomers={fetchCustomers}
-          getRequiredOptionsForProduct={getRequiredOptionsForProduct}
-          getOptionalOptionsForProduct={getOptionalOptionsForProduct}
-          getChoicesForOption={getChoicesForOption}
+          onRefreshCustomers={refreshCustomers}
           onDelete={handleDeleteReservation}
         />
-       )}
-
-             {/* 고객 추가 모달 */}
-       {showCustomerForm && (
-         <CustomerForm
-           customer={null}
-           channels={channels}
-           onSubmit={handleAddCustomer}
-           onCancel={() => setShowCustomerForm(false)}
-         />
-       )}
-
-       {/* 고객 수정 모달 */}
-       {editingCustomer && (
-         <CustomerForm
-           customer={editingCustomer}
-           channels={channels}
-           onSubmit={async (customerData) => {
-             try {
-               // Supabase에 고객 정보 업데이트
-               const { error } = await supabase
-                 .from('customers')
-                 .update(customerData)
-                 .eq('id', editingCustomer.id)
-
-               if (error) {
-                 console.error('Error updating customer:', error)
-                 alert('고객 정보 수정 중 오류가 발생했습니다: ' + error.message)
-                 return
-               }
-
-               // 성공 시 고객 목록 새로고침
-               await fetchCustomers()
-               setEditingCustomer(null)
-               alert('고객 정보가 성공적으로 수정되었습니다!')
-             } catch (error) {
-               console.error('Error updating customer:', error)
-               alert('고객 정보 수정 중 오류가 발생했습니다.')
-             }
-           }}
-           onCancel={() => setEditingCustomer(null)}
-           onDelete={async () => {
-             if (confirm('정말로 이 고객을 삭제하시겠습니까?')) {
-               try {
-                 const { error } = await supabase
-                   .from('customers')
-                   .delete()
-                   .eq('id', editingCustomer.id)
-
-                 if (error) {
-                   console.error('Error deleting customer:', error)
-                   alert('고객 삭제 중 오류가 발생했습니다: ' + error.message)
-                   return
-                 }
-
-                 // 성공 시 고객 목록 새로고침
-                 await fetchCustomers()
-                 setEditingCustomer(null)
-                 alert('고객이 성공적으로 삭제되었습니다!')
-               } catch (error) {
-                 console.error('Error deleting customer:', error)
-                 alert('고객 삭제 중 오류가 발생했습니다.')
-               }
-             }
-           }}
-         />
-       )}
-    </div>
-  )
-}
-
-interface ReservationFormProps {
-  reservation?: Reservation | null
-  customers: Customer[]
-  products: Product[]
-  channels: Channel[]
-  productOptions: ProductOption[]
-  optionChoices: ProductOptionChoice[]
-  options: Option[]
-  pickupHotels: PickupHotel[]
-  coupons: Database['public']['Tables']['coupons']['Row'][]
-  onSubmit: (reservation: Omit<Reservation, 'id'>) => void
-  onCancel: () => void
-  onRefreshCustomers: () => Promise<void>
-  getRequiredOptionsForProduct: (productId: string) => Record<string, ProductOption[]>
-  getOptionalOptionsForProduct: (productId: string) => ProductOption[]
-  getChoicesForOption: (optionId: string) => ProductOptionChoice[]
-  onDelete: (id: string) => void
-}
-
-function ReservationForm({ reservation, customers, products, channels, productOptions, optionChoices, options, pickupHotels, coupons, onSubmit, onCancel, onRefreshCustomers, getRequiredOptionsForProduct, getOptionalOptionsForProduct, getChoicesForOption, onDelete }: ReservationFormProps) {
-  const [showCustomerForm, setShowCustomerForm] = useState(false)
-  const t = useTranslations('reservations')
-  const tCommon = useTranslations('common')
-  const customerSearchRef = useRef<HTMLDivElement>(null)
-  
-  const [formData, setFormData] = useState<{
-    customerId: string
-    customerSearch: string
-    showCustomerDropdown: boolean
-    productId: string
-    selectedProductCategory: string
-    selectedProductSubCategory: string
-    productSearch: string
-    tourDate: string
-    tourTime: string
-    eventNote: string
-    pickUpHotel: string
-    pickUpHotelSearch: string
-    showPickupHotelDropdown: boolean
-    pickUpTime: string
-    adults: number
-    child: number
-    infant: number
-    totalPeople: number
-    channelId: string
-    selectedChannelType: 'ota' | 'self' | 'partner'
-    channelSearch: string
-    channelRN: string
-    addedBy: string
-    addedTime: string
-    tourId: string
-    status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
-    selectedOptions: { [optionId: string]: string[] }
-    selectedOptionPrices: { [key: string]: number }
-    // 가격 정보
-    adultProductPrice: number
-    childProductPrice: number
-    infantProductPrice: number
-    productPriceTotal: number
-    requiredOptions: { [optionId: string]: { choiceId: string; adult: number; child: number; infant: number } }
-    requiredOptionTotal: number
-    subtotal: number
-    couponCode: string
-    couponDiscount: number
-    additionalDiscount: number
-    additionalCost: number
-    cardFee: number
-    tax: number
-    prepaymentCost: number
-    prepaymentTip: number
-    selectedOptionalOptions: { [optionId: string]: { choiceId: string; quantity: number; price: number } }
-    optionTotal: number
-    totalPrice: number
-    depositAmount: number
-    balanceAmount: number
-    isPrivateTour: boolean
-    privateTourAdditionalCost: number
-    productRequiredOptions: ProductOption[]
-  }>({
-    customerId: reservation?.customerId || '',
-    customerSearch: reservation?.customerId ? 
-      customers.find(c => c.id === reservation.customerId)?.name || '' : '',
-    showCustomerDropdown: false,
-    productId: reservation?.productId || '',
-    selectedProductCategory: '',
-    selectedProductSubCategory: '',
-    productSearch: '',
-    tourDate: reservation?.tourDate || '',
-    tourTime: reservation?.tourTime || '',
-    eventNote: reservation?.eventNote || '',
-    pickUpHotel: reservation?.pickUpHotel || '',
-    pickUpHotelSearch: reservation?.pickUpHotel ? 
-      pickupHotels.find(h => h.id === reservation.pickUpHotel) ? 
-        `${pickupHotels.find(h => h.id === reservation.pickUpHotel)?.hotel} - ${pickupHotels.find(h => h.id === reservation.pickUpHotel)?.pick_up_location}` : '' : '',
-    showPickupHotelDropdown: false,
-    pickUpTime: reservation?.pickUpTime || '',
-    adults: reservation?.adults || 1,
-    child: reservation?.child || 0,
-    infant: reservation?.infant || 0,
-    totalPeople: reservation?.totalPeople || 1,
-    channelId: reservation?.channelId || '',
-    selectedChannelType: 'self',
-    channelSearch: '',
-    channelRN: reservation?.channelRN || '',
-    addedBy: reservation?.addedBy || '',
-    addedTime: reservation?.addedTime || new Date().toISOString().slice(0, 16).replace('T', ' '),
-    tourId: reservation?.tourId || '',
-    status: reservation?.status || 'pending',
-    selectedOptions: reservation?.selectedOptions || {},
-    selectedOptionPrices: reservation?.selectedOptionPrices || {},
-    // 가격 정보 초기값
-    adultProductPrice: 0,
-    childProductPrice: 0,
-    infantProductPrice: 0,
-    productPriceTotal: 0,
-    requiredOptions: {},
-    requiredOptionTotal: 0,
-    subtotal: 0,
-    couponCode: '',
-    couponDiscount: 0,
-    additionalDiscount: 0,
-    additionalCost: 0,
-    cardFee: 0,
-    tax: 0,
-    prepaymentCost: 0,
-    prepaymentTip: 0,
-    selectedOptionalOptions: {},
-    optionTotal: 0,
-    totalPrice: 0,
-    depositAmount: 0,
-    balanceAmount: 0,
-    isPrivateTour: false,
-    privateTourAdditionalCost: 0,
-    productRequiredOptions: []
-  })
-
-  // 현재 사용자 정보 가져오기
-  const [currentUser, setCurrentUser] = useState<{ email: string } | null>(null)
-
-  // 외부 클릭 감지하여 드롭다운 닫기
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Element
-      if (!target.closest('.pickup-hotel-dropdown')) {
-        setFormData(prev => ({ ...prev, showPickupHotelDropdown: false }))
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [])
-
-  useEffect(() => {
-    const getCurrentUser = async () => {
-      try {
-        const { data: { user }, error } = await supabase.auth.getUser()
-        if (user && !error) {
-          setCurrentUser({ email: user.email || '' })
-          // 새 예약인 경우에만 현재 사용자 이메일로 설정
-          if (!reservation) {
-            setFormData(prev => ({ ...prev, addedBy: user.email || '' }))
-          }
-        }
-      } catch (error) {
-        console.error('Error getting current user:', error)
-      }
-    }
-    
-    getCurrentUser()
-  }, [reservation])
-
-  // 상품 선택 시 필수 옵션 로드 함수
-  const loadRequiredOptionsForProduct = async (productId: string) => {
-    if (!productId) {
-      setFormData(prev => ({ ...prev, requiredOptions: {} }))
-      return
-    }
-
-    try {
-      // 상품의 필수 옵션들을 가져오기
-      const { data: productOptions, error } = await supabase
-        .from('product_options')
-        .select(`
-          id,
-          name,
-          description,
-          is_required,
-          product_option_choices (
-            id,
-            name,
-            description,
-            adult_price_adjustment,
-            child_price_adjustment,
-            infant_price_adjustment,
-            is_default
-          )
-        `)
-        .eq('product_id', productId)
-        .eq('is_required', true)
-
-      if (error) {
-        console.error('필수 옵션 로드 오류:', error)
-        return
-      }
-
-      // 필수 옵션을 formData에 설정
-      const requiredOptions: { [optionId: string]: { choiceId: string; adult: number; child: number; infant: number } } = {}
-      
-      productOptions?.forEach(productOption => {
-        if (productOption.product_option_choices && productOption.product_option_choices.length > 0) {
-          // 기본 선택지 또는 첫 번째 선택지를 기본값으로 설정
-          const defaultChoice = productOption.product_option_choices.find((choice: ProductOptionChoice) => choice.is_default) || 
-                               productOption.product_option_choices[0]
-          
-          requiredOptions[productOption.id] = {
-            choiceId: defaultChoice.id,
-            adult: defaultChoice.adult_price_adjustment || 0,
-            child: defaultChoice.child_price_adjustment || 0,
-            infant: defaultChoice.infant_price_adjustment || 0
-          }
-        }
-      })
-
-      setFormData(prev => ({ 
-        ...prev, 
-        requiredOptions,
-        productRequiredOptions: productOptions || []
-      }))
-    } catch (error) {
-      console.error('필수 옵션 로드 중 오류:', error)
-    }
-  }
-
-  // 가격 계산 함수들
-  const calculateProductPriceTotal = () => {
-    return (formData.adultProductPrice * formData.adults) + 
-           (formData.childProductPrice * formData.child) + 
-           (formData.infantProductPrice * formData.infant)
-  }
-
-  const calculateRequiredOptionTotal = () => {
-    let total = 0
-    Object.values(formData.requiredOptions).forEach(option => {
-      total += (option.adult * formData.adults) + 
-               (option.child * formData.child) + 
-               (option.infant * formData.infant)
-    })
-    return total
-  }
-
-  const calculateSubtotal = () => {
-    return calculateProductPriceTotal() + calculateRequiredOptionTotal()
-  }
-
-  const calculateOptionTotal = () => {
-    let total = 0
-    Object.values(formData.selectedOptionalOptions).forEach(option => {
-      total += option.price * option.quantity
-    })
-    return total
-  }
-
-  const calculateTotalPrice = () => {
-    const subtotal = calculateSubtotal()
-    const totalDiscount = formData.couponDiscount + formData.additionalDiscount
-    const totalAdditional = formData.additionalCost + formData.cardFee + formData.tax + 
-                           formData.prepaymentCost + formData.prepaymentTip + calculateOptionTotal() +
-                           (formData.isPrivateTour ? formData.privateTourAdditionalCost : 0)
-    
-    return Math.max(0, subtotal - totalDiscount + totalAdditional)
-  }
-
-  const calculateBalance = () => {
-    return Math.max(0, formData.totalPrice - formData.depositAmount)
-  }
-
-  // 쿠폰 할인 계산 함수
-  const calculateCouponDiscount = (coupon: Database['public']['Tables']['coupons']['Row'], subtotal: number) => {
-    if (!coupon) return 0
-    
-    console.log('쿠폰 할인 계산:', { coupon, subtotal }) // 디버깅용
-    
-    // 새로운 스키마 사용: discount_type, percentage_value, fixed_value
-    if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
-      return (subtotal * (Number(coupon.percentage_value) || 0)) / 100
-    } else if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
-      return Number(coupon.fixed_value) || 0
-    }
-    
-    return 0
-  }
-
-  // 가격 정보 자동 업데이트
-  useEffect(() => {
-    const newProductPriceTotal = calculateProductPriceTotal()
-    const newRequiredOptionTotal = calculateRequiredOptionTotal()
-    const newSubtotal = calculateSubtotal()
-    const newTotalPrice = calculateTotalPrice()
-    const newBalance = calculateBalance()
-
-    setFormData(prev => ({
-      ...prev,
-      productPriceTotal: newProductPriceTotal,
-      requiredOptionTotal: newRequiredOptionTotal,
-      subtotal: newSubtotal,
-      totalPrice: newTotalPrice,
-      balanceAmount: newBalance
-    }))
-  }, [
-    formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice,
-    formData.requiredOptions, formData.selectedOptions,
-    formData.adults, formData.child, formData.infant,
-    formData.couponDiscount, formData.additionalDiscount, formData.additionalCost,
-    formData.cardFee, formData.tax, formData.prepaymentCost, formData.prepaymentTip,
-    formData.isPrivateTour, formData.privateTourAdditionalCost
-  ])
-
-  // 가격 정보 저장 함수
-  const savePricingInfo = async (reservationId: string) => {
-    try {
-      const pricingData = {
-        reservation_id: reservationId,
-        adult_product_price: formData.adultProductPrice,
-        child_product_price: formData.childProductPrice,
-        infant_product_price: formData.infantProductPrice,
-        product_price_total: formData.productPriceTotal,
-        required_options: formData.requiredOptions,
-        required_option_total: formData.requiredOptionTotal,
-        subtotal: formData.subtotal,
-        coupon_code: formData.couponCode,
-        coupon_discount: formData.couponDiscount,
-        additional_discount: formData.additionalDiscount,
-        additional_cost: formData.additionalCost,
-        card_fee: formData.cardFee,
-        tax: formData.tax,
-        prepayment_cost: formData.prepaymentCost,
-        prepayment_tip: formData.prepaymentTip,
-        selected_options: formData.selectedOptionalOptions,
-        option_total: formData.optionTotal,
-        total_price: formData.totalPrice,
-        deposit_amount: formData.depositAmount,
-        balance_amount: formData.balanceAmount,
-        is_private_tour: formData.isPrivateTour,
-        private_tour_additional_cost: formData.privateTourAdditionalCost
-      }
-
-      // Supabase에 저장
-      const { error } = await supabase
-        .from('reservation_pricing')
-        .upsert(pricingData, { onConflict: 'reservation_id' })
-
-      if (error) {
-        console.error('가격 정보 저장 오류:', error)
-        throw error
-      }
-
-      console.log('가격 정보가 성공적으로 저장되었습니다.')
-    } catch (error) {
-      console.error('가격 정보 저장 중 오류:', error)
-      throw error
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    // 필수 옵션이 모두 선택되었는지 확인 (카테고리별로 하나씩)
-    const requiredOptions = getRequiredOptionsForProduct(formData.productId)
-    const missingCategories = Object.entries(requiredOptions).filter(([category, options]) => {
-      // 해당 카테고리에서 선택된 옵션이 있는지 확인
-      return !options.some(option => 
-        formData.selectedOptions[option.id] && formData.selectedOptions[option.id].length > 0
-      )
-    })
-    
-    if (missingCategories.length > 0) {
-      alert(`다음 카테고리에서 필수 옵션을 선택해주세요:\n${missingCategories.map(([category]) => category).join('\n')}`)
-      return
-    }
-    
-    const totalPeople = formData.adults + formData.child + formData.infant
-    
-    try {
-      // 예약 정보 제출
-    onSubmit({
-      ...formData,
-      totalPeople
-    })
-      
-      // 가격 정보를 임시로 저장 (예약 ID는 임시로 생성)
-      const tempReservationId = `temp_${Date.now()}`
-      await savePricingInfo(tempReservationId)
-      
-      console.log('예약 정보와 가격 정보가 제출되었습니다.')
-    } catch (error) {
-      console.error('예약 저장 중 오류:', error)
-      alert('예약 저장 중 오류가 발생했습니다.')
-    }
-  }
-
-
-
-  // 고객 추가 함수
-  const handleAddCustomer = useCallback(async (customerData: Database['public']['Tables']['customers']['Insert']) => {
-    try {
-      // Supabase에 저장
-      const { data, error } = await supabase
-        .from('customers')
-        .insert(customerData)
-        .select()
-
-      if (error) {
-        console.error('Error adding customer:', error)
-        alert('고객 추가 중 오류가 발생했습니다: ' + error.message)
-        return
-      }
-
-      // 성공 시 고객 목록 새로고침
-      await onRefreshCustomers()
-      setShowCustomerForm(false)
-      alert('고객이 성공적으로 추가되었습니다!')
-      
-      // 새로 추가된 고객을 자동으로 선택
-      if (data && data[0]) {
-        setFormData(prev => ({
-          ...prev,
-          customerId: data[0].id,
-          customerSearch: `${data[0].name}${data[0].email ? ` (${data[0].email})` : ''}`,
-          showCustomerDropdown: false
-        }))
-      }
-    } catch (error) {
-      console.error('Error adding customer:', error)
-      alert('고객 추가 중 오류가 발생했습니다.')
-    }
-    }, [])
-
-  // 외부 클릭 시 고객 검색 드롭다운 닫기
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (customerSearchRef.current && !customerSearchRef.current.contains(event.target as Node)) {
-        setFormData(prev => ({ ...prev, showCustomerDropdown: false }))
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [])
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-7xl max-h-[95vh] overflow-y-auto">
-                 <div className="flex justify-between items-center mb-4">
-           <h2 className="text-xl font-bold">
-          {reservation ? t('form.editTitle') : t('form.title')}
-        </h2>
-           <div>
-             <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
-             <select
-               value={formData.status}
-               onChange={(e) => setFormData({ ...formData, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' })}
-               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-             >
-               <option value="pending">{t('status.pending')}</option>
-               <option value="confirmed">{t('status.confirmed')}</option>
-               <option value="completed">{t('status.completed')}</option>
-               <option value="cancelled">{t('status.cancelled')}</option>
-             </select>
-           </div>
-         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-           {/* 4열 그리드 레이아웃 */}
-           <div className="grid grid-cols-4 gap-4">
-             {/* 1-2열 합친 영역: 고객, 투어 정보, 픽업 정보, 참가자 수, 추가 정보 */}
-             <div className="col-span-2 space-y-4">
-               {/* 첫 번째 행: 고객, 채널 RN# */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.customer')}</label>
-                   <div className="relative" ref={customerSearchRef}>
-                     <input
-                       type="text"
-                       value={formData.customerSearch || ''}
-                       onChange={(e) => {
-                         setFormData({ ...formData, customerSearch: e.target.value })
-                         // 검색어가 변경되면 고객 ID 초기화
-                         if (e.target.value === '') {
-                           setFormData(prev => ({ ...prev, customerId: '' }))
-                         }
-                       }}
-                       onFocus={() => setFormData(prev => ({ ...prev, showCustomerDropdown: true }))}
-                       placeholder="고객 이름, 이메일, 전화번호로 검색..."
-                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-20"
-                required
-                     />
-                     <button
-                       type="button"
-                       onClick={() => setShowCustomerForm(true)}
-                       className="absolute right-1 top-1/2 transform -translate-y-1/2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                     >
-                       + 고객 추가
-                     </button>
-                     
-                     {/* 고객 검색 드롭다운 */}
-                     {formData.showCustomerDropdown && formData.customerSearch && (
-                       <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                         {customers
-                           .filter(customer => 
-                             customer.name?.toLowerCase().includes(formData.customerSearch.toLowerCase()) ||
-                             customer.email?.toLowerCase().includes(formData.customerSearch.toLowerCase()) ||
-                             customer.phone?.toLowerCase().includes(formData.customerSearch.toLowerCase())
-                           )
-                           .slice(0, 10) // 최대 10개만 표시
-                           .map(customer => (
-                             <div
-                               key={customer.id}
-                               onClick={() => {
-                                 setFormData(prev => ({
-                                   ...prev,
-                                   customerId: customer.id,
-                                   customerSearch: `${customer.name}${customer.email ? ` (${customer.email})` : ''}`,
-                                   showCustomerDropdown: false
-                                 }))
-                               }}
-                               className="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
-                             >
-                               <div className="font-medium text-gray-900">{customer.name}</div>
-                               {customer.email && (
-                                 <div className="text-sm text-gray-500">{customer.email}</div>
-                               )}
-                               {customer.phone && (
-                                 <div className="text-sm text-gray-500">{customer.phone}</div>
-                               )}
-                             </div>
-                           ))}
-                         {customers.filter(customer => 
-                           customer.name?.toLowerCase().includes(formData.customerSearch.toLowerCase()) ||
-                           customer.email?.toLowerCase().includes(formData.customerSearch.toLowerCase()) ||
-                           customer.phone?.toLowerCase().includes(formData.customerSearch.toLowerCase())
-                         ).length === 0 && (
-                           <div className="px-3 py-2 text-gray-500 text-center">
-                             검색 결과가 없습니다
-                           </div>
-                         )}
-                       </div>
-                     )}
-                     
-                     {/* 선택된 고객 표시 */}
-                     {formData.customerId && !formData.showCustomerDropdown && (
-                       <div className="mt-1 text-xs text-gray-600">
-                         선택된 고객: {customers.find(c => c.id === formData.customerId)?.name}
-                       </div>
-                     )}
-                   </div>
-            </div>
-                 
-            <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.channelRN')}</label>
-                   <input
-                     type="text"
-                     value={formData.channelRN}
-                     onChange={(e) => setFormData({ ...formData, channelRN: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                     placeholder={t('form.channelRNPlaceholder')}
-                   />
-            </div>
-          </div>
-
-               {/* 두 번째 행: 투어 날짜, 투어 시간 */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourDate')}</label>
-              <input
-                type="date"
-                value={formData.tourDate}
-                onChange={(e) => setFormData({ ...formData, tourDate: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-                 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourTime')}</label>
-              <input
-                type="time"
-                value={formData.tourTime}
-                onChange={(e) => setFormData({ ...formData, tourTime: sanitizeTimeInput(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-          </div>
-
-               {/* 세 번째 행: 픽업 호텔, 픽업 시간 */}
-          <div className="grid grid-cols-2 gap-4">
-                          <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.pickUpHotel')}</label>
-                <div className="relative pickup-hotel-dropdown">
-                <input
-                  type="text"
-                  value={formData.pickUpHotelSearch}
-                  onChange={(e) => {
-                    setFormData({ ...formData, pickUpHotelSearch: e.target.value, showPickupHotelDropdown: true })
-                  }}
-                  onFocus={() => setFormData({ ...formData, showPickupHotelDropdown: true })}
-                  placeholder="픽업 호텔을 검색하세요"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-                
-                {/* 드롭다운 화살표 */}
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-
-                {/* 드롭다운 메뉴 */}
-                {formData.showPickupHotelDropdown && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {pickupHotels
-                      .filter(hotel => 
-                        hotel.hotel.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase()) ||
-                        hotel.pick_up_location.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase())
-                      )
-                      .map((hotel) => (
-                        <div
-                          key={hotel.id}
-                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                          onClick={() => {
-                            setFormData({
-                              ...formData,
-                              pickUpHotel: hotel.id,
-                              pickUpHotelSearch: `${hotel.hotel} - ${hotel.pick_up_location}`,
-                              showPickupHotelDropdown: false
-                            })
-                          }}
-                        >
-                          <div className="font-medium text-gray-900">{hotel.hotel}</div>
-                          <div className="text-sm text-gray-600">{hotel.pick_up_location}</div>
-                        </div>
-                      ))}
-                    {pickupHotels.filter(hotel => 
-                      hotel.hotel.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase()) ||
-                      hotel.pick_up_location.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase())
-                    ).length === 0 && (
-                      <div className="px-3 py-2 text-gray-500 text-center">
-                        검색 결과가 없습니다
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-                 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.pickUpTime')}</label>
-              <input
-                type="time"
-                value={formData.pickUpTime}
-                onChange={(e) => setFormData({ ...formData, pickUpTime: sanitizeTimeInput(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-          </div>
-
-               {/* 네 번째 행: 참가자 수 설정 */}
-          <div>
-            
-                 <div className="grid grid-cols-4 gap-4">
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">{t('form.adults')}</label>
-                <input
-                  type="number"
-                  value={formData.adults}
-                  onChange={(e) => {
-                    const newAdults = Number(e.target.value) || 0
-                    setFormData(prev => ({ 
-                      ...prev, 
-                      adults: newAdults,
-                      totalPeople: newAdults + prev.child + prev.infant
-                    }))
-                  }}
-                  min="1"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">{t('form.child')}</label>
-                <input
-                  type="number"
-                  value={formData.child}
-                  onChange={(e) => {
-                    const newChild = Number(e.target.value) || 0
-                    setFormData(prev => ({ 
-                      ...prev, 
-                      child: newChild,
-                      totalPeople: prev.adults + newChild + prev.infant
-                    }))
-                  }}
-                  min="0"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">{t('form.infant')}</label>
-                <input
-                  type="number"
-                  value={formData.infant}
-                  onChange={(e) => {
-                    const newInfant = Number(e.target.value) || 0
-                    setFormData(prev => ({ 
-                      ...prev, 
-                      infant: newInfant,
-                      totalPeople: prev.adults + prev.child + newInfant
-                    }))
-                  }}
-                  min="0"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            <div>
-                     <label className="block text-xs text-gray-600 mb-1">총 인원</label>
-                     <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700">
-                       <span className="font-medium">{formData.totalPeople}</span>명
-            </div>
-          </div>
-            </div>
-          </div>
-
-                              {/* 다섯 번째 행: 특별 요청 사항 */}
-               <div>
-                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.eventNote')}</label>
-                 <textarea
-                   value={formData.eventNote}
-                   onChange={(e) => setFormData({ ...formData, eventNote: e.target.value })}
-                   rows={3}
-                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                   placeholder={t('form.eventNotePlaceholder')}
-                 />
-               </div>
-
-               {/* 가격 정보 섹션 */}
-             <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-               <div className="flex items-center justify-between mb-3">
-                 <h3 className="text-base font-semibold text-gray-900">가격 정보</h3>
-                 <div className="flex items-center space-x-2">
-                   <label className="flex items-center">
-                     <input
-                       type="checkbox"
-                       checked={formData.isPrivateTour}
-                       onChange={(e) => setFormData({ ...formData, isPrivateTour: e.target.checked })}
-                       className="mr-1 h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                     />
-                     <span className="text-xs text-gray-700">단독투어</span>
-                   </label>
-                   {formData.isPrivateTour && (
-                     <div className="flex items-center space-x-1">
-                       <span className="text-xs text-gray-600">+$</span>
-                       <input
-                         type="number"
-                         value={formData.privateTourAdditionalCost}
-                         onChange={(e) => setFormData({ ...formData, privateTourAdditionalCost: Number(e.target.value) || 0 })}
-                         className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                         step="0.01"
-                         placeholder="0"
-                       />
-                     </div>
-                   )}
-                   <button
-                     type="button"
-                     onClick={async () => {
-                       try {
-                         const tempReservationId = `temp_${Date.now()}`
-                         await savePricingInfo(tempReservationId)
-                         alert('가격 정보가 저장되었습니다!')
-                       } catch (error) {
-                         alert('가격 정보 저장 중 오류가 발생했습니다.')
-                       }
-                     }}
-                     className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                   >
-                     저장
-                   </button>
-                   <button
-                     type="button"
-                     onClick={() => {
-                       // 가격 정보 초기화
-                       setFormData(prev => ({
-                         ...prev,
-                         adultProductPrice: 0,
-                         childProductPrice: 0,
-                         infantProductPrice: 0,
-                         requiredOptions: {},
-                         couponCode: '',
-                         couponDiscount: 0,
-                         additionalDiscount: 0,
-                         additionalCost: 0,
-                         cardFee: 0,
-                         tax: 0,
-                         prepaymentCost: 0,
-                         prepaymentTip: 0,
-                         selectedOptionalOptions: {},
-                         depositAmount: 0,
-                         isPrivateTour: false,
-                         privateTourAdditionalCost: 0,
-                         productRequiredOptions: []
-                       }))
-                     }}
-                     className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
-                   >
-                     초기화
-                   </button>
-                 </div>
-               </div>
-
-               <div className="grid grid-cols-3 gap-3">
-                 {/* 상품 가격 */}
-                 <div className="bg-white p-3 rounded border border-gray-200">
-                   <h4 className="text-sm font-medium text-gray-900 mb-2">상품가격</h4>
-                   <div className="space-y-1">
-                     <div className="flex items-center justify-between text-xs">
-                       <span className="text-gray-600">성인</span>
-                       <div className="flex items-center space-x-1">
-                         <span className="font-medium">$</span>
-                         <input
-                           type="number"
-                           value={formData.adultProductPrice}
-                           onChange={(e) => setFormData({ ...formData, adultProductPrice: Number(e.target.value) || 0 })}
-                           className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                           step="0.01"
-                         />
-                         <span className="text-gray-500">x{formData.adults}</span>
-                         <span className="font-medium">${(formData.adultProductPrice * formData.adults).toFixed(2)}</span>
-                       </div>
-                     </div>
-                     <div className="flex items-center justify-between text-xs">
-                       <span className="text-gray-600">아동</span>
-                       <div className="flex items-center space-x-1">
-                         <span className="font-medium">$</span>
-                         <input
-                           type="number"
-                           value={formData.childProductPrice}
-                           onChange={(e) => setFormData({ ...formData, childProductPrice: Number(e.target.value) || 0 })}
-                           className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                           step="0.01"
-                         />
-                         <span className="text-gray-500">x{formData.child}</span>
-                         <span className="font-medium">${(formData.childProductPrice * formData.child).toFixed(2)}</span>
-                       </div>
-                     </div>
-                     <div className="flex items-center justify-between text-xs">
-                       <span className="text-gray-600">유아</span>
-                       <div className="flex items-center space-x-1">
-                         <span className="font-medium">$</span>
-                         <input
-                           type="number"
-                           value={formData.infantProductPrice}
-                           onChange={(e) => setFormData({ ...formData, infantProductPrice: Number(e.target.value) || 0 })}
-                           className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                           step="0.01"
-                         />
-                         <span className="text-gray-500">x{formData.infant}</span>
-                         <span className="font-medium">${(formData.infantProductPrice * formData.infant).toFixed(2)}</span>
-                       </div>
-                     </div>
-                     <div className="border-t pt-1 flex justify-between items-center">
-                       <span className="text-sm font-medium text-gray-900">합계</span>
-                       <span className="text-sm font-bold text-blue-600">${formData.productPriceTotal.toFixed(2)}</span>
-                     </div>
-                   </div>
-                 </div>
-
-                 {/* 필수 옵션 */}
-                 <div className="bg-white p-3 rounded border border-gray-200">
-                   <h4 className="text-sm font-medium text-gray-900 mb-2">필수옵션</h4>
-                   <div className="space-y-2">
-                     {formData.productRequiredOptions.map((productOption) => {
-                       const currentOption = formData.requiredOptions[productOption.id]
-                       if (!currentOption) return null
-                       
-                       return (
-                         <div key={productOption.id} className="border border-gray-200 rounded p-2">
-                           <div className="text-xs font-medium text-gray-700 mb-1">
-                             {productOption.name}
-                           </div>
-                           
-                           {/* 옵션 선택지 */}
-                           {productOption.product_option_choices && productOption.product_option_choices.length > 1 && (
-                             <div className="mb-2">
-                               <select
-                                 value={currentOption.choiceId}
-                                 onChange={(e) => {
-                                   const selectedChoice = productOption.product_option_choices.find(
-                                     (choice: ProductOptionChoice) => choice.id === e.target.value
-                                   )
-                                   if (selectedChoice) {
-                                     setFormData(prev => ({
-                                       ...prev,
-                                       requiredOptions: {
-                                         ...prev.requiredOptions,
-                                         [productOption.id]: {
-                                           choiceId: selectedChoice.id,
-                                           adult: selectedChoice.adult_price_adjustment || 0,
-                                           child: selectedChoice.child_price_adjustment || 0,
-                                           infant: selectedChoice.infant_price_adjustment || 0
-                                         }
-                                       },
-                                       selectedOptions: {
-                                         ...prev.selectedOptions,
-                                         [productOption.id]: [selectedChoice.id]
-                                       }
-                                     }))
-                                   }
-                                 }}
-                                 className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                               >
-                                 {productOption.product_option_choices.map((choice: ProductOptionChoice) => (
-                                   <option key={choice.id} value={choice.id}>
-                                     {choice.name} (${choice.adult_price_adjustment})
-                                   </option>
-                                 ))}
-                               </select>
-                             </div>
-                           )}
-                           
-                           {/* 가격 표시 */}
-                           <div className="text-xs space-y-1">
-                             <div className="flex justify-between">
-                               <span className="text-gray-600">성인</span>
-                               <span className="font-medium">${(currentOption.adult * formData.adults).toFixed(2)}</span>
-                             </div>
-                             <div className="flex justify-between">
-                               <span className="text-gray-600">아동</span>
-                               <span className="font-medium">${(currentOption.child * formData.child).toFixed(2)}</span>
-                             </div>
-                             <div className="flex justify-between">
-                               <span className="text-gray-600">유아</span>
-                               <span className="font-medium">${(currentOption.infant * formData.infant).toFixed(2)}</span>
-                             </div>
-                           </div>
-                         </div>
-                       )
-                     })}
-                     
-                     {formData.productRequiredOptions.length === 0 && (
-                       <div className="text-center py-2 text-gray-500 text-xs">
-                         상품 선택 시 표시
-                       </div>
-                     )}
-                     
-                     <div className="border-t pt-1 flex justify-between items-center">
-                       <span className="text-sm font-medium text-gray-900">총합</span>
-                       <span className="text-sm font-bold text-green-600">+${formData.requiredOptionTotal.toFixed(2)}</span>
-                     </div>
-                   </div>
-                 </div>
-
-                 {/* 소계 */}
-                 <div className="bg-blue-50 p-3 rounded border border-blue-200">
-                   <div className="flex justify-between items-center">
-                     <span className="text-sm font-medium text-blue-900">소계</span>
-                     <span className="text-lg font-bold text-blue-900">${formData.subtotal.toFixed(2)}</span>
-                   </div>
-                 </div>
-
-                 {/* 할인 및 추가 비용 */}
-                 <div className="bg-white p-3 rounded border border-gray-200">
-                   <h4 className="text-sm font-medium text-gray-900 mb-2">할인/추가비용</h4>
-                   <div className="space-y-2">
-                     {/* 쿠폰 */}
-                     <div>
-                       <label className="block text-xs text-gray-600 mb-1">쿠폰</label>
-                       <select
-                         value={formData.couponCode}
-                         onChange={(e) => {
-                           const selectedCouponCode = e.target.value
-                           const selectedCoupon = coupons.find(coupon => coupon.coupon_code === selectedCouponCode)
-                           
-                           const subtotal = calculateProductPriceTotal() + calculateRequiredOptionTotal()
-                           const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
-                           
-                           setFormData({ 
-                             ...formData, 
-                             couponCode: selectedCouponCode,
-                             couponDiscount: couponDiscount
-                           })
-                         }}
-                         className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                       >
-                         <option value="">쿠폰 선택</option>
-                         {coupons.map((coupon) => {
-                           let discountText = '할인 정보 없음'
-                           if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
-                             discountText = `${coupon.percentage_value}%`
-                           } else if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
-                             discountText = `$${coupon.fixed_value}`
-                           }
-                           
-                           return (
-                             <option key={coupon.id} value={coupon.coupon_code}>
-                               {coupon.coupon_code} ({discountText})
-                             </option>
-                           )
-                         })}
-                       </select>
-                       {formData.couponCode && (
-                         <div className="mt-1 text-xs text-red-600">
-                           할인: -${formData.couponDiscount.toFixed(2)}
-                         </div>
-                       )}
-                     </div>
-
-                     {/* 추가 할인 및 비용 */}
-                     <div className="grid grid-cols-2 gap-1">
-                       <div>
-                         <label className="block text-xs text-gray-600 mb-1">추가할인</label>
-                         <input
-                           type="number"
-                           value={formData.additionalDiscount}
-                           onChange={(e) => setFormData({ ...formData, additionalDiscount: Number(e.target.value) || 0 })}
-                           className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                           step="0.01"
-                         />
-                       </div>
-                       <div>
-                         <label className="block text-xs text-gray-600 mb-1">추가비용</label>
-                         <input
-                           type="number"
-                           value={formData.additionalCost}
-                           onChange={(e) => setFormData({ ...formData, additionalCost: Number(e.target.value) || 0 })}
-                           className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                           step="0.01"
-                         />
-                       </div>
-                     </div>
-
-                     <div className="grid grid-cols-2 gap-1">
-                       <div>
-                         <label className="block text-xs text-gray-600 mb-1">세금</label>
-                         <input
-                           type="number"
-                           value={formData.tax}
-                           onChange={(e) => setFormData({ ...formData, tax: Number(e.target.value) || 0 })}
-                           className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                           step="0.01"
-                         />
-                       </div>
-                       <div>
-                         <label className="block text-xs text-gray-600 mb-1">카드수수료</label>
-                         <input
-                           type="number"
-                           value={formData.cardFee}
-                           onChange={(e) => setFormData({ ...formData, cardFee: Number(e.target.value) || 0 })}
-                           className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                           step="0.01"
-                         />
-                       </div>
-                     </div>
-                   </div>
-                 </div>
-
-                 {/* 선택 옵션 */}
-                 <div className="bg-white p-3 rounded border border-gray-200">
-                   <h4 className="text-sm font-medium text-gray-900 mb-2">선택옵션</h4>
-                   <div className="space-y-2">
-                     {Object.entries(formData.selectedOptionalOptions).map(([optionId, option]) => {
-                       const optionalOptions = getOptionalOptionsForProduct(formData.productId)
-                       return (
-                         <div key={optionId} className="border border-gray-200 rounded p-2">
-                           <div className="flex items-center justify-between mb-1">
-                             <span className="text-xs font-medium text-gray-700">선택 옵션</span>
-                             <button
-                               type="button"
-                               onClick={() => {
-                                 setFormData(prev => {
-                                   const newOptions = { ...prev.selectedOptionalOptions }
-                                   delete newOptions[optionId]
-                                   return { ...prev, selectedOptionalOptions: newOptions }
-                                 })
-                               }}
-                               className="text-red-500 hover:text-red-700 text-xs"
-                             >
-                               삭제
-                             </button>
-                           </div>
-                           <div className="space-y-1">
-                             <select
-                               value={option.choiceId}
-                               onChange={(e) => {
-                                 const selectedChoiceId = e.target.value
-                                 const selectedOption = optionalOptions.find((opt: ProductOption) => 
-                                   opt.product_option_choices?.some((choice: ProductOptionChoice) => choice.id === selectedChoiceId)
-                                 )
-                                 const selectedChoice = selectedOption?.product_option_choices?.find(
-                                   (choice: ProductOptionChoice) => choice.id === selectedChoiceId
-                                 )
-                                 
-                                 setFormData(prev => ({
-                                   ...prev,
-                                   selectedOptionalOptions: {
-                                     ...prev.selectedOptionalOptions,
-                                     [optionId]: { 
-                                       ...option, 
-                                       choiceId: selectedChoiceId,
-                                       price: selectedChoice?.adult_price_adjustment || 0
-                                     }
-                                   }
-                                 }))
-                               }}
-                               className="w-full px-1 py-0.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                             >
-                               <option value="">옵션 선택</option>
-                               {optionalOptions.map((productOption: ProductOption) => 
-                                 productOption.product_option_choices?.map((choice: ProductOptionChoice) => (
-                                   <option key={choice.id} value={choice.id}>
-                                     {productOption.name} - {choice.name} (${choice.adult_price_adjustment})
-                                   </option>
-                                 ))
-                               )}
-                             </select>
-                             
-                             <div className="flex items-center space-x-1">
-                               <input
-                                 type="number"
-                                 min="0"
-                                 value={option.quantity}
-                                 onChange={(e) => setFormData(prev => ({
-                                   ...prev,
-                                   selectedOptionalOptions: {
-                                     ...prev.selectedOptionalOptions,
-                                     [optionId]: {
-                                       ...prev.selectedOptionalOptions[optionId],
-                                       quantity: Number(e.target.value) || 0
-                                     }
-                                   }
-                                 }))}
-                                 className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                                 placeholder="수량"
-                               />
-                               <span className="text-xs text-gray-600">x ${option.price}</span>
-                               <span className="text-xs font-medium">= ${(option.quantity * option.price).toFixed(2)}</span>
-                             </div>
-                           </div>
-                         </div>
-                       )
-                     })}
-                     
-                     <button
-                       type="button"
-                       onClick={() => {
-                         if (!formData.productId) {
-                           alert('먼저 상품을 선택해주세요.')
-                           return
-                         }
-                         
-                         const optionalOptions = getOptionalOptionsForProduct(formData.productId)
-                         if (optionalOptions.length === 0) {
-                           alert('이 상품에는 선택 옵션이 없습니다.')
-                           return
-                         }
-                         
-                         const newOptionId = `selected_${Date.now()}`
-                         setFormData(prev => ({
-                           ...prev,
-                           selectedOptionalOptions: {
-                             ...prev.selectedOptionalOptions,
-                             [newOptionId]: { choiceId: '', quantity: 0, price: 0 }
-                           }
-                         }))
-                       }}
-                       className="w-full px-2 py-1 border border-dashed border-gray-300 rounded text-xs text-gray-600 hover:border-blue-400 hover:text-blue-600"
-                     >
-                       + 선택 옵션 추가
-                     </button>
-                   </div>
-                 </div>
-
-                 {/* 총 가격 */}
-                 <div className="bg-yellow-50 p-3 rounded border border-yellow-200">
-                   <div className="space-y-2">
-                     <div className="flex justify-between items-center">
-                       <span className="text-sm font-bold text-yellow-900">총 가격</span>
-                       <span className="text-lg font-bold text-yellow-900">${formData.totalPrice.toFixed(2)}</span>
-                     </div>
-                     <div className="flex justify-between items-center">
-                       <span className="text-xs text-yellow-800">보증금</span>
-                       <div className="flex items-center space-x-1">
-                         <input
-                           type="number"
-                           value={formData.depositAmount}
-                           onChange={(e) => setFormData({ ...formData, depositAmount: Number(e.target.value) || 0 })}
-                           className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                           step="0.01"
-                         />
-                       </div>
-                     </div>
-                     <div className="flex justify-between items-center">
-                       <span className="text-xs text-yellow-800">잔액</span>
-                       <span className="text-sm font-bold text-yellow-800">${formData.balanceAmount.toFixed(2)}</span>
-                     </div>
-                   </div>
-                 </div>
-                 </div>
-               </div>
-               </div>
-             </div>
-              
-              {/* 3열: 상품 선택 (카테고리, 서브카테고리별 탭) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.product')}</label>
-                <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  {/* 상품 카테고리별 탭 */}
-                  <div className="flex bg-gray-50">
-                    {Array.from(new Set(products.map(p => p.category))).filter(Boolean).map((category) => (
-                      <button
-                        key={category}
-                        type="button"
-                        onClick={() => setFormData(prev => ({ 
-                          ...prev, 
-                          selectedProductCategory: category || '',
-                          selectedProductSubCategory: '' // 카테고리 변경 시 서브카테고리 초기화
-                        }))}
-                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                          (formData.selectedProductCategory || '') === category
-                            ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                            : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                        }`}
-                      >
-                        {category}
-                      </button>
-                    ))}
-                  </div>
-                  
-                  {/* 서브카테고리 선택 (카테고리가 선택된 경우에만 표시) */}
-                  {formData.selectedProductCategory && (
-                    <div className="flex bg-gray-100 border-b border-gray-200">
-                      <button
-                        type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, selectedProductSubCategory: '' }))}
-                        className={`px-3 py-2 text-sm font-medium transition-colors ${
-                          !formData.selectedProductSubCategory
-                            ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                            : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                        }`}
-                      >
-                        {t('form.allCategories')}
-                      </button>
-                      {Array.from(new Set(
-                        products
-                          .filter(p => p.category === formData.selectedProductCategory && p.sub_category)
-                          .map(p => p.sub_category)
-                      )).filter(Boolean).map((subCategory) => (
-                        <button
-                          key={subCategory}
-                          type="button"
-                          onClick={() => setFormData(prev => ({ ...prev, selectedProductSubCategory: subCategory || '' }))}
-                          className={`px-3 py-2 text-sm font-medium transition-colors ${
-                            formData.selectedProductSubCategory === subCategory
-                              ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                              : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                          }`}
-                        >
-                          {subCategory}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  
-                  {/* 상품명 검색 */}
-                  <div className="p-3 bg-white border-b border-gray-200">
-                    <input
-                      type="text"
-                      placeholder="상품명 검색..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      onChange={(e) => setFormData(prev => ({ ...prev, productSearch: e.target.value }))}
-                    />
-                  </div>
-                  
-                  {/* 상품 선택 리스트 */}
-                  <div className="max-h-80 overflow-y-auto">
-                    {products
-                      .filter(product => {
-                        const matchesCategory = !formData.selectedProductCategory || product.category === formData.selectedProductCategory
-                        const matchesSubCategory = !formData.selectedProductSubCategory || product.sub_category === formData.selectedProductSubCategory
-                        const matchesSearch = !formData.productSearch || 
-                          product.name?.toLowerCase().includes(formData.productSearch.toLowerCase()) ||
-                          product.sub_category?.toLowerCase().includes(formData.productSearch.toLowerCase())
-                        return matchesCategory && matchesSubCategory && matchesSearch
-                      })
-                      .map(product => (
-                        <div
-                          key={product.id}
-                          onClick={async () => {
-                            const newProductId = formData.productId === product.id ? '' : product.id
-                            setFormData(prev => ({ 
-                            ...prev, 
-                              productId: newProductId,
-                            selectedOptions: {} // 상품 변경 시 선택된 옵션 초기화
-                            }))
-                            
-                            // 상품 선택 시 필수 옵션 자동 로드
-                            if (newProductId) {
-                              await loadRequiredOptionsForProduct(newProductId)
-                            } else {
-                              setFormData(prev => ({ 
-                                ...prev, 
-                                requiredOptions: {},
-                                selectedOptions: {} // 상품 변경 시 선택된 옵션도 초기화
-                              }))
-                            }
-                          }}
-                          className={`p-3 cursor-pointer border-b border-gray-100 last:border-b-0 hover:bg-gray-50 ${
-                            formData.productId === product.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-                          }`}
-                        >
-                          <div className="text-sm text-gray-900">{product.name}</div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-                
-                {/* 선택된 상품 정보 표시 */}
-                {formData.productId && (
-                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h4 className="text-sm font-semibold text-blue-800 mb-2">{t('form.selectedProduct')}</h4>
-                    {(() => {
-                      const selectedProduct = products.find(p => p.id === formData.productId)
-                      return selectedProduct ? (
-                        <div className="space-y-2">
-                          <div className="font-medium text-gray-900">{selectedProduct.name}</div>
-                          <div className="flex items-center gap-2 text-sm">
-                            {selectedProduct.category && (
-                              <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
-                                {selectedProduct.category}
-                              </span>
-                            )}
-                            {selectedProduct.sub_category && (
-                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                                {selectedProduct.sub_category}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ) : null
-                    })()}
-                  </div>
-                )}
-                
-                {/* 선택된 상품의 필수 옵션 표시 */}
-                {formData.productId && (
-                  <div className="mt-4">
-                    
-                                         <div className="space-y-4">
-                       {Object.entries(getRequiredOptionsForProduct(formData.productId)).map(([category, options]) => (
-                         <div key={category} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                           <h4 className="text-sm font-semibold text-gray-800 mb-3 border-b pb-2">
-                             {category} 카테고리 (하나 선택 필수)
-                           </h4>
-                           <div className="space-y-3">
-                             {options.map((option) => {
-                               const choices = getChoicesForOption(option.id)
-                               return choices.map((choice: ProductOptionChoice) => (
-                                 <div 
-                                   key={choice.id} 
-                                   className={`border rounded-lg p-3 cursor-pointer transition-all duration-200 ${
-                                     formData.selectedOptions[option.id]?.includes(choice.id)
-                                       ? 'border-blue-500 bg-blue-50 shadow-md'
-                                       : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300'
-                                   }`}
-                                                                      onClick={() => {
-                                           // 같은 카테고리의 다른 옵션들은 선택 해제
-                                           const updatedSelectedOptions = { ...formData.selectedOptions }
-                                           options.forEach(opt => {
-                                             if (opt.id !== option.id) {
-                                               updatedSelectedOptions[opt.id] = []
-                                             }
-                                           })
-
-                                     // 가격 정보의 필수 옵션도 함께 업데이트
-                                     const updatedRequiredOptions = { ...formData.requiredOptions }
-                                     options.forEach(opt => {
-                                       if (opt.id !== option.id) {
-                                         delete updatedRequiredOptions[opt.id]
-                                       }
-                                     })
-
-                                     // 선택된 choice의 가격 정보를 가격 정보 섹션에 반영
-                                     updatedRequiredOptions[option.id] = {
-                                       choiceId: choice.id,
-                                       adult: choice.adult_price_adjustment || 0,
-                                       child: choice.child_price_adjustment || 0,
-                                       infant: choice.infant_price_adjustment || 0
-                                     }
-                                           
-                                           setFormData(prev => ({
-                                             ...prev,
-                                             selectedOptions: {
-                                               ...updatedSelectedOptions,
-                                               [option.id]: [choice.id]
-                                       },
-                                       requiredOptions: updatedRequiredOptions
-                                     }))
-                                   }}
-                                 >
-                                   <div className="flex items-center space-x-3 mb-2">
-                                     <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                                       formData.selectedOptions[option.id]?.includes(choice.id)
-                                         ? 'border-blue-500 bg-blue-500'
-                                         : 'border-gray-300'
-                                     }`}>
-                                       {formData.selectedOptions[option.id]?.includes(choice.id) && (
-                                         <div className="w-2 h-2 bg-white rounded-full"></div>
-                                       )}
-                                     </div>
-                                     <div className="flex-1">
-                                                                               <div className="text-sm font-medium text-gray-900">
-                                          {choice.name}
-                                        </div>
-                                     </div>
-                                   </div>
-                                   
-                                   {/* 요금 입력칸 */}
-                                   <div className="grid grid-cols-3 gap-2">
-                                     <div>
-                                       <label className="block text-xs text-gray-600 mb-1">성인</label>
-                                       <input
-                                         type="number"
-                                         placeholder="0"
-                                         defaultValue={choice.adult_price_adjustment || 0}
-                                         onChange={(e) => {
-                                           const value = Number(e.target.value) || 0
-                                           setFormData(prev => ({
-                                             ...prev,
-                                             selectedOptionPrices: {
-                                               ...prev.selectedOptionPrices,
-                                               [`${option.id}_${choice.id}_adult`]: value
-                                             }
-                                           }))
-                                         }}
-                                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                       />
-                                     </div>
-                                     <div>
-                                       <label className="block text-xs text-gray-600 mb-1">아동</label>
-                                       <input
-                                         type="number"
-                                         placeholder="0"
-                                         defaultValue={choice.child_price_adjustment || 0}
-                                         onChange={(e) => {
-                                           const value = Number(e.target.value) || 0
-                                           setFormData(prev => ({
-                                             ...prev,
-                                             selectedOptionPrices: {
-                                               ...prev.selectedOptionPrices,
-                                               [`${option.id}_${choice.id}_child`]: value
-                                             }
-                                           }))
-                                         }}
-                                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                       />
-                                     </div>
-                                     <div>
-                                       <label className="block text-xs text-gray-600 mb-1">유아</label>
-                                       <input
-                                         type="number"
-                                         placeholder="0"
-                                         defaultValue={choice.infant_price_adjustment || 0}
-                                         onChange={(e) => {
-                                           const value = Number(e.target.value) || 0
-                                           setFormData(prev => ({
-                                             ...prev,
-                                             selectedOptionPrices: {
-                                               ...prev.selectedOptionPrices,
-                                               [`${option.id}_${choice.id}_infant`]: value
-                                             }
-                                           }))
-                                         }}
-                                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                       />
-                                     </div>
-                                   </div>
-                                 </div>
-                               ))
-                             })}
-                           </div>
-                         </div>
-                       ))}
-                       
-                       {Object.keys(getRequiredOptionsForProduct(formData.productId)).length === 0 && (
-                         <div className="text-sm text-gray-500 text-center py-4 border border-gray-200 rounded-lg">
-                           {t('form.noRequiredOptions')}
-                         </div>
-                       )}
-                     </div>
-                  </div>
-                )}
-              </div>
-              
-              {/* 4열: 채널 선택 (타입별 탭) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.channel')}</label>
-                <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  {/* 채널 타입별 탭 */}
-                  <div className="flex bg-gray-50">
-                    {['self', 'ota', 'partner'].map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, selectedChannelType: type as 'ota' | 'self' | 'partner' }))}
-                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                          formData.selectedChannelType === type
-                            ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                            : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                        }`}
-                      >
-                        {type === 'self' ? '자체채널' : type === 'ota' ? 'OTA' : '제휴사'}
-                      </button>
-                    ))}
-                  </div>
-                  
-                  {/* 채널명 검색 */}
-                  <div className="p-3 bg-white border-b border-gray-200">
-                    <input
-                      type="text"
-                      placeholder="채널명 검색..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      onChange={(e) => setFormData(prev => ({ ...prev, channelSearch: e.target.value }))}
-                    />
-                  </div>
-                  
-                  {/* 채널 선택 리스트 */}
-                  <div className="max-h-80 overflow-y-auto">
-                    {channels
-                      .filter(channel => {
-                        const matchesType = channel.type === formData.selectedChannelType
-                        const matchesSearch = !formData.channelSearch || 
-                          channel.name?.toLowerCase().includes(formData.channelSearch.toLowerCase())
-                        return matchesType && matchesSearch
-                      })
-                      .map(channel => (
-                        <div
-                          key={channel.id}
-                          onClick={() => setFormData(prev => ({ 
-                            ...prev, 
-                            channelId: prev.channelId === channel.id ? '' : channel.id 
-                          }))}
-                          className={`p-3 cursor-pointer border-b border-gray-100 last:border-b-0 hover:bg-gray-50 ${
-                            formData.channelId === channel.id ? 'bg-blue-500 border-l-4 border-l-blue-500' : ''
-                          }`}
-                        >
-                                                     <div className="text-sm text-gray-900">{channel.name}</div>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-                
-                
-              </div>
-           </div>
-
-                                
-
-                     <div className="flex space-x-3 pt-4">
-             <button
-               type="submit"
-               className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
-             >
-               {reservation ? tCommon('edit') : tCommon('add')}
-             </button>
-             <button
-               type="button"
-               onClick={onCancel}
-               className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
-             >
-               {tCommon('cancel')}
-             </button>
-             {reservation && (
-               <button
-                 type="button"
-                 onClick={() => {
-                   if (confirm(t('deleteConfirm'))) {
-                     onDelete(reservation.id);
-                     onCancel();
-                   }
-                 }}
-                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-               >
-                 <Trash2 size={16} className="inline mr-2" />
-                 {tCommon('delete')}
-               </button>
-             )}
-           </div>
-        </form>
-      </div>
+      )}
 
       {/* 고객 추가 모달 */}
       {showCustomerForm && (
@@ -2474,8 +552,69 @@ function ReservationForm({ reservation, customers, products, channels, productOp
           onCancel={() => setShowCustomerForm(false)}
         />
       )}
+
+      {/* 고객 수정 모달 */}
+      {editingCustomer && (
+        <CustomerForm
+          customer={editingCustomer}
+          channels={channels}
+          onSubmit={async (customerData) => {
+            try {
+              // Supabase에 고객 정보 업데이트
+              const { error } = await supabase
+                .from('customers')
+                .update(customerData)
+                .eq('id', editingCustomer.id)
+
+              if (error) {
+                console.error('Error updating customer:', error)
+                alert('고객 정보 수정 중 오류가 발생했습니다: ' + error.message)
+                return
+              }
+
+              // 성공 시 고객 목록 새로고침
+              await refreshCustomers()
+              setEditingCustomer(null)
+              alert('고객 정보가 성공적으로 수정되었습니다!')
+            } catch (error) {
+              console.error('Error updating customer:', error)
+              alert('고객 정보 수정 중 오류가 발생했습니다.')
+            }
+          }}
+          onCancel={() => setEditingCustomer(null)}
+          onDelete={async () => {
+            if (confirm('정말로 이 고객을 삭제하시겠습니까?')) {
+              try {
+                const { error } = await supabase
+                  .from('customers')
+                  .delete()
+                  .eq('id', editingCustomer.id)
+
+                if (error) {
+                  console.error('Error deleting customer:', error)
+                  alert('고객 삭제 중 오류가 발생했습니다: ' + error.message)
+                  return
+                }
+
+                // 성공 시 고객 목록 새로고침
+                await refreshCustomers()
+                setEditingCustomer(null)
+                alert('고객이 성공적으로 삭제되었습니다!')
+              } catch (error) {
+                console.error('Error deleting customer:', error)
+                alert('고객 삭제 중 오류가 발생했습니다.')
+              }
+            }
+          }}
+        />
+      )}
+
+      {/* 가격 정보 모달 */}
+      <PricingInfoModal
+        reservation={pricingModalReservation}
+        isOpen={showPricingModal}
+        onClose={handleClosePricingModal}
+      />
     </div>
   )
 }
-
-

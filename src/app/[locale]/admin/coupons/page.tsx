@@ -4,9 +4,22 @@ import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Plus, Edit, Trash2, Search, Filter } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import type { Database } from '@/lib/supabase'
-
-type Coupon = Database['public']['Tables']['coupons']['Row']
+// 새로운 쿠폰 스키마에 맞는 타입 정의
+type Coupon = {
+  id: string
+  coupon_code: string | null
+  discount_type: string | null
+  percentage_value: number | null
+  fixed_value: number | null
+  status: string | null
+  description: string | null
+  start_date: string | null
+  end_date: string | null
+  channel_id: string | null
+  product_id: string | null
+  created_at: string | null
+  updated_at: string | null
+}
 
 export default function CouponsPage() {
   const t = useTranslations('admin')
@@ -41,11 +54,25 @@ export default function CouponsPage() {
   }, [])
 
   // 쿠폰 추가
-  const handleAddCoupon = async (couponData: Omit<Coupon, 'id' | 'created_at'>) => {
+  const handleAddCoupon = async (id: string, couponData: Omit<Coupon, 'id' | 'created_at'>) => {
     try {
+      // null 값들을 undefined로 변환하여 데이터베이스 스키마와 일치시킴
+      const cleanData = {
+        coupon_code: couponData.coupon_code || null,
+        discount_type: couponData.discount_type || null,
+        percentage_value: couponData.percentage_value || null,
+        fixed_value: couponData.fixed_value || null,
+        status: couponData.status || 'active',
+        description: couponData.description || null,
+        start_date: couponData.start_date || null,
+        end_date: couponData.end_date || null,
+        channel_id: couponData.channel_id || null,
+        product_id: couponData.product_id || null
+      }
+
       const { error } = await supabase
         .from('coupons')
-        .insert([couponData])
+        .insert([cleanData])
 
       if (error) throw error
       
@@ -59,9 +86,23 @@ export default function CouponsPage() {
   // 쿠폰 수정
   const handleEditCoupon = async (id: string, couponData: Partial<Omit<Coupon, 'id' | 'created_at'>>) => {
     try {
+      // null 값들을 적절히 처리하여 데이터베이스 스키마와 일치시킴
+      const cleanData = {
+        coupon_code: couponData.coupon_code || null,
+        discount_type: couponData.discount_type || null,
+        percentage_value: couponData.percentage_value || null,
+        fixed_value: couponData.fixed_value || null,
+        status: couponData.status || 'active',
+        description: couponData.description || null,
+        start_date: couponData.start_date || null,
+        end_date: couponData.end_date || null,
+        channel_id: couponData.channel_id || null,
+        product_id: couponData.product_id || null
+      }
+
       const { error } = await supabase
         .from('coupons')
-        .update(couponData)
+        .update(cleanData)
         .eq('id', id)
 
       if (error) throw error
@@ -93,7 +134,7 @@ export default function CouponsPage() {
 
   // 필터링된 쿠폰 목록
   const filteredCoupons = coupons.filter(coupon => {
-    const matchesSearch = coupon.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = (coupon.coupon_code && coupon.coupon_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
                          (coupon.description && coupon.description.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesStatus = statusFilter === 'all' || coupon.status === statusFilter
     
@@ -167,13 +208,13 @@ export default function CouponsPage() {
                     설명
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    고정 할인
+                    할인 유형
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    퍼센트 할인
+                    할인 값
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    할인 우선순위
+                    유효 기간
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     상태
@@ -191,20 +232,30 @@ export default function CouponsPage() {
                   <tr key={coupon.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="font-mono text-sm font-medium text-gray-900">
-                        {coupon.code}
+                        {coupon.coupon_code || '-'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {coupon.description || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {coupon.fixed_discount_amount > 0 ? `$${coupon.fixed_discount_amount}` : '-'}
+                      {coupon.discount_type === 'percentage' ? '퍼센트 할인' : 
+                       coupon.discount_type === 'fixed' ? '고정 할인' : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {coupon.percentage_discount > 0 ? `${coupon.percentage_discount}%` : '-'}
+                      {coupon.discount_type === 'percentage' && coupon.percentage_value ? 
+                        `${coupon.percentage_value}%` :
+                        coupon.discount_type === 'fixed' && coupon.fixed_value ? 
+                        `$${coupon.fixed_value}` : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {coupon.discount_priority === 'fixed_first' ? '고정 할인 우선' : '퍼센트 할인 우선'}
+                      {coupon.start_date && coupon.end_date ? 
+                        `${new Date(coupon.start_date).toLocaleDateString('ko-KR')} ~ ${new Date(coupon.end_date).toLocaleDateString('ko-KR')}` :
+                        coupon.start_date ? 
+                        `${new Date(coupon.start_date).toLocaleDateString('ko-KR')} ~` :
+                        coupon.end_date ?
+                        `~ ${new Date(coupon.end_date).toLocaleDateString('ko-KR')}` :
+                        '무제한'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -216,7 +267,7 @@ export default function CouponsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(coupon.created_at).toLocaleDateString('ko-KR')}
+                      {coupon.created_at ? new Date(coupon.created_at).toLocaleDateString('ko-KR') : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center space-x-2">
@@ -269,22 +320,38 @@ interface CouponModalProps {
 
 function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
   const [formData, setFormData] = useState({
-    code: coupon?.code || '',
+    coupon_code: coupon?.coupon_code || '',
     description: coupon?.description || '',
-    fixed_discount_amount: coupon?.fixed_discount_amount || 0,
-    percentage_discount: coupon?.percentage_discount || 0,
-    discount_priority: coupon?.discount_priority || 'fixed_first',
-    status: coupon?.status || 'active'
+    discount_type: coupon?.discount_type || 'percentage',
+    percentage_value: coupon?.percentage_value || 0,
+    fixed_value: coupon?.fixed_value || 0,
+    status: coupon?.status || 'active',
+    start_date: coupon?.start_date || '',
+    end_date: coupon?.end_date || '',
+    channel_id: coupon?.channel_id || '',
+    product_id: coupon?.product_id || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // 빈 문자열을 null로 변환
+    const processedData = {
+      ...formData,
+      coupon_code: formData.coupon_code || null,
+      description: formData.description || null,
+      start_date: formData.start_date || null,
+      end_date: formData.end_date || null,
+      channel_id: formData.channel_id || null,
+      product_id: formData.product_id || null
+    }
+    
     if (coupon) {
       // 편집 모드: id와 함께 전체 데이터 전달
-      onSave(coupon.id, formData)
+      onSave(coupon.id, processedData)
     } else {
       // 추가 모드: id 없이 데이터만 전달
-      onSave('', formData)
+      onSave('', processedData)
     }
   }
 
@@ -303,8 +370,8 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
             <input
               type="text"
               required
-              value={formData.code}
-              onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
+              value={formData.coupon_code}
+              onChange={(e) => setFormData(prev => ({ ...prev, coupon_code: e.target.value }))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="예: WELCOME20"
             />
@@ -325,20 +392,20 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              할인 우선순위
+              할인 유형 *
             </label>
             <select
-              value={formData.discount_priority}
-              onChange={(e) => setFormData(prev => ({ ...prev, discount_priority: e.target.value as 'fixed_first' | 'percentage_first' }))}
+              value={formData.discount_type}
+              onChange={(e) => setFormData(prev => ({ ...prev, discount_type: e.target.value as 'percentage' | 'fixed' }))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="fixed_first">고정 할인 우선</option>
-              <option value="percentage_first">퍼센트 할인 우선</option>
+              <option value="percentage">퍼센트 할인</option>
+              <option value="fixed">고정 할인</option>
             </select>
           </div>
 
-          {/* 할인 우선순위에 따른 동적 입력칸 표시 */}
-          {formData.discount_priority === 'fixed_first' ? (
+          {/* 할인 유형에 따른 동적 입력칸 표시 */}
+          {formData.discount_type === 'fixed' ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 고정 할인 금액 ($) *
@@ -348,14 +415,11 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
                 required
                 min="0"
                 step="0.01"
-                value={formData.fixed_discount_amount}
-                onChange={(e) => setFormData(prev => ({ ...prev, fixed_discount_amount: parseFloat(e.target.value) || 0 }))}
+                value={formData.fixed_value}
+                onChange={(e) => setFormData(prev => ({ ...prev, fixed_value: parseFloat(e.target.value) || 0 }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="20.00"
               />
-              <p className="mt-1 text-sm text-gray-500">
-                고정 할인 우선이므로 고정 할인 금액을 입력해주세요
-              </p>
             </div>
           ) : (
             <div>
@@ -368,16 +432,64 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
                 min="0"
                 max="100"
                 step="0.01"
-                value={formData.percentage_discount}
-                onChange={(e) => setFormData(prev => ({ ...prev, percentage_discount: parseFloat(e.target.value) || 0 }))}
+                value={formData.percentage_value}
+                onChange={(e) => setFormData(prev => ({ ...prev, percentage_value: parseFloat(e.target.value) || 0 }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="5.00"
               />
-              <p className="mt-1 text-sm text-gray-500">
-                퍼센트 할인 우선이므로 퍼센트 할인 비율을 입력해주세요
-              </p>
             </div>
           )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                시작일
+              </label>
+              <input
+                type="date"
+                value={formData.start_date}
+                onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                종료일
+              </label>
+              <input
+                type="date"
+                value={formData.end_date}
+                onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              채널 ID
+            </label>
+            <input
+              type="text"
+              value={formData.channel_id}
+              onChange={(e) => setFormData(prev => ({ ...prev, channel_id: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="특정 채널에만 적용 (선택사항)"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              상품 ID
+            </label>
+            <input
+              type="text"
+              value={formData.product_id}
+              onChange={(e) => setFormData(prev => ({ ...prev, product_id: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="특정 상품에만 적용 (선택사항)"
+            />
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

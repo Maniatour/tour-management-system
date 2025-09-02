@@ -1,0 +1,136 @@
+import type { Database } from '@/lib/supabase'
+import type { 
+  Customer, 
+  Product, 
+  Channel, 
+  ProductOption, 
+  ProductOptionChoice, 
+  Option, 
+  PickupHotel, 
+  Reservation 
+} from '@/types/reservation'
+
+// 픽업 호텔 ID로 호텔 정보를 찾는 헬퍼 함수
+export const getPickupHotelDisplay = (hotelId: string, pickupHotels: PickupHotel[]) => {
+  const hotel = pickupHotels.find(h => h.id === hotelId)
+  return hotel ? `${hotel.hotel} - ${hotel.pick_up_location}` : hotelId
+}
+
+// 고객 이름 가져오기
+export const getCustomerName = (customerId: string, customers: Customer[]) => {
+  return customers.find(c => c.id === customerId)?.name || 'Unknown'
+}
+
+// 상품 이름 가져오기
+export const getProductName = (productId: string, products: Product[]) => {
+  return products.find(p => p.id === productId)?.name || 'Unknown'
+}
+
+// 채널 이름 가져오기
+export const getChannelName = (channelId: string, channels: Channel[]) => {
+  return channels.find(c => c.id === channelId)?.name || 'Unknown'
+}
+
+// 상태 라벨 가져오기
+export const getStatusLabel = (status: string, t: (key: string) => string) => {
+  return t(`status.${status}`)
+}
+
+// 상태 색상 가져오기
+export const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'confirmed': return 'bg-green-100 text-green-800'
+    case 'pending': return 'bg-yellow-100 text-yellow-800'
+    case 'completed': return 'bg-blue-100 text-blue-800'
+    case 'cancelled': return 'bg-red-100 text-red-800'
+    default: return 'bg-gray-100 text-gray-800'
+  }
+}
+
+// 총 가격 계산
+export const calculateTotalPrice = (reservation: Reservation, products: Product[], optionChoices: ProductOptionChoice[]) => {
+  const product = products.find(p => p.id === reservation.productId)
+  if (!product || !product.base_price) return 0
+  
+  // 기본 가격을 성인/아동/유아로 나누어 계산 (간단한 계산)
+  let adultPrice = product.base_price
+  let childPrice = product.base_price * 0.7 // 아동은 성인의 70%
+  let infantPrice = product.base_price * 0.3 // 유아는 성인의 30%
+  
+  // 선택된 옵션의 가격 조정 적용
+  if (reservation.selectedOptions) {
+    Object.entries(reservation.selectedOptions).forEach(([optionId, choiceIds]) => {
+      if (Array.isArray(choiceIds)) {
+        choiceIds.forEach(choiceId => {
+          const choice = optionChoices.find(c => c.id === choiceId)
+          if (choice) {
+            if (choice.adult_price_adjustment !== null) {
+              adultPrice += choice.adult_price_adjustment
+            }
+            if (choice.child_price_adjustment !== null) {
+              childPrice += choice.child_price_adjustment
+            }
+            if (choice.infant_price_adjustment !== null) {
+              infantPrice += choice.infant_price_adjustment
+            }
+          }
+        })
+      }
+    })
+  }
+  
+  // 사용자가 입력한 요금 정보 적용
+  if (reservation.selectedOptionPrices) {
+    Object.entries(reservation.selectedOptionPrices).forEach(([key, value]) => {
+      if (typeof value === 'number') {
+        if (key.includes('_adult')) {
+          adultPrice += value
+        } else if (key.includes('_child')) {
+          childPrice += value
+        } else if (key.includes('_infant')) {
+          infantPrice += value
+        }
+      }
+    })
+  }
+  
+  return (
+    reservation.adults * adultPrice +
+    reservation.child * childPrice +
+    reservation.infant * infantPrice
+  )
+}
+
+// 상품의 필수 선택 옵션을 카테고리별로 그룹화하여 가져오기
+export const getRequiredOptionsForProduct = (productId: string, productOptions: ProductOption[], options: Database['public']['Tables']['options']['Row'][]) => {
+  const requiredOptions = productOptions.filter(option => 
+    option.product_id === productId && option.is_required === true
+  )
+  
+  // 카테고리별로 그룹화 (options 테이블의 category 사용)
+  const groupedOptions = requiredOptions.reduce((groups, option) => {
+    // linked_option_id를 통해 options 테이블의 category 가져오기
+    const linkedOption = options.find(opt => opt.id === option.linked_option_id)
+    const category = linkedOption?.category || '기타'
+    
+    if (!groups[category]) {
+      groups[category] = []
+    }
+    groups[category].push(option)
+    return groups
+  }, {} as Record<string, ProductOption[]>)
+  
+  return groupedOptions
+}
+
+// 상품의 선택 옵션 (필수가 아닌 옵션) 가져오기
+export const getOptionalOptionsForProduct = (productId: string, productOptions: ProductOption[]) => {
+  return productOptions.filter(option => 
+    option.product_id === productId && option.is_required === false
+  )
+}
+
+// 옵션의 선택지 가져오기
+export const getChoicesForOption = (optionId: string, optionChoices: ProductOptionChoice[]) => {
+  return optionChoices.filter(choice => choice.product_option_id === optionId)
+}

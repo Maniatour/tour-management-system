@@ -29,8 +29,7 @@ import {
   DynamicPricingRule, 
   CreatePricingRuleDto, 
   WeekdayPricingDto,
-  DAY_NAMES,
-  DAY_COLORS 
+  DAY_NAMES
 } from '@/lib/types/dynamic-pricing';
 import ChangeHistory from './ChangeHistory';
 
@@ -99,6 +98,36 @@ export default function DynamicPricingManager({
   }>>([]);
   const [isLoadingChannels, setIsLoadingChannels] = useState(true);
 
+  // 동적 가격 데이터
+  const [dynamicPricingData, setDynamicPricingData] = useState<Array<{
+    id: string;
+    product_id: string;
+    channel_id: string;
+    date: string;
+    adult_price: number;
+    child_price: number;
+    infant_price: number;
+    options_pricing: Array<{
+      option_id: string;
+      adult_price: number;
+      child_price: number;
+      infant_price: number;
+    }> | Record<string, any>;
+    commission_percent: number;
+    markup_amount: number;
+    coupon_percent: number;
+    is_sale_available: boolean;
+  }>>([]);
+  const [isLoadingPricingData, setIsLoadingPricingData] = useState(false);
+
+  // 뷰 모드 상태
+  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
+  const [listViewMonth, setListViewMonth] = useState(new Date());
+  
+  // 다중 선택 상태
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+
   // 선택된 채널 타입 탭
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType>('OTA');
 
@@ -118,6 +147,7 @@ export default function DynamicPricingManager({
   useEffect(() => {
     loadChannels();
     loadProductOptions();
+    loadDynamicPricingData();
   }, []);
 
   // 요일별 가격 초기화
@@ -240,6 +270,182 @@ export default function DynamicPricingManager({
     } finally {
       setIsLoadingOptions(false);
     }
+  };
+
+  // Supabase에서 동적 가격 데이터 로드
+  const loadDynamicPricingData = async () => {
+    try {
+      setIsLoadingPricingData(true);
+      
+      const { data: pricingData, error } = await supabase
+        .from('dynamic_pricing')
+        .select('*')
+        .eq('product_id', productId)
+        .order('date');
+
+      if (error) {
+        console.error('Dynamic pricing 데이터 로드 실패:', error);
+        return;
+      }
+
+      setDynamicPricingData(pricingData || []);
+    } catch (error) {
+      console.error('Dynamic pricing 데이터 로드 중 오류:', error);
+    } finally {
+      setIsLoadingPricingData(false);
+    }
+  };
+
+  // 리스트뷰용 월별 데이터 가져오기
+  const getListViewData = () => {
+    if (!selectedChannel) return [];
+    
+    const year = listViewMonth.getFullYear();
+    const month = listViewMonth.getMonth();
+    const startDate = new Date(year, month, 1);
+    const endDate = new Date(year, month + 1, 0);
+    
+    return dynamicPricingData
+      .filter(data => {
+        const dataDate = new Date(data.date);
+        return data.channel_id === selectedChannel && 
+               dataDate >= startDate && 
+               dataDate <= endDate;
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  // 리스트뷰 네비게이션
+  const goToPreviousMonthList = () => {
+    setListViewMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const goToNextMonthList = () => {
+    setListViewMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  // 카드 클릭 시 가격 설정 날짜 변경
+  const handleCardClick = (date: string) => {
+    console.log('클릭된 날짜 (원본):', date);
+    console.log('날짜 타입:', typeof date);
+    
+    // 날짜가 이미 YYYY-MM-DD 형식인지 확인
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      console.error('날짜 형식이 올바르지 않습니다:', date);
+      return;
+    }
+    
+    console.log('설정할 날짜:', date);
+    console.log('현재 pricingConfig:', pricingConfig.start_date, pricingConfig.end_date);
+    
+    // 가격 설정의 시작일과 종료일을 해당 날짜로 설정
+    setPricingConfig(prev => {
+      const newConfig = {
+        ...prev,
+        start_date: date,
+        end_date: date
+      };
+      console.log('새로운 pricingConfig:', newConfig.start_date, newConfig.end_date);
+      return newConfig;
+    });
+    
+    // 가격 설정 탭으로 스크롤
+    const pricingSection = document.getElementById('pricing-section');
+    if (pricingSection) {
+      pricingSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  // 다중 선택 처리
+  const handleMultiSelect = (date: string, index: number, event: React.MouseEvent) => {
+    const listData = getListViewData();
+    let newSelectedDates: string[] = [];
+    
+    console.log('다중 선택 처리:', {
+      clickedDate: date,
+      clickedIndex: index,
+      shiftKey: event.shiftKey,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      lastSelectedIndex: lastSelectedIndex,
+      listDataDates: listData.map(item => item.date)
+    });
+    
+    if (event.shiftKey && lastSelectedIndex !== null) {
+      // Shift 클릭: 범위 선택
+      const startIndex = Math.min(lastSelectedIndex, index);
+      const endIndex = Math.max(lastSelectedIndex, index);
+      const rangeDates = listData.slice(startIndex, endIndex + 1).map(item => item.date);
+      
+      setSelectedDates(prev => {
+        newSelectedDates = [...prev];
+        rangeDates.forEach(rangeDate => {
+          if (!newSelectedDates.includes(rangeDate)) {
+            newSelectedDates.push(rangeDate);
+          }
+        });
+        return newSelectedDates;
+      });
+    } else if (event.ctrlKey || event.metaKey) {
+      // Ctrl/Cmd 클릭: 개별 토글
+      setSelectedDates(prev => {
+        if (prev.includes(date)) {
+          newSelectedDates = prev.filter(d => d !== date);
+        } else {
+          newSelectedDates = [...prev, date];
+        }
+        return newSelectedDates;
+      });
+      setLastSelectedIndex(index);
+    } else {
+      // 일반 클릭: 단일 선택
+      newSelectedDates = [date];
+      setSelectedDates(newSelectedDates);
+      setLastSelectedIndex(index);
+    }
+    
+    console.log('새로운 선택된 날짜들:', newSelectedDates);
+    
+    // 선택된 날짜들로 즉시 가격 설정 업데이트
+    if (newSelectedDates.length > 0) {
+      const sortedDates = newSelectedDates.sort();
+      const startDate = sortedDates[0];
+      const endDate = sortedDates[sortedDates.length - 1];
+      
+      setPricingConfig(prev => ({
+        ...prev,
+        start_date: startDate,
+        end_date: endDate
+      }));
+    }
+  };
+
+  // 선택된 날짜들로 가격 설정 업데이트
+  const applySelectedDates = () => {
+    if (selectedDates.length === 0) return;
+    
+    const sortedDates = selectedDates.sort();
+    const startDate = sortedDates[0];
+    const endDate = sortedDates[sortedDates.length - 1];
+    
+    setPricingConfig(prev => ({
+      ...prev,
+      start_date: startDate,
+      end_date: endDate
+    }));
+    
+    // 가격 설정 탭으로 스크롤
+    const pricingSection = document.getElementById('pricing-section');
+    if (pricingSection) {
+      pricingSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  // 선택 초기화
+  const clearSelection = () => {
+    setSelectedDates([]);
+    setLastSelectedIndex(null);
   };
 
   // 채널 타입별로 필터링
@@ -406,6 +612,76 @@ export default function DynamicPricingManager({
     };
   };
 
+  // 특정 날짜의 가격 계산 (캘린더용)
+  const calculateDatePrices = (date: string, channelId: string) => {
+    // 해당 날짜와 채널의 동적 가격 데이터 찾기
+    const pricingData = dynamicPricingData.find(
+      data => data.date === date && data.channel_id === channelId
+    );
+
+    if (!pricingData) {
+      return null;
+    }
+
+    // 기본 가격 (adult_price)
+    const baseAdultPrice = pricingData.adult_price;
+
+    // 선택된 옵션의 가격 추가 (options_pricing 배열에서 선택된 옵션 ID로 검색)
+    let optionAdultPrice = 0;
+    if (selectedRequiredOption && pricingData.options_pricing) {
+      console.log(`옵션 가격 데이터 확인 - 날짜: ${date}, 선택된 옵션: ${selectedRequiredOption}`, {
+        options_pricing: pricingData.options_pricing,
+        options_pricing_type: Array.isArray(pricingData.options_pricing) ? 'array' : 'object'
+      });
+      
+      // options_pricing이 배열인 경우
+      if (Array.isArray(pricingData.options_pricing)) {
+        const optionPricing = pricingData.options_pricing.find(
+          (option: any) => option.option_id === selectedRequiredOption
+        );
+        if (optionPricing) {
+          optionAdultPrice = optionPricing.adult_price || 0;
+          console.log(`배열에서 찾은 옵션 가격:`, optionPricing);
+        }
+      } else {
+        // options_pricing이 객체인 경우 (기존 방식)
+        const optionPricing = pricingData.options_pricing[selectedRequiredOption];
+        if (optionPricing) {
+          optionAdultPrice = optionPricing.adult || optionPricing.adult_price || 0;
+          console.log(`객체에서 찾은 옵션 가격:`, optionPricing);
+        }
+      }
+    }
+
+    // 파란색: 최대 가격 = adult_price + options_pricing[선택된옵션ID].adult
+    const maxAdultPrice = baseAdultPrice + optionAdultPrice;
+
+    // 주황색: 할인 가격 = 최대 가격에서 coupon_percent 적용
+    const couponDiscountAmount = maxAdultPrice * (pricingData.coupon_percent / 100);
+    const discountedAdultPrice = maxAdultPrice - couponDiscountAmount;
+
+    // 초록색: Net 가격 = 할인 가격에서 commission_percent 적용
+    const commissionAmount = discountedAdultPrice * (pricingData.commission_percent / 100);
+    const netAdultPrice = discountedAdultPrice - commissionAmount;
+
+    console.log(`날짜 ${date} 가격 계산:`, {
+      baseAdultPrice,
+      optionAdultPrice,
+      selectedOption: selectedRequiredOption,
+      maxAdultPrice,
+      couponPercent: pricingData.coupon_percent,
+      discountedAdultPrice,
+      commissionPercent: pricingData.commission_percent,
+      netAdultPrice
+    });
+
+    return {
+      max: { adult: maxAdultPrice, child: 0, infant: 0 },
+      discounted: { adult: discountedAdultPrice, child: 0, infant: 0 },
+      net: { adult: netAdultPrice, child: 0, infant: 0 }
+    };
+  };
+
   // 캘린더 네비게이션
   const goToPreviousMonth = () => {
     setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -439,11 +715,17 @@ export default function DynamicPricingManager({
     
     // 현재 달의 날짜들
     for (let i = 1; i <= daysInMonth; i++) {
+      const currentDate = new Date(year, month, i);
+      const dateString = currentDate.toISOString().split('T')[0];
+      
+      // 해당 날짜에 가격 데이터가 있는지 확인
+      const hasPricing = dynamicPricingData.some(data => data.date === dateString);
+      
       days.push({
-        date: new Date(year, month, i),
+        date: currentDate,
         isCurrentMonth: true,
-        hasPricing: true, // 실제로는 저장된 가격 규칙 확인
-        pricing: generateDailyPricing(new Date(year, month, i))
+        hasPricing: hasPricing,
+        pricing: generateDailyPricing(currentDate)
       });
     }
     
@@ -461,32 +743,20 @@ export default function DynamicPricingManager({
     return days;
   };
 
-  // 일별 가격 생성 (실제로는 저장된 데이터에서 가져와야 함)
+  // 일별 가격 생성 (dynamic_pricing 데이터 사용)
   const generateDailyPricing = (date: Date) => {
-    // 선택된 옵션의 기본 가격
-    const selectedOption = options.find(opt => opt.id === selectedRequiredOption);
-    const totalBasePrice = selectedOption?.base_price || 0;
-
-    if (totalBasePrice === 0) return null;
-
-    const markup = 0; // 업차지 금액
-    const couponFixedDiscount = 0; // 쿠폰 고정 할인
-    const couponPercentageDiscount = 0; // 쿠폰 퍼센트 할인
-    const commission = 32; // 커미션 (32%로 설정)
-
-    // 손님 지불 금액 (기본가 + 업차지)
-    const customerPayment = totalBasePrice + markup;
+    if (!selectedChannel) return null;
     
-    // 할인 적용 후 금액 (할인 우선순위 고려)
-    const discountedPrice = calculateCouponDiscount(customerPayment, couponFixedDiscount, couponPercentageDiscount, 'fixed_first');
-   
-   // 우리 수령 금액 (커미션 제외)
-   const ourReceivedAmount = discountedPrice * (1 - commission / 100);
+    const dateString = date.toISOString().split('T')[0];
+    const prices = calculateDatePrices(dateString, selectedChannel);
+    
+    if (!prices) return null;
 
+    // 기존 호환성을 위해 customerPayment, commission, ourReceivedAmount 형태로 반환
    return {
-     customerPayment: customerPayment,
-     commission: discountedPrice - ourReceivedAmount,
-     ourReceivedAmount: ourReceivedAmount
+      customerPayment: prices.max.adult,      // 최대 가격
+      commission: prices.max.adult - prices.net.adult,  // 커미션 금액
+      ourReceivedAmount: prices.net.adult     // Net 가격
    };
   };
 
@@ -496,7 +766,7 @@ export default function DynamicPricingManager({
     // 이 useEffect는 의존성 배열에 currentMonth와 selectedRequiredOption을 포함하여
     // 이 값들이 변경될 때마다 캘린더를 새로고침합니다.
     console.log('옵션 또는 월이 변경됨:', selectedRequiredOption);
-  }, [currentMonth, selectedRequiredOption]);
+  }, [currentMonth, selectedRequiredOption, dynamicPricingData, selectedChannel]);
 
   // selectedRequiredOption 상태 변화 모니터링
   useEffect(() => {
@@ -534,8 +804,56 @@ export default function DynamicPricingManager({
         created_at: new Date().toISOString()
       };
       console.log('저장할 가격 설정:', pricingData);
+      console.log('pricingConfig 값들:', {
+        adult_price: pricingConfig.adult_price,
+        child_price: pricingConfig.child_price,
+        infant_price: pricingConfig.infant_price
+      });
 
-      // 3. 기존 동적 가격 규칙들 삭제
+      // 3. pricingConfig를 기반으로 pricingRules 생성
+      const generatedPricingRules: CreatePricingRuleDto[] = []
+      
+      // 선택된 채널들에 대해 가격 규칙 생성
+      const activeChannels = channels.filter(channel => channel.is_selling_product)
+      
+      for (const channel of activeChannels) {
+        // 선택된 요일들에 대해 각각 가격 규칙 생성
+        for (const dayOfWeek of pricingConfig.selected_weekdays) {
+          // 시작일부터 종료일까지의 모든 날짜에 대해 가격 규칙 생성
+          const startDate = new Date(pricingConfig.start_date)
+          const endDate = new Date(pricingConfig.end_date)
+          
+          for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+            // 해당 날짜가 선택된 요일인지 확인
+            if (date.getDay() === dayOfWeek) {
+              const rule: CreatePricingRuleDto = {
+                product_id: productId,
+                channel_id: channel.id,
+                rule_name: `${channel.name} ${DAY_NAMES[dayOfWeek]} 가격`,
+                start_date: date.toISOString().split('T')[0],
+                end_date: date.toISOString().split('T')[0],
+                weekday_pricing: [{
+                  day_of_week: dayOfWeek,
+                  adult_price: pricingConfig.adult_price,
+                  child_price: pricingConfig.child_price || pricingConfig.adult_price * 0.7, // 아동은 성인의 70%
+                  infant_price: pricingConfig.infant_price || pricingConfig.adult_price * 0.3  // 유아는 성인의 30%
+                }],
+                required_option_pricing: pricingConfig.required_options.map(option => ({
+                  option_id: option.option_id,
+                  adult_price: option.adult_price,
+                  child_price: option.child_price,
+                  infant_price: option.infant_price
+                }))
+              }
+              generatedPricingRules.push(rule)
+            }
+          }
+        }
+      }
+      
+      console.log('생성된 가격 규칙들:', generatedPricingRules)
+
+      // 4. 기존 동적 가격 규칙들 삭제
       const { error: deleteError } = await supabase
         .from('dynamic_pricing')
         .delete()
@@ -543,32 +861,45 @@ export default function DynamicPricingManager({
 
       if (deleteError) throw deleteError
 
-      // 4. 새 동적 가격 규칙들 추가
-      for (const rule of pricingRules) {
+      // 5. 새 동적 가격 규칙들 추가
+      for (const rule of generatedPricingRules) {
         const weekdayPricing = rule.weekday_pricing?.[0]
         const adultPrice = weekdayPricing?.adult_price || 0
         const childPrice = weekdayPricing?.child_price || 0
         const infantPrice = weekdayPricing?.infant_price || 0
 
-        const { error: ruleError } = await supabase
-          .from('dynamic_pricing')
-          .insert({
+        const insertData = {
             product_id: productId,
             channel_id: rule.channel_id,
             date: rule.start_date,
             adult_price: adultPrice,
-            child_price: childPrice,
-            infant_price: infantPrice,
-            options_pricing: rule.required_option_pricing || {},
+          child_price: childPrice || adultPrice * 0.7, // 아동은 성인의 70%
+          infant_price: infantPrice || adultPrice * 0.3, // 유아는 성인의 30%
+          options_pricing: rule.required_option_pricing || [],
             commission_percent: pricingConfig.commission_percent,
             markup_amount: pricingConfig.markup_amount,
-            coupon_fixed_discount: pricingConfig.coupon_fixed_discount,
-            coupon_percentage_discount: pricingConfig.coupon_percentage_discount,
-            discount_priority: pricingConfig.discount_priority,
+          coupon_percent: pricingConfig.coupon_percentage_discount || 0,
             is_sale_available: pricingConfig.is_sale_available
-          })
+        }
 
-        if (ruleError) throw ruleError
+        console.log('동적 가격 저장 데이터:', insertData)
+        console.log('저장되는 가격 값들:', {
+          adult_price: adultPrice,
+          child_price: childPrice,
+          infant_price: infantPrice
+        })
+        console.log('저장되는 options_pricing:', insertData.options_pricing)
+
+        const { error: ruleError } = await supabase
+          .from('dynamic_pricing')
+          .insert(insertData)
+
+        if (ruleError) {
+          console.error('동적 가격 저장 오류:', ruleError)
+          throw ruleError
+        }
+        
+        console.log('동적 가격 저장 성공:', rule.channel_id, rule.start_date)
       }
 
       // 5. 성공 메시지
@@ -740,6 +1071,35 @@ export default function DynamicPricingManager({
 
          <div className="flex items-center justify-between mb-4">
            <h3 className="text-lg font-semibold text-gray-900">가격 캘린더</h3>
+           <div className="flex items-center space-x-2">
+             {/* 뷰 모드 전환 버튼 */}
+             <div className="flex bg-gray-100 rounded-lg p-1">
+               <button
+                 type="button"
+                 onClick={() => setViewMode('calendar')}
+                 className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                   viewMode === 'calendar'
+                     ? 'bg-white text-blue-600 shadow-sm'
+                     : 'text-gray-600 hover:text-gray-800'
+                 }`}
+               >
+                 달력
+               </button>
+               <button
+                 type="button"
+                 onClick={() => setViewMode('list')}
+                 className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                   viewMode === 'list'
+                     ? 'bg-white text-blue-600 shadow-sm'
+                     : 'text-gray-600 hover:text-gray-800'
+                 }`}
+               >
+                 리스트
+               </button>
+             </div>
+             
+             {/* 달력뷰 네비게이션 */}
+             {viewMode === 'calendar' && (
            <div className="flex space-x-1">
              <button
                type="button"
@@ -755,10 +1115,12 @@ export default function DynamicPricingManager({
              >
                <ChevronRight size={16} />
              </button>
+               </div>
+             )}
            </div>
          </div>
 
-                  {/* 달력 위 옵션 선택기 */}
+         {/* 옵션 선택기 */}
          {options.length > 0 && (
            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
                            <div className="flex items-center justify-between mb-3">
@@ -779,8 +1141,6 @@ export default function DynamicPricingManager({
                  }, {} as Record<string, typeof options>);
 
                                    return Object.entries(groupedOptions).map(([category, categoryOptions]) => {
-                    const selectedOption = categoryOptions.find(opt => opt.id === selectedRequiredOption);
-                    
                                          return (
                        <div key={category}>
                          <div className="flex flex-wrap gap-2">
@@ -813,6 +1173,9 @@ export default function DynamicPricingManager({
            </div>
          )}
          
+         {/* 달력뷰 */}
+         {viewMode === 'calendar' && (
+           <>
          <div className="text-center mb-4">
            <h4 className="font-medium text-gray-900">
              {currentMonth.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' })}
@@ -830,12 +1193,16 @@ export default function DynamicPricingManager({
 
                  {/* 날짜 그리드 */}
          <div className="grid grid-cols-7 gap-1">
-           {daysInMonth.map((day, index) => (
+               {daysInMonth.map((day, index) => {
+                 const dateString = day.date.toISOString().split('T')[0];
+                 const prices = selectedChannel ? calculateDatePrices(dateString, selectedChannel) : null;
+                 
+                 return (
              <div
                key={index}
                className={`p-1 text-xs border rounded cursor-pointer transition-colors ${
                  day.isCurrentMonth
-                   ? day.hasPricing
+                         ? prices
                      ? 'bg-white border-gray-200 hover:bg-gray-50'
                      : 'bg-white border-gray-200 hover:bg-gray-50'
                    : 'bg-gray-100 border-gray-200 text-gray-400'
@@ -846,45 +1213,202 @@ export default function DynamicPricingManager({
                </div>
                
                {/* 가격 정보 표시 */}
-               {day.isCurrentMonth && day.pricing && (
+                     {day.isCurrentMonth && prices && (
                  <div className="space-y-1">
                    <div className="text-center text-xs font-bold text-blue-600">
-                     ${day.pricing.customerPayment.toFixed(2)}
+                           ${prices.max.adult.toFixed(2)}
                    </div>
                    <div className="text-center text-xs text-orange-600">
-                     ${day.pricing.commission.toFixed(2)}
+                           ${prices.discounted.adult.toFixed(2)}
                    </div>
                    <div className="text-center text-xs text-green-600">
-                     ${day.pricing.ourReceivedAmount.toFixed(2)}
+                           ${prices.net.adult.toFixed(2)}
                    </div>
                  </div>
                )}
              </div>
-           ))}
+                 );
+               })}
          </div>
+           </>
+         )}
+
+         {/* 리스트뷰 */}
+         {viewMode === 'list' && (
+           <>
+             {/* 리스트뷰 헤더 */}
+             <div className="flex items-center justify-between mb-4">
+               <h4 className="font-medium text-gray-900">
+                 {listViewMonth.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' })}
+               </h4>
+               <div className="flex space-x-1">
+                 <button
+                   type="button"
+                   onClick={goToPreviousMonthList}
+                   className="p-1 hover:bg-gray-100 rounded"
+                 >
+                   <ChevronLeft size={16} />
+                 </button>
+                 <button
+                   type="button"
+                   onClick={goToNextMonthList}
+                   className="p-1 hover:bg-gray-100 rounded"
+                 >
+                   <ChevronRight size={16} />
+                 </button>
+               </div>
+             </div>
+
+             {/* 다중 선택 컨트롤 */}
+             {selectedDates.length > 0 && (
+               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                 <div className="flex items-center justify-between">
+                   <div className="text-sm text-blue-800">
+                     {selectedDates.length}개 날짜 선택됨 (자동으로 가격 설정에 반영됨)
+                   </div>
+                   <button
+                     type="button"
+                     onClick={clearSelection}
+                     className="px-3 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600"
+                   >
+                     선택 해제
+                   </button>
+                 </div>
+               </div>
+             )}
+
+             {/* 리스트 데이터 */}
+             <div className="space-y-2 h-[800px] overflow-y-auto">
+               {getListViewData().length > 0 ? (
+                 getListViewData().map((data, index) => {
+                   const prices = calculateDatePrices(data.date, data.channel_id);
+                   const displayDate = new Date(data.date).toLocaleDateString('ko-KR', { 
+                     month: 'short', 
+                     day: 'numeric',
+                     weekday: 'short'
+                   });
+                   
+                   // 클릭 시 사용하는 날짜 형식과 동일하게 변환
+                   const clickedDate = new Date(data.date);
+                   const year = clickedDate.getFullYear();
+                   const month = String(clickedDate.getMonth() + 1).padStart(2, '0');
+                   const day = String(clickedDate.getDate()).padStart(2, '0');
+                   const formattedDate = `${year}-${month}-${day}`;
+                   
+                   const isSelected = selectedDates.includes(formattedDate);
+                   
+                   console.log('카드 렌더링:', {
+                     dataDate: data.date,
+                     formattedDate: formattedDate,
+                     isSelected: isSelected,
+                     selectedDates: selectedDates
+                   });
+                   
+                   return (
+                     <div 
+                       key={data.id} 
+                       className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                         isSelected 
+                           ? 'border-blue-500 bg-blue-50' 
+                           : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-blue-300'
+                       }`}
+                       onClick={(event) => {
+                         // 표시된 날짜를 기준으로 클릭 이벤트 처리
+                         const clickedDate = new Date(data.date);
+                         const year = clickedDate.getFullYear();
+                         const month = String(clickedDate.getMonth() + 1).padStart(2, '0');
+                         const day = String(clickedDate.getDate()).padStart(2, '0');
+                         const formattedDate = `${year}-${month}-${day}`;
+                         
+                         // 다중 선택 처리 (가격 설정도 자동 업데이트됨)
+                         handleMultiSelect(formattedDate, index, event);
+                         
+                         // 가격 설정 탭으로 스크롤
+                         const pricingSection = document.getElementById('pricing-section');
+                         if (pricingSection) {
+                           pricingSection.scrollIntoView({ behavior: 'smooth' });
+                         }
+                       }}
+                       title={`클릭하여 가격 수정 (표시: ${displayDate}, 실제: ${data.date})`}
+                     >
+                       <div className="flex items-center justify-between mb-2">
+                         <div className="font-medium text-sm">
+                           {new Date(data.date).toLocaleDateString('ko-KR', { 
+                             month: 'short', 
+                             day: 'numeric',
+                             weekday: 'short'
+                           })}
+                         </div>
+                         <div className="text-xs text-gray-500">
+                           {channels.find(c => c.id === data.channel_id)?.name}
+                         </div>
+                       </div>
+                       
+                       {prices && (
+                         <div className="text-xs space-y-1">
+                           <div>
+                             <span className="text-blue-600 font-bold">최대: ${prices.max.adult.toFixed(2)}</span>
+                             <span className="mx-4 text-gray-400">|</span>
+                             <span className="text-orange-600 font-bold">할인: ${prices.discounted.adult.toFixed(2)}</span>
+                             <span className="mx-4 text-gray-400">|</span>
+                             <span className="text-green-600 font-bold">Net: ${prices.net.adult.toFixed(2)}</span>
+                           </div>
+                           <div className="text-gray-500 text-xs">
+                             기본가 ${data.adult_price.toFixed(2)} + 옵션 ${(prices.max.adult - data.adult_price).toFixed(2)} 
+                             → 쿠폰 -${(prices.max.adult - prices.discounted.adult).toFixed(2)} 
+                             → 커미션 -${(prices.discounted.adult - prices.net.adult).toFixed(2)}
+                           </div>
+                         </div>
+                       )}
+                     </div>
+                   );
+                 })
+               ) : (
+                 <div className="text-center py-8 text-gray-500">
+                   <div className="text-sm">이 달에 가격 데이터가 없습니다</div>
+                 </div>
+               )}
+             </div>
+
+             {/* 선택 안내 */}
+             <div className="mt-4 pt-3 border-t border-gray-200">
+               <div className="text-xs text-gray-500">
+                 <div className="font-medium mb-1">선택 방법:</div>
+                 <div>• 일반 클릭: 단일 선택</div>
+                 <div>• Ctrl/Cmd + 클릭: 개별 추가/제거</div>
+                 <div>• Shift + 클릭: 범위 선택</div>
+               </div>
+             </div>
+           </>
+         )}
          
          {/* 가격 범례 */}
          <div className="mt-4 pt-4 border-t border-gray-200">
-           <div className="text-xs text-gray-600 mb-2">OTA 채널을 통한 손님 지불, 수수료, 우리 수령 금액</div>
+           <div className="text-xs text-gray-600 mb-2">필수 옵션에 따른 가격 (성인 기준)</div>
            <div className="space-y-1">
              <div className="flex items-center space-x-2">
                <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-               <span className="text-xs text-gray-600">손님 지불</span>
+               <span className="text-xs text-gray-600">최대 가격</span>
              </div>
+             <div className="text-xs text-gray-500 ml-4">기본가 + 선택옵션가</div>
+             
              <div className="flex items-center space-x-2">
                <div className="w-2 h-2 bg-orange-600 rounded-full"></div>
-               <span className="text-xs text-gray-600">커미션</span>
+               <span className="text-xs text-gray-600">할인 가격</span>
              </div>
+             <div className="text-xs text-gray-500 ml-4">최대가 - 쿠폰할인</div>
+             
              <div className="flex items-center space-x-2">
                <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-               <span className="text-xs text-gray-600">우리 수령 금액</span>
+               <span className="text-xs text-gray-600">Net 가격</span>
              </div>
+             <div className="text-xs text-gray-500 ml-4">할인가 - 커미션</div>
            </div>
          </div>
        </div>
 
       {/* 3. 가운데 가격 설정 섹션 */}
-      <div className="w-[30%] bg-white p-6 overflow-y-auto">
+      <div id="pricing-section" className="w-[30%] bg-white p-6 overflow-y-auto">
         <div className="max-w-none mx-auto">
                                  <h2 className="text-lg font-semibold text-gray-900 mb-4">
               {selectedChannel ? `${channels.find(c => c.id === selectedChannel)?.name} 가격 설정` : '가격 설정'}
@@ -1114,12 +1638,17 @@ export default function DynamicPricingManager({
                        <input
                          type="number"
                          value={pricingConfig.child_price}
-                         onChange={(e) => setPricingConfig(prev => ({ ...prev, child_price: parseFloat(e.target.value) || 0 }))}
+                         onChange={(e) => {
+                           const value = parseFloat(e.target.value) || 0;
+                           console.log('아동 가격 변경:', value);
+                           setPricingConfig(prev => ({ ...prev, child_price: value }));
+                         }}
                          className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                          placeholder="0"
                        />
                        <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                      </div>
+                     <p className="text-xs text-gray-500 mt-1">입력하지 않으면 성인 가격의 70%로 자동 설정됩니다</p>
                    </div>
                    <div>
                      <label className="block text-sm font-medium text-gray-700 mb-2">유아 ($)</label>
@@ -1127,12 +1656,17 @@ export default function DynamicPricingManager({
                        <input
                          type="number"
                          value={pricingConfig.infant_price}
-                         onChange={(e) => setPricingConfig(prev => ({ ...prev, infant_price: parseFloat(e.target.value) || 0 }))}
+                         onChange={(e) => {
+                           const value = parseFloat(e.target.value) || 0;
+                           console.log('유아 가격 변경:', value);
+                           setPricingConfig(prev => ({ ...prev, infant_price: value }));
+                         }}
                          className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                          placeholder="0"
                        />
                        <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                      </div>
+                     <p className="text-xs text-gray-500 mt-1">입력하지 않으면 성인 가격의 30%로 자동 설정됩니다</p>
                    </div>
                  </div>
                </div>
