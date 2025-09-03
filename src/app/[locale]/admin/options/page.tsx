@@ -23,6 +23,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingOption, setEditingOption] = useState<Option | null>(null)
   const [copyingOption, setCopyingOption] = useState<Option | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
 
   useEffect(() => {
     fetchOptions()
@@ -49,12 +50,19 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
     }
   }
 
-  const filteredOptions = options.filter(option =>
-    option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    option.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (option.description && option.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (option.tags && option.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
-  )
+  // 카테고리 목록 가져오기
+  const categories = ['all', ...Array.from(new Set(options.map(option => option.category))).sort()]
+
+  const filteredOptions = options.filter(option => {
+    const matchesSearch = option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      option.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (option.description && option.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (option.tags && option.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
+    
+    const matchesCategory = selectedCategory === 'all' || option.category === selectedCategory
+    
+    return matchesSearch && matchesCategory
+  })
 
   const handleAddOption = async (option: Omit<Option, 'id' | 'created_at'>) => {
     try {
@@ -233,6 +241,28 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
+      </div>
+
+      {/* 카테고리 탭 */}
+      <div className="flex flex-wrap gap-2">
+        {categories.map((category) => (
+          <button
+            key={category}
+            onClick={() => setSelectedCategory(category)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              selectedCategory === category
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {category === 'all' ? '전체' : getCategoryLabel(category)}
+            {category !== 'all' && (
+              <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+                {options.filter(option => option.category === category).length}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* 옵션 목록 */}
