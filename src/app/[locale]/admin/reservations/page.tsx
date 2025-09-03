@@ -76,10 +76,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         customer_id: reservation.customerId,
         product_id: reservation.productId,
         tour_date: reservation.tourDate,
-        tour_time: reservation.tourTime,
+        tour_time: reservation.tourTime || null, // 빈 문자열을 null로 변환
         event_note: reservation.eventNote,
         pickup_hotel: reservation.pickUpHotel,
-        pickup_time: reservation.pickUpTime,
+        pickup_time: reservation.pickUpTime || null, // 빈 문자열을 null로 변환
         adults: reservation.adults,
         child: reservation.child,
         infant: reservation.infant,
@@ -168,10 +168,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           customer_id: reservation.customerId,
           product_id: reservation.productId,
           tour_date: reservation.tourDate,
-          tour_time: reservation.tourTime,
+          tour_time: reservation.tourTime || null, // 빈 문자열을 null로 변환
           event_note: reservation.eventNote,
           pickup_hotel: reservation.pickUpHotel,
-          pickup_time: reservation.pickUpTime,
+          pickup_time: reservation.pickUpTime || null, // 빈 문자열을 null로 변환
           adults: reservation.adults,
           child: reservation.child,
           infant: reservation.infant,
