@@ -464,46 +464,58 @@ export default function PricingSection({
               <div className="grid grid-cols-2 gap-1">
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">추가할인</label>
-                  <input
-                    type="number"
-                    value={formData.additionalDiscount}
-                    onChange={(e) => setFormData({ ...formData, additionalDiscount: Number(e.target.value) || 0 })}
-                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                    step="0.01"
-                  />
+                  <div className="relative">
+                    <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                    <input
+                      type="number"
+                      value={formData.additionalDiscount}
+                      onChange={(e) => setFormData({ ...formData, additionalDiscount: Number(e.target.value) || 0 })}
+                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      step="0.01"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">추가비용</label>
-                  <input
-                    type="number"
-                    value={formData.additionalCost}
-                    onChange={(e) => setFormData({ ...formData, additionalCost: Number(e.target.value) || 0 })}
-                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                    step="0.01"
-                  />
+                  <div className="relative">
+                    <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                    <input
+                      type="number"
+                      value={formData.additionalCost}
+                      onChange={(e) => setFormData({ ...formData, additionalCost: Number(e.target.value) || 0 })}
+                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      step="0.01"
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-1">
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">세금</label>
-                  <input
-                    type="number"
-                    value={formData.tax}
-                    onChange={(e) => setFormData({ ...formData, tax: Number(e.target.value) || 0 })}
-                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                    step="0.01"
-                  />
+                  <div className="relative">
+                    <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                    <input
+                      type="number"
+                      value={formData.tax}
+                      onChange={(e) => setFormData({ ...formData, tax: Number(e.target.value) || 0 })}
+                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      step="0.01"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">카드수수료</label>
-                  <input
-                    type="number"
-                    value={formData.cardFee}
-                    onChange={(e) => setFormData({ ...formData, cardFee: Number(e.target.value) || 0 })}
-                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                    step="0.01"
-                  />
+                  <div className="relative">
+                    <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                    <input
+                      type="number"
+                      value={formData.cardFee}
+                      onChange={(e) => setFormData({ ...formData, cardFee: Number(e.target.value) || 0 })}
+                      className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      step="0.01"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -512,25 +524,31 @@ export default function PricingSection({
                  <div className="grid grid-cols-2 gap-1">
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">선결제 지출</label>
-                    <input
-                      type="number"
-                      value={formData.prepaymentCost}
-                      onChange={(e) => setFormData({ ...formData, prepaymentCost: Number(e.target.value) || 0 })}
-                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                      step="0.01"
-                      placeholder="0"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={formData.prepaymentCost}
+                        onChange={(e) => setFormData({ ...formData, prepaymentCost: Number(e.target.value) || 0 })}
+                        className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        step="0.01"
+                        placeholder="0"
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">선결제 팁</label>
-                    <input
-                      type="number"
-                      value={formData.prepaymentTip}
-                      onChange={(e) => setFormData({ ...formData, prepaymentTip: Number(e.target.value) || 0 })}
-                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                      step="0.01"
-                      placeholder="0"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={formData.prepaymentTip}
+                        onChange={(e) => setFormData({ ...formData, prepaymentTip: Number(e.target.value) || 0 })}
+                        className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        step="0.01"
+                        placeholder="0"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
