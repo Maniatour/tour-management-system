@@ -50,7 +50,6 @@ export default function TourInfoSection({
             value={formData.tourTime}
             onChange={(e) => setFormData({ ...formData, tourTime: sanitizeTimeInput(e.target.value) })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            required
           />
         </div>
       </div>
@@ -69,7 +68,6 @@ export default function TourInfoSection({
               onFocus={() => setFormData({ ...formData, showPickupHotelDropdown: true })}
               placeholder="픽업 호텔을 검색하세요"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
             />
             
             {/* 드롭다운 화살표 */}
@@ -124,7 +122,6 @@ export default function TourInfoSection({
             value={formData.pickUpTime}
             onChange={(e) => setFormData({ ...formData, pickUpTime: sanitizeTimeInput(e.target.value) })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            required
           />
         </div>
       </div>
