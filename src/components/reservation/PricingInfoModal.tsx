@@ -62,9 +62,15 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   useEffect(() => {
     if (isOpen && reservation) {
       loadPricingData()
-      loadCoupons()
     }
   }, [isOpen, reservation])
+
+  // pricingData가 로드된 후 쿠폰 로드
+  useEffect(() => {
+    if (pricingData) {
+      loadCoupons()
+    }
+  }, [pricingData])
 
   const loadPricingData = async () => {
     if (!reservation) return
@@ -83,6 +89,11 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         throw error
       }
 
+      // 쿠폰 할인이 양수로 저장되어 있다면 마이너스로 변환
+      if (data && data.coupon_discount > 0) {
+        data.coupon_discount = -data.coupon_discount
+      }
+      
       setPricingData(data)
       setEditData(data)
     } catch (err) {
@@ -105,8 +116,8 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       setCoupons(data || [])
       
       // 기존 가격 데이터에 쿠폰이 있으면 해당 쿠폰을 선택
-      if (editData?.coupon_code && data) {
-        const matchingCoupon = data.find(c => c.coupon_code === editData.coupon_code)
+      if (pricingData?.coupon_code && data) {
+        const matchingCoupon = data.find(c => c.coupon_code === pricingData.coupon_code)
         if (matchingCoupon) {
           setSelectedCoupon(matchingCoupon.id)
         }
@@ -212,16 +223,16 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       return
     }
     
-    // 쿠폰 할인 계산
+    // 쿠폰 할인 계산 (마이너스 값으로 저장)
     let discountAmount = 0
     const subtotal = (editData.product_price_total || 0) + 
                     (editData.required_option_total || 0) + 
                     (editData.option_total || 0)
     
     if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
-      discountAmount = subtotal * (coupon.percentage_value / 100)
+      discountAmount = -(subtotal * (coupon.percentage_value / 100)) // 마이너스로 저장
     } else if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
-      discountAmount = coupon.fixed_value
+      discountAmount = -coupon.fixed_value // 마이너스로 저장
     }
     
     const updatedData = { 
@@ -345,30 +356,39 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">성인</span>
-                    <input
-                      type="number"
-                      value={editData?.adult_product_price || 0}
-                      onChange={(e) => handleInputChange('adult_product_price', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.adult_product_price || 0}
+                        onChange={(e) => handleInputChange('adult_product_price', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">아동</span>
-                    <input
-                      type="number"
-                      value={editData?.child_product_price || 0}
-                      onChange={(e) => handleInputChange('child_product_price', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.child_product_price || 0}
+                        onChange={(e) => handleInputChange('child_product_price', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">유아</span>
-                    <input
-                      type="number"
-                      value={editData?.infant_product_price || 0}
-                      onChange={(e) => handleInputChange('infant_product_price', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.infant_product_price || 0}
+                        onChange={(e) => handleInputChange('infant_product_price', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center bg-white rounded px-2 py-1">
                     <span className="font-semibold text-gray-900">합계</span>
@@ -383,21 +403,27 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">필수 옵션</span>
-                    <input
-                      type="number"
-                      value={editData?.required_option_total || 0}
-                      onChange={(e) => handleInputChange('required_option_total', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.required_option_total || 0}
+                        onChange={(e) => handleInputChange('required_option_total', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">선택 옵션</span>
-                    <input
-                      type="number"
-                      value={editData?.option_total || 0}
-                      onChange={(e) => handleInputChange('option_total', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.option_total || 0}
+                        onChange={(e) => handleInputChange('option_total', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center bg-white rounded px-2 py-1 col-span-2">
                     <span className="font-semibold text-gray-900">옵션 합계</span>
@@ -439,61 +465,85 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">쿠폰 할인</span>
-                    <span className="font-semibold text-green-600">-${(editData?.coupon_discount || 0).toFixed(2)}</span>
+                    <span className="font-semibold text-green-600">
+                      {editData?.coupon_discount && editData.coupon_discount < 0 
+                        ? `-$${Math.abs(editData.coupon_discount).toFixed(2)}` 
+                        : editData?.coupon_discount && editData.coupon_discount > 0
+                        ? `-$${editData.coupon_discount.toFixed(2)}`
+                        : `$${(editData?.coupon_discount || 0).toFixed(2)}`}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">추가 할인</span>
-                    <input
-                      type="number"
-                      value={editData?.additional_discount || 0}
-                      onChange={(e) => handleInputChange('additional_discount', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.additional_discount || 0}
+                        onChange={(e) => handleInputChange('additional_discount', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">추가 비용</span>
-                    <input
-                      type="number"
-                      value={editData?.additional_cost || 0}
-                      onChange={(e) => handleInputChange('additional_cost', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.additional_cost || 0}
+                        onChange={(e) => handleInputChange('additional_cost', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">카드 수수료</span>
-                    <input
-                      type="number"
-                      value={editData?.card_fee || 0}
-                      onChange={(e) => handleInputChange('card_fee', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.card_fee || 0}
+                        onChange={(e) => handleInputChange('card_fee', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">세금</span>
-                    <input
-                      type="number"
-                      value={editData?.tax || 0}
-                      onChange={(e) => handleInputChange('tax', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.tax || 0}
+                        onChange={(e) => handleInputChange('tax', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">선불 비용</span>
-                    <input
-                      type="number"
-                      value={editData?.prepayment_cost || 0}
-                      onChange={(e) => handleInputChange('prepayment_cost', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.prepayment_cost || 0}
+                        onChange={(e) => handleInputChange('prepayment_cost', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">선불 팁</span>
-                    <input
-                      type="number"
-                      value={editData?.prepayment_tip || 0}
-                      onChange={(e) => handleInputChange('prepayment_tip', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.prepayment_tip || 0}
+                        onChange={(e) => handleInputChange('prepayment_tip', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -518,12 +568,15 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                 {editData?.is_private_tour && (
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-gray-600">추가 비용</span>
-                    <input
-                      type="number"
-                      value={editData?.private_tour_additional_cost || 0}
-                      onChange={(e) => handleInputChange('private_tour_additional_cost', parseFloat(e.target.value) || 0)}
-                      className="w-20 px-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        value={editData?.private_tour_additional_cost || 0}
+                        onChange={(e) => handleInputChange('private_tour_additional_cost', parseFloat(e.target.value) || 0)}
+                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -534,14 +587,33 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-gray-700">할인/추가비용 + 프라이빗투어</span>
                   <span className="font-bold text-orange-600">
-                    ${((editData?.coupon_discount || 0) + 
-                        (editData?.additional_discount || 0) + 
-                        (editData?.additional_cost || 0) + 
-                        (editData?.card_fee || 0) + 
-                        (editData?.tax || 0) + 
-                        (editData?.prepayment_cost || 0) + 
-                        (editData?.prepayment_tip || 0) + 
-                        (editData?.private_tour_additional_cost || 0)).toFixed(2)}
+                    {(() => {
+                      const couponDiscount = editData?.coupon_discount || 0;
+                      const additionalDiscount = editData?.additional_discount || 0;
+                      const additionalCost = editData?.additional_cost || 0;
+                      const cardFee = editData?.card_fee || 0;
+                      const tax = editData?.tax || 0;
+                      const prepaymentCost = editData?.prepayment_cost || 0;
+                      const prepaymentTip = editData?.prepayment_tip || 0;
+                      const privateTourCost = editData?.private_tour_additional_cost || 0;
+                      
+                      const total = couponDiscount + additionalDiscount + additionalCost + cardFee + tax + prepaymentCost + prepaymentTip + privateTourCost;
+                      
+                      // 디버깅용 콘솔 로그
+                      console.log('소계 계산 디버깅:', {
+                        couponDiscount,
+                        additionalDiscount,
+                        additionalCost,
+                        cardFee,
+                        tax,
+                        prepaymentCost,
+                        prepaymentTip,
+                        privateTourCost,
+                        total
+                      });
+                      
+                      return total < 0 ? `-$${Math.abs(total).toFixed(2)}` : `$${total.toFixed(2)}`;
+                    })()}
                   </span>
                 </div>
               </div>
@@ -557,21 +629,27 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                   <div className="grid grid-cols-2 gap-3 mt-3">
                     <div className="text-center">
                       <div className="text-xs text-gray-600">예약금</div>
-                      <input
-                        type="number"
-                        value={editData?.deposit_amount || 0}
-                        onChange={(e) => handleInputChange('deposit_amount', parseFloat(e.target.value) || 0)}
-                        className="w-full px-1 py-0.5 text-center border border-gray-300 rounded text-sm"
-                      />
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.deposit_amount || 0}
+                          onChange={(e) => handleInputChange('deposit_amount', parseFloat(e.target.value) || 0)}
+                          className="w-full pl-4 pr-1 py-0.5 text-center border border-gray-300 rounded text-sm"
+                        />
+                      </div>
                     </div>
                     <div className="text-center">
                       <div className="text-xs text-gray-600">잔금</div>
-                      <input
-                        type="number"
-                        value={editData?.balance_amount || 0}
-                        onChange={(e) => handleInputChange('balance_amount', parseFloat(e.target.value) || 0)}
-                        className="w-full px-1 py-0.5 text-center border border-gray-300 rounded text-sm"
-                      />
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.balance_amount || 0}
+                          onChange={(e) => handleInputChange('balance_amount', parseFloat(e.target.value) || 0)}
+                          className="w-full pl-4 pr-1 py-0.5 text-center border border-gray-300 rounded text-sm"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

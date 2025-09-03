@@ -112,7 +112,14 @@ export default function DynamicPricingManager({
       adult_price: number;
       child_price: number;
       infant_price: number;
-    }> | Record<string, any>;
+    }> | Record<string, {
+      adult?: number;
+      adult_price?: number;
+      child?: number;
+      child_price?: number;
+      infant?: number;
+      infant_price?: number;
+    }>;
     commission_percent: number;
     markup_amount: number;
     coupon_percent: number;
@@ -637,7 +644,7 @@ export default function DynamicPricingManager({
       // options_pricing이 배열인 경우
       if (Array.isArray(pricingData.options_pricing)) {
         const optionPricing = pricingData.options_pricing.find(
-          (option: any) => option.option_id === selectedRequiredOption
+          (option: { option_id: string; adult_price?: number }) => option.option_id === selectedRequiredOption
         );
         if (optionPricing) {
           optionAdultPrice = optionPricing.adult_price || 0;
@@ -835,8 +842,8 @@ export default function DynamicPricingManager({
                 weekday_pricing: [{
                   day_of_week: dayOfWeek,
                   adult_price: pricingConfig.adult_price,
-                  child_price: pricingConfig.child_price || pricingConfig.adult_price * 0.7, // 아동은 성인의 70%
-                  infant_price: pricingConfig.infant_price || pricingConfig.adult_price * 0.3  // 유아는 성인의 30%
+                  child_price: pricingConfig.child_price || pricingConfig.adult_price, // 아동은 성인과 같은 가격
+                  infant_price: pricingConfig.infant_price || pricingConfig.adult_price  // 유아는 성인과 같은 가격
                 }],
                 required_option_pricing: pricingConfig.required_options.map(option => ({
                   option_id: option.option_id,
@@ -873,8 +880,8 @@ export default function DynamicPricingManager({
             channel_id: rule.channel_id,
             date: rule.start_date,
             adult_price: adultPrice,
-          child_price: childPrice || adultPrice * 0.7, // 아동은 성인의 70%
-          infant_price: infantPrice || adultPrice * 0.3, // 유아는 성인의 30%
+          child_price: childPrice || adultPrice, // 아동은 성인과 같은 가격
+          infant_price: infantPrice || adultPrice, // 유아는 성인과 같은 가격
           options_pricing: rule.required_option_pricing || [],
             commission_percent: pricingConfig.commission_percent,
             markup_amount: pricingConfig.markup_amount,
@@ -1648,7 +1655,6 @@ export default function DynamicPricingManager({
                        />
                        <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                      </div>
-                     <p className="text-xs text-gray-500 mt-1">입력하지 않으면 성인 가격의 70%로 자동 설정됩니다</p>
                    </div>
                    <div>
                      <label className="block text-sm font-medium text-gray-700 mb-2">유아 ($)</label>
@@ -1666,7 +1672,6 @@ export default function DynamicPricingManager({
                        />
                        <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                      </div>
-                     <p className="text-xs text-gray-500 mt-1">입력하지 않으면 성인 가격의 30%로 자동 설정됩니다</p>
                    </div>
                  </div>
                </div>

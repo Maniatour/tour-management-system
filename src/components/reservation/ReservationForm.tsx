@@ -137,7 +137,8 @@ export default function ReservationForm({
     infant: reservation?.infant || 0,
     totalPeople: reservation?.totalPeople || 1,
     channelId: reservation?.channelId || '',
-    selectedChannelType: 'self',
+    selectedChannelType: reservation?.channelId ? 
+      (channels.find(c => c.id === reservation?.channelId)?.type || 'self') : 'self',
     channelSearch: '',
     channelRN: reservation?.channelRN || '',
     addedBy: reservation?.addedBy || '',
@@ -214,8 +215,8 @@ export default function ReservationForm({
     getCurrentUser()
   }, [reservation])
 
-  // 상품 선택 시 필수 옵션 로드 함수
-  const loadRequiredOptionsForProduct = async (productId: string) => {
+  // 상품 선택 시 필수 옵션 로드 함수 (dynamic_pricing의 options_pricing 참조)
+  const loadRequiredOptionsForProduct = useCallback(async (productId: string, tourDate?: string, channelId?: string) => {
     if (!productId) {
       setFormData(prev => ({ ...prev, requiredOptions: {} }))
       return
@@ -248,7 +249,7 @@ export default function ReservationForm({
         return
       }
 
-      // 필수 옵션을 formData에 설정
+      // 필수 옵션을 formData에 설정 (기본값으로 product_option_choices의 가격 사용)
       const requiredOptions: { [optionId: string]: { choiceId: string; adult: number; child: number; infant: number } } = {}
       
       productOptions?.forEach(productOption => {
@@ -266,18 +267,79 @@ export default function ReservationForm({
         }
       })
 
+      // dynamic_pricing에서 options_pricing 가격 정보가 있으면 업데이트
+      if (tourDate && channelId) {
+        try {
+          const { data: pricingData, error: pricingError } = await supabase
+            .from('dynamic_pricing')
+            .select('options_pricing')
+            .eq('product_id', productId)
+            .eq('date', tourDate)
+            .eq('channel_id', channelId)
+            .limit(1)
+
+          if (!pricingError && pricingData && pricingData.length > 0) {
+            const pricing = pricingData[0]
+            console.log('Dynamic pricing options_pricing 조회:', pricing.options_pricing)
+            
+            if (pricing.options_pricing && typeof pricing.options_pricing === 'object') {
+              // options_pricing이 배열인 경우 처리
+              if (Array.isArray(pricing.options_pricing)) {
+                pricing.options_pricing.forEach((optionPricing: { option_id: string; adult_price?: number; child_price?: number; infant_price?: number }) => {
+                  if (optionPricing.option_id && requiredOptions[optionPricing.option_id]) {
+                    requiredOptions[optionPricing.option_id] = {
+                      ...requiredOptions[optionPricing.option_id],
+                      adult: optionPricing.adult_price || 0,
+                      child: optionPricing.child_price || 0,
+                      infant: optionPricing.infant_price || 0
+                    }
+                    console.log(`옵션 ${optionPricing.option_id} 가격 업데이트 (배열 형식):`, {
+                      adult: optionPricing.adult_price,
+                      child: optionPricing.child_price,
+                      infant: optionPricing.infant_price
+                    })
+                  }
+                })
+              } else {
+                // options_pricing이 객체인 경우 처리
+                Object.entries(pricing.options_pricing).forEach(([optionId, optionPricing]) => {
+                  const pricingData = optionPricing as { adult?: number; adult_price?: number; child?: number; child_price?: number; infant?: number; infant_price?: number }
+                  if (requiredOptions[optionId] && pricingData) {
+                    requiredOptions[optionId] = {
+                      ...requiredOptions[optionId],
+                      adult: pricingData.adult || pricingData.adult_price || 0,
+                      child: pricingData.child || pricingData.child_price || 0,
+                      infant: pricingData.infant || pricingData.infant_price || 0
+                    }
+                    console.log(`옵션 ${optionId} 가격 업데이트 (객체 형식):`, {
+                      adult: pricingData.adult || pricingData.adult_price,
+                      child: pricingData.child || pricingData.child_price,
+                      infant: pricingData.infant || pricingData.infant_price
+                    })
+                  }
+                })
+              }
+            }
+          }
+        } catch (pricingError) {
+          console.log('Dynamic pricing 조회 중 오류 (기본 가격 사용):', pricingError)
+        }
+      }
+
       setFormData(prev => ({ 
         ...prev, 
         requiredOptions,
         productRequiredOptions: productOptions || []
       }))
+
+      console.log('필수 옵션 로드 완료:', requiredOptions)
     } catch (error) {
       console.error('필수 옵션 로드 중 오류:', error)
     }
-  }
+  }, [setFormData])
 
   // 가격 정보 조회 함수 (reservation_pricing 우선, 없으면 dynamic_pricing)
-  const loadPricingInfo = async (productId: string, tourDate: string, channelId: string, reservationId?: string) => {
+  const loadPricingInfo = useCallback(async (productId: string, tourDate: string, channelId: string, reservationId?: string) => {
     if (!productId || !tourDate || !channelId) {
       console.log('필수 정보가 부족합니다:', { productId, tourDate, channelId })
       return
@@ -390,30 +452,8 @@ export default function ReservationForm({
         infantProductPrice: pricing.infant_price || 0
       }))
 
-      // 옵션 가격 정보도 업데이트
-      if (pricing.options_pricing && typeof pricing.options_pricing === 'object') {
-        setFormData(prev => {
-          const updatedRequiredOptions = { ...prev.requiredOptions }
-          
-          // options_pricing이 JSONB 객체인 경우 처리
-          Object.entries(pricing.options_pricing).forEach(([optionId, optionPricing]) => {
-            const pricing = optionPricing as { adult?: number; child?: number; infant?: number }
-            if (updatedRequiredOptions[optionId] && pricing) {
-              updatedRequiredOptions[optionId] = {
-                ...updatedRequiredOptions[optionId],
-                adult: pricing.adult || 0,
-                child: pricing.child || 0,
-                infant: pricing.infant || 0
-              }
-            }
-          })
-
-          return {
-            ...prev,
-            requiredOptions: updatedRequiredOptions
-          }
-        })
-      }
+      // 필수 옵션을 먼저 로드한 후 dynamic_pricing의 options_pricing으로 가격 업데이트
+      await loadRequiredOptionsForProduct(productId, tourDate, channelId)
 
       console.log('가격 정보가 자동으로 입력되었습니다')
       
@@ -423,7 +463,7 @@ export default function ReservationForm({
     } catch (error) {
       console.error('Dynamic pricing 조회 중 오류:', error)
     }
-  }
+  }, [loadRequiredOptionsForProduct])
 
   // 가격 계산 함수들
   const calculateProductPriceTotal = useCallback(() => {
@@ -494,7 +534,7 @@ export default function ReservationForm({
       })
       loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id)
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, reservation?.id])
+  }, [formData.productId, formData.tourDate, formData.channelId, reservation?.id, loadPricingInfo])
 
   // 가격 정보 자동 업데이트
   useEffect(() => {
@@ -798,7 +838,7 @@ export default function ReservationForm({
                 products={products}
                 getRequiredOptionsForProduct={(productId) => getRequiredOptionsForProduct(productId, productOptions, options)}
                 getChoicesForOption={(optionId) => getChoicesForOption(optionId, optionChoices)}
-                loadRequiredOptionsForProduct={loadRequiredOptionsForProduct}
+                loadRequiredOptionsForProduct={(productId) => loadRequiredOptionsForProduct(productId, formData.tourDate, formData.channelId)}
                 t={t}
               />
             </div>
