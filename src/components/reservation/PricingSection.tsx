@@ -59,7 +59,7 @@ interface PricingSectionProps {
     fixed_value?: number
   }>
   getOptionalOptionsForProduct: (productId: string) => ProductOption[]
-  getDynamicPricingForOption: (optionId: string) => { adult: number; child: number; infant: number } | null
+  getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
   t: (key: string) => string
 }
 
@@ -272,13 +272,13 @@ export default function PricingSection({
                       <div className="mb-2">
                         <select
                           value={currentOption.choiceId}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const selectedChoice = productOption.product_option_choices?.find(
                               (choice) => choice.id === e.target.value
                             )
                             if (selectedChoice) {
                               // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
-                              const dynamicPricing = getDynamicPricingForOption(productOption.id)
+                              const dynamicPricing = await getDynamicPricingForOption(productOption.id)
                               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               setFormData((prev: any) => ({
                                 ...prev,

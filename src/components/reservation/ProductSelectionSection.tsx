@@ -43,7 +43,7 @@ interface ProductSelectionSectionProps {
     infant_price_adjustment?: number
   }>
   loadRequiredOptionsForProduct: (productId: string) => Promise<void>
-  getDynamicPricingForOption: (optionId: string) => { adult: number; child: number; infant: number } | null
+  getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
   t: (key: string) => string
 }
 
@@ -208,7 +208,7 @@ export default function ProductSelectionSection({
                             ? 'border-blue-500 bg-blue-50 shadow-md'
                             : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300'
                         }`}
-                        onClick={() => {
+                        onClick={async () => {
                           // 같은 카테고리의 다른 옵션들은 선택 해제
                           const updatedSelectedOptions = { ...formData.selectedOptions }
                           options.forEach(opt => {
@@ -227,7 +227,7 @@ export default function ProductSelectionSection({
 
                           // 선택된 choice의 가격 정보를 가격 정보 섹션에 반영
                           // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
-                          const dynamicPricing = getDynamicPricingForOption(option.id)
+                          const dynamicPricing = await getDynamicPricingForOption(option.id)
                           updatedRequiredOptions[option.id] = {
                             choiceId: choice.id,
                             adult: dynamicPricing?.adult ?? choice.adult_price_adjustment ?? 0,

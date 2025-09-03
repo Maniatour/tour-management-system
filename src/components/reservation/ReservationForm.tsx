@@ -567,25 +567,58 @@ export default function ReservationForm({
   ])
 
   // dynamic_pricing에서 특정 옵션의 가격 정보를 가져오는 함수
-  const getDynamicPricingForOption = useCallback((optionId: string) => {
+  const getDynamicPricingForOption = useCallback(async (optionId: string) => {
     if (!formData.productId || !formData.tourDate || !formData.channelId) {
       return null
     }
 
-    // 현재 로드된 dynamic_pricing 데이터에서 해당 옵션의 가격 정보 찾기
-    // 이 함수는 loadPricingInfo에서 로드된 데이터를 기반으로 작동
-    // 실제로는 formData.requiredOptions에서 이미 dynamic_pricing 데이터가 반영되어 있음
-    const requiredOption = formData.requiredOptions[optionId]
-    if (requiredOption) {
-      return {
-        adult: requiredOption.adult,
-        child: requiredOption.child,
-        infant: requiredOption.infant
-      }
-    }
+    try {
+      // dynamic_pricing 테이블에서 직접 가격 정보 조회
+      const { data: pricingData, error } = await supabase
+        .from('dynamic_pricing')
+        .select('options_pricing')
+        .eq('product_id', formData.productId)
+        .eq('date', formData.tourDate)
+        .eq('channel_id', formData.channelId)
+        .limit(1)
 
-    return null
-  }, [formData.productId, formData.tourDate, formData.channelId, formData.requiredOptions])
+      if (error || !pricingData || pricingData.length === 0) {
+        return null
+      }
+
+      const pricing = pricingData[0]
+      if (pricing.options_pricing && typeof pricing.options_pricing === 'object') {
+        if (Array.isArray(pricing.options_pricing)) {
+          const optionPricing = pricing.options_pricing.find(
+            (option: { option_id: string; adult_price?: number; child_price?: number; infant_price?: number }) => 
+              option.option_id === optionId
+          )
+          if (optionPricing) {
+            return {
+              adult: optionPricing.adult_price || 0,
+              child: optionPricing.child_price || 0,
+              infant: optionPricing.infant_price || 0
+            }
+          }
+        } else {
+          const optionPricing = pricing.options_pricing[optionId]
+          if (optionPricing) {
+            const pricingData = optionPricing as { adult?: number; adult_price?: number; child?: number; child_price?: number; infant?: number; infant_price?: number }
+            return {
+              adult: pricingData.adult || pricingData.adult_price || 0,
+              child: pricingData.child || pricingData.child_price || 0,
+              infant: pricingData.infant || pricingData.infant_price || 0
+            }
+          }
+        }
+      }
+
+      return null
+    } catch (error) {
+      console.error('Dynamic pricing 조회 중 오류:', error)
+      return null
+    }
+  }, [formData.productId, formData.tourDate, formData.channelId])
 
   // 가격 정보 저장 함수 (외부에서 호출 가능)
   const savePricingInfo = useCallback(async (reservationId: string) => {
