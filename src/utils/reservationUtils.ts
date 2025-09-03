@@ -130,6 +130,15 @@ export const getOptionalOptionsForProduct = (productId: string, productOptions: 
   )
 }
 
+// 상품의 다중 선택 가능한 옵션 가져오기 (is_multiple = true)
+export const getMultipleSelectOptionsForProduct = (productId: string, productOptions: ProductOption[]) => {
+  return productOptions.filter(option => 
+    option.product_id === productId && 
+    option.is_required === false && 
+    option.is_multiple === true
+  )
+}
+
 // 옵션의 선택지 가져오기
 export const getChoicesForOption = (optionId: string, optionChoices: ProductOptionChoice[]) => {
   return optionChoices.filter(choice => choice.product_option_id === optionId)

@@ -38,6 +38,7 @@ export interface PricingInfo {
   prepaymentCost: number
   prepaymentTip: number
   selectedOptionalOptions: { [key: string]: any }
+  selectedMultipleOptions: { [key: string]: any }
   optionTotal: number
   totalPrice: number
   depositAmount: number

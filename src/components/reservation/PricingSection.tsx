@@ -59,6 +59,7 @@ interface PricingSectionProps {
     fixed_value?: number
   }>
   getOptionalOptionsForProduct: (productId: string) => ProductOption[]
+  getMultipleSelectOptionsForProduct: (productId: string) => ProductOption[]
   getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
   t: (key: string) => string
 }
@@ -72,6 +73,7 @@ export default function PricingSection({
   calculateCouponDiscount,
   coupons,
   getOptionalOptionsForProduct,
+  getMultipleSelectOptionsForProduct,
   getDynamicPricingForOption
 }: PricingSectionProps) {
   return (
@@ -554,6 +556,49 @@ export default function PricingSection({
               </div>
             </div>
           </div>
+
+          {/* 다중 선택 옵션 */}
+          {formData.productId && getMultipleSelectOptionsForProduct(formData.productId).length > 0 && (
+            <div className="bg-white p-3 rounded border border-gray-200">
+              <h4 className="text-sm font-medium text-gray-900 mb-2">다중 선택 옵션</h4>
+              <div className="space-y-2">
+                {getMultipleSelectOptionsForProduct(formData.productId).map((option) => (
+                  <div key={option.id} className="border border-gray-200 rounded p-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-gray-700">{option.name}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <select
+                        value={(formData as { selectedMultipleOptions?: { [key: string]: string } }).selectedMultipleOptions?.[option.id] || ''}
+                        onChange={(e) => {
+                          const selectedChoiceId = e.target.value
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          setFormData((prev: any) => ({
+                            ...prev,
+                            selectedMultipleOptions: {
+                              ...prev.selectedMultipleOptions,
+                              [option.id]: selectedChoiceId
+                            }
+                          }))
+                        }}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
+                      >
+                        <option value="">선택하세요</option>
+                        {option.product_option_choices?.map((choice) => (
+                          <option key={choice.id} value={choice.id}>
+                            {choice.name} 
+                            {choice.adult_price_adjustment !== undefined && choice.adult_price_adjustment !== 0 && ` (성인: ${choice.adult_price_adjustment > 0 ? '+' : ''}${choice.adult_price_adjustment})`}
+                            {choice.child_price_adjustment !== undefined && choice.child_price_adjustment !== 0 && ` (아동: ${choice.child_price_adjustment > 0 ? '+' : ''}${choice.child_price_adjustment})`}
+                            {choice.infant_price_adjustment !== undefined && choice.infant_price_adjustment !== 0 && ` (유아: ${choice.infant_price_adjustment > 0 ? '+' : ''}${choice.infant_price_adjustment})`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 선택 옵션 */}
           <div className="bg-white p-3 rounded border border-gray-200">
