@@ -75,7 +75,7 @@ export default function PricingSection({
   getDynamicPricingForOption
 }: PricingSectionProps) {
   return (
-    <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+    <div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-3">
           <h3 className="text-base font-semibold text-gray-900">가격 정보</h3>
@@ -773,6 +773,9 @@ export default function PricingSection({
           </div>
         </div>
       </div>
+      
+      {/* 구분선 */}
+      <div className="border-t border-gray-300 mt-4"></div>
     </div>
   )
 }
