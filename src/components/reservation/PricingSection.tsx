@@ -3,6 +3,7 @@
 interface ProductOption {
   id: string
   name: string
+  linked_option_id?: string
   product_option_choices?: Array<{
     id: string
     name: string
@@ -289,9 +290,9 @@ export default function PricingSection({
                             )
                             if (selectedChoice) {
                               // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
-                              const dynamicPricing = await getDynamicPricingForOption(productOption.id)
+                              const dynamicPricing = await getDynamicPricingForOption(productOption.linked_option_id || productOption.id)
                               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              setFormData((prev: any) => ({
+                              setFormData((prev: any) => ({
                                 ...prev,
                                 requiredOptions: {
                                   ...prev.requiredOptions,

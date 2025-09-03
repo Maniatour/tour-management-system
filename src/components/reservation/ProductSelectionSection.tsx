@@ -10,6 +10,7 @@ interface Product {
 interface ProductOption {
   id: string
   name: string
+  linked_option_id?: string
   product_option_choices?: Array<{
     id: string
     name: string
@@ -227,7 +228,7 @@ export default function ProductSelectionSection({
 
                           // 선택된 choice의 가격 정보를 가격 정보 섹션에 반영
                           // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
-                          const dynamicPricing = await getDynamicPricingForOption(option.id)
+                          const dynamicPricing = await getDynamicPricingForOption(option.linked_option_id || option.id)
                           updatedRequiredOptions[option.id] = {
                             choiceId: choice.id,
                             adult: dynamicPricing?.adult ?? choice.adult_price_adjustment ?? 0,
