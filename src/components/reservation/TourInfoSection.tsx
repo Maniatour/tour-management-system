@@ -15,7 +15,8 @@ interface TourInfoSectionProps {
     pickUpHotel: string
     pickUpTime: string
   }
-  setFormData: (data: { [key: string]: unknown }) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setFormData: (data: any) => void
   pickupHotels: PickupHotel[]
   sanitizeTimeInput: (value: string) => string
   t: (key: string) => string

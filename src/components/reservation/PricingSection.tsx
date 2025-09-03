@@ -72,6 +72,7 @@ interface PricingSectionProps {
   getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
   options: Option[]
   t: (key: string) => string
+  autoSelectCoupon: () => void
 }
 
 export default function PricingSection({
@@ -84,7 +85,8 @@ export default function PricingSection({
   coupons,
   getOptionalOptionsForProduct,
   getDynamicPricingForOption,
-  options
+  options,
+  autoSelectCoupon
 }: PricingSectionProps) {
   return (
     <div>
@@ -430,7 +432,17 @@ export default function PricingSection({
               {/* 쿠폰 */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs text-gray-600">쿠폰</label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-600">쿠폰</label>
+                    <button
+                      type="button"
+                      onClick={autoSelectCoupon}
+                      className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 transition-colors"
+                      title="상품, 채널, 날짜에 맞는 쿠폰 자동 선택"
+                    >
+                      자동 선택
+                    </button>
+                  </div>
                   {formData.couponCode && (
                     <div className="text-xs text-red-600 font-medium">
                       -${formData.couponDiscount.toFixed(2)}

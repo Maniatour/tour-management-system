@@ -587,7 +587,7 @@ export default function ReservationForm({
   }, [formData.totalPrice, formData.depositAmount])
 
   // 쿠폰 할인 계산 함수
-  const calculateCouponDiscount = (coupon: Database['public']['Tables']['coupons']['Row'], subtotal: number) => {
+  const calculateCouponDiscount = useCallback((coupon: Database['public']['Tables']['coupons']['Row'], subtotal: number) => {
     if (!coupon) return 0
     
     console.log('쿠폰 할인 계산:', { coupon, subtotal }) // 디버깅용
@@ -600,7 +600,87 @@ export default function ReservationForm({
     }
     
     return 0
-  }
+  }, [])
+
+  // 쿠폰 자동 선택 함수
+  const autoSelectCoupon = useCallback(() => {
+    if (!formData.productId || !formData.tourDate || !formData.channelId) {
+      return
+    }
+
+    console.log('쿠폰 자동 선택 시작:', {
+      productId: formData.productId,
+      tourDate: formData.tourDate,
+      channelId: formData.channelId
+    })
+
+    // 투어 날짜를 Date 객체로 변환
+    const tourDate = new Date(formData.tourDate)
+    
+    // 조건에 맞는 쿠폰 필터링
+    const matchingCoupons = coupons.filter(coupon => {
+      // 상태가 활성인지 확인
+      if (coupon.status !== 'active') return false
+      
+      // 채널이 일치하는지 확인 (null이면 모든 채널에 적용)
+      if (coupon.channel_id && coupon.channel_id !== formData.channelId) return false
+      
+      // 상품이 일치하는지 확인 (null이면 모든 상품에 적용)
+      if (coupon.product_id && coupon.product_id !== formData.productId) return false
+      
+      // 날짜 범위 확인
+      if (coupon.start_date) {
+        const startDate = new Date(coupon.start_date)
+        if (tourDate < startDate) return false
+      }
+      
+      if (coupon.end_date) {
+        const endDate = new Date(coupon.end_date)
+        if (tourDate > endDate) return false
+      }
+      
+      return true
+    })
+
+    console.log('매칭되는 쿠폰들:', matchingCoupons)
+
+    // 가장 적합한 쿠폰 선택 (우선순위: 고정값 할인 > 퍼센트 할인)
+    if (matchingCoupons.length > 0) {
+      const selectedCoupon = matchingCoupons.reduce((best, current) => {
+        // 고정값 할인이 있는 쿠폰을 우선 선택
+        if (current.discount_type === 'fixed' && current.fixed_value && 
+            (!best || best.discount_type !== 'fixed' || (best.fixed_value || 0) < current.fixed_value)) {
+          return current
+        }
+        // 고정값이 없으면 퍼센트 할인 중 가장 높은 것 선택
+        if (current.discount_type === 'percentage' && current.percentage_value && 
+            (!best || best.discount_type !== 'percentage' || (best.percentage_value || 0) < current.percentage_value)) {
+          return current
+        }
+        return best
+      })
+
+      if (selectedCoupon) {
+        console.log('자동 선택된 쿠폰:', selectedCoupon)
+        
+        const subtotal = calculateProductPriceTotal() + calculateRequiredOptionTotal()
+        const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
+        
+        setFormData(prev => ({
+          ...prev,
+          couponCode: selectedCoupon.coupon_code || '',
+          couponDiscount: couponDiscount
+        }))
+      }
+    } else {
+      // 매칭되는 쿠폰이 없으면 쿠폰 선택 해제
+      setFormData(prev => ({
+        ...prev,
+        couponCode: '',
+        couponDiscount: 0
+      }))
+    }
+  }, [formData.productId, formData.tourDate, formData.channelId, coupons, calculateProductPriceTotal, calculateRequiredOptionTotal, calculateCouponDiscount])
 
   // 상품, 날짜, 채널이 변경될 때 dynamic pricing에서 가격 자동 조회
   useEffect(() => {
@@ -613,6 +693,11 @@ export default function ReservationForm({
       loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id)
     }
   }, [formData.productId, formData.tourDate, formData.channelId, reservation?.id, loadPricingInfo])
+
+  // 상품, 날짜, 채널이 변경될 때 쿠폰 자동 선택
+  useEffect(() => {
+    autoSelectCoupon()
+  }, [autoSelectCoupon])
 
   // 가격 정보 자동 업데이트
   useEffect(() => {
@@ -963,6 +1048,7 @@ export default function ReservationForm({
                 getDynamicPricingForOption={getDynamicPricingForOption}
                 options={options}
                 t={t}
+                autoSelectCoupon={autoSelectCoupon}
               />
             </div>
 
