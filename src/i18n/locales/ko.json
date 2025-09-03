@@ -171,8 +171,10 @@
     "status": {
       "pending": "대기중",
       "confirmed": "확정",
+      "Confirmed": "확정",
       "completed": "완료",
-      "cancelled": "취소"
+      "cancelled": "취소",
+      "Canceled": "취소"
     },
     "form": {
       "title": "새 예약 추가",

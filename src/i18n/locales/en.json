@@ -148,8 +148,10 @@
     "status": {
       "pending": "Pending",
       "confirmed": "Confirmed",
+      "Confirmed": "Confirmed",
       "completed": "Completed",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "Canceled": "Cancelled"
     },
     "form": {
       "title": "Add New Reservation",
