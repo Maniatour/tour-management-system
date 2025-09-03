@@ -622,11 +622,11 @@ export default function ReservationForm({
       // 상태가 활성인지 확인
       if (coupon.status !== 'active') return false
       
-      // 채널이 일치하는지 확인 (null이면 모든 채널에 적용)
-      if (coupon.channel_id && coupon.channel_id !== formData.channelId) return false
+      // 채널이 정확히 일치하는지 확인 (null이면 매칭하지 않음)
+      if (!coupon.channel_id || coupon.channel_id !== formData.channelId) return false
       
-      // 상품이 일치하는지 확인 (null이면 모든 상품에 적용)
-      if (coupon.product_id && coupon.product_id !== formData.productId) return false
+      // 상품이 정확히 일치하는지 확인 (null이면 매칭하지 않음)
+      if (!coupon.product_id || coupon.product_id !== formData.productId) return false
       
       // 날짜 범위 확인
       if (coupon.start_date) {
