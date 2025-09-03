@@ -130,7 +130,8 @@ export const getOptionalOptionsForProduct = (productId: string, productOptions: 
   )
 }
 
-// 옵션의 선택지 가져오기
+// 옵션의 선택지 가져오기 (병합된 테이블 구조)
 export const getChoicesForOption = (optionId: string, optionChoices: ProductOptionChoice[]) => {
-  return optionChoices.filter(choice => choice.product_option_id === optionId)
+  // 병합된 테이블에서는 각 옵션이 이미 하나의 선택지를 나타냄
+  return optionChoices.filter(choice => choice.id === optionId)
 }

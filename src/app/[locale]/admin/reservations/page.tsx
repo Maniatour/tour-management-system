@@ -424,7 +424,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 {/* 상품 정보 */}
                 <div>
                   <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products)}</div>
-                  {/* 선택된 옵션들 표시 */}
+                  {/* 필수 선택된 옵션들만 표시 */}
                   {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
                     <div className="mt-1 space-y-1">
                       {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
@@ -436,6 +436,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         ).filter(Boolean);
                         
                         if (!option || choices.length === 0) return null;
+                        
+                        // 필수 옵션만 표시 (is_required가 true인 옵션만)
+                        if (!option.is_required) return null;
                         
                         // 옵션명과 선택지명이 같은 경우 선택지명만 표시
                         const displayText = choices.map(c => c?.name).join(', ');

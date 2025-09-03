@@ -225,7 +225,7 @@ export default function ReservationForm({
     }
 
     try {
-      // 상품의 필수 옵션들을 가져오기
+      // 상품의 필수 옵션들을 가져오기 (병합된 테이블 구조)
       const { data: productOptions, error } = await supabase
         .from('product_options')
         .select(`
@@ -234,15 +234,12 @@ export default function ReservationForm({
           description,
           is_required,
           linked_option_id,
-          product_option_choices (
-            id,
-            name,
-            description,
-            adult_price_adjustment,
-            child_price_adjustment,
-            infant_price_adjustment,
-            is_default
-          )
+          choice_name,
+          choice_description,
+          adult_price_adjustment,
+          child_price_adjustment,
+          infant_price_adjustment,
+          is_default
         `)
         .eq('product_id', productId)
         .eq('is_required', true)
@@ -252,21 +249,16 @@ export default function ReservationForm({
         return
       }
 
-      // 필수 옵션을 formData에 설정 (기본값으로 product_option_choices의 가격 사용)
+      // 필수 옵션을 formData에 설정 (병합된 테이블 구조)
       const requiredOptions: { [optionId: string]: { choiceId: string; adult: number; child: number; infant: number } } = {}
       
       productOptions?.forEach(productOption => {
-        if (productOption.product_option_choices && productOption.product_option_choices.length > 0) {
-          // 기본 선택지 또는 첫 번째 선택지를 기본값으로 설정
-          const defaultChoice = productOption.product_option_choices.find((choice: ProductOptionChoice) => choice.is_default) || 
-                               productOption.product_option_choices[0]
-          
-          requiredOptions[productOption.id] = {
-            choiceId: defaultChoice.id,
-            adult: defaultChoice.adult_price_adjustment || 0,
-            child: defaultChoice.child_price_adjustment || 0,
-            infant: defaultChoice.infant_price_adjustment || 0
-          }
+        // 병합된 테이블에서는 각 행이 이미 하나의 선택지를 나타냄
+        requiredOptions[productOption.id] = {
+          choiceId: productOption.id, // 옵션 ID를 선택지 ID로 사용
+          adult: productOption.adult_price_adjustment || 0,
+          child: productOption.child_price_adjustment || 0,
+          infant: productOption.infant_price_adjustment || 0
         }
       })
 
@@ -305,10 +297,20 @@ export default function ReservationForm({
                     infant_price: optionPricing.infant_price
                   })
                   
-                  // linked_option_id와 매칭되는 product_option 찾기 (linked_option_id가 없으면 id로 매칭)
+                  // option_id를 linked_option_id로 매핑하는 로직
+                  let targetOptionId = optionPricing.option_id
+                  
+                  // 기존 option_id가 product_options의 id와 일치하는 경우, linked_option_id로 변환
+                  const productOptionById = requiredOptionsList.find(opt => opt.id === optionPricing.option_id)
+                  if (productOptionById && productOptionById.linked_option_id) {
+                    targetOptionId = productOptionById.linked_option_id
+                    console.log(`옵션 ID 매핑: ${optionPricing.option_id} -> ${targetOptionId}`)
+                  }
+                  
+                  // linked_option_id와 매칭되는 product_option 찾기
                   const matchingProductOption = requiredOptionsList.find(opt => 
-                    opt.linked_option_id === optionPricing.option_id || 
-                    opt.id === optionPricing.option_id
+                    opt.linked_option_id === targetOptionId || 
+                    opt.id === targetOptionId
                   )
                   
                   // 매칭이 안 되는 경우 더 자세한 디버깅
@@ -362,10 +364,21 @@ export default function ReservationForm({
                 // options_pricing이 객체인 경우 처리
                 Object.entries(pricing.options_pricing).forEach(([optionId, optionPricing]) => {
                   const pricingData = optionPricing as { adult?: number; adult_price?: number; child?: number; child_price?: number; infant?: number; infant_price?: number }
-                  // linked_option_id와 매칭되는 product_option 찾기 (linked_option_id가 없으면 id로 매칭)
+                  
+                  // option_id를 linked_option_id로 매핑하는 로직
+                  let targetOptionId = optionId
+                  
+                  // 기존 option_id가 product_options의 id와 일치하는 경우, linked_option_id로 변환
+                  const productOptionById = requiredOptionsList.find(opt => opt.id === optionId)
+                  if (productOptionById && productOptionById.linked_option_id) {
+                    targetOptionId = productOptionById.linked_option_id
+                    console.log(`옵션 ID 매핑 (객체): ${optionId} -> ${targetOptionId}`)
+                  }
+                  
+                  // linked_option_id와 매칭되는 product_option 찾기
                   const matchingProductOption = requiredOptionsList.find(opt => 
-                    opt.linked_option_id === optionId || 
-                    opt.id === optionId
+                    opt.linked_option_id === targetOptionId || 
+                    opt.id === targetOptionId
                   )
                   if (matchingProductOption && requiredOptions[matchingProductOption.id] && pricingData) {
                     requiredOptions[matchingProductOption.id] = {

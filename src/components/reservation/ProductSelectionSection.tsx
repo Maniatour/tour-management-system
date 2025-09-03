@@ -11,13 +11,12 @@ interface ProductOption {
   id: string
   name: string
   linked_option_id?: string
-  product_option_choices?: Array<{
-    id: string
-    name: string
-    adult_price_adjustment?: number
-    child_price_adjustment?: number
-    infant_price_adjustment?: number
-  }>
+  choice_name?: string
+  choice_description?: string
+  adult_price_adjustment?: number
+  child_price_adjustment?: number
+  infant_price_adjustment?: number
+  is_default?: boolean
 }
 
 interface ProductSelectionSectionProps {
@@ -200,8 +199,15 @@ export default function ProductSelectionSection({
                 </h4>
                 <div className="space-y-3">
                   {options.map((option) => {
-                    const choices = getChoicesForOption(option.id)
-                    return choices.map((choice) => (
+                    // 병합된 테이블에서는 각 옵션이 이미 하나의 선택지를 나타냄
+                    const choice = {
+                      id: option.id,
+                      name: option.choice_name || option.name,
+                      adult_price_adjustment: option.adult_price_adjustment,
+                      child_price_adjustment: option.child_price_adjustment,
+                      infant_price_adjustment: option.infant_price_adjustment
+                    }
+                    return (
                       <div 
                         key={choice.id} 
                         className={`border rounded-lg p-3 cursor-pointer transition-all duration-200 ${
@@ -268,7 +274,7 @@ export default function ProductSelectionSection({
                            가격은 가격 정보 섹션에서 설정됩니다
                          </div>
                       </div>
-                    ))
+                    )
                   })}
                 </div>
               </div>

@@ -95,16 +95,43 @@ export function useReservationData() {
 
   const fetchOptionChoices = async () => {
     try {
+      // 병합된 테이블 구조에서는 product_options에서 선택지 정보를 가져옴
       const { data, error } = await supabase
-        .from('product_option_choices')
-        .select('*')
+        .from('product_options')
+        .select(`
+          id,
+          name,
+          description,
+          choice_name,
+          choice_description,
+          adult_price_adjustment,
+          child_price_adjustment,
+          infant_price_adjustment,
+          is_default,
+          product_id
+        `)
         .order('name', { ascending: true })
 
       if (error) {
         console.error('Error fetching option choices:', error)
         return
       }
-      setOptionChoices(data || [])
+      
+      // 새로운 구조에 맞게 데이터 변환
+      const transformedChoices = (data || []).map(item => ({
+        id: item.id,
+        name: item.choice_name || item.name,
+        description: item.choice_description || item.description,
+        adult_price_adjustment: item.adult_price_adjustment,
+        child_price_adjustment: item.child_price_adjustment,
+        infant_price_adjustment: item.infant_price_adjustment,
+        is_default: item.is_default,
+        product_option_id: item.id, // 자기 자신을 참조
+        created_at: item.created_at,
+        updated_at: item.updated_at
+      }))
+      
+      setOptionChoices(transformedChoices)
     } catch (error) {
       console.error('Error fetching option choices:', error)
     }

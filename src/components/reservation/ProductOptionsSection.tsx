@@ -77,30 +77,30 @@ export default function ProductOptionsSection({
                   </div>
                   
                   <div className="space-y-2">
-                    {option.choices.map((choice) => (
-                      <div key={choice.id} className="flex items-center justify-between p-2 border border-gray-100 rounded">
-                        <div className="flex items-center space-x-3">
-                          <input
-                            type="radio"
-                            name={`option_${optionId}`}
-                            value={choice.id}
-                            checked={formData.requiredOptions[optionId]?.choiceId === choice.id}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              requiredOptions: {
-                                ...prev.requiredOptions,
-                                [optionId]: {
-                                  choiceId: e.target.value,
-                                  adult: 0,
-                                  child: 0,
-                                  infant: 0
-                                }
+                    {/* 병합된 테이블에서는 각 옵션이 이미 하나의 선택지를 나타냄 */}
+                    <div className="flex items-center justify-between p-2 border border-gray-100 rounded">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="radio"
+                          name={`option_${optionId}`}
+                          value={optionId}
+                          checked={formData.requiredOptions[optionId]?.choiceId === optionId}
+                                                      onChange={(e) => setFormData((prev: any) => ({
+                            ...prev,
+                            requiredOptions: {
+                              ...prev.requiredOptions,
+                              [optionId]: {
+                                choiceId: e.target.value,
+                                adult: 0,
+                                child: 0,
+                                infant: 0
                               }
-                            }))}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                          />
-                          <span className="text-sm text-gray-900">{choice.name}</span>
-                        </div>
+                            }
+                          }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                        />
+                        <span className="text-sm text-gray-900">{option.name}</span>
+                      </div>
                         
                         {/* 가격 조정 입력 */}
                         <div className="flex items-center space-x-2">
@@ -109,14 +109,14 @@ export default function ProductOptionsSection({
                             <input
                               type="number"
                               placeholder="0"
-                              defaultValue={choice.adult_price_adjustment || 0}
+                              defaultValue={option.adult_price_adjustment || 0}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
-                                setFormData(prev => ({
+                                setFormData((prev: any) => ({
                                   ...prev,
                                   selectedOptionPrices: {
                                     ...prev.selectedOptionPrices,
-                                    [`${optionId}_${choice.id}_adult`]: value
+                                    [`${optionId}_adult`]: value
                                   }
                                 }))
                               }}
@@ -128,14 +128,14 @@ export default function ProductOptionsSection({
                             <input
                               type="number"
                               placeholder="0"
-                              defaultValue={choice.child_price_adjustment || 0}
+                              defaultValue={option.child_price_adjustment || 0}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
-                                setFormData(prev => ({
+                                setFormData((prev: any) => ({
                                   ...prev,
                                   selectedOptionPrices: {
                                     ...prev.selectedOptionPrices,
-                                    [`${optionId}_${choice.id}_child`]: value
+                                    [`${optionId}_child`]: value
                                   }
                                 }))
                               }}
@@ -147,14 +147,14 @@ export default function ProductOptionsSection({
                             <input
                               type="number"
                               placeholder="0"
-                              defaultValue={choice.infant_price_adjustment || 0}
+                              defaultValue={option.infant_price_adjustment || 0}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
-                                setFormData(prev => ({
+                                setFormData((prev: any) => ({
                                   ...prev,
                                   selectedOptionPrices: {
                                     ...prev.selectedOptionPrices,
-                                    [`${optionId}_${choice.id}_infant`]: value
+                                    [`${optionId}_infant`]: value
                                   }
                                 }))
                               }}
@@ -163,7 +163,6 @@ export default function ProductOptionsSection({
                           </div>
                         </div>
                       </div>
-                    ))}
                   </div>
                 </div>
               ))}

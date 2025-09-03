@@ -209,20 +209,17 @@ export default function DynamicPricingManager({
     try {
       setIsLoadingOptions(true);
       
-      // product_options 테이블에서 직접 데이터를 가져옴 (options 테이블과의 조인 제거)
+      // 병합된 product_options 테이블에서 데이터를 가져옴
       const { data: optionsData, error } = await supabase
         .from('product_options')
         .select(`
           id,
           name,
           linked_option_id,
-          product_option_choices (
-            id,
-            name,
-            adult_price_adjustment,
-            child_price_adjustment,
-            infant_price_adjustment
-          )
+          choice_name,
+          adult_price_adjustment,
+          child_price_adjustment,
+          infant_price_adjustment
         `)
         .eq('product_id', productId);
 
@@ -231,18 +228,17 @@ export default function DynamicPricingManager({
         return;
       }
 
-                    // 옵션 데이터를 가격 캘린더용으로 변환
+                    // 옵션 데이터를 가격 캘린더용으로 변환 (병합된 테이블 구조)
         const transformedOptions = optionsData?.map(option => {
-          // 첫 번째 선택 항목의 가격 조정값을 기준으로 설정
-          const firstChoice = option.product_option_choices?.[0];
-          const adultPrice = firstChoice?.adult_price_adjustment || 0;
-          const childPrice = firstChoice?.child_price_adjustment || 0;
-          const infantPrice = firstChoice?.infant_price_adjustment || 0;
+          // 병합된 테이블에서는 각 행이 이미 하나의 선택지를 나타냄
+          const adultPrice = option.adult_price_adjustment || 0;
+          const childPrice = option.child_price_adjustment || 0;
+          const infantPrice = option.infant_price_adjustment || 0;
           
           return {
             id: option.id,
-            name: option.name,
-            category: '기본', // 기본 카테고리로 설정 (options 테이블 조인 제거)
+            name: option.choice_name || option.name,
+            category: '기본', // 기본 카테고리로 설정
             base_price: adultPrice,
             adult_price: adultPrice,
             child_price: childPrice,

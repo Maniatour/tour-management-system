@@ -131,6 +131,9 @@ END $$;
 
 -- Verify final structure
 DO $$ 
+DECLARE
+    col RECORD;
+    con RECORD;
 BEGIN
     RAISE NOTICE '=== Final verification ===';
     

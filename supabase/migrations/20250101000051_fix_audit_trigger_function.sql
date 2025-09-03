@@ -1,13 +1,7 @@
--- Add customer-facing names to products table
--- This migration adds English and Korean full names for customers to see
+-- Fix audit_trigger_function to handle mixed ID types
+-- Migration: 20250101000051_fix_audit_trigger_function.sql
 
--- First, drop the audit_logs_view that depends on the record_id column
-DROP VIEW IF EXISTS audit_logs_view;
-
--- Then, change audit_logs record_id from UUID to TEXT to handle mixed ID types
-ALTER TABLE audit_logs ALTER COLUMN record_id TYPE TEXT;
-
--- Then, fix the audit_trigger_function to handle mixed ID types
+-- Update the audit_trigger_function to handle both UUID and TEXT record_id types
 CREATE OR REPLACE FUNCTION audit_trigger_function() RETURNS TRIGGER AS $$
 DECLARE
     old_data JSONB;
@@ -114,32 +108,5 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Add new columns for customer-facing names
-ALTER TABLE products ADD COLUMN IF NOT EXISTS name_en VARCHAR(255);
-ALTER TABLE products ADD COLUMN IF NOT EXISTS name_ko VARCHAR(255);
-
--- Add display_name column that combines both languages
-ALTER TABLE products ADD COLUMN IF NOT EXISTS display_name JSONB;
-
--- Update existing products to have display names
--- For now, we'll set the English and Korean names to be the same as the internal name
-UPDATE products 
-SET 
-  name_en = name,
-  name_ko = name,
-  display_name = jsonb_build_object('en', name, 'ko', name)
-WHERE name_en IS NULL;
-
--- Make the new columns NOT NULL after setting default values
-ALTER TABLE products ALTER COLUMN name_en SET NOT NULL;
-ALTER TABLE products ALTER COLUMN name_ko SET NOT NULL;
-
--- Add comments to explain the purpose of each column
-COMMENT ON COLUMN products.name IS 'Internal name for admin use';
-COMMENT ON COLUMN products.name_en IS 'English name displayed to customers';
-COMMENT ON COLUMN products.name_ko IS 'Korean name displayed to customers';
-COMMENT ON COLUMN products.display_name IS 'JSON object containing names in multiple languages';
-
--- Create an index on the new name columns for better search performance
-CREATE INDEX IF NOT EXISTS idx_products_name_en ON products(name_en);
-CREATE INDEX IF NOT EXISTS idx_products_name_ko ON products(name_ko);
+-- Add comment to document the fix
+COMMENT ON FUNCTION audit_trigger_function() IS 'Updated audit trigger function to handle both UUID and TEXT record_id types by casting to TEXT';
