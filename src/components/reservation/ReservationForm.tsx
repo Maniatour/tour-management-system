@@ -288,6 +288,12 @@ export default function ReservationForm({
             // requiredOptionsList 변수 정의 (productOptions에서 직접 가져오기)
             const requiredOptionsList = productOptions || []
             
+            console.log('ProductOptions 정보:', requiredOptionsList.map(opt => ({
+              id: opt.id,
+              name: opt.name,
+              linked_option_id: opt.linked_option_id
+            })))
+            
             if (pricing.options_pricing && typeof pricing.options_pricing === 'object') {
               // options_pricing이 배열인 경우 처리
               if (Array.isArray(pricing.options_pricing)) {
@@ -299,8 +305,11 @@ export default function ReservationForm({
                     infant_price: optionPricing.infant_price
                   })
                   
-                  // linked_option_id와 매칭되는 product_option 찾기
-                  const matchingProductOption = requiredOptionsList.find(opt => opt.linked_option_id === optionPricing.option_id)
+                  // linked_option_id와 매칭되는 product_option 찾기 (linked_option_id가 없으면 id로 매칭)
+                  const matchingProductOption = requiredOptionsList.find(opt => 
+                    opt.linked_option_id === optionPricing.option_id || 
+                    opt.id === optionPricing.option_id
+                  )
                   console.log(`매칭되는 product_option 찾기:`, {
                     option_id: optionPricing.option_id,
                     requiredOptionsList: requiredOptionsList.map(opt => ({ id: opt.id, linked_option_id: opt.linked_option_id })),
@@ -336,8 +345,11 @@ export default function ReservationForm({
                 // options_pricing이 객체인 경우 처리
                 Object.entries(pricing.options_pricing).forEach(([optionId, optionPricing]) => {
                   const pricingData = optionPricing as { adult?: number; adult_price?: number; child?: number; child_price?: number; infant?: number; infant_price?: number }
-                  // linked_option_id와 매칭되는 product_option 찾기
-                  const matchingProductOption = requiredOptionsList.find(opt => opt.linked_option_id === optionId)
+                  // linked_option_id와 매칭되는 product_option 찾기 (linked_option_id가 없으면 id로 매칭)
+                  const matchingProductOption = requiredOptionsList.find(opt => 
+                    opt.linked_option_id === optionId || 
+                    opt.id === optionId
+                  )
                   if (matchingProductOption && requiredOptions[matchingProductOption.id] && pricingData) {
                     requiredOptions[matchingProductOption.id] = {
                       ...requiredOptions[matchingProductOption.id],
