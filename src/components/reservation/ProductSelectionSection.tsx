@@ -28,6 +28,8 @@ interface ProductSelectionSectionProps {
     selectedOptions: Record<string, string[]>
     requiredOptions: Record<string, { choiceId: string; adult: number; child: number; infant: number }>
     selectedOptionPrices: Record<string, number>
+    tourDate: string
+    channelId: string
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
@@ -41,6 +43,7 @@ interface ProductSelectionSectionProps {
     infant_price_adjustment?: number
   }>
   loadRequiredOptionsForProduct: (productId: string) => Promise<void>
+  getDynamicPricingForOption: (optionId: string) => { adult: number; child: number; infant: number } | null
   t: (key: string) => string
 }
 
@@ -51,6 +54,7 @@ export default function ProductSelectionSection({
   getRequiredOptionsForProduct,
   getChoicesForOption,
   loadRequiredOptionsForProduct,
+  getDynamicPricingForOption,
   t
 }: ProductSelectionSectionProps) {
   return (
@@ -222,11 +226,13 @@ export default function ProductSelectionSection({
                           })
 
                           // 선택된 choice의 가격 정보를 가격 정보 섹션에 반영
+                          // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
+                          const dynamicPricing = getDynamicPricingForOption(option.id)
                           updatedRequiredOptions[option.id] = {
                             choiceId: choice.id,
-                            adult: choice.adult_price_adjustment || 0,
-                            child: choice.child_price_adjustment || 0,
-                            infant: choice.infant_price_adjustment || 0
+                            adult: dynamicPricing?.adult ?? choice.adult_price_adjustment ?? 0,
+                            child: dynamicPricing?.child ?? choice.child_price_adjustment ?? 0,
+                            infant: dynamicPricing?.infant ?? choice.infant_price_adjustment ?? 0
                           }
                           
                           setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -263,7 +269,10 @@ export default function ProductSelectionSection({
                             <input
                               type="number"
                               placeholder="0"
-                              defaultValue={choice.adult_price_adjustment || 0}
+                              defaultValue={(() => {
+                                const dynamicPricing = getDynamicPricingForOption(option.id)
+                                return dynamicPricing?.adult ?? choice.adult_price_adjustment ?? 0
+                              })()}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
                                 setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -282,7 +291,10 @@ export default function ProductSelectionSection({
                             <input
                               type="number"
                               placeholder="0"
-                              defaultValue={choice.child_price_adjustment || 0}
+                              defaultValue={(() => {
+                                const dynamicPricing = getDynamicPricingForOption(option.id)
+                                return dynamicPricing?.child ?? choice.child_price_adjustment ?? 0
+                              })()}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
                                 setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -301,7 +313,10 @@ export default function ProductSelectionSection({
                             <input
                               type="number"
                               placeholder="0"
-                              defaultValue={choice.infant_price_adjustment || 0}
+                              defaultValue={(() => {
+                                const dynamicPricing = getDynamicPricingForOption(option.id)
+                                return dynamicPricing?.infant ?? choice.infant_price_adjustment ?? 0
+                              })()}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
                                 setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any

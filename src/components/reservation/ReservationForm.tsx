@@ -562,6 +562,27 @@ export default function ReservationForm({
     calculateProductPriceTotal, calculateRequiredOptionTotal, calculateSubtotal, calculateTotalPrice, calculateBalance
   ])
 
+  // dynamic_pricing에서 특정 옵션의 가격 정보를 가져오는 함수
+  const getDynamicPricingForOption = useCallback((optionId: string) => {
+    if (!formData.productId || !formData.tourDate || !formData.channelId) {
+      return null
+    }
+
+    // 현재 로드된 dynamic_pricing 데이터에서 해당 옵션의 가격 정보 찾기
+    // 이 함수는 loadPricingInfo에서 로드된 데이터를 기반으로 작동
+    // 실제로는 formData.requiredOptions에서 이미 dynamic_pricing 데이터가 반영되어 있음
+    const requiredOption = formData.requiredOptions[optionId]
+    if (requiredOption) {
+      return {
+        adult: requiredOption.adult,
+        child: requiredOption.child,
+        infant: requiredOption.infant
+      }
+    }
+
+    return null
+  }, [formData.productId, formData.tourDate, formData.channelId, formData.requiredOptions])
+
   // 가격 정보 저장 함수 (외부에서 호출 가능)
   const savePricingInfo = useCallback(async (reservationId: string) => {
     try {
@@ -839,6 +860,7 @@ export default function ReservationForm({
                 getRequiredOptionsForProduct={(productId) => getRequiredOptionsForProduct(productId, productOptions, options)}
                 getChoicesForOption={(optionId) => getChoicesForOption(optionId, optionChoices)}
                 loadRequiredOptionsForProduct={(productId) => loadRequiredOptionsForProduct(productId, formData.tourDate, formData.channelId)}
+                getDynamicPricingForOption={getDynamicPricingForOption}
                 t={t}
               />
             </div>
