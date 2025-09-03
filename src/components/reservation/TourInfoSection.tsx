@@ -15,7 +15,7 @@ interface TourInfoSectionProps {
     pickUpHotel: string
     pickUpTime: string
   }
-  setFormData: (data: any) => void
+  setFormData: (data: { [key: string]: unknown }) => void
   pickupHotels: PickupHotel[]
   sanitizeTimeInput: (value: string) => string
   t: (key: string) => string

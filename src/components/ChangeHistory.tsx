@@ -14,8 +14,8 @@ interface ChangeHistoryProps {
 interface ChangeRecord {
   id: string
   action: 'INSERT' | 'UPDATE' | 'DELETE'
-  old_values: Record<string, any> | null
-  new_values: Record<string, any> | null
+  old_values: Record<string, unknown> | null
+  new_values: Record<string, unknown> | null
   changed_fields: string[]
   user_email: string
   created_at: string
@@ -139,7 +139,7 @@ export default function ChangeHistory({
     return fieldNames[fieldName] || fieldName
   }
 
-  const formatValue = (value: any, fieldName: string) => {
+  const formatValue = (value: unknown, fieldName: string) => {
     if (value === null || value === undefined) return '없음'
     if (typeof value === 'boolean') return value ? '예' : '아니오'
     if (typeof value === 'number') return value.toLocaleString()

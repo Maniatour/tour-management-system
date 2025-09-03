@@ -30,6 +30,7 @@ export default function CouponsPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null)
+  const [products, setProducts] = useState<{id: string, name: string}[]>([])
 
   // 쿠폰 목록 조회
   const fetchCoupons = async () => {
@@ -49,13 +50,50 @@ export default function CouponsPage() {
     }
   }
 
+  // 상품 목록 조회
+  const fetchProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name')
+        .eq('status', 'active')
+        .order('name')
+      
+      if (error) throw error
+      setProducts(data || [])
+    } catch (error) {
+      console.error('상품 목록 조회 오류:', error)
+    }
+  }
+
+  // 상품 ID를 상품 이름으로 변환
+  const getProductNames = (productIds: string | null) => {
+    if (!productIds) return '전체 상품'
+    
+    const ids = productIds.split(',').map(id => id.trim()).filter(id => id)
+    if (ids.length === 0) return '전체 상품'
+    
+    const names = ids.map(id => {
+      const product = products.find(p => p.id === id)
+      return product ? product.name : id
+    })
+    
+    if (names.length === 1) return names[0]
+    if (names.length <= 3) return names.join(', ')
+    return `${names.slice(0, 2).join(', ')} 외 ${names.length - 2}개`
+  }
+
   useEffect(() => {
     fetchCoupons()
+    fetchProducts()
   }, [])
 
   // 쿠폰 추가
   const handleAddCoupon = async (id: string, couponData: Omit<Coupon, 'id' | 'created_at'>) => {
     try {
+      // product_id를 그대로 저장 (다중 상품 ID 지원)
+      const productId = couponData.product_id || null
+
       // null 값들을 undefined로 변환하여 데이터베이스 스키마와 일치시킴
       const cleanData = {
         coupon_code: couponData.coupon_code || null,
@@ -67,7 +105,7 @@ export default function CouponsPage() {
         start_date: couponData.start_date || null,
         end_date: couponData.end_date || null,
         channel_id: couponData.channel_id || null,
-        product_id: couponData.product_id || null
+        product_id: productId
       }
 
       const { error } = await supabase
@@ -86,6 +124,9 @@ export default function CouponsPage() {
   // 쿠폰 수정
   const handleEditCoupon = async (id: string, couponData: Partial<Omit<Coupon, 'id' | 'created_at'>>) => {
     try {
+      // product_id를 그대로 저장 (다중 상품 ID 지원)
+      const productId = couponData.product_id || null
+
       // null 값들을 적절히 처리하여 데이터베이스 스키마와 일치시킴
       const cleanData = {
         coupon_code: couponData.coupon_code || null,
@@ -97,7 +138,7 @@ export default function CouponsPage() {
         start_date: couponData.start_date || null,
         end_date: couponData.end_date || null,
         channel_id: couponData.channel_id || null,
-        product_id: couponData.product_id || null
+        product_id: productId
       }
 
       const { error } = await supabase
@@ -214,6 +255,9 @@ export default function CouponsPage() {
                     할인 값
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    적용 상품
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     유효 기간
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -247,6 +291,13 @@ export default function CouponsPage() {
                         `${coupon.percentage_value}%` :
                         coupon.discount_type === 'fixed' && coupon.fixed_value ? 
                         `$${coupon.fixed_value}` : '-'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      <div className="max-w-xs">
+                        <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                          {getProductNames(coupon.product_id)}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {coupon.start_date && coupon.end_date ? 
@@ -332,6 +383,95 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
     product_id: coupon?.product_id || ''
   })
 
+  // 선택기 관련 상태
+  const [showChannelSelector, setShowChannelSelector] = useState(false)
+  const [showProductSelector, setShowProductSelector] = useState(false)
+  const [channels, setChannels] = useState<{id: string, name: string, type: string, category: string, status: string}[]>([])
+  const [products, setProducts] = useState<{id: string, name: string, category: string, sub_category: string, status: string}[]>([])
+  const [loadingChannels, setLoadingChannels] = useState(false)
+  const [loadingProducts, setLoadingProducts] = useState(false)
+  const [selectedChannelType, setSelectedChannelType] = useState<'self' | 'partner' | 'ota'>('self')
+  const [selectedProductSubCategory, setSelectedProductSubCategory] = useState<string>('all')
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
+
+  // 채널 데이터 로드
+  const loadChannels = async (type?: 'self' | 'partner' | 'ota') => {
+    try {
+      setLoadingChannels(true)
+      const { data, error } = await supabase
+        .from('channels')
+        .select('id, name, type, category, status')
+        .eq('status', 'active')
+        .eq('type', type || selectedChannelType)
+        .order('name')
+
+      if (error) throw error
+      setChannels(data || [])
+    } catch (error) {
+      console.error('채널 로드 오류:', error)
+    } finally {
+      setLoadingChannels(false)
+    }
+  }
+
+  // 상품 데이터 로드
+  const loadProducts = async (subCategory?: string) => {
+    try {
+      setLoadingProducts(true)
+      let query = supabase
+        .from('products')
+        .select('id, name, category, sub_category, status')
+        .eq('status', 'active')
+        .order('name')
+
+      if (subCategory && subCategory !== 'all') {
+        query = query.eq('sub_category', subCategory)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+      setProducts(data || [])
+    } catch (error) {
+      console.error('상품 로드 오류:', error)
+    } finally {
+      setLoadingProducts(false)
+    }
+  }
+
+  // 채널 선택기 열기
+  const openChannelSelector = () => {
+    setShowChannelSelector(true)
+    loadChannels()
+  }
+
+  // 상품 선택기 열기
+  const openProductSelector = () => {
+    setShowProductSelector(true)
+    loadProducts()
+  }
+
+  // 상품 선택/해제
+  const toggleProductSelection = (productId: string) => {
+    setSelectedProducts(prev => 
+      prev.includes(productId) 
+        ? prev.filter(id => id !== productId)
+        : [...prev, productId]
+    )
+  }
+
+  // 선택된 상품들 적용
+  const applySelectedProducts = () => {
+    setFormData(prev => ({ ...prev, product_id: selectedProducts.join(',') }))
+    setShowProductSelector(false)
+  }
+
+  // 상품 선택 초기화
+  const clearProductSelection = () => {
+    setSelectedProducts([])
+    setFormData(prev => ({ ...prev, product_id: '' }))
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -343,7 +483,8 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
       start_date: formData.start_date || null,
       end_date: formData.end_date || null,
       channel_id: formData.channel_id || null,
-      product_id: formData.product_id || null
+      product_id: formData.product_id || null,
+      updated_at: new Date().toISOString()
     }
     
     if (coupon) {
@@ -467,28 +608,71 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              채널 ID
+              채널 선택
             </label>
+            <div className="flex space-x-2">
             <input
               type="text"
               value={formData.channel_id}
-              onChange={(e) => setFormData(prev => ({ ...prev, channel_id: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="특정 채널에만 적용 (선택사항)"
-            />
+                readOnly
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 bg-gray-50"
+                placeholder="채널을 선택하세요"
+              />
+              <button
+                type="button"
+                onClick={openChannelSelector}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                선택
+              </button>
+              {formData.channel_id && (
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, channel_id: '' }))}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                >
+                  초기화
+                </button>
+              )}
+            </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              상품 ID
+              상품 선택 (다중 선택 가능)
             </label>
+            <div className="flex space-x-2">
             <input
               type="text"
-              value={formData.product_id}
-              onChange={(e) => setFormData(prev => ({ ...prev, product_id: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="특정 상품에만 적용 (선택사항)"
-            />
+                value={formData.product_id ? `${formData.product_id.split(',').length}개 상품 선택됨` : ''}
+                readOnly
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 bg-gray-50"
+                placeholder="상품을 선택하세요"
+              />
+              <button
+                type="button"
+                onClick={openProductSelector}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                선택
+              </button>
+              {formData.product_id && (
+                <button
+                  type="button"
+                  onClick={clearProductSelection}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                >
+                  초기화
+                </button>
+              )}
+            </div>
+            {formData.product_id && formData.product_id.includes(',') && (
+              <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">
+                  ✅ 여러 상품이 선택되었습니다. 모든 선택된 상품에 쿠폰이 적용됩니다.
+                </p>
+              </div>
+            )}
           </div>
 
           <div>
@@ -522,6 +706,185 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
           </div>
         </form>
       </div>
+
+      {/* 채널 선택기 모달 */}
+      {showChannelSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-hidden">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">채널 선택</h3>
+              <button
+                onClick={() => setShowChannelSelector(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+
+                         {/* 채널 타입 탭 */}
+             <div className="flex space-x-1 mb-4 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+               {['self', 'partner', 'ota'].map((type) => (
+                 <button
+                   key={type}
+                   onClick={() => {
+                     setSelectedChannelType(type as 'self' | 'partner' | 'ota')
+                     loadChannels(type as 'self' | 'partner' | 'ota')
+                   }}
+                   className={`py-2 px-4 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                     selectedChannelType === type
+                       ? 'bg-white text-blue-600 shadow-sm'
+                       : 'text-gray-600 hover:text-gray-900'
+                   }`}
+                 >
+                   {type === 'self' ? '자체' : 
+                    type === 'partner' ? '제휴' : 
+                    type === 'ota' ? 'OTA' : type}
+                 </button>
+               ))}
+             </div>
+
+            {/* 채널 목록 */}
+            <div className="max-h-96 overflow-y-auto">
+              {loadingChannels ? (
+                <div className="text-center py-8 text-gray-500">로딩 중...</div>
+              ) : channels.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">해당 타입의 채널이 없습니다.</div>
+              ) : (
+                <div className="space-y-2">
+                  {channels.map((channel) => (
+                    <div
+                      key={channel.id}
+                      onClick={() => {
+                        setFormData(prev => ({ ...prev, channel_id: channel.id }))
+                        setShowChannelSelector(false)
+                      }}
+                      className="p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-colors"
+                    >
+                      <div className="font-medium text-gray-900">{channel.name}</div>
+                      <div className="text-sm text-gray-500">ID: {channel.id}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 상품 선택기 모달 */}
+      {showProductSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-hidden">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">상품 선택</h3>
+              <button
+                onClick={() => setShowProductSelector(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 상품 서브카테고리 탭 */}
+            <div className="flex space-x-1 mb-4 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+              <button
+                onClick={() => {
+                  setSelectedProductSubCategory('all')
+                  loadProducts('all')
+                }}
+                className={`py-2 px-4 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                  selectedProductSubCategory === 'all'
+                    ? 'bg-white text-green-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                전체
+              </button>
+              {['Mania Tour', 'Attraction', 'Scenic'].map((subCategory) => (
+                <button
+                  key={subCategory}
+                  onClick={() => {
+                    setSelectedProductSubCategory(subCategory)
+                    loadProducts(subCategory)
+                  }}
+                  className={`py-2 px-4 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                    selectedProductSubCategory === subCategory
+                      ? 'bg-white text-green-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {subCategory === 'Mania Tour' ? '매니아 투어' : 
+                   subCategory === 'Attraction' ? '관광명소' : 
+                   subCategory === 'Scenic' ? '경관' : subCategory}
+                </button>
+              ))}
+            </div>
+
+                         {/* 상품 목록 */}
+             <div className="max-h-96 overflow-y-auto">
+               {loadingProducts ? (
+                 <div className="text-center py-8 text-gray-500">로딩 중...</div>
+               ) : products.length === 0 ? (
+                 <div className="text-center py-8 text-gray-500">해당 카테고리의 상품이 없습니다.</div>
+               ) : (
+                 <div className="space-y-2">
+                   {products.map((product) => (
+                     <div
+                       key={product.id}
+                       onClick={() => toggleProductSelection(product.id)}
+                       className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                         selectedProducts.includes(product.id)
+                           ? 'border-green-500 bg-green-50'
+                           : 'border-gray-200 hover:bg-green-50 hover:border-green-300'
+                       }`}
+                     >
+                       <div className="flex items-center space-x-3">
+                         <input
+                           type="checkbox"
+                           checked={selectedProducts.includes(product.id)}
+                           onChange={() => toggleProductSelection(product.id)}
+                           className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                         />
+                         <div className="flex-1">
+                           <div className="font-medium text-gray-900">{product.name}</div>
+                           <div className="text-sm text-gray-500">
+                             카테고리: {product.category} | 서브카테고리: {product.sub_category} | ID: {product.id}
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               )}
+             </div>
+
+             {/* 선택된 상품들 적용 버튼 */}
+             <div className="mt-4 pt-4 border-t border-gray-200">
+               <div className="flex items-center justify-between">
+                 <div className="text-sm text-gray-600">
+                   {selectedProducts.length}개 상품 선택됨
+                 </div>
+                 <div className="flex space-x-2">
+                   <button
+                     type="button"
+                     onClick={() => setShowProductSelector(false)}
+                     className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                   >
+                     취소
+                   </button>
+                   <button
+                     type="button"
+                     onClick={applySelectedProducts}
+                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                   >
+                     적용
+                   </button>
+                 </div>
+               </div>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

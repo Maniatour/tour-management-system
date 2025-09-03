@@ -1,9 +1,8 @@
 'use client'
 
 import React, { useState, useEffect, use } from 'react'
-import { useTranslations } from 'next-intl'
+// import { useTranslations } from 'next-intl'
 import { 
-  Plus, 
   DollarSign, 
   Calendar,
   MessageCircle,
@@ -17,9 +16,9 @@ import {
   Trash2
 } from 'lucide-react'
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import type { Database } from '@/lib/supabase'
+// import type { Database } from '@/lib/supabase'
 import DynamicPricingManager from '@/components/DynamicPricingManager'
 import ChangeHistory from '@/components/ChangeHistory'
 import BasicInfoTab from '@/components/product/BasicInfoTab'
@@ -27,9 +26,7 @@ import OptionsTab from '@/components/product/OptionsTab'
 import GlobalOptionModal from '@/components/product/GlobalOptionModal'
 import OptionsManualModal from '@/components/product/OptionsManualModal'
 
-type Product = Database['public']['Tables']['products']['Row']
-type ProductInsert = Database['public']['Tables']['products']['Insert']
-type ProductUpdate = Database['public']['Tables']['products']['Update']
+// 타입 정의는 필요에 따라 추가
 
 // 기존 인터페이스들은 폼에서 사용하기 위해 유지
 interface ProductOptionChoice {
@@ -109,8 +106,7 @@ interface AdminProductEditProps {
 
 export default function AdminProductEdit({ params }: AdminProductEditProps) {
   const { locale, id } = use(params)
-  const t = useTranslations('products')
-  const tCommon = useTranslations('common')
+  // 번역은 필요에 따라 사용
   const router = useRouter()
   const isNewProduct = id === 'new'
   
@@ -269,7 +265,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         departureCountry: '',
         arrivalCountry: '',
         languages: ['ko'],
-        groupSize: 'private',
+        groupSize: ['private'],
         adultAge: 13,
         childAgeMin: 3,
         childAgeMax: 12,
@@ -309,11 +305,9 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           // 2. 상품 옵션 정보 로드
           const { data: optionsData, error: optionsError } = await supabase
             .from('product_options')
-            .select(`
-              *,
-              product_option_choices (*)
-            `)
+            .select('*')
             .eq('product_id', id)
+            .order('name', { ascending: true })
 
           if (optionsError) throw optionsError
 
@@ -346,41 +340,74 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             childAgeMin: productData.child_age_min || 3,
             childAgeMax: productData.child_age_max || 12,
             infantAge: productData.infant_age || 2,
-                         productOptions: optionsData?.map((option: {
-               id: string
-               name: string
-               description: string
-               is_required: boolean
-               is_multiple: boolean
-               linked_option_id: string | null
-               product_option_choices: Array<{
+                         productOptions: (() => {
+               // 새로운 통합 구조에 맞게 그룹화
+               const optionsMap = new Map<string, {
                  id: string
                  name: string
                  description: string
+                 isRequired: boolean
+                 isMultiple: boolean
+                 linkedOptionId?: string
+                 choices: Array<{
+                   id: string
+                   name: string
+                   description: string
+                   priceAdjustment: {
+                     adult: number
+                     child: number
+                     infant: number
+                   }
+                   isDefault: boolean
+                 }>
+               }>()
+               
+               optionsData?.forEach((option: {
+                 id: string
+                 name: string
+                 description: string
+                 is_required: boolean
+                 is_multiple: boolean
+                 linked_option_id: string | null
+                 choice_name: string | null
+                 choice_description: string | null
                  adult_price_adjustment: number
                  child_price_adjustment: number
                  infant_price_adjustment: number
                  is_default: boolean
-               }>
-             }) => ({
-               id: option.id,
-               name: option.name,
-               description: option.description,
-               isRequired: option.is_required,
-               isMultiple: option.is_multiple,
-               linkedOptionId: option.linked_option_id || undefined,
-               choices: option.product_option_choices?.map((choice) => ({
-                 id: choice.id,
-                 name: choice.name,
-                 description: choice.description,
-                 priceAdjustment: {
-                   adult: choice.adult_price_adjustment || 0,
-                   child: choice.child_price_adjustment || 0,
-                   infant: choice.infant_price_adjustment || 0
-                 },
-                 isDefault: choice.is_default || false
-               })) || []
-             })) || []
+               }) => {
+                 const optionKey = option.name
+                 
+                 if (!optionsMap.has(optionKey)) {
+                   optionsMap.set(optionKey, {
+                     id: option.id,
+                     name: option.name,
+                     description: option.description,
+                     isRequired: option.is_required,
+                     isMultiple: option.is_multiple,
+                     linkedOptionId: option.linked_option_id || undefined,
+                     choices: []
+                   })
+                 }
+                 
+                 // choice가 있는 경우에만 추가
+                 if (option.choice_name) {
+                   optionsMap.get(optionKey)!.choices.push({
+                     id: option.id, // choice ID는 option ID와 동일
+                     name: option.choice_name,
+                     description: option.choice_description || '',
+                     priceAdjustment: {
+                       adult: option.adult_price_adjustment || 0,
+                       child: option.child_price_adjustment || 0,
+                       infant: option.infant_price_adjustment || 0
+                     },
+                     isDefault: option.is_default || false
+                   })
+                 }
+               })
+               
+               return Array.from(optionsMap.values())
+             })()
           }))
         } catch (error) {
           console.error('상품 데이터 로드 중 오류 발생:', error)
@@ -463,7 +490,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         console.log('새 상품 생성됨:', productId)
       } else {
         // 기존 상품 업데이트
-        const { data: updatedProduct, error: productError } = await supabase
+        const { error: productError } = await supabase
           .from('products')
           .update({
             name: formData.name.trim(),
@@ -519,50 +546,62 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         console.log('새 옵션 저장 시작:', formData.productOptions.length, '개')
         
         for (const option of formData.productOptions) {
-          // product_options 테이블에 저장
-          const { data: optionData, error: optionError } = await supabase
-            .from('product_options')
-            .insert({
-              product_id: productId,
-              name: option.name.trim(),
-              description: option.description.trim(),
-              is_required: option.isRequired,
-              is_multiple: option.isMultiple,
-              linked_option_id: option.linkedOptionId || null
-            })
-            .select()
-            .single()
-
-          if (optionError) {
-            console.error('옵션 저장 오류:', optionError)
-            throw new Error(`옵션 저장 실패: ${optionError.message}`)
-          }
-
-          console.log('옵션 저장됨:', optionData.id)
-
-          // product_option_choices 테이블에 저장
+          // 새로운 통합 구조: choices가 있는 경우, 각 choice를 별도의 product_options 행으로 저장
           if (option.choices && option.choices.length > 0) {
-            const choicesToInsert = option.choices.map((choice, index) => ({
-              product_option_id: optionData.id,
-              name: choice.name.trim(),
-              description: choice.description.trim(),
-              adult_price_adjustment: choice.priceAdjustment.adult,
-              child_price_adjustment: choice.priceAdjustment.child,
-              infant_price_adjustment: choice.priceAdjustment.infant,
-              is_default: choice.isDefault || false,
-              sort_order: index
-            }))
+            for (const choice of option.choices) {
+              const { data: optionData, error: optionError } = await supabase
+                .from('product_options')
+                .insert({
+                  product_id: productId,
+                  name: option.name.trim(),
+                  description: option.description.trim(),
+                  is_required: option.isRequired,
+                  is_multiple: option.isMultiple,
+                  linked_option_id: option.linkedOptionId || null,
+                  choice_name: choice.name.trim(),
+                  choice_description: choice.description.trim(),
+                  adult_price_adjustment: choice.priceAdjustment.adult,
+                  child_price_adjustment: choice.priceAdjustment.child,
+                  infant_price_adjustment: choice.priceAdjustment.infant,
+                  is_default: choice.isDefault || false
+                })
+                .select()
+                .single()
 
-            const { error: choicesError } = await supabase
-              .from('product_option_choices')
-              .insert(choicesToInsert)
+              if (optionError) {
+                console.error('옵션 저장 오류:', optionError)
+                throw new Error(`옵션 저장 실패: ${optionError.message}`)
+              }
 
-            if (choicesError) {
-              console.error('선택 항목 저장 오류:', choicesError)
-              throw new Error(`선택 항목 저장 실패: ${choicesError.message}`)
+              console.log('옵션 저장됨:', optionData.id, 'choice:', choice.name)
             }
-            
-            console.log('선택 항목 저장됨:', choicesToInsert.length, '개')
+          } else {
+            // choices가 없는 경우, 기본 옵션만 저장
+            const { data: optionData, error: optionError } = await supabase
+              .from('product_options')
+              .insert({
+                product_id: productId,
+                name: option.name.trim(),
+                description: option.description.trim(),
+                is_required: option.isRequired,
+                is_multiple: option.isMultiple,
+                linked_option_id: option.linkedOptionId || null,
+                choice_name: null,
+                choice_description: null,
+                adult_price_adjustment: 0,
+                child_price_adjustment: 0,
+                infant_price_adjustment: 0,
+                is_default: true
+              })
+              .select()
+              .single()
+
+            if (optionError) {
+              console.error('옵션 저장 오류:', optionError)
+              throw new Error(`옵션 저장 실패: ${optionError.message}`)
+            }
+
+            console.log('옵션 저장됨:', optionData.id)
           }
         }
       }
@@ -783,7 +822,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     }
   }
 
-  // 통합 가격 관련 함수들
+  // 통합 가격 관련 함수들 (현재 사용되지 않음)
+  /*
   const addChannel = () => {
     const newChannel: ChannelPricing = {
       channelId: `channel_${Date.now()}`,
@@ -815,23 +855,24 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       seasonalPricing: [...prevData.seasonalPricing, newSeason]
     }))
   }
+  */
 
-  const addCoupon = () => {
-    const newCoupon: Coupon = {
-      id: `coupon_${Date.now()}`,
-      code: 'NEW' + Math.random().toString(36).substr(2, 5).toUpperCase(),
-      fixedDiscountAmount: 0,
-      percentageDiscount: 10,
-      discountPriority: 'percentage_first',
-      minAmount: 100,
-      maxDiscount: 50,
-      isActive: true
-    }
-    setFormData(prevData => ({
-      ...prevData,
-      coupons: [...prevData.coupons, newCoupon]
-    }))
-  }
+  // const addCoupon = () => {
+  //   const newCoupon: Coupon = {
+  //     id: `coupon_${Date.now()}`,
+  //     code: 'NEW' + Math.random().toString(36).substr(2, 5).toUpperCase(),
+  //     fixedDiscountAmount: 0,
+  //     percentageDiscount: 10,
+  //     discountPriority: 'percentage_first',
+  //     minAmount: 100,
+  //     maxDiscount: 50,
+  //     isActive: true
+  //   }
+  //   setFormData(prevData => ({
+  //     ...prevData,
+  //     coupons: [...prevData.coupons, newCoupon]
+  //   }))
+  // }
 
   const tabs = [
     { id: 'basic', label: '기본정보', icon: Info },
@@ -987,7 +1028,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
 
         {activeTab === 'media' && (
           <div className="text-center py-8 text-gray-500">
-            <Image className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+            <Image className="h-12 w-12 mx-auto mb-4 text-gray-300" alt="미디어 아이콘" />
             <p>미디어 탭 - 추후 구현 예정</p>
           </div>
         )}

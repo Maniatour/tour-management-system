@@ -26,9 +26,9 @@ interface ProductOptionsSectionProps {
     requiredOptions: Record<string, { choiceId: string; adult: number; child: number; infant: number }>
     selectedOptionPrices: Record<string, number>
   }
-  setFormData: (data: any) => void
+  setFormData: (data: { [key: string]: unknown }) => void
   products: Product[]
-  getRequiredOptionsForProduct: (productId: string) => Record<string, any>
+  getRequiredOptionsForProduct: (productId: string) => Record<string, unknown>
   t: (key: string) => string
 }
 
@@ -85,7 +85,7 @@ export default function ProductOptionsSection({
                           name={`option_${optionId}`}
                           value={optionId}
                           checked={formData.requiredOptions[optionId]?.choiceId === optionId}
-                                                      onChange={(e) => setFormData((prev: any) => ({
+                                                      onChange={(e) => setFormData((prev: { [key: string]: unknown }) => ({
                             ...prev,
                             requiredOptions: {
                               ...prev.requiredOptions,
@@ -112,7 +112,7 @@ export default function ProductOptionsSection({
                               defaultValue={option.adult_price_adjustment || 0}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
-                                setFormData((prev: any) => ({
+                                setFormData((prev: { [key: string]: unknown }) => ({
                                   ...prev,
                                   selectedOptionPrices: {
                                     ...prev.selectedOptionPrices,
@@ -131,7 +131,7 @@ export default function ProductOptionsSection({
                               defaultValue={option.child_price_adjustment || 0}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
-                                setFormData((prev: any) => ({
+                                setFormData((prev: { [key: string]: unknown }) => ({
                                   ...prev,
                                   selectedOptionPrices: {
                                     ...prev.selectedOptionPrices,
@@ -150,7 +150,7 @@ export default function ProductOptionsSection({
                               defaultValue={option.infant_price_adjustment || 0}
                               onChange={(e) => {
                                 const value = Number(e.target.value) || 0
-                                setFormData((prev: any) => ({
+                                setFormData((prev: { [key: string]: unknown }) => ({
                                   ...prev,
                                   selectedOptionPrices: {
                                     ...prev.selectedOptionPrices,

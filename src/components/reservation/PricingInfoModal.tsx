@@ -16,7 +16,7 @@ interface PricingData {
   child_product_price: number
   infant_product_price: number
   product_price_total: number
-  required_options: any
+  required_options: Record<string, unknown>
   required_option_total: number
   subtotal: number
   coupon_code: string | null
@@ -27,7 +27,7 @@ interface PricingData {
   tax: number
   prepayment_cost: number
   prepayment_tip: number
-  selected_options: any
+  selected_options: Record<string, unknown>
   option_total: number
   total_price: number
   deposit_amount: number

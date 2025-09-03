@@ -20,7 +20,7 @@ interface OptionsSectionProps {
     requiredOptions: Record<string, string>
     selectedOptionPrices: Record<string, number>
   }
-  setFormData: (data: any) => void
+  setFormData: (data: { [key: string]: unknown }) => void
   getRequiredOptionsForProduct: (productId: string) => Record<string, Option>
   t: (key: string) => string
 }

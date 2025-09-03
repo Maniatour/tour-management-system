@@ -26,7 +26,7 @@ import { supabase } from '@/lib/supabase'
       infantAge: number
       status: 'active' | 'inactive' | 'draft'
     }
-  setFormData: (data: any) => void
+  setFormData: React.Dispatch<React.SetStateAction<any>>
   newTag: string
   setNewTag: (tag: string) => void
   addTag: () => void
@@ -237,7 +237,7 @@ export default function BasicInfoTab({
           <label className="block text-sm font-medium text-gray-700 mb-1">서브 카테고리</label>
           {/* 디버깅: 현재 값들 확인 */}
           <div className="text-xs text-gray-500 mb-1">
-            Debug: formData.subCategory = "{formData.subCategory}", 
+            Debug: formData.subCategory = &quot;{formData.subCategory}&quot;, 
             subCategories.length = {subCategories.length}
           </div>
           <select

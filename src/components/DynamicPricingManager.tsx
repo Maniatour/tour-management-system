@@ -209,7 +209,7 @@ export default function DynamicPricingManager({
     try {
       setIsLoadingOptions(true);
       
-      // 병합된 product_options 테이블에서 데이터를 가져옴
+      // 병합된 product_options 테이블에서 필수 옵션만 가져옴
       const { data: optionsData, error } = await supabase
         .from('product_options')
         .select(`
@@ -221,7 +221,8 @@ export default function DynamicPricingManager({
           child_price_adjustment,
           infant_price_adjustment
         `)
-        .eq('product_id', productId);
+        .eq('product_id', productId)
+        .eq('is_required', true);
 
       if (error) {
         console.error('Product options 로드 실패:', error);

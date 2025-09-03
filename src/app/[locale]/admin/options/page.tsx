@@ -57,7 +57,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
     const matchesSearch = option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       option.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (option.description && option.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (option.tags && option.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
+      (option.tags && option.tags.some((tag: string) => tag.toLowerCase().includes(searchTerm.toLowerCase())))
     
     const matchesCategory = selectedCategory === 'all' || option.category === selectedCategory
     
@@ -156,6 +156,11 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
   }
 
   const getCategoryLabel = (category: string) => {
+    // 빈 값이나 null/undefined 처리
+    if (!category || category.trim() === '') {
+      return '미분류'
+    }
+    
     // 안전한 번역 처리
     try {
       const result = t(`categories.${category}`, { fallback: category })
@@ -166,6 +171,11 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
   }
 
   const getPriceTypeLabel = (priceType: string) => {
+    // 빈 값이나 null/undefined 처리
+    if (!priceType || priceType.trim() === '') {
+      return '미설정'
+    }
+    
     try {
       const result = t(`priceTypes.${priceType}`, { fallback: priceType })
       return result
@@ -337,7 +347,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                   <td className="px-6 py-4">
                     <div className="flex flex-wrap gap-1">
                       {option.tags && option.tags.length > 0 ? (
-                        option.tags.map((tag, index) => (
+                        option.tags.map((tag: string, index: number) => (
                           <span
                             key={index}
                             className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
@@ -487,7 +497,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
   const removeTag = (tagToRemove: string) => {
     setFormData({
       ...formData,
-      tags: formData.tags.filter(tag => tag !== tagToRemove)
+      tags: formData.tags.filter((tag: string) => tag !== tagToRemove)
     })
   }
 
@@ -724,7 +734,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
               </button>
             </div>
             <div className="flex flex-wrap gap-2">
-              {formData.tags.map((tag, index) => (
+              {formData.tags.map((tag: string, index: number) => (
                 <span
                   key={index}
                   className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"

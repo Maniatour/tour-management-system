@@ -83,9 +83,9 @@ export interface PricingCalculationLog {
   reservation_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   pricing_rule_id?: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   calculation_type: 'base_price' | 'option_price' | 'total_price';
-  input_data: Record<string, any>;
-  calculation_result: Record<string, any>;
-  applied_rule?: Record<string, any>;
+  input_data: Record<string, unknown>;
+  calculation_result: Record<string, unknown>;
+  applied_rule?: Record<string, unknown>;
   created_at: string;
 }
 

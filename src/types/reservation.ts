@@ -26,7 +26,7 @@ export interface PricingInfo {
   childProductPrice: number
   infantProductPrice: number
   productPriceTotal: number
-  requiredOptions: { [key: string]: any }
+  requiredOptions: { [key: string]: unknown }
   requiredOptionTotal: number
   subtotal: number
   couponCode: string
@@ -37,7 +37,7 @@ export interface PricingInfo {
   tax: number
   prepaymentCost: number
   prepaymentTip: number
-  selectedOptionalOptions: { [key: string]: any }
+  selectedOptionalOptions: { [key: string]: unknown }
   optionTotal: number
   totalPrice: number
   depositAmount: number

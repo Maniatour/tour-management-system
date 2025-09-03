@@ -383,7 +383,7 @@ export default function AdminCustomers() {
         <div className="flex items-center space-x-2">
           <Filter className="h-4 w-4 text-gray-400" />
           <select
-            value={`${sortField}-${sortDirection}`}
+            value={`${String(sortField)}-${sortDirection}`}
             onChange={(e) => {
               const [field, direction] = e.target.value.split('-')
               setSortField(field as keyof Customer)
