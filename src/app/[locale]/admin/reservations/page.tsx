@@ -56,18 +56,89 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [showPricingModal, setShowPricingModal] = useState(false)
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
+  
+  // 페이지네이션 상태
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(20)
+  
+  // 고급 필터링 상태
+  const [selectedChannel, setSelectedChannel] = useState<string>('all')
+  const [dateRange, setDateRange] = useState<{start: string, end: string}>({start: '', end: ''})
+  const [sortBy, setSortBy] = useState<'created_at' | 'tour_date' | 'customer_name' | 'product_name'>('created_at')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  const filteredReservations = reservations.filter(reservation => {
-    const matchesSearch = 
-      reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reservation.channelRN.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getCustomerName(reservation.customerId, customers).toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getProductName(reservation.productId, products).toLowerCase().includes(searchTerm.toLowerCase())
+  // 필터링 및 정렬 로직
+  const filteredAndSortedReservations = useCallback(() => {
+    const filtered = reservations.filter(reservation => {
+      // 검색 조건
+      const matchesSearch = 
+        reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        reservation.channelRN.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        getCustomerName(reservation.customerId, customers).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        getProductName(reservation.productId, products).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        getChannelName(reservation.channelId, channels).toLowerCase().includes(searchTerm.toLowerCase())
+      
+      // 상태 필터
+      const matchesStatus = selectedStatus === 'all' || reservation.status === selectedStatus
+      
+      // 채널 필터
+      const matchesChannel = selectedChannel === 'all' || reservation.channelId === selectedChannel
+      
+      // 날짜 범위 필터
+      let matchesDateRange = true
+      if (dateRange.start && dateRange.end) {
+        const tourDate = new Date(reservation.tourDate)
+        const startDate = new Date(dateRange.start)
+        const endDate = new Date(dateRange.end)
+        matchesDateRange = tourDate >= startDate && tourDate <= endDate
+      }
+      
+      return matchesSearch && matchesStatus && matchesChannel && matchesDateRange
+    })
     
-    const matchesStatus = selectedStatus === 'all' || reservation.status === selectedStatus
+    // 정렬
+    filtered.sort((a, b) => {
+      let aValue: string | Date, bValue: string | Date
+      
+      switch (sortBy) {
+        case 'created_at':
+          aValue = new Date(a.addedTime)
+          bValue = new Date(b.addedTime)
+          break
+        case 'tour_date':
+          aValue = new Date(a.tourDate)
+          bValue = new Date(b.tourDate)
+          break
+        case 'customer_name':
+          aValue = getCustomerName(a.customerId, customers)
+          bValue = getCustomerName(b.customerId, customers)
+          break
+        case 'product_name':
+          aValue = getProductName(a.productId, products)
+          bValue = getProductName(b.productId, products)
+          break
+        default:
+          aValue = new Date(a.addedTime)
+          bValue = new Date(b.addedTime)
+      }
+      
+      if (sortOrder === 'asc') {
+        return aValue > bValue ? 1 : -1
+      } else {
+        return aValue < bValue ? 1 : -1
+      }
+    })
     
-    return matchesSearch && matchesStatus
-  })
+    return filtered
+  }, [reservations, customers, products, channels, searchTerm, selectedStatus, selectedChannel, dateRange, sortBy, sortOrder])
+  
+  const filteredReservations = filteredAndSortedReservations()
+  
+  // 페이지네이션 계산
+  const totalPages = Math.ceil(filteredReservations.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedReservations = filteredReservations.slice(startIndex, endIndex)
 
   const handleAddReservation = async (reservation: Omit<Reservation, 'id'>) => {
     try {
@@ -337,28 +408,140 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       </div>
 
       {/* 검색 및 필터 */}
-      <div className="flex space-x-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder={t('searchPlaceholder')}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+      <div className="space-y-4">
+        {/* 기본 검색 및 필터 */}
+        <div className="flex flex-wrap gap-4">
+          <div className="relative flex-1 min-w-64">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+            <input
+              type="text"
+              placeholder="예약 ID, 고객명, 상품명, 채널명으로 검색..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value)
+                setCurrentPage(1) // 검색 시 첫 페이지로 이동
+              }}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          
+          <select
+            value={selectedStatus}
+            onChange={(e) => {
+              setSelectedStatus(e.target.value)
+              setCurrentPage(1)
+            }}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="all">모든 상태</option>
+            <option value="pending">대기중</option>
+            <option value="confirmed">확정</option>
+            <option value="completed">완료</option>
+            <option value="cancelled">취소</option>
+          </select>
+          
+          <select
+            value={selectedChannel}
+            onChange={(e) => {
+              setSelectedChannel(e.target.value)
+              setCurrentPage(1)
+            }}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="all">모든 채널</option>
+            {channels.map(channel => (
+              <option key={channel.id} value={channel.id}>{channel.name}</option>
+            ))}
+          </select>
         </div>
-        <select
-          value={selectedStatus}
-          onChange={(e) => setSelectedStatus(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="all">{t('filter.allStatus')}</option>
-          <option value="pending">{t('status.pending')}</option>
-          <option value="confirmed">{t('status.confirmed')}</option>
-          <option value="completed">{t('status.completed')}</option>
-          <option value="cancelled">{t('status.cancelled')}</option>
-        </select>
+        
+        {/* 고급 필터 */}
+        <div className="flex flex-wrap gap-4 items-center">
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700">투어 날짜:</label>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => {
+                setDateRange(prev => ({ ...prev, start: e.target.value }))
+                setCurrentPage(1)
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <span className="text-gray-500">~</span>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => {
+                setDateRange(prev => ({ ...prev, end: e.target.value }))
+                setCurrentPage(1)
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700">정렬:</label>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'created_at' | 'tour_date' | 'customer_name' | 'product_name')}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="created_at">등록일</option>
+              <option value="tour_date">투어 날짜</option>
+              <option value="customer_name">고객명</option>
+              <option value="product_name">상품명</option>
+            </select>
+            <button
+              onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              {sortOrder === 'asc' ? '↑' : '↓'}
+            </button>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700">페이지당:</label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value))
+                setCurrentPage(1)
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value={10}>10개</option>
+              <option value={20}>20개</option>
+              <option value={50}>50개</option>
+              <option value={100}>100개</option>
+            </select>
+          </div>
+          
+          <button
+            onClick={() => {
+              setSearchTerm('')
+              setSelectedStatus('all')
+              setSelectedChannel('all')
+              setDateRange({start: '', end: ''})
+              setSortBy('created_at')
+              setSortOrder('desc')
+              setCurrentPage(1)
+            }}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            필터 초기화
+          </button>
+        </div>
+        
+        {/* 결과 정보 */}
+        <div className="text-sm text-gray-600">
+          총 {filteredReservations.length}개 예약 중 {startIndex + 1}-{Math.min(endIndex, filteredReservations.length)}개 표시
+          {filteredReservations.length !== reservations.length && (
+            <span className="ml-2 text-blue-600">
+              (전체 {reservations.length}개 중 필터링됨)
+            </span>
+          )}
+        </div>
       </div>
 
       {/* 예약 목록 */}
@@ -368,8 +551,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           <p className="mt-4 text-gray-600">데이터를 불러오는 중...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredReservations.map((reservation) => (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {paginatedReservations.map((reservation) => (
             <div
               key={reservation.id}
               onClick={() => handleEditReservationClick(reservation)}
@@ -522,6 +706,64 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             </div>
           ))}
         </div>
+        
+        {/* 페이지네이션 */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-8">
+            <div className="text-sm text-gray-700">
+              페이지 {currentPage} / {totalPages} (총 {filteredReservations.length}개)
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              {/* 이전 페이지 버튼 */}
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                이전
+              </button>
+              
+              {/* 페이지 번호들 */}
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum
+                if (totalPages <= 5) {
+                  pageNum = i + 1
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i
+                } else {
+                  pageNum = currentPage - 2 + i
+                }
+                
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`px-3 py-2 text-sm font-medium rounded-md ${
+                      currentPage === pageNum
+                        ? 'text-white bg-blue-600 border border-blue-600'
+                        : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                )
+              })}
+              
+              {/* 다음 페이지 버튼 */}
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                다음
+              </button>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       {/* 예약 추가/편집 모달 */}
