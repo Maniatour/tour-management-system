@@ -729,18 +729,26 @@ export default function PricingSection({
             {/* 구분선 */}
             <div className="border-t border-gray-300 my-2"></div>
             
-            {/* 총 가격 */}
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-base font-bold text-gray-900">총 가격</span>
-              <span className="text-lg font-bold text-blue-600">${formData.totalPrice.toFixed(2)}</span>
-            </div>
-            
-            {/* NET 가격 */}
-            <div className="flex justify-between items-center mb-3 p-2 bg-green-50 border border-green-200 rounded">
-              <span className="text-sm font-semibold text-green-800">NET 가격</span>
-              <span className="text-base font-bold text-green-600">
-                ${(formData.totalPrice * (1 - formData.commission_percent / 100)).toFixed(2)}
-              </span>
+            {/* 총 가격, 커미션, NET 가격 */}
+            <div className="space-y-1 mb-3">
+              <div className="flex justify-between items-center">
+                <span className="text-base font-bold text-gray-900">총 가격</span>
+                <span className="text-lg font-bold text-blue-600">${formData.totalPrice.toFixed(2)}</span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-gray-700">커미션</span>
+                <span className="text-sm font-medium text-red-600">
+                  -${(formData.totalPrice * (formData.commission_percent / 100)).toFixed(2)}
+                </span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <span className="text-base font-bold text-green-800">Net 가격</span>
+                <span className="text-lg font-bold text-green-600">
+                  ${(formData.totalPrice * (1 - formData.commission_percent / 100)).toFixed(2)}
+                </span>
+              </div>
             </div>
             
             {/* 보증금 및 잔액 */}
