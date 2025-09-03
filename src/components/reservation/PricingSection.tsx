@@ -12,6 +12,15 @@ interface ProductOption {
   }>
 }
 
+interface Option {
+  id: string
+  name: string
+  category: string
+  adult_price: number
+  child_price: number
+  infant_price: number
+}
+
 interface PricingSectionProps {
   formData: {
     productId: string
@@ -59,8 +68,8 @@ interface PricingSectionProps {
     fixed_value?: number
   }>
   getOptionalOptionsForProduct: (productId: string) => ProductOption[]
-  getMultipleSelectOptionsForProduct: (productId: string) => ProductOption[]
   getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
+  options: Option[]
   t: (key: string) => string
 }
 
@@ -73,8 +82,8 @@ export default function PricingSection({
   calculateCouponDiscount,
   coupons,
   getOptionalOptionsForProduct,
-  getMultipleSelectOptionsForProduct,
-  getDynamicPricingForOption
+  getDynamicPricingForOption,
+  options
 }: PricingSectionProps) {
   return (
     <div>
@@ -557,55 +566,11 @@ export default function PricingSection({
             </div>
           </div>
 
-          {/* 다중 선택 옵션 */}
-          {formData.productId && getMultipleSelectOptionsForProduct(formData.productId).length > 0 && (
-            <div className="bg-white p-3 rounded border border-gray-200">
-              <h4 className="text-sm font-medium text-gray-900 mb-2">다중 선택 옵션</h4>
-              <div className="space-y-2">
-                {getMultipleSelectOptionsForProduct(formData.productId).map((option) => (
-                  <div key={option.id} className="border border-gray-200 rounded p-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-gray-700">{option.name}</span>
-                    </div>
-                    <div className="space-y-1">
-                      <select
-                        value={(formData as { selectedMultipleOptions?: { [key: string]: string } }).selectedMultipleOptions?.[option.id] || ''}
-                        onChange={(e) => {
-                          const selectedChoiceId = e.target.value
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          setFormData((prev: any) => ({
-                            ...prev,
-                            selectedMultipleOptions: {
-                              ...prev.selectedMultipleOptions,
-                              [option.id]: selectedChoiceId
-                            }
-                          }))
-                        }}
-                        className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
-                      >
-                        <option value="">선택하세요</option>
-                        {option.product_option_choices?.map((choice) => (
-                          <option key={choice.id} value={choice.id}>
-                            {choice.name} 
-                            {choice.adult_price_adjustment !== undefined && choice.adult_price_adjustment !== 0 && ` (성인: ${choice.adult_price_adjustment > 0 ? '+' : ''}${choice.adult_price_adjustment})`}
-                            {choice.child_price_adjustment !== undefined && choice.child_price_adjustment !== 0 && ` (아동: ${choice.child_price_adjustment > 0 ? '+' : ''}${choice.child_price_adjustment})`}
-                            {choice.infant_price_adjustment !== undefined && choice.infant_price_adjustment !== 0 && ` (유아: ${choice.infant_price_adjustment > 0 ? '+' : ''}${choice.infant_price_adjustment})`}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* 선택 옵션 */}
           <div className="bg-white p-3 rounded border border-gray-200">
             <h4 className="text-sm font-medium text-gray-900 mb-2">선택옵션</h4>
             <div className="space-y-2">
               {Object.entries(formData.selectedOptionalOptions).map(([optionId, option]) => {
-                const optionalOptions = getOptionalOptionsForProduct(formData.productId)
                 return (
                   <div key={optionId} className="border border-gray-200 rounded p-2">
                     <div className="flex items-center justify-between mb-1">
@@ -629,23 +594,18 @@ export default function PricingSection({
                       <select
                         value={option.choiceId}
                         onChange={(e) => {
-                          const selectedChoiceId = e.target.value
-                          const selectedOption = optionalOptions.find((opt) => 
-                            opt.product_option_choices?.some((choice) => choice.id === selectedChoiceId)
-                          )
-                          const selectedChoice = selectedOption?.product_option_choices?.find(
-                            (choice) => choice.id === selectedChoiceId
-                          )
+                          const selectedOptionId = e.target.value
+                          const selectedOption = options.find((opt) => opt.id === selectedOptionId)
                           
                           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              setFormData((prev: any) => ({
+                          setFormData((prev: any) => ({
                             ...prev,
                             selectedOptionalOptions: {
                               ...prev.selectedOptionalOptions,
                               [optionId]: { 
                                 ...option, 
-                                choiceId: selectedChoiceId,
-                                price: selectedChoice?.adult_price_adjustment || 0
+                                choiceId: selectedOptionId,
+                                price: selectedOption?.adult_price || 0
                               }
                             }
                           }))
@@ -653,13 +613,11 @@ export default function PricingSection({
                         className="w-full px-1 py-0.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
                       >
                         <option value="">옵션 선택</option>
-                        {optionalOptions.map((productOption) => 
-                          productOption.product_option_choices?.map((choice) => (
-                            <option key={choice.id} value={choice.id}>
-                              {productOption.name} - {choice.name} (${choice.adult_price_adjustment})
-                            </option>
-                          ))
-                        )}
+                        {options.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.name} (${option.adult_price})
+                          </option>
+                        ))}
                       </select>
                       
                       <div className="flex items-center space-x-1">
@@ -705,7 +663,7 @@ export default function PricingSection({
                   
                   const newOptionId = `selected_${Date.now()}`
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              setFormData((prev: any) => ({
+                  setFormData((prev: any) => ({
                     ...prev,
                     selectedOptionalOptions: {
                       ...prev.selectedOptionalOptions,

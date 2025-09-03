@@ -13,7 +13,7 @@ import ParticipantsSection from '@/components/reservation/ParticipantsSection'
 import PricingSection from '@/components/reservation/PricingSection'
 import ProductSelectionSection from '@/components/reservation/ProductSelectionSection'
 import ChannelSection from '@/components/reservation/ChannelSection'
-import { getRequiredOptionsForProduct, getOptionalOptionsForProduct, getMultipleSelectOptionsForProduct, getChoicesForOption } from '@/utils/reservationUtils'
+import { getRequiredOptionsForProduct, getOptionalOptionsForProduct, getChoicesForOption } from '@/utils/reservationUtils'
 import type { 
   Customer, 
   Product, 
@@ -107,7 +107,6 @@ export default function ReservationForm({
     prepaymentCost: number
     prepaymentTip: number
     selectedOptionalOptions: { [optionId: string]: { choiceId: string; quantity: number; price: number } }
-    selectedMultipleOptions: { [optionId: string]: string }
     optionTotal: number
     totalPrice: number
     depositAmount: number
@@ -166,7 +165,6 @@ export default function ReservationForm({
     prepaymentCost: 0,
     prepaymentTip: 0,
     selectedOptionalOptions: {},
-    selectedMultipleOptions: {},
     optionTotal: 0,
     totalPrice: 0,
     depositAmount: 0,
@@ -382,7 +380,6 @@ export default function ReservationForm({
             prepaymentCost: existingPricing.prepayment_cost || 0,
             prepaymentTip: existingPricing.prepayment_tip || 0,
             selectedOptionalOptions: existingPricing.selected_options || {},
-            selectedMultipleOptions: existingPricing.selected_multiple_options || {},
             optionTotal: existingPricing.option_total || 0,
             totalPrice: existingPricing.total_price || 0,
             depositAmount: existingPricing.deposit_amount || 0,
@@ -660,7 +657,6 @@ export default function ReservationForm({
         prepayment_cost: formData.prepaymentCost,
         prepayment_tip: formData.prepaymentTip,
         selected_options: formData.selectedOptionalOptions,
-        selected_multiple_options: formData.selectedMultipleOptions,
         option_total: formData.optionTotal,
         total_price: formData.totalPrice,
         deposit_amount: formData.depositAmount,
@@ -747,7 +743,6 @@ export default function ReservationForm({
           prepaymentCost: formData.prepaymentCost,
           prepaymentTip: formData.prepaymentTip,
           selectedOptionalOptions: formData.selectedOptionalOptions,
-          selectedMultipleOptions: formData.selectedMultipleOptions,
           optionTotal: formData.optionTotal,
           totalPrice: formData.totalPrice,
           depositAmount: formData.depositAmount,
@@ -891,8 +886,8 @@ export default function ReservationForm({
                 calculateCouponDiscount={calculateCouponDiscount}
                 coupons={coupons}
                 getOptionalOptionsForProduct={(productId) => getOptionalOptionsForProduct(productId, productOptions)}
-                getMultipleSelectOptionsForProduct={(productId) => getMultipleSelectOptionsForProduct(productId, productOptions)}
                 getDynamicPricingForOption={getDynamicPricingForOption}
+                options={options}
                 t={t}
               />
             </div>

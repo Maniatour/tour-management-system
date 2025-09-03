@@ -123,19 +123,10 @@ export const getRequiredOptionsForProduct = (productId: string, productOptions: 
   return groupedOptions
 }
 
-// 상품의 선택 옵션 (필수가 아닌 옵션) 가져오기
+// 상품의 선택 옵션 (is_multiple이 true인 옵션) 가져오기
 export const getOptionalOptionsForProduct = (productId: string, productOptions: ProductOption[]) => {
   return productOptions.filter(option => 
-    option.product_id === productId && option.is_required === false
-  )
-}
-
-// 상품의 다중 선택 가능한 옵션 가져오기 (is_multiple = true)
-export const getMultipleSelectOptionsForProduct = (productId: string, productOptions: ProductOption[]) => {
-  return productOptions.filter(option => 
-    option.product_id === productId && 
-    option.is_required === false && 
-    option.is_multiple === true
+    option.product_id === productId && option.is_multiple === true
   )
 }
 
