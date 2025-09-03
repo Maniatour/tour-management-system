@@ -58,6 +58,7 @@ interface PricingSectionProps {
     fixed_value?: number
   }>
   getOptionalOptionsForProduct: (productId: string) => ProductOption[]
+  getDynamicPricingForOption: (optionId: string) => { adult: number; child: number; infant: number } | null
   t: (key: string) => string
 }
 
@@ -69,7 +70,8 @@ export default function PricingSection({
   calculateRequiredOptionTotal,
   calculateCouponDiscount,
   coupons,
-  getOptionalOptionsForProduct
+  getOptionalOptionsForProduct,
+  getDynamicPricingForOption
 }: PricingSectionProps) {
   return (
     <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
@@ -271,6 +273,8 @@ export default function PricingSection({
                               (choice) => choice.id === e.target.value
                             )
                             if (selectedChoice) {
+                              // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
+                              const dynamicPricing = getDynamicPricingForOption(productOption.id)
                               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               setFormData((prev: any) => ({
                                 ...prev,
@@ -278,9 +282,9 @@ export default function PricingSection({
                                   ...prev.requiredOptions,
                                   [productOption.id]: {
                                     choiceId: selectedChoice.id,
-                                    adult: selectedChoice.adult_price_adjustment || 0,
-                                    child: selectedChoice.child_price_adjustment || 0,
-                                    infant: selectedChoice.infant_price_adjustment || 0
+                                    adult: dynamicPricing?.adult ?? selectedChoice.adult_price_adjustment ?? 0,
+                                    child: dynamicPricing?.child ?? selectedChoice.child_price_adjustment ?? 0,
+                                    infant: dynamicPricing?.infant ?? selectedChoice.infant_price_adjustment ?? 0
                                   }
                                 }
                               }))
@@ -297,19 +301,90 @@ export default function PricingSection({
                       </div>
                     )}
                     
-                    {/* 가격 표시 */}
-                    <div className="text-xs space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">성인</span>
-                        <span className="font-medium">${(currentOption.adult * formData.adults).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">아동</span>
-                        <span className="font-medium">${(currentOption.child * formData.child).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">유아</span>
-                        <span className="font-medium">${(currentOption.infant * formData.infant).toFixed(2)}</span>
+                    {/* 가격 입력 */}
+                    <div className="text-xs space-y-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-gray-600 mb-1">성인</label>
+                          <div className="relative">
+                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                            <input
+                              type="number"
+                              value={currentOption.adult}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value) || 0
+                                setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+                                  ...prev,
+                                  requiredOptions: {
+                                    ...prev.requiredOptions,
+                                    [productOption.id]: {
+                                      ...prev.requiredOptions[productOption.id],
+                                      adult: value
+                                    }
+                                  }
+                                }))
+                              }}
+                              className="w-full pl-4 pr-1 py-1 text-right border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            총: ${(currentOption.adult * formData.adults).toFixed(2)}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-gray-600 mb-1">아동</label>
+                          <div className="relative">
+                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                            <input
+                              type="number"
+                              value={currentOption.child}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value) || 0
+                                setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+                                  ...prev,
+                                  requiredOptions: {
+                                    ...prev.requiredOptions,
+                                    [productOption.id]: {
+                                      ...prev.requiredOptions[productOption.id],
+                                      child: value
+                                    }
+                                  }
+                                }))
+                              }}
+                              className="w-full pl-4 pr-1 py-1 text-right border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            총: ${(currentOption.child * formData.child).toFixed(2)}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-gray-600 mb-1">유아</label>
+                          <div className="relative">
+                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                            <input
+                              type="number"
+                              value={currentOption.infant}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value) || 0
+                                setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+                                  ...prev,
+                                  requiredOptions: {
+                                    ...prev.requiredOptions,
+                                    [productOption.id]: {
+                                      ...prev.requiredOptions[productOption.id],
+                                      infant: value
+                                    }
+                                  }
+                                }))
+                              }}
+                              className="w-full pl-4 pr-1 py-1 text-right border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            총: ${(currentOption.infant * formData.infant).toFixed(2)}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

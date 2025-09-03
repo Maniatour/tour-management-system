@@ -262,75 +262,10 @@ export default function ProductSelectionSection({
                           </div>
                         </div>
                         
-                        {/* 요금 입력칸 */}
-                        <div className="grid grid-cols-3 gap-2">
-                          <div>
-                            <label className="block text-xs text-gray-600 mb-1">성인</label>
-                            <input
-                              type="number"
-                              placeholder="0"
-                              defaultValue={(() => {
-                                const dynamicPricing = getDynamicPricingForOption(option.id)
-                                return dynamicPricing?.adult ?? choice.adult_price_adjustment ?? 0
-                              })()}
-                              onChange={(e) => {
-                                const value = Number(e.target.value) || 0
-                                setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                                  ...prev,
-                                  selectedOptionPrices: {
-                                    ...prev.selectedOptionPrices,
-                                    [`${option.id}_${choice.id}_adult`]: value
-                                  }
-                                }))
-                              }}
-                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-600 mb-1">아동</label>
-                            <input
-                              type="number"
-                              placeholder="0"
-                              defaultValue={(() => {
-                                const dynamicPricing = getDynamicPricingForOption(option.id)
-                                return dynamicPricing?.child ?? choice.child_price_adjustment ?? 0
-                              })()}
-                              onChange={(e) => {
-                                const value = Number(e.target.value) || 0
-                                setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                                  ...prev,
-                                  selectedOptionPrices: {
-                                    ...prev.selectedOptionPrices,
-                                    [`${option.id}_${choice.id}_child`]: value
-                                  }
-                                }))
-                              }}
-                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-600 mb-1">유아</label>
-                            <input
-                              type="number"
-                              placeholder="0"
-                              defaultValue={(() => {
-                                const dynamicPricing = getDynamicPricingForOption(option.id)
-                                return dynamicPricing?.infant ?? choice.infant_price_adjustment ?? 0
-                              })()}
-                              onChange={(e) => {
-                                const value = Number(e.target.value) || 0
-                                setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                                  ...prev,
-                                  selectedOptionPrices: {
-                                    ...prev.selectedOptionPrices,
-                                    [`${option.id}_${choice.id}_infant`]: value
-                                  }
-                                }))
-                              }}
-                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                        </div>
+                                                 {/* 가격 정보는 가격 정보 섹션에서 관리 */}
+                         <div className="text-xs text-gray-500 mt-2">
+                           가격은 가격 정보 섹션에서 설정됩니다
+                         </div>
                       </div>
                     ))
                   })}

@@ -847,6 +847,7 @@ export default function ReservationForm({
                 calculateCouponDiscount={calculateCouponDiscount}
                 coupons={coupons}
                 getOptionalOptionsForProduct={(productId) => getOptionalOptionsForProduct(productId, productOptions)}
+                getDynamicPricingForOption={getDynamicPricingForOption}
                 t={t}
               />
             </div>
