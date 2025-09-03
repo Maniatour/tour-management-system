@@ -434,6 +434,7 @@ export default function ReservationForm({
 
         if (existingError && existingError.code !== 'PGRST116') {
           console.log('기존 가격 정보 조회 오류:', existingError.message)
+          // 오류가 발생해도 계속 진행 (dynamic_pricing 조회)
         } else if (existingPricing) {
           console.log('기존 가격 정보 사용:', existingPricing)
           setFormData(prev => ({
@@ -481,40 +482,29 @@ export default function ReservationForm({
 
       if (error) {
         console.log('Dynamic pricing 조회 오류:', error.message)
+        // 오류가 발생해도 가격을 0으로 설정하고 계속 진행
+        setFormData(prev => ({
+          ...prev,
+          adultProductPrice: 0,
+          childProductPrice: 0,
+          infantProductPrice: 0
+        }))
+        setPriceAutoFillMessage('가격 조회 중 오류가 발생했습니다. 수동으로 입력해주세요.')
         return
       }
 
       if (!pricingData || pricingData.length === 0) {
-        console.log('Dynamic pricing 데이터가 없습니다. 기본 가격을 사용합니다.')
+        console.log('Dynamic pricing 데이터가 없습니다. 가격을 0으로 설정합니다.')
         
-        // 기본 가격 조회
-        try {
-          const { data: productData, error: productError } = await supabase
-            .from('products')
-            .select('base_price')
-            .eq('id', productId)
-            .single()
-
-          if (productError) {
-            console.log('기본 가격 조회 오류:', productError.message)
-            return
-          }
-
-          if (productData) {
-            console.log('기본 가격 사용:', productData.base_price)
-            setFormData(prev => ({
-              ...prev,
-              adultProductPrice: productData.base_price || 0,
-              childProductPrice: productData.base_price * 0.7 || 0, // 아동은 성인 가격의 70%
-              infantProductPrice: 0 // 유아는 무료
-            }))
-            
-            setPriceAutoFillMessage('기본 가격이 자동으로 입력되었습니다!')
-          }
-        } catch (fallbackError) {
-          console.log('기본 가격 조회 실패:', fallbackError)
-        }
+        // 가격 정보가 없으면 0으로 설정
+        setFormData(prev => ({
+          ...prev,
+          adultProductPrice: 0,
+          childProductPrice: 0,
+          infantProductPrice: 0
+        }))
         
+        setPriceAutoFillMessage('가격 정보가 없어 0으로 설정되었습니다. 수동으로 입력해주세요.')
         return
       }
 
