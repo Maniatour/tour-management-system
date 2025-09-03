@@ -42,6 +42,7 @@ interface PricingSectionProps {
     totalPrice: number
     depositAmount: number
     balanceAmount: number
+    commission_percent: number
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
@@ -729,9 +730,17 @@ export default function PricingSection({
             <div className="border-t border-gray-300 my-2"></div>
             
             {/* 총 가격 */}
-            <div className="flex justify-between items-center mb-3">
+            <div className="flex justify-between items-center mb-2">
               <span className="text-base font-bold text-gray-900">총 가격</span>
               <span className="text-lg font-bold text-blue-600">${formData.totalPrice.toFixed(2)}</span>
+            </div>
+            
+            {/* NET 가격 */}
+            <div className="flex justify-between items-center mb-3 p-2 bg-green-50 border border-green-200 rounded">
+              <span className="text-sm font-semibold text-green-800">NET 가격</span>
+              <span className="text-base font-bold text-green-600">
+                ${(formData.totalPrice * (1 - formData.commission_percent / 100)).toFixed(2)}
+              </span>
             </div>
             
             {/* 보증금 및 잔액 */}

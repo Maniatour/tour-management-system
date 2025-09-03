@@ -44,6 +44,7 @@ export interface PricingInfo {
   balanceAmount: number
   isPrivateTour: boolean
   privateTourAdditionalCost: number
+  commission_percent: number
 }
 
 export interface Reservation {

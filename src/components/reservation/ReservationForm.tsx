@@ -113,6 +113,7 @@ export default function ReservationForm({
     balanceAmount: number
     isPrivateTour: boolean
     privateTourAdditionalCost: number
+    commission_percent: number
     productRequiredOptions: ProductOption[]
   }>({
     customerId: reservation?.customerId || '',
@@ -170,6 +171,7 @@ export default function ReservationForm({
     balanceAmount: 0,
     isPrivateTour: false,
     privateTourAdditionalCost: 0,
+    commission_percent: 0,
     productRequiredOptions: []
   })
 
@@ -383,7 +385,8 @@ export default function ReservationForm({
             depositAmount: existingPricing.deposit_amount || 0,
             balanceAmount: existingPricing.balance_amount || 0,
             isPrivateTour: existingPricing.is_private_tour || false,
-            privateTourAdditionalCost: existingPricing.private_tour_additional_cost || 0
+            privateTourAdditionalCost: existingPricing.private_tour_additional_cost || 0,
+            commission_percent: 0 // reservation_pricing에는 commission_percent가 없으므로 0으로 설정
           }))
           
           setPriceAutoFillMessage('기존 가격 정보가 로드되었습니다!')
@@ -449,7 +452,8 @@ export default function ReservationForm({
         ...prev,
         adultProductPrice: pricing.adult_price || 0,
         childProductPrice: pricing.child_price || 0,
-        infantProductPrice: pricing.infant_price || 0
+        infantProductPrice: pricing.infant_price || 0,
+        commission_percent: pricing.commission_percent || 0
       }))
 
       // 필수 옵션을 먼저 로드한 후 dynamic_pricing의 options_pricing으로 가격 업데이트
@@ -625,7 +629,8 @@ export default function ReservationForm({
         deposit_amount: formData.depositAmount,
         balance_amount: formData.balanceAmount,
         is_private_tour: formData.isPrivateTour,
-        private_tour_additional_cost: formData.privateTourAdditionalCost
+        private_tour_additional_cost: formData.privateTourAdditionalCost,
+        commission_percent: formData.commission_percent
       }
 
       let error
@@ -710,7 +715,8 @@ export default function ReservationForm({
           depositAmount: formData.depositAmount,
           balanceAmount: formData.balanceAmount,
           isPrivateTour: formData.isPrivateTour,
-          privateTourAdditionalCost: formData.privateTourAdditionalCost
+          privateTourAdditionalCost: formData.privateTourAdditionalCost,
+          commission_percent: formData.commission_percent
         }
       })
       
