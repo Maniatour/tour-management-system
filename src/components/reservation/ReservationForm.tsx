@@ -310,6 +310,22 @@ export default function ReservationForm({
                     opt.linked_option_id === optionPricing.option_id || 
                     opt.id === optionPricing.option_id
                   )
+                  
+                  // 매칭이 안 되는 경우 더 자세한 디버깅
+                  if (!matchingProductOption) {
+                    console.log(`매칭 실패 - 상세 분석:`, {
+                      찾고있는_option_id: optionPricing.option_id,
+                      available_product_options: requiredOptionsList.map(opt => ({
+                        id: opt.id,
+                        name: opt.name,
+                        linked_option_id: opt.linked_option_id,
+                        linked_option_id_type: typeof opt.linked_option_id,
+                        linked_option_id_null: opt.linked_option_id === null,
+                        linked_option_id_undefined: opt.linked_option_id === undefined
+                      }))
+                    })
+                  }
+                  
                   console.log(`매칭되는 product_option 찾기:`, {
                     option_id: optionPricing.option_id,
                     requiredOptionsList: requiredOptionsList.map(opt => ({ id: opt.id, linked_option_id: opt.linked_option_id })),
@@ -337,7 +353,8 @@ export default function ReservationForm({
                     console.log(`매칭되는 product_option을 찾을 수 없음:`, {
                       option_id: optionPricing.option_id,
                       requiredOptions_keys: Object.keys(requiredOptions),
-                      matchingProductOption: matchingProductOption
+                      matchingProductOption: matchingProductOption,
+                      requiredOptions_content: requiredOptions
                     })
                   }
                 })
