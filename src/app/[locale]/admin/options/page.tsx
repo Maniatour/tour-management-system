@@ -59,6 +59,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
   const handleAddOption = async (option: Omit<Option, 'id' | 'created_at'>) => {
     try {
       const newOption = {
+        id: crypto.randomUUID(), // UUID 생성
         name: option.name,
         category: option.category,
         description: option.description,
