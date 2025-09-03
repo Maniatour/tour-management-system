@@ -233,6 +233,7 @@ export default function ReservationForm({
           name,
           description,
           is_required,
+          linked_option_id,
           product_option_choices (
             id,
             name,
@@ -284,19 +285,30 @@ export default function ReservationForm({
             const pricing = pricingData[0]
             console.log('Dynamic pricing options_pricing 조회:', pricing.options_pricing)
             
-            // requiredOptionsList 변수 정의
-            const requiredOptionsList = Object.keys(requiredOptions).map(optionId => {
-              const option = productOptions.find(opt => opt.id === optionId)
-              return option
-            }).filter(Boolean) as Array<{ id: string; linked_option_id?: string }>
+            // requiredOptionsList 변수 정의 (productOptions에서 직접 가져오기)
+            const requiredOptionsList = productOptions || []
             
             if (pricing.options_pricing && typeof pricing.options_pricing === 'object') {
               // options_pricing이 배열인 경우 처리
               if (Array.isArray(pricing.options_pricing)) {
                 pricing.options_pricing.forEach((optionPricing: { option_id: string; adult_price?: number; child_price?: number; infant_price?: number }) => {
+                  console.log(`Dynamic pricing 옵션 처리:`, {
+                    option_id: optionPricing.option_id,
+                    adult_price: optionPricing.adult_price,
+                    child_price: optionPricing.child_price,
+                    infant_price: optionPricing.infant_price
+                  })
+                  
                   // linked_option_id와 매칭되는 product_option 찾기
                   const matchingProductOption = requiredOptionsList.find(opt => opt.linked_option_id === optionPricing.option_id)
+                  console.log(`매칭되는 product_option 찾기:`, {
+                    option_id: optionPricing.option_id,
+                    requiredOptionsList: requiredOptionsList.map(opt => ({ id: opt.id, linked_option_id: opt.linked_option_id })),
+                    matchingProductOption: matchingProductOption ? { id: matchingProductOption.id, linked_option_id: matchingProductOption.linked_option_id } : null
+                  })
+                  
                   if (matchingProductOption && requiredOptions[matchingProductOption.id]) {
+                    const beforePrice = requiredOptions[matchingProductOption.id]
                     requiredOptions[matchingProductOption.id] = {
                       ...requiredOptions[matchingProductOption.id],
                       adult: optionPricing.adult_price || 0,
@@ -304,9 +316,19 @@ export default function ReservationForm({
                       infant: optionPricing.infant_price || 0
                     }
                     console.log(`옵션 ${matchingProductOption.id} (linked_option_id: ${optionPricing.option_id}) 가격 업데이트 (배열 형식):`, {
-                      adult: optionPricing.adult_price,
-                      child: optionPricing.child_price,
-                      infant: optionPricing.infant_price
+                      before: beforePrice,
+                      after: requiredOptions[matchingProductOption.id],
+                      dynamic_pricing: {
+                        adult: optionPricing.adult_price,
+                        child: optionPricing.child_price,
+                        infant: optionPricing.infant_price
+                      }
+                    })
+                  } else {
+                    console.log(`매칭되는 product_option을 찾을 수 없음:`, {
+                      option_id: optionPricing.option_id,
+                      requiredOptions_keys: Object.keys(requiredOptions),
+                      matchingProductOption: matchingProductOption
                     })
                   }
                 })
