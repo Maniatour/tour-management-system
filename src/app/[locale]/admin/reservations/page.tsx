@@ -698,12 +698,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 </div>
               </div>
 
-              {/* 카드 푸터 - 편집 안내 */}
-              <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 rounded-b-lg">
-                <div className="text-center">
-                  
-                </div>
-              </div>
+
             </div>
           ))}
         </div>
