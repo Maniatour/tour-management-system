@@ -438,6 +438,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             <option value="confirmed">확정</option>
             <option value="completed">완료</option>
             <option value="cancelled">취소</option>
+            <option value="recruiting">모집중</option>
           </select>
           
           <select

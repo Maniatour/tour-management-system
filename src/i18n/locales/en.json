@@ -151,7 +151,9 @@
       "Confirmed": "Confirmed",
       "completed": "Completed",
       "cancelled": "Cancelled",
-      "Canceled": "Cancelled"
+      "Canceled": "Cancelled",
+      "recruiting": "Recruiting",
+      "Recruiting": "Recruiting"
     },
     "form": {
       "title": "Add New Reservation",

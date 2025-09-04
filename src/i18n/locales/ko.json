@@ -174,7 +174,9 @@
       "Confirmed": "확정",
       "completed": "완료",
       "cancelled": "취소",
-      "Canceled": "취소"
+      "Canceled": "취소",
+      "recruiting": "모집중",
+      "Recruiting": "모집중"
     },
     "form": {
       "title": "새 예약 추가",
