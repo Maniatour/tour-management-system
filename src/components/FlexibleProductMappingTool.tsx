@@ -160,36 +160,55 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
       const results = []
       
       for (const rule of mappingRules) {
+        console.log(`매핑 규칙 실행 시작: ${rule.sourceProductId} → ${rule.targetProductId}`)
+        
         // 변환할 예약들을 미리 찾기
         const reservationsToUpdate = reservations.filter(r => r.product_id === rule.sourceProductId)
         const updatedCount = reservationsToUpdate.length
+
+        console.log(`변환 대상 예약 수: ${updatedCount}개`)
 
         if (updatedCount === 0) {
           console.warn(`변환할 예약이 없습니다: ${rule.sourceProductId}`)
           continue
         }
 
-        // 상품 ID 변경
-        const { error: updateError } = await supabase
-          .from('reservations')
-          .update({ product_id: rule.targetProductId })
-          .eq('product_id', rule.sourceProductId)
+        // 상품 ID가 다른 경우에만 변경
+        if (rule.sourceProductId !== rule.targetProductId) {
+          console.log(`상품 ID 변경 실행: ${rule.sourceProductId} → ${rule.targetProductId}`)
+          
+          const { error: updateError } = await supabase
+            .from('reservations')
+            .update({ product_id: rule.targetProductId })
+            .eq('product_id', rule.sourceProductId)
 
-        if (updateError) {
-          console.error(`상품 ID 변경 중 오류 (${rule.sourceProductId}):`, updateError)
-          throw updateError
+          if (updateError) {
+            console.error(`상품 ID 변경 중 오류 (${rule.sourceProductId}):`, updateError)
+            throw updateError
+          }
+          
+          console.log(`상품 ID 변경 완료: ${updatedCount}개 예약`)
+        } else {
+          console.log(`상품 ID가 동일하므로 변경 생략: ${rule.sourceProductId}`)
         }
 
         // 필수 선택 옵션을 selected_options에 추가
         if (rule.targetOptions.length > 0) {
+          console.log(`옵션 추가 시작: ${rule.targetOptions.join(', ')}`)
+          
           const optionIds = rule.targetOptions.map(optionName => {
             const option = productOptions.find(opt => 
               opt.product_id === rule.targetProductId && opt.name === optionName && opt.is_required === true
             )
+            console.log(`옵션 "${optionName}" 찾기:`, option ? `ID: ${option.id}` : '찾을 수 없음')
             return option?.id
           }).filter(Boolean)
 
+          console.log(`찾은 옵션 ID들:`, optionIds)
+
           if (optionIds.length > 0) {
+            console.log(`${optionIds.length}개 옵션을 ${reservationsToUpdate.length}개 예약에 추가`)
+            
             // 각 예약에 대해 selected_options 업데이트
             for (const reservation of reservationsToUpdate) {
               const currentOptions = reservation.selected_options || {}
@@ -200,16 +219,27 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
               
               const updatedOptions = { ...currentOptions, ...newOptions }
               
+              console.log(`예약 ${reservation.id} 옵션 업데이트:`, {
+                before: currentOptions,
+                after: updatedOptions
+              })
+              
               const { error: optionError } = await supabase
                 .from('reservations')
                 .update({ selected_options: updatedOptions })
                 .eq('id', reservation.id)
 
               if (optionError) {
-                console.warn(`예약 ${reservation.id} 옵션 추가 중 오류:`, optionError)
+                console.error(`예약 ${reservation.id} 옵션 추가 중 오류:`, optionError)
+              } else {
+                console.log(`예약 ${reservation.id} 옵션 추가 완료`)
               }
             }
+          } else {
+            console.warn('추가할 옵션을 찾을 수 없습니다.')
           }
+        } else {
+          console.log('추가할 옵션이 없습니다.')
         }
 
         results.push({
@@ -237,7 +267,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
     }
   }
 
-  // 필터링된 예약 목록 (selected_options가 없는 예약만)
+  // 필터링된 예약 목록 (선택된 소스 상품의 예약들)
   const filteredReservations = reservations.filter(reservation => {
     const matchesSearch = !searchTerm || 
       reservation.product_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -245,11 +275,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
     
     const matchesSource = !selectedSourceProduct || reservation.product_id === selectedSourceProduct
     
-    // selected_options가 없는 예약만 필터링
-    const hasNoSelectedOptions = !reservation.selected_options || 
-      Object.keys(reservation.selected_options).length === 0
-    
-    return matchesSearch && matchesSource && hasNoSelectedOptions
+    return matchesSearch && matchesSource
   })
 
   return (
@@ -258,7 +284,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
         <div>
           <h3 className="text-lg font-semibold text-gray-900">유연한 상품 매핑 도구</h3>
           <p className="text-sm text-gray-600">
-            기존 상품을 선택하고 새로운 상품으로 통합하며, selected_options가 없는 예약에만 필수 선택 옵션을 추가할 수 있습니다.
+            기존 상품을 선택하고 새로운 상품으로 통합하며, 필수 선택 옵션을 추가할 수 있습니다.
             {reservations.length > 0 && (
               <span className="ml-2 text-blue-600 font-medium">
                 (전체 {reservations.length}개 예약 로드됨)
@@ -489,7 +515,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                   변환 대상 예약 수: {reservations.filter(r => r.product_id === selectedSourceProduct).length}개
                 </div>
                 <div className="text-sm text-gray-600">
-                  selected_options 없는 예약 수: {filteredReservations.length}개
+                  필터링된 예약 수: {filteredReservations.length}개
                 </div>
               </div>
             )}
@@ -554,9 +580,9 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
             <ul className="mt-1 space-y-1">
               <li>• 이 작업은 되돌릴 수 없습니다. 실행 전에 데이터를 백업하세요.</li>
               <li>• 여러 매핑 규칙을 한 번에 실행할 수 있습니다.</li>
-              <li>• selected_options가 없는 예약에만 적용됩니다.</li>
               <li>• 필수 선택 옵션만 selected_options JSONB 컬럼에 추가됩니다.</li>
               <li>• 상품 통합 후 각 예약의 selected_options에서 구분됩니다.</li>
+              <li>• 브라우저 콘솔에서 상세한 실행 로그를 확인할 수 있습니다.</li>
             </ul>
           </div>
         </div>
