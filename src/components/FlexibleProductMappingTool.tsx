@@ -188,7 +188,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
     }
   }
 
-  // 필터링된 예약 목록
+  // 필터링된 예약 목록 (selected_options가 없는 예약만)
   const filteredReservations = reservations.filter(reservation => {
     const matchesSearch = !searchTerm || 
       reservation.product_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -196,7 +196,11 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
     
     const matchesSource = !selectedSourceProduct || reservation.product_id === selectedSourceProduct
     
-    return matchesSearch && matchesSource
+    // selected_options가 없는 예약만 필터링
+    const hasNoSelectedOptions = !reservation.selected_options || 
+      Object.keys(reservation.selected_options).length === 0
+    
+    return matchesSearch && matchesSource && hasNoSelectedOptions
   })
 
   return (
@@ -204,7 +208,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-gray-900">유연한 상품 매핑 도구</h3>
-          <p className="text-sm text-gray-600">기존 상품을 선택하고 새로운 상품으로 통합하며, 필수 선택 옵션을 selected_options에 추가할 수 있습니다.</p>
+          <p className="text-sm text-gray-600">기존 상품을 선택하고 새로운 상품으로 통합하며, selected_options가 없는 예약에만 필수 선택 옵션을 추가할 수 있습니다.</p>
         </div>
         <button
           onClick={loadData}
@@ -430,6 +434,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
             <ul className="mt-1 space-y-1">
               <li>• 이 작업은 되돌릴 수 없습니다. 실행 전에 데이터를 백업하세요.</li>
               <li>• 여러 매핑 규칙을 한 번에 실행할 수 있습니다.</li>
+              <li>• selected_options가 없는 예약에만 적용됩니다.</li>
               <li>• 필수 선택 옵션만 selected_options JSONB 컬럼에 추가됩니다.</li>
               <li>• 상품 통합 후 각 예약의 selected_options에서 구분됩니다.</li>
             </ul>

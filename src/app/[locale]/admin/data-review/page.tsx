@@ -42,54 +42,79 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterErrors, setFilterErrors] = useState<boolean>(false)
+  const [filterNoSelectedOptions, setFilterNoSelectedOptions] = useState<boolean>(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editedData, setEditedData] = useState<Partial<ReservationWithDetails>>({})
   const [saving, setSaving] = useState(false)
   const [showOnlyEdited, setShowOnlyEdited] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<ReservationWithDetails | null>(null)
   const [showErrorModal, setShowErrorModal] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const itemsPerPage = 1000
 
   // 데이터 로드
   useEffect(() => {
     loadData()
   }, [])
 
-  const loadData = async () => {
+  const loadData = async (page = 1, append = false) => {
     try {
       setLoading(true)
       
-      // 모든 데이터를 병렬로 로드
-      const [reservationsRes, customersRes, productsRes, channelsRes, pickupHotelsRes] = await Promise.all([
-        supabase.from('reservations').select('*').order('created_at', { ascending: false }),
-        supabase.from('customers').select('*'),
-        supabase.from('products').select('*'),
-        supabase.from('channels').select('*'),
-        supabase.from('pickup_hotels').select('*')
-      ])
+      // 첫 페이지일 때만 참조 데이터 로드
+      if (page === 1) {
+        const [customersRes, productsRes, channelsRes, pickupHotelsRes] = await Promise.all([
+          supabase.from('customers').select('*'),
+          supabase.from('products').select('*'),
+          supabase.from('channels').select('*'),
+          supabase.from('pickup_hotels').select('*')
+        ])
+
+        if (customersRes.error) throw customersRes.error
+        if (productsRes.error) throw productsRes.error
+        if (channelsRes.error) throw channelsRes.error
+        if (pickupHotelsRes.error) throw pickupHotelsRes.error
+
+        setCustomers(customersRes.data || [])
+        setProducts(productsRes.data || [])
+        setChannels(channelsRes.data || [])
+        setPickupHotels(pickupHotelsRes.data || [])
+      }
+
+      // 예약 데이터 페이지네이션으로 로드
+      const from = (page - 1) * itemsPerPage
+      const to = from + itemsPerPage - 1
+
+      const reservationsRes = await supabase
+        .from('reservations')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(from, to)
 
       if (reservationsRes.error) throw reservationsRes.error
-      if (customersRes.error) throw customersRes.error
-      if (productsRes.error) throw productsRes.error
-      if (channelsRes.error) throw channelsRes.error
-      if (pickupHotelsRes.error) throw pickupHotelsRes.error
 
-      setCustomers(customersRes.data || [])
-      setProducts(productsRes.data || [])
-      setChannels(channelsRes.data || [])
-      setPickupHotels(pickupHotelsRes.data || [])
+      // 총 개수 설정
+      setTotalCount(reservationsRes.count || 0)
+      setHasMore((reservationsRes.data?.length || 0) === itemsPerPage)
 
       // 예약 데이터에 상세 정보 추가 및 검증
       const reservationsWithDetails = (reservationsRes.data || []).map(reservation => ({
         ...reservation,
-        customer: customersRes.data?.find(c => c.id === reservation.customer_id),
-        product: productsRes.data?.find(p => p.id === reservation.product_id),
-        channel: channelsRes.data?.find(c => c.id === reservation.channel_id),
-        pickupHotel: pickupHotelsRes.data?.find(h => h.id === reservation.pickup_hotel),
-        validationErrors: validateReservation(reservation, customersRes.data || [], productsRes.data || [], channelsRes.data || []),
+        customer: customers.find(c => c.id === reservation.customer_id),
+        product: products.find(p => p.id === reservation.product_id),
+        channel: channels.find(c => c.id === reservation.channel_id),
+        pickupHotel: pickupHotels.find(h => h.id === reservation.pickup_hotel),
+        validationErrors: validateReservation(reservation, customers, products, channels),
         isEdited: false
       }))
 
-      setReservations(reservationsWithDetails)
+      if (append) {
+        setReservations(prev => [...prev, ...reservationsWithDetails])
+      } else {
+        setReservations(reservationsWithDetails)
+      }
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
@@ -149,8 +174,13 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
     const matchesStatus = filterStatus === 'all' || reservation.status === filterStatus
     const matchesErrors = !filterErrors || reservation.validationErrors.length > 0
     const matchesEdited = !showOnlyEdited || reservation.isEdited
+    
+    // selected_options가 없는 예약만 필터링
+    const matchesNoSelectedOptions = !filterNoSelectedOptions || 
+      !reservation.selected_options || 
+      Object.keys(reservation.selected_options).length === 0
 
-    return matchesSearch && matchesStatus && matchesErrors && matchesEdited
+    return matchesSearch && matchesStatus && matchesErrors && matchesEdited && matchesNoSelectedOptions
   })
 
   // 편집 시작
@@ -436,6 +466,16 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
               />
               <span className="text-sm text-gray-700">수정된 것만 보기</span>
             </label>
+
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={filterNoSelectedOptions}
+                onChange={(e) => setFilterNoSelectedOptions(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">selected_options 없는 것만</span>
+            </label>
           </div>
         </div>
 
@@ -627,9 +667,40 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
           </div>
         </div>
 
+        {/* 더 많은 데이터 로드 버튼 */}
+        {hasMore && (
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => {
+                const nextPage = currentPage + 1
+                setCurrentPage(nextPage)
+                loadData(nextPage, true)
+              }}
+              disabled={loading}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 mx-auto"
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <span>로딩 중...</span>
+                </>
+              ) : (
+                <>
+                  <span>더 많은 데이터 로드 ({totalCount - reservations.length}개 남음)</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
         {/* 결과 요약 */}
         <div className="mt-6 text-center text-sm text-gray-600">
           {filteredReservations.length}개 예약 중 {reservations.filter(r => r.validationErrors.length > 0).length}개에 오류가 있습니다.
+          {totalCount > reservations.length && (
+            <span className="ml-2 text-blue-600">
+              (전체 {totalCount}개 중 {reservations.length}개 로드됨)
+            </span>
+          )}
         </div>
       </div>
 
