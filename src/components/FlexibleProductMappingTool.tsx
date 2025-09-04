@@ -34,6 +34,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
   const [mappingRules, setMappingRules] = useState<MappingRule[]>([])
   const [previewMode, setPreviewMode] = useState(true)
   const [migrationResults, setMigrationResults] = useState<any[]>([])
+  const [debugMode, setDebugMode] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -159,15 +160,25 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
       const results = []
       
       for (const rule of mappingRules) {
+        // 변환할 예약들을 미리 찾기
+        const reservationsToUpdate = reservations.filter(r => r.product_id === rule.sourceProductId)
+        const updatedCount = reservationsToUpdate.length
+
+        if (updatedCount === 0) {
+          console.warn(`변환할 예약이 없습니다: ${rule.sourceProductId}`)
+          continue
+        }
+
         // 상품 ID 변경
         const { error: updateError } = await supabase
           .from('reservations')
           .update({ product_id: rule.targetProductId })
           .eq('product_id', rule.sourceProductId)
 
-        if (updateError) throw updateError
-
-        const updatedCount = reservations.filter(r => r.product_id === rule.sourceProductId).length
+        if (updateError) {
+          console.error(`상품 ID 변경 중 오류 (${rule.sourceProductId}):`, updateError)
+          throw updateError
+        }
 
         // 필수 선택 옵션을 selected_options에 추가
         if (rule.targetOptions.length > 0) {
@@ -180,8 +191,6 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
 
           if (optionIds.length > 0) {
             // 각 예약에 대해 selected_options 업데이트
-            const reservationsToUpdate = reservations.filter(r => r.product_id === rule.sourceProductId)
-            
             for (const reservation of reservationsToUpdate) {
               const currentOptions = reservation.selected_options || {}
               const newOptions = optionIds.reduce((acc, id) => {
@@ -209,16 +218,20 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
           updatedCount,
           optionsAdded: rule.targetOptions.length
         })
+
+        console.log(`매핑 완료: ${rule.sourceProductId} → ${rule.targetProductId} (${updatedCount}개 예약)`)
       }
 
       setMigrationResults(results)
       setPreviewMode(false)
       onDataUpdated()
       
-      alert('매핑이 완료되었습니다!')
+      const totalUpdated = results.reduce((sum, result) => sum + result.updatedCount, 0)
+      alert(`매핑이 완료되었습니다!\n총 ${totalUpdated}개 예약이 변환되었습니다.`)
     } catch (error) {
       console.error('Error executing mapping:', error)
-      alert('매핑 중 오류가 발생했습니다.')
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
+      alert(`매핑 중 오류가 발생했습니다:\n${errorMessage}`)
     } finally {
       setLoading(false)
     }
@@ -253,19 +266,31 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
             )}
           </p>
         </div>
-        <button
-          onClick={loadData}
-          disabled={loading}
-          className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 flex items-center space-x-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          <span>
-            {loading 
-              ? `로딩 중... (${loadingProgress.current}/${loadingProgress.total})` 
-              : '새로고침'
-            }
-          </span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setDebugMode(!debugMode)}
+            className={`px-3 py-2 text-sm rounded-lg flex items-center space-x-2 ${
+              debugMode 
+                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <span>디버그 모드</span>
+          </button>
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 flex items-center space-x-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>
+              {loading 
+                ? `로딩 중... (${loadingProgress.current}/${loadingProgress.total})` 
+                : '새로고침'
+              }
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* 매핑 규칙 설정 */}
@@ -432,6 +457,40 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
             {filteredReservations.length > 10 && (
               <div className="px-4 py-2 text-sm text-gray-500 text-center">
                 ... 및 {filteredReservations.length - 10}개 더
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 디버그 정보 */}
+      {debugMode && (
+        <div className="mb-6">
+          <h4 className="font-medium text-gray-900 mb-3">디버그 정보</h4>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="font-medium">전체 예약 수:</span> {reservations.length}
+              </div>
+              <div>
+                <span className="font-medium">상품 수:</span> {products.length}
+              </div>
+              <div>
+                <span className="font-medium">옵션 수:</span> {productOptions.length}
+              </div>
+              <div>
+                <span className="font-medium">매핑 규칙 수:</span> {mappingRules.length}
+              </div>
+            </div>
+            {selectedSourceProduct && (
+              <div className="mt-4">
+                <div className="font-medium text-gray-700 mb-2">선택된 소스 상품: {selectedSourceProduct}</div>
+                <div className="text-sm text-gray-600">
+                  변환 대상 예약 수: {reservations.filter(r => r.product_id === selectedSourceProduct).length}개
+                </div>
+                <div className="text-sm text-gray-600">
+                  selected_options 없는 예약 수: {filteredReservations.length}개
+                </div>
               </div>
             )}
           </div>
