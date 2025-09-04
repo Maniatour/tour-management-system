@@ -144,7 +144,7 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
 
               {/* 예약 라벨들 */}
               <div className="space-y-1">
-                {dayTours.slice(0, 3).map((reservation, index) => {
+                {dayTours.slice(0, 2).map((reservation, index) => {
                   const totalParticipants = reservation.adults + reservation.child + reservation.infant
                   const participantText = `성인${reservation.adults} 아동${reservation.child} 유아${reservation.infant}`
                   
@@ -157,15 +157,26 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
                       }`}
                       title={`${reservation.customer_name} | ${reservation.product_id} | ${participantText}`}
                     >
-                      <div className="truncate font-medium">{reservation.customer_name}</div>
-                      <div className="truncate text-xs opacity-90">{reservation.product_id}</div>
-                      <div className="truncate text-xs opacity-75">{participantText}</div>
+                      <div className="truncate">
+                        <span className="font-medium">{reservation.customer_name}</span>
+                        <span className="mx-1">|</span>
+                        <span className="opacity-90">{reservation.product_id}</span>
+                        <span className="mx-1">|</span>
+                        <span className="opacity-75">{participantText}</span>
+                      </div>
                     </div>
                   )
                 })}
-                {dayTours.length > 3 && (
-                  <div className="text-xs text-gray-500 text-center">
-                    +{dayTours.length - 3}개 더
+                {dayTours.length > 2 && (
+                  <div 
+                    className="text-xs text-gray-500 text-center cursor-pointer hover:text-gray-700 transition-colors"
+                    onClick={() => {
+                      // 추가 예약들을 보여주는 모달이나 상세 뷰를 열 수 있음
+                      console.log('추가 예약들:', dayTours.slice(2))
+                    }}
+                    title={`추가 ${dayTours.length - 2}개 예약: ${dayTours.slice(2).map(r => r.customer_name).join(', ')}`}
+                  >
+                    +{dayTours.length - 2}개 더
                   </div>
                 )}
               </div>
