@@ -146,7 +146,6 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
               <div className="space-y-1">
                 {dayTours.slice(0, 2).map((reservation, index) => {
                   const totalParticipants = reservation.adults + reservation.child + reservation.infant
-                  const participantText = `성인${reservation.adults} 아동${reservation.child} 유아${reservation.infant}`
                   
                   return (
                     <div
@@ -155,14 +154,14 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
                       className={`text-xs p-1 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
                         getTourStatusColor(reservation.tour_status)
                       }`}
-                      title={`${reservation.customer_name} | ${reservation.product_id} | ${participantText}`}
+                      title={`${reservation.customer_name} | ${reservation.product_id} | 총 ${totalParticipants}명`}
                     >
                       <div className="truncate">
                         <span className="font-medium">{reservation.customer_name}</span>
                         <span className="mx-1">|</span>
                         <span className="opacity-90">{reservation.product_id}</span>
                         <span className="mx-1">|</span>
-                        <span className="opacity-75">{participantText}</span>
+                        <span className="opacity-75">총 {totalParticipants}명</span>
                       </div>
                     </div>
                   )
