@@ -79,9 +79,9 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
     return product ? product.name : productId
   }
 
-  // 상품의 옵션 목록 가져오기
-  const getProductOptions = (productId: string) => {
-    return productOptions.filter(opt => opt.product_id === productId)
+  // 상품의 필수 선택 옵션 목록 가져오기
+  const getRequiredProductOptions = (productId: string) => {
+    return productOptions.filter(opt => opt.product_id === productId && opt.is_required === true)
   }
 
   // 매핑 규칙 추가
@@ -133,34 +133,36 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
 
         const updatedCount = reservations.filter(r => r.product_id === rule.sourceProductId).length
 
-        // 옵션 추가
+        // 필수 선택 옵션을 selected_options에 추가
         if (rule.targetOptions.length > 0) {
           const optionIds = rule.targetOptions.map(optionName => {
             const option = productOptions.find(opt => 
-              opt.product_id === rule.targetProductId && opt.name === optionName
+              opt.product_id === rule.targetProductId && opt.name === optionName && opt.is_required === true
             )
             return option?.id
           }).filter(Boolean)
 
           if (optionIds.length > 0) {
-            // 옵션을 selected_options에 추가
-            const { error: optionError } = await supabase
-              .from('reservations')
-              .update({
-                selected_options: supabase.raw(`
-                  COALESCE(selected_options, '{}'::jsonb) || 
-                  ${JSON.stringify(
-                    optionIds.reduce((acc, id) => {
-                      acc[id!] = []
-                      return acc
-                    }, {} as Record<string, any>)
-                  )}::jsonb
-                `)
-              })
-              .eq('product_id', rule.targetProductId)
+            // 각 예약에 대해 selected_options 업데이트
+            const reservationsToUpdate = reservations.filter(r => r.product_id === rule.sourceProductId)
+            
+            for (const reservation of reservationsToUpdate) {
+              const currentOptions = reservation.selected_options || {}
+              const newOptions = optionIds.reduce((acc, id) => {
+                acc[id!] = [] // 빈 배열로 초기화 (선택된 choice가 없음을 의미)
+                return acc
+              }, {} as Record<string, any>)
+              
+              const updatedOptions = { ...currentOptions, ...newOptions }
+              
+              const { error: optionError } = await supabase
+                .from('reservations')
+                .update({ selected_options: updatedOptions })
+                .eq('id', reservation.id)
 
-            if (optionError) {
-              console.warn('옵션 추가 중 오류:', optionError)
+              if (optionError) {
+                console.warn(`예약 ${reservation.id} 옵션 추가 중 오류:`, optionError)
+              }
             }
           }
         }
@@ -202,7 +204,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-gray-900">유연한 상품 매핑 도구</h3>
-          <p className="text-sm text-gray-600">기존 상품을 선택하고 새로운 상품과 옵션으로 일괄 변환할 수 있습니다.</p>
+          <p className="text-sm text-gray-600">기존 상품을 선택하고 새로운 상품으로 통합하며, 필수 선택 옵션을 selected_options에 추가할 수 있습니다.</p>
         </div>
         <button
           onClick={loadData}
@@ -263,12 +265,12 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
           </div>
         </div>
 
-        {/* 옵션 선택 */}
+        {/* 필수 선택 옵션 선택 */}
         {selectedTargetProduct && (
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">추가할 옵션 (선택사항)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">추가할 필수 선택 옵션</label>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {getProductOptions(selectedTargetProduct).map(option => (
+              {getRequiredProductOptions(selectedTargetProduct).map(option => (
                 <label key={option.id} className="flex items-center space-x-2">
                   <input
                     type="checkbox"
@@ -283,9 +285,13 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span className="text-sm text-gray-700">{option.name}</span>
+                  <span className="text-xs text-red-500">(필수)</span>
                 </label>
               ))}
             </div>
+            {getRequiredProductOptions(selectedTargetProduct).length === 0 && (
+              <p className="text-sm text-gray-500">이 상품에는 필수 선택 옵션이 없습니다.</p>
+            )}
           </div>
         )}
 
@@ -340,7 +346,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">예약 ID</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">현재 상품</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">변환될 상품</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">추가될 옵션</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">추가될 필수 옵션</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -424,7 +430,8 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
             <ul className="mt-1 space-y-1">
               <li>• 이 작업은 되돌릴 수 없습니다. 실행 전에 데이터를 백업하세요.</li>
               <li>• 여러 매핑 규칙을 한 번에 실행할 수 있습니다.</li>
-              <li>• 옵션은 선택된 타겟 상품의 옵션만 추가됩니다.</li>
+              <li>• 필수 선택 옵션만 selected_options JSONB 컬럼에 추가됩니다.</li>
+              <li>• 상품 통합 후 각 예약의 selected_options에서 구분됩니다.</li>
             </ul>
           </div>
         </div>
