@@ -35,6 +35,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
   const [previewMode, setPreviewMode] = useState(true)
   const [migrationResults, setMigrationResults] = useState<any[]>([])
   const [debugMode, setDebugMode] = useState(false)
+  const [testMode, setTestMode] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -224,15 +225,23 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                 after: updatedOptions
               })
               
-              const { error: optionError } = await supabase
+              const { data: updateData, error: optionError } = await supabase
                 .from('reservations')
                 .update({ selected_options: updatedOptions })
                 .eq('id', reservation.id)
+                .select('id, selected_options')
 
               if (optionError) {
                 console.error(`예약 ${reservation.id} 옵션 추가 중 오류:`, optionError)
               } else {
-                console.log(`예약 ${reservation.id} 옵션 추가 완료`)
+                console.log(`예약 ${reservation.id} 옵션 추가 완료:`, updateData)
+                
+                // 실제 업데이트된 데이터 확인
+                if (updateData && updateData.length > 0) {
+                  console.log(`실제 업데이트된 selected_options:`, updateData[0].selected_options)
+                } else {
+                  console.warn(`예약 ${reservation.id} 업데이트 결과가 없습니다.`)
+                }
               }
             }
           } else {
@@ -302,6 +311,16 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
             }`}
           >
             <span>디버그 모드</span>
+          </button>
+          <button
+            onClick={() => setTestMode(!testMode)}
+            className={`px-3 py-2 text-sm rounded-lg flex items-center space-x-2 ${
+              testMode 
+                ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <span>테스트 모드</span>
           </button>
           <button
             onClick={loadData}
@@ -519,6 +538,107 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 테스트 모드 */}
+      {testMode && (
+        <div className="mb-6">
+          <h4 className="font-medium text-gray-900 mb-3">테스트 모드</h4>
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="space-y-4">
+              <div>
+                <button
+                  onClick={async () => {
+                    console.log('=== 데이터베이스 옵션 조회 테스트 ===')
+                    
+                    // MDGCSUNRISE 상품의 옵션 조회
+                    const { data: options, error } = await supabase
+                      .from('product_options')
+                      .select('*')
+                      .eq('product_id', 'MDGCSUNRISE')
+                      .eq('is_required', true)
+                    
+                    if (error) {
+                      console.error('옵션 조회 오류:', error)
+                    } else {
+                      console.log('MDGCSUNRISE 옵션들:', options)
+                    }
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  MDGCSUNRISE 옵션 조회 테스트
+                </button>
+              </div>
+              
+              <div>
+                <button
+                  onClick={async () => {
+                    console.log('=== 예약 데이터 조회 테스트 ===')
+                    
+                    // 첫 번째 예약의 selected_options 조회
+                    const { data: reservation, error } = await supabase
+                      .from('reservations')
+                      .select('id, product_id, selected_options')
+                      .eq('product_id', 'MDGCSUNRISE')
+                      .limit(1)
+                    
+                    if (error) {
+                      console.error('예약 조회 오류:', error)
+                    } else {
+                      console.log('첫 번째 MDGCSUNRISE 예약:', reservation)
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  예약 데이터 조회 테스트
+                </button>
+              </div>
+              
+              <div>
+                <button
+                  onClick={async () => {
+                    console.log('=== 단일 예약 업데이트 테스트 ===')
+                    
+                    // 첫 번째 예약을 찾아서 테스트 업데이트
+                    const { data: reservation, error: fetchError } = await supabase
+                      .from('reservations')
+                      .select('id, product_id, selected_options')
+                      .eq('product_id', 'MDGCSUNRISE')
+                      .limit(1)
+                    
+                    if (fetchError) {
+                      console.error('예약 조회 오류:', fetchError)
+                      return
+                    }
+                    
+                    if (reservation && reservation.length > 0) {
+                      const testId = reservation[0].id
+                      const testOptions = { "test-option-id": [] }
+                      
+                      console.log(`테스트 업데이트: 예약 ${testId}`)
+                      console.log('업데이트할 데이터:', testOptions)
+                      
+                      const { data: updateData, error: updateError } = await supabase
+                        .from('reservations')
+                        .update({ selected_options: testOptions })
+                        .eq('id', testId)
+                        .select('id, selected_options')
+                      
+                      if (updateError) {
+                        console.error('업데이트 오류:', updateError)
+                      } else {
+                        console.log('업데이트 성공:', updateData)
+                      }
+                    }
+                  }}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                >
+                  단일 예약 업데이트 테스트
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
