@@ -350,6 +350,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">예약 ID</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">현재 상품</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">변환될 상품</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">현재 selected_options</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">추가될 필수 옵션</th>
                 </tr>
               </thead>
@@ -360,6 +361,18 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                     <td className="px-4 py-2 text-sm text-gray-900">{getProductName(reservation.product_id || '')}</td>
                     <td className="px-4 py-2 text-sm text-gray-900">
                       {selectedTargetProduct ? getProductName(selectedTargetProduct) : '-'}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-gray-900">
+                      {reservation.selected_options && Object.keys(reservation.selected_options).length > 0 ? (
+                        <div className="max-w-xs">
+                          <div className="text-xs text-gray-600 mb-1">현재 옵션:</div>
+                          <div className="text-xs bg-gray-100 p-1 rounded font-mono break-all">
+                            {JSON.stringify(reservation.selected_options, null, 2)}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">없음</span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-sm text-gray-900">
                       {selectedOptions.length > 0 ? selectedOptions.join(', ') : '-'}
