@@ -5,7 +5,6 @@ import {
   Package, 
   Users, 
   Calendar, 
-  UserCheck, 
   Settings, 
   MapPin, 
   BarChart3,
@@ -14,7 +13,8 @@ import {
   X,
   History,
   Ticket,
-  Building
+  Building,
+  FileCheck
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -34,6 +34,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: '상품 관리', href: `/${locale}/admin/products`, icon: Package },
     { name: '고객 관리', href: `/${locale}/admin/customers`, icon: Users },
     { name: '예약 관리', href: `/${locale}/admin/reservations`, icon: Calendar },
+    { name: '데이터 검수', href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: '픽업 호텔 관리', href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: '팀 관리', href: `/${locale}/admin/team`, icon: Users },
     { name: '옵션 관리', href: `/${locale}/admin/options`, icon: Settings },
