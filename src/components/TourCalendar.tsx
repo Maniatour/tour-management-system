@@ -131,7 +131,7 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
           return (
             <div
               key={index}
-              className={`min-h-[100px] p-2 border border-gray-200 ${
+              className={`min-h-[120px] p-2 border border-gray-200 ${
                 isCurrentMonthDay ? 'bg-white' : 'bg-gray-50'
               } ${isTodayDate ? 'ring-2 ring-blue-500' : ''}`}
             >
@@ -144,18 +144,25 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
 
               {/* 예약 라벨들 */}
               <div className="space-y-1">
-                {dayTours.slice(0, 3).map((reservation, index) => (
-                  <div
-                    key={reservation.id}
-                    onClick={() => onTourClick(reservation)}
-                    className={`text-xs p-1 rounded cursor-pointer text-white truncate ${
-                      getTourStatusColor(reservation.tour_status)
-                    } hover:opacity-80 transition-opacity`}
-                    title={`${reservation.product_id} - ${reservation.customer_name} - ${reservation.tour_status}`}
-                  >
-                    {reservation.product_id}
-                  </div>
-                ))}
+                {dayTours.slice(0, 3).map((reservation, index) => {
+                  const totalParticipants = reservation.adults + reservation.child + reservation.infant
+                  const participantText = `성인${reservation.adults} 아동${reservation.child} 유아${reservation.infant}`
+                  
+                  return (
+                    <div
+                      key={reservation.id}
+                      onClick={() => onTourClick(reservation)}
+                      className={`text-xs p-1 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
+                        getTourStatusColor(reservation.tour_status)
+                      }`}
+                      title={`${reservation.customer_name} | ${reservation.product_id} | ${participantText}`}
+                    >
+                      <div className="truncate font-medium">{reservation.customer_name}</div>
+                      <div className="truncate text-xs opacity-90">{reservation.product_id}</div>
+                      <div className="truncate text-xs opacity-75">{participantText}</div>
+                    </div>
+                  )
+                })}
                 {dayTours.length > 3 && (
                   <div className="text-xs text-gray-500 text-center">
                     +{dayTours.length - 3}개 더
