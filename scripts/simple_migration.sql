@@ -1,4 +1,4 @@
--- 직접 마이그레이션 실행 스크립트
+-- 간단한 마이그레이션 스크립트
 -- Supabase SQL Editor에서 실행하세요
 
 -- 1. MDGCSUNRISE 상품 생성
@@ -50,8 +50,8 @@ VALUES (
 )
 ON CONFLICT DO NOTHING;
 
--- 4. 마이그레이션 함수 생성
-CREATE OR REPLACE FUNCTION migrate_product_ids()
+-- 4. 간단한 마이그레이션 함수 생성
+CREATE OR REPLACE FUNCTION migrate_product_ids_simple()
 RETURNS TABLE(
     old_product_id TEXT,
     new_product_id TEXT,
@@ -59,59 +59,50 @@ RETURNS TABLE(
     updated_count INTEGER
 ) AS $$
 DECLARE
-    rec RECORD;
-    option_id UUID;
+    lower_canyon_option_id UUID;
+    x_canyon_option_id UUID;
     updated_count INTEGER;
 BEGIN
-    -- MDGCSUNRISE_X를 MDGCSUNRISE로 변경하고 Antelope X Canyon 옵션 추가
+    -- 옵션 ID 조회
+    SELECT id INTO lower_canyon_option_id
+    FROM product_options 
+    WHERE product_id = 'MDGCSUNRISE' 
+    AND name = 'Lower Antelope Canyon'
+    AND is_required = true
+    LIMIT 1;
+    
+    SELECT id INTO x_canyon_option_id
+    FROM product_options 
+    WHERE product_id = 'MDGCSUNRISE' 
+    AND name = 'Antelope X Canyon'
+    AND is_required = true
+    LIMIT 1;
+    
+    -- MDGCSUNRISE_X를 MDGCSUNRISE로 변경
     UPDATE reservations 
     SET product_id = 'MDGCSUNRISE'
     WHERE product_id = 'MDGCSUNRISE_X';
     
     GET DIAGNOSTICS updated_count = ROW_COUNT;
-    
-    -- Antelope X Canyon 옵션 ID 조회
-    SELECT po.id INTO option_id
-    FROM product_options po
-    WHERE po.product_id = 'MDGCSUNRISE' 
-    AND po.name = 'Antelope X Canyon'
-    AND po.is_required = true
-    LIMIT 1;
-    
-    -- MDGCSUNRISE_X에서 변경된 예약들에 Antelope X Canyon 옵션 추가
-    IF option_id IS NOT NULL THEN
-        UPDATE reservations 
-        SET selected_options = COALESCE(selected_options, '{}'::jsonb) || 
-            jsonb_build_object(option_id::text, jsonb_build_array())
-        WHERE reservations.product_id = 'MDGCSUNRISE' 
-        AND reservations.id IN (
-            SELECT r.id FROM reservations r
-            WHERE r.product_id = 'MDGCSUNRISE'
-            AND (r.selected_options IS NULL OR r.selected_options = '{}'::jsonb)
-        );
-    END IF;
-    
     RETURN QUERY SELECT 'MDGCSUNRISE_X'::TEXT, 'MDGCSUNRISE'::TEXT, 'Antelope X Canyon'::TEXT, updated_count;
     
-    -- 기존 MDGCSUNRISE에 Lower Antelope Canyon 옵션 추가
-    SELECT po.id INTO option_id
-    FROM product_options po
-    WHERE po.product_id = 'MDGCSUNRISE' 
-    AND po.name = 'Lower Antelope Canyon'
-    AND po.is_required = true
-    LIMIT 1;
-    
-    IF option_id IS NOT NULL THEN
+    -- MDGCSUNRISE_X에서 변경된 예약들에 Antelope X Canyon 옵션 추가
+    IF x_canyon_option_id IS NOT NULL THEN
         UPDATE reservations 
         SET selected_options = COALESCE(selected_options, '{}'::jsonb) || 
-            jsonb_build_object(option_id::text, jsonb_build_array())
-        WHERE reservations.product_id = 'MDGCSUNRISE' 
-        AND (reservations.selected_options IS NULL OR reservations.selected_options = '{}'::jsonb)
-        AND reservations.id NOT IN (
-            SELECT r.id FROM reservations r
-            WHERE r.product_id = 'MDGCSUNRISE'
-            AND r.selected_options ? option_id::text
-        );
+            jsonb_build_object(x_canyon_option_id::text, jsonb_build_array())
+        WHERE product_id = 'MDGCSUNRISE' 
+        AND (selected_options IS NULL OR selected_options = '{}'::jsonb);
+    END IF;
+    
+    -- 기존 MDGCSUNRISE에 Lower Antelope Canyon 옵션 추가
+    IF lower_canyon_option_id IS NOT NULL THEN
+        UPDATE reservations 
+        SET selected_options = COALESCE(selected_options, '{}'::jsonb) || 
+            jsonb_build_object(lower_canyon_option_id::text, jsonb_build_array())
+        WHERE product_id = 'MDGCSUNRISE' 
+        AND (selected_options IS NULL OR selected_options = '{}'::jsonb)
+        AND NOT (selected_options ? lower_canyon_option_id::text);
         
         GET DIAGNOSTICS updated_count = ROW_COUNT;
     ELSE

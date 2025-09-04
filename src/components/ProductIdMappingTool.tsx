@@ -81,7 +81,7 @@ export default function ProductIdMappingTool({ onDataUpdated }: ProductIdMapping
       setLoading(true)
       
       // 마이그레이션 함수 실행
-      const { data, error } = await supabase.rpc('migrate_product_ids')
+      const { data, error } = await supabase.rpc('migrate_product_ids_simple')
       
       if (error) throw error
       
