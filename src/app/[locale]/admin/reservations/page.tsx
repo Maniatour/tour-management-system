@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { Plus, Search, Calendar, MapPin, Users } from 'lucide-react'
+import { useState, useCallback, useMemo } from 'react'
+import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -9,6 +9,7 @@ import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
+import TourCalendar from '@/components/TourCalendar'
 import { useReservationData } from '@/hooks/useReservationData'
 import { 
   getPickupHotelDisplay, 
@@ -51,6 +52,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
+  const [viewMode, setViewMode] = useState<'card' | 'calendar'>('card')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [pricingModalReservation, setPricingModalReservation] = useState<Reservation | null>(null)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -139,6 +141,25 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedReservations = filteredReservations.slice(startIndex, endIndex)
+
+  // 달력뷰용 데이터 변환
+  const calendarReservations = useMemo(() => {
+    return filteredReservations.map(reservation => ({
+      id: reservation.id,
+      product_id: getProductName(reservation.productId, products),
+      tour_date: reservation.tourDate,
+      tour_status: reservation.status,
+      tour_time: reservation.tourTime,
+      pickup_hotel: reservation.pickUpHotel,
+      pickup_time: reservation.pickUpTime,
+      adults: reservation.adults,
+      child: reservation.child,
+      infant: reservation.infant,
+      customer_name: getCustomerName(reservation.customerId, customers),
+      channel_name: getChannelName(reservation.channelId, channels),
+      total_price: calculateTotalPrice(reservation, products, optionChoices)
+    }))
+  }, [filteredReservations, products, customers, channels, optionChoices])
 
   const handleAddReservation = async (reservation: Omit<Reservation, 'id'>) => {
     try {
@@ -327,6 +348,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     setEditingReservation(reservation)
   }
 
+  // 달력뷰에서 예약 클릭 시 편집 모달 열기
+  const handleCalendarReservationClick = (calendarReservation: { id: string }) => {
+    const originalReservation = reservations.find(r => r.id === calendarReservation.id)
+    if (originalReservation) {
+      setEditingReservation(originalReservation)
+    }
+  }
+
   // 가격 정보 모달 열기
   const handlePricingInfoClick = (reservation: Reservation) => {
     setPricingModalReservation(reservation)
@@ -456,6 +485,32 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           </select>
         </div>
         
+        {/* 뷰 전환 버튼 */}
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setViewMode('card')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              viewMode === 'card' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <Grid3X3 className="w-4 h-4" />
+            <span>카드뷰</span>
+          </button>
+          <button
+            onClick={() => setViewMode('calendar')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              viewMode === 'calendar' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4" />
+            <span>달력뷰</span>
+          </button>
+        </div>
+
         {/* 고급 필터 */}
         <div className="flex flex-wrap gap-4 items-center">
           <div className="flex items-center space-x-2">
@@ -551,7 +606,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">데이터를 불러오는 중...</p>
         </div>
+      ) : viewMode === 'calendar' ? (
+        /* 달력뷰 */
+        <TourCalendar 
+          tours={calendarReservations} 
+          onTourClick={handleCalendarReservationClick}
+        />
       ) : (
+        /* 카드뷰 */
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {paginatedReservations.map((reservation) => (
@@ -703,7 +765,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           ))}
         </div>
         
-        {/* 페이지네이션 */}
+        {/* 페이지네이션 - 카드뷰에서만 표시 */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between mt-8">
             <div className="text-sm text-gray-700">

@@ -8,8 +8,8 @@ import type { Database } from '@/lib/supabase'
 type Tour = Database['public']['Tables']['tours']['Row']
 
 interface TourCalendarProps {
-  tours: Tour[]
-  onTourClick: (tour: Tour) => void
+  tours: any[] // 예약 데이터를 받도록 수정
+  onTourClick: (tour: any) => void
 }
 
 export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) {
@@ -35,7 +35,7 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
     return days
   }, [firstDayOfMonth])
 
-  // 특정 날짜의 투어들 가져오기
+  // 특정 날짜의 예약들 가져오기
   const getToursForDate = (date: Date) => {
     const dateString = date.toISOString().split('T')[0]
     return tours.filter(tour => tour.tour_date === dateString)
@@ -61,14 +61,14 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
     return date.getMonth() === currentDate.getMonth()
   }
 
-  // 투어 상태에 따른 색상 반환
+  // 예약 상태에 따른 색상 반환
   const getTourStatusColor = (status: string) => {
     switch (status) {
-      case 'scheduled': return 'bg-blue-500'
-      case 'inProgress': return 'bg-yellow-500'
-      case 'completed': return 'bg-green-500'
+      case 'pending': return 'bg-yellow-500'
+      case 'confirmed': return 'bg-green-500'
+      case 'completed': return 'bg-blue-500'
       case 'cancelled': return 'bg-red-500'
-      case 'delayed': return 'bg-orange-500'
+      case 'recruiting': return 'bg-purple-500'
       default: return 'bg-gray-500'
     }
   }
@@ -86,7 +86,7 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-gray-900 flex items-center">
           <CalendarIcon className="w-5 h-5 mr-2" />
-          {t('calendar.title')}
+          예약 달력
         </h2>
         <div className="flex items-center space-x-4">
           <button
@@ -142,18 +142,18 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
                 {date.getDate()}
               </div>
 
-              {/* 투어 라벨들 */}
+              {/* 예약 라벨들 */}
               <div className="space-y-1">
-                {dayTours.slice(0, 3).map((tour, tourIndex) => (
+                {dayTours.slice(0, 3).map((reservation, index) => (
                   <div
-                    key={tour.id}
-                    onClick={() => onTourClick(tour)}
+                    key={reservation.id}
+                    onClick={() => onTourClick(reservation)}
                     className={`text-xs p-1 rounded cursor-pointer text-white truncate ${
-                      getTourStatusColor(tour.tour_status)
+                      getTourStatusColor(reservation.tour_status)
                     } hover:opacity-80 transition-opacity`}
-                    title={`${tour.product_id} - ${tour.tour_status}`}
+                    title={`${reservation.product_id} - ${reservation.customer_name} - ${reservation.tour_status}`}
                   >
-                    {tour.product_id}
+                    {reservation.product_id}
                   </div>
                 ))}
                 {dayTours.length > 3 && (
@@ -167,14 +167,20 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
         })}
       </div>
 
-      {/* 투어 상태 범례 */}
+      {/* 예약 상태 범례 */}
       <div className="mt-6 pt-4 border-t border-gray-200">
-        <h3 className="text-sm font-medium text-gray-700 mb-3">{t('calendar.legend')}</h3>
+        <h3 className="text-sm font-medium text-gray-700 mb-3">예약 상태</h3>
         <div className="flex flex-wrap gap-3">
-          {['scheduled', 'inProgress', 'completed', 'cancelled', 'delayed'].map((status) => (
+          {[
+            { status: 'pending', label: '대기중' },
+            { status: 'confirmed', label: '확정' },
+            { status: 'completed', label: '완료' },
+            { status: 'cancelled', label: '취소' },
+            { status: 'recruiting', label: '모집중' }
+          ].map(({ status, label }) => (
             <div key={status} className="flex items-center space-x-2">
               <div className={`w-3 h-3 rounded-full ${getTourStatusColor(status)}`} />
-              <span className="text-sm text-gray-600">{t(`status.${status}`)}</span>
+              <span className="text-sm text-gray-600">{label}</span>
             </div>
           ))}
         </div>
