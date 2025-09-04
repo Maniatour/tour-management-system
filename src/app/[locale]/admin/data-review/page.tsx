@@ -8,6 +8,7 @@ import type { Database } from '@/lib/supabase'
 import { getPickupHotelDisplay, getCustomerName, getProductName, getChannelName } from '@/utils/reservationUtils'
 import DataReviewErrorModal from '@/components/DataReviewErrorModal'
 import ProductIdMappingTool from '@/components/ProductIdMappingTool'
+import FlexibleProductMappingTool from '@/components/FlexibleProductMappingTool'
 
 type Reservation = Database['public']['Tables']['reservations']['Row']
 type Customer = Database['public']['Tables']['customers']['Row']
@@ -314,7 +315,10 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
           </div>
         </div>
 
-        {/* 상품 ID 매핑 도구 */}
+        {/* 유연한 상품 매핑 도구 */}
+        <FlexibleProductMappingTool onDataUpdated={loadData} />
+
+        {/* 상품 ID 매핑 도구 (기존) */}
         <ProductIdMappingTool onDataUpdated={loadData} />
 
         {/* 일괄 수정 도구 */}
