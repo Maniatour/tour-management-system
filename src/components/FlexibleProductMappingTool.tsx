@@ -26,6 +26,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
   const [products, setProducts] = useState<Product[]>([])
   const [productOptions, setProductOptions] = useState<ProductOption[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 })
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedSourceProduct, setSelectedSourceProduct] = useState('')
   const [selectedTargetProduct, setSelectedTargetProduct] = useState('')
@@ -41,24 +42,59 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
   const loadData = async () => {
     try {
       setLoading(true)
+      setLoadingProgress({ current: 0, total: 0 })
       
-      const [reservationsRes, productsRes, optionsRes] = await Promise.all([
-        supabase.from('reservations').select('*').order('created_at', { ascending: false }),
+      // 먼저 총 개수를 가져오기
+      const { count } = await supabase
+        .from('reservations')
+        .select('*', { count: 'exact', head: true })
+
+      const totalCount = count || 0
+      setLoadingProgress({ current: 0, total: totalCount })
+      
+      // 모든 예약 데이터를 페이지네이션으로 로드
+      let allReservations: Reservation[] = []
+      let from = 0
+      const pageSize = 1000
+      let hasMore = true
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('reservations')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1)
+
+        if (error) throw error
+
+        if (data && data.length > 0) {
+          allReservations = [...allReservations, ...data]
+          from += pageSize
+          hasMore = data.length === pageSize
+          
+          // 진행률 업데이트
+          setLoadingProgress({ current: allReservations.length, total: totalCount })
+        } else {
+          hasMore = false
+        }
+      }
+
+      const [productsRes, optionsRes] = await Promise.all([
         supabase.from('products').select('*').order('name'),
         supabase.from('product_options').select('*').order('name')
       ])
 
-      if (reservationsRes.error) throw reservationsRes.error
       if (productsRes.error) throw productsRes.error
       if (optionsRes.error) throw optionsRes.error
 
-      setReservations(reservationsRes.data || [])
+      setReservations(allReservations)
       setProducts(productsRes.data || [])
       setProductOptions(optionsRes.data || [])
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
       setLoading(false)
+      setLoadingProgress({ current: 0, total: 0 })
     }
   }
 
@@ -208,7 +244,14 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-gray-900">유연한 상품 매핑 도구</h3>
-          <p className="text-sm text-gray-600">기존 상품을 선택하고 새로운 상품으로 통합하며, selected_options가 없는 예약에만 필수 선택 옵션을 추가할 수 있습니다.</p>
+          <p className="text-sm text-gray-600">
+            기존 상품을 선택하고 새로운 상품으로 통합하며, selected_options가 없는 예약에만 필수 선택 옵션을 추가할 수 있습니다.
+            {reservations.length > 0 && (
+              <span className="ml-2 text-blue-600 font-medium">
+                (전체 {reservations.length}개 예약 로드됨)
+              </span>
+            )}
+          </p>
         </div>
         <button
           onClick={loadData}
@@ -216,7 +259,12 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
           className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 flex items-center space-x-2"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          <span>새로고침</span>
+          <span>
+            {loading 
+              ? `로딩 중... (${loadingProgress.current}/${loadingProgress.total})` 
+              : '새로고침'
+            }
+          </span>
         </button>
       </div>
 
