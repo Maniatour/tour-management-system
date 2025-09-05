@@ -106,37 +106,34 @@ export default function AdminTours() {
 
       const teamMap = new Map(teamMembers?.map(member => [member.email, member]) || [])
 
-      // 각 투어별로 예약 데이터를 가져오기 (투어 상세 페이지와 동일한 방식)
+      // 모든 예약 데이터를 한 번에 가져오기 (최적화)
       const reservationMap = new Map<string, Database['public']['Tables']['reservations']['Row'][]>()
       
-      // 고유한 product_id + tour_date 조합들을 수집
-      const uniqueKeys = new Set<string>()
-      data?.forEach(tour => {
-        if (tour.product_id && tour.tour_date) {
-          uniqueKeys.add(`${tour.product_id}-${tour.tour_date}`)
-        }
-      })
-
-      // 각 조합에 대해 예약 데이터를 가져오기 (Promise.all 사용)
-      const reservationPromises = Array.from(uniqueKeys).map(async (key) => {
-        const parts = key.split('-')
-        const product_id = parts[0]
-        const tour_date = parts.slice(1).join('-') // 나머지 부분을 모두 합쳐서 날짜로 사용
-        
-        
-        const { data: reservations } = await supabase
+      // 투어 데이터에서 필요한 날짜 범위 계산
+      const tourDates = [...new Set((data || []).map(tour => tour.tour_date).filter(Boolean))]
+      
+      // 예약 데이터 변수 선언 (TDZ 문제 해결)
+      let allReservations: Database['public']['Tables']['reservations']['Row'][] = []
+      
+      if (tourDates.length > 0 && productIds.length > 0) {
+        // 한 번의 요청으로 모든 관련 예약 데이터 가져오기
+        const { data: reservationsData } = await supabase
           .from('reservations')
           .select('*')
-          .eq('product_id', product_id)
-          .eq('tour_date', tour_date)
+          .in('product_id', productIds)
+          .in('tour_date', tourDates)
         
-        return { key, reservations: reservations || [] }
-      })
-
-      const reservationResults = await Promise.all(reservationPromises)
-      reservationResults.forEach(({ key, reservations }) => {
-        reservationMap.set(key, reservations)
-      })
+        allReservations = reservationsData || []
+        
+        // product_id + tour_date 조합으로 그룹화
+        allReservations.forEach(reservation => {
+          const key = `${reservation.product_id}-${reservation.tour_date}`
+          if (!reservationMap.has(key)) {
+            reservationMap.set(key, [])
+          }
+          reservationMap.get(key)!.push(reservation)
+        })
+      }
 
 
       // 각 투어에 대해 총인원 및 배정된 인원 계산
