@@ -4,7 +4,10 @@
 -- 1. 기존 외래키 제약조건 제거
 ALTER TABLE coupons DROP CONSTRAINT IF EXISTS coupons_product_id_fkey;
 
--- 2. product_id 컬럼을 TEXT로 변경 (이미 TEXT인 경우 무시)
+-- 2. 기존 뷰 삭제 (컬럼 타입 변경을 위해)
+DROP VIEW IF EXISTS coupons_products_view;
+
+-- 3. product_id 컬럼을 TEXT로 변경 (이미 TEXT인 경우 무시)
 DO $$ 
 BEGIN
     -- product_id 컬럼이 존재하는지 확인
@@ -63,9 +66,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 6. 다중 상품 ID 검증을 위한 체크 제약조건 추가
-ALTER TABLE coupons ADD CONSTRAINT chk_coupons_valid_product_ids 
-CHECK (validate_product_ids(product_id));
+-- 6. 다중 상품 ID 검증을 위한 체크 제약조건 추가 (이미 존재하는 경우 무시)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'chk_coupons_valid_product_ids' 
+        AND table_name = 'coupons'
+    ) THEN
+        ALTER TABLE coupons ADD CONSTRAINT chk_coupons_valid_product_ids 
+        CHECK (validate_product_ids(product_id));
+    END IF;
+END $$;
 
 -- 7. 다중 상품 ID를 개별 행으로 분리하는 뷰 생성 (쿼리 편의용)
 CREATE OR REPLACE VIEW coupons_products_view AS

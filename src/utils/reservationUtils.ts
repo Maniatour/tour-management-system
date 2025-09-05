@@ -45,6 +45,7 @@ export const getStatusColor = (status: string) => {
     case 'cancelled': return 'bg-red-100 text-red-800'
     case 'recruiting': return 'bg-purple-100 text-purple-800'
     case 'Recruiting': return 'bg-purple-100 text-purple-800'
+    case 'Payment Requested': return 'bg-orange-100 text-orange-800'
     default: return 'bg-gray-100 text-gray-800'
   }
 }
@@ -133,7 +134,17 @@ export const getOptionalOptionsForProduct = (productId: string, productOptions: 
 }
 
 // 옵션의 선택지 가져오기 (병합된 테이블 구조)
-export const getChoicesForOption = (optionId: string, optionChoices: ProductOptionChoice[]) => {
-  // 병합된 테이블에서는 각 옵션이 이미 하나의 선택지를 나타냄
-  return optionChoices.filter(choice => choice.id === optionId)
+export const getChoicesForOption = (optionId: string, productOptions: ProductOption[]) => {
+  // 실제 시스템에서는 choice ID가 옵션 ID와 동일하므로 옵션 자체를 choice로 반환
+  const option = productOptions.find(opt => opt.id === optionId)
+  return option ? [{
+    id: option.id,
+    name: option.name,
+    description: option.description,
+    adult_price_adjustment: 0,
+    child_price_adjustment: 0,
+    infant_price_adjustment: 0,
+    is_default: true,
+    product_option_id: option.id
+  }] : []
 }

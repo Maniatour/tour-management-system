@@ -176,7 +176,8 @@
       "cancelled": "취소",
       "Canceled": "취소",
       "recruiting": "모집중",
-      "Recruiting": "모집중"
+      "Recruiting": "모집중",
+      "Payment Requested": "결제 요청"
     },
     "form": {
       "title": "새 예약 추가",
@@ -216,6 +217,18 @@
       "selectedProduct": "선택된 상품",
       "allCategories": "전체"
     }
+  },
+  "schedule": {
+    "title": "스케줄 뷰",
+    "productSelection": "표시할 상품 선택",
+    "teamMemberSelection": "표시할 팀원 선택",
+    "dailyTotal": "일별 합계",
+    "total": "합계",
+    "tours": "투어",
+    "people": "명",
+    "assigned": "배정",
+    "totalPeople": "총인원",
+    "today": "오늘"
   },
   "tours": {
     "title": "투어 관리",
@@ -259,7 +272,9 @@
       "inProgress": "진행 중",
       "completed": "완료",
       "cancelled": "취소됨",
-      "delayed": "지연됨"
+      "delayed": "지연됨",
+      "Recruiting": "모집중",
+      "recruiting": "모집중"
     },
     "form": {
       "title": "새 투어 추가",

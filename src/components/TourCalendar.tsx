@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback, memo } from 'react'
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { Database } from '@/lib/supabase'
@@ -8,11 +8,11 @@ import type { Database } from '@/lib/supabase'
 type Tour = Database['public']['Tables']['tours']['Row']
 
 interface TourCalendarProps {
-  tours: any[] // 예약 데이터를 받도록 수정
-  onTourClick: (tour: any) => void
+  tours: (Tour & { product_name?: string; total_people?: number; assigned_people?: number; guide_name?: string; assistant_name?: string })[] // 투어 데이터 + 상품명 + 총인원 + 배정인원 + 가이드명 + 어시스턴트명
+  onTourClick: (tour: Tour) => void
 }
 
-export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) {
+const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCalendarProps) {
   const t = useTranslations('tours')
   const [currentDate, setCurrentDate] = useState(new Date())
 
@@ -35,34 +35,73 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
     return days
   }, [firstDayOfMonth])
 
-  // 특정 날짜의 예약들 가져오기
-  const getToursForDate = (date: Date) => {
-    const dateString = date.toISOString().split('T')[0]
+  // 특정 날짜의 예약들 가져오기 (메모이제이션)
+  const getToursForDate = useCallback((date: Date) => {
+    // 라스베가스 시간대 (Pacific Time) 기준으로 날짜 문자열 생성
+    // Intl.DateTimeFormat을 사용하여 정확한 시간대 변환
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+    
+    const lasVegasDate = formatter.format(date)
+    const dateString = lasVegasDate // YYYY-MM-DD 형식
+    
     return tours.filter(tour => tour.tour_date === dateString)
-  }
+  }, [tours])
 
-  // 이전/다음 월로 이동
-  const goToPreviousMonth = () => {
+  // 이전/다음 월로 이동 (메모이제이션)
+  const goToPreviousMonth = useCallback(() => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))
-  }
+  }, [currentDate])
 
-  const goToNextMonth = () => {
+  const goToNextMonth = useCallback(() => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))
-  }
+  }, [currentDate])
 
-  // 오늘 날짜인지 확인
-  const isToday = (date: Date) => {
+  // 오늘 날짜인지 확인 (메모이제이션)
+  const isToday = useCallback((date: Date) => {
     const today = new Date()
     return date.toDateString() === today.toDateString()
-  }
+  }, [])
 
-  // 현재 월의 날짜인지 확인
-  const isCurrentMonth = (date: Date) => {
+  // 현재 월의 날짜인지 확인 (메모이제이션)
+  const isCurrentMonth = useCallback((date: Date) => {
     return date.getMonth() === currentDate.getMonth()
-  }
+  }, [currentDate])
 
-  // 예약 상태에 따른 색상 반환
-  const getTourStatusColor = (status: string) => {
+  // 상품별 색상 생성 (일관된 색상, 메모이제이션)
+  const getProductColor = useCallback((productId: string | null) => {
+    const colors = [
+      'bg-blue-500',
+      'bg-green-500', 
+      'bg-purple-500',
+      'bg-orange-500',
+      'bg-pink-500',
+      'bg-indigo-500',
+      'bg-yellow-500',
+      'bg-red-500',
+      'bg-teal-500',
+      'bg-cyan-500'
+    ]
+    
+    // productId가 null이거나 빈 문자열인 경우 기본 색상 반환
+    if (!productId) {
+      return 'bg-gray-500'
+    }
+    
+    // productId의 해시값을 사용하여 일관된 색상 선택
+    let hash = 0
+    for (let i = 0; i < productId.length; i++) {
+      hash = productId.charCodeAt(i) + ((hash << 5) - hash)
+    }
+    return colors[Math.abs(hash) % colors.length]
+  }, [])
+
+  // 예약 상태에 따른 색상 반환 (메모이제이션)
+  const getTourStatusColor = useCallback((status: string) => {
     switch (status) {
       case 'pending': return 'bg-yellow-500'
       case 'confirmed': return 'bg-green-500'
@@ -71,7 +110,7 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
       case 'recruiting': return 'bg-purple-500'
       default: return 'bg-gray-500'
     }
-  }
+  }, [])
 
   const monthNames = [
     '1월', '2월', '3월', '4월', '5월', '6월',
@@ -142,42 +181,47 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
                 {date.getDate()}
               </div>
 
-              {/* 예약 라벨들 */}
+              {/* 투어 라벨들 */}
               <div className="space-y-1">
-                {dayTours.slice(0, 2).map((reservation, index) => {
-                  const totalParticipants = reservation.adults + reservation.child + reservation.infant
+                {dayTours.map((tour, index) => {
+                  // 배정된 인원 수와 총 인원 수
+                  const assignedPeople = tour.assigned_people || 0
+                  const totalPeople = tour.total_people || 0
+                  const hasUnassignedReservations = totalPeople > assignedPeople
+                  
+                  // 툴팁 텍스트 구성
+                  let tooltipText = `${tour.product_name || tour.product_id} | 배정: ${assignedPeople}명 / 총: ${totalPeople}명`
+                  if (hasUnassignedReservations) {
+                    tooltipText += ' (미배정 있음)'
+                  }
+                  
+                  // 가이드 정보 추가
+                  if (tour.guide_name) {
+                    tooltipText += `\n가이드: ${tour.guide_name}`
+                  }
+                  
+                  // 어시스턴트 정보 추가
+                  if (tour.assistant_name) {
+                    tooltipText += `\n어시스턴트: ${tour.assistant_name}`
+                  }
                   
                   return (
                     <div
-                      key={reservation.id}
-                      onClick={() => onTourClick(reservation)}
+                      key={tour.id}
+                      onClick={() => onTourClick(tour)}
                       className={`text-xs p-1 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
-                        getTourStatusColor(reservation.tour_status)
-                      }`}
-                      title={`${reservation.customer_name} | ${reservation.product_id} | 총 ${totalParticipants}명`}
+                        getProductColor(tour.product_id)
+                      } ${hasUnassignedReservations ? 'ring-2 ring-red-500 ring-opacity-75' : ''}`}
+                      title={tooltipText}
                     >
                       <div className="truncate">
-                        <span className="font-medium">{reservation.customer_name}</span>
+                        <span className="font-medium">{tour.product_name || tour.product_id}</span>
                         <span className="mx-1">|</span>
-                        <span className="opacity-90">{reservation.product_id}</span>
-                        <span className="mx-1">|</span>
-                        <span className="opacity-75">총 {totalParticipants}명</span>
+                        <span className="opacity-90">{assignedPeople} / {totalPeople}명</span>
                       </div>
                     </div>
                   )
                 })}
-                {dayTours.length > 2 && (
-                  <div 
-                    className="text-xs text-gray-500 text-center cursor-pointer hover:text-gray-700 transition-colors"
-                    onClick={() => {
-                      // 추가 예약들을 보여주는 모달이나 상세 뷰를 열 수 있음
-                      console.log('추가 예약들:', dayTours.slice(2))
-                    }}
-                    title={`추가 ${dayTours.length - 2}개 예약: ${dayTours.slice(2).map(r => r.customer_name).join(', ')}`}
-                  >
-                    +{dayTours.length - 2}개 더
-                  </div>
-                )}
               </div>
             </div>
           )
@@ -204,4 +248,6 @@ export default function TourCalendar({ tours, onTourClick }: TourCalendarProps) 
       </div>
     </div>
   )
-}
+})
+
+export default TourCalendar

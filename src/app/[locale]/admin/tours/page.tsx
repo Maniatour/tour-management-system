@@ -1,20 +1,18 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Search, Calendar, User, Car, DollarSign, Edit, Trash2, Clock, Grid, Eye, CalendarDays } from 'lucide-react'
+import { Plus, Search, Calendar, User, Car, DollarSign, Edit, Trash2, Clock, Grid, Eye, CalendarDays, BarChart3 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import TourCalendar from '@/components/TourCalendar'
-import { sanitizeTimeInput } from '@/lib/utils'
-
+import ScheduleView from '@/components/ScheduleView'
 type Tour = Database['public']['Tables']['tours']['Row']
-type TourInsert = Database['public']['Tables']['tours']['Insert']
-type TourUpdate = Database['public']['Tables']['tours']['Update']
 
 type Employee = Database['public']['Tables']['team']['Row']
+type Product = Database['public']['Tables']['products']['Row']
 
 export default function AdminTours() {
   const params = useParams()
@@ -23,13 +21,15 @@ export default function AdminTours() {
   
   // 직원 데이터 (Supabase에서 가져옴)
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [products, setProducts] = useState<Product[]>([])
   const [tours, setTours] = useState<Tour[]>([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<'table' | 'calendar'>('calendar')
+  const [viewMode, setViewMode] = useState<'table' | 'calendar' | 'schedule'>('calendar')
 
   // Supabase에서 데이터 가져오기
   useEffect(() => {
     fetchEmployees()
+    fetchProducts()
     fetchTours()
   }, [])
 
@@ -52,6 +52,26 @@ export default function AdminTours() {
     }
   }
 
+  const fetchProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .eq('status', 'active')
+        .in('sub_category', ['Mania Tour', 'Mania Service'])
+        .order('name')
+
+      if (error) {
+        console.error('Error fetching products:', error)
+        return
+      }
+
+      setProducts(data || [])
+    } catch (error) {
+      console.error('Error fetching products:', error)
+    }
+  }
+
   const fetchTours = async () => {
     try {
       setLoading(true)
@@ -65,7 +85,99 @@ export default function AdminTours() {
         return
       }
 
-      setTours(data || [])
+      // 상품 정보 가져오기
+      const productIds = [...new Set((data || []).map(tour => tour.product_id).filter(Boolean))]
+      const { data: products } = await supabase
+        .from('products')
+        .select('id, name')
+        .in('id', productIds)
+
+      const productMap = new Map(products?.map(p => [p.id, p.name]) || [])
+
+      // 가이드와 어시스턴트 정보 가져오기 (team 테이블 사용)
+      const guideEmails = [...new Set((data || []).map(tour => tour.tour_guide_id).filter(Boolean))]
+      const assistantEmails = [...new Set((data || []).map(tour => tour.assistant_id).filter(Boolean))]
+      const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
+
+      const { data: teamMembers } = await supabase
+        .from('team')
+        .select('email, name_ko')
+        .in('email', allEmails)
+
+      const teamMap = new Map(teamMembers?.map(member => [member.email, member]) || [])
+
+      // 각 투어별로 예약 데이터를 가져오기 (투어 상세 페이지와 동일한 방식)
+      const reservationMap = new Map<string, Database['public']['Tables']['reservations']['Row'][]>()
+      
+      // 고유한 product_id + tour_date 조합들을 수집
+      const uniqueKeys = new Set<string>()
+      data?.forEach(tour => {
+        if (tour.product_id && tour.tour_date) {
+          uniqueKeys.add(`${tour.product_id}-${tour.tour_date}`)
+        }
+      })
+
+      // 각 조합에 대해 예약 데이터를 가져오기 (Promise.all 사용)
+      const reservationPromises = Array.from(uniqueKeys).map(async (key) => {
+        const parts = key.split('-')
+        const product_id = parts[0]
+        const tour_date = parts.slice(1).join('-') // 나머지 부분을 모두 합쳐서 날짜로 사용
+        
+        
+        const { data: reservations } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('product_id', product_id)
+          .eq('tour_date', tour_date)
+        
+        return { key, reservations: reservations || [] }
+      })
+
+      const reservationResults = await Promise.all(reservationPromises)
+      reservationResults.forEach(({ key, reservations }) => {
+        reservationMap.set(key, reservations)
+      })
+
+
+      // 각 투어에 대해 총인원 및 배정된 인원 계산
+      const toursWithDetails = (data || []).map(tour => {
+        const key = `${tour.product_id}-${tour.tour_date}`
+        const tourReservations = reservationMap.get(key) || []
+        
+        // 총인원 계산 - 해당 상품/날짜의 모든 예약의 total_people 합산
+        const totalPeople = tourReservations.reduce((sum, res) => 
+          sum + (res.total_people || 0), 0
+        )
+        
+        // 배정된 인원 계산 - reservation_ids 배열의 각 ID에 해당하는 예약의 total_people 합산
+        let assignedPeople = 0
+        if (tour.reservation_ids && Array.isArray(tour.reservation_ids) && tour.reservation_ids.length > 0) {
+          // reservation_ids 배열의 각 ID에 대해 해당하는 예약 찾기
+          const assignedReservations = tourReservations.filter(res => 
+            tour.reservation_ids.includes(res.id)
+          )
+          
+          assignedPeople = assignedReservations.reduce((sum, res) => 
+            sum + (res.total_people || 0), 0
+          )
+          
+          
+        }
+
+        const guide = tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null
+        const assistant = tour.assistant_id ? teamMap.get(tour.assistant_id) : null
+
+        return {
+          ...tour,
+          product_name: productMap.get(tour.product_id),
+          total_people: totalPeople,
+          assigned_people: assignedPeople,
+          guide_name: guide?.name_ko || null,
+          assistant_name: assistant?.name_ko || null
+        }
+      })
+
+      setTours(toursWithDetails)
     } catch (error) {
       console.error('Error fetching tours:', error)
     } finally {
@@ -91,9 +203,19 @@ export default function AdminTours() {
 
   const handleAddTour = async (tour: Omit<Tour, 'id' | 'created_at'>) => {
     try {
+      // 빈 문자열을 null로 변환
+      const cleanedTour = {
+        ...tour,
+        tour_start_datetime: tour.tour_start_datetime || null,
+        tour_end_datetime: tour.tour_end_datetime || null,
+        tour_guide_id: tour.tour_guide_id || null,
+        assistant_id: tour.assistant_id || null,
+        tour_car_id: tour.tour_car_id || null
+      }
+
       const { data, error } = await supabase
         .from('tours')
-        .insert([tour])
+        .insert([cleanedTour])
         .select()
 
       if (error) {
@@ -113,9 +235,19 @@ export default function AdminTours() {
   const handleEditTour = async (tour: Omit<Tour, 'id' | 'created_at'>) => {
     if (editingTour) {
       try {
+        // 빈 문자열을 null로 변환
+        const cleanedTour = {
+          ...tour,
+          tour_start_datetime: tour.tour_start_datetime || null,
+          tour_end_datetime: tour.tour_end_datetime || null,
+          tour_guide_id: tour.tour_guide_id || null,
+          assistant_id: tour.assistant_id || null,
+          tour_car_id: tour.tour_car_id || null
+        }
+
         const { error } = await supabase
           .from('tours')
-          .update(tour)
+          .update(cleanedTour)
           .eq('id', editingTour.id)
 
         if (error) {
@@ -123,7 +255,7 @@ export default function AdminTours() {
           return
         }
 
-        setTours(tours.map(t => t.id === editingTour.id ? { ...t, ...tour } : t))
+        setTours(tours.map(t => t.id === editingTour.id ? { ...t, ...cleanedTour } : t))
         setEditingTour(null)
       } catch (error) {
         console.error('Error updating tour:', error)
@@ -264,12 +396,28 @@ export default function AdminTours() {
             <CalendarDays size={20} />
             <span>{t('view.calendar')}</span>
           </button>
+          <button
+            onClick={() => setViewMode('schedule')}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
+              viewMode === 'schedule'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <BarChart3 size={20} />
+            <span>스케줄 뷰</span>
+          </button>
         </div>
       </div>
 
       {/* 달력 보기 */}
       {viewMode === 'calendar' && (
         <TourCalendar tours={filteredTours} onTourClick={handleTourClick} />
+      )}
+
+      {/* 스케줄 뷰 */}
+      {viewMode === 'schedule' && (
+        <ScheduleView />
       )}
 
       {/* 테이블 보기 */}
@@ -397,6 +545,7 @@ export default function AdminTours() {
         <TourForm
           tour={editingTour}
           employees={employees}
+          products={products}
           onSubmit={editingTour ? handleEditTour : handleAddTour}
           onCancel={() => {
             setShowAddForm(false)
@@ -411,11 +560,12 @@ export default function AdminTours() {
 interface TourFormProps {
   tour?: Tour | null
   employees: Employee[]
+  products: Product[]
   onSubmit: (tour: Omit<Tour, 'id' | 'created_at'>) => void
   onCancel: () => void
 }
 
-function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
+function TourForm({ tour, employees, products, onSubmit, onCancel }: TourFormProps) {
   const t = useTranslations('tours')
   const tCommon = useTranslations('common')
   
@@ -453,7 +603,7 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
   const removeReservationId = (idToRemove: string) => {
     setFormData({
       ...formData,
-      reservation_ids: formData.reservation_ids.filter(id => id !== idToRemove)
+      reservation_ids: formData.reservation_ids.filter((id: string) => id !== idToRemove)
     })
   }
 
@@ -464,8 +614,8 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
     }
   }
 
-  const guides = employees.filter(e => e.position === '투어 가이드')
-  const assistants = employees.filter(e => e.position === '투어 가이드' || e.position === '어시스턴트')
+  const guides = employees.filter(e => e.position === 'Tour Guide' && e.is_active === true)
+  const assistants = employees.filter(e => e.position === 'Tour Guide' && e.is_active === true)
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -477,13 +627,19 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.productId')}</label>
-              <input
-                type="text"
+              <select
                 value={formData.product_id}
                 onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
-              />
+              >
+                <option value="">상품을 선택하세요</option>
+                {products.map(product => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} ({product.id})
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourDate')}</label>
@@ -517,7 +673,6 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
                   }
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
               />
             </div>
             <div>
@@ -539,7 +694,6 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
                   }
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
               />
             </div>
           </div>
@@ -551,7 +705,6 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
                 value={formData.tour_guide_id}
                 onChange={(e) => setFormData({ ...formData, tour_guide_id: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
               >
                 <option value="">{t('form.selectGuide')}</option>
                 {guides.map(guide => (
@@ -586,7 +739,6 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
                 value={formData.tour_car_id}
                 onChange={(e) => setFormData({ ...formData, tour_car_id: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
               />
             </div>
             <div>
@@ -612,11 +764,10 @@ function TourForm({ tour, employees, onSubmit, onCancel }: TourFormProps) {
                 <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₩</span>
                 <input
                   type="number"
-                                  value={formData.guide_fee}
-                onChange={(e) => setFormData({ ...formData, guide_fee: Number(e.target.value) })}
+                  value={formData.guide_fee}
+                  onChange={(e) => setFormData({ ...formData, guide_fee: Number(e.target.value) })}
                   min="0"
                   className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
                 />
               </div>
             </div>

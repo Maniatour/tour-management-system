@@ -1049,7 +1049,7 @@ export default function ReservationForm({
                 setFormData={setFormData}
                 products={products}
                 getRequiredOptionsForProduct={(productId) => getRequiredOptionsForProduct(productId, productOptions, options)}
-                getChoicesForOption={(optionId) => getChoicesForOption(optionId, optionChoices)}
+                getChoicesForOption={(optionId) => getChoicesForOption(optionId, productOptions)}
                 loadRequiredOptionsForProduct={(productId) => loadRequiredOptionsForProduct(productId, formData.tourDate, formData.channelId)}
                 getDynamicPricingForOption={getDynamicPricingForOption}
                 t={t}

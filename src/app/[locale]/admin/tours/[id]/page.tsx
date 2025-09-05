@@ -2,95 +2,499 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Edit, Trash2, Calendar, User, Car, DollarSign, Users, Clock, MapPin } from 'lucide-react'
-import { useTranslations } from 'next-intl'
-import { sanitizeTimeInput } from '@/lib/utils'
+import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Plane, Map, MapPin, Clock, User, Users } from 'lucide-react'
+import ReactCountryFlag from 'react-country-flag'
+import { supabase } from '@/lib/supabase'
+import type { Database } from '@/lib/supabase'
+import ReservationForm from '@/components/reservation/ReservationForm'
 
-interface Tour {
-  id: string
-  productId: string
-  tourDate: string
-  tourGuideId: string
-  assistantId: string
-  tourCarId: string
-  reservationIds: string[]
-  tourStatus: 'scheduled' | 'inProgress' | 'completed' | 'cancelled' | 'delayed'
-  tourStartDateTime: string
-  tourEndDateTime: string
-  guideFee: number
-  assistantFee: number
-  created_at: string
-}
+type Tour = Database['public']['Tables']['tours']['Row']
+type Product = Database['public']['Tables']['products']['Row']
+type Customer = Database['public']['Tables']['customers']['Row']
+type Reservation = Database['public']['Tables']['reservations']['Row']
+type Team = Database['public']['Tables']['team']['Row']
 
 export default function TourDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const t = useTranslations('tours')
-  const tCommon = useTranslations('common')
   
   const [tour, setTour] = useState<Tour | null>(null)
-  const [showEditForm, setShowEditForm] = useState(false)
-  const [editingTour, setEditingTour] = useState<Tour | null>(null)
-
-  // 샘플 투어 데이터 (실제로는 API에서 가져와야 함)
-  const sampleTours: Tour[] = [
-    {
-      id: '1',
-      productId: 'PROD-001',
-      tourDate: '2024-01-20',
-      tourGuideId: 'guide1@company.com',
-      assistantId: 'assistant1@company.com',
-      tourCarId: 'CAR-001',
-      reservationIds: ['RES-001', 'RES-002'],
-      tourStatus: 'scheduled',
-      tourStartDateTime: '2024-01-20T09:00:00',
-      tourEndDateTime: '2024-01-20T17:00:00',
-      guideFee: 150.00,
-      assistantFee: 100.00,
-      created_at: '2024-01-15'
-    },
-    {
-      id: '2',
-      productId: 'PROD-002',
-      tourDate: '2024-01-21',
-      tourGuideId: 'guide2@company.com',
-      assistantId: 'assistant2@company.com',
-      tourCarId: 'CAR-002',
-      reservationIds: ['RES-003'],
-      tourStatus: 'inProgress',
-      tourStartDateTime: '2024-01-21T10:00:00',
-      tourEndDateTime: '2024-01-21T18:00:00',
-      guideFee: 180.00,
-      assistantFee: 120.00,
-      created_at: '2024-01-16'
-    }
-  ]
+  const [product, setProduct] = useState<Product | null>(null)
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [assignedReservations, setAssignedReservations] = useState<Reservation[]>([])
+  const [pendingReservations, setPendingReservations] = useState<Reservation[]>([])
+  const [pickupHotels, setPickupHotels] = useState<Database['public']['Tables']['pickup_hotels']['Row'][]>([])
+  const [pickupTimeValue, setPickupTimeValue] = useState<string>('')
+  const [showTimeModal, setShowTimeModal] = useState(false)
+  const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
+  const [teamMembers, setTeamMembers] = useState<Team[]>([])
+  const [teamType, setTeamType] = useState<'1guide' | '2guide' | 'guide+driver'>('1guide')
+  const [selectedGuide, setSelectedGuide] = useState<string>('')
+  const [selectedAssistant, setSelectedAssistant] = useState<string>('')
+  const [tourNote, setTourNote] = useState<string>('')
+  const [loading, setLoading] = useState(true)
+  const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
 
   useEffect(() => {
     const tourId = params.id as string
-    const foundTour = sampleTours.find(t => t.id === tourId)
-    if (foundTour) {
-      setTour(foundTour)
+    if (tourId) {
+      fetchTourData(tourId)
     }
   }, [params.id])
 
-  const handleEditTour = (tourData: Omit<Tour, 'id' | 'created_at'>) => {
-    if (tour) {
-      const updatedTour: Tour = {
-        ...tourData,
-        id: tour.id,
-        created_at: tour.created_at
+  const fetchTourData = async (tourId: string) => {
+    try {
+      setLoading(true)
+      
+      // 투어 데이터 가져오기
+      const { data: tourData, error: tourError } = await supabase
+        .from('tours')
+        .select('*')
+        .eq('id', tourId)
+        .single()
+
+      if (tourError) {
+        console.error('Error fetching tour:', tourError)
+        return
       }
-      setTour(updatedTour)
-      setShowEditForm(false)
-      setEditingTour(null)
+
+      if (tourData) {
+        console.log('Tour data:', tourData)
+        setTour(tourData)
+        
+        // 기존 팀 구성 정보 설정 (email 기반)
+        if (tourData.tour_guide_id) {
+          setSelectedGuide(tourData.tour_guide_id)
+        }
+        if (tourData.assistant_id) {
+          setSelectedAssistant(tourData.assistant_id)
+        }
+        if (tourData.tour_note) {
+          setTourNote(tourData.tour_note)
+        }
+
+        // 상품 정보 가져오기
+        if (tourData.product_id) {
+          const { data: productData } = await supabase
+            .from('products')
+            .select('*')
+            .eq('id', tourData.product_id)
+            .single()
+          setProduct(productData)
+
+          // 같은 상품 ID의 예약들을 가져오기
+          console.log('Fetching reservations for:', {
+            product_id: tourData.product_id,
+            tour_date: tourData.tour_date
+          })
+          
+          const { data: allReservations, error: reservationError } = await supabase
+            .from('reservations')
+            .select('*')
+            .eq('product_id', tourData.product_id)
+            .eq('tour_date', tourData.tour_date)
+
+          console.log('Reservations query result:', { allReservations, reservationError })
+          console.log('Sample reservation IDs:', allReservations?.map(r => ({ 
+            id: r.id, 
+            type: typeof r.id, 
+            pickup_time: r.pickup_time,
+            tour_date: r.tour_date,
+            product_id: r.product_id
+          })))
+          console.log('Total reservations found:', allReservations?.length || 0)
+
+          if (reservationError) {
+            console.error('Error fetching reservations:', reservationError)
+          }
+
+          const reservations = allReservations || []
+          setReservations(reservations)
+
+          // 고객 정보 가져오기
+          const customerIds = reservations.map(r => r.customer_id).filter(Boolean)
+          if (customerIds.length > 0) {
+            const { data: customerData } = await supabase
+              .from('customers')
+              .select('*')
+              .in('id', customerIds)
+            
+            if (customerData) {
+              setCustomers(customerData)
+            }
+          }
+
+          // 픽업 호텔 정보 가져오기
+          const { data: pickupHotelsData } = await supabase
+            .from('pickup_hotels')
+            .select('*')
+          
+          if (pickupHotelsData) {
+            setPickupHotels(pickupHotelsData)
+          }
+
+          // 팀 멤버 정보 가져오기 (Tour Guide, is_active = true)
+          const { data: teamData } = await supabase
+            .from('team')
+            .select('*')
+            .eq('position', 'Tour Guide')
+            .eq('is_active', true)
+          
+          if (teamData) {
+            setTeamMembers(teamData)
+          }
+
+          // 이미 이 투어에 배정된 예약들
+          const assignedReservations = reservations.filter(r => 
+            tourData.reservation_ids && tourData.reservation_ids.includes(r.id)
+          )
+          console.log('Assigned reservations:', assignedReservations.length, assignedReservations.map(r => r.id))
+          console.log('Reservation statuses:', assignedReservations.map(r => ({ id: r.id, status: r.status })))
+          setAssignedReservations(assignedReservations)
+
+          // 배정 대기중인 예약들 (다른 투어에 배정되지 않은 예약들)
+          const { data: allTours } = await supabase
+            .from('tours')
+            .select('reservation_ids')
+            .eq('product_id', tourData.product_id)
+            .eq('tour_date', tourData.tour_date)
+            .neq('id', tourId)
+
+          console.log('Other tours for same product/date:', allTours?.length || 0)
+
+          const assignedReservationIds = new Set()
+          allTours?.forEach(tour => {
+            if (tour.reservation_ids) {
+              tour.reservation_ids.forEach((id: string) => assignedReservationIds.add(id))
+            }
+          })
+
+          console.log('Reservation IDs assigned to other tours:', Array.from(assignedReservationIds))
+
+          const pendingReservations = reservations.filter(r => 
+            !assignedReservationIds.has(r.id) && !tourData.reservation_ids?.includes(r.id)
+          )
+          console.log('Pending reservations:', pendingReservations.length, pendingReservations.map(r => r.id))
+          console.log('Pending reservation statuses:', pendingReservations.map(r => ({ id: r.id, status: r.status })))
+          setPendingReservations(pendingReservations)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching tour data:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleDeleteTour = () => {
-    if (confirm(t('deleteConfirm'))) {
-      router.push(`/${params.locale}/admin/tours`)
+  const handleAssignReservation = async (reservationId: string) => {
+    if (!tour) return
+
+    try {
+      const currentReservationIds = tour.reservation_ids || []
+      const updatedReservationIds = [...currentReservationIds, reservationId]
+
+      const { error } = await supabase
+        .from('tours')
+        .update({ reservation_ids: updatedReservationIds })
+        .eq('id', tour.id)
+
+      if (error) {
+        console.error('Error assigning reservation:', error)
+        return
+      }
+
+      // 로컬 상태 업데이트
+      const reservation = pendingReservations.find(r => r.id === reservationId)
+      if (reservation) {
+        setAssignedReservations([...assignedReservations, reservation])
+        setPendingReservations(pendingReservations.filter(r => r.id !== reservationId))
+        
+        // 투어 상태 업데이트
+        setTour({ ...tour, reservation_ids: updatedReservationIds })
+      }
+    } catch (error) {
+      console.error('Error assigning reservation:', error)
     }
+  }
+
+  const handleUnassignReservation = async (reservationId: string) => {
+    if (!tour) return
+
+    try {
+      const currentReservationIds = tour.reservation_ids || []
+      const updatedReservationIds = currentReservationIds.filter((id: string) => id !== reservationId)
+
+      const { error } = await supabase
+        .from('tours')
+        .update({ reservation_ids: updatedReservationIds })
+        .eq('id', tour.id)
+
+      if (error) {
+        console.error('Error unassigning reservation:', error)
+        return
+      }
+
+      // 로컬 상태 업데이트
+      const reservation = assignedReservations.find(r => r.id === reservationId)
+      if (reservation) {
+        setPendingReservations([...pendingReservations, reservation])
+        setAssignedReservations(assignedReservations.filter(r => r.id !== reservationId))
+        
+        // 투어 상태 업데이트
+        setTour({ ...tour, reservation_ids: updatedReservationIds })
+      }
+    } catch (error) {
+      console.error('Error unassigning reservation:', error)
+    }
+  }
+
+  const getCustomerName = (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId)
+    return customer ? customer.name : 'Unknown Customer'
+  }
+
+  const getCustomerLanguage = (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId)
+    return customer ? customer.language : 'Unknown'
+  }
+
+  const getPickupHotelName = (pickupHotelId: string) => {
+    const hotel = pickupHotels.find(h => h.id === pickupHotelId)
+    if (hotel) {
+      return `${hotel.hotel} - ${hotel.pick_up_location}`
+    }
+    return pickupHotelId || '픽업 호텔 미지정'
+  }
+
+  const getPickupHotelNameOnly = (pickupHotelId: string) => {
+    const hotel = pickupHotels.find(h => h.id === pickupHotelId)
+    return hotel ? hotel.hotel : pickupHotelId || '픽업 호텔 미지정'
+  }
+
+  const getCountryCode = (language: string) => {
+    const languageMap: Record<string, string> = {
+      'ko': 'KR',
+      'en': 'US',
+      'ja': 'JP',
+      'zh': 'CN',
+      'es': 'ES',
+      'fr': 'FR',
+      'de': 'DE',
+      'it': 'IT',
+      'pt': 'PT',
+      'ru': 'RU',
+      'ar': 'SA',
+      'th': 'TH',
+      'vi': 'VN',
+      'id': 'ID',
+      'ms': 'MY',
+      'tl': 'PH'
+    }
+    return languageMap[language] || 'US'
+  }
+
+  const getTotalAssignedPeople = () => {
+    return assignedReservations.reduce((total, reservation) => {
+      return total + (reservation.total_people || 0)
+    }, 0)
+  }
+
+  const getTotalPeople = () => {
+    return reservations.reduce((total, reservation) => {
+      return total + (reservation.total_people || 0)
+    }, 0)
+  }
+
+  const handleAssignAllReservations = async () => {
+    if (!tour || pendingReservations.length === 0) return
+
+    try {
+      const currentReservationIds = tour.reservation_ids || []
+      const newReservationIds = pendingReservations.map(r => r.id)
+      const updatedReservationIds = [...currentReservationIds, ...newReservationIds]
+
+      const { error } = await supabase
+        .from('tours')
+        .update({ reservation_ids: updatedReservationIds })
+        .eq('id', tour.id)
+
+      if (error) {
+        console.error('Error assigning all reservations:', error)
+        return
+      }
+
+      // 로컬 상태 업데이트
+      setAssignedReservations([...assignedReservations, ...pendingReservations])
+      setPendingReservations([])
+      setTour({ ...tour, reservation_ids: updatedReservationIds })
+    } catch (error) {
+      console.error('Error assigning all reservations:', error)
+    }
+  }
+
+  const handleUnassignAllReservations = async () => {
+    if (!tour || assignedReservations.length === 0) return
+
+    try {
+      const { error } = await supabase
+        .from('tours')
+        .update({ reservation_ids: [] })
+        .eq('id', tour.id)
+
+      if (error) {
+        console.error('Error unassigning all reservations:', error)
+        return
+      }
+
+      // 로컬 상태 업데이트
+      setPendingReservations([...pendingReservations, ...assignedReservations])
+      setAssignedReservations([])
+      setTour({ ...tour, reservation_ids: [] })
+    } catch (error) {
+      console.error('Error unassigning all reservations:', error)
+    }
+  }
+
+  const handleEditPickupTime = (reservation: Reservation) => {
+    setSelectedReservation(reservation)
+    // Convert database time format (HH:MM:SS) to input format (HH:MM)
+    const timeValue = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'
+    setPickupTimeValue(timeValue)
+    setShowTimeModal(true)
+  }
+
+  const handleSavePickupTime = async () => {
+    if (!selectedReservation) return
+
+    try {
+      // Convert time string to proper format for database
+      const timeValue = pickupTimeValue ? `${pickupTimeValue}:00` : null
+      
+      const { error } = await supabase
+        .from('reservations')
+        .update({ pickup_time: timeValue })
+        .eq('id', selectedReservation.id)
+
+      if (error) {
+        console.error('Error updating pickup time:', error)
+        return
+      }
+
+      // Update local state
+      setAssignedReservations(prev => 
+        prev.map(res => 
+          res.id === selectedReservation.id 
+            ? { ...res, pickup_time: pickupTimeValue }
+            : res
+        )
+      )
+      setPendingReservations(prev => 
+        prev.map(res => 
+          res.id === selectedReservation.id 
+            ? { ...res, pickup_time: pickupTimeValue }
+            : res
+        )
+      )
+
+      setShowTimeModal(false)
+      setSelectedReservation(null)
+      setPickupTimeValue('')
+    } catch (error) {
+      console.error('Error saving pickup time:', error)
+    }
+  }
+
+  const handleCancelEditPickupTime = () => {
+    setShowTimeModal(false)
+    setSelectedReservation(null)
+    setPickupTimeValue('')
+  }
+
+  const openGoogleMaps = (link: string) => {
+    if (link) {
+      window.open(link, '_blank', 'noopener,noreferrer')
+    }
+  }
+
+  const handleTeamTypeChange = (type: '1guide' | '2guide' | 'guide+driver') => {
+    setTeamType(type)
+    setSelectedGuide('')
+    setSelectedAssistant('')
+  }
+
+  const handleGuideSelect = async (guideEmail: string) => {
+    setSelectedGuide(guideEmail)
+    if (tour) {
+      try {
+        const updateData: { tour_guide_id: string; assistant_id?: string | null } = { tour_guide_id: guideEmail }
+        if (teamType === '1guide') {
+          updateData.assistant_id = null
+        }
+        
+        const { error } = await supabase
+          .from('tours')
+          .update(updateData)
+          .eq('id', tour.id)
+
+        if (error) {
+          console.error('Error updating guide:', error)
+        }
+      } catch (error) {
+        console.error('Error updating guide:', error)
+      }
+    }
+  }
+
+  const handleAssistantSelect = async (assistantEmail: string) => {
+    setSelectedAssistant(assistantEmail)
+    if (tour) {
+      try {
+        const { error } = await supabase
+          .from('tours')
+          .update({ assistant_id: assistantEmail })
+          .eq('id', tour.id)
+
+        if (error) {
+          console.error('Error updating assistant:', error)
+        }
+      } catch (error) {
+        console.error('Error updating assistant:', error)
+      }
+    }
+  }
+
+  const getTeamMemberName = (email: string) => {
+    const member = teamMembers.find(member => member.email === email)
+    return member ? member.name_ko : '직원 미선택'
+  }
+
+  const handleTourNoteChange = async (note: string) => {
+    setTourNote(note)
+    if (tour) {
+      try {
+        const { error } = await supabase
+          .from('tours')
+          .update({ tour_note: note })
+          .eq('id', tour.id)
+
+        if (error) {
+          console.error('Error updating tour note:', error)
+        }
+      } catch (error) {
+        console.error('Error updating tour note:', error)
+      }
+    }
+  }
+
+  // 예약 편집 모달 열기
+  const handleEditReservationClick = (reservation: Reservation) => {
+    setEditingReservation(reservation)
+  }
+
+  // 예약 편집 모달 닫기
+  const handleCloseEditModal = async () => {
+    setEditingReservation(null)
   }
 
   const getStatusColor = (status: string) => {
@@ -104,14 +508,23 @@ export default function TourDetailPage() {
     }
   }
 
-  const formatDateTime = (dateTime: string) => {
-    return new Date(dateTime).toLocaleString('ko-KR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'scheduled': return '예정'
+      case 'inProgress': return '진행중'
+      case 'completed': return '완료'
+      case 'cancelled': return '취소'
+      case 'delayed': return '지연'
+      default: return '미정'
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">로딩 중...</div>
+      </div>
+    )
   }
 
   if (!tour) {
@@ -122,22 +535,11 @@ export default function TourDetailPage() {
     )
   }
 
-  if (showEditForm) {
-    return (
-      <TourForm
-        tour={editingTour || tour}
-        onSubmit={handleEditTour}
-        onCancel={() => {
-          setShowEditForm(false)
-          setEditingTour(null)
-        }}
-      />
-    )
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="min-h-screen bg-gray-50">
       {/* 헤더 */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button
@@ -146,331 +548,714 @@ export default function TourDetailPage() {
           >
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">{t('detail.title')}</h1>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {product?.name || '투어 상세'}
+                </h1>
+                <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                  <span>투어 ID: {tour.id}</span>
+                  <span>|</span>
+                  <span>날짜: {tour.tour_date ? new Date(tour.tour_date + 'T00:00:00').toLocaleDateString('ko-KR', {timeZone: 'America/Los_Angeles'}) : ''}</span>
+                  <span>|</span>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
+                    {getStatusText(tour.tour_status)}
+                  </span>
         </div>
-        <div className="flex space-x-3">
-          <button
-            onClick={() => setShowEditForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-          >
-            <Edit size={16} />
-            <span>{t('detail.editTour')}</span>
+              </div>
+        </div>
+            <div className="flex items-center space-x-6">
+              {/* 총 배정 인원 표시 */}
+              <div className="text-center bg-blue-50 rounded-lg px-4 py-3 border border-blue-200">
+                <div className="text-3xl font-bold text-blue-600">
+                  {getTotalAssignedPeople()} / {getTotalPeople()}명
+                </div>
+                <div className="text-xs text-blue-600 mt-1">
+                  {assignedReservations.length} / {reservations.length}건 예약
+                </div>
+              </div>
+              <div className="flex space-x-2">
+                <button className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center space-x-2">
+                  <Copy size={16} />
+                  <span>복사</span>
           </button>
-          <button
-            onClick={handleDeleteTour}
-            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center space-x-2"
-          >
+                <button className="px-4 py-2 text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center space-x-2">
             <Trash2 size={16} />
-            <span>{t('detail.deleteTour')}</span>
+                  <span>삭제</span>
+                </button>
+                <button className="px-4 py-2 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 flex items-center space-x-2">
+                  <Edit size={16} />
+                  <span>편집</span>
           </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* 투어 정보 카드 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="px-0 py-6">
+        {/* 4열 그리드 레이아웃 */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* 1열: 기본 정보, 픽업 스케줄, 옵션 관리 */}
+          <div className="space-y-6">
         {/* 기본 정보 */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-            <MapPin className="h-5 w-5 text-blue-600 mr-2" />
-            {t('detail.tourInfo')}
-          </h2>
-          <div className="space-y-3">
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <h2 className="text-md font-semibold text-gray-900 mb-3">기본 정보</h2>
+                <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-gray-600">투어 ID:</span>
-              <span className="font-medium">{tour.id}</span>
+                    <span className="text-gray-600 text-sm">투어명:</span>
+                    <span className="font-medium text-sm">{product?.name || '-'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">상품 ID:</span>
-              <span className="font-medium">{tour.productId}</span>
+                    <span className="text-gray-600 text-sm">투어 날짜:</span>
+                    <span className="font-medium text-sm">{tour.tour_date ? new Date(tour.tour_date + 'T00:00:00').toLocaleDateString('ko-KR', {timeZone: 'America/Los_Angeles'}) : ''}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">상태:</span>
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tour.tourStatus)}`}>
-                {t(`status.${tour.tourStatus}`)}
+                    <span className="text-gray-600 text-sm">투어 시간:</span>
+                    <span className="font-medium text-sm">
+                      {tour.tour_start_datetime ? new Date(tour.tour_start_datetime).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '08:00'}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">등록일:</span>
-              <span className="font-medium">{tour.created_at}</span>
+                    <span className="text-gray-600 text-sm">상태:</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
+                      {getStatusText(tour.tour_status)}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* 투어 노트 */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    투어 노트
+                  </label>
+                  <textarea
+                    value={tourNote}
+                    onChange={(e) => handleTourNoteChange(e.target.value)}
+                    placeholder="투어 관련 특이사항이나 메모를 입력하세요..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                    rows={3}
+                  />
             </div>
           </div>
         </div>
 
-        {/* 참가자 정보 */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-            <Users className="h-5 w-5 text-green-600 mr-2" />
-            {t('detail.participants')}
-          </h2>
-          <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-600">가이드:</span>
-              <span className="font-medium">{tour.tourGuideId}</span>
+            {/* 픽업 스케줄 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-md font-semibold text-gray-900">픽업 스케줄</h2>
+                  <button className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                    자동생성
+                  </button>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">어시스턴트:</span>
-              <span className="font-medium">{tour.assistantId}</span>
+                <div className="space-y-2">
+                  {assignedReservations.length > 0 ? (
+                    (() => {
+                      // 호텔별로 그룹화
+                      const groupedByHotel = assignedReservations.reduce((acc, reservation) => {
+                        const hotelName = getPickupHotelNameOnly(reservation.pickup_hotel)
+                        if (!acc[hotelName]) {
+                          acc[hotelName] = []
+                        }
+                        acc[hotelName].push(reservation)
+                        return acc
+                      }, {} as Record<string, Reservation[]>)
+
+                      return Object.entries(groupedByHotel).map(([hotelName, reservations]) => {
+                        const totalPeople = (reservations as Reservation[]).reduce((sum, res) => sum + (res.total_people || 0), 0)
+                        const hotelInfo = pickupHotels.find(h => h.hotel === hotelName)
+                        
+                        // 가장 빠른 픽업 시간 찾기
+                        const pickupTimes = (reservations as Reservation[]).map(r => r.pickup_time).filter(Boolean)
+                        const earliestTime = pickupTimes.length > 0 ? 
+                          pickupTimes.sort()[0].substring(0, 5) : '08:00'
+                        
+                        return (
+                          <div key={hotelName} className="border rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center space-x-2">
+                                <span className="text-sm font-medium text-blue-600">{earliestTime}</span>
+                                <span className="text-gray-300">|</span>
+                                <span className="font-medium text-sm">{hotelName} ({totalPeople}명)</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">예약 ID:</span>
-              <span className="font-medium text-sm">{tour.reservationIds.join(', ')}</span>
+                              {hotelInfo?.link && (
+                                <button
+                                  onClick={() => openGoogleMaps(hotelInfo.link)}
+                                  className="text-blue-600 hover:text-blue-800 transition-colors p-1"
+                                  title="구글 맵에서 보기"
+                                >
+                                  <Map size={16} />
+                                </button>
+                              )}
+            </div>
+                            {hotelInfo && (
+                              <div className="text-xs text-gray-500 mb-2">
+                                {hotelInfo.pick_up_location}
+                              </div>
+                            )}
+                            <div className="space-y-1">
+                              {(reservations as Reservation[]).map((reservation) => (
+                                <div key={reservation.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                                  <div className="text-xs text-gray-600">
+                                    {getCustomerName(reservation.customer_id)}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {reservation.total_people || 0}인
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })
+                    })()
+                  ) : (
+                    <div className="text-center py-4 text-gray-500">
+                      <MapPin className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm">배정된 예약이 없습니다.</p>
+                      <p className="text-xs">예약을 배정하면 픽업 스케줄이 표시됩니다.</p>
+                    </div>
+                  )}
+                </div>
+          </div>
+        </div>
+
+            {/* 옵션 관리 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <h2 className="text-md font-semibold text-gray-900 mb-3">옵션 관리</h2>
+                <div className="text-center py-6 text-gray-500">
+                  <Settings className="h-8 w-8 mx-auto mb-3 text-gray-300" />
+                  <p className="text-sm">등록된 옵션이 없습니다.</p>
+                  <p className="text-xs">배정된 고객이 옵션을 추가하면 여기에 표시됩니다.</p>
+            </div>
             </div>
           </div>
         </div>
 
-        {/* 일정 정보 */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-            <Calendar className="h-5 w-5 text-purple-600 mr-2" />
-            {t('detail.schedule')}
-          </h2>
+          {/* 2열: 팀 구성, 배정 관리 */}
+          <div className="space-y-6">
+            {/* 팀 구성 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <h2 className="text-md font-semibold text-gray-900 mb-3">팀 구성</h2>
           <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-600">투어 날짜:</span>
-              <span className="font-medium">{tour.tourDate}</span>
+                  {/* 팀 타입 선택 */}
+                  <div className="flex space-x-2">
+                    <button 
+                      onClick={() => handleTeamTypeChange('1guide')}
+                      className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
+                        teamType === '1guide' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      <User size={12} />
+                      <span>1가이드</span>
+                    </button>
+                    <button 
+                      onClick={() => handleTeamTypeChange('2guide')}
+                      className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
+                        teamType === '2guide' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      <Users size={12} />
+                      <span>2가이드</span>
+                    </button>
+                    <button 
+                      onClick={() => handleTeamTypeChange('guide+driver')}
+                      className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
+                        teamType === 'guide+driver' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      <Car size={12} />
+                      <span>가이드+드라이버</span>
+                    </button>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">시작 시간:</span>
-              <span className="font-medium">{formatDateTime(tour.tourStartDateTime)}</span>
+
+                  {/* 가이드 선택 */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600 text-sm">가이드:</span>
+                      <select
+                        value={selectedGuide}
+                        onChange={(e) => handleGuideSelect(e.target.value)}
+                        className="text-xs border rounded px-2 py-1 min-w-32"
+                      >
+                        <option value="">가이드 선택</option>
+                        {teamMembers.map(member => (
+                          <option key={member.email} value={member.email}>
+                            {member.name_ko}
+                          </option>
+                        ))}
+                      </select>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">종료 시간:</span>
-              <span className="font-medium">{formatDateTime(tour.tourEndDateTime)}</span>
+
+                    {/* 2가이드 또는 가이드+드라이버일 때 어시스턴트 선택 */}
+                    {(teamType === '2guide' || teamType === 'guide+driver') && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600 text-sm">
+                          {teamType === '2guide' ? '2차 가이드:' : '드라이버:'}
+                        </span>
+                        <select
+                          value={selectedAssistant}
+                          onChange={(e) => handleAssistantSelect(e.target.value)}
+                          className="text-xs border rounded px-2 py-1 min-w-32"
+                        >
+                          <option value="">선택</option>
+                          {teamMembers
+                            .filter(member => member.email !== selectedGuide)
+                            .map(member => (
+                              <option key={member.email} value={member.email}>
+                                {member.name_ko}
+                              </option>
+                            ))
+                          }
+                        </select>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">차량 ID:</span>
-              <span className="font-medium">{tour.tourCarId}</span>
+                    )}
             </div>
+
+                  {/* 현재 배정된 팀원 표시 */}
+                  {(selectedGuide || selectedAssistant) && (
+                    <div className="p-2 bg-gray-50 rounded text-xs">
+                      <div className="font-medium text-gray-700 mb-1">현재 배정된 팀원:</div>
+                      {selectedGuide && (
+                        <div className="text-gray-600">가이드: {getTeamMemberName(selectedGuide)}</div>
+                      )}
+                      {selectedAssistant && (
+                        <div className="text-gray-600">
+                          {teamType === '2guide' ? '2차 가이드' : '드라이버'}: {getTeamMemberName(selectedAssistant)}
           </div>
+                      )}
+                    </div>
+                  )}
+                </div>
         </div>
       </div>
 
-      {/* 재무 정보 */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-          <DollarSign className="h-5 w-5 text-yellow-600 mr-2" />
-          {t('detail.financial')}
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-blue-50 rounded-lg p-4">
+            {/* 배정 관리 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-md font-semibold text-gray-900">배정 관리</h2>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={handleAssignAllReservations}
+                      disabled={pendingReservations.length === 0}
+                      className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-1"
+                    >
+                      <Check size={12} />
+                      <span>모두 배정</span>
+                    </button>
+                    <button
+                      onClick={handleUnassignAllReservations}
+                      disabled={assignedReservations.length === 0}
+                      className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-1"
+                    >
+                      <X size={12} />
+                      <span>모두 배정 취소</span>
+                    </button>
+                  </div>
+                </div>
+                
+                {/* 배정된 예약 */}
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">배정된 예약 ({assignedReservations.length})</h3>
+                  <div className="space-y-2">
+                    {assignedReservations.map((reservation) => (
+                      <div 
+                        key={reservation.id} 
+                        className="p-3 bg-blue-50 rounded-lg border cursor-pointer hover:bg-blue-100 transition-colors"
+                        onClick={() => handleEditReservationClick(reservation)}
+                      >
+                        {/* 첫 번째 줄: 국기 | 이름 인원 */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            {/* 언어 국기 아이콘 */}
+                            <ReactCountryFlag
+                              countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id))}
+                              svg
+                              style={{
+                                width: '16px',
+                                height: '12px'
+                              }}
+                            />
+                            {/* 고객 이름 */}
+                            <span className="font-medium text-sm">{getCustomerName(reservation.customer_id)}</span>
+                            {/* 총인원 */}
+                            <span className="text-xs text-gray-600">
+                              {reservation.total_people || 0}명
+                            </span>
+                            {/* 예약 상태 */}
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              reservation.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                              reservation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              reservation.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                              reservation.status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
+                              reservation.status === 'completed' ? 'bg-purple-100 text-purple-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {reservation.status === 'confirmed' ? '확정' :
+                               reservation.status === 'pending' ? '대기' :
+                               reservation.status === 'cancelled' ? '취소' :
+                               reservation.status === 'recruiting' ? '모집중' :
+                               reservation.status === 'completed' ? '완료' :
+                               reservation.status || '미정'}
+                            </span>
+                          </div>
+                          <button 
+                            onClick={() => handleUnassignReservation(reservation.id)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                        
+                        {/* 두 번째 줄: 픽업시간 | 픽업 호텔 */}
             <div className="flex items-center justify-between">
-              <span className="text-blue-800 font-medium">가이드 수수료</span>
-              <span className="text-2xl font-bold text-blue-900">${tour.guideFee.toLocaleString()}</span>
+                          {/* 픽업 시간 */}
+                          <div className="flex items-center space-x-1">
+                            <Clock size={10} className="text-gray-400" />
+                            <span className="text-xs text-gray-600">
+                              {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
+                            </span>
+                            <button
+                              onClick={() => handleEditPickupTime(reservation)}
+                              className="text-blue-600 hover:text-blue-800"
+                            >
+                              <Edit size={10} />
+                            </button>
             </div>
+                          
+                          {/* 픽업 호텔 이름 */}
+                          <span className="text-xs text-gray-500 text-right flex-1 ml-2">
+                            {getPickupHotelName(reservation.pickup_hotel)}
+                          </span>
           </div>
-          <div className="bg-green-50 rounded-lg p-4">
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 배정 대기중인 예약 */}
+                <div className="mb-3">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">배정 대기중인 예약 ({pendingReservations.length})</h3>
+                  <div className="space-y-2">
+                    {pendingReservations.map((reservation) => (
+                      <div 
+                        key={reservation.id} 
+                        className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => handleEditReservationClick(reservation)}
+                      >
+                        {/* 첫 번째 줄: 국기 | 이름 인원 */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            {/* 언어 국기 아이콘 */}
+                            <ReactCountryFlag
+                              countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id))}
+                              svg
+                              style={{
+                                width: '16px',
+                                height: '12px'
+                              }}
+                            />
+                            {/* 고객 이름 */}
+                            <span className="font-medium text-sm">{getCustomerName(reservation.customer_id)}</span>
+                            {/* 총인원 */}
+                            <span className="text-xs text-gray-600">
+                              {reservation.total_people || 0}명
+                            </span>
+                            {/* 예약 상태 */}
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              reservation.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                              reservation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              reservation.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                              reservation.status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
+                              reservation.status === 'completed' ? 'bg-purple-100 text-purple-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {reservation.status === 'confirmed' ? '확정' :
+                               reservation.status === 'pending' ? '대기' :
+                               reservation.status === 'cancelled' ? '취소' :
+                               reservation.status === 'recruiting' ? '모집중' :
+                               reservation.status === 'completed' ? '완료' :
+                               reservation.status || '미정'}
+                            </span>
+                          </div>
+                          <button 
+                            onClick={() => handleAssignReservation(reservation.id)}
+                            className="text-green-600 hover:text-green-800"
+                          >
+                            <Check size={14} />
+                          </button>
+                        </div>
+                        
+                        {/* 두 번째 줄: 픽업시간 | 픽업 호텔 */}
             <div className="flex items-center justify-between">
-              <span className="text-green-800 font-medium">어시스턴트 수수료</span>
-              <span className="text-2xl font-bold text-green-900">${tour.assistantFee.toLocaleString()}</span>
+                          {/* 픽업 시간 */}
+                          <div className="flex items-center space-x-1">
+                            <Clock size={10} className="text-gray-400" />
+                            <span className="text-xs text-gray-600">
+                              {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
+                            </span>
+                            <button
+                              onClick={() => handleEditPickupTime(reservation)}
+                              className="text-blue-600 hover:text-blue-800"
+                            >
+                              <Edit size={10} />
+                            </button>
             </div>
+                          
+                          {/* 픽업 호텔 이름 */}
+                          <span className="text-xs text-gray-500 text-right flex-1 ml-2">
+                            {getPickupHotelName(reservation.pickup_hotel)}
+                          </span>
           </div>
         </div>
+                    ))}
       </div>
     </div>
-  )
-}
 
-interface TourFormProps {
-  tour: Tour
-  onSubmit: (tour: Omit<Tour, 'id' | 'created_at'>) => void
-  onCancel: () => void
-}
+                {/* 요약 */}
+                <div className="p-2 bg-gray-100 rounded text-xs text-gray-600">
+                  총 예약: {reservations.length}건 | 배정: {assignedReservations.length}건 | 대기: {pendingReservations.length}건
+            </div>
+          </div>
+        </div>
+      </div>
 
-function TourForm({ tour, onSubmit, onCancel }: TourFormProps) {
-  const t = useTranslations('tours')
-  const tCommon = useTranslations('common')
-  
-  const [formData, setFormData] = useState({
-    productId: tour.productId,
-    tourDate: tour.tourDate,
-    tourGuideId: tour.tourGuideId,
-    assistantId: tour.assistantId,
-    tourCarId: tour.tourCarId,
-    reservationIds: tour.reservationIds.join(', '),
-    tourStatus: tour.tourStatus,
-    tourStartDateTime: tour.tourStartDateTime.slice(0, 16),
-    tourEndDateTime: tour.tourEndDateTime.slice(0, 16),
-    guideFee: tour.guideFee,
-    assistantFee: tour.assistantFee
-  })
+          {/* 3열: 부킹 관리 */}
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <h2 className="text-md font-semibold text-gray-900 mb-3">부킹 관리</h2>
+                <div className="space-y-3">
+                  <div className="border rounded p-3">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Hotel className="h-3 w-3 text-blue-600" />
+                      <span className="font-medium text-xs">호텔 확정</span>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      <div>벨라지오</div>
+                      <div>예약번호: H-12345</div>
+                      <div>시디뷰 요청</div>
+                    </div>
+                  </div>
+                  <div className="border rounded p-3">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Car className="h-3 w-3 text-green-600" />
+                      <span className="font-medium text-xs">렌터카 확정</span>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      <div>헤르츠</div>
+                      <div>예약번호: C-12345</div>
+                      <div>GPS 포함</div>
+                    </div>
+                  </div>
+                  <div className="border rounded p-3">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Plane className="h-3 w-3 text-purple-600" />
+                      <span className="font-medium text-xs">앤텔롭 확정</span>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      <div>앤텔롭 투어</div>
+                      <div>예약번호: AC-123</div>
+                      <div>일출 촬영 포함</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const tourData = {
-      ...formData,
-      reservationIds: formData.reservationIds.split(',').map(id => id.trim()).filter(id => id)
-    }
-    onSubmit(tourData)
-  }
+          {/* 4열: 정산 관리 */}
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <h2 className="text-md font-semibold text-gray-900 mb-3">정산 관리</h2>
+                
+                {/* 수익, 지출, 정산 */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="text-center p-3 bg-green-50 rounded">
+                    <div className="text-lg font-bold text-green-600">$0</div>
+                    <div className="text-xs text-gray-600">총 수입</div>
+                  </div>
+                  <div className="text-center p-3 bg-red-50 rounded">
+                    <div className="text-lg font-bold text-red-600">$665.5</div>
+                    <div className="text-xs text-gray-600">총 지출</div>
+                  </div>
+                  <div className="text-center p-3 bg-gray-50 rounded">
+                    <div className="text-lg font-bold text-gray-600">$-665.5</div>
+                    <div className="text-xs text-gray-600">순이익</div>
+                  </div>
+                </div>
 
-  return (
+                {/* 지출 카테고리별 요약 */}
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">지출 카테고리별 요약</h3>
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded text-xs">
+                      <span className="font-medium">antelope_booking</span>
+                      <span className="text-gray-600">$250 (1건, 앤텔로프 캐년 투어 예약, 2024-01-15, 미상환)</span>
+            </div>
+                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded text-xs">
+                      <span className="font-medium">hotel_booking</span>
+                      <span className="text-gray-600">$180 (1건, 투어 호텔 예약, 2024-01-14, 상환완료)</span>
+            </div>
+                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded text-xs">
+                      <span className="font-medium">연료비</span>
+                      <span className="text-gray-600">$85.5 (1건, Shell Station 연료비, 2024-01-13, 미상환)</span>
+            </div>
+                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded text-xs">
+                      <span className="font-medium">가이드비</span>
+                      <span className="text-gray-600">$150 (1건, 가이드 비용, 2024-01-12, 미상환)</span>
+            </div>
+            </div>
+            </div>
+
+                {/* 지출 관리 */}
+            <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-medium text-gray-700">지출 관리</h3>
+                    <button className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 flex items-center space-x-1">
+                      <Plus size={10} />
+                      <span>추가</span>
+                    </button>
+                  </div>
+                  <div className="text-xs text-gray-600 mb-2">
+                    투어 운영 지출 | 총 지출: $665.5 | 미상환: $485.5 | 상환완료: $180
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center p-2 border rounded text-xs">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium text-red-600">미상환</span>
+                        <span>antelope_booking</span>
+                      </div>
+                      <div className="text-gray-600">앤텔로프 캐년 투어 예약, 2024-01-15 - $250</div>
+                    </div>
+                    <div className="flex justify-between items-center p-2 border rounded text-xs">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium text-green-600">상환완료</span>
+                        <span>hotel_booking</span>
+                      </div>
+                      <div className="text-gray-600">투어 호텔 예약, 2024-01-14 - $180</div>
+                    </div>
+                    <div className="flex justify-between items-center p-2 border rounded text-xs">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium text-red-600">미상환</span>
+                        <span>연료비</span>
+                      </div>
+                      <div className="text-gray-600">Shell Station 연료비, 2024-01-13 - $85.5 (엔텔로프 투어 차량)</div>
+                    </div>
+                    <div className="flex justify-between items-center p-2 border rounded text-xs">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium text-red-600">미상환</span>
+                        <span>가이드비</span>
+                      </div>
+                      <div className="text-gray-600">가이드 비용, 2024-01-12 - $150</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 픽업시간 수정 모달 */}
+      {showTimeModal && selectedReservation && (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">
-          {t('form.editTitle')}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.productId')}</label>
-              <input
-                type="text"
-                value={formData.productId}
-                onChange={(e) => setFormData({ ...formData, productId: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourDate')}</label>
-              <input
-                type="date"
-                value={formData.tourDate}
-                onChange={(e) => setFormData({ ...formData, tourDate: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourGuideId')}</label>
-              <input
-                type="email"
-                value={formData.tourGuideId}
-                onChange={(e) => setFormData({ ...formData, tourGuideId: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.assistantId')}</label>
-              <input
-                type="email"
-                value={formData.assistantId}
-                onChange={(e) => setFormData({ ...formData, assistantId: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourCarId')}</label>
-              <input
-                type="text"
-                value={formData.tourCarId}
-                onChange={(e) => setFormData({ ...formData, tourCarId: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.reservationIds')}</label>
-              <input
-                type="text"
-                value={formData.reservationIds}
-                onChange={(e) => setFormData({ ...formData, reservationIds: e.target.value })}
-                placeholder="예약 ID를 쉼표로 구분하여 입력"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourStatus')}</label>
-              <select
-                value={formData.tourStatus}
-                onChange={(e) => setFormData({ ...formData, tourStatus: e.target.value as Tour['tourStatus'] })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
+          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">픽업시간 수정</h3>
+              <button
+                onClick={handleCancelEditPickupTime}
+                className="text-gray-400 hover:text-gray-600"
               >
-                <option value="scheduled">{t('status.scheduled')}</option>
-                <option value="inProgress">{t('status.inProgress')}</option>
-                <option value="completed">{t('status.completed')}</option>
-                <option value="cancelled">{t('status.cancelled')}</option>
-                <option value="delayed">{t('status.delayed')}</option>
-              </select>
+                <X size={20} />
+              </button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourStartDateTime')}</label>
+            
+            <div className="mb-4">
+              <div className="flex items-center space-x-2 mb-2">
+                <ReactCountryFlag
+                  countryCode={getCountryCode(getCustomerLanguage(selectedReservation.customer_id))}
+                  svg
+                  style={{ width: '16px', height: '12px' }}
+                />
+                <span className="font-medium text-sm">{getCustomerName(selectedReservation.customer_id)}</span>
+                <span className="text-xs text-gray-600">
+                  {selectedReservation.adults + selectedReservation.child}명
+                </span>
+            </div>
+              <div className="text-xs text-gray-500 mb-4">
+                {getPickupHotelName(selectedReservation.pickup_hotel)}
+            </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                픽업시간
+              </label>
               <input
-                type="datetime-local"
-                value={formData.tourStartDateTime}
-                onChange={(e) => {
-                  try {
-                    // datetime-local 입력값 검증
-                    const dateTime = new Date(e.target.value);
-                    if (isNaN(dateTime.getTime())) {
-                      console.warn('Invalid datetime input:', e.target.value);
-                      return;
-                    }
-                    setFormData({ ...formData, tourStartDateTime: e.target.value });
-                  } catch (error) {
-                    console.error('Error parsing datetime:', error);
-                  }
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
+                type="time"
+                value={pickupTimeValue}
+                onChange={(e) => setPickupTimeValue(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourEndDateTime')}</label>
-              <input
-                type="datetime-local"
-                value={formData.tourEndDateTime}
-                onChange={(e) => {
-                  try {
-                    // datetime-local 입력값 검증
-                    const dateTime = new Date(e.target.value);
-                    if (isNaN(dateTime.getTime())) {
-                      console.warn('Invalid datetime input:', e.target.value);
-                      return;
-                    }
-                    setFormData({ ...formData, tourEndDateTime: e.target.value });
-                  } catch (error) {
-                    console.error('Error parsing datetime:', error);
-                  }
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.guideFee')}</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.guideFee}
-                onChange={(e) => setFormData({ ...formData, guideFee: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.assistantFee')}</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.assistantFee}
-                onChange={(e) => setFormData({ ...formData, assistantFee: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-          </div>
-          <div className="flex space-x-3 pt-4">
+
+            <div className="flex space-x-3">
             <button
-              type="submit"
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+                onClick={handleSavePickupTime}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
-              {tCommon('save')}
+                저장
             </button>
             <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
+                onClick={handleCancelEditPickupTime}
+                className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
             >
-              {tCommon('cancel')}
+                취소
             </button>
           </div>
-        </form>
       </div>
+      </div>
+      )}
+
+      {/* 예약 편집 모달 */}
+      {editingReservation && (
+        <ReservationForm
+          reservation={editingReservation}
+          customers={customers}
+          products={product ? [product] : []}
+          channels={[]}
+          productOptions={[]}
+          optionChoices={[]}
+          options={[]}
+          pickupHotels={pickupHotels}
+          coupons={[]}
+          onSubmit={async (reservationData) => {
+            // 예약 수정 로직 (필요시 구현)
+            console.log('Reservation updated:', reservationData)
+            handleCloseEditModal()
+          }}
+          onCancel={handleCloseEditModal}
+          onRefreshCustomers={async () => {}}
+          onDelete={async () => {
+            // 예약 삭제 로직 (필요시 구현)
+            console.log('Reservation deleted')
+            handleCloseEditModal()
+          }}
+        />
+      )}
     </div>
   )
 }
+

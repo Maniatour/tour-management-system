@@ -58,7 +58,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [showPricingModal, setShowPricingModal] = useState(false)
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
-  
+
   // 페이지네이션 상태
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
@@ -73,15 +73,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const filteredAndSortedReservations = useCallback(() => {
     const filtered = reservations.filter(reservation => {
       // 검색 조건
-      const matchesSearch = 
-        reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        reservation.channelRN.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        getCustomerName(reservation.customerId, customers).toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = 
+      reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      reservation.channelRN.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getCustomerName(reservation.customerId, customers).toLowerCase().includes(searchTerm.toLowerCase()) ||
         getProductName(reservation.productId, products).toLowerCase().includes(searchTerm.toLowerCase()) ||
         getChannelName(reservation.channelId, channels).toLowerCase().includes(searchTerm.toLowerCase())
-      
+    
       // 상태 필터
-      const matchesStatus = selectedStatus === 'all' || reservation.status === selectedStatus
+    const matchesStatus = selectedStatus === 'all' || reservation.status === selectedStatus
       
       // 채널 필터
       const matchesChannel = selectedChannel === 'all' || reservation.channelId === selectedChannel
@@ -441,21 +441,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         {/* 기본 검색 및 필터 */}
         <div className="flex flex-wrap gap-4">
           <div className="relative flex-1 min-w-64">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-            <input
-              type="text"
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+          <input
+            type="text"
               placeholder="예약 ID, 고객명, 상품명, 채널명으로 검색..."
-              value={searchTerm}
+            value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value)
                 setCurrentPage(1) // 검색 시 첫 페이지로 이동
               }}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
           
-          <select
-            value={selectedStatus}
+        <select
+          value={selectedStatus}
             onChange={(e) => {
               setSelectedStatus(e.target.value)
               setCurrentPage(1)
@@ -564,13 +564,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 setItemsPerPage(Number(e.target.value))
                 setCurrentPage(1)
               }}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
+          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
               <option value={10}>10개</option>
               <option value={20}>20개</option>
               <option value={50}>50개</option>
               <option value={100}>100개</option>
-            </select>
+        </select>
           </div>
           
           <button
@@ -615,7 +615,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       ) : (
         /* 카드뷰 */
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {paginatedReservations.map((reservation) => (
             <div
               key={reservation.id}
@@ -678,28 +678,16 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         if (!choiceIds || choiceIds.length === 0) return null;
                         
                         const option = productOptions.find(opt => opt.id === optionId);
-                        const choices = choiceIds.map(choiceId => 
-                          optionChoices.find(c => c.id === choiceId)
-                        ).filter(Boolean);
                         
-                        if (!option || choices.length === 0) return null;
+                        if (!option) return null;
                         
                         // 필수 옵션만 표시 (is_required가 true인 옵션만)
                         if (!option.is_required) return null;
                         
-                        // 옵션명과 선택지명이 같은 경우 선택지명만 표시
-                        const displayText = choices.map(c => c?.name).join(', ');
-                        const isOptionNameSame = option.name === displayText;
-                        
+                        // 실제 시스템에서는 choice ID가 옵션 ID와 동일하므로 옵션명을 직접 표시
                         return (
                           <div key={optionId} className="text-xs text-gray-600">
-                            {isOptionNameSame ? (
-                              <span className="font-medium">{displayText}</span>
-                            ) : (
-                              <>
-                                <span className="font-medium">{option.name}:</span> {displayText}
-                              </>
-                            )}
+                            <span className="font-medium">{option.name}</span>
                           </div>
                         );
                       })}
@@ -760,7 +748,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 </div>
               </div>
 
-
+                  
             </div>
           ))}
         </div>

@@ -153,7 +153,8 @@
       "cancelled": "Cancelled",
       "Canceled": "Cancelled",
       "recruiting": "Recruiting",
-      "Recruiting": "Recruiting"
+      "Recruiting": "Recruiting",
+      "Payment Requested": "Payment Requested"
     },
     "form": {
       "title": "Add New Reservation",

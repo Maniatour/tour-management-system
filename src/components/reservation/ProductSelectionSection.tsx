@@ -57,6 +57,9 @@ export default function ProductSelectionSection({
   getDynamicPricingForOption,
   t
 }: ProductSelectionSectionProps) {
+  
+  // 디버깅을 위한 로그
+  console.log('ProductSelectionSection - formData.selectedOptions:', formData.selectedOptions)
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.product')}</label>
