@@ -514,14 +514,19 @@ export default function TourHotelBookingForm({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 객실 타입
               </label>
-              <input
-                type="text"
+              <select
                 name="room_type"
                 value={formData.room_type}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="예: 스탠다드, 디럭스"
-              />
+              >
+                <option value="">객실 타입을 선택하세요</option>
+                <option value="1 king">1 King</option>
+                <option value="2 queen">2 Queen</option>
+                <option value="2 full">2 Full</option>
+                <option value="3 full">3 Full</option>
+                <option value="3 queen">3 Queen</option>
+              </select>
             </div>
 
             <div>
