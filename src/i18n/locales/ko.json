@@ -52,23 +52,6 @@
       "tourCompleted": "투어가 완료되었습니다"
     }
   },
-  "schedule": {
-    "title": "가이드 스케줄",
-    "dateSelection": "날짜별 스케줄 확인",
-    "summary": {
-      "totalTours": "총 투어",
-      "confirmedTours": "확정된 투어",
-      "totalParticipants": "총 참가자",
-      "expectedRevenue": "예상 수익"
-    },
-    "details": "투어 스케줄 상세",
-    "noTours": "선택한 날짜에 예정된 투어가 없습니다",
-    "actions": {
-      "customerInfo": "고객 정보",
-      "tourReport": "투어 보고서",
-      "completeTour": "투어 완료"
-    }
-  },
   "customers": {
     "title": "고객 관리",
     "addCustomer": "새 고객 추가",
@@ -170,6 +153,7 @@
     },
     "status": {
       "pending": "대기중",
+      "Pending": "대기중",
       "confirmed": "확정",
       "Confirmed": "확정",
       "completed": "완료",
@@ -177,7 +161,9 @@
       "Canceled": "취소",
       "recruiting": "모집중",
       "Recruiting": "모집중",
-      "Payment Requested": "결제 요청"
+      "Payment Requested": "결제 요청",
+      "deleted": "삭제됨",
+      "Deleted": "삭제됨"
     },
     "form": {
       "title": "새 예약 추가",
@@ -220,6 +206,7 @@
   },
   "schedule": {
     "title": "스케줄 뷰",
+    "dateSelection": "날짜별 스케줄 확인",
     "productSelection": "표시할 상품 선택",
     "teamMemberSelection": "표시할 팀원 선택",
     "dailyTotal": "일별 합계",
@@ -228,7 +215,20 @@
     "people": "명",
     "assigned": "배정",
     "totalPeople": "총인원",
-    "today": "오늘"
+    "today": "오늘",
+    "summary": {
+      "totalTours": "총 투어",
+      "confirmedTours": "확정된 투어",
+      "totalParticipants": "총 참가자",
+      "expectedRevenue": "예상 수익"
+    },
+    "details": "투어 스케줄 상세",
+    "noTours": "선택한 날짜에 예정된 투어가 없습니다",
+    "actions": {
+      "customerInfo": "고객 정보",
+      "tourReport": "투어 보고서",
+      "completeTour": "투어 완료"
+    }
   },
   "tours": {
     "title": "투어 관리",
@@ -274,7 +274,16 @@
       "cancelled": "취소됨",
       "delayed": "지연됨",
       "Recruiting": "모집중",
-      "recruiting": "모집중"
+      "recruiting": "모집중",
+      "Confirmed": "확정",
+      "Canceled - No Answer": "취소 - 답변 없음",
+      "Canceled - No Minimum": "취소 - 최소 인원 미달",
+      "Canceled - by customer": "취소 - 고객 요청",
+      "Canceled - Event Closed": "취소 - 이벤트 종료",
+      "Requested": "요청됨",
+      "Requested for Delete": "삭제 요청됨",
+      "Deleted": "삭제됨",
+      "null": "상태 없음"
     },
     "form": {
       "title": "새 투어 추가",

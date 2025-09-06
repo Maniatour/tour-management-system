@@ -15,7 +15,8 @@ import {
   Ticket,
   Building,
   FileCheck,
-  CalendarDays
+  CalendarDays,
+  Car
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -35,8 +36,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: '상품 관리', href: `/${locale}/admin/products`, icon: Package },
     { name: '고객 관리', href: `/${locale}/admin/customers`, icon: Users },
     { name: '예약 관리', href: `/${locale}/admin/reservations`, icon: Calendar },
+    { name: '예약 통계', href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
     { name: '데이터 검수', href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: '픽업 호텔 관리', href: `/${locale}/admin/pickup-hotels`, icon: Building },
+    { name: '차량 관리', href: `/${locale}/admin/vehicles`, icon: Car },
     { name: '팀 관리', href: `/${locale}/admin/team`, icon: Users },
     { name: '옵션 관리', href: `/${locale}/admin/options`, icon: Settings },
     { name: '투어 관리', href: `/${locale}/admin/tours`, icon: MapPin },
@@ -149,7 +152,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
         {/* 페이지 콘텐츠 */}
         <main className="py-6">
-          <div className="max-w-full mx-auto px-2 sm:px-4 lg:px-6">
+          <div className="max-w-full mx-auto px-1 sm:px-2 lg:px-3">
             {children}
           </div>
         </main>

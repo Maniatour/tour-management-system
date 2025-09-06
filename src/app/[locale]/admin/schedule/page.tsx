@@ -52,6 +52,28 @@ export default function SchedulePage() {
     return days
   }, [currentDate, lastDayOfMonth])
 
+  // 로컬 스토리지에서 선택된 상품과 팀원 불러오기
+  useEffect(() => {
+    const savedSelectedProducts = localStorage.getItem('schedule_selected_products')
+    const savedSelectedTeamMembers = localStorage.getItem('schedule_selected_team_members')
+    
+    if (savedSelectedProducts) {
+      try {
+        setSelectedProducts(JSON.parse(savedSelectedProducts))
+      } catch (error) {
+        console.error('Error parsing saved selected products:', error)
+      }
+    }
+    
+    if (savedSelectedTeamMembers) {
+      try {
+        setSelectedTeamMembers(JSON.parse(savedSelectedTeamMembers))
+      } catch (error) {
+        console.error('Error parsing saved selected team members:', error)
+      }
+    }
+  }, [])
+
   // 데이터 가져오기
   useEffect(() => {
     fetchData()
@@ -98,11 +120,11 @@ export default function SchedulePage() {
       setTours(toursData || [])
       setReservations(reservationsData || [])
 
-      // 기본 선택 설정
-      if (productsData && productsData.length > 0) {
+      // 기본 선택 설정 (저장된 선택이 없을 때만)
+      if (productsData && productsData.length > 0 && selectedProducts.length === 0) {
         setSelectedProducts(productsData.slice(0, 5).map(p => p.id))
       }
-      if (teamData && teamData.length > 0) {
+      if (teamData && teamData.length > 0 && selectedTeamMembers.length === 0) {
         setSelectedTeamMembers(teamData.slice(0, 5).map(t => t.email))
       }
 
@@ -204,22 +226,40 @@ export default function SchedulePage() {
     setCurrentDate(new Date())
   }
 
+  // 선택 초기화
+  const resetSelections = () => {
+    setSelectedProducts([])
+    setSelectedTeamMembers([])
+    localStorage.removeItem('schedule_selected_products')
+    localStorage.removeItem('schedule_selected_team_members')
+  }
+
   // 상품 선택 토글
   const toggleProduct = (productId: string) => {
-    setSelectedProducts(prev => 
-      prev.includes(productId) 
+    setSelectedProducts(prev => {
+      const newSelection = prev.includes(productId) 
         ? prev.filter(id => id !== productId)
         : [...prev, productId]
-    )
+      
+      // 로컬 스토리지에 저장
+      localStorage.setItem('schedule_selected_products', JSON.stringify(newSelection))
+      
+      return newSelection
+    })
   }
 
   // 팀 멤버 선택 토글
   const toggleTeamMember = (teamMemberId: string) => {
-    setSelectedTeamMembers(prev => 
-      prev.includes(teamMemberId) 
+    setSelectedTeamMembers(prev => {
+      const newSelection = prev.includes(teamMemberId) 
         ? prev.filter(id => id !== teamMemberId)
         : [...prev, teamMemberId]
-    )
+      
+      // 로컬 스토리지에 저장
+      localStorage.setItem('schedule_selected_team_members', JSON.stringify(newSelection))
+      
+      return newSelection
+    })
   }
 
   // 총계 계산
@@ -256,16 +296,39 @@ export default function SchedulePage() {
     <div className="p-6 bg-gray-50 min-h-screen">
       {/* 헤더 */}
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">스케줄 뷰</h1>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+        {/* 메인 헤더 - 모든 요소를 한 줄에 배치 */}
+        <div className="flex items-center justify-between gap-4 mb-4">
+          {/* 왼쪽: 제목과 상품 선택 */}
+          <div className="flex items-center gap-4 flex-1">
+            <h1 className="text-3xl font-bold text-gray-900 whitespace-nowrap">스케줄 뷰</h1>
+            
+            {/* 상품 선택 버튼 */}
+            <div className="flex flex-wrap gap-2 items-center">
+              {products.map(product => (
+                <button
+                  key={product.id}
+                  onClick={() => toggleProduct(product.id)}
+                  className={`px-3 py-1 rounded-full text-sm transition-colors whitespace-nowrap ${
+                    selectedProducts.includes(product.id)
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {product.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 오른쪽: 월 이동 버튼들 */}
+          <div className="flex items-center space-x-4 flex-shrink-0">
             <button
               onClick={goToPreviousMonth}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h2 className="text-2xl font-semibold text-gray-900">
+            <h2 className="text-2xl font-semibold text-gray-900 whitespace-nowrap">
               {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
             </h2>
             <button
@@ -276,59 +339,43 @@ export default function SchedulePage() {
             </button>
             <button
               onClick={goToToday}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors whitespace-nowrap"
             >
               오늘
             </button>
+            <button
+              onClick={resetSelections}
+              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors whitespace-nowrap"
+            >
+              선택 초기화
+            </button>
+          </div>
+        </div>
+
+        {/* 팀원 선택 섹션 */}
+        <div className="bg-white rounded-lg shadow p-4">
+          <h3 className="text-lg font-semibold mb-3 flex items-center">
+            <Users className="w-5 h-5 mr-2" />
+            표시할 팀원 선택 ({selectedTeamMembers.length}개 선택됨)
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {teamMembers.map(member => (
+              <button
+                key={member.email}
+                onClick={() => toggleTeamMember(member.email)}
+                className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                  selectedTeamMembers.includes(member.email)
+                    ? 'bg-green-500 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                {member.name_ko} ({member.position})
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* 상품 선택 */}
-      <div className="mb-6 bg-white rounded-lg shadow p-4">
-        <h3 className="text-lg font-semibold mb-3 flex items-center">
-          <MapPin className="w-5 h-5 mr-2" />
-          표시할 상품 선택
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {products.map(product => (
-            <button
-              key={product.id}
-              onClick={() => toggleProduct(product.id)}
-              className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                selectedProducts.includes(product.id)
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {product.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 팀 멤버 선택 */}
-      <div className="mb-6 bg-white rounded-lg shadow p-4">
-        <h3 className="text-lg font-semibold mb-3 flex items-center">
-          <Users className="w-5 h-5 mr-2" />
-          표시할 팀원 선택
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {teamMembers.map(member => (
-            <button
-              key={member.email}
-              onClick={() => toggleTeamMember(member.email)}
-              className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                selectedTeamMembers.includes(member.email)
-                  ? 'bg-green-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {member.name_ko} ({member.position})
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* 스케줄 테이블 */}
       <div className="bg-white rounded-lg shadow overflow-hidden">

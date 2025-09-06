@@ -331,78 +331,81 @@ export default function AdminTours() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      {/* 헤더 - 제목과 컨트롤들을 같은 줄에 배치 */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-        >
-          <Plus size={20} />
-          <span>{t('addTour')}</span>
-        </button>
-      </div>
+        
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+          {/* 검색 및 필터 */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder={t('searchPlaceholder')}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full sm:w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">{t('filter.allStatus')}</option>
+              <option value="scheduled">{t('status.scheduled')}</option>
+              <option value="inProgress">{t('status.inProgress')}</option>
+              <option value="completed">{t('status.completed')}</option>
+              <option value="cancelled">{t('status.cancelled')}</option>
+              <option value="delayed">{t('status.delayed')}</option>
+            </select>
+          </div>
 
-      {/* 검색 및 필터 */}
-      <div className="flex space-x-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder={t('searchPlaceholder')}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-        <select
-          value={selectedStatus}
-          onChange={(e) => setSelectedStatus(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="all">{t('filter.allStatus')}</option>
-          <option value="scheduled">{t('status.scheduled')}</option>
-          <option value="inProgress">{t('status.inProgress')}</option>
-          <option value="completed">{t('status.completed')}</option>
-          <option value="cancelled">{t('status.cancelled')}</option>
-          <option value="delayed">{t('status.delayed')}</option>
-        </select>
-      </div>
+          {/* 뷰 모드 전환 버튼 */}
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm ${
+                viewMode === 'table'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <Grid size={16} />
+              <span className="hidden sm:inline">{t('view.table')}</span>
+            </button>
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm ${
+                viewMode === 'calendar'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <CalendarDays size={16} />
+              <span className="hidden sm:inline">{t('view.calendar')}</span>
+            </button>
+            <button
+              onClick={() => setViewMode('schedule')}
+              className={`px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm ${
+                viewMode === 'schedule'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <BarChart3 size={16} />
+              <span className="hidden sm:inline">스케줄 뷰</span>
+            </button>
+          </div>
 
-      {/* 뷰 모드 전환 버튼 */}
-      <div className="flex justify-between items-center">
-        <div className="flex space-x-2">
+          {/* 투어 추가 버튼 */}
           <button
-            onClick={() => setViewMode('table')}
-            className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
-              viewMode === 'table'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+            onClick={() => setShowAddForm(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 text-sm"
           >
-            <Grid size={20} />
-            <span>{t('view.table')}</span>
-          </button>
-          <button
-            onClick={() => setViewMode('calendar')}
-            className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
-              viewMode === 'calendar'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <CalendarDays size={20} />
-            <span>{t('view.calendar')}</span>
-          </button>
-          <button
-            onClick={() => setViewMode('schedule')}
-            className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
-              viewMode === 'schedule'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <BarChart3 size={20} />
-            <span>스케줄 뷰</span>
+            <Plus size={16} />
+            <span>{t('addTour')}</span>
           </button>
         </div>
       </div>
@@ -474,10 +477,10 @@ export default function AdminTours() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {tour.reservation_ids.length}개 예약
+                        {tour.reservation_ids?.length || 0}개 예약
                       </div>
                       <div className="text-xs text-gray-500">
-                        {tour.reservation_ids.join(', ')}
+                        {tour.reservation_ids?.join(', ') || '예약 없음'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">

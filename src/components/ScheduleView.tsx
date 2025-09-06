@@ -33,10 +33,77 @@ export default function ScheduleView() {
   const [loading, setLoading] = useState(true)
   const [showProductModal, setShowProductModal] = useState(false)
   const [showTeamModal, setShowTeamModal] = useState(false)
+  const [productColors, setProductColors] = useState<{ [productId: string]: string }>({})
+
+  // 색상 팔레트 정의 (원색)
+  const colorPalette = [
+    { name: '파란색', class: 'bg-blue-500 border-blue-600 text-white' },
+    { name: '초록색', class: 'bg-green-500 border-green-600 text-white' },
+    { name: '노란색', class: 'bg-yellow-500 border-yellow-600 text-black' },
+    { name: '보라색', class: 'bg-purple-500 border-purple-600 text-white' },
+    { name: '분홍색', class: 'bg-pink-500 border-pink-600 text-white' },
+    { name: '인디고', class: 'bg-indigo-500 border-indigo-600 text-white' },
+    { name: '빨간색', class: 'bg-red-500 border-red-600 text-white' },
+    { name: '주황색', class: 'bg-orange-500 border-orange-600 text-white' },
+    { name: '청록색', class: 'bg-cyan-500 border-cyan-600 text-white' },
+    { name: '라임색', class: 'bg-lime-500 border-lime-600 text-black' },
+    { name: '회색', class: 'bg-gray-500 border-gray-600 text-white' },
+    { name: '슬레이트', class: 'bg-slate-500 border-slate-600 text-white' }
+  ]
+
+  // 상품별 색상 초기화
+  const initializeProductColors = () => {
+    const colors: { [productId: string]: string } = {}
+    products.forEach((product, index) => {
+      if (!productColors[product.id]) {
+        colors[product.id] = colorPalette[index % colorPalette.length].class
+      } else {
+        colors[product.id] = productColors[product.id]
+      }
+    })
+    setProductColors(colors)
+  }
+
+  // 상품 색상 변경
+  const changeProductColor = (productId: string, colorClass: string) => {
+    setProductColors(prev => ({
+      ...prev,
+      [productId]: colorClass
+    }))
+  }
+
+  // Tailwind CSS 클래스를 실제 색상 값으로 변환
+  const getColorFromClass = (colorClass: string) => {
+    const colorMap: { [key: string]: string } = {
+      'bg-blue-500 border-blue-600 text-white': '#3b82f6',
+      'bg-green-500 border-green-600 text-white': '#10b981',
+      'bg-yellow-500 border-yellow-600 text-black': '#eab308',
+      'bg-purple-500 border-purple-600 text-white': '#8b5cf6',
+      'bg-pink-500 border-pink-600 text-white': '#ec4899',
+      'bg-indigo-500 border-indigo-600 text-white': '#6366f1',
+      'bg-red-500 border-red-600 text-white': '#ef4444',
+      'bg-orange-500 border-orange-600 text-white': '#f97316',
+      'bg-cyan-500 border-cyan-600 text-white': '#06b6d4',
+      'bg-lime-500 border-lime-600 text-black': '#84cc16',
+      'bg-gray-500 border-gray-600 text-white': '#6b7280',
+      'bg-slate-500 border-slate-600 text-white': '#64748b'
+    }
+    return colorMap[colorClass] || '#6b7280'
+  }
 
   // 현재 월의 첫 번째 날과 마지막 날 계산
   const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
   const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+  
+  // 오늘 날짜 확인 함수
+  const isToday = (dateString: string) => {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    const todayString = `${year}-${month}-${day}`
+    return dateString === todayString
+  }
   
   // 월의 모든 날짜 생성
   const monthDays = useMemo(() => {
@@ -56,6 +123,13 @@ export default function ScheduleView() {
   useEffect(() => {
     fetchData()
   }, [currentDate])
+
+  // 상품별 색상 초기화
+  useEffect(() => {
+    if (products.length > 0) {
+      initializeProductColors()
+    }
+  }, [products])
 
   const fetchData = async () => {
     try {
@@ -163,20 +237,20 @@ export default function ScheduleView() {
   const guideScheduleData = useMemo(() => {
     if (!tours.length || !reservations.length) return []
 
-    const data: { [teamMemberId: string]: { team_member_name: string; position: string; dailyData: { [date: string]: { totalPeople: number; assignedPeople: number; tours: number; productColors: { [productId: string]: string } } }; totalPeople: number; totalAssignedPeople: number; totalTours: number } } = {}
+    const data: { [teamMemberId: string]: { team_member_name: string; position: string; dailyData: { [date: string]: { totalPeople: number; assignedPeople: number; tours: number; productColors: { [productId: string]: string }; role: string | null; guideInitials: string | null } }; totalPeople: number; totalAssignedPeople: number; totalTours: number } } = {}
     const teamMap = new Map(teamMembers.map(t => [t.email, t]))
     const productMap = new Map(products.map(p => [p.id, p]))
 
-    // 상품별 색상 정의
-    const productColors = [
-      'bg-blue-100 border-blue-300 text-blue-800',
-      'bg-green-100 border-green-300 text-green-800',
-      'bg-yellow-100 border-yellow-300 text-yellow-800',
-      'bg-purple-100 border-purple-300 text-purple-800',
-      'bg-pink-100 border-pink-300 text-pink-800',
-      'bg-indigo-100 border-indigo-300 text-indigo-800',
-      'bg-red-100 border-red-300 text-red-800',
-      'bg-orange-100 border-orange-300 text-orange-800'
+    // 상품별 색상 정의 (기본값 - 원색)
+    const defaultProductColors = [
+      'bg-blue-500 border-blue-600 text-white',
+      'bg-green-500 border-green-600 text-white',
+      'bg-yellow-500 border-yellow-600 text-black',
+      'bg-purple-500 border-purple-600 text-white',
+      'bg-pink-500 border-pink-600 text-white',
+      'bg-indigo-500 border-indigo-600 text-white',
+      'bg-red-500 border-red-600 text-white',
+      'bg-orange-500 border-orange-600 text-white'
     ]
 
     // 선택된 팀 멤버별로 데이터 생성
@@ -188,7 +262,7 @@ export default function ScheduleView() {
         tour.tour_guide_id === teamMemberId || tour.assistant_id === teamMemberId
       )
 
-      const dailyData: { [date: string]: { totalPeople: number; assignedPeople: number; tours: number; productColors: { [productId: string]: string } } } = {}
+      const dailyData: { [date: string]: { totalPeople: number; assignedPeople: number; tours: number; productColors: { [productId: string]: string }; role: string | null; guideInitials: string | null } } = {}
       let totalPeople = 0
       let totalAssignedPeople = 0
       let totalTours = 0
@@ -210,13 +284,31 @@ export default function ScheduleView() {
           return sum + assignedReservations.reduce((s, res) => s + (res.total_people || 0), 0)
         }, 0)
 
+        // 역할과 가이드 초성 정보 추가
+        const isGuide = dayTours.some(tour => tour.tour_guide_id === teamMemberId)
+        const isAssistant = dayTours.some(tour => tour.assistant_id === teamMemberId)
+        const role = isGuide ? 'guide' : isAssistant ? 'assistant' : null
+        
+        // 가이드 초성 추출 (어시스턴트인 경우)
+        let guideInitials = null
+        if (isAssistant) {
+          const guideTour = dayTours.find(tour => tour.assistant_id === teamMemberId)
+          if (guideTour && guideTour.tour_guide_id) {
+            const guide = teamMap.get(guideTour.tour_guide_id)
+            if (guide) {
+              guideInitials = guide.name_ko.split('').map((char: string) => char.charAt(0)).join('').substring(0, 2)
+            }
+          }
+        }
+
         // 상품별 색상 매핑
         const productColorsForDay: { [productId: string]: string } = {}
         dayTours.forEach((tour, index) => {
           const productId = tour.product_id
           if (!productColorsForDay[productId]) {
+            // 사용자가 설정한 색상이 있으면 사용, 없으면 기본 색상 사용
             const productIndex = selectedProducts.indexOf(productId)
-            productColorsForDay[productId] = productColors[productIndex % productColors.length]
+            productColorsForDay[productId] = productColors[productId] || defaultProductColors[productIndex % defaultProductColors.length]
           }
         })
 
@@ -224,7 +316,9 @@ export default function ScheduleView() {
           totalPeople: dayTotalPeople,
           assignedPeople: dayAssignedPeople,
           tours: dayTours.length,
-          productColors: productColorsForDay
+          productColors: productColorsForDay,
+          role: role,
+          guideInitials: guideInitials
         }
 
         totalPeople += dayTotalPeople
@@ -243,7 +337,7 @@ export default function ScheduleView() {
     })
 
     return data
-  }, [tours, reservations, products, teamMembers, selectedProducts, selectedTeamMembers, monthDays])
+  }, [tours, reservations, products, teamMembers, selectedProducts, selectedTeamMembers, monthDays, productColors])
 
   // 월 이동
   const goToPreviousMonth = () => {
@@ -328,19 +422,46 @@ export default function ScheduleView() {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md border p-6">
+    <div className="bg-white rounded-lg shadow-md border p-2">
       {/* 헤더 */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">스케줄 뷰</h2>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+      <div className="mb-4">
+        {/* 메인 헤더 - 모든 요소를 한 줄에 배치 */}
+        <div className="flex items-center justify-between gap-4 mb-4">
+          {/* 왼쪽: 제목과 선택 버튼들 */}
+          <div className="flex items-center gap-4 flex-1">
+            <h2 className="text-2xl font-bold text-gray-900 whitespace-nowrap">스케줄 뷰</h2>
+            
+            {/* 선택 버튼들 */}
+            <div className="flex gap-4">
+              {/* 상품 선택 버튼 */}
+              <button
+                onClick={() => setShowProductModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                <MapPin className="w-4 h-4" />
+                <span>상품 선택 ({selectedProducts.length}개)</span>
+              </button>
+
+              {/* 팀원 선택 버튼 */}
+              <button
+                onClick={() => setShowTeamModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+              >
+                <Users className="w-4 h-4" />
+                <span>팀원 선택 ({selectedTeamMembers.length}개)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 오른쪽: 월 이동 버튼들 */}
+          <div className="flex items-center space-x-4 flex-shrink-0">
             <button
               onClick={goToPreviousMonth}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h3 className="text-xl font-semibold text-gray-900">
+            <h3 className="text-xl font-semibold text-gray-900 whitespace-nowrap">
               {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
             </h3>
             <button
@@ -351,7 +472,7 @@ export default function ScheduleView() {
             </button>
             <button
               onClick={goToToday}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors whitespace-nowrap"
             >
               오늘
             </button>
@@ -359,47 +480,33 @@ export default function ScheduleView() {
         </div>
       </div>
 
-      {/* 선택 옵션 */}
-      <div className="mb-6 flex gap-4">
-        {/* 상품 선택 버튼 */}
-        <button
-          onClick={() => setShowProductModal(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-        >
-          <MapPin className="w-4 h-4" />
-          <span>상품 선택 ({selectedProducts.length}개)</span>
-        </button>
-
-        {/* 팀원 선택 버튼 */}
-        <button
-          onClick={() => setShowTeamModal(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-        >
-          <Users className="w-4 h-4" />
-          <span>팀원 선택 ({selectedTeamMembers.length}개)</span>
-        </button>
-      </div>
-
       {/* 상품별 스케줄 테이블 */}
-      <div className="mb-8">
+      <div className="mb-4">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <MapPin className="w-5 h-5 mr-2 text-blue-500" />
           상품별 투어 인원
         </h3>
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full" style={{tableLayout: 'fixed'}}>
             <thead className="bg-blue-50">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 w-48">
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
                   상품명
                 </th>
-                {monthDays.map(({ date, dayOfWeek }) => (
-                  <th key={date} className="px-2 py-3 text-center text-sm font-medium text-gray-700 min-w-16">
-                    <div>{date}일</div>
-                    <div className="text-xs text-gray-500">{dayOfWeek}</div>
+                {monthDays.map(({ date, dayOfWeek, dateString }) => (
+                  <th 
+                    key={date} 
+                    className={`px-1 py-2 text-center text-xs font-medium text-gray-700 min-w-12 ${
+                      isToday(dateString) 
+                        ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
+                        : ''
+                    }`}
+                  >
+                    <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}일</div>
+                    <div className={`text-xs ${isToday(dateString) ? 'text-red-600' : 'text-gray-500'}`}>{dayOfWeek}</div>
                   </th>
                 ))}
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 w-24">
+                <th className="px-2 py-2 text-center text-xs font-medium text-gray-700 w-16">
                   합계
                 </th>
               </tr>
@@ -407,31 +514,33 @@ export default function ScheduleView() {
             <tbody className="divide-y divide-gray-200">
               {/* 각 상품별 데이터 */}
               {Object.entries(productScheduleData).map(([productId, product], index) => {
-                const productColors = [
-                  'bg-blue-100 border-blue-300 text-blue-800',
-                  'bg-green-100 border-green-300 text-green-800',
-                  'bg-yellow-100 border-yellow-300 text-yellow-800',
-                  'bg-purple-100 border-purple-300 text-purple-800',
-                  'bg-pink-100 border-pink-300 text-pink-800',
-                  'bg-indigo-100 border-indigo-300 text-indigo-800',
-                  'bg-red-100 border-red-300 text-red-800',
-                  'bg-orange-100 border-orange-300 text-orange-800'
-                ]
-                const colorClass = productColors[index % productColors.length]
+                const colorClass = productColors[productId] || colorPalette[index % colorPalette.length].class
                 
                 return (
-                  <tr key={productId} className={`hover:bg-gray-50 ${colorClass}`}>
-                    <td className="px-4 py-3 text-sm font-medium">
+                  <tr key={productId} className="hover:bg-gray-50">
+                    <td className={`px-2 py-2 text-xs font-medium ${colorClass}`} style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
                       {product.product_name}
                     </td>
                     {monthDays.map(({ dateString }) => {
                       const dayData = product.dailyData[dateString]
                       return (
-                        <td key={dateString} className="px-2 py-3 text-center text-sm">
+                        <td 
+                          key={dateString} 
+                          className={`px-1 py-2 text-center text-xs bg-white ${
+                            isToday(dateString) 
+                              ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
+                              : ''
+                          }`}
+                        >
                           {dayData ? (
-                            <div>
-                              <div className="font-medium">{dayData.totalPeople}</div>
-                              <div className="text-xs text-gray-500">{dayData.tours}투어</div>
+                            <div className={`font-medium ${
+                              dayData.totalPeople === 0 
+                                ? 'text-gray-300' 
+                                : dayData.totalPeople < 4 
+                                  ? 'text-blue-600' 
+                                  : 'text-red-600'
+                            } ${isToday(dateString) ? 'text-red-700' : ''}`}>
+                              {dayData.totalPeople}
                             </div>
                           ) : (
                             <div className="text-gray-300">-</div>
@@ -439,9 +548,14 @@ export default function ScheduleView() {
                         </td>
                       )
                     })}
-                    <td className="px-4 py-3 text-center text-sm font-medium">
-                      <div>{product.totalPeople}</div>
-                      <div className="text-xs text-gray-500">{product.totalTours}투어</div>
+                    <td className="px-2 py-2 text-center text-xs font-medium bg-white">
+                      <div className={`font-medium ${
+                        product.totalPeople === 0 
+                          ? 'text-gray-300' 
+                          : product.totalPeople < 4 
+                            ? 'text-blue-600' 
+                            : 'text-red-600'
+                      }`}>{product.totalPeople}</div>
                     </td>
                   </tr>
                 )
@@ -449,21 +563,32 @@ export default function ScheduleView() {
 
               {/* 상품별 총계 행 - 가장 아래로 이동 */}
               <tr className="bg-blue-100 font-semibold">
-                <td className="px-4 py-3 text-sm text-gray-900">
+                <td className="px-2 py-2 text-xs text-gray-900" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
                   const dayTotal = productTotals[dateString]
                   return (
-                    <td key={dateString} className="px-2 py-3 text-center text-sm">
-                      <div className="font-medium">{dayTotal.totalPeople}</div>
-                      <div className="text-xs text-gray-500">{dayTotal.tours}투어</div>
+                    <td 
+                      key={dateString} 
+                      className={`px-1 py-2 text-center text-xs ${
+                        isToday(dateString) 
+                          ? 'border-2 border-red-500 bg-red-50' 
+                          : ''
+                      }`}
+                    >
+                      <div className={`font-medium ${
+                        dayTotal.totalPeople === 0 
+                          ? 'text-gray-300' 
+                          : dayTotal.totalPeople < 4 
+                            ? 'text-blue-600' 
+                            : 'text-red-600'
+                      } ${isToday(dateString) ? 'text-red-700' : ''}`}>{dayTotal.totalPeople}</div>
                     </td>
                   )
                 })}
-                <td className="px-4 py-3 text-center text-sm font-medium">
+                <td className="px-2 py-2 text-center text-xs font-medium">
                   <div>{Object.values(productScheduleData).reduce((sum, product) => sum + product.totalPeople, 0)}</div>
-                  <div className="text-xs text-gray-500">{Object.values(productScheduleData).reduce((sum, product) => sum + product.totalTours, 0)}투어</div>
                 </td>
               </tr>
             </tbody>
@@ -473,24 +598,26 @@ export default function ScheduleView() {
 
       {/* 가이드별 스케줄 테이블 */}
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Users className="w-5 h-5 mr-2 text-green-500" />
-          가이드별 투어 인원
-        </h3>
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-green-50">
+          <table className="w-full" style={{tableLayout: 'fixed'}}>
+            <thead className="bg-green-50 hidden">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 w-48">
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
                   가이드명
                 </th>
-                {monthDays.map(({ date, dayOfWeek }) => (
-                  <th key={date} className="px-2 py-3 text-center text-sm font-medium text-gray-700 min-w-16">
-                    <div>{date}일</div>
-                    <div className="text-xs text-gray-500">{dayOfWeek}</div>
+                {monthDays.map(({ date, dayOfWeek, dateString }) => (
+                  <th 
+                    key={date} 
+                    className={`px-1 py-2 text-center text-xs font-medium text-gray-700 min-w-12 ${
+                      isToday(dateString) 
+                        ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
+                        : ''
+                    }`}
+                  >
+                    <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}</div>
                   </th>
                 ))}
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 w-24">
+                <th className="px-2 py-2 text-center text-xs font-medium text-gray-700 w-16">
                   합계
                 </th>
               </tr>
@@ -498,20 +625,31 @@ export default function ScheduleView() {
             <tbody className="divide-y divide-gray-200">
               {/* 가이드별 총계 행 */}
               <tr className="bg-green-100 font-semibold">
-                <td className="px-4 py-3 text-sm text-gray-900">
+                <td className="px-2 py-2 text-xs text-gray-900" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
                   const dayTotal = guideTotals[dateString]
                   return (
-                    <td key={dateString} className="px-2 py-3 text-center text-sm">
-                      <div className="font-medium">{dayTotal.assignedPeople}</div>
-                      <div className="text-xs text-gray-500">({dayTotal.totalPeople})</div>
-                      <div className="text-xs text-gray-400">{dayTotal.tours}투어</div>
+                    <td 
+                      key={dateString} 
+                      className={`px-1 py-2 text-center text-xs ${
+                        isToday(dateString) 
+                          ? 'border-2 border-red-500 bg-red-50' 
+                          : ''
+                      }`}
+                    >
+                      <div className={`font-medium ${
+                        dayTotal.assignedPeople === 0 
+                          ? 'text-gray-300' 
+                          : dayTotal.assignedPeople < 4 
+                            ? 'text-blue-600' 
+                            : 'text-red-600'
+                      } ${isToday(dateString) ? 'text-red-700' : ''}`}>{dayTotal.assignedPeople}</div>
                     </td>
                   )
                 })}
-                <td className="px-4 py-3 text-center text-sm font-medium">
+                <td className="px-2 py-2 text-center text-xs font-medium">
                   <div>{Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalAssignedPeople, 0)}</div>
                   <div className="text-xs text-gray-500">({Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalPeople, 0)})</div>
                 </td>
@@ -520,34 +658,62 @@ export default function ScheduleView() {
               {/* 각 가이드별 데이터 */}
               {Object.entries(guideScheduleData).map(([teamMemberId, guide]) => (
                 <tr key={teamMemberId} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-2 py-2 text-xs" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
                     <div className="font-medium text-gray-900">{guide.team_member_name}</div>
-                    <div className="text-xs text-gray-500">{guide.position}</div>
                   </td>
                   {monthDays.map(({ dateString }) => {
                     const dayData = guide.dailyData[dateString]
                     return (
-                      <td key={dateString} className="px-2 py-3 text-center text-sm">
+                      <td 
+                        key={dateString} 
+                        className={`px-1 py-2 text-center text-xs bg-white relative ${
+                          isToday(dateString) 
+                            ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
+                            : ''
+                        }`}
+                      >
                         {dayData ? (
-                          <div>
-                            <div className="font-medium">{dayData.assignedPeople}</div>
-                            <div className="text-xs text-gray-500">({dayData.totalPeople})</div>
-                            <div className="text-xs text-gray-400">{dayData.tours}투어</div>
-                            {/* 상품별 색상 표시 */}
+                          <div className="relative">
+                            {/* 상품별 배경색 표시 (텍스트 아래) */}
                             {Object.keys(dayData.productColors).length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1 justify-center">
-                                {Object.entries(dayData.productColors).map(([productId, colorClass]) => {
-                                  const product = products.find(p => p.id === productId)
-                                  return (
-                                    <span
-                                      key={productId}
-                                      className={`px-1 py-0.5 text-xs rounded ${colorClass}`}
-                                      title={product?.name}
-                                    >
-                                      {product?.name?.substring(0, 3)}
-                                    </span>
-                                  )
-                                })}
+                              <div className="absolute inset-0 pointer-events-none rounded" 
+                                   style={{
+                                     background: Object.values(dayData.productColors).length === 1 
+                                       ? `linear-gradient(135deg, ${getColorFromClass(Object.values(dayData.productColors)[0])} 0%, ${getColorFromClass(Object.values(dayData.productColors)[0])} 100%)`
+                                       : `linear-gradient(135deg, ${Object.values(dayData.productColors).map(color => getColorFromClass(color)).join(', ')})`
+                                   }}>
+                              </div>
+                            )}
+                            
+                            {/* 가이드로 배정된 경우 - 인원 표시 */}
+                            {dayData.role === 'guide' && (
+                              <div className={`font-bold text-white px-2 py-1 rounded relative z-10 ${
+                                dayData.assignedPeople === 0 
+                                  ? 'bg-gray-400' 
+                                  : 'bg-transparent'
+                              } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
+                                   style={{
+                                     backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                       ? getColorFromClass(Object.values(dayData.productColors)[0])
+                                       : undefined
+                                   }}>
+                                {dayData.assignedPeople}
+                              </div>
+                            )}
+                            
+                            {/* 어시스턴트로 배정된 경우 - 가이드 이름 초성 표시 */}
+                            {dayData.role === 'assistant' && (
+                              <div className={`font-bold text-white px-2 py-1 rounded relative z-10 ${
+                                dayData.assignedPeople === 0 
+                                  ? 'bg-gray-400' 
+                                  : 'bg-transparent'
+                              } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
+                                   style={{
+                                     backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                       ? getColorFromClass(Object.values(dayData.productColors)[0])
+                                       : undefined
+                                   }}>
+                                {dayData.guideInitials || 'A'}
                               </div>
                             )}
                           </div>
@@ -557,11 +723,15 @@ export default function ScheduleView() {
                       </td>
                     )
                   })}
-                  <td className="px-4 py-3 text-center text-sm font-medium">
-                    <div>{guide.totalAssignedPeople}</div>
-                    <div className="text-xs text-gray-500">({guide.totalPeople})</div>
-                    <div className="text-xs text-gray-400">{guide.totalTours}투어</div>
-                  </td>
+                    <td className="px-2 py-2 text-center text-xs font-medium">
+                      <div className={`font-medium ${
+                        guide.totalAssignedPeople === 0 
+                          ? 'text-gray-300' 
+                          : guide.totalAssignedPeople < 4 
+                            ? 'text-blue-600' 
+                            : 'text-red-600'
+                      }`}>{guide.totalAssignedPeople}</div>
+                    </td>
                 </tr>
               ))}
             </tbody>
@@ -590,19 +760,47 @@ export default function ScheduleView() {
               <p className="text-sm text-gray-600 mb-3">
                 표시할 상품을 선택하세요. ({selectedProducts.length}개 선택됨)
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="space-y-3">
                 {products.map(product => (
-                  <button
-                    key={product.id}
-                    onClick={() => toggleProduct(product.id)}
-                    className={`px-3 py-2 rounded-lg text-sm transition-colors ${
-                      selectedProducts.includes(product.id)
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    {product.name}
-                  </button>
+                  <div key={product.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => toggleProduct(product.id)}
+                        className={`px-3 py-2 rounded-lg text-sm transition-colors ${
+                          selectedProducts.includes(product.id)
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        {product.name}
+                      </button>
+                      {selectedProducts.includes(product.id) && (
+                        <div className={`px-2 py-1 rounded text-xs ${productColors[product.id] || colorPalette[0].class}`}>
+                          미리보기
+                        </div>
+                      )}
+                    </div>
+                    
+                    {selectedProducts.includes(product.id) && (
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm text-gray-600">색상:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {colorPalette.map((color, index) => (
+                            <button
+                              key={index}
+                              onClick={() => changeProductColor(product.id, color.class)}
+                              className={`w-6 h-6 rounded border-2 ${
+                                productColors[product.id] === color.class
+                                  ? 'border-gray-800'
+                                  : 'border-gray-300'
+                              } ${color.class}`}
+                              title={color.name}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

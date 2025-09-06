@@ -2,15 +2,23 @@
 -- 마이그레이션 전에 필요한 상품 옵션들을 생성
 
 -- 1. MDGCSUNRISE 상품이 존재하는지 확인하고 없으면 생성
-INSERT INTO products (id, name, description)
+INSERT INTO products (id, name, name_ko, name_en, description, category, base_price)
 VALUES (
     'MDGCSUNRISE',
     '도깨비 투어',
-    'Lower Antelope Canyon과 Antelope X Canyon을 포함한 도깨비 투어'
+    '도깨비 투어',
+    'Goblin Tour',
+    'Lower Antelope Canyon과 Antelope X Canyon을 포함한 도깨비 투어',
+    'tour',
+    0.00
 )
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
-    description = EXCLUDED.description;
+    name_ko = EXCLUDED.name_ko,
+    name_en = EXCLUDED.name_en,
+    description = EXCLUDED.description,
+    category = EXCLUDED.category,
+    base_price = EXCLUDED.base_price;
 
 -- 2. Lower Antelope Canyon 필수 옵션 생성
 INSERT INTO product_options (id, product_id, name, description, is_required, is_multiple, created_at, updated_at)

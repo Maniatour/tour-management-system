@@ -147,6 +147,7 @@
     },
     "status": {
       "pending": "Pending",
+      "Pending": "Pending",
       "confirmed": "Confirmed",
       "Confirmed": "Confirmed",
       "completed": "Completed",
@@ -154,7 +155,9 @@
       "Canceled": "Cancelled",
       "recruiting": "Recruiting",
       "Recruiting": "Recruiting",
-      "Payment Requested": "Payment Requested"
+      "Payment Requested": "Payment Requested",
+      "deleted": "Deleted",
+      "Deleted": "Deleted"
     },
     "form": {
       "title": "Add New Reservation",

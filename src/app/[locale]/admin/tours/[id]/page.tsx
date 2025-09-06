@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Plane, Map, MapPin, Clock, User, Users } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
+import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type Product = Database['public']['Tables']['products']['Row']
@@ -35,15 +36,12 @@ export default function TourDetailPage() {
   const [tourNote, setTourNote] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
+  const [showVehicleAssignment, setShowVehicleAssignment] = useState(false)
+  const [assignedVehicle, setAssignedVehicle] = useState<Database['public']['Tables']['vehicles']['Row'] | null>(null)
+  const [vehicles, setVehicles] = useState<Database['public']['Tables']['vehicles']['Row'][]>([])
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
 
-  useEffect(() => {
-    const tourId = params.id as string
-    if (tourId) {
-      fetchTourData(tourId)
-    }
-  }, [params.id])
-
-  const fetchTourData = async (tourId: string) => {
+  const fetchTourData = useCallback(async (tourId: string) => {
     try {
       setLoading(true)
       
@@ -70,6 +68,9 @@ export default function TourDetailPage() {
         if (tourData.assistant_id) {
           setSelectedAssistant(tourData.assistant_id)
         }
+        if (tourData.team_type) {
+          setTeamType(tourData.team_type as '1guide' | '2guide' | 'guide+driver')
+        }
         if (tourData.tour_note) {
           setTourNote(tourData.tour_note)
         }
@@ -82,6 +83,27 @@ export default function TourDetailPage() {
             .eq('id', tourData.product_id)
             .single()
           setProduct(productData)
+
+          // 특정 투어가 아닌 경우 1가이드로 강제 설정
+          if (productData && !['MDGC1D', 'MDGCSUNRISE'].includes(productData.id)) {
+            if (tourData.team_type && tourData.team_type !== '1guide') {
+              // 데이터베이스에서 1가이드로 업데이트
+              const { error } = await supabase
+                .from('tours')
+                .update({ 
+                  team_type: '1guide',
+                  assistant_id: null 
+                })
+                .eq('id', tourId)
+              
+              if (error) {
+                console.error('Error updating team type to 1guide:', error)
+              } else {
+                console.log('Team type updated to 1guide for non-special tour')
+              }
+            }
+            setTeamType('1guide')
+          }
 
           // 같은 상품 ID의 예약들을 가져오기
           console.log('Fetching reservations for:', {
@@ -179,11 +201,135 @@ export default function TourDetailPage() {
           console.log('Pending reservation statuses:', pendingReservations.map(r => ({ id: r.id, status: r.status })))
           setPendingReservations(pendingReservations)
         }
+
+        // 배정된 차량 정보 가져오기
+        if (tourData.tour_car_id) {
+          const { data: vehicleData } = await supabase
+            .from('vehicles')
+            .select('*')
+            .eq('id', tourData.tour_car_id)
+            .single()
+
+          if (vehicleData) {
+            setAssignedVehicle(vehicleData)
+            setSelectedVehicleId(tourData.tour_car_id)
+          }
+        }
+
+        // 차량 목록은 tour가 설정된 후 useEffect에서 가져옴
       }
     } catch (error) {
       console.error('Error fetching tour data:', error)
     } finally {
       setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const tourId = params.id as string
+    if (tourId) {
+      fetchTourData(tourId)
+    }
+  }, [params.id, fetchTourData])
+
+  const fetchVehicles = useCallback(async () => {
+    try {
+      if (!tour) return
+
+      // 같은 날짜의 다른 투어들에서 이미 배정된 차량 ID들을 가져오기
+      const { data: assignedVehicles, error: assignedError } = await supabase
+        .from('tours')
+        .select('tour_car_id')
+        .eq('tour_date', tour.tour_date)
+        .not('id', 'eq', tour.id)
+        .not('tour_car_id', 'is', null)
+
+      if (assignedError) throw assignedError
+
+      const assignedVehicleIds = assignedVehicles?.map(t => t.tour_car_id).filter(Boolean) || []
+
+      // 사용 가능한 차량들만 가져오기
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select('*')
+        .or(`and(vehicle_category.eq.company,vehicle_status.eq.운행 가능),and(vehicle_category.eq.rental,rental_status.neq.returned)`)
+        .not('id', 'in', `(${assignedVehicleIds.join(',')})`)
+        .order('vehicle_category', { ascending: true })
+        .order('vehicle_number', { ascending: true })
+
+      if (error) throw error
+      
+      // 렌터카의 경우 렌탈 기간에 투어 날짜가 포함되는지 확인
+      const availableVehicles = (data || []).filter(vehicle => {
+        if (vehicle.vehicle_category === 'company' || !vehicle.vehicle_category) {
+          return true // 회사차는 항상 사용 가능
+        }
+        
+        if (vehicle.vehicle_category === 'rental') {
+          // 렌터카의 경우 렌탈 기간 확인
+          if (!vehicle.rental_start_date || !vehicle.rental_end_date) {
+            return false // 렌탈 기간이 설정되지 않은 렌터카는 제외
+          }
+          
+          const tourDate = new Date(tour.tour_date)
+          const rentalStartDate = new Date(vehicle.rental_start_date)
+          const rentalEndDate = new Date(vehicle.rental_end_date)
+          
+          // 투어 날짜가 렌탈 기간에 포함되는지 확인
+          return tourDate >= rentalStartDate && tourDate <= rentalEndDate
+        }
+        
+        return true
+      })
+      
+      setVehicles(availableVehicles)
+    } catch (error) {
+      console.error('차량 목록을 불러오는 중 오류가 발생했습니다:', error)
+    }
+  }, [tour])
+
+  // tour가 설정되면 사용 가능한 차량 목록 가져오기
+  useEffect(() => {
+    if (tour) {
+      fetchVehicles()
+    }
+  }, [tour, fetchVehicles])
+
+  const handleVehicleAssignmentComplete = () => {
+    // 차량 배정 완료 후 데이터 새로고침
+    if (tour) {
+      fetchTourData(tour.id)
+    }
+  }
+
+  const handleVehicleSelect = async (vehicleId: string) => {
+    if (!tour) return
+
+    try {
+      setSelectedVehicleId(vehicleId)
+      
+      // 투어에 차량 배정 업데이트
+      const { error } = await supabase
+        .from('tours')
+        .update({
+          tour_car_id: vehicleId || null
+        })
+        .eq('id', tour.id)
+
+      if (error) throw error
+
+      // 배정된 차량 정보 업데이트
+      if (vehicleId) {
+        const selectedVehicle = vehicles.find(v => v.id === vehicleId)
+        setAssignedVehicle(selectedVehicle || null)
+      } else {
+        setAssignedVehicle(null)
+      }
+
+      console.log('차량 배정이 업데이트되었습니다:', vehicleId)
+    } catch (error) {
+      console.error('차량 배정 중 오류가 발생했습니다:', error)
+      alert('차량 배정 중 오류가 발생했습니다.')
     }
   }
 
@@ -417,10 +563,38 @@ export default function TourDetailPage() {
     }
   }
 
-  const handleTeamTypeChange = (type: '1guide' | '2guide' | 'guide+driver') => {
+  const handleTeamTypeChange = async (type: '1guide' | '2guide' | 'guide+driver') => {
+    // 특정 투어가 아닌 경우 1가이드로 강제 설정
+    if (product && !['MDGC1D', 'MDGCSUNRISE'].includes(product.id) && type !== '1guide') {
+      console.log('This tour only supports 1guide team type')
+      return
+    }
+    
     setTeamType(type)
     setSelectedGuide('')
     setSelectedAssistant('')
+    
+    if (tour) {
+      try {
+        const updateData: { team_type: string; assistant_id?: string | null } = { team_type: type }
+        if (type === '1guide') {
+          updateData.assistant_id = null
+        }
+        
+        const { error } = await supabase
+          .from('tours')
+          .update(updateData)
+          .eq('id', tour.id)
+
+        if (error) {
+          console.error('Error updating team type:', error)
+        } else {
+          console.log('Team type updated successfully:', type)
+        }
+      } catch (error) {
+        console.error('Error updating team type:', error)
+      }
+    }
   }
 
   const handleGuideSelect = async (guideEmail: string) => {
@@ -754,28 +928,33 @@ export default function TourDetailPage() {
                       <User size={12} />
                       <span>1가이드</span>
                     </button>
-                    <button 
-                      onClick={() => handleTeamTypeChange('2guide')}
-                      className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
-                        teamType === '2guide' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      <Users size={12} />
-                      <span>2가이드</span>
-                    </button>
-                    <button 
-                      onClick={() => handleTeamTypeChange('guide+driver')}
-                      className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
-                        teamType === 'guide+driver' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      <Car size={12} />
-                      <span>가이드+드라이버</span>
-                    </button>
+                    {/* 2가이드와 가이드+드라이버는 특정 투어에서만 사용 가능 */}
+                    {product && ['MDGC1D', 'MDGCSUNRISE'].includes(product.id) && (
+                      <>
+                        <button 
+                          onClick={() => handleTeamTypeChange('2guide')}
+                          className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
+                            teamType === '2guide' 
+                              ? 'bg-blue-100 text-blue-800' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          <Users size={12} />
+                          <span>2가이드</span>
+                        </button>
+                        <button 
+                          onClick={() => handleTeamTypeChange('guide+driver')}
+                          className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
+                            teamType === 'guide+driver' 
+                              ? 'bg-blue-100 text-blue-800' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          <Car size={12} />
+                          <span>가이드+드라이버</span>
+                        </button>
+                      </>
+                    )}
             </div>
 
                   {/* 가이드 선택 */}
@@ -838,6 +1017,46 @@ export default function TourDetailPage() {
                 </div>
         </div>
       </div>
+
+            {/* 차량 배정 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <h2 className="text-md font-semibold text-gray-900 mb-3">차량 배정</h2>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600 text-sm">차량 선택:</span>
+                    <select
+                      value={selectedVehicleId}
+                      onChange={(e) => handleVehicleSelect(e.target.value)}
+                      className="text-xs border rounded px-2 py-1 min-w-48"
+                    >
+                      <option value="">차량을 선택하세요</option>
+                      {vehicles.map((vehicle) => (
+                        <option key={vehicle.id} value={vehicle.id}>
+                          {vehicle.vehicle_category === 'company' 
+                            ? `${vehicle.vehicle_number} - ${vehicle.vehicle_type} (${vehicle.capacity}인승)`
+                            : `${vehicle.rental_company} - ${vehicle.vehicle_type} (${vehicle.capacity}인승) - ${vehicle.rental_start_date} ~ ${vehicle.rental_end_date}`
+                          }
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 현재 배정된 차량 정보 표시 */}
+                  {assignedVehicle && (
+                    <div className="p-2 bg-blue-50 rounded text-xs">
+                      <div className="font-medium text-blue-700 mb-1">현재 배정된 차량:</div>
+                      <div className="text-blue-600">
+                        {assignedVehicle.vehicle_category === 'company' 
+                          ? `${assignedVehicle.vehicle_number} - ${assignedVehicle.vehicle_type} (${assignedVehicle.capacity}인승)`
+                          : `${assignedVehicle.rental_company} - ${assignedVehicle.vehicle_type} (${assignedVehicle.capacity}인승)`
+                        }
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
 
             {/* 배정 관리 */}
             <div className="bg-white rounded-lg shadow-sm border">
@@ -1253,6 +1472,16 @@ export default function TourDetailPage() {
             console.log('Reservation deleted')
             handleCloseEditModal()
           }}
+        />
+      )}
+
+      {/* 차량 배정 모달 */}
+      {showVehicleAssignment && tour && (
+        <VehicleAssignmentModal
+          tourId={tour.id}
+          tourDate={tour.tour_date || ''}
+          onClose={() => setShowVehicleAssignment(false)}
+          onAssignmentComplete={handleVehicleAssignmentComplete}
         />
       )}
     </div>
