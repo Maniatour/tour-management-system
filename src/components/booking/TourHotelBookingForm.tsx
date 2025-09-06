@@ -500,7 +500,7 @@ export default function TourHotelBookingForm({
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
                   {filteredCities.map((city, index) => (
                     <div
-                      key={index}
+                      key={`city-${city}-${index}`}
                       className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
                       onClick={() => handleCitySelect(city)}
                     >
@@ -539,7 +539,7 @@ export default function TourHotelBookingForm({
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
                   {filteredHotels.map((hotel, index) => (
                     <div
-                      key={index}
+                      key={`hotel-${hotel}-${index}`}
                       className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
                       onClick={() => handleHotelSelect(hotel)}
                     >
@@ -643,7 +643,7 @@ export default function TourHotelBookingForm({
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
                   {filteredWebsites.map((website, index) => (
                     <div
-                      key={index}
+                      key={`website-${website}-${index}`}
                       className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
                       onClick={() => handleWebsiteSelect(website)}
                     >
