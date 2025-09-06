@@ -222,6 +222,7 @@ export default function TourHotelBookingForm({
         </h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 첫 번째 줄: 투어 선택, RN# */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -250,6 +251,23 @@ export default function TourHotelBookingForm({
                 투어가 아직 생성되지 않은 경우 비워두고 저장할 수 있습니다.
               </p>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                RN#
+              </label>
+              <input
+                type="text"
+                name="rn_number"
+                value={formData.rn_number}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* 두 번째 줄부터: 나머지 필드들 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
 
             <div>
@@ -521,19 +539,6 @@ export default function TourHotelBookingForm({
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="https://"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                RN#
-              </label>
-              <input
-                type="text"
-                name="rn_number"
-                value={formData.rn_number}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
