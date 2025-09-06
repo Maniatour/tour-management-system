@@ -125,13 +125,18 @@ export default function TourHotelBookingForm({
     setLoading(true);
 
     try {
+      const bookingData = {
+        ...formData,
+        tour_id: formData.tour_id || null, // 빈 문자열을 null로 변환
+      };
+
       const { error } = await supabase
         .from('tour_hotel_bookings')
-        .upsert(formData);
+        .upsert(bookingData);
 
       if (error) throw error;
 
-      onSave(formData);
+      onSave(bookingData);
     } catch (error) {
       console.error('투어 호텔 부킹 저장 오류:', error);
       alert('저장 중 오류가 발생했습니다.');
@@ -222,16 +227,15 @@ export default function TourHotelBookingForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                투어 선택 *
+                투어 선택 (선택사항)
               </label>
               <select
                 name="tour_id"
                 value={formData.tour_id}
                 onChange={handleChange}
-                required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">투어를 선택하세요</option>
+                <option value="">투어를 선택하세요 (선택사항)</option>
                 {tours.length > 0 ? (
                   tours.map(tour => (
                     <option key={tour.id} value={tour.id}>
@@ -244,6 +248,9 @@ export default function TourHotelBookingForm({
                   </option>
                 )}
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                투어가 아직 생성되지 않은 경우 비워두고 저장할 수 있습니다.
+              </p>
             </div>
 
             <div>

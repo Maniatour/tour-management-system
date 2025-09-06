@@ -121,13 +121,18 @@ export default function TicketBookingForm({
     setLoading(true);
 
     try {
+      const bookingData = {
+        ...formData,
+        tour_id: formData.tour_id || null, // 빈 문자열을 null로 변환
+      };
+
       const { error } = await supabase
         .from('ticket_bookings')
-        .upsert(formData);
+        .upsert(bookingData);
 
       if (error) throw error;
 
-      onSave(formData);
+      onSave(bookingData);
     } catch (error) {
       console.error('입장권 부킹 저장 오류:', error);
       alert('저장 중 오류가 발생했습니다.');
@@ -452,6 +457,9 @@ export default function TicketBookingForm({
                   </option>
                 )}
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                투어가 아직 생성되지 않은 경우 비워두고 저장할 수 있습니다.
+              </p>
             </div>
 
             <div>

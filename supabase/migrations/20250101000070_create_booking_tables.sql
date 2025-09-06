@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS ticket_bookings (
     income DECIMAL(10,2) DEFAULT 0.00, -- 수입
     payment_method VARCHAR(100), -- 결제 방법
     rn_number VARCHAR(255), -- RN#
-    tour_id TEXT REFERENCES tours(id), -- 투어 ID
+    tour_id TEXT REFERENCES tours(id) ON DELETE SET NULL, -- 투어 ID (nullable)
     note TEXT, -- 메모
     status VARCHAR(50) DEFAULT 'pending', -- 상태 (pending, confirmed, cancelled, completed)
     season VARCHAR(100), -- 시즌
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS ticket_bookings (
 -- 투어 호텔 부킹 테이블
 CREATE TABLE IF NOT EXISTS tour_hotel_bookings (
     id TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
-    tour_id TEXT REFERENCES tours(id), -- 투어 ID
+    tour_id TEXT REFERENCES tours(id) ON DELETE SET NULL, -- 투어 ID (nullable)
     event_date DATE NOT NULL, -- 이벤트 날짜
     submit_on TIMESTAMP WITH TIME ZONE DEFAULT NOW(), -- 제출일시
     check_in_date DATE NOT NULL, -- 체크인 날짜
