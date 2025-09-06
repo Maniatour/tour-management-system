@@ -8,7 +8,6 @@ import BookingHistory from './BookingHistory';
 interface TourHotelBooking {
   id: string;
   tour_id: string;
-  event_date: string;
   submit_on: string;
   check_in_date: string;
   check_out_date: string;

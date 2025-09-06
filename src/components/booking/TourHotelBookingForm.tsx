@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase';
 interface TourHotelBooking {
   id?: string;
   tour_id: string;
-  event_date: string;
   check_in_date: string;
   check_out_date: string;
   reservation_name: string;
@@ -38,7 +37,6 @@ export default function TourHotelBookingForm({
 }: TourHotelBookingFormProps) {
   const [formData, setFormData] = useState<TourHotelBooking>({
     tour_id: tourId || '',
-    event_date: '',
     check_in_date: '',
     check_out_date: '',
     reservation_name: '',
@@ -189,8 +187,8 @@ export default function TourHotelBookingForm({
     setTimeout(() => setShowCitySuggestions(false), 200);
   };
 
-  const handleDateChange = (field: string, direction: 'up' | 'down') => {
-    const currentDate = new Date(formData[field as keyof TourHotelBooking] as string);
+  const handleDateChange = (field: 'check_in_date' | 'check_out_date', direction: 'up' | 'down') => {
+    const currentDate = new Date(formData[field] as string);
     if (isNaN(currentDate.getTime())) return;
 
     const newDate = new Date(currentDate);
@@ -253,43 +251,6 @@ export default function TourHotelBookingForm({
               </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                이벤트 날짜 *
-              </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  name="event_date"
-                  value={formData.event_date}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 pr-16 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <div className="absolute right-1 top-1/2 transform -translate-y-1/2 flex flex-col">
-                  <button
-                    type="button"
-                    onClick={() => handleDateChange('event_date', 'up')}
-                    className="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800"
-                    title="다음 날"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDateChange('event_date', 'down')}
-                    className="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800"
-                    title="이전 날"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
