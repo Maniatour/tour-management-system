@@ -619,7 +619,7 @@ export default function TourHotelBookingForm({
                 웹사이트
               </label>
               <input
-                type="url"
+                type="text"
                 name="website"
                 value={formData.website}
                 onChange={handleChange}
@@ -634,7 +634,7 @@ export default function TourHotelBookingForm({
                   }
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="https://"
+                placeholder="웹사이트 주소 또는 이름을 입력하세요"
                 autoComplete="off"
               />
               {showWebsiteSuggestions && (
