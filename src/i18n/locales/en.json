@@ -664,5 +664,120 @@
     "searchPlaceholder": "Search...",
     "auditLogs": "Audit Logs",
     "records": "records"
+  },
+  "booking": {
+    "title": "Booking Management",
+    "subtitle": "Manage ticket and hotel bookings for tours and track change history",
+    "tickets": {
+      "title": "Ticket Booking Management",
+      "addBooking": "Add New Booking",
+      "editBooking": "Edit Booking",
+      "searchPlaceholder": "Search by category, company, submitter, RN#...",
+      "columns": {
+        "category": "Category",
+        "submittedBy": "Submitted By",
+        "checkInDate": "Check-in Date",
+        "time": "Time",
+        "company": "Company",
+        "quantity": "Quantity",
+        "expense": "Expense",
+        "income": "Income",
+        "status": "Status",
+        "tour": "Tour",
+        "actions": "Actions"
+      },
+      "form": {
+        "title": "New Ticket Booking",
+        "editTitle": "Edit Ticket Booking",
+        "category": "Category",
+        "submittedBy": "Submitted By",
+        "checkInDate": "Check-in Date",
+        "time": "Time",
+        "company": "Company",
+        "quantity": "Quantity",
+        "expense": "Expense (USD)",
+        "income": "Income (USD)",
+        "paymentMethod": "Payment Method",
+        "rnNumber": "RN#",
+        "tourSelection": "Tour Selection",
+        "note": "Note",
+        "season": "Season"
+      },
+      "status": {
+        "tentative": "Tentative",
+        "confirmed": "Confirmed",
+        "paid": "Paid",
+        "cancelled": "Cancelled"
+      }
+    },
+    "hotels": {
+      "title": "Tour Hotel Booking Management",
+      "addBooking": "Add New Booking",
+      "editBooking": "Edit Booking",
+      "searchPlaceholder": "Search by hotel, city, reservation name, RN#...",
+      "columns": {
+        "hotel": "Hotel/City",
+        "reservationName": "Reservation Name",
+        "checkInOut": "Check-in/Out",
+        "roomInfo": "Room Info",
+        "pricing": "Pricing",
+        "paymentMethod": "Payment Method",
+        "status": "Status",
+        "tour": "Tour",
+        "actions": "Actions"
+      },
+      "form": {
+        "title": "New Tour Hotel Booking",
+        "editTitle": "Edit Tour Hotel Booking",
+        "tourSelection": "Tour Selection",
+        "eventDate": "Event Date",
+        "checkInDate": "Check-in Date",
+        "checkOutDate": "Check-out Date",
+        "reservationName": "Reservation Name",
+        "cc": "CC (Credit Card Info)",
+        "rooms": "Rooms",
+        "city": "City",
+        "hotel": "Hotel",
+        "roomType": "Room Type",
+        "unitPrice": "Unit Price (USD)",
+        "totalPrice": "Total Price (USD)",
+        "paymentMethod": "Payment Method",
+        "website": "Website",
+        "rnNumber": "RN#"
+      },
+      "status": {
+        "pending": "Pending",
+        "confirmed": "Confirmed",
+        "cancelled": "Cancelled",
+        "completed": "Completed"
+      }
+    },
+    "history": {
+      "title": "Booking History",
+      "ticketTitle": "Ticket Booking History",
+      "hotelTitle": "Tour Hotel Booking History",
+      "noHistory": "No change history available",
+      "action": {
+        "created": "Created",
+        "updated": "Updated",
+        "cancelled": "Cancelled",
+        "confirmed": "Confirmed"
+      },
+      "createdData": "Created Data",
+      "changes": "Changes",
+      "cancelledData": "Cancelled Data",
+      "reason": "Change Reason",
+      "previous": "Previous",
+      "new": "New"
+    },
+    "guidance": {
+      "title": "Booking Management Guidance",
+      "items": [
+        "Payment to suppliers and actual booking must be completed 2 days before the tour.",
+        "Tour participants may change, so always check and update booking records.",
+        "All changes are automatically recorded in history and can be viewed anytime.",
+        "Update status from tentative booking to confirmed booking when appropriate."
+      ]
+    }
   }
 }

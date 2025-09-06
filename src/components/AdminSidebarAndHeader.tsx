@@ -16,7 +16,8 @@ import {
   Building,
   FileCheck,
   CalendarDays,
-  Car
+  Car,
+  BookOpen
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -37,6 +38,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: '고객 관리', href: `/${locale}/admin/customers`, icon: Users },
     { name: '예약 관리', href: `/${locale}/admin/reservations`, icon: Calendar },
     { name: '예약 통계', href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
+    { name: '부킹 관리', href: `/${locale}/admin/booking`, icon: BookOpen },
     { name: '데이터 검수', href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: '픽업 호텔 관리', href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: '차량 관리', href: `/${locale}/admin/vehicles`, icon: Car },
