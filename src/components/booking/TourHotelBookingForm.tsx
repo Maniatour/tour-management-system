@@ -42,7 +42,7 @@ export default function TourHotelBookingForm({
     check_out_date: '',
     reservation_name: '',
     submitted_by: 'admin@example.com',
-    cc: '',
+    cc: 'not_sent',
     rooms: 1,
     city: '',
     hotel: '',
