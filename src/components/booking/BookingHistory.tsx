@@ -196,7 +196,7 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
                     <h4 className="font-medium text-gray-900 mb-2">변경 사항:</h4>
                     <div className="space-y-2">
                       {formatChanges(item.old_values, item.new_values).map((change, changeIndex) => (
-                        <div key={changeIndex} className="bg-blue-50 p-3 rounded">
+                        <div key={`${item.id}-${change.field}-${changeIndex}`} className="bg-blue-50 p-3 rounded">
                           <div className="flex items-center space-x-2 mb-1">
                             <span className="font-medium text-blue-900">
                               {getFieldDisplayName(change.field)}
