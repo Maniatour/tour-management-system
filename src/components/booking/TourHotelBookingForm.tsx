@@ -55,6 +55,7 @@ export default function TourHotelBookingForm({
   });
 
   const [tours, setTours] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [hotels, setHotels] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,6 +66,7 @@ export default function TourHotelBookingForm({
 
   useEffect(() => {
     fetchTours();
+    fetchTeamMembers();
     fetchHotels();
     fetchCities();
   }, []);
@@ -83,6 +85,21 @@ export default function TourHotelBookingForm({
       setTours(data || []);
     } catch (error) {
       console.error('투어 목록 조회 오류:', error);
+    }
+  };
+
+  const fetchTeamMembers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en, position')
+        .eq('is_active', true)
+        .order('name_ko');
+      
+      if (error) throw error;
+      setTeamMembers(data || []);
+    } catch (error) {
+      console.error('팀원 목록 조회 오류:', error);
     }
   };
 
@@ -365,16 +382,22 @@ export default function TourHotelBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                예약명 *
+                예약자명 *
               </label>
-              <input
-                type="text"
+              <select
                 name="reservation_name"
                 value={formData.reservation_name}
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              >
+                <option value="">예약자명을 선택하세요</option>
+                {teamMembers.map((member) => (
+                  <option key={member.email} value={member.name_ko}>
+                    {member.name_ko} {member.name_en ? `(${member.name_en})` : ''} - {member.position || '직책 없음'}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>

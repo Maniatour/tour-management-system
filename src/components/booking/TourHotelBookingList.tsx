@@ -235,7 +235,7 @@ export default function TourHotelBookingList() {
                   호텔/도시
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  예약명
+                  예약자명
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   체크인/아웃
