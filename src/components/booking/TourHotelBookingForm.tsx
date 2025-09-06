@@ -58,17 +58,21 @@ export default function TourHotelBookingForm({
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [hotels, setHotels] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
+  const [websites, setWebsites] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showHotelSuggestions, setShowHotelSuggestions] = useState(false);
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
+  const [showWebsiteSuggestions, setShowWebsiteSuggestions] = useState(false);
   const [filteredHotels, setFilteredHotels] = useState<string[]>([]);
   const [filteredCities, setFilteredCities] = useState<string[]>([]);
+  const [filteredWebsites, setFilteredWebsites] = useState<string[]>([]);
 
   useEffect(() => {
     fetchTours();
     fetchTeamMembers();
     fetchHotels();
     fetchCities();
+    fetchWebsites();
   }, []);
 
   const fetchTours = async () => {
@@ -132,6 +136,22 @@ export default function TourHotelBookingForm({
       setCities(uniqueCities);
     } catch (error) {
       console.error('도시 목록 조회 오류:', error);
+    }
+  };
+
+  const fetchWebsites = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tour_hotel_bookings')
+        .select('website')
+        .not('website', 'is', null)
+        .order('website');
+      
+      if (error) throw error;
+      const uniqueWebsites = [...new Set(data?.map(item => item.website) || [])];
+      setWebsites(uniqueWebsites);
+    } catch (error) {
+      console.error('웹사이트 목록 조회 오류:', error);
     }
   };
 
@@ -201,6 +221,15 @@ export default function TourHotelBookingForm({
       setFilteredCities(filtered);
       setShowCitySuggestions(value.length > 0 && filtered.length > 0);
     }
+
+    // 웹사이트 자동완성
+    if (name === 'website') {
+      const filtered = websites.filter(website => 
+        website.toLowerCase().includes(value.toLowerCase())
+      );
+      setFilteredWebsites(filtered);
+      setShowWebsiteSuggestions(value.length > 0 && filtered.length > 0);
+    }
   };
 
   const handleHotelSelect = (hotel: string) => {
@@ -213,12 +242,21 @@ export default function TourHotelBookingForm({
     setShowCitySuggestions(false);
   };
 
+  const handleWebsiteSelect = (website: string) => {
+    setFormData(prev => ({ ...prev, website }));
+    setShowWebsiteSuggestions(false);
+  };
+
   const handleHotelBlur = () => {
     setTimeout(() => setShowHotelSuggestions(false), 200);
   };
 
   const handleCityBlur = () => {
     setTimeout(() => setShowCitySuggestions(false), 200);
+  };
+
+  const handleWebsiteBlur = () => {
+    setTimeout(() => setShowWebsiteSuggestions(false), 200);
   };
 
   const handleDateChange = (field: 'check_in_date' | 'check_out_date', direction: 'up' | 'down') => {
@@ -576,7 +614,7 @@ export default function TourHotelBookingForm({
               </select>
             </div>
 
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 웹사이트
               </label>
@@ -585,9 +623,33 @@ export default function TourHotelBookingForm({
                 name="website"
                 value={formData.website}
                 onChange={handleChange}
+                onBlur={handleWebsiteBlur}
+                onFocus={() => {
+                  if (formData.website.length > 0) {
+                    const filtered = websites.filter(website => 
+                      website.toLowerCase().includes(formData.website.toLowerCase())
+                    );
+                    setFilteredWebsites(filtered);
+                    setShowWebsiteSuggestions(filtered.length > 0);
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="https://"
+                autoComplete="off"
               />
+              {showWebsiteSuggestions && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {filteredWebsites.map((website, index) => (
+                    <div
+                      key={index}
+                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                      onClick={() => handleWebsiteSelect(website)}
+                    >
+                      {website}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
