@@ -150,6 +150,23 @@ export default function TourHotelBookingForm({
       [name]: name === 'rooms' || name === 'unit_price' || name === 'total_price' ? Number(value) : value
     }));
 
+    // 투어 선택 시 날짜 자동 설정
+    if (name === 'tour_id' && value) {
+      const selectedTour = tours.find(tour => tour.id === value);
+      if (selectedTour && selectedTour.tour_date) {
+        const tourDate = selectedTour.tour_date;
+        const checkOutDate = new Date(tourDate);
+        checkOutDate.setDate(checkOutDate.getDate() + 1);
+        const checkOutDateString = checkOutDate.toISOString().split('T')[0];
+        
+        setFormData(prev => ({
+          ...prev,
+          check_in_date: tourDate,
+          check_out_date: checkOutDateString
+        }));
+      }
+    }
+
     // 호텔 자동완성
     if (name === 'hotel') {
       const filtered = hotels.filter(hotel => 
