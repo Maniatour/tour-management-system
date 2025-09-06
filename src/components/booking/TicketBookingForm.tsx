@@ -309,14 +309,25 @@ export default function TicketBookingForm({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 시간 *
               </label>
-              <input
-                type="time"
+              <select
                 name="time"
                 value={formData.time}
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              >
+                <option value="">시간을 선택하세요</option>
+                {Array.from({ length: 13 * 12 }, (_, i) => {
+                  const hour = Math.floor(i / 12) + 6; // 6시부터 시작
+                  const minute = (i % 12) * 5;
+                  const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+                  return (
+                    <option key={timeString} value={timeString}>
+                      {timeString}
+                    </option>
+                  );
+                })}
+              </select>
             </div>
 
             <div className="relative">
