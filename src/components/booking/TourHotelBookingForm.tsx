@@ -402,16 +402,19 @@ export default function TourHotelBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                CC (신용카드 정보)
+                CC 상태
               </label>
-              <input
-                type="text"
+              <select
                 name="cc"
                 value={formData.cc}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="마지막 4자리"
-              />
+              >
+                <option value="">CC 상태를 선택하세요</option>
+                <option value="sent">CC 발송 완료</option>
+                <option value="not_sent">미발송</option>
+                <option value="not_needed">필요없음</option>
+              </select>
             </div>
 
             <div>

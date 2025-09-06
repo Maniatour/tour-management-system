@@ -149,6 +149,24 @@ export default function TourHotelBookingList() {
     }
   };
 
+  const getCCStatusText = (cc: string) => {
+    switch (cc) {
+      case 'sent': return 'CC 발송 완료';
+      case 'not_sent': return '미발송';
+      case 'not_needed': return '필요없음';
+      default: return cc || '-';
+    }
+  };
+
+  const getCCStatusColor = (cc: string) => {
+    switch (cc) {
+      case 'sent': return 'bg-green-100 text-green-800';
+      case 'not_sent': return 'bg-yellow-100 text-yellow-800';
+      case 'not_needed': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   const getPaymentMethodText = (method: string) => {
     switch (method) {
       case 'credit_card': return '신용카드';
@@ -289,7 +307,14 @@ export default function TourHotelBookingList() {
                     <div className="font-medium">총액: ${booking.total_price}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {getPaymentMethodText(booking.payment_method) || '-'}
+                    <div className="space-y-1">
+                      <div>결제: {getPaymentMethodText(booking.payment_method) || '-'}</div>
+                      <div>
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
+                          {getCCStatusText(booking.cc)}
+                        </span>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
