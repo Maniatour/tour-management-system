@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "../globals.css";
 import Navigation from "@/components/Navigation";
 import Sidebar from "@/components/Sidebar";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { headers } from 'next/headers';
@@ -33,7 +34,11 @@ export default async function LocaleLayout({
   if (isAdminPage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
-        {children}
+        <AuthProvider>
+          <div className="min-h-screen bg-gray-50">
+            {children}
+          </div>
+        </AuthProvider>
       </NextIntlClientProvider>
     );
   }
@@ -41,15 +46,17 @@ export default async function LocaleLayout({
   // 일반 페이지인 경우 기존 레이아웃 사용
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>
-      <div className="min-h-screen bg-gray-50">
-        <Navigation />
-        <div className="flex">
-          <Sidebar />
-          <main className="flex-1 p-6">
-            {children}
-          </main>
+      <AuthProvider>
+        <div className="min-h-screen bg-gray-50">
+          <Navigation />
+          <div className="flex">
+            <Sidebar />
+            <main className="flex-1 p-6">
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
+      </AuthProvider>
           </NextIntlClientProvider>
   );
 }

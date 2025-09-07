@@ -23,8 +23,9 @@ import {
   UserCheck
 } from 'lucide-react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface AdminSidebarAndHeaderProps {
   locale: string
@@ -33,7 +34,18 @@ interface AdminSidebarAndHeaderProps {
 
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { signOut, authUser, userRole } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const handleLogout = async () => {
+    try {
+      await signOut()
+      router.push(`/${locale}/auth`)
+    } catch (error) {
+      console.error('로그아웃 중 오류가 발생했습니다:', error)
+    }
+  }
 
   const navigation = [
     { name: '대시보드', href: `/${locale}/admin`, icon: BarChart3 },
@@ -58,6 +70,65 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
   return (
     <>
+      {/* 어드민 헤더 - 페이지 가장 상단에 여백 없이 */}
+      <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50">
+        <div className="w-full px-4">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-6">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden text-gray-500 hover:text-gray-700"
+              >
+                <Menu size={24} />
+              </button>
+              
+              {/* 시스템 제목 */}
+              <h1 className="text-lg md:text-xl font-bold text-gray-800">
+                투어 관리 시스템
+              </h1>
+              
+              {/* 어드민 네비게이션 메뉴 */}
+              <Link 
+                href={`/${locale}/admin/products`}
+                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <Package className="w-4 h-4 mr-2" />
+                상품 관리
+              </Link>
+              <Link 
+                href={`/${locale}/admin/off-schedule`}
+                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <UserCheck className="w-4 h-4 mr-2" />
+                Off 스케줄 관리
+              </Link>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-700">
+                <div className="font-medium">
+                  {authUser?.name || '관리자'}님, 안녕하세요!
+                </div>
+                <div className="text-xs text-gray-500">
+                  {authUser?.email || '이메일 정보 없음'} | 
+                  {userRole === 'admin' ? ' 관리자' : 
+                   userRole === 'manager' ? ' 매니저' : 
+                   userRole === 'team_member' ? ' 팀원' : ' 고객'}
+                </div>
+              </div>
+              <LanguageSwitcher />
+              <button 
+                onClick={handleLogout}
+                className="flex items-center text-gray-500 hover:text-red-600 transition-colors"
+              >
+                <LogOut size={20} className="mr-2" />
+                로그아웃
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
       {/* 모바일 사이드바 오버레이 */}
       {sidebarOpen && (
         <div 
@@ -101,15 +172,24 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               </Link>
             )
           })}
+          
+          {/* 모바일 로그아웃 버튼 */}
+          <button
+            onClick={() => {
+              handleLogout()
+              setSidebarOpen(false)
+            }}
+            className="flex items-center w-full px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg mb-2 transition-colors"
+          >
+            <LogOut size={20} className="mr-3" />
+            로그아웃
+          </button>
         </nav>
       </div>
 
-      {/* 데스크톱 사이드바 */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col">
+      {/* 데스크톱 사이드바 - 헤더 아래에 위치 */}
+      <div className="hidden lg:fixed lg:top-16 lg:left-0 lg:bottom-0 lg:flex lg:w-64 lg:flex-col">
         <div className="flex flex-col flex-grow bg-white shadow-lg">
-          <div className="flex items-center h-16 px-4 border-b border-gray-200">
-            <h1 className="text-xl font-bold text-gray-900">투어 관리 시스템</h1>
-          </div>
           <nav className="flex-1 px-4 mt-8">
             {navigation.map((item) => {
               const Icon = item.icon
@@ -130,34 +210,22 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               )
             })}
           </nav>
+          
+          {/* 데스크톱 로그아웃 버튼 */}
+          <div className="px-4 pb-4">
+            <button
+              onClick={handleLogout}
+              className="flex items-center w-full px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
+            >
+              <LogOut size={20} className="mr-3" />
+              로그아웃
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 메인 콘텐츠 */}
-      <div className="lg:pl-64">
-        {/* 헤더 */}
-        <header className="bg-white shadow-sm border-b border-gray-200 mt-0">
-          <div className="flex items-center justify-between h-16 px-0">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden text-gray-500 hover:text-gray-700"
-            >
-              <Menu size={24} />
-            </button>
-            
-            <div className="flex items-center space-x-4">
-              <div className="text-sm text-gray-700">
-                관리자님, 안녕하세요!
-              </div>
-              <LanguageSwitcher />
-              <button className="flex items-center text-gray-500 hover:text-gray-700">
-                <LogOut size={20} className="mr-2" />
-                로그아웃
-              </button>
-            </div>
-          </div>
-        </header>
-
+      {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백 추가 */}
+      <div className="pt-16 lg:pl-64">
         {/* 페이지 콘텐츠 */}
         <main className="py-6">
           <div className="max-w-full mx-auto px-1 sm:px-2 lg:px-3">

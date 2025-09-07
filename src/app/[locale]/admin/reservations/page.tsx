@@ -911,7 +911,27 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         {groupByDate ? (
           /* 날짜별 그룹화된 카드뷰 */
           <div className="space-y-8">
-            {Object.entries(groupedReservations).map(([date, reservations]) => (
+            {Object.keys(groupedReservations).length === 0 ? (
+              /* 예약이 없을 때 안내 메시지 */
+              <div className="text-center py-16">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
+                  <Calendar className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">선택한 기간에 예약이 없습니다</h3>
+                  <p className="text-gray-500 mb-6">
+                    {dateRange.start && dateRange.end ? 
+                      `${new Date(dateRange.start).toLocaleDateString('ko-KR')} ~ ${new Date(dateRange.end).toLocaleDateString('ko-KR')} 기간에 등록된 예약이 없습니다.` :
+                      '현재 선택한 필터 조건에 해당하는 예약이 없습니다.'
+                    }
+                  </p>
+                  <div className="space-y-2 text-sm text-gray-400">
+                    <p>• 다른 날짜 범위를 선택해보세요</p>
+                    <p>• 필터 조건을 변경해보세요</p>
+                    <p>• 새로운 예약을 등록해보세요</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              Object.entries(groupedReservations).map(([date, reservations]) => (
               <div key={date} className="space-y-4">
                 {/* 등록일 헤더 */}
                 <div className="bg-gray-50 px-4 py-3 rounded-lg border border-gray-200">
@@ -1195,12 +1215,33 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   ))}
                 </div>
               </div>
-            ))}
+              ))
+            )}
           </div>
         ) : (
           /* 일반 카드뷰 */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {paginatedReservations.map((reservation) => (
+          paginatedReservations.length === 0 ? (
+            /* 예약이 없을 때 안내 메시지 */
+            <div className="text-center py-16">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
+                <Grid3X3 className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">선택한 조건에 예약이 없습니다</h3>
+                <p className="text-gray-500 mb-6">
+                  {dateRange.start && dateRange.end ? 
+                    `${new Date(dateRange.start).toLocaleDateString('ko-KR')} ~ ${new Date(dateRange.end).toLocaleDateString('ko-KR')} 기간에 등록된 예약이 없습니다.` :
+                    '현재 선택한 필터 조건에 해당하는 예약이 없습니다.'
+                  }
+                </p>
+                <div className="space-y-2 text-sm text-gray-400">
+                  <p>• 다른 날짜 범위를 선택해보세요</p>
+                  <p>• 필터 조건을 변경해보세요</p>
+                  <p>• 새로운 예약을 등록해보세요</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {paginatedReservations.map((reservation) => (
               <div
                 key={reservation.id}
                 onClick={() => handleEditReservationClick(reservation)}
@@ -1334,6 +1375,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               </div>
             ))}
           </div>
+          )
         )}
         
         {/* 페이지네이션 - 카드뷰에서만 표시 (그룹화되지 않은 경우에만) */}
@@ -1391,7 +1433,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               </button>
             </div>
           </div>
-        )}
+          )}
         </>
       )}
 
