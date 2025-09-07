@@ -121,9 +121,10 @@ export default function VehiclesPage() {
     if (activeTab === 'company') {
       matchesTab = vehicle.vehicle_category === 'company' || !vehicle.vehicle_category
     } else if (activeTab === 'rental_active') {
+      const status = vehicle.rental_status || ''
       matchesTab = vehicle.vehicle_category === 'rental' && 
-                   vehicle.rental_status && 
-                   ['reserved', 'picked_up', 'in_use'].includes(vehicle.rental_status)
+                   status !== '' && 
+                   ['reserved', 'picked_up', 'in_use'].includes(status)
     } else if (activeTab === 'rental_returned') {
       matchesTab = vehicle.vehicle_category === 'rental' && 
                    vehicle.rental_status === 'returned'

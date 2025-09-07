@@ -36,24 +36,56 @@ export default function TourHotelBookingForm({
   onCancel, 
   tourId 
 }: TourHotelBookingFormProps) {
-  const [formData, setFormData] = useState<TourHotelBooking>({
-    tour_id: tourId || '',
-    check_in_date: '',
-    check_out_date: '',
-    reservation_name: '',
-    submitted_by: 'admin@example.com',
-    cc: 'not_sent',
-    rooms: 1,
-    city: '',
-    hotel: '',
-    room_type: '',
-    unit_price: 0,
-    total_price: 0,
-    payment_method: '',
-    website: '',
-    rn_number: '',
-    status: 'pending',
-    ...booking
+  const [formData, setFormData] = useState<TourHotelBooking>(() => {
+    console.log('편집 모드 - 전달받은 booking 데이터:', booking);
+    
+    const initialData = {
+      tour_id: tourId || '',
+      check_in_date: '',
+      check_out_date: '',
+      reservation_name: '',
+      submitted_by: 'admin@example.com',
+      cc: 'not_sent',
+      rooms: 1,
+      city: '',
+      hotel: '',
+      room_type: '',
+      unit_price: 0,
+      total_price: 0,
+      payment_method: '',
+      website: '',
+      rn_number: '',
+      status: 'pending',
+    };
+
+    if (booking) {
+      const mergedData = {
+        ...initialData,
+        ...booking,
+        // 명시적으로 각 필드를 설정하여 undefined 값 처리
+        tour_id: booking.tour_id ?? tourId ?? initialData.tour_id,
+        check_in_date: booking.check_in_date ?? initialData.check_in_date,
+        check_out_date: booking.check_out_date ?? initialData.check_out_date,
+        reservation_name: booking.reservation_name ?? initialData.reservation_name,
+        submitted_by: booking.submitted_by ?? initialData.submitted_by,
+        cc: booking.cc ?? initialData.cc,
+        rooms: booking.rooms ?? initialData.rooms,
+        city: booking.city ?? initialData.city,
+        hotel: booking.hotel ?? initialData.hotel,
+        room_type: booking.room_type ?? initialData.room_type,
+        unit_price: booking.unit_price ?? initialData.unit_price,
+        total_price: booking.total_price ?? initialData.total_price,
+        payment_method: booking.payment_method ?? initialData.payment_method,
+        website: booking.website ?? initialData.website,
+        rn_number: booking.rn_number ?? initialData.rn_number,
+        status: booking.status ?? initialData.status,
+      };
+      
+      console.log('편집 모드 - 최종 formData:', mergedData);
+      return mergedData;
+    }
+    
+    return initialData;
   });
 
   const [tours, setTours] = useState<any[]>([]);
@@ -81,14 +113,74 @@ export default function TourHotelBookingForm({
     try {
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD 형식
       
-      const { data, error } = await supabase
+      console.log('투어 목록 조회 시작...');
+      
+      // 먼저 tours만 조회
+      const { data: toursData, error: toursError } = await supabase
         .from('tours')
-        .select('id, tour_date, product_id, products(name)')
+        .select('id, tour_date, product_id')
         .gte('tour_date', today) // 오늘 날짜 이후의 투어만
         .order('tour_date', { ascending: true });
+
+      if (toursError) {
+        console.error('투어 목록 조회 오류:', toursError);
+        throw toursError;
+      }
+
+      console.log('투어 데이터:', toursData);
+
+      if (!toursData || toursData.length === 0) {
+        setTours([]);
+        return;
+      }
+
+      // product_id가 있는 투어들만 필터링
+      const toursWithProductId = toursData.filter(tour => tour.product_id);
       
-      if (error) throw error;
-      setTours(data || []);
+      if (toursWithProductId.length === 0) {
+        setTours(toursData);
+        return;
+      }
+
+      // 모든 product_id를 한 번에 조회
+      const productIds = [...new Set(toursWithProductId.map(tour => tour.product_id))];
+      
+      const { data: productsData, error: productsError } = await supabase
+        .from('products')
+        .select(`
+          id,
+          name
+        `)
+        .in('id', productIds);
+
+      if (productsError) {
+        console.warn('상품 정보 조회 오류:', productsError);
+        setTours(toursData);
+        return;
+      }
+
+      // products 데이터를 Map으로 변환하여 빠른 조회 가능하게 함
+      const productsMap = new Map();
+      (productsData || []).forEach(product => {
+        productsMap.set(product.id, product);
+      });
+
+      // 투어 데이터에 상품 정보 추가
+      const toursWithProducts = toursData.map(tour => {
+        if (tour.product_id && productsMap.has(tour.product_id)) {
+          const product = productsMap.get(tour.product_id);
+          return {
+            ...tour,
+            products: {
+              name: product.name
+            }
+          };
+        }
+        return tour;
+      });
+
+      console.log('투어 목록 조회 성공:', toursWithProducts);
+      setTours(toursWithProducts);
     } catch (error) {
       console.error('투어 목록 조회 오류:', error);
     }
@@ -164,12 +256,24 @@ export default function TourHotelBookingForm({
     try {
       const bookingData = {
         ...formData,
-        tour_id: formData.tour_id || null, // 빈 문자열을 null로 변환
+        tour_id: formData.tour_id && formData.tour_id.trim() !== '' ? formData.tour_id : null,
       };
 
-      const { error } = await supabase
-        .from('tour_hotel_bookings')
-        .upsert(bookingData);
+      let error;
+      if (booking?.id) {
+        // 수정인 경우
+        const { error: updateError } = await supabase
+          .from('tour_hotel_bookings')
+          .update(bookingData)
+          .eq('id', booking.id);
+        error = updateError;
+      } else {
+        // 새로 생성인 경우
+        const { error: insertError } = await supabase
+          .from('tour_hotel_bookings')
+          .insert(bookingData);
+        error = insertError;
+      }
 
       if (error) throw error;
 
@@ -304,7 +408,7 @@ export default function TourHotelBookingForm({
               </label>
               <select
                 name="tour_id"
-                value={formData.tour_id}
+                value={formData.tour_id || ''}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -426,7 +530,7 @@ export default function TourHotelBookingForm({
               </label>
               <select
                 name="reservation_name"
-                value={formData.reservation_name}
+                value={formData.reservation_name || ''}
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -446,7 +550,7 @@ export default function TourHotelBookingForm({
               </label>
               <select
                 name="cc"
-                value={formData.cc}
+                value={formData.cc || ''}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -556,7 +660,7 @@ export default function TourHotelBookingForm({
               </label>
               <select
                 name="room_type"
-                value={formData.room_type}
+                value={formData.room_type || ''}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -604,7 +708,7 @@ export default function TourHotelBookingForm({
               </label>
               <select
                 name="payment_method"
-                value={formData.payment_method}
+                value={formData.payment_method || ''}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -660,7 +764,7 @@ export default function TourHotelBookingForm({
               </label>
               <select
                 name="status"
-                value={formData.status}
+                value={formData.status || ''}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >

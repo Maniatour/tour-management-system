@@ -985,22 +985,11 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         {activeTab === 'options' && (
           <OptionsTab
             formData={formData}
-            setFormData={setFormData}
-            globalOptions={globalOptions}
-            loadingOptions={loadingOptions}
-            showManualModal={showManualModal}
-            setShowManualModal={setShowManualModal}
             setShowAddOptionModal={setShowAddOptionModal}
-            fetchGlobalOptions={fetchGlobalOptions}
-            addProductOption={addProductOption}
             removeProductOption={removeProductOption}
             updateProductOption={updateProductOption}
-            addOptionChoice={addOptionChoice}
-            removeOptionChoice={removeOptionChoice}
-            updateOptionChoice={updateOptionChoice}
-            linkToGlobalOption={linkToGlobalOption}
-              productId={id}
-              isNewProduct={isNewProduct}
+            productId={id}
+            isNewProduct={isNewProduct}
           />
         )}
 
@@ -1028,7 +1017,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
 
         {activeTab === 'media' && (
           <div className="text-center py-8 text-gray-500">
-            <Image className="h-12 w-12 mx-auto mb-4 text-gray-300" alt="미디어 아이콘" />
+            <Image className="h-12 w-12 mx-auto mb-4 text-gray-300" />
             <p>미디어 탭 - 추후 구현 예정</p>
           </div>
         )}

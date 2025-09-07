@@ -50,23 +50,84 @@ export default function TicketBookingList() {
   const fetchBookings = async () => {
     try {
       setLoading(true);
-      let query = supabase
+      
+      // 먼저 ticket_bookings만 조회
+      const { data: bookingsData, error: bookingsError } = await supabase
         .from('ticket_bookings')
-        .select(`
-          *,
-          tours (
-            tour_date,
-            products (
-              name
-            )
-          )
-        `)
+        .select('*')
         .order('check_in_date', { ascending: false });
 
-      const { data, error } = await query;
+      if (bookingsError) throw bookingsError;
+
+      console.log('입장권 부킹 데이터:', bookingsData);
+
+      if (!bookingsData || bookingsData.length === 0) {
+        setBookings([]);
+        return;
+      }
+
+      // tour_id가 있는 부킹들만 필터링
+      const bookingsWithTourId = bookingsData.filter(booking => booking.tour_id);
       
-      if (error) throw error;
-      setBookings(data || []);
+      console.log('투어 ID가 있는 부킹들:', bookingsWithTourId);
+      
+      if (bookingsWithTourId.length === 0) {
+        setBookings(bookingsData);
+        return;
+      }
+
+      // 모든 tour_id를 한 번에 조회
+      const tourIds = [...new Set(bookingsWithTourId.map(booking => booking.tour_id))];
+      
+      console.log('조회할 투어 ID들:', tourIds);
+      
+      const { data: toursData, error: toursError } = await supabase
+        .from('tours')
+        .select(`
+          id,
+          tour_date,
+          products (
+            name
+          )
+        `)
+        .in('id', tourIds);
+
+      console.log('투어 데이터:', toursData);
+      console.log('투어 조회 오류:', toursError);
+
+      if (toursError) {
+        console.warn('투어 정보 조회 오류:', toursError);
+        setBookings(bookingsData);
+        return;
+      }
+
+      // tours 데이터를 Map으로 변환하여 빠른 조회 가능하게 함
+      const toursMap = new Map();
+      (toursData || []).forEach(tour => {
+        toursMap.set(tour.id, tour);
+      });
+
+      console.log('투어 맵:', toursMap);
+
+      // 부킹 데이터에 투어 정보 추가
+      const bookingsWithTours = bookingsData.map(booking => {
+        if (booking.tour_id && toursMap.has(booking.tour_id)) {
+          const tour = toursMap.get(booking.tour_id);
+          console.log(`부킹 ${booking.id}의 투어 정보:`, tour);
+          return {
+            ...booking,
+            tours: {
+              tour_date: tour.tour_date,
+              products: tour.products
+            }
+          };
+        }
+        console.log(`부킹 ${booking.id}에 투어 정보 없음 (tour_id: ${booking.tour_id})`);
+        return booking;
+      });
+
+      console.log('최종 부킹 데이터:', bookingsWithTours);
+      setBookings(bookingsWithTours);
     } catch (error) {
       console.error('입장권 부킹 조회 오류:', error);
     } finally {
@@ -159,7 +220,7 @@ export default function TicketBookingList() {
   return (
     <div className="space-y-6">
       {/* 헤더 */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center px-6 py-4">
         <h2 className="text-2xl font-bold">입장권 부킹 관리</h2>
         <button
           onClick={() => setShowForm(true)}
@@ -170,7 +231,7 @@ export default function TicketBookingList() {
       </div>
 
       {/* 필터 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             검색

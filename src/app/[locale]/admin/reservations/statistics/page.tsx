@@ -427,7 +427,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                       </div>
                     </div>
                     <div className="w-16 text-sm text-gray-600 text-right">
-                      {selectedChart === 'trend' ? `${item.people}명` : `${item.percentage.toFixed(1)}%`}
+                      {selectedChart === 'trend' ? `${item.people}명` : `${('percentage' in item ? (item as { percentage: number }).percentage : 0).toFixed(1)}%`}
                     </div>
                   </div>
                 ))}
@@ -478,7 +478,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                     {item.people.toLocaleString()}명
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {selectedChart === 'trend' ? '-' : `${item.percentage.toFixed(1)}%`}
+                    {selectedChart === 'trend' ? '-' : `${('percentage' in item ? (item as { percentage: number }).percentage : 0).toFixed(1)}%`}
                   </td>
                   {selectedChart !== 'trend' && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

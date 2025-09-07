@@ -2,18 +2,22 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Plane, Map, MapPin, Clock, User, Users } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Map, MapPin, Clock, User, Users } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
+import TicketBookingForm from '@/components/booking/TicketBookingForm'
+import TourHotelBookingForm from '@/components/booking/TourHotelBookingForm'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type Product = Database['public']['Tables']['products']['Row']
 type Customer = Database['public']['Tables']['customers']['Row']
 type Reservation = Database['public']['Tables']['reservations']['Row']
 type Team = Database['public']['Tables']['team']['Row']
+type TicketBooking = Database['public']['Tables']['ticket_bookings']['Row']
+type TourHotelBooking = Database['public']['Tables']['tour_hotel_bookings']['Row']
 
 export default function TourDetailPage() {
   const params = useParams()
@@ -40,6 +44,47 @@ export default function TourDetailPage() {
   const [assignedVehicle, setAssignedVehicle] = useState<Database['public']['Tables']['vehicles']['Row'] | null>(null)
   const [vehicles, setVehicles] = useState<Database['public']['Tables']['vehicles']['Row'][]>([])
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
+  
+  // 부킹 관련 상태
+  const [ticketBookings, setTicketBookings] = useState<TicketBooking[]>([])
+  const [tourHotelBookings, setTourHotelBookings] = useState<TourHotelBooking[]>([])
+  const [showTicketBookingForm, setShowTicketBookingForm] = useState(false)
+  const [showTourHotelBookingForm, setShowTourHotelBookingForm] = useState(false)
+  const [editingTicketBooking, setEditingTicketBooking] = useState<TicketBooking | null>(null)
+  const [editingTourHotelBooking, setEditingTourHotelBooking] = useState<TourHotelBooking | null>(null)
+  const [showTicketBookingDetails, setShowTicketBookingDetails] = useState(false)
+
+  const fetchBookings = useCallback(async (tourId: string) => {
+    try {
+      // 입장권 부킹 조회
+      const { data: ticketBookingsData, error: ticketError } = await supabase
+        .from('ticket_bookings')
+        .select('*')
+        .eq('tour_id', tourId)
+        .order('check_in_date', { ascending: false })
+
+      if (ticketError) {
+        console.error('입장권 부킹 조회 오류:', ticketError)
+      } else {
+        setTicketBookings(ticketBookingsData || [])
+      }
+
+      // 투어 호텔 부킹 조회
+      const { data: tourHotelBookingsData, error: tourHotelError } = await supabase
+        .from('tour_hotel_bookings')
+        .select('*')
+        .eq('tour_id', tourId)
+        .order('check_in_date', { ascending: false })
+
+      if (tourHotelError) {
+        console.error('투어 호텔 부킹 조회 오류:', tourHotelError)
+      } else {
+        setTourHotelBookings(tourHotelBookingsData || [])
+      }
+    } catch (error) {
+      console.error('부킹 데이터 조회 오류:', error)
+    }
+  }, [])
 
   const fetchTourData = useCallback(async (tourId: string) => {
     try {
@@ -217,13 +262,16 @@ export default function TourDetailPage() {
         }
 
         // 차량 목록은 tour가 설정된 후 useEffect에서 가져옴
+        
+        // 부킹 데이터 가져오기
+        await fetchBookings(tourId)
       }
     } catch (error) {
       console.error('Error fetching tour data:', error)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchBookings])
 
   useEffect(() => {
     const tourId = params.id as string
@@ -670,6 +718,50 @@ export default function TourDetailPage() {
   const handleCloseEditModal = async () => {
     setEditingReservation(null)
   }
+
+  // 부킹 관련 핸들러들
+  const handleAddTicketBooking = () => {
+    setEditingTicketBooking(null)
+    setShowTicketBookingForm(true)
+  }
+
+  const handleEditTicketBooking = (booking: TicketBooking) => {
+    setEditingTicketBooking(booking)
+    setShowTicketBookingForm(true)
+  }
+
+  const handleCloseTicketBookingForm = () => {
+    setShowTicketBookingForm(false)
+    setEditingTicketBooking(null)
+  }
+
+  const handleAddTourHotelBooking = () => {
+    setEditingTourHotelBooking(null)
+    setShowTourHotelBookingForm(true)
+  }
+
+  const handleEditTourHotelBooking = (booking: TourHotelBooking) => {
+    setEditingTourHotelBooking(booking)
+    setShowTourHotelBookingForm(true)
+  }
+
+  const handleCloseTourHotelBookingForm = () => {
+    setShowTourHotelBookingForm(false)
+    setEditingTourHotelBooking(null)
+  }
+
+  const handleBookingSubmit = async (booking: TicketBooking | TourHotelBooking) => {
+    // 부킹 제출 후 데이터 새로고침
+    if (tour) {
+      await fetchBookings(tour.id)
+    }
+    console.log('부킹이 저장되었습니다:', booking)
+  }
+
+  // 필터링된 입장권 부킹 계산
+  const filteredTicketBookings = showTicketBookingDetails 
+    ? ticketBookings 
+    : ticketBookings.filter(booking => booking.status?.toLowerCase() === 'confirmed')
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -1253,41 +1345,147 @@ export default function TourDetailPage() {
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
-                <h2 className="text-md font-semibold text-gray-900 mb-3">부킹 관리</h2>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-md font-semibold text-gray-900">부킹 관리</h2>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={handleAddTicketBooking}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 flex items-center space-x-1"
+                    >
+                      <Plus size={12} />
+                      <span>입장권</span>
+                    </button>
+                    <button
+                      onClick={handleAddTourHotelBooking}
+                      className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 flex items-center space-x-1"
+                    >
+                      <Plus size={12} />
+                      <span>호텔</span>
+                    </button>
+                  </div>
+                </div>
+                
                 <div className="space-y-3">
-                  <div className="border rounded p-3">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Hotel className="h-3 w-3 text-blue-600" />
-                      <span className="font-medium text-xs">호텔 확정</span>
+                  {/* 입장권 부킹 목록 */}
+                  {ticketBookings.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-medium text-gray-700">
+                          입장권 부킹 ({filteredTicketBookings.length})
+                          {!showTicketBookingDetails && ticketBookings.length > filteredTicketBookings.length && 
+                            ` / 전체 ${ticketBookings.length}`
+                          }
+                        </h3>
+                        <button
+                          onClick={() => setShowTicketBookingDetails(!showTicketBookingDetails)}
+                          className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
+                        >
+                          {showTicketBookingDetails ? '간단히 보기' : '상세 보기'}
+                        </button>
+                      </div>
+                      <div className="space-y-1">
+                        {filteredTicketBookings.map((booking) => (
+                          <div 
+                            key={booking.id} 
+                            className="p-2 border rounded cursor-pointer hover:bg-gray-50 transition-colors"
+                            onClick={() => handleEditTicketBooking(booking)}
+                          >
+                            {/* 첫 번째 줄: company와 status */}
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center space-x-2">
+                                <span className="text-lg">🎫</span>
+                                <span className="font-medium text-sm text-gray-900 truncate">
+                                  {booking.company || 'N/A'}
+                                </span>
+                              </div>
+                              <span className={`text-xs px-2 py-1 rounded-full ${
+                                booking.status?.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-800' :
+                                booking.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                booking.status?.toLowerCase() === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                booking.status?.toLowerCase() === 'completed' ? 'bg-blue-100 text-blue-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {booking.status?.toLowerCase() === 'confirmed' ? 'Confirm' :
+                                 booking.status?.toLowerCase() === 'pending' ? 'Pending' :
+                                 booking.status?.toLowerCase() === 'cancelled' ? 'Cancelled' :
+                                 booking.status?.toLowerCase() === 'completed' ? 'Completed' :
+                                 booking.status || 'Unknown'}
+                              </span>
+                            </div>
+                            
+                            {/* 두 번째 줄: 카테고리, 시간, 인원, RN# */}
+                            <div className="flex items-center space-x-2 text-xs text-gray-500">
+                              <span className="font-medium text-gray-700">
+                                {booking.category || 'N/A'}
+                              </span>
+                              <span>
+                                {booking.time ? booking.time.substring(0, 5) : 'N/A'}
+                              </span>
+                              <span>
+                                {booking.ea || 0}명
+                              </span>
+                              {booking.rn_number && (
+                                <span>
+                                  #{booking.rn_number}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-600">
-                      <div>벨라지오</div>
-                      <div>예약번호: H-12345</div>
-                      <div>시디뷰 요청</div>
+                  )}
+
+                  {/* 투어 호텔 부킹 목록 */}
+                  {tourHotelBookings.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-700 mb-2">투어 호텔 부킹 ({tourHotelBookings.length})</h3>
+                      <div className="space-y-2">
+                        {tourHotelBookings.map((booking) => (
+                          <div 
+                            key={booking.id} 
+                            className="border rounded p-3 cursor-pointer hover:bg-gray-50"
+                            onClick={() => handleEditTourHotelBooking(booking)}
+                          >
+                            <div className="flex items-center space-x-2 mb-1">
+                              <Hotel className="h-3 w-3 text-blue-600" />
+                              <span className="font-medium text-xs">호텔 부킹</span>
+                            </div>
+                            <div className="text-xs text-gray-600">
+                              <div>체크인: {booking.check_in_date}</div>
+                              <div>체크아웃: {booking.check_out_date}</div>
+                              <div>예약번호: {booking.booking_reference || 'N/A'}</div>
+                              <div className="flex items-center space-x-2">
+                                <span>상태:</span>
+                                <span className={`px-2 py-1 rounded-full text-xs ${
+                                  booking.status?.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-800' :
+                                  booking.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                  booking.status?.toLowerCase() === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                  booking.status?.toLowerCase() === 'completed' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {booking.status?.toLowerCase() === 'confirmed' ? '확정' :
+                                   booking.status?.toLowerCase() === 'pending' ? '대기' :
+                                   booking.status?.toLowerCase() === 'cancelled' ? '취소' :
+                                   booking.status?.toLowerCase() === 'completed' ? '완료' :
+                                   booking.status || '미정'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="border rounded p-3">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Car className="h-3 w-3 text-green-600" />
-                      <span className="font-medium text-xs">렌터카 확정</span>
+                  )}
+
+                  {/* 부킹이 없는 경우 */}
+                  {ticketBookings.length === 0 && tourHotelBookings.length === 0 && (
+                    <div className="text-center py-6 text-gray-500">
+                      <Hotel className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm">등록된 부킹이 없습니다.</p>
+                      <p className="text-xs">위 버튼을 클릭하여 부킹을 추가하세요.</p>
                     </div>
-                    <div className="text-xs text-gray-600">
-                      <div>헤르츠</div>
-                      <div>예약번호: C-12345</div>
-                      <div>GPS 포함</div>
-                    </div>
-                  </div>
-                  <div className="border rounded p-3">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Plane className="h-3 w-3 text-purple-600" />
-                      <span className="font-medium text-xs">앤텔롭 확정</span>
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      <div>앤텔롭 투어</div>
-                      <div>예약번호: AC-123</div>
-                      <div>일출 촬영 포함</div>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1483,6 +1681,60 @@ export default function TourDetailPage() {
           onClose={() => setShowVehicleAssignment(false)}
           onAssignmentComplete={handleVehicleAssignmentComplete}
         />
+      )}
+
+      {/* 입장권 부킹 폼 모달 */}
+      {showTicketBookingForm && tour && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {editingTicketBooking ? '입장권 부킹 수정' : '입장권 부킹 추가'}
+                </h3>
+                <button
+                  onClick={handleCloseTicketBookingForm}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <TicketBookingForm
+                booking={editingTicketBooking}
+                tourId={tour.id}
+                onSave={handleBookingSubmit}
+                onCancel={handleCloseTicketBookingForm}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 투어 호텔 부킹 폼 모달 */}
+      {showTourHotelBookingForm && tour && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {editingTourHotelBooking ? '투어 호텔 부킹 수정' : '투어 호텔 부킹 추가'}
+                </h3>
+                <button
+                  onClick={handleCloseTourHotelBookingForm}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <TourHotelBookingForm
+                booking={editingTourHotelBooking}
+                tourId={tour.id}
+                onSave={handleBookingSubmit}
+                onCancel={handleCloseTourHotelBookingForm}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

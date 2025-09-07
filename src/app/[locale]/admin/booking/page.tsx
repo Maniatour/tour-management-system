@@ -18,9 +18,9 @@ export default function BookingManagementPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="py-8">
         {/* 헤더 */}
-        <div className="mb-8">
+        <div className="mb-8 px-4 sm:px-6 lg:px-8">
           <h1 className="text-3xl font-bold text-gray-900">부킹 관리</h1>
           <p className="mt-2 text-gray-600">
             투어를 위한 입장권과 호텔 부킹을 관리하고 변경 이력을 추적할 수 있습니다.
@@ -28,7 +28,7 @@ export default function BookingManagementPage() {
         </div>
 
         {/* 탭 네비게이션 */}
-        <div className="border-b border-gray-200 mb-6">
+        <div className="border-b border-gray-200 mb-6 px-4 sm:px-6 lg:px-8">
           <nav className="-mb-px flex space-x-8">
             {tabs.map((tab) => (
               <button
@@ -47,12 +47,12 @@ export default function BookingManagementPage() {
         </div>
 
         {/* 탭 컨텐츠 */}
-        <div className="bg-white rounded-lg shadow">
+        <div className="mx-4 sm:mx-6 lg:mx-8 bg-white rounded-lg shadow">
           {ActiveComponent && <ActiveComponent />}
         </div>
 
         {/* 안내 메시지 */}
-        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-md p-4">
+        <div className="mt-8 mx-4 sm:mx-6 lg:mx-8 bg-blue-50 border border-blue-200 rounded-md p-4">
           <div className="flex">
             <div className="flex-shrink-0">
               <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">

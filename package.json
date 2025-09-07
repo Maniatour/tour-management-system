@@ -16,6 +16,7 @@
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.56.0",
     "@tailwindcss/line-clamp": "^0.4.4",
+    "dayjs": "^1.11.18",
     "lucide-react": "^0.542.0",
     "next": "15.5.2",
     "next-intl": "^4.3.5",

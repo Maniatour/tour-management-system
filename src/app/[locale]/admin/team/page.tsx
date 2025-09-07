@@ -700,7 +700,7 @@ function TeamMemberForm({
                     if (currentLanguages.includes(language.value)) {
                       setFormData({
                         ...formData,
-                        languages: currentLanguages.filter(lang => lang !== language.value)
+                        languages: currentLanguages.filter((lang: string) => lang !== language.value)
                       })
                     } else {
                       setFormData({

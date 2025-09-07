@@ -18,19 +18,15 @@ interface OptionsTabProps {
   formData: {
     productOptions: ProductOption[]
   }
-  setFormData: React.Dispatch<React.SetStateAction<{
-    productOptions: ProductOption[]
-  }>>
   setShowAddOptionModal: (show: boolean) => void
   removeProductOption: (optionId: string) => void
-  updateProductOption: (optionId: string, updates: Partial<ProductOption>) => void
+  updateProductOption: (optionId: string, updates: Record<string, unknown>) => void
   productId: string
   isNewProduct: boolean
 }
 
 export default function OptionsTab({
   formData,
-  setFormData,
   setShowAddOptionModal,
   removeProductOption,
   updateProductOption,
