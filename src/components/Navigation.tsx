@@ -2,6 +2,8 @@
 
 import { useTranslations, useLocale } from 'next-intl'
 import { usePathname } from 'next/navigation'
+import Link from 'next/link'
+import { Calendar, UserCheck } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
 
 const Navigation = () => {
@@ -25,8 +27,22 @@ const Navigation = () => {
             </h1>
           </div>
           
-          {/* 우측 영역 (언어 전환) */}
-          <div className="flex items-center space-x-2">
+          {/* 네비게이션 메뉴 */}
+          <div className="flex items-center space-x-6">
+            <Link 
+              href={`/${locale}/products`}
+              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <Calendar className="w-4 h-4 mr-2" />
+              상품
+            </Link>
+            <Link 
+              href={`/${locale}/off-schedule`}
+              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <UserCheck className="w-4 h-4 mr-2" />
+              Off 스케줄
+            </Link>
             <LanguageSwitcher />
           </div>
         </div>

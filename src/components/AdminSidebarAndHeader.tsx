@@ -19,7 +19,8 @@ import {
   Car,
   BookOpen,
   Truck,
-  DollarSign
+  DollarSign,
+  UserCheck
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -43,6 +44,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: '부킹 관리', href: `/${locale}/admin/booking`, icon: BookOpen },
     { name: '공급업체 관리', href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: '공급업체 정산', href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
+    { name: 'Off 스케줄 관리', href: `/${locale}/admin/off-schedule`, icon: UserCheck },
     { name: '데이터 검수', href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: '픽업 호텔 관리', href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: '차량 관리', href: `/${locale}/admin/vehicles`, icon: Car },

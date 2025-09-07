@@ -56,6 +56,7 @@ export default function ScheduleView() {
   const [unassignedTours, setUnassignedTours] = useState<Tour[]>([])
   const [ticketBookings, setTicketBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; ea: number | null }>>([])
   const [highlightedDate, setHighlightedDate] = useState<string | null>(null)
+  const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string }>>([])
 
   // 사용자 설정 저장
   const saveUserSetting = async (key: string, value: string[] | number | boolean) => {
@@ -226,6 +227,17 @@ export default function ScheduleView() {
     return dateString === todayString
   }
 
+  // Off 날짜 확인 함수
+  const isOffDate = (teamMemberId: string, dateString: string) => {
+    // teamMemberId를 team_email로 변환
+    const teamMember = teamMembers.find(member => member.email === teamMemberId)
+    if (!teamMember) return false
+    
+    return offSchedules.some(off => 
+      off.team_email === teamMember.email && off.off_date === dateString
+    )
+  }
+
   // 상품 ID에 따른 멀티데이 투어 일수 계산
   const getMultiDayTourDays = (productId: string): number => {
     const multiDayPatterns = {
@@ -347,6 +359,14 @@ export default function ScheduleView() {
         .gte('check_in_date', startDate)
         .lte('check_in_date', endDate)
 
+      // Off 스케줄 데이터 가져오기 (현재 월) - 승인된 것만
+      const { data: offSchedulesData } = await supabase
+        .from('off_schedules')
+        .select('team_email, off_date, reason')
+        .eq('status', 'approved')
+        .gte('off_date', firstDayOfMonth.format('YYYY-MM-DD'))
+        .lte('off_date', lastDayOfMonth.format('YYYY-MM-DD'))
+
       console.log('=== ScheduleView 데이터 로딩 결과 ===')
       console.log('Loaded products:', productsData?.length || 0, productsData)
       console.log('Loaded team members:', teamData?.length || 0, teamData)
@@ -359,6 +379,7 @@ export default function ScheduleView() {
       setTours(toursData || [])
       setReservations(reservationsData || [])
       setTicketBookings(ticketBookingsData as any || [])
+      setOffSchedules(offSchedulesData || [])
 
       // 저장된 사용자 설정 불러오기
       await loadUserSettings()
@@ -1253,7 +1274,15 @@ export default function ScheduleView() {
                                   onDragLeave={handleDragLeave}
                                   onDrop={(e) => handleDrop(e, teamMemberId, dateString, 'guide')}
                                 >
-                                  {/* 이어지는 날짜는 오버레이에서 하나의 박스로 렌더링 */}
+                                  {/* Off 날짜 표시 */}
+                                  {isOffDate(teamMemberId, dateString) ? (
+                                    <div className="bg-black text-white rounded px-1 py-0.5 text-xs font-bold flex items-center justify-center h-full">
+                                      OFF
+                                    </div>
+                                  ) : (
+                                    /* 이어지는 날짜는 오버레이에서 하나의 박스로 렌더링 */
+                                    <div></div>
+                                  )}
                                 </div>
                               </div>
                             )
@@ -1389,7 +1418,15 @@ export default function ScheduleView() {
                                   </div>
                                 ) : (
                                   <div className="text-gray-300 text-center py-1 text-xs">
-                                    {/* 드롭 영역 - 텍스트 숨김 */}
+                                    {/* Off 날짜 표시 */}
+                                    {isOffDate(teamMemberId, dateString) ? (
+                                      <div className="bg-black text-white rounded px-1 py-0.5 text-xs font-bold">
+                                        OFF
+                                      </div>
+                                    ) : (
+                                      /* 드롭 영역 - 텍스트 숨김 */
+                                      <div></div>
+                                    )}
                                   </div>
                                 )}
                               </div>
