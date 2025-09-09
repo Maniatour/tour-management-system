@@ -24,7 +24,7 @@ export default function AdminTours() {
   const [products, setProducts] = useState<Product[]>([])
   const [tours, setTours] = useState<Tour[]>([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<'table' | 'calendar' | 'schedule'>('calendar')
+  const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'schedule'>('calendar')
 
   // Supabase에서 데이터 가져오기
   useEffect(() => {
@@ -367,15 +367,15 @@ export default function AdminTours() {
           {/* 뷰 모드 전환 버튼 - 모바일 최적화 */}
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setViewMode('table')}
+              onClick={() => setViewMode('list')}
               className={`px-2 sm:px-3 py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 transition-colors text-xs sm:text-sm ${
-                viewMode === 'table'
+                viewMode === 'list'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               <Grid size={14} className="sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">{t('view.table')}</span>
+              <span className="hidden sm:inline">리스트 뷰</span>
             </button>
             <button
               onClick={() => setViewMode('calendar')}
@@ -422,146 +422,134 @@ export default function AdminTours() {
         <ScheduleView />
       )}
 
-      {/* 테이블 보기 - 모바일 최적화 */}
-      {viewMode === 'table' && (
-        <div className="bg-white rounded-lg shadow-md border">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.id')}</th>
-                  <th className="hidden md:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.tourInfo')}</th>
-                  <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.staff')}</th>
-                  <th className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.reservations')}</th>
-                  <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.fees')}</th>
-                  <th className="hidden xl:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">단독투어</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.status')}</th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tCommon('actions')}</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredTours.map((tour) => (
-                  <tr key={tour.id} className="hover:bg-gray-50">
-                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{tour.id}</div>
-                      <div className="text-xs sm:text-sm text-gray-500">상품: {tour.product_id}</div>
-                      {/* 모바일에서 투어 정보 표시 */}
-                      <div className="md:hidden mt-2 space-y-1">
-                        <div className="flex items-center space-x-2 text-xs">
-                          <Calendar className="h-3 w-3 text-gray-400" />
-                          <span className="text-gray-900">{tour.tour_date}</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-xs">
-                          <Clock className="h-3 w-3 text-gray-400" />
-                          <span className="text-gray-500">
-                            {formatDateTime(tour.tour_start_datetime)} - {formatDateTime(tour.tour_end_datetime)}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2 text-sm">
-                          <Calendar className="h-3 w-3 text-gray-400" />
-                          <span className="text-gray-900">{tour.tour_date}</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-sm">
-                          <Clock className="h-3 w-3 text-gray-400" />
-                          <span className="text-gray-500">
-                            {formatDateTime(tour.tour_start_datetime)} - {formatDateTime(tour.tour_end_datetime)}
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-sm">
-                          <Car className="h-3 w-3 text-gray-400" />
-                          <span className="text-gray-500">차량: {tour.tour_car_id}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2 text-sm">
-                          <User className="h-3 w-3 text-gray-400" />
-                          <span className="text-gray-600">가이드:</span>
-                          <span className="text-gray-900">{getGuideName(tour.tour_guide_id)}</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-sm">
-                          <User className="h-3 w-3 text-gray-400" />
-                          <span className="text-gray-600">어시스턴트:</span>
-                          <span className="text-gray-900">{getAssistantName(tour.assistant_id)}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {tour.reservation_ids?.length || 0}개 예약
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {tour.reservation_ids?.join(', ') || '예약 없음'}
-                      </div>
-                    </td>
-                    <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2 text-sm">
-                          <DollarSign className="h-3 w-3 text-gray-400" />
-                          <span className="text-gray-600">가이드:</span>
-                          <span className="text-gray-900">₩{tour.guide_fee.toLocaleString()}</span>
-                        </div>
-                        {tour.assistant_fee > 0 && (
-                          <div className="flex items-center space-x-2 text-sm">
-                            <DollarSign className="h-3 w-3 text-gray-400" />
-                            <span className="text-gray-600">어시스턴트:</span>
-                            <span className="text-gray-900">₩{tour.assistant_fee.toLocaleString()}</span>
-                          </div>
-                        )}
-                        <div className="text-xs text-gray-500">
-                          총: ₩{(tour.guide_fee + tour.assistant_fee).toLocaleString()}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        Boolean(tour.is_private_tour)
-                          ? 'bg-purple-100 text-purple-800' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {Boolean(tour.is_private_tour) ? '단독투어' : '일반투어'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
-                        {getStatusLabel(tour.tour_status)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
-                        <Link
-                          href={`/${params.locale}/admin/tours/${tour.id}`}
-                          className="text-blue-600 hover:text-blue-900"
-                          title={t('viewDetails')}
-                        >
-                          <Eye size={16} />
-                        </Link>
-                        <button
-                          onClick={() => setEditingTour(tour)}
-                          className="text-blue-600 hover:text-blue-900"
-                          title={tCommon('edit')}
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTour(tour.id)}
-                          className="text-red-600 hover:text-red-900"
-                          title={tCommon('delete')}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* 리스트 뷰 - 카드뷰 */}
+      {viewMode === 'list' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredTours.map((tour) => (
+            <div key={tour.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+              {/* 카드 헤더 */}
+              <div className="p-4 border-b border-gray-100">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <Calendar className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-semibold text-gray-900 truncate">{tour.id}</h3>
+                      <p className="text-xs text-gray-500 truncate">상품: {tour.product_id}</p>
+                    </div>
+                  </div>
+                  <div className="flex space-x-1">
+                    <Link
+                      href={`/${params.locale}/admin/tours/${tour.id}`}
+                      className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                      title={t('viewDetails')}
+                    >
+                      <Eye size={14} />
+                    </Link>
+                    <button
+                      onClick={() => setEditingTour(tour)}
+                      className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                      title={tCommon('edit')}
+                    >
+                      <Edit size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTour(tour.id)}
+                      className="p-1 text-red-600 hover:text-red-900 hover:bg-red-50 rounded"
+                      title={tCommon('delete')}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 카드 본문 */}
+              <div className="p-4 space-y-3">
+                {/* 투어 정보 */}
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2 text-sm">
+                    <Calendar className="h-3 w-3 text-gray-400" />
+                    <span className="text-gray-600">날짜:</span>
+                    <span className="text-gray-900">{tour.tour_date}</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm">
+                    <Clock className="h-3 w-3 text-gray-400" />
+                    <span className="text-gray-600">시간:</span>
+                    <span className="text-gray-500 text-xs">
+                      {formatDateTime(tour.tour_start_datetime)} - {formatDateTime(tour.tour_end_datetime)}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm">
+                    <Car className="h-3 w-3 text-gray-400" />
+                    <span className="text-gray-600">차량:</span>
+                    <span className="text-gray-900">{tour.tour_car_id || '미배정'}</span>
+                  </div>
+                </div>
+
+                {/* 스태프 정보 */}
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2 text-sm">
+                    <User className="h-3 w-3 text-gray-400" />
+                    <span className="text-gray-600">가이드:</span>
+                    <span className="text-gray-900">{getGuideName(tour.tour_guide_id)}</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm">
+                    <User className="h-3 w-3 text-gray-400" />
+                    <span className="text-gray-600">어시스턴트:</span>
+                    <span className="text-gray-900">{getAssistantName(tour.assistant_id)}</span>
+                  </div>
+                </div>
+
+                {/* 예약 정보 */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">예약 수</span>
+                    <span className="text-gray-900 font-medium">{tour.reservation_ids?.length || 0}개</span>
+                  </div>
+                  {tour.reservation_ids && tour.reservation_ids.length > 0 && (
+                    <div className="text-xs text-gray-500">
+                      {tour.reservation_ids.slice(0, 2).join(', ')}
+                      {tour.reservation_ids.length > 2 && ` +${tour.reservation_ids.length - 2}개 더`}
+                    </div>
+                  )}
+                </div>
+
+                {/* 수수료 정보 */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">가이드 수수료</span>
+                    <span className="text-gray-900 font-medium">₩{tour.guide_fee.toLocaleString()}</span>
+                  </div>
+                  {tour.assistant_fee > 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">어시스턴트 수수료</span>
+                      <span className="text-gray-900 font-medium">₩{tour.assistant_fee.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-sm font-medium border-t pt-2">
+                    <span className="text-gray-700">총 수수료</span>
+                    <span className="text-gray-900">₩{(tour.guide_fee + tour.assistant_fee).toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* 상태 및 타입 */}
+                <div className="flex items-center justify-between">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
+                    {getStatusLabel(tour.tour_status)}
+                  </span>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    Boolean(tour.is_private_tour)
+                      ? 'bg-purple-100 text-purple-800' 
+                      : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {Boolean(tour.is_private_tour) ? '단독투어' : '일반투어'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

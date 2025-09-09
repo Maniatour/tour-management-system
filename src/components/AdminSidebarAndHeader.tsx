@@ -55,6 +55,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [currentSession, setCurrentSession] = useState<AttendanceRecord | null>(null)
   const [isCheckingIn, setIsCheckingIn] = useState(false)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false)
+  const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
+  const [elapsedTime, setElapsedTime] = useState('00:00:00')
 
   // 디버깅을 위한 사용자 정보 로깅
   console.log('AdminSidebarAndHeader - User info:', {
@@ -123,7 +126,19 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     }
   }
 
-  // 출근 체크인
+  // 출근 체크인 모달 열기
+  const handleCheckInClick = () => {
+    setAttendanceAction('checkin')
+    setShowAttendanceModal(true)
+  }
+
+  // 퇴근 체크아웃 모달 열기
+  const handleCheckOutClick = () => {
+    setAttendanceAction('checkout')
+    setShowAttendanceModal(true)
+  }
+
+  // 출근 체크인 실행
   const handleCheckIn = async () => {
     if (!authUser?.email) return
 
@@ -179,6 +194,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
       alert(`${nextSessionNumber}번째 출근 체크인이 완료되었습니다!`)
       fetchTodayRecords()
+      setShowAttendanceModal(false)
     } catch (error) {
       console.error('출근 체크인 중 오류:', error)
       alert('출근 체크인 중 오류가 발생했습니다.')
@@ -187,7 +203,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     }
   }
 
-  // 퇴근 체크아웃
+  // 퇴근 체크아웃 실행
   const handleCheckOut = async () => {
     if (!currentSession) return
 
@@ -207,11 +223,54 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
       alert(`${currentSession.session_number}번째 퇴근 체크아웃이 완료되었습니다!`)
       fetchTodayRecords()
+      setShowAttendanceModal(false)
     } catch (error) {
       console.error('퇴근 체크아웃 중 오류:', error)
       alert('퇴근 체크아웃 중 오류가 발생했습니다.')
     }
   }
+
+  // 모달에서 확인 버튼 클릭
+  const handleConfirmAttendance = () => {
+    if (attendanceAction === 'checkin') {
+      handleCheckIn()
+    } else if (attendanceAction === 'checkout') {
+      handleCheckOut()
+    }
+  }
+
+  // 경과 시간 계산 함수
+  const calculateElapsedTime = (startTime: string) => {
+    const start = new Date(startTime)
+    const now = new Date()
+    const diff = now.getTime() - start.getTime()
+    
+    const hours = Math.floor(diff / (1000 * 60 * 60))
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000)
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  // 타이머 업데이트
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null
+    
+    if (currentSession && currentSession.check_in_time && !currentSession.check_out_time) {
+      // 1초마다 경과 시간 업데이트
+      interval = setInterval(() => {
+        setElapsedTime(calculateElapsedTime(currentSession.check_in_time!))
+      }, 1000)
+    } else {
+      setElapsedTime('00:00:00')
+    }
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
+  }, [currentSession])
 
   // 컴포넌트 마운트 시 오늘의 출퇴근 기록 조회
   useEffect(() => {
@@ -273,10 +332,20 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             <div className="flex items-center space-x-1 sm:space-x-4">
               {/* 출퇴근 버튼 (팀원만 표시) - 모바일에서는 작게 */}
               {authUser?.email && !employeeNotFound && (
-                <div className="flex items-center space-x-1">
+                <div className="flex items-center space-x-2">
+                  {/* 경과 시간 표시 (출근 중일 때만) */}
+                  {currentSession && currentSession.check_in_time && !currentSession.check_out_time && (
+                    <div className="flex items-center space-x-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-lg">
+                      <Clock className="w-3 h-3" />
+                      <span className="text-xs sm:text-sm font-mono font-medium">
+                        {elapsedTime}
+                      </span>
+                    </div>
+                  )}
+                  
                   {!currentSession ? (
                     <button
-                      onClick={handleCheckIn}
+                      onClick={handleCheckInClick}
                       disabled={isCheckingIn}
                       className="flex items-center px-2 py-1 sm:px-3 sm:py-2 bg-green-600 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
@@ -286,7 +355,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     </button>
                   ) : (
                     <button
-                      onClick={handleCheckOut}
+                      onClick={handleCheckOutClick}
                       className="flex items-center px-2 py-1 sm:px-3 sm:py-2 bg-red-600 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
                     >
                       <XCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
@@ -441,6 +510,51 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           </div>
         </main>
       </div>
+
+      {/* 출퇴근 확인 모달 */}
+      {showAttendanceModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4">
+                {attendanceAction === 'checkin' ? (
+                  <CheckCircle className="h-6 w-6 text-blue-600" />
+                ) : (
+                  <XCircle className="h-6 w-6 text-red-600" />
+                )}
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                {attendanceAction === 'checkin' ? '출근 확인' : '퇴근 확인'}
+              </h3>
+              <p className="text-sm text-gray-500 mb-6">
+                {attendanceAction === 'checkin' 
+                  ? '출근을 시작하시겠습니까?' 
+                  : '퇴근을 완료하시겠습니까?'
+                }
+              </p>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowAttendanceModal(false)}
+                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleConfirmAttendance}
+                  disabled={isCheckingIn}
+                  className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
+                    attendanceAction === 'checkin'
+                      ? 'bg-green-600 text-white hover:bg-green-700 disabled:opacity-50'
+                      : 'bg-red-600 text-white hover:bg-red-700'
+                  }`}
+                >
+                  {isCheckingIn ? '처리 중...' : (attendanceAction === 'checkin' ? '출근 시작' : '퇴근 완료')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

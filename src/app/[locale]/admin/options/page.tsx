@@ -275,121 +275,116 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
         ))}
       </div>
 
-      {/* 옵션 목록 */}
-      <div className="bg-white rounded-lg shadow-md border">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.name')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.category')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.description')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.price')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.priceType')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.status')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.tags')}</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tCommon('actions')}</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredOptions.map((option) => (
-                <tr key={option.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 h-10 w-10">
-                        <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                          <Settings className="h-6 w-6 text-blue-600" />
-                        </div>
-                      </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">{option.name}</div>
-                        <div className="text-sm text-gray-500">ID: {option.id}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(option.category)}`}>
-                      {getCategoryLabel(option.category)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900 max-w-xs truncate" title={option.description}>
-                      {option.description}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2 text-sm">
-                        <DollarSign className="h-3 w-3 text-gray-400" />
-                        <span className="text-gray-600">성인:</span>
-                        <span className="text-gray-900">${option.adult_price}</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-sm">
-                        <span className="text-gray-600">아동:</span>
-                        <span className="text-gray-900">${option.child_price}</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-sm">
-                        <span className="text-gray-600">유아:</span>
-                        <span className="text-gray-900">${option.infant_price}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                      {getPriceTypeLabel(option.price_type)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(option.status)}`}>
-                      {getStatusLabel(option.status)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-1">
-                      {option.tags && option.tags.length > 0 ? (
-                        option.tags.map((tag: string, index: number) => (
-                          <span
-                            key={index}
-                            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
-                          >
-                            {tag}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-gray-400 text-sm">태그 없음</span>
-                      )}
-                    </div>
-                  </td>
-                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                     <div className="flex space-x-2">
-                       <button
-                         onClick={() => setEditingOption(option)}
-                         className="text-blue-600 hover:text-blue-900"
-                         title="편집"
-                       >
-                         <Edit size={16} />
-                       </button>
-                       <button
-                         onClick={() => handleCopyOption(option)}
-                         className="text-green-600 hover:text-green-900"
-                         title="복사"
-                       >
-                         <Copy size={16} />
-                       </button>
-                       <button
-                         onClick={() => handleDeleteOption(option.id)}
-                         className="text-red-600 hover:text-red-900"
-                         title="삭제"
-                       >
-                         <Trash2 size={16} />
-                       </button>
-                     </div>
-                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* 옵션 목록 - 카드뷰 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredOptions.map((option) => (
+          <div key={option.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+            {/* 카드 헤더 */}
+            <div className="p-4 border-b border-gray-100">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <Settings className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold text-gray-900 truncate">{option.name}</h3>
+                    <p className="text-xs text-gray-500 truncate">ID: {option.id}</p>
+                  </div>
+                </div>
+                <div className="flex space-x-1">
+                  <button
+                    onClick={() => setEditingOption(option)}
+                    className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                    title="편집"
+                  >
+                    <Edit size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleCopyOption(option)}
+                    className="p-1 text-green-600 hover:text-green-900 hover:bg-green-50 rounded"
+                    title="복사"
+                  >
+                    <Copy size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteOption(option.id)}
+                    className="p-1 text-red-600 hover:text-red-900 hover:bg-red-50 rounded"
+                    title="삭제"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 카드 본문 */}
+            <div className="p-4 space-y-3">
+              {/* 카테고리와 상태 */}
+              <div className="flex items-center justify-between">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(option.category)}`}>
+                  {getCategoryLabel(option.category)}
+                </span>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(option.status)}`}>
+                  {getStatusLabel(option.status)}
+                </span>
+              </div>
+
+              {/* 설명 */}
+              <div className="text-sm text-gray-700 line-clamp-2" title={option.description}>
+                {option.description}
+              </div>
+
+              {/* 가격 정보 */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center space-x-1">
+                    <DollarSign className="h-3 w-3 text-gray-400" />
+                    <span className="text-gray-600">성인</span>
+                  </div>
+                  <span className="font-medium text-gray-900">${option.adult_price}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">아동</span>
+                  <span className="font-medium text-gray-900">${option.child_price}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">유아</span>
+                  <span className="font-medium text-gray-900">${option.infant_price}</span>
+                </div>
+              </div>
+
+              {/* 가격 타입 */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">가격 타입</span>
+                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                  {getPriceTypeLabel(option.price_type)}
+                </span>
+              </div>
+
+              {/* 태그 */}
+              <div>
+                <div className="text-xs text-gray-500 mb-1">태그</div>
+                <div className="flex flex-wrap gap-1">
+                  {option.tags && option.tags.length > 0 ? (
+                    option.tags.slice(0, 3).map((tag: string, index: number) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                      >
+                        {tag}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-gray-400 text-xs">태그 없음</span>
+                  )}
+                  {option.tags && option.tags.length > 3 && (
+                    <span className="text-xs text-gray-500">+{option.tags.length - 3}개 더</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
              {/* 옵션 추가/편집/복사 모달 */}
