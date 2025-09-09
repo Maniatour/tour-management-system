@@ -9,9 +9,6 @@ import {
   Trash2, 
   Eye,
   User,
-  Mail,
-  Phone,
-  Calendar,
   Car,
   CreditCard,
   Shield,
@@ -62,7 +59,8 @@ export default function AdminTeam() {
   // 새 팀원 추가
   const handleAddMember = async (memberData: TeamMemberInsert) => {
     try {
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('team')
         .insert(memberData)
 
@@ -84,7 +82,8 @@ export default function AdminTeam() {
   // 팀원 정보 수정
   const handleEditMember = async (email: string, updateData: TeamMemberUpdate) => {
     try {
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('team')
         .update(updateData)
         .eq('email', email)
@@ -110,7 +109,8 @@ export default function AdminTeam() {
     if (!confirm(t('deleteConfirm'))) return
 
     try {
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('team')
         .delete()
         .eq('email', email)
@@ -132,7 +132,8 @@ export default function AdminTeam() {
   // 팀원 활성/비활성 상태 토글
   const handleToggleActive = async (email: string, currentStatus: boolean) => {
     try {
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('team')
         .update({ is_active: !currentStatus })
         .eq('email', email)
@@ -422,7 +423,7 @@ export default function AdminTeam() {
                         {member.email}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {member.phone}
+                        {member.phone || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {member.position || '-'}
@@ -518,7 +519,6 @@ function TeamMemberForm({
   onSubmit: (data: TeamMemberInsert) => void
   onCancel: () => void
 }) {
-  const t = useTranslations('team')
   const [formData, setFormData] = useState<TeamMemberInsert>({
     email: member?.email || '',
     name_ko: member?.name_ko || '',
@@ -551,9 +551,9 @@ function TeamMemberForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     
-    // 필수 필드 검증
-    if (!formData.email || !formData.name_ko || !formData.phone) {
-      alert('이메일, 한국어 이름, 전화번호는 필수 입력 항목입니다.')
+    // 필수 필드 검증 (전화번호는 선택사항으로 변경)
+    if (!formData.email || !formData.name_ko) {
+      alert('이메일과 한국어 이름은 필수 입력 항목입니다.')
       return
     }
 
@@ -564,7 +564,19 @@ function TeamMemberForm({
       return
     }
 
-    onSubmit(formData)
+    // 날짜 필드의 빈 문자열을 null로 변환
+    const processedData = {
+      ...formData,
+      hire_date: formData.hire_date || null,
+      date_of_birth: formData.date_of_birth || null,
+      cpr_acquired: formData.cpr_acquired || null,
+      cpr_expired: formData.cpr_expired || null,
+      medical_acquired: formData.medical_acquired || null,
+      medical_expired: formData.medical_expired || null,
+      phone: formData.phone || null
+    }
+
+    onSubmit(processedData)
   }
 
   return (
@@ -652,14 +664,14 @@ function TeamMemberForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                전화번호 *
+                전화번호
               </label>
               <input
                 type="tel"
-                value={formData.phone}
+                value={formData.phone || ''}
                 onChange={(e) => setFormData({...formData, phone: e.target.value})}
                 className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
-                required
+                placeholder="전화번호를 입력하세요 (선택사항)"
               />
             </div>
             
@@ -1038,7 +1050,7 @@ function TeamMemberDetailModal({
               </div>
               <div>
                 <span className="text-sm font-medium text-gray-500">전화번호</span>
-                <p className="text-gray-900">{member.phone}</p>
+                <p className="text-gray-900">{member.phone || '미입력'}</p>
               </div>
               {member.position && (
                 <div>

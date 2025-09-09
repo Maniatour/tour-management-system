@@ -110,6 +110,7 @@ export default function AddOffScheduleModal({
       
       // 여러 Off 스케줄을 한 번에 추가 (공통 사유 사용)
       const offSchedulesToInsert = offDates.map(item => ({
+        id: `OFF_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
         team_email: selectedMember,
         off_date: item.date,
         reason: reason.trim(),

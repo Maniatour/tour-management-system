@@ -1,14 +1,14 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
-import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, BarChart3 } from 'lucide-react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
+import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
 import ReservationForm from '@/components/reservation/ReservationForm'
+import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import TourCalendar from '@/components/TourCalendar'
 import { useReservationData } from '@/hooks/useReservationData'
@@ -45,6 +45,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     pickupHotels,
     coupons,
     loading,
+    loadingProgress,
     refreshReservations,
     refreshCustomers
   } = useReservationData()
@@ -72,7 +73,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [dateRange, setDateRange] = useState<{start: string, end: string}>({start: '', end: ''})
   const [sortBy, setSortBy] = useState<'created_at' | 'tour_date' | 'customer_name' | 'product_name'>('created_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [groupByDate] = useState<boolean>(true)
+  const [groupByDate, setGroupByDate] = useState<boolean>(true) // 기본값을 true로 설정하여 날짜별 그룹화
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
   // 그룹 접기/펼치기 함수
@@ -91,16 +92,31 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // 주간 통계 아코디언 상태
   const [isWeeklyStatsCollapsed, setIsWeeklyStatsCollapsed] = useState(false)
 
+  // 검색어에 따른 그룹화 상태 조정
+  useEffect(() => {
+    if (searchTerm.trim()) {
+      // 검색어가 있을 때는 그룹화 해제
+      setGroupByDate(false)
+    } else {
+      // 검색어가 없을 때는 그룹화 활성화
+      setGroupByDate(true)
+    }
+  }, [searchTerm])
+
   // 필터링 및 정렬 로직
   const filteredAndSortedReservations = useCallback(() => {
     const filtered = reservations.filter(reservation => {
-      // 검색 조건
-    const matchesSearch = 
+      // 검색 조건 - 검색어가 있을 때만 검색 수행
+      const matchesSearch = !searchTerm || 
       reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.channelRN.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getCustomerName(reservation.customerId, customers).toLowerCase().includes(searchTerm.toLowerCase()) ||
-        getProductName(reservation.productId, products).toLowerCase().includes(searchTerm.toLowerCase()) ||
-        getChannelName(reservation.channelId, channels).toLowerCase().includes(searchTerm.toLowerCase())
+      getCustomerName(reservation.customerId, customers as Customer[]).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getProductName(reservation.productId, products).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getChannelName(reservation.channelId, channels).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      reservation.tourDate.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      reservation.tourTime.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      reservation.pickUpHotel.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      reservation.addedBy.toLowerCase().includes(searchTerm.toLowerCase())
     
       // 상태 필터
     const matchesStatus = selectedStatus === 'all' || reservation.status === selectedStatus
@@ -108,13 +124,16 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       // 채널 필터
       const matchesChannel = selectedChannel === 'all' || reservation.channelId === selectedChannel
       
-      // 날짜 범위 필터
+      // 날짜 범위 필터 - 빈 날짜 범위일 때는 모든 데이터 표시
       let matchesDateRange = true
       if (dateRange.start && dateRange.end) {
         const tourDate = new Date(reservation.tourDate)
         const startDate = new Date(dateRange.start)
         const endDate = new Date(dateRange.end)
-        matchesDateRange = tourDate >= startDate && tourDate <= endDate
+        // 날짜가 유효한 경우에만 필터링 적용
+        if (!isNaN(tourDate.getTime()) && !isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+          matchesDateRange = tourDate >= startDate && tourDate <= endDate
+        }
       }
       
       return matchesSearch && matchesStatus && matchesChannel && matchesDateRange
@@ -134,8 +153,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           bValue = new Date(b.tourDate)
           break
         case 'customer_name':
-          aValue = getCustomerName(a.customerId, customers)
-          bValue = getCustomerName(b.customerId, customers)
+          aValue = getCustomerName(a.customerId, customers as Customer[])
+          bValue = getCustomerName(b.customerId, customers as Customer[])
           break
         case 'product_name':
           aValue = getProductName(a.productId, products)
@@ -159,7 +178,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const filteredReservations = filteredAndSortedReservations()
   
   // 주간 페이지네이션을 위한 유틸리티 함수들
-  const getWeekStartDate = (weekOffset: number) => {
+  const getWeekStartDate = useCallback((weekOffset: number) => {
     const now = new Date()
     const currentDay = now.getDay() // 0 = 일요일, 1 = 월요일, ..., 6 = 토요일
     const daysToSubtract = currentDay // 일요일부터 시작하므로 현재 요일만큼 빼기
@@ -167,17 +186,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     weekStart.setDate(now.getDate() - daysToSubtract + (weekOffset * 7))
     weekStart.setHours(0, 0, 0, 0)
     return weekStart
-  }
+  }, [])
 
-  const getWeekEndDate = (weekOffset: number) => {
+  const getWeekEndDate = useCallback((weekOffset: number) => {
     const weekStart = getWeekStartDate(weekOffset)
     const weekEnd = new Date(weekStart)
     weekEnd.setDate(weekStart.getDate() + 6)
     weekEnd.setHours(23, 59, 59, 999)
     return weekEnd
-  }
+  }, [getWeekStartDate])
 
-  const formatWeekRange = (weekOffset: number) => {
+  const formatWeekRange = useCallback((weekOffset: number) => {
     const weekStart = getWeekStartDate(weekOffset)
     const weekEnd = getWeekEndDate(weekOffset)
     return {
@@ -185,7 +204,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       end: weekEnd.toISOString().split('T')[0],
       display: `${weekStart.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}`
     }
-  }
+  }, [getWeekStartDate, getWeekEndDate])
 
   // 날짜별 그룹화 로직 (created_at 기준) - 주간 페이지네이션 적용
   const groupedReservations = useMemo(() => {
@@ -225,7 +244,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       })
     
     return sortedGroups
-  }, [filteredReservations, groupByDate, currentWeek])
+  }, [filteredReservations, groupByDate, currentWeek, formatWeekRange])
 
   // 주간 통계 데이터 계산
   const weeklyStats = useMemo(() => {
@@ -289,7 +308,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       adults: reservation.adults,
       child: reservation.child,
       infant: reservation.infant,
-      customer_name: getCustomerName(reservation.customerId, customers),
+      customer_name: getCustomerName(reservation.customerId, customers as Customer[]),
       channel_name: getChannelName(reservation.channelId, channels),
       total_price: calculateTotalPrice(reservation, products, optionChoices)
     }))
@@ -316,12 +335,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         tour_id: reservation.tourId,
         status: reservation.status,
         selected_options: reservation.selectedOptions,
-        selected_option_prices: reservation.selectedOptionPrices
+        selected_option_prices: reservation.selectedOptionPrices,
+        is_private_tour: reservation.isPrivateTour || false
       }
 
       const { data: newReservation, error } = await supabase
         .from('reservations')
-        .insert(reservationData)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .insert(reservationData as any)
         .select()
         .single()
 
@@ -336,7 +357,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         try {
           const pricingData = {
             id: crypto.randomUUID(),
-            reservation_id: newReservation.id,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            reservation_id: (newReservation as any).id,
             adult_product_price: reservation.pricingInfo.adultProductPrice,
             child_product_price: reservation.pricingInfo.childProductPrice,
             infant_product_price: reservation.pricingInfo.infantProductPrice,
@@ -357,13 +379,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             total_price: reservation.pricingInfo.totalPrice,
             deposit_amount: reservation.pricingInfo.depositAmount,
             balance_amount: reservation.pricingInfo.balanceAmount,
-            is_private_tour: reservation.pricingInfo.isPrivateTour,
-            private_tour_additional_cost: reservation.pricingInfo.privateTourAdditionalCost
+            private_tour_additional_cost: reservation.pricingInfo.privateTourAdditionalCost,
+            commission_percent: reservation.pricingInfo.commission_percent || 0
           }
 
           const { error: pricingError } = await supabase
             .from('reservation_pricing')
-            .insert([pricingData])
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .upsert(pricingData as any, { 
+              onConflict: 'reservation_id',
+              ignoreDuplicates: false 
+            })
 
           if (pricingError) {
             console.error('Error saving pricing info:', pricingError)
@@ -373,6 +399,27 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
         } catch (pricingError) {
           console.error('Error saving pricing info:', pricingError)
+        }
+      }
+
+      // Mania Tour 또는 Mania Service인 경우 자동으로 투어 생성 또는 업데이트
+      if (newReservation) {
+        const tourResult = await autoCreateOrUpdateTour(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (newReservation as any).product_id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (newReservation as any).tour_date,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (newReservation as any).id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (newReservation as any).is_private_tour
+        )
+        
+        if (tourResult.success) {
+          console.log('투어 자동 생성/업데이트 성공:', tourResult.message)
+        } else {
+          console.warn('투어 자동 생성/업데이트 실패:', tourResult.message)
+          // 투어 생성 실패는 예약 성공에 영향을 주지 않음
         }
       }
 
@@ -408,24 +455,33 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           tour_id: reservation.tourId,
           status: reservation.status,
           selected_options: reservation.selectedOptions,
-          selected_option_prices: reservation.selectedOptionPrices
+          selected_option_prices: reservation.selectedOptionPrices,
+          is_private_tour: reservation.isPrivateTour || false
         }
 
-        const { error } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
           .from('reservations')
-          .update(reservationData)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .update(reservationData as any)
           .eq('id', editingReservation.id)
 
         if (error) {
-          console.error('Error updating reservation:', error)
+          console.error('Error updating reservation:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code
+          })
           alert('예약 수정 중 오류가 발생했습니다: ' + error.message)
           return
         }
 
-        // 가격 정보가 있으면 업데이트
+        // 가격 정보가 있으면 업데이트 또는 삽입
         if (reservation.pricingInfo) {
           try {
             const pricingData = {
+              reservation_id: editingReservation.id,
               adult_product_price: reservation.pricingInfo.adultProductPrice,
               child_product_price: reservation.pricingInfo.childProductPrice,
               infant_product_price: reservation.pricingInfo.infantProductPrice,
@@ -446,24 +502,48 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               total_price: reservation.pricingInfo.totalPrice,
               deposit_amount: reservation.pricingInfo.depositAmount,
               balance_amount: reservation.pricingInfo.balanceAmount,
-              is_private_tour: reservation.pricingInfo.isPrivateTour,
-              private_tour_additional_cost: reservation.pricingInfo.privateTourAdditionalCost
+            private_tour_additional_cost: reservation.pricingInfo.privateTourAdditionalCost,
+            commission_percent: reservation.pricingInfo.commission_percent || 0
             }
 
+            // upsert를 사용하여 기존 레코드가 있으면 업데이트, 없으면 삽입
             const { error: pricingError } = await supabase
               .from('reservation_pricing')
-              .update(pricingData)
-              .eq('reservation_id', editingReservation.id)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              .upsert(pricingData as any, { 
+                onConflict: 'reservation_id',
+                ignoreDuplicates: false 
+              })
 
             if (pricingError) {
-              console.error('Error updating pricing info:', pricingError)
-              // 가격 정보 업데이트 실패는 예약 수정 성공에 영향을 주지 않음
+              console.error('Error saving pricing info:', pricingError)
+              // 가격 정보 저장 실패는 예약 수정 성공에 영향을 주지 않음
             } else {
-              console.log('가격 정보가 성공적으로 업데이트되었습니다.')
+              console.log('가격 정보가 성공적으로 저장되었습니다.')
             }
           } catch (pricingError) {
-            console.error('Error updating pricing info:', pricingError)
+            console.error('Error saving pricing info:', pricingError)
           }
+        }
+
+        // Mania Tour 또는 Mania Service인 경우 자동으로 투어 생성 또는 업데이트
+        try {
+          const tourResult = await autoCreateOrUpdateTour(
+            reservation.productId,
+            reservation.tourDate,
+            editingReservation.id,
+            reservation.isPrivateTour
+          )
+          
+          if (tourResult.success) {
+            console.log('투어 자동 생성/업데이트 성공:', tourResult.message)
+          } else {
+            console.warn('투어 자동 생성/업데이트 실패:', tourResult.message)
+            // 투어 생성 실패는 예약 수정 성공에 영향을 주지 않음
+          }
+        } catch (tourError) {
+          console.error('투어 자동 생성/업데이트 중 예상치 못한 오류:', tourError)
+          // 투어 생성 실패는 예약 수정 성공에 영향을 주지 않음
         }
 
         // 성공 시 예약 목록 새로고침
@@ -471,8 +551,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         setEditingReservation(null)
         alert('예약이 성공적으로 수정되었습니다!')
       } catch (error) {
-        console.error('Error updating reservation:', error)
-        alert('예약 수정 중 오류가 발생했습니다.')
+        console.error('Error updating reservation:', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+          error: error
+        })
+        alert('예약 수정 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'))
       }
     }
   }
@@ -480,6 +564,62 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // 예약 편집 모달 열기
   const handleEditReservationClick = (reservation: Reservation) => {
     setEditingReservation(reservation)
+  }
+
+
+  // 투어 존재 여부 확인 함수
+  const checkTourExists = async (productId: string, tourDate: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase
+        .from('tours')
+        .select('id')
+        .eq('product_id', productId)
+        .eq('tour_date', tourDate)
+        .limit(1)
+
+      if (error) {
+        console.error('Error checking tour existence:', error)
+        return false
+      }
+
+      return data && data.length > 0
+    } catch (error) {
+      console.error('Error checking tour existence:', error)
+      return false
+    }
+  }
+
+  // 투어 생성 함수
+  const handleCreateTour = async (reservation: Reservation) => {
+    try {
+      // 먼저 투어가 실제로 존재하는지 다시 한번 확인
+      const tourExists = await checkTourExists(reservation.productId, reservation.tourDate)
+      
+      if (tourExists) {
+        alert('해당 날짜에 이미 투어가 존재합니다.')
+        // 예약 목록 새로고침하여 최신 상태 반영
+        await refreshReservations()
+        return
+      }
+
+      const result = await autoCreateOrUpdateTour(
+        reservation.productId,
+        reservation.tourDate,
+        reservation.id,
+        reservation.isPrivateTour
+      )
+
+      if (result.success) {
+        alert('투어가 성공적으로 생성되었습니다!')
+        // 예약 목록 새로고침
+        await refreshReservations()
+      } else {
+        alert('투어 생성 중 오류가 발생했습니다: ' + result.message)
+      }
+    } catch (error) {
+      console.error('Error creating tour:', error)
+      alert('투어 생성 중 오류가 발생했습니다.')
+    }
   }
 
   // 달력뷰에서 예약 클릭 시 편집 모달 열기
@@ -532,7 +672,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       // Supabase에 저장
       const { data, error } = await supabase
         .from('customers')
-        .insert(customerData)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .insert(customerData as any)
         .select()
 
       if (error) {
@@ -549,13 +690,48 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       // 새로 추가된 고객을 자동으로 선택 (예약 폼이 열려있는 경우)
       if (showAddForm && data && data[0]) {
         const newCustomer = data[0]
-        alert(`새 고객 "${newCustomer.name}"이 추가되었습니다. 고객을 선택해주세요.`)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        alert(`새 고객 "${(newCustomer as any).name}"이 추가되었습니다. 고객을 선택해주세요.`)
       }
     } catch (error) {
       console.error('Error adding customer:', error)
       alert('고객 추가 중 오류가 발생했습니다.')
     }
   }, [showAddForm, refreshCustomers])
+
+  // 로딩 화면
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">예약 데이터 로딩 중...</h3>
+            {loadingProgress.total > 0 && (
+              <div className="space-y-2">
+                <div className="text-sm text-gray-600">
+                  {loadingProgress.current} / {loadingProgress.total} 예약 로딩 중
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${(loadingProgress.current / loadingProgress.total) * 100}%` }}
+                  ></div>
+                </div>
+                <div className="text-xs text-gray-500">
+                  {Math.round((loadingProgress.current / loadingProgress.total) * 100)}% 완료
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -691,6 +867,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               {sortOrder === 'asc' ? '↑' : '↓'}
             </button>
           </div>
+
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700">그룹화:</label>
+            <button
+              onClick={() => setGroupByDate(!groupByDate)}
+              className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                groupByDate 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {groupByDate ? '날짜별 그룹화 ON' : '날짜별 그룹화 OFF'}
+            </button>
+          </div>
           
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium text-gray-700">페이지당:</label>
@@ -717,6 +907,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               setDateRange({start: '', end: ''})
               setSortBy('created_at')
               setSortOrder('desc')
+              setGroupByDate(true) // 그룹화 상태도 초기화
               setCurrentPage(1)
               setCurrentWeek(0) // 주간 페이지네이션도 현재 주로 초기화
             }}
@@ -902,7 +1093,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       ) : viewMode === 'calendar' ? (
         /* 달력뷰 */
         <TourCalendar 
-          tours={calendarReservations} 
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tours={calendarReservations as any} 
           onTourClick={handleCalendarReservationClick}
         />
       ) : (
@@ -1099,7 +1291,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2"
                     onClick={(e) => {
                       e.stopPropagation();
-                      const customer = customers.find(c => c.id === reservation.customerId);
+                      const customer = (customers as Customer[]).find(c => c.id === reservation.customerId);
                       if (customer) {
                         setEditingCustomer(customer);
                       }
@@ -1107,7 +1299,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   >
                     {/* 언어별 국기 아이콘 */}
                     {(() => {
-                      const customer = customers.find(c => c.id === reservation.customerId);
+                      const customer = (customers as Customer[]).find(c => c.id === reservation.customerId);
                       if (!customer?.language) return null;
                       
                       const language = customer.language.toLowerCase();
@@ -1122,9 +1314,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       }
                       return null;
                     })()}
-                    <span>{getCustomerName(reservation.customerId, customers)}</span>
+                    <span>{getCustomerName(reservation.customerId, customers as Customer[])}</span>
                   </div>
-                  <div className="text-xs text-gray-500">{customers.find(c => c.id === reservation.customerId)?.email}</div>
+                  <div className="text-xs text-gray-500">{(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}</div>
                 </div>
               </div>
 
@@ -1194,18 +1386,44 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     <div className="text-lg font-bold text-blue-600">
                       {calculateTotalPrice(reservation, products, optionChoices).toLocaleString()}원
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePricingInfoClick(reservation);
-                      }}
-                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                      </svg>
-                      <span>가격</span>
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePricingInfoClick(reservation);
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                        </svg>
+                        <span>가격</span>
+                      </button>
+                      
+                      {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
+                      {(() => {
+                        const product = products.find(p => p.id === reservation.productId);
+                        const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service';
+                        
+                        // hasExistingTour 필드를 사용하여 투어 존재 여부 확인
+                        if (isManiaTour && !reservation.hasExistingTour) {
+                          return (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCreateTour(reservation);
+                              }}
+                              className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200"
+                              title="투어 생성"
+                            >
+                              <Play className="w-3 h-3" />
+                              <span>투어</span>
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1262,7 +1480,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2"
                       onClick={(e) => {
                         e.stopPropagation();
-                        const customer = customers.find(c => c.id === reservation.customerId);
+                        const customer = (customers as Customer[]).find(c => c.id === reservation.customerId);
                         if (customer) {
                           setEditingCustomer(customer);
                         }
@@ -1270,7 +1488,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     >
                       {/* 언어별 국기 아이콘 */}
                       {(() => {
-                        const customer = customers.find(c => c.id === reservation.customerId);
+                        const customer = (customers as Customer[]).find(c => c.id === reservation.customerId);
                         if (!customer?.language) return null;
                         
                         const language = customer.language.toLowerCase();
@@ -1285,9 +1503,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         }
                         return null;
                       })()}
-                      <span>{getCustomerName(reservation.customerId, customers)}</span>
+                      <span>{getCustomerName(reservation.customerId, customers as Customer[])}</span>
                     </div>
-                    <div className="text-xs text-gray-500">{customers.find(c => c.id === reservation.customerId)?.email}</div>
+                    <div className="text-xs text-gray-500">{(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}</div>
                   </div>
                 </div>
 
@@ -1477,9 +1695,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           onSubmit={async (customerData) => {
             try {
               // Supabase에 고객 정보 업데이트
-              const { error } = await supabase
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const { error } = await (supabase as any)
                 .from('customers')
-                .update(customerData)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                .update(customerData as any)
                 .eq('id', editingCustomer.id)
 
               if (error) {

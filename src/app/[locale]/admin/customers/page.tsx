@@ -1,22 +1,17 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { useTranslations } from 'next-intl'
 import ReactCountryFlag from 'react-country-flag'
 import { 
   Plus, 
   Search, 
-  Edit, 
   Trash2, 
-  Eye,
   User,
   Mail,
   Phone,
-  MapPin,
   Globe,
   FileText,
   Calendar,
-  TrendingUp,
   Filter,
   AlertTriangle
 } from 'lucide-react'
@@ -27,11 +22,22 @@ type Customer = Database['public']['Tables']['customers']['Row']
 type CustomerInsert = Database['public']['Tables']['customers']['Insert']
 type CustomerUpdate = Database['public']['Tables']['customers']['Update']
 
+// 예약 정보 타입 정의
+type ReservationInfo = {
+  bookingCount: number
+  totalParticipants: number
+}
+
+// 예약 데이터 타입 정의
+type ReservationData = {
+  customer_id: string
+  total_people: number
+}
+
 export default function AdminCustomers() {
-  const t = useTranslations('customers')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [channels, setChannels] = useState<Array<{id: string, name: string, type: string | null}>>([])
-  const [selectedChannelType, setSelectedChannelType] = useState<'ota' | 'self' | 'partner'>('ota')
+  const [reservationInfo, setReservationInfo] = useState<Record<string, ReservationInfo>>({})
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
@@ -47,14 +53,12 @@ export default function AdminCustomers() {
   // 폼 열기 함수
   const openForm = () => {
     setShowForm(true)
-    setSelectedChannelType('ota') // 기본값으로 ota 선택
   }
 
   // 폼 닫기 함수
   const closeForm = () => {
     setShowForm(false)
     setEditingCustomer(null)
-    setSelectedChannelType('ota')
   }
 
   // 고객 목록 불러오기 (모든 고객을 가져오기 위해 페이지네이션 사용)
@@ -118,10 +122,89 @@ export default function AdminCustomers() {
     }
   }
 
+  // 고객별 예약 정보 가져오기
+  const fetchReservationInfo = async () => {
+    try {
+      console.log('Fetching reservation info...')
+      
+      // 모든 예약 데이터를 가져오기 (페이지네이션 사용)
+      let allReservations: any[] = []
+      let hasMore = true
+      let page = 0
+      const pageSize = 1000
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('reservations')
+          .select('id, customer_id, total_people, status, created_at')
+          .range(page * pageSize, (page + 1) * pageSize - 1)
+
+        if (error) {
+          console.error('Error fetching reservations:', error)
+          break
+        }
+
+        if (data && data.length > 0) {
+          allReservations = [...allReservations, ...data]
+          page++
+        } else {
+          hasMore = false
+        }
+      }
+
+      console.log('Total reservations found:', allReservations.length)
+
+      if (allReservations.length === 0) {
+        console.log('No reservations found in database')
+        setReservationInfo({})
+        return
+      }
+
+      // 실제 데이터가 있는 경우에만 처리
+      const infoMap: Record<string, ReservationInfo> = {}
+      
+      console.log('Starting to process', allReservations.length, 'reservations')
+      
+      allReservations.forEach((reservation: any, index: number) => {
+        const customerId = reservation.customer_id
+        if (!customerId) {
+          return // customer_id가 없는 경우 스킵
+        }
+        
+        if (!infoMap[customerId]) {
+          infoMap[customerId] = {
+            bookingCount: 0,
+            totalParticipants: 0
+          }
+        }
+        
+        infoMap[customerId].bookingCount += 1
+        infoMap[customerId].totalParticipants += reservation.total_people || 0
+      })
+
+      console.log('Final processed reservation info:', JSON.stringify(infoMap, null, 2))
+      console.log('Info map keys:', Object.keys(infoMap))
+      console.log('Info map values:', Object.values(infoMap))
+      
+      // infoMap이 비어있지 않은지 확인
+      if (Object.keys(infoMap).length === 0) {
+        console.warn('infoMap is empty after processing!')
+      } else {
+        console.log('Setting reservation info with', Object.keys(infoMap).length, 'customers')
+      }
+      
+      setReservationInfo(infoMap)
+    } catch (error) {
+      console.error('Error fetching reservation info:', error)
+      setReservationInfo({})
+    }
+  }
+
   // 새 고객 추가
   const handleAddCustomer = async (customerData: CustomerInsert) => {
     try {
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('customers')
         .insert(customerData)
 
@@ -143,7 +226,8 @@ export default function AdminCustomers() {
   // 고객 정보 수정
   const handleEditCustomer = async (id: string, updateData: CustomerUpdate) => {
       try {
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
           .from('customers')
         .update(updateData)
         .eq('id', id)
@@ -189,15 +273,6 @@ export default function AdminCustomers() {
     }
   }
 
-  // 정렬 처리 함수
-  const handleSort = (field: keyof Customer) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
-    }
-  }
 
   // 정렬된 고객 목록
   const getSortedCustomers = (customers: Customer[]) => {
@@ -243,10 +318,11 @@ export default function AdminCustomers() {
     })
   }
 
-  // 컴포넌트 마운트 시 고객 목록과 채널 목록 불러오기
+  // 컴포넌트 마운트 시 고객 목록과 채널 목록, 예약 정보 불러오기
   useEffect(() => {
     fetchCustomers()
     fetchChannels()
+    fetchReservationInfo()
   }, [])
 
   // 검색된 고객 목록
@@ -270,8 +346,6 @@ export default function AdminCustomers() {
     setCurrentPage(1)
   }, [searchTerm, statusFilter])
 
-  // 정렬된 고객 목록
-  const sortedCustomers = getSortedCustomers(filteredCustomers)
 
   // 고객을 등록일별로 그룹화
   const groupCustomersByDate = (customers: Customer[]) => {
@@ -292,6 +366,22 @@ export default function AdminCustomers() {
     })
     
     return groups
+  }
+
+  // 날짜별 예약 정보 계산
+  const getDateReservationInfo = (customers: Customer[]) => {
+    let totalBookings = 0
+    let totalParticipants = 0
+    
+    customers.forEach(customer => {
+      const info = reservationInfo[customer.id]
+      if (info) {
+        totalBookings += info.bookingCount
+        totalParticipants += info.totalParticipants
+      }
+    })
+    
+    return { totalBookings, totalParticipants }
   }
 
   // 전체 고객을 그룹화
@@ -437,7 +527,16 @@ export default function AdminCustomers() {
                   <div className="flex items-center space-x-3">
                     <Calendar className="h-5 w-5 text-gray-400" />
                     <h3 className="text-lg font-semibold text-gray-900">{date}</h3>
-                    <span className="text-sm text-gray-500">({customers.length}명)</span>
+                    <span className="text-sm text-gray-500">
+                      ({(() => {
+                        const dateInfo = getDateReservationInfo(customers)
+                        if (dateInfo.totalBookings > 0) {
+                          return `${customers.length}명, ${dateInfo.totalBookings}건, ${dateInfo.totalParticipants}명`
+                        } else {
+                          return `${customers.length}명`
+                        }
+                      })()})
+                    </span>
                   </div>
                   
                   {/* 해당 날짜의 고객 카드들 */}
@@ -448,99 +547,116 @@ export default function AdminCustomers() {
                           onClick={() => {
                             setEditingCustomer(customer)
                             setShowForm(true)
-                            // 고객의 채널 타입에 따라 탭 선택
-                            if (customer.channel_id) {
-                              const customerChannel = channels.find(ch => ch.id === customer.channel_id)
-                              if (customerChannel?.type) {
-                                setSelectedChannelType(customerChannel.type as 'ota' | 'self' | 'partner')
-                              } else {
-                                setSelectedChannelType('ota') // 기본값
-                              }
-                            } else {
-                              setSelectedChannelType('ota') // 기본값
-                            }
+                            // 고객 정보를 편집 모드로 설정
                           }}
                           className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 p-3 border border-gray-200 cursor-pointer"
                         >
-                        {/* 고객 이름과 언어 */}
+                        {/* 고객 이름과 언어, 예약 정보 */}
                         <div className="mb-2">
-                          <div className="flex items-center">
-                            <span className="text-base mr-2">
-                              {(() => {
-                                const lang = customer.language
-                                
-                                // 언어가 없거나 빈 문자열인 경우 경고 아이콘 표시
-                                if (!lang || lang === '') {
-                                  return (
-                                    <div className="relative group">
-                                      <AlertTriangle className="h-5 w-5 text-amber-500" />
-                                      {/* 호버 툴팁 */}
-                                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                                        언어가 선택되지 않음
-                                        {/* 화살표 */}
-                                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center flex-1 min-w-0">
+                              <span className="text-base mr-2 flex-shrink-0">
+                                {(() => {
+                                  const lang = customer.language
+                                  
+                                  // 언어가 없거나 빈 문자열인 경우 경고 아이콘 표시
+                                  if (!lang || lang === '') {
+                                    return (
+                                      <div className="relative group">
+                                        <AlertTriangle className="h-5 w-5 text-amber-500" />
+                                        {/* 호버 툴팁 */}
+                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                                          언어가 선택되지 않음
+                                          {/* 화살표 */}
+                                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                        </div>
                                       </div>
-                                    </div>
-                                  )
-                                }
-                                
-                                // 배열인 경우
-                                if (Array.isArray(lang)) {
-                                  for (const l of lang) {
-                                    if (l && typeof l === 'string') {
-                                      if (l.includes('KR') || l.includes('ko')) return <ReactCountryFlag countryCode="KR" svg style={{ width: '20px', height: '15px' }} />
-                                      if (l.includes('EN') || l.includes('en')) return <ReactCountryFlag countryCode="US" svg style={{ width: '20px', height: '15px' }} />
-                                    }
+                                    )
                                   }
-                                  // 배열이지만 유효한 언어가 없는 경우 경고 아이콘
+                                  
+                                  // 배열인 경우
+                                  if (Array.isArray(lang)) {
+                                    for (const l of lang) {
+                                      if (l && typeof l === 'string') {
+                                        if (l.includes('KR') || l.includes('ko')) return <ReactCountryFlag countryCode="KR" svg style={{ width: '20px', height: '15px' }} />
+                                        if (l.includes('EN') || l.includes('en')) return <ReactCountryFlag countryCode="US" svg style={{ width: '20px', height: '15px' }} />
+                                      }
+                                    }
+                                    // 배열이지만 유효한 언어가 없는 경우 경고 아이콘
+                                    return (
+                                      <div className="relative group">
+                                        <AlertTriangle className="h-5 w-5 text-amber-500" />
+                                        {/* 호버 툴팁 */}
+                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                                          유효하지 않은 언어 설정
+                                          {/* 화살표 */}
+                                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                        </div>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  // 문자열인 경우
+                                  if (typeof lang === 'string') {
+                                    if ((lang as string).includes('KR') || (lang as string).includes('ko')) return <ReactCountryFlag countryCode="KR" svg style={{ width: '20px', height: '15px' }} />
+                                    if ((lang as string).includes('EN') || (lang as string).includes('en')) return <ReactCountryFlag countryCode="US" svg style={{ width: '20px', height: '15px' }} />
+                                    // 유효하지 않은 언어 문자열인 경우 경고 아이콘
+                                    return (
+                                      <div className="relative group">
+                                        <AlertTriangle className="h-5 w-5 text-amber-500" />
+                                        {/* 호버 툴팁 */}
+                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                                          유효하지 않은 언어 설정
+                                          {/* 화살표 */}
+                                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                        </div>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  // 기타 경우 경고 아이콘
                                   return (
                                     <div className="relative group">
                                       <AlertTriangle className="h-5 w-5 text-amber-500" />
                                       {/* 호버 툴팁 */}
                                       <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                                        유효하지 않은 언어 설정
+                                        언어 설정 오류
                                         {/* 화살표 */}
                                         <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                                       </div>
                                     </div>
                                   )
-                                }
+                                })()}
+                              </span>
+                              <h3 className="text-base font-medium text-gray-900 truncate">
+                                {customer.name}
+                              </h3>
+                            </div>
+                            
+                            {/* 예약 정보 - 오른쪽 정렬 */}
+                            <div className="flex items-center space-x-2 text-xs text-gray-600 flex-shrink-0 ml-2">
+                              {(() => {
+                                const info = reservationInfo[customer.id]
                                 
-                                // 문자열인 경우
-                                if (typeof lang === 'string') {
-                                  if ((lang as string).includes('KR') || (lang as string).includes('ko')) return <ReactCountryFlag countryCode="KR" svg style={{ width: '20px', height: '15px' }} />
-                                  if ((lang as string).includes('EN') || (lang as string).includes('en')) return <ReactCountryFlag countryCode="US" svg style={{ width: '20px', height: '15px' }} />
-                                  // 유효하지 않은 언어 문자열인 경우 경고 아이콘
+                                if (!info || (info.bookingCount === 0 && info.totalParticipants === 0)) {
                                   return (
-                                    <div className="relative group">
-                                      <AlertTriangle className="h-5 w-5 text-amber-500" />
-                                      {/* 호버 툴팁 */}
-                                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                                        유효하지 않은 언어 설정
-                                        {/* 화살표 */}
-                                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                                      </div>
-                                    </div>
+                                    <span className="text-gray-400">예약 없음</span>
                                   )
                                 }
-                                
-                                // 기타 경우 경고 아이콘
                                 return (
-                                  <div className="relative group">
-                                    <AlertTriangle className="h-5 w-5 text-amber-500" />
-                                    {/* 호버 툴팁 */}
-                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                                      언어 설정 오류
-                                      {/* 화살표 */}
-                                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                  <>
+                                    <div className="flex items-center space-x-1">
+                                      <Calendar className="h-3 w-3" />
+                                      <span>{info.bookingCount}건</span>
                                     </div>
-                                  </div>
+                                    <div className="flex items-center space-x-1">
+                                      <User className="h-3 w-3" />
+                                      <span>{info.totalParticipants}명</span>
+                                    </div>
+                                  </>
                                 )
                               })()}
-                            </span>
-                            <h3 className="text-base font-medium text-gray-900 truncate">
-                              {customer.name}
-                            </h3>
+                            </div>
                           </div>
                         </div>
 

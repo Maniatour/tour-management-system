@@ -205,17 +205,24 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
                     tooltipText += `\n어시스턴트: ${tour.assistant_name}`
                   }
                   
+                  // 단독투어 여부 확인
+                  const isPrivateTour = tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
+                  
                   return (
                     <div
                       key={tour.id}
                       onClick={() => onTourClick(tour)}
                       className={`text-xs p-1 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
                         getProductColor(tour.product_id)
-                      } ${hasUnassignedReservations ? 'ring-2 ring-red-500 ring-opacity-75' : ''}`}
-                      title={tooltipText}
+                      } ${hasUnassignedReservations ? 'ring-2 ring-red-500 ring-opacity-75' : ''} ${
+                        isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
+                      }`}
+                      title={tooltipText + (isPrivateTour ? '\n단독투어' : '')}
                     >
                       <div className="truncate">
-                        <span className="font-medium">{tour.product_name || tour.product_id}</span>
+                        <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
+                          {isPrivateTour ? '🔒 ' : ''}{tour.product_name || tour.product_id}
+                        </span>
                         <span className="mx-1">|</span>
                         <span className="opacity-90">{assignedPeople} / {totalPeople}명</span>
                       </div>
@@ -244,6 +251,21 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
               <span className="text-sm text-gray-600">{label}</span>
             </div>
           ))}
+        </div>
+        
+        {/* 단독투어 범례 */}
+        <div className="mt-4">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">투어 유형</h3>
+          <div className="flex flex-wrap gap-3">
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 rounded-full bg-purple-400 ring-2 ring-purple-400 ring-opacity-50" />
+              <span className="text-sm text-gray-600">단독투어</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 rounded-full bg-gray-400" />
+              <span className="text-sm text-gray-600">일반투어</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

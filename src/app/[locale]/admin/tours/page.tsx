@@ -170,7 +170,9 @@ export default function AdminTours() {
           total_people: totalPeople,
           assigned_people: assignedPeople,
           guide_name: guide?.name_ko || null,
-          assistant_name: assistant?.name_ko || null
+          assistant_name: assistant?.name_ko || null,
+          // Supabase의 TRUE/FALSE를 JavaScript의 true/false로 변환
+          is_private_tour: tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
         }
       })
 
@@ -432,6 +434,7 @@ export default function AdminTours() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.staff')}</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.reservations')}</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.fees')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">단독투어</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.status')}</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tCommon('actions')}</th>
                 </tr>
@@ -501,6 +504,15 @@ export default function AdminTours() {
                           총: ₩{(tour.guide_fee + tour.assistant_fee).toLocaleString()}
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        Boolean(tour.is_private_tour)
+                          ? 'bg-purple-100 text-purple-800' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {Boolean(tour.is_private_tour) ? '단독투어' : '일반투어'}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>

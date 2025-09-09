@@ -68,5 +68,7 @@ export interface Reservation {
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
   selectedOptions?: { [optionId: string]: string[] }
   selectedOptionPrices?: { [key: string]: number }
+  isPrivateTour?: boolean
   pricingInfo?: PricingInfo
+  hasExistingTour?: boolean // 투어 존재 여부
 }

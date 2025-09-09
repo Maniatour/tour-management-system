@@ -95,6 +95,7 @@ export default function OffSchedulePage() {
       const { error } = await supabase
         .from('off_schedules')
         .insert({
+          id: `OFF_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
           team_email: teamMember.email,
           off_date: newRequest.off_date,
           reason: newRequest.reason.trim()

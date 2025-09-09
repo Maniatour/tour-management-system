@@ -64,6 +64,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         canManageOptions: hasPermission(role, 'canManageOptions'),
       }
 
+      console.log('User role check result:', {
+        email,
+        teamData,
+        role,
+        permissions: userPermissions
+      })
+      
+      // team 테이블에서 사용자 이름 업데이트
+      if (teamData && teamData.name_ko) {
+        setAuthUser(prev => prev ? {
+          ...prev,
+          name: teamData.name_ko
+        } : null)
+      }
+      
       setUserRole(role)
       setPermissions(userPermissions)
     } catch (error) {
@@ -79,13 +94,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 초기 사용자 상태 가져오기
     const getInitialUser = async () => {
       try {
-        // 먼저 세션이 있는지 확인
+        // 먼저 localStorage에서 세션 정보 확인
+        const storedSession = localStorage.getItem('auth_session')
+        if (storedSession) {
+          try {
+            const sessionData = JSON.parse(storedSession)
+            console.log('Found stored session data:', { 
+              email: sessionData.user?.email, 
+              userRole: sessionData.userRole 
+            })
+            
+            if (sessionData.user) {
+              setUser(sessionData.user)
+              
+              const authUserData: AuthUser = {
+                id: sessionData.user.id,
+                email: sessionData.user.email || '',
+                name: sessionData.teamData?.name_ko || 
+                      sessionData.user.user_metadata?.name || 
+                      sessionData.user.user_metadata?.full_name || 
+                      sessionData.user.user_metadata?.display_name ||
+                      (sessionData.user.email ? sessionData.user.email.split('@')[0] : undefined),
+                avatar_url: sessionData.user.user_metadata?.avatar_url,
+                created_at: sessionData.user.created_at,
+              }
+              setAuthUser(authUserData)
+              
+              if (sessionData.userRole) {
+                setUserRole(sessionData.userRole)
+                
+                // 권한 설정
+                const userPermissions = {
+                  canViewAdmin: hasPermission(sessionData.userRole, 'canViewAdmin'),
+                  canManageProducts: hasPermission(sessionData.userRole, 'canManageProducts'),
+                  canManageCustomers: hasPermission(sessionData.userRole, 'canManageCustomers'),
+                  canManageReservations: hasPermission(sessionData.userRole, 'canManageReservations'),
+                  canManageTours: hasPermission(sessionData.userRole, 'canManageTours'),
+                  canManageTeam: hasPermission(sessionData.userRole, 'canManageTeam'),
+                  canViewSchedule: hasPermission(sessionData.userRole, 'canViewSchedule'),
+                  canManageBookings: hasPermission(sessionData.userRole, 'canManageBookings'),
+                  canViewAuditLogs: hasPermission(sessionData.userRole, 'canViewAuditLogs'),
+                  canManageChannels: hasPermission(sessionData.userRole, 'canManageChannels'),
+                  canManageOptions: hasPermission(sessionData.userRole, 'canManageOptions'),
+                }
+                setPermissions(userPermissions)
+              }
+              
+              setLoading(false)
+              return
+            }
+          } catch (parseError) {
+            console.error('Error parsing stored session:', parseError)
+            localStorage.removeItem('auth_session')
+          }
+        }
+        
+        // localStorage에 세션이 없으면 Supabase에서 확인
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
         console.log('AuthContext: Session check result:', { 
           session: !!session, 
           user: !!session?.user, 
           email: session?.user?.email,
+          userMetadata: session?.user?.user_metadata,
           error: sessionError 
         })
         
@@ -100,12 +171,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (session?.user) {
+          console.log('Initial session found, setting user data')
           setUser(session.user)
           
           const authUserData: AuthUser = {
             id: session.user.id,
             email: session.user.email || '',
-            name: session.user.user_metadata?.name || session.user.user_metadata?.full_name,
+            name: session.user.user_metadata?.name || 
+                  session.user.user_metadata?.full_name || 
+                  session.user.user_metadata?.display_name ||
+                  (session.user.email ? session.user.email.split('@')[0] : undefined),
             avatar_url: session.user.user_metadata?.avatar_url,
             created_at: session.user.created_at,
           }
@@ -116,6 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await checkUserRole(session.user.email)
           }
         } else {
+          console.log('No initial session found')
           setUser(null)
           setAuthUser(null)
           setUserRole('customer')
@@ -137,9 +213,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 인증 상태 변경 리스너
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state change:', { event, session: !!session, user: !!session?.user })
+        
         try {
           // 로그아웃 이벤트인 경우 즉시 상태 초기화
-          if (event === 'SIGNED_OUT' || !session) {
+          if (event === 'SIGNED_OUT') {
+            console.log('SIGNED_OUT event, clearing user data')
             setUser(null)
             setAuthUser(null)
             setUserRole('customer')
@@ -148,14 +227,81 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return
           }
 
+          // 세션이 없고 SIGNED_OUT이 아닌 경우 (INITIAL_SESSION 등)
+          if (!session && event !== 'SIGNED_OUT') {
+            console.log('No session but not SIGNED_OUT, checking localStorage...')
+            const storedSession = localStorage.getItem('auth_session')
+            if (storedSession) {
+              try {
+                const sessionData = JSON.parse(storedSession)
+                console.log('Found stored session on no-session event:', { 
+                  email: sessionData.user?.email, 
+                  userRole: sessionData.userRole 
+                })
+                
+                if (sessionData.user) {
+                  setUser(sessionData.user)
+                  
+                  const authUserData: AuthUser = {
+                    id: sessionData.user.id,
+                    email: sessionData.user.email || '',
+                    name: sessionData.teamData?.name_ko || 
+                          sessionData.user.user_metadata?.name || 
+                          sessionData.user.user_metadata?.full_name || 
+                          sessionData.user.user_metadata?.display_name ||
+                          (sessionData.user.email ? sessionData.user.email.split('@')[0] : undefined),
+                    avatar_url: sessionData.user.user_metadata?.avatar_url,
+                    created_at: sessionData.user.created_at,
+                  }
+                  setAuthUser(authUserData)
+                  
+                  if (sessionData.userRole) {
+                    setUserRole(sessionData.userRole)
+                    
+                    const userPermissions = {
+                      canViewAdmin: hasPermission(sessionData.userRole, 'canViewAdmin'),
+                      canManageProducts: hasPermission(sessionData.userRole, 'canManageProducts'),
+                      canManageCustomers: hasPermission(sessionData.userRole, 'canManageCustomers'),
+                      canManageReservations: hasPermission(sessionData.userRole, 'canManageReservations'),
+                      canManageTours: hasPermission(sessionData.userRole, 'canManageTours'),
+                      canManageTeam: hasPermission(sessionData.userRole, 'canManageTeam'),
+                      canViewSchedule: hasPermission(sessionData.userRole, 'canViewSchedule'),
+                      canManageBookings: hasPermission(sessionData.userRole, 'canManageBookings'),
+                      canViewAuditLogs: hasPermission(sessionData.userRole, 'canViewAuditLogs'),
+                      canManageChannels: hasPermission(sessionData.userRole, 'canManageChannels'),
+                      canManageOptions: hasPermission(sessionData.userRole, 'canManageOptions'),
+                    }
+                    setPermissions(userPermissions)
+                  }
+                }
+              } catch (parseError) {
+                console.error('Error parsing stored session on no-session event:', parseError)
+                localStorage.removeItem('auth_session')
+              }
+            } else {
+              console.log('No stored session found, setting to customer')
+              setUser(null)
+              setAuthUser(null)
+              setUserRole('customer')
+              setPermissions(null)
+            }
+            setLoading(false)
+            return
+          }
+
+
           // 로그인 이벤트인 경우
           if (event === 'SIGNED_IN' && session?.user) {
+            console.log('SIGNED_IN event detected, setting user data')
             setUser(session.user)
             
             const authUserData: AuthUser = {
               id: session.user.id,
               email: session.user.email || '',
-              name: session.user.user_metadata?.name || session.user.user_metadata?.full_name,
+              name: session.user.user_metadata?.name || 
+                    session.user.user_metadata?.full_name || 
+                    session.user.user_metadata?.display_name ||
+                    (session.user.email ? session.user.email.split('@')[0] : undefined),
               avatar_url: session.user.user_metadata?.avatar_url,
               created_at: session.user.created_at,
             }
@@ -172,7 +318,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const authUserData: AuthUser = {
               id: session.user.id,
               email: session.user.email || '',
-              name: session.user.user_metadata?.name || session.user.user_metadata?.full_name,
+              name: session.user.user_metadata?.name || 
+                    session.user.user_metadata?.full_name || 
+                    session.user.user_metadata?.display_name ||
+                    (session.user.email ? session.user.email.split('@')[0] : undefined),
               avatar_url: session.user.user_metadata?.avatar_url,
               created_at: session.user.created_at,
             }
@@ -201,6 +350,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     const supabase = createClientSupabase()
     await supabase.auth.signOut()
+    // localStorage에서 세션 정보 제거
+    localStorage.removeItem('auth_session')
   }
 
   const getRedirectPath = (locale: string) => {

@@ -72,9 +72,13 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
 }
 
 export function getUserRole(email: string, teamData?: any): UserRole {
+  console.log('getUserRole called with:', { email, teamData })
+  
   // 팀 데이터가 있고 이메일이 팀 테이블에 있는 경우
   if (teamData && teamData.is_active) {
     const position = teamData.position?.toLowerCase() || ''
+    
+    console.log('Team data found, position:', position)
     
     // position 기반으로 역할 결정
     if (position === 'super') {
@@ -93,6 +97,7 @@ export function getUserRole(email: string, teamData?: any): UserRole {
     }
   }
   
+  console.log('No team data or inactive user, returning customer')
   // 기본적으로 일반 고객으로 처리
   return 'customer'
 }

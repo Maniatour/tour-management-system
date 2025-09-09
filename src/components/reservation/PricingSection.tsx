@@ -49,6 +49,7 @@ interface PricingSectionProps {
     prepaymentCost: number
     prepaymentTip: number
     selectedOptionalOptions: Record<string, { choiceId: string; quantity: number; price: number }>
+    selectedOptions: { [optionId: string]: string[] }
     totalPrice: number
     depositAmount: number
     balanceAmount: number
@@ -181,6 +182,7 @@ export default function PricingSection({
                 depositAmount: 0,
                 isPrivateTour: false,
                 privateTourAdditionalCost: 0,
+                commission_percent: 0,
                 productRequiredOptions: []
               }))
             }}
@@ -274,6 +276,14 @@ export default function PricingSection({
               {formData.productRequiredOptions.map((productOption) => {
                 const currentOption = formData.requiredOptions[productOption.id]
                 if (!currentOption) return null
+                
+                // 택일 옵션의 경우 selectedOptions에서 선택된 옵션만 표시
+                // selectedOptions에서 해당 옵션이 선택되었는지 확인
+                const isSelected = formData.selectedOptions && 
+                  formData.selectedOptions[productOption.id] && 
+                  formData.selectedOptions[productOption.id].length > 0
+                
+                if (!isSelected) return null
                 
                 return (
                   <div key={productOption.id} className="border border-gray-200 rounded p-2">
@@ -773,11 +783,25 @@ export default function PricingSection({
                 <span className="text-lg font-bold text-blue-600">${formData.totalPrice.toFixed(2)}</span>
               </div>
               
+              {/* 커미션 퍼센트 입력 */}
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-700">커미션</span>
-                <span className="text-sm font-medium text-red-600">
-                  -${(formData.totalPrice * (formData.commission_percent / 100)).toFixed(2)}
-                </span>
+                <div className="flex items-center space-x-1">
+                  <input
+                    type="number"
+                    value={formData.commission_percent}
+                    onChange={(e) => setFormData({ ...formData, commission_percent: Number(e.target.value) || 0 })}
+                    className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="0"
+                  />
+                  <span className="text-xs text-gray-500">%</span>
+                  <span className="text-sm font-medium text-red-600">
+                    -${(formData.totalPrice * (formData.commission_percent / 100)).toFixed(2)}
+                  </span>
+                </div>
               </div>
               
               <div className="flex justify-between items-center">

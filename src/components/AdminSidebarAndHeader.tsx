@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   Package, 
   Users, 
@@ -15,21 +15,38 @@ import {
   Ticket,
   Building,
   FileCheck,
-  CalendarDays,
   Car,
   BookOpen,
   Truck,
   DollarSign,
-  UserCheck
+  UserCheck,
+  Clock,
+  CheckCircle,
+  XCircle
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 interface AdminSidebarAndHeaderProps {
   locale: string
   children: React.ReactNode
+}
+
+interface AttendanceRecord {
+  id: string
+  employee_email: string
+  date: string
+  check_in_time: string | null
+  check_out_time: string | null
+  work_hours: number
+  status: string
+  notes: string | null
+  session_number: number
+  employee_name: string
+  employee_email: string
 }
 
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
@@ -37,6 +54,173 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const router = useRouter()
   const { signOut, authUser, userRole } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [currentSession, setCurrentSession] = useState<AttendanceRecord | null>(null)
+  const [isCheckingIn, setIsCheckingIn] = useState(false)
+  const [employeeNotFound, setEmployeeNotFound] = useState(false)
+
+  // 디버깅을 위한 사용자 정보 로깅
+  console.log('AdminSidebarAndHeader - User info:', {
+    authUser,
+    userRole,
+    hasName: !!authUser?.name,
+    hasEmail: !!authUser?.email
+  })
+
+  // 오늘의 출퇴근 기록 조회
+  const fetchTodayRecords = async () => {
+    if (!authUser?.email) return
+
+    try {
+      // 먼저 이메일로 직원 정보 조회
+      const { data: employeeData, error: employeeError } = await supabase
+        .from('team')
+        .select('name_ko, email')
+        .eq('email', authUser.email)
+        .eq('is_active', true)
+        .single()
+
+      if (employeeError) {
+        console.error('직원 정보 조회 오류:', employeeError)
+        setEmployeeNotFound(true)
+        return
+      }
+
+      if (!employeeData) {
+        console.log('직원 정보를 찾을 수 없습니다.')
+        setEmployeeNotFound(true)
+        return
+      }
+
+      // 오늘의 모든 출퇴근 기록 조회
+      const { data, error } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .eq('employee_email', employeeData.email)
+        .eq('date', new Date().toISOString().split('T')[0])
+        .order('session_number', { ascending: true })
+
+      if (error && error.code !== 'PGRST116') {
+        console.log('출퇴근 기록 테이블이 아직 생성되지 않았습니다.')
+        setCurrentSession(null)
+        return
+      }
+
+      if (data && data.length > 0) {
+        const records = data.map(record => ({
+          ...record,
+          employee_name: employeeData.name_ko,
+          employee_email: employeeData.email
+        }))
+        
+        // 현재 진행 중인 세션 찾기 (퇴근하지 않은 세션)
+        const activeSession = records.find(record => 
+          record.check_in_time && !record.check_out_time
+        )
+        setCurrentSession(activeSession || null)
+      } else {
+        setCurrentSession(null)
+      }
+    } catch (error) {
+      console.error('오늘 기록 조회 중 오류:', error)
+    }
+  }
+
+  // 출근 체크인
+  const handleCheckIn = async () => {
+    if (!authUser?.email) return
+
+    setIsCheckingIn(true)
+    try {
+      // 먼저 이메일로 직원 정보 조회
+      const { data: employeeData, error: employeeError } = await supabase
+        .from('team')
+        .select('name_ko, email')
+        .eq('email', authUser.email)
+        .eq('is_active', true)
+        .single()
+
+      if (employeeError) {
+        console.error('직원 정보 조회 오류:', employeeError)
+        alert('직원 정보를 찾을 수 없습니다.')
+        return
+      }
+
+      if (!employeeData) {
+        alert('직원 정보를 찾을 수 없습니다.')
+        return
+      }
+
+      // 오늘의 기존 기록 조회하여 다음 세션 번호 계산
+      const { data: existingRecords } = await supabase
+        .from('attendance_records')
+        .select('session_number')
+        .eq('employee_email', employeeData.email)
+        .eq('date', new Date().toISOString().split('T')[0])
+        .order('session_number', { ascending: false })
+        .limit(1)
+
+      const nextSessionNumber = existingRecords && existingRecords.length > 0 
+        ? existingRecords[0].session_number + 1 
+        : 1
+
+      const { error } = await supabase
+        .from('attendance_records')
+        .insert({
+          employee_email: employeeData.email,
+          date: new Date().toISOString().split('T')[0],
+          check_in_time: new Date().toISOString(),
+          status: 'present',
+          session_number: nextSessionNumber
+        })
+
+      if (error) {
+        console.error('출근 체크인 오류:', error)
+        alert('출퇴근 기록 테이블이 아직 생성되지 않았습니다. 관리자에게 문의하세요.')
+        return
+      }
+
+      alert(`${nextSessionNumber}번째 출근 체크인이 완료되었습니다!`)
+      fetchTodayRecords()
+    } catch (error) {
+      console.error('출근 체크인 중 오류:', error)
+      alert('출근 체크인 중 오류가 발생했습니다.')
+    } finally {
+      setIsCheckingIn(false)
+    }
+  }
+
+  // 퇴근 체크아웃
+  const handleCheckOut = async () => {
+    if (!currentSession) return
+
+    try {
+      const { error } = await supabase
+        .from('attendance_records')
+        .update({
+          check_out_time: new Date().toISOString()
+        })
+        .eq('id', currentSession.id)
+
+      if (error) {
+        console.error('퇴근 체크아웃 오류:', error)
+        alert('퇴근 체크아웃에 실패했습니다.')
+        return
+      }
+
+      alert(`${currentSession.session_number}번째 퇴근 체크아웃이 완료되었습니다!`)
+      fetchTodayRecords()
+    } catch (error) {
+      console.error('퇴근 체크아웃 중 오류:', error)
+      alert('퇴근 체크아웃 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 컴포넌트 마운트 시 오늘의 출퇴근 기록 조회
+  useEffect(() => {
+    if (authUser?.email) {
+      fetchTodayRecords()
+    }
+  }, [authUser])
 
   const handleLogout = async () => {
     try {
@@ -54,6 +238,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: '예약 관리', href: `/${locale}/admin/reservations`, icon: Calendar },
     { name: '예약 통계', href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
     { name: '부킹 관리', href: `/${locale}/admin/booking`, icon: BookOpen },
+    { name: '출퇴근 관리', href: `/${locale}/admin/attendance`, icon: Clock },
     { name: '공급업체 관리', href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: '공급업체 정산', href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
     { name: 'Off 스케줄 관리', href: `/${locale}/admin/off-schedule`, icon: UserCheck },
@@ -105,15 +290,40 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* 출퇴근 버튼 (팀원만 표시) */}
+              {authUser?.email && !employeeNotFound && (
+                <div className="flex items-center space-x-2">
+                  {!currentSession ? (
+                    <button
+                      onClick={handleCheckIn}
+                      disabled={isCheckingIn}
+                      className="flex items-center px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      {isCheckingIn ? '체크인 중...' : '출근'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleCheckOut}
+                      className="flex items-center px-3 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                      <XCircle className="w-4 h-4 mr-1" />
+                      퇴근
+                    </button>
+                  )}
+                </div>
+              )}
+              
               <div className="text-sm text-gray-700">
                 <div className="font-medium">
-                  {authUser?.name || '관리자'}님, 안녕하세요!
+                  {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}님, 안녕하세요!
                 </div>
                 <div className="text-xs text-gray-500">
                   {authUser?.email || '이메일 정보 없음'} | 
                   {userRole === 'admin' ? ' 관리자' : 
                    userRole === 'manager' ? ' 매니저' : 
-                   userRole === 'team_member' ? ' 팀원' : ' 고객'}
+                   userRole === 'team_member' ? ' 팀원' : 
+                   authUser?.email ? ' 구글 사용자' : ' 고객'}
                 </div>
               </div>
               <LanguageSwitcher />

@@ -66,6 +66,11 @@ export async function signInWithEmail({ email, password }: SignInData) {
 export async function signInWithGoogle() {
   const supabase = createClientSupabase()
   
+  console.log('Starting Google sign in...', {
+    origin: window.location.origin,
+    redirectTo: `${window.location.origin}/auth/callback`
+  })
+  
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -77,7 +82,10 @@ export async function signInWithGoogle() {
     },
   })
 
+  console.log('Google OAuth result:', { data, error })
+
   if (error) {
+    console.error('Google OAuth error:', error)
     return { error: { message: error.message, status: error.status } }
   }
 

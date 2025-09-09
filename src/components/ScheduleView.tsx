@@ -8,10 +8,13 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
 
-type Tour = Database['public']['Tables']['tours']['Row']
-type Product = Database['public']['Tables']['products']['Row']
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Tour = any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Product = any
 type Team = Database['public']['Tables']['team']['Row']
-type Reservation = Database['public']['Tables']['reservations']['Row']
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Reservation = any
 
 interface DailyData {
   totalPeople: number
@@ -57,13 +60,32 @@ export default function ScheduleView() {
   const [ticketBookings, setTicketBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; ea: number | null }>>([])
   const [highlightedDate, setHighlightedDate] = useState<string | null>(null)
   const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string }>>([])
+  const [draggedUnassignedTour, setDraggedUnassignedTour] = useState<Tour | null>(null)
+  const [showMessageModal, setShowMessageModal] = useState(false)
+  const [messageModalContent, setMessageModalContent] = useState({ title: '', message: '', type: 'success' as 'success' | 'error' })
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {} })
+
+  // 메시지 모달 표시 함수
+  const showMessage = (title: string, message: string, type: 'success' | 'error' = 'success') => {
+    setMessageModalContent({ title, message, type })
+    setShowMessageModal(true)
+  }
+
+  // 확인 모달 표시 함수
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModalContent({ title, message, onConfirm })
+    setShowConfirmModal(true)
+  }
 
   // 사용자 설정 저장
   const saveUserSetting = async (key: string, value: string[] | number | boolean) => {
     try {
       // 먼저 기존 설정이 있는지 확인
-      const { data: existingData } = await supabase
-        .from('user_settings')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: existingData } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('user_settings' as any)
         .select('id')
         .eq('user_id', currentUserId)
         .eq('setting_key', key)
@@ -71,12 +93,15 @@ export default function ScheduleView() {
 
       if (existingData) {
         // 기존 설정이 있으면 업데이트
-        const { error } = await supabase
-          .from('user_settings')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('user_settings' as any)
           .update({
             setting_value: value,
             updated_at: new Date().toISOString()
-          })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any)
           .eq('user_id', currentUserId)
           .eq('setting_key', key)
         
@@ -87,15 +112,18 @@ export default function ScheduleView() {
         }
       } else {
         // 기존 설정이 없으면 새로 삽입
-        const { error } = await supabase
-          .from('user_settings')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('user_settings' as any)
           .insert({
             user_id: currentUserId,
             setting_key: key,
             setting_value: value,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
-          })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any)
         
         if (error) {
           console.error('Error inserting user setting:', error)
@@ -113,8 +141,10 @@ export default function ScheduleView() {
   // 사용자 설정 불러오기
   const loadUserSettings = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('user_settings')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('user_settings' as any)
         .select('setting_key, setting_value')
         .eq('user_id', currentUserId)
         .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members'])
@@ -136,8 +166,10 @@ export default function ScheduleView() {
 
       // 데이터베이스에서 설정 불러오기
       const settings = data || []
-      const productsSetting = settings.find(s => s.setting_key === 'schedule_selected_products')
-      const teamMembersSetting = settings.find(s => s.setting_key === 'schedule_selected_team_members')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const productsSetting = settings.find((s: any) => s.setting_key === 'schedule_selected_products')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const teamMembersSetting = settings.find((s: any) => s.setting_key === 'schedule_selected_team_members')
 
       if (productsSetting?.setting_value) {
         setSelectedProducts(productsSetting.setting_value)
@@ -228,7 +260,7 @@ export default function ScheduleView() {
   }
 
   // Off 날짜 확인 함수
-  const isOffDate = (teamMemberId: string, dateString: string) => {
+  const isOffDate = useCallback((teamMemberId: string, dateString: string) => {
     // teamMemberId를 team_email로 변환
     const teamMember = teamMembers.find(member => member.email === teamMemberId)
     if (!teamMember) return false
@@ -236,7 +268,7 @@ export default function ScheduleView() {
     return offSchedules.some(off => 
       off.team_email === teamMember.email && off.off_date === dateString
     )
-  }
+  }, [teamMembers, offSchedules])
 
   // 상품 ID에 따른 멀티데이 투어 일수 계산
   const getMultiDayTourDays = (productId: string): number => {
@@ -290,8 +322,10 @@ export default function ScheduleView() {
       const endDate = lastDayOfMonth.format('YYYY-MM-DD')
       
       // 가이드나 어시스턴트가 배정되지 않은 투어들 (특정 상태 제외)
-      const { data: unassignedToursData, error } = await supabase
-        .from('tours')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: unassignedToursData, error } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('tours' as any)
         .select(`
           *,
           products!inner(name)
@@ -322,14 +356,17 @@ export default function ScheduleView() {
       setLoading(true)
       
       // 상품 데이터 가져오기 (Mania Tour, Mania Service만)
-      const { data: productsData } = await supabase
-        .from('products')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: productsData } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('products' as any)
         .select('*')
         .in('sub_category', ['Mania Tour', 'Mania Service'])
         .order('name')
 
       // 팀 멤버 데이터 가져오기
-      const { data: teamData } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: teamData } = await (supabase as any)
         .from('team')
         .select('*')
         .eq('is_active', true)
@@ -339,29 +376,37 @@ export default function ScheduleView() {
       const startDate = firstDayOfMonth.subtract(3, 'day').format('YYYY-MM-DD')
       const endDate = lastDayOfMonth.format('YYYY-MM-DD')
       
-      const { data: toursData } = await supabase
-        .from('tours')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: toursData } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('tours' as any)
         .select('*, products(name)')
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
 
       // 예약 데이터 가져오기 (현재 월)
-      const { data: reservationsData } = await supabase
-        .from('reservations')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: reservationsData } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('reservations' as any)
         .select('*')
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
 
       // 부킹(입장권) 데이터 가져오기: hover summary용 confirmed EA 합계 계산
-      const { data: ticketBookingsData } = await supabase
-        .from('ticket_bookings')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: ticketBookingsData } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('ticket_bookings' as any)
         .select('id, tour_id, status, ea')
         .gte('check_in_date', startDate)
         .lte('check_in_date', endDate)
 
       // Off 스케줄 데이터 가져오기 (현재 월) - 승인된 것만
-      const { data: offSchedulesData } = await supabase
-        .from('off_schedules')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: offSchedulesData } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('off_schedules' as any)
         .select('team_email, off_date, reason')
         .eq('status', 'approved')
         .gte('off_date', firstDayOfMonth.format('YYYY-MM-DD'))
@@ -378,7 +423,7 @@ export default function ScheduleView() {
       setTeamMembers(teamData || [])
       setTours(toursData || [])
       setReservations(reservationsData || [])
-      setTicketBookings(ticketBookingsData as any || [])
+      setTicketBookings(ticketBookingsData || [])
       setOffSchedules(offSchedulesData || [])
 
       // 저장된 사용자 설정 불러오기
@@ -513,9 +558,9 @@ export default function ScheduleView() {
       )
 
       const dailyData: { [date: string]: { totalPeople: number; assignedPeople: number; tours: number; productColors: { [productId: string]: string }; role: string | null; guideInitials: string | null; isMultiDay: boolean; multiDayDays: number } } = {}
-      const totalPeople = 0
-      const totalAssignedPeople = 0
-      const totalTours = 0
+      let totalPeople = 0
+      let totalAssignedPeople = 0
+      let totalTours = 0
 
       // 각 날짜별로 데이터 계산
       monthDays.forEach(({ dateString }) => {
@@ -583,6 +628,15 @@ export default function ScheduleView() {
             dailyData[dateString].multiDayDays = multiDayDays
             ;(dailyData[dateString] as DailyData).extendsToNextMonth = false
           }
+          
+          // 멀티데이 투어의 경우 실제 투어 일수만큼 합계에 추가 (OFF 스케줄 제외)
+          if (!isOffDate(teamMemberId, dateString)) {
+            // 멀티데이 투어의 경우 실제 투어 일수만큼 계산
+            const actualTourDays = Math.min(multiDayDays, monthDays.length - monthDays.findIndex(d => d.dateString === dateString))
+            totalPeople += dayTotalPeople * actualTourDays
+            totalAssignedPeople += dayAssignedPeople * actualTourDays
+            totalTours += actualTourDays
+          }
         }
         
         // 1일 투어 처리
@@ -618,13 +672,20 @@ export default function ScheduleView() {
                 dailyData[dateString].productColors[productId] = productColors[productId] || defaultProductColors[productIndex % defaultProductColors.length]
               }
             })
+            
+            // 1일 투어의 경우 OFF 스케줄이 아닌 날에만 합계에 추가
+            if (!isOffDate(teamMemberId, dateString)) {
+              totalPeople += dayTotalPeople
+              totalAssignedPeople += dayAssignedPeople
+              totalTours += singleDayTours.length
+            }
           }
         }
       })
 
       data[teamMemberId] = {
         team_member_name: teamMember.name_ko,
-        position: teamMember.position,
+        position: teamMember.position || '',
         dailyData,
         totalPeople,
         totalAssignedPeople,
@@ -633,7 +694,7 @@ export default function ScheduleView() {
     })
 
     return data
-  }, [tours, reservations, teamMembers, selectedProducts, selectedTeamMembers, monthDays, productColors, currentDate])
+  }, [tours, reservations, teamMembers, selectedProducts, selectedTeamMembers, monthDays, productColors, currentDate, isOffDate])
 
   // 월 이동
   const goToPreviousMonth = () => {
@@ -734,6 +795,66 @@ export default function ScheduleView() {
     setDragOverCell(null)
   }
 
+
+  // 오프 스케줄 삭제 (더블클릭)
+  const handleOffScheduleDelete = async (offSchedule: { team_email: string; off_date: string; reason: string }) => {
+    try {
+      // 오프 스케줄 삭제
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('off_schedules' as any)
+        .delete()
+        .eq('team_email', offSchedule.team_email)
+        .eq('off_date', offSchedule.off_date)
+
+      if (error) {
+        console.error('Error deleting off schedule:', error)
+        showMessage('삭제 실패', '오프 스케줄 삭제에 실패했습니다.', 'error')
+        return
+      }
+
+      // 성공 시 데이터 새로고침
+      await fetchData()
+      showMessage('삭제 완료', '오프 스케줄이 삭제되었습니다.', 'success')
+      
+    } catch (error) {
+      console.error('Error deleting off schedule:', error)
+      showMessage('오류 발생', '오프 스케줄 삭제 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
+  // 오프 스케줄 생성
+  const handleCreateOffSchedule = async (teamMemberId: string, dateString: string) => {
+    try {
+      const { error } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('off_schedules' as any)
+        .insert({
+          id: crypto.randomUUID(), // UUID 생성
+          team_email: teamMemberId,
+          off_date: dateString,
+          reason: '더블클릭으로 생성',
+          status: 'approved'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+
+      if (error) {
+        console.error('Error creating off schedule:', error)
+        showMessage('생성 실패', '오프 스케줄 생성에 실패했습니다.', 'error')
+        return
+      }
+
+      // 성공 시 데이터 새로고침
+      await fetchData()
+      showMessage('생성 완료', '오프 스케줄이 생성되었습니다.', 'success')
+      
+    } catch (error) {
+      console.error('Error creating off schedule:', error)
+      showMessage('오류 발생', '오프 스케줄 생성 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
   // 드롭 처리
   const handleDrop = async (e: React.DragEvent, teamMemberId: string, dateString: string, role: 'guide' | 'assistant') => {
     e.preventDefault()
@@ -758,9 +879,12 @@ export default function ScheduleView() {
         // 기존 가이드는 유지
       }
 
-      const { error } = await supabase
-        .from('tours')
-        .update(updateData)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('tours' as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .update(updateData as any)
         .eq('id', draggedTour.id)
 
       if (error) {
@@ -792,12 +916,15 @@ export default function ScheduleView() {
 
     try {
       // 투어 배정 해제 (가이드와 어시스턴트 모두 null로 설정)
-      const { error } = await supabase
-        .from('tours')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('tours' as any)
         .update({
           tour_guide_id: null,
           assistant_id: null
-        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
         .eq('id', draggedTour.id)
 
       if (error) {
@@ -827,6 +954,122 @@ export default function ScheduleView() {
     window.open(href, '_blank')
   }
 
+  // 미 배정된 투어들을 가이드/어시스턴트 배정 카드로 변환
+  const unassignedTourCards = useMemo(() => {
+    const cards: Array<{
+      id: string
+      tour: Tour
+      role: 'guide' | 'assistant'
+      title: string
+      isAssigned: boolean
+    }> = []
+    
+    unassignedTours.forEach(tour => {
+      const product = products.find(p => p.id === tour.product_id)
+      const productName = product?.name || 'N/A'
+      const tourDate = dayjs(tour.tour_date).format('MM월 DD일')
+      const baseTitle = `${tourDate} ${productName}`
+      
+      // 가이드가 배정되지 않은 경우 가이드 카드 추가
+      if (!tour.tour_guide_id) {
+        cards.push({
+          id: `${tour.id}-guide`,
+          tour,
+          role: 'guide',
+          title: `${baseTitle} - 가이드`,
+          isAssigned: false
+        })
+      }
+      
+      // team_type이 1guide가 아니고 어시스턴트가 배정되지 않은 경우에만 어시스턴트 카드 추가
+      if (tour.team_type !== '1guide' && !tour.assistant_id) {
+        cards.push({
+          id: `${tour.id}-assistant`,
+          tour,
+          role: 'assistant',
+          title: `${baseTitle} - 어시스턴트`,
+          isAssigned: false
+        })
+      }
+    })
+    
+    // 날짜순, 상품명순으로 정렬
+    return cards.sort((a, b) => {
+      const dateCompare = a.tour.tour_date.localeCompare(b.tour.tour_date)
+      if (dateCompare !== 0) return dateCompare
+      
+      const productA = products.find(p => p.id === a.tour.product_id)
+      const productB = products.find(p => p.id === b.tour.product_id)
+      return (productA?.name || '').localeCompare(productB?.name || '')
+    })
+  }, [unassignedTours, products])
+
+  // 미 배정된 투어 카드 드래그 시작
+  const handleUnassignedTourCardDragStart = (e: React.DragEvent, card: { tour: Tour; role: 'guide' | 'assistant' }) => {
+    setDraggedUnassignedTour(card.tour)
+    setHighlightedDate(card.tour.tour_date) // 해당 날짜 하이라이트
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', JSON.stringify({
+      tourId: card.tour.id,
+      role: card.role
+    }))
+  }
+
+  // 미 배정된 투어 드래그 종료
+  const handleUnassignedTourDragEnd = () => {
+    setDraggedUnassignedTour(null)
+    setDragOverCell(null)
+    setHighlightedDate(null) // 하이라이트 제거
+  }
+
+  // 가이드/어시스턴트 셀에 드롭
+  const handleGuideCellDrop = async (e: React.DragEvent, teamMemberId: string, dateString: string, role: 'guide' | 'assistant') => {
+    e.preventDefault()
+    
+    if (!draggedUnassignedTour) return
+    
+    try {
+      // 역할에 따라 적절한 필드 업데이트
+      const updateData: Partial<Tour> = {
+        tour_date: dateString
+      }
+      
+      if (role === 'guide') {
+        updateData.tour_guide_id = teamMemberId
+      } else if (role === 'assistant') {
+        updateData.assistant_id = teamMemberId
+      }
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('tours' as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .update(updateData as any)
+        .eq('id', draggedUnassignedTour.id)
+
+      if (error) {
+        console.error('Error assigning tour:', error)
+        alert('투어 배정에 실패했습니다.')
+        return
+      }
+
+      // 성공 시 데이터 새로고침
+      await fetchData()
+      await fetchUnassignedTours()
+      alert(`${role === 'guide' ? '가이드' : '어시스턴트'}가 성공적으로 배정되었습니다.`)
+      
+    } catch (error) {
+      console.error('Error assigning tour:', error)
+      alert('투어 배정 중 오류가 발생했습니다.')
+    } finally {
+      setDraggedUnassignedTour(null)
+      setDragOverCell(null)
+      setHighlightedDate(null) // 하이라이트 제거
+    }
+  }
+
+
   // 투어 요약 정보 생성
   const getTourSummary = (tour: Tour) => {
     const productName = tour.products?.name || 'N/A'
@@ -836,27 +1079,30 @@ export default function ScheduleView() {
     const dayReservations = reservations.filter(r => r.tour_date === tour.tour_date && r.product_id === tour.product_id)
     const totalPeopleAll = dayReservations.reduce((s, r) => s + (r.total_people || 0), 0)
     let assignedPeople = 0
-    if ((tour as any).reservation_ids && Array.isArray((tour as any).reservation_ids)) {
-      const assigned = dayReservations.filter(r => ((tour as any).reservation_ids as string[]).includes(r.id))
+    if (tour.reservation_ids && Array.isArray(tour.reservation_ids)) {
+      const assigned = dayReservations.filter(r => tour.reservation_ids!.includes(r.id))
       assignedPeople = assigned.reduce((s, r) => s + (r.total_people || 0), 0)
     }
 
     // 가이드/어시스턴트 이름
-    const guide = teamMembers.find(t => t.email === (tour as any).tour_guide_id)
-    const assistant = teamMembers.find(t => t.email === (tour as any).assistant_id)
+    const guide = teamMembers.find(t => t.email === tour.tour_guide_id)
+    const assistant = teamMembers.find(t => t.email === tour.assistant_id)
     const guideName = guide?.name_ko || '-'
     const assistantName = assistant?.name_ko || '-'
 
     // 차량 번호(가능한 필드 우선 사용)
-    const vehicleNumber = (tour as any).vehicle_number || (tour as any).vehicle_id || '-'
+    const vehicleNumber = tour.vehicle_number || tour.vehicle_id || '-'
 
     // 부킹 Confirm EA 합계
     const confirmedEa = ticketBookings
       .filter(tb => tb.tour_id === tour.id && (tb.status === 'confirmed' || tb.status === 'paid'))
       .reduce((s, tb) => s + (tb.ea || 0), 0)
 
+    // 단독투어 여부 확인
+    const isPrivateTour = tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
+
     return [
-      `투어: ${productName}`,
+      `투어: ${productName}${isPrivateTour ? ' (단독투어)' : ''}`,
       `날짜: ${tourDate}`,
       `인원: ${assignedPeople} / ${totalPeopleAll}`,
       `가이드: ${guideName}`,
@@ -899,9 +1145,17 @@ export default function ScheduleView() {
       monthDays.forEach(({ dateString }) => {
         const dayData = guide.dailyData[dateString]
         if (dayData) {
-          dailyTotals[dateString].totalPeople += dayData.totalPeople
-          dailyTotals[dateString].assignedPeople += dayData.assignedPeople
-          dailyTotals[dateString].tours += dayData.tours
+          // 멀티데이 투어의 경우 실제 투어 일수만큼 계산
+          if (dayData.isMultiDay) {
+            const actualTourDays = Math.min(dayData.multiDayDays, monthDays.length - monthDays.findIndex(d => d.dateString === dateString))
+            dailyTotals[dateString].totalPeople += dayData.totalPeople * actualTourDays
+            dailyTotals[dateString].assignedPeople += dayData.assignedPeople * actualTourDays
+            dailyTotals[dateString].tours += actualTourDays
+          } else {
+            dailyTotals[dateString].totalPeople += dayData.totalPeople
+            dailyTotals[dateString].assignedPeople += dayData.assignedPeople
+            dailyTotals[dateString].tours += dayData.tours
+          }
         }
       })
     })
@@ -946,6 +1200,7 @@ export default function ScheduleView() {
                 <Users className="w-4 h-4" />
                 <span>팀원 선택 ({selectedTeamMembers.length}개)</span>
               </button>
+
             </div>
           </div>
 
@@ -1095,6 +1350,7 @@ export default function ScheduleView() {
         </div>
       </div>
 
+
       {/* 가이드별 스케줄 테이블 */}
       <div>
         <div className="overflow-x-auto">
@@ -1151,8 +1407,7 @@ export default function ScheduleView() {
                   )
                 })}
                 <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '100px', minWidth: '100px', maxWidth: '100px'}}>
-                  <div>{Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalAssignedPeople, 0)}</div>
-                  <div className="text-xs text-gray-500">({Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalPeople, 0)})</div>
+                  <div>{Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalAssignedPeople, 0)} ({Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalTours, 0)}일)</div>
                 </td>
               </tr>
 
@@ -1199,7 +1454,7 @@ export default function ScheduleView() {
                       const role = tour.tour_guide_id === teamMemberId ? 'guide' : tour.assistant_id === teamMemberId ? 'assistant' : null
                       let guideInitials = null as string | null
                       if (role === 'assistant' && tour.tour_guide_id) {
-                        const guideInfo = teamMap.get(tour.tour_guide_id)
+                        const guideInfo = teamMembers.find(member => member.email === tour.tour_guide_id)
                         if (guideInfo) {
                           guideInitials = guideInfo.name_ko.split('').map((ch: string) => ch.charAt(0)).join('').substring(0, 2)
                         }
@@ -1223,6 +1478,14 @@ export default function ScheduleView() {
                             isMultiDay: true,
                             multiDayDays: mdays
                           }
+                        }
+                        
+                        // 이전 달에서 시작한 멀티데이 투어의 경우 이번 달에 해당하는 일수만큼 합계에 추가
+                        const daysInCurrentMonth = Math.min(mdays, lastDayOfCurrentMonth.diff(firstDayOfMonth, 'day') + 1)
+                        if (daysInCurrentMonth > 0) {
+                        // 이전 달에서 시작한 투어는 totalPeople이 0이므로 assignedPeople만 계산
+                        // totalAssignedPeople += assignedPeople * daysInCurrentMonth
+                        // totalTours += daysInCurrentMonth
                         }
                       }
                     }
@@ -1270,13 +1533,59 @@ export default function ScheduleView() {
                                       ? 'bg-blue-200 border-2 border-blue-400' 
                                       : ''
                                   }`}
-                                  onDragOver={(e) => { if (draggedTour && draggedTour.tour_date === dateString) handleDragOver(e, `${teamMemberId}-${dateString}-guide`) }}
+                                  style={{ pointerEvents: 'auto' }}
+                                  onDragOver={(e) => { 
+                                    if (draggedTour && draggedTour.tour_date === dateString) {
+                                      handleDragOver(e, `${teamMemberId}-${dateString}-guide`)
+                                    } else if (draggedUnassignedTour) {
+                                      handleDragOver(e, `${teamMemberId}-${dateString}-guide`)
+                                    }
+                                  }}
                                   onDragLeave={handleDragLeave}
-                                  onDrop={(e) => handleDrop(e, teamMemberId, dateString, 'guide')}
+                                onDrop={(e) => {
+                                  try {
+                                    const dragData = JSON.parse(e.dataTransfer.getData('text/plain'))
+                                    
+                                    if (draggedUnassignedTour) {
+                                      // 미 배정 투어 배정
+                                      const role = dragData.role || 'guide'
+                                      handleGuideCellDrop(e, teamMemberId, dateString, role)
+                                    } else {
+                                      // 기존 투어 재배정
+                                      handleDrop(e, teamMemberId, dateString, 'guide')
+                                    }
+                                  } catch {
+                                    if (draggedUnassignedTour) {
+                                      handleGuideCellDrop(e, teamMemberId, dateString, 'guide')
+                                    } else {
+                                      handleDrop(e, teamMemberId, dateString, 'guide')
+                                    }
+                                  }
+                                }}
                                 >
                                   {/* Off 날짜 표시 */}
                                   {isOffDate(teamMemberId, dateString) ? (
-                                    <div className="bg-black text-white rounded px-1 py-0.5 text-xs font-bold flex items-center justify-center h-full">
+                                    <div 
+                                      className="bg-black text-white rounded px-1 py-0.5 text-xs font-bold flex items-center justify-center h-full cursor-pointer hover:bg-gray-800 transition-colors select-none"
+                                      onDoubleClick={() => {
+                                        const teamMember = teamMembers.find(member => member.email === teamMemberId)
+                                        if (!teamMember) {
+                                          console.log('팀 멤버를 찾을 수 없습니다:', teamMemberId)
+                                          return
+                                        }
+                                        const offSchedule = offSchedules.find(off => 
+                                          off.team_email === teamMember.email && off.off_date === dateString
+                                        )
+                                        if (offSchedule) {
+                                          showConfirm(
+                                            '오프 스케줄 삭제',
+                                            '오프 스케줄을 삭제하시겠습니까?',
+                                            () => handleOffScheduleDelete(offSchedule)
+                                          )
+                                        }
+                                      }}
+                                      title="오프 스케줄 - 더블클릭하여 삭제"
+                                    >
                                       OFF
                                     </div>
                                   ) : (
@@ -1296,7 +1605,7 @@ export default function ScheduleView() {
                                 isToday(dateString) 
                                   ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
                                   : ''
-                              } ${highlightedDate === dateString ? 'ring-2 ring-blue-300' : ''}`}
+                              } ${highlightedDate === dateString ? 'bg-yellow-200' : ''}`}
                               style={{ minWidth: '44px' }}
                             >
                               <div
@@ -1305,9 +1614,39 @@ export default function ScheduleView() {
                                     ? 'bg-blue-200 border-2 border-blue-400' 
                                     : ''
                                 }`}
-                                onDragOver={(e) => { if (draggedTour && draggedTour.tour_date === dateString) handleDragOver(e, `${teamMemberId}-${dateString}-guide`) }}
+                                style={{ 
+                                  pointerEvents: 'auto',
+                                  overflow: 'visible',
+                                  position: 'relative'
+                                }}
+                                onDragOver={(e) => { 
+                                  if (draggedTour && draggedTour.tour_date === dateString) {
+                                    handleDragOver(e, `${teamMemberId}-${dateString}-guide`)
+                                  } else if (draggedUnassignedTour) {
+                                    handleDragOver(e, `${teamMemberId}-${dateString}-guide`)
+                                  }
+                                }}
                                 onDragLeave={handleDragLeave}
-                                onDrop={(e) => handleDrop(e, teamMemberId, dateString, 'guide')}
+                                onDrop={(e) => {
+                                  try {
+                                    const dragData = JSON.parse(e.dataTransfer.getData('text/plain'))
+                                    
+                                    if (draggedUnassignedTour) {
+                                      // 미 배정 투어 배정
+                                      const role = dragData.role || 'guide'
+                                      handleGuideCellDrop(e, teamMemberId, dateString, role)
+                                    } else {
+                                      // 기존 투어 재배정
+                                      handleDrop(e, teamMemberId, dateString, 'guide')
+                                    }
+                                  } catch {
+                                    if (draggedUnassignedTour) {
+                                      handleGuideCellDrop(e, teamMemberId, dateString, 'guide')
+                                    } else {
+                                      handleDrop(e, teamMemberId, dateString, 'guide')
+                                    }
+                                  }
+                                }}
                               >
                                 {dayData ? (
                                   <div className="relative h-full">
@@ -1323,109 +1662,131 @@ export default function ScheduleView() {
                                     )}
                                     
                                     {/* 가이드로 배정된 경우 - 인원 표시 */}
-                                    {dayData.role === 'guide' && !dayData.isMultiDay && (
-                                      <div 
-                                        className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                                          dayData.assignedPeople === 0 
-                                            ? 'bg-gray-400' 
-                                            : 'bg-transparent'
-                                        } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
-                                        style={{
-                                          backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                            ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                            : undefined
-                                        }}
-                                        draggable
-                                        onDragStart={(e) => {
-                                          const guideTours = tours.filter(tour => 
-                                            tour.tour_date === dateString && 
-                                            tour.tour_guide_id === teamMemberId
-                                          )
-                                          if (guideTours.length > 0) {
-                                            handleDragStart(e, guideTours[0])
-                                          }
-                                        }}
-                                        onDoubleClick={() => {
-                                          const guideTours = tours.filter(tour => 
-                                            tour.tour_date === dateString && 
-                                            tour.tour_guide_id === teamMemberId
-                                          )
-                                          if (guideTours.length > 0) {
-                                            handleTourDoubleClick(guideTours[0].id)
-                                          }
-                                        }}
-                                        title={(() => {
-                                          const guideTours = tours.filter(tour => 
-                                            tour.tour_date === dateString && 
-                                            tour.tour_guide_id === teamMemberId
-                                          )
-                                          return guideTours.length > 0 ? getTourSummary(guideTours[0]) : ''
-                                        })()}
-                                      >
-                                        <span>{dayData.assignedPeople}</span>
-                                        {dayData.extendsToNextMonth && (
-                                          <span className="text-xs opacity-75">→</span>
-                                        )}
-                                      </div>
-                                    )}
+                                    {dayData.role === 'guide' && !dayData.isMultiDay && (() => {
+                                      // 해당 날짜의 가이드 투어들 중 단독투어 여부 확인
+                                      const guideTours = tours.filter(tour => 
+                                        tour.tour_date === dateString && 
+                                        tour.tour_guide_id === teamMemberId
+                                      )
+                                      const hasPrivateTour = guideTours.some(tour => 
+                                        tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
+                                      )
+                                      
+                                      return (
+                                        <div 
+                                          className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
+                                            dayData.assignedPeople === 0 
+                                              ? 'bg-gray-400' 
+                                              : 'bg-transparent'
+                                          } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
+                                          style={{
+                                            backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                              ? getColorFromClass(Object.values(dayData.productColors)[0])
+                                              : undefined
+                                          }}
+                                          draggable
+                                          onDragStart={(e) => {
+                                            if (guideTours.length > 0) {
+                                              handleDragStart(e, guideTours[0])
+                                            }
+                                          }}
+                                          onDoubleClick={() => {
+                                            if (guideTours.length > 0) {
+                                              handleTourDoubleClick(guideTours[0].id)
+                                            }
+                                          }}
+                                          title={guideTours.length > 0 ? getTourSummary(guideTours[0]) : ''}
+                                        >
+                                          {hasPrivateTour && <span>🔒</span>}
+                                          <span>{dayData.assignedPeople}</span>
+                                          {dayData.extendsToNextMonth && (
+                                            <span className="text-xs opacity-75">→</span>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
                                     
                                     {/* 어시스턴트로 배정된 경우 - 가이드 이름 초성 표시 */}
-                                    {dayData.role === 'assistant' && !dayData.isMultiDay && (
-                                      <div 
-                                        className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
-                                          dayData.assignedPeople === 0 
-                                            ? 'bg-gray-400' 
-                                            : 'bg-transparent'
-                                        } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
-                                        style={{
-                                          backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
-                                            ? getColorFromClass(Object.values(dayData.productColors)[0])
-                                            : undefined
-                                        }}
-                                        draggable
-                                        onDragStart={(e) => {
-                                          const assistantTours = tours.filter(tour => 
-                                            tour.tour_date === dateString && 
-                                            tour.assistant_id === teamMemberId
-                                          )
-                                          if (assistantTours.length > 0) {
-                                            handleDragStart(e, assistantTours[0])
-                                          }
-                                        }}
-                                        onDoubleClick={() => {
-                                          const assistantTours = tours.filter(tour => 
-                                            tour.tour_date === dateString && 
-                                            tour.assistant_id === teamMemberId
-                                          )
-                                          if (assistantTours.length > 0) {
-                                            handleTourDoubleClick(assistantTours[0].id)
-                                          }
-                                        }}
-                                        title={(() => {
-                                          const assistantTours = tours.filter(tour => 
-                                            tour.tour_date === dateString && 
-                                            tour.assistant_id === teamMemberId
-                                          )
-                                          return assistantTours.length > 0 ? getTourSummary(assistantTours[0]) : ''
-                                        })()}
-                                      >
-                                        <span>{dayData.guideInitials || 'A'}</span>
-                                        {dayData.extendsToNextMonth && (
-                                          <span className="text-xs opacity-75">→</span>
-                                        )}
-                                      </div>
-                                    )}
+                                    {dayData.role === 'assistant' && !dayData.isMultiDay && (() => {
+                                      // 해당 날짜의 어시스턴트 투어들 중 단독투어 여부 확인
+                                      const assistantTours = tours.filter(tour => 
+                                        tour.tour_date === dateString && 
+                                        tour.assistant_id === teamMemberId
+                                      )
+                                      const hasPrivateTour = assistantTours.some(tour => 
+                                        tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
+                                      )
+                                      
+                                      return (
+                                        <div 
+                                          className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
+                                            dayData.assignedPeople === 0 
+                                              ? 'bg-gray-400' 
+                                              : 'bg-transparent'
+                                          } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''}`}
+                                          style={{
+                                            backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                              ? getColorFromClass(Object.values(dayData.productColors)[0])
+                                              : undefined
+                                          }}
+                                          draggable
+                                          onDragStart={(e) => {
+                                            if (assistantTours.length > 0) {
+                                              handleDragStart(e, assistantTours[0])
+                                            }
+                                          }}
+                                          onDoubleClick={() => {
+                                            if (assistantTours.length > 0) {
+                                              handleTourDoubleClick(assistantTours[0].id)
+                                            }
+                                          }}
+                                          title={assistantTours.length > 0 ? getTourSummary(assistantTours[0]) : ''}
+                                        >
+                                          {hasPrivateTour && <span>🔒</span>}
+                                          <span>{dayData.guideInitials || 'A'}</span>
+                                          {dayData.extendsToNextMonth && (
+                                            <span className="text-xs opacity-75">→</span>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
                                   </div>
                                 ) : (
                                   <div className="text-gray-300 text-center py-1 text-xs">
                                     {/* Off 날짜 표시 */}
                                     {isOffDate(teamMemberId, dateString) ? (
-                                      <div className="bg-black text-white rounded px-1 py-0.5 text-xs font-bold">
+                                      <div 
+                                        className="bg-black text-white rounded px-1 py-0.5 text-xs font-bold cursor-pointer hover:bg-gray-800 transition-colors select-none"
+                                        onDoubleClick={() => {
+                                          const teamMember = teamMembers.find(member => member.email === teamMemberId)
+                                          if (!teamMember) {
+                                            console.log('팀 멤버를 찾을 수 없습니다:', teamMemberId)
+                                            return
+                                          }
+                                          const offSchedule = offSchedules.find(off => 
+                                            off.team_email === teamMember.email && off.off_date === dateString
+                                          )
+                                          if (offSchedule) {
+                                            showConfirm(
+                                              '오프 스케줄 삭제',
+                                              '오프 스케줄을 삭제하시겠습니까?',
+                                              () => handleOffScheduleDelete(offSchedule)
+                                            )
+                                          }
+                                        }}
+                                        title="오프 스케줄 - 더블클릭하여 삭제"
+                                      >
                                         OFF
                                       </div>
                                     ) : (
-                                      /* 드롭 영역 - 텍스트 숨김 */
-                                      <div></div>
+                                      /* 드롭 영역 - 더블클릭으로 오프 스케줄 생성 */
+                                      <div 
+                                        className="h-full flex items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
+                                        onDoubleClick={() => handleCreateOffSchedule(teamMemberId, dateString)}
+                                        title="더블클릭하여 오프 스케줄 생성"
+                                      >
+                                        <div className="text-gray-300 text-xs">+</div>
+                                      </div>
                                     )}
                                   </div>
                                 )}
@@ -1494,14 +1855,31 @@ export default function ScheduleView() {
                                   return guideTours.length > 0 ? getTourSummary(guideTours[0]) : ''
                                 })()}
                               >
-                                <span>
-                                  {tour.dayData.role === 'assistant' 
-                                    ? (tour.dayData.guideInitials || 'A')
-                                    : (tour.dayData.assignedPeople || '')}
-                                </span>
-                                {tour.extendsToNextMonth && (
-                                  <span className="text-xs opacity-75">→</span>
-                                )}
+                                {(() => {
+                                  const guideTours = tours.filter(tourItem => 
+                                    tourItem.tour_date === tour.startDate && 
+                                    (tour.dayData.role === 'guide' 
+                                      ? tourItem.tour_guide_id === teamMemberId 
+                                      : tourItem.assistant_id === teamMemberId)
+                                  )
+                                  const hasPrivateTour = guideTours.some(tourItem => 
+                                    tourItem.is_private_tour === 'TRUE' || tourItem.is_private_tour === true
+                                  )
+                                  
+                                  return (
+                                    <>
+                                      {hasPrivateTour && <span>🔒</span>}
+                                      <span>
+                                        {tour.dayData.role === 'assistant' 
+                                          ? (tour.dayData.guideInitials || 'A')
+                                          : (tour.dayData.assignedPeople || '')}
+                                      </span>
+                                      {tour.extendsToNextMonth && (
+                                        <span className="text-xs opacity-75">→</span>
+                                      )}
+                                    </>
+                                  )
+                                })()}
                               </div>
                             </div>
                           )
@@ -1515,7 +1893,7 @@ export default function ScheduleView() {
                           : guide.totalAssignedPeople < 4 
                             ? 'text-blue-600' 
                             : 'text-red-600'
-                      }`}>{guide.totalAssignedPeople}</div>
+                      }`}>{guide.totalAssignedPeople} ({guide.totalTours}일)</div>
                     </td>
                   </tr>
                 )
@@ -1531,7 +1909,7 @@ export default function ScheduleView() {
           <Users className="w-5 h-5 mr-2 text-red-500" />
           미 배정된 투어 스케줄
         </h3>
-        {unassignedTours.length > 0 ? (
+        {unassignedTourCards.length > 0 ? (
           <div 
             className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3"
             onDragOver={(e) => {
@@ -1540,44 +1918,57 @@ export default function ScheduleView() {
             }}
             onDrop={handleUnassignDrop}
           >
-            {unassignedTours.map((tour) => (
-              <div
-                key={tour.id}
-                className="bg-white border border-red-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
-                draggable
-                onDragStart={(e) => handleDragStart(e, tour)}
-                onDoubleClick={() => handleTourDoubleClick(tour.id)}
-                title={getTourSummary(tour)}
-              >
-                <div className="flex items-center space-x-2">
-                  <GripVertical className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
+            {unassignedTourCards.map((card) => {
+              // 단독투어 여부 확인
+              const isPrivateTour = card.tour.is_private_tour === 'TRUE' || card.tour.is_private_tour === true
+              
+              return (
+                <div
+                  key={card.id}
+                  className={`bg-white border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer group ${
+                    card.role === 'guide' 
+                      ? 'border-blue-200 bg-blue-50' 
+                      : 'border-green-200 bg-green-50'
+                  } ${isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-50' : ''}`}
+                  draggable
+                  onDragStart={(e) => handleUnassignedTourCardDragStart(e, card)}
+                  onDragEnd={handleUnassignedTourDragEnd}
+                  onDoubleClick={() => handleTourDoubleClick(card.tour.id)}
+                  title={getTourSummary(card.tour)}
+                >
+                  <div className="flex items-center space-x-2">
+                    <GripVertical className="w-4 h-4 text-gray-400 group-hover:text-gray-600 transition-colors flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-medium mb-1 ${isPrivateTour ? 'text-purple-700' : 'text-gray-900'}`}>
+                        {isPrivateTour ? '🔒 ' : ''}{card.title}
+                      </div>
                     <div className="flex items-center space-x-2 text-xs">
-                      <span className="text-gray-600 font-medium truncate">
-                        {tour.tour_date}
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                        card.role === 'guide' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-green-100 text-green-800'
+                      }`}>
+                        {card.role === 'guide' ? '가이드' : '어시스턴트'}
                       </span>
-                      <span className="text-gray-400">|</span>
-                      <span className="text-gray-900 font-medium truncate flex-1">
-                        {tour.products?.name || 'N/A'}
-                      </span>
-                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
-                        tour.tour_status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                        tour.tour_status === 'inProgress' ? 'bg-yellow-100 text-yellow-800' :
-                        tour.tour_status === 'completed' ? 'bg-green-100 text-green-800' :
-                        tour.tour_status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                        card.tour.tour_status === 'scheduled' ? 'bg-gray-100 text-gray-800' :
+                        card.tour.tour_status === 'inProgress' ? 'bg-yellow-100 text-yellow-800' :
+                        card.tour.tour_status === 'completed' ? 'bg-green-100 text-green-800' :
+                        card.tour.tour_status === 'cancelled' ? 'bg-red-100 text-red-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
-                        {tour.tour_status === 'scheduled' ? '예정' :
-                         tour.tour_status === 'inProgress' ? '진행중' :
-                         tour.tour_status === 'completed' ? '완료' :
-                         tour.tour_status === 'cancelled' ? '취소' :
-                         tour.tour_status}
+                        {card.tour.tour_status === 'scheduled' ? '예정' :
+                         card.tour.tour_status === 'inProgress' ? '진행중' :
+                         card.tour.tour_status === 'completed' ? '완료' :
+                         card.tour.tour_status === 'cancelled' ? '취소' :
+                         card.tour.tour_status}
                       </span>
                     </div>
                   </div>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <div 
@@ -1808,6 +2199,112 @@ export default function ScheduleView() {
           </div>
         </div>
       )}
+
+      {/* 메시지 모달 */}
+      {showMessageModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  messageModalContent.type === 'success' 
+                    ? 'bg-green-100 text-green-600' 
+                    : 'bg-red-100 text-red-600'
+                }`}>
+                  {messageModalContent.type === 'success' ? (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </div>
+                <h3 className={`text-lg font-semibold ${
+                  messageModalContent.type === 'success' ? 'text-green-900' : 'text-red-900'
+                }`}>
+                  {messageModalContent.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowMessageModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <p className={`text-sm ${
+              messageModalContent.type === 'success' ? 'text-green-700' : 'text-red-700'
+            }`}>
+              {messageModalContent.message}
+            </p>
+            
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setShowMessageModal(false)}
+                className={`px-4 py-2 rounded-lg text-white transition-colors ${
+                  messageModalContent.type === 'success' 
+                    ? 'bg-green-500 hover:bg-green-600' 
+                    : 'bg-red-500 hover:bg-red-600'
+                }`}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 확인 모달 */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center bg-yellow-100 text-yellow-600">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-yellow-900">
+                  {confirmModalContent.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <p className="text-sm text-yellow-700 mb-6">
+              {confirmModalContent.message}
+            </p>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  confirmModalContent.onConfirm()
+                  setShowConfirmModal(false)
+                }}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

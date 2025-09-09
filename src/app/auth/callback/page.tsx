@@ -12,8 +12,17 @@ export default function AuthCallbackPage() {
     const handleAuthCallback = async () => {
       const supabase = createClientSupabase()
       
+      console.log('Auth callback page loaded')
+      
       try {
         const { data, error } = await supabase.auth.getSession()
+        
+        console.log('Auth callback session check:', { 
+          hasSession: !!data.session, 
+          hasUser: !!data.session?.user,
+          userEmail: data.session?.user?.email,
+          error 
+        })
         
         if (error) {
           console.error('Auth callback error:', error)
@@ -35,6 +44,22 @@ export default function AuthCallbackPage() {
                 .single()
 
               const userRole = getUserRole(email, teamData)
+              
+              // 세션 정보를 localStorage에 저장 (임시 해결책)
+              const sessionData = {
+                user: data.session.user,
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token,
+                expires_at: data.session.expires_at,
+                userRole: userRole,
+                teamData: teamData
+              }
+              localStorage.setItem('auth_session', JSON.stringify(sessionData))
+              
+              console.log('Session data saved to localStorage:', { email, userRole })
+              
+              // 세션이 완전히 설정되도록 잠시 대기
+              await new Promise(resolve => setTimeout(resolve, 1000))
               
               // 역할에 따라 리다이렉트
               if (userRole && userRole !== 'customer') {

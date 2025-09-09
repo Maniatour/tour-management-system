@@ -459,9 +459,9 @@ export default function ReservationForm({
             totalPrice: existingPricing.total_price || 0,
             depositAmount: existingPricing.deposit_amount || 0,
             balanceAmount: existingPricing.balance_amount || 0,
-            isPrivateTour: existingPricing.is_private_tour || false,
+            isPrivateTour: reservation?.isPrivateTour || false,
             privateTourAdditionalCost: existingPricing.private_tour_additional_cost || 0,
-            commission_percent: 0 // reservation_pricing에는 commission_percent가 없으므로 0으로 설정
+            commission_percent: existingPricing.commission_percent || 0
           }))
           
           setPriceAutoFillMessage('기존 가격 정보가 로드되었습니다!')
@@ -542,13 +542,41 @@ export default function ReservationForm({
 
   const calculateRequiredOptionTotal = useCallback(() => {
     let total = 0
-    Object.values(formData.requiredOptions).forEach(option => {
-      total += (option.adult * formData.adults) + 
-               (option.child * formData.child) + 
-               (option.infant * formData.infant)
+    console.log('calculateRequiredOptionTotal 호출:', {
+      requiredOptions: formData.requiredOptions,
+      selectedOptions: formData.selectedOptions,
+      adults: formData.adults,
+      child: formData.child,
+      infant: formData.infant
     })
+    
+    Object.entries(formData.requiredOptions).forEach(([optionId, option]) => {
+      // 택일 옵션의 경우 selectedOptions에서 선택된 옵션만 계산
+      const isSelected = formData.selectedOptions && 
+        formData.selectedOptions[optionId] && 
+        formData.selectedOptions[optionId].length > 0
+      
+      console.log(`옵션 ${optionId} 계산:`, {
+        isSelected,
+        option,
+        adults: formData.adults,
+        child: formData.child,
+        infant: formData.infant,
+        optionTotal: (option.adult * formData.adults) + (option.child * formData.child) + (option.infant * formData.infant)
+      })
+      
+      if (isSelected) {
+        const optionTotal = (option.adult * formData.adults) + 
+                           (option.child * formData.child) + 
+                           (option.infant * formData.infant)
+        total += optionTotal
+        console.log(`옵션 ${optionId} 총합 추가: ${optionTotal}, 현재 총합: ${total}`)
+      }
+    })
+    
+    console.log('최종 requiredOptionTotal:', total)
     return total
-  }, [formData.requiredOptions, formData.adults, formData.child, formData.infant])
+  }, [formData.requiredOptions, formData.selectedOptions, formData.adults, formData.child, formData.infant])
 
   const calculateSubtotal = useCallback(() => {
     return calculateProductPriceTotal() + calculateRequiredOptionTotal()
@@ -810,7 +838,6 @@ export default function ReservationForm({
         total_price: formData.totalPrice,
         deposit_amount: formData.depositAmount,
         balance_amount: formData.balanceAmount,
-        is_private_tour: formData.isPrivateTour,
         private_tour_additional_cost: formData.privateTourAdditionalCost,
         commission_percent: formData.commission_percent
       }
