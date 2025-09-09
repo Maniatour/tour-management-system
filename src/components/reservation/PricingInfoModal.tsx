@@ -286,12 +286,12 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   if (!isOpen || !reservation) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] sm:max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200">
           <div className="flex items-center space-x-2">
-            <DollarSign className="w-5 h-5 text-green-600" />
+            <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
             <h2 className="text-lg font-semibold text-gray-900">가격 정보</h2>
           </div>
           <div className="flex items-center space-x-2">
@@ -306,24 +306,24 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
 
         {/* 예약 기본 정보 */}
         <div className="p-3 border-b border-gray-200 bg-gray-50">
-          <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-4 text-xs text-gray-600">
             <div className="flex items-center space-x-1">
-              <Users className="w-3 h-3" />
+              <Users className="w-3 h-3 flex-shrink-0" />
               <span>성인 {reservation.adults}명, 아동 {reservation.child}명, 유아 {reservation.infant}명</span>
             </div>
             <div className="flex items-center space-x-1">
-              <Calendar className="w-3 h-3" />
+              <Calendar className="w-3 h-3 flex-shrink-0" />
               <span>{reservation.tourDate}</span>
             </div>
             <div className="flex items-center space-x-1">
-              <MapPin className="w-3 h-3" />
-              <span>{reservation.pickUpHotel}</span>
+              <MapPin className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">{reservation.pickUpHotel}</span>
             </div>
           </div>
         </div>
 
         {/* 가격 정보 */}
-        <div className="p-4">
+        <div className="p-3 sm:p-4">
           {loading ? (
             <div className="flex items-center justify-center py-6">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>

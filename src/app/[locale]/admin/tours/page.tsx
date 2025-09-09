@@ -332,28 +332,28 @@ export default function AdminTours() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* 헤더 - 제목과 컨트롤들을 같은 줄에 배치 */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
+    <div className="space-y-4 sm:space-y-6">
+      {/* 헤더 - 모바일 최적화 */}
+      <div className="flex flex-col space-y-4">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
         
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-          {/* 검색 및 필터 */}
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+        <div className="flex flex-col space-y-3">
+          {/* 검색 및 필터 - 모바일 최적화 */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
               <input
                 type="text"
                 placeholder={t('searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full sm:w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               />
             </div>
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
               <option value="all">{t('filter.allStatus')}</option>
               <option value="scheduled">{t('status.scheduled')}</option>
@@ -364,22 +364,22 @@ export default function AdminTours() {
             </select>
           </div>
 
-          {/* 뷰 모드 전환 버튼 */}
-          <div className="flex space-x-2">
+          {/* 뷰 모드 전환 버튼 - 모바일 최적화 */}
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setViewMode('table')}
-              className={`px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm ${
+              className={`px-2 sm:px-3 py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 transition-colors text-xs sm:text-sm ${
                 viewMode === 'table'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <Grid size={16} />
+              <Grid size={14} className="sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">{t('view.table')}</span>
             </button>
             <button
               onClick={() => setViewMode('calendar')}
-              className={`px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm ${
+              className={`px-2 sm:px-3 py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 transition-colors text-xs sm:text-sm ${
                 viewMode === 'calendar'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -390,21 +390,21 @@ export default function AdminTours() {
             </button>
             <button
               onClick={() => setViewMode('schedule')}
-              className={`px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm ${
+              className={`px-2 sm:px-3 py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 transition-colors text-xs sm:text-sm ${
                 viewMode === 'schedule'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <BarChart3 size={16} />
+              <BarChart3 size={14} className="sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">스케줄 뷰</span>
             </button>
           </div>
 
-          {/* 투어 추가 버튼 */}
+          {/* 투어 추가 버튼 - 모바일 최적화 */}
           <button
             onClick={() => setShowAddForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 text-sm"
+            className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2 text-sm"
           >
             <Plus size={16} />
             <span>{t('addTour')}</span>
@@ -422,31 +422,44 @@ export default function AdminTours() {
         <ScheduleView />
       )}
 
-      {/* 테이블 보기 */}
+      {/* 테이블 보기 - 모바일 최적화 */}
       {viewMode === 'table' && (
         <div className="bg-white rounded-lg shadow-md border">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.id')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.tourInfo')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.staff')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.reservations')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.fees')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">단독투어</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.status')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tCommon('actions')}</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.id')}</th>
+                  <th className="hidden md:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.tourInfo')}</th>
+                  <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.staff')}</th>
+                  <th className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.reservations')}</th>
+                  <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.fees')}</th>
+                  <th className="hidden xl:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">단독투어</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.status')}</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{tCommon('actions')}</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredTours.map((tour) => (
                   <tr key={tour.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{tour.id}</div>
-                      <div className="text-sm text-gray-500">상품: {tour.product_id}</div>
+                      <div className="text-xs sm:text-sm text-gray-500">상품: {tour.product_id}</div>
+                      {/* 모바일에서 투어 정보 표시 */}
+                      <div className="md:hidden mt-2 space-y-1">
+                        <div className="flex items-center space-x-2 text-xs">
+                          <Calendar className="h-3 w-3 text-gray-400" />
+                          <span className="text-gray-900">{tour.tour_date}</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-xs">
+                          <Clock className="h-3 w-3 text-gray-400" />
+                          <span className="text-gray-500">
+                            {formatDateTime(tour.tour_start_datetime)} - {formatDateTime(tour.tour_end_datetime)}
+                          </span>
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap">
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2 text-sm">
                           <Calendar className="h-3 w-3 text-gray-400" />
@@ -464,7 +477,7 @@ export default function AdminTours() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap">
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2 text-sm">
                           <User className="h-3 w-3 text-gray-400" />
@@ -478,7 +491,7 @@ export default function AdminTours() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
                         {tour.reservation_ids?.length || 0}개 예약
                       </div>
@@ -486,7 +499,7 @@ export default function AdminTours() {
                         {tour.reservation_ids?.join(', ') || '예약 없음'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap">
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2 text-sm">
                           <DollarSign className="h-3 w-3 text-gray-400" />

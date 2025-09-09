@@ -393,15 +393,15 @@ export default function TourHotelBookingForm({
   }, [formData.rooms, formData.unit_price]);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-[95vw] sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg sm:text-xl font-bold mb-4">
           {booking ? '투어 호텔 부킹 수정' : '새 투어 호텔 부킹'}
         </h2>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 첫 번째 줄: 투어 선택, RN# */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+          {/* 첫 번째 줄: 투어 선택, RN# - 모바일 최적화 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 투어 선택 (선택사항)
@@ -410,7 +410,7 @@ export default function TourHotelBookingForm({
                 name="tour_id"
                 value={formData.tour_id || ''}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               >
                 <option value="">투어를 선택하세요 (선택사항)</option>
                 {tours.length > 0 ? (
@@ -439,13 +439,13 @@ export default function TourHotelBookingForm({
                 name="rn_number"
                 value={formData.rn_number}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
             </div>
           </div>
 
-          {/* 두 번째 줄부터: 나머지 필드들 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 두 번째 줄부터: 나머지 필드들 - 모바일 최적화 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
 
 
             <div>

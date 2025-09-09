@@ -50,7 +50,7 @@ const Sidebar = () => {
   return (
     <div className={`bg-white shadow-lg border-r transition-all duration-300 ${
       isCollapsed ? 'w-16' : 'w-64'
-    }`}>
+    } hidden lg:block`}>
       {/* 사이드바 헤더 */}
       <div className="flex items-center justify-between p-4 border-b">
         {!isCollapsed && (

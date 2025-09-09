@@ -1,0 +1,5 @@
+[33m0f758c1[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m feat: 단독투어 기능 구현 및 시각적 구분 추가
+[33m16f8cb5[m feat: Implement comprehensive authentication system with role-based access control and off-schedule management
+[33m42a2f52[m feat: Add Off Schedule Management System
+[33mb0e8713[m chore: upload all current changes
+[33m923cfe5[m Fix React key prop warning in TourHotelBookingForm autocomplete

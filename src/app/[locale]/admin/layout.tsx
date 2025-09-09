@@ -2,6 +2,7 @@ import React from 'react'
 import { NextIntlClientProvider } from 'next-intl'
 import { getMessages } from 'next-intl/server'
 import AdminSidebarAndHeader from '@/components/AdminSidebarAndHeader'
+import MobileFooter from '@/components/MobileFooter'
 
 interface AdminLayoutProps {
   children: React.ReactNode
@@ -18,6 +19,7 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
         <AdminSidebarAndHeader locale={locale}>
           {children}
         </AdminSidebarAndHeader>
+        <MobileFooter locale={locale} />
       </div>
     </NextIntlClientProvider>
   )

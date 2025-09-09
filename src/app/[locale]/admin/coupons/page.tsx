@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Edit, Trash2, Search, Filter } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, Filter, Grid, List, Ticket, Calendar, Percent, DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 // 새로운 쿠폰 스키마에 맞는 타입 정의
 type Coupon = {
@@ -31,6 +31,7 @@ export default function CouponsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null)
   const [products, setProducts] = useState<{id: string, name: string}[]>([])
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
 
   // 쿠폰 목록 조회
   const fetchCoupons = async () => {
@@ -184,19 +185,44 @@ export default function CouponsPage() {
 
   return (
     <div className="space-y-6">
-      {/* 페이지 헤더 */}
-      <div className="flex items-center justify-between">
+      {/* 페이지 헤더 - 모바일 최적화 */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">쿠폰 관리</h1>
-          <p className="text-gray-600">쿠폰을 생성하고 관리하세요</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">쿠폰 관리</h1>
+          <p className="text-sm sm:text-base text-gray-600">쿠폰을 생성하고 관리하세요</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-        >
-          <Plus size={20} />
-          <span>쿠폰 추가</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          {/* 뷰 전환 버튼 */}
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('card')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'card'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Grid size={16} />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <List size={16} />
+            </button>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 text-sm sm:text-base"
+          >
+            <Plus size={16} className="sm:w-5 sm:h-5" />
+            <span>쿠폰 추가</span>
+          </button>
+        </div>
       </div>
 
       {/* 검색 및 필터 */}
@@ -230,16 +256,19 @@ export default function CouponsPage() {
       </div>
 
       {/* 쿠폰 목록 */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-gray-500">로딩 중...</div>
-        ) : filteredCoupons.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            {searchTerm || statusFilter !== 'all' ? '검색 결과가 없습니다.' : '등록된 쿠폰이 없습니다.'}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+      {loading ? (
+        <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">로딩 중...</div>
+      ) : filteredCoupons.length === 0 ? (
+        <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+          {searchTerm || statusFilter !== 'all' ? '검색 결과가 없습니다.' : '등록된 쿠폰이 없습니다.'}
+        </div>
+      ) : (
+        <>
+          {viewMode === 'table' ? (
+            /* 테이블 뷰 - 모바일 최적화 */
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -340,9 +369,112 @@ export default function CouponsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-      </div>
+              </div>
+            </div>
+          ) : (
+            /* 카드뷰 - 모바일 최적화 */
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+              {filteredCoupons.map((coupon) => (
+                <div key={coupon.id} className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
+                  <div className="p-4 sm:p-6">
+                    {/* 카드 헤더 */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex-shrink-0">
+                          <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
+                            <Ticket size={24} className="text-blue-600" />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-lg font-semibold text-gray-900 truncate">
+                            {coupon.coupon_code || '코드 없음'}
+                          </h3>
+                          <p className="text-sm text-gray-600 truncate">
+                            {coupon.description || '설명 없음'}
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        coupon.status === 'active' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {coupon.status === 'active' ? '활성' : '비활성'}
+                      </span>
+                    </div>
+
+                    {/* 카드 내용 */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">할인 유형</span>
+                        <span className="font-medium">
+                          {coupon.discount_type === 'percentage' ? '퍼센트 할인' : 
+                           coupon.discount_type === 'fixed' ? '고정 할인' : '미지정'}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">할인 값</span>
+                        <span className="font-medium text-blue-600">
+                          {coupon.discount_type === 'percentage' && coupon.percentage_value ? 
+                            `${coupon.percentage_value}%` :
+                            coupon.discount_type === 'fixed' && coupon.fixed_value ? 
+                            `$${coupon.fixed_value}` : '-'}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">적용 상품</span>
+                        <span className="font-medium text-purple-600">{getProductNames(coupon.product_id)}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">유효 기간</span>
+                        <span className="font-medium text-sm">
+                          {coupon.start_date && coupon.end_date ? 
+                            `${new Date(coupon.start_date).toLocaleDateString('ko-KR')} ~ ${new Date(coupon.end_date).toLocaleDateString('ko-KR')}` :
+                            coupon.start_date ? 
+                            `${new Date(coupon.start_date).toLocaleDateString('ko-KR')} ~` :
+                            coupon.end_date ?
+                            `~ ${new Date(coupon.end_date).toLocaleDateString('ko-KR')}` :
+                            '무제한'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">생성일</span>
+                        <span className="font-medium text-gray-600">
+                          {coupon.created_at ? new Date(coupon.created_at).toLocaleDateString('ko-KR') : '-'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 액션 버튼들 */}
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => setEditingCoupon(coupon)}
+                          className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
+                        >
+                          <Edit size={14} />
+                          <span>편집</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCoupon(coupon.id)}
+                          className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
+                        >
+                          <Trash2 size={14} />
+                          <span>삭제</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
              {/* 쿠폰 추가/편집 모달 */}
        {(showAddModal || editingCoupon) && (

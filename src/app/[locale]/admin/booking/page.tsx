@@ -18,23 +18,23 @@ export default function BookingManagementPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="py-8">
-        {/* 헤더 */}
-        <div className="mb-8 px-4 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900">부킹 관리</h1>
-          <p className="mt-2 text-gray-600">
+      <div className="py-4 sm:py-6 lg:py-8">
+        {/* 헤더 - 모바일 최적화 */}
+        <div className="mb-6 sm:mb-8 px-4 sm:px-6 lg:px-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">부킹 관리</h1>
+          <p className="mt-2 text-sm sm:text-base text-gray-600">
             투어를 위한 입장권과 호텔 부킹을 관리하고 변경 이력을 추적할 수 있습니다.
           </p>
         </div>
 
-        {/* 탭 네비게이션 */}
-        <div className="border-b border-gray-200 mb-6 px-4 sm:px-6 lg:px-8">
-          <nav className="-mb-px flex space-x-8">
+        {/* 탭 네비게이션 - 모바일 최적화 */}
+        <div className="border-b border-gray-200 mb-4 sm:mb-6 px-4 sm:px-6 lg:px-8">
+          <nav className="-mb-px flex space-x-4 sm:space-x-8 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -46,8 +46,8 @@ export default function BookingManagementPage() {
           </nav>
         </div>
 
-        {/* 탭 컨텐츠 */}
-        <div className="mx-4 sm:mx-6 lg:mx-8 bg-white rounded-lg shadow">
+        {/* 탭 컨텐츠 - 모바일 최적화 */}
+        <div className="mx-2 sm:mx-4 lg:mx-8 bg-white rounded-lg shadow">
           {ActiveComponent && <ActiveComponent />}
         </div>
 

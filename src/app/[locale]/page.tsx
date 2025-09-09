@@ -81,22 +81,22 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen">
-      {/* 히어로 섹션 */}
+      {/* 히어로 섹션 - 모바일 최적화 */}
       <section className="relative bg-gradient-to-r from-blue-900 to-purple-900 text-white">
         <div className="absolute inset-0 bg-black/30" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-24">
           <div className="text-center">
-            <h1 className="text-4xl md:text-6xl font-bold mb-6">
+            <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-4 sm:mb-6">
               잊을 수 없는
               <br />
               특별한 여행 경험
             </h1>
-            <p className="text-xl md:text-2xl mb-8 text-blue-100">
+            <p className="text-lg sm:text-xl md:text-2xl mb-6 sm:mb-8 text-blue-100">
               전문 가이드와 함께하는 프리미엄 투어로
               <br />
               평생 기억에 남을 추억을 만들어보세요
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
               <Link
                 href="/ko/products"
                 className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors flex items-center justify-center"
@@ -113,73 +113,73 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 통계 섹션 */}
-      <section className="py-16 bg-white">
+      {/* 통계 섹션 - 모바일 최적화 */}
+      <section className="py-8 sm:py-12 lg:py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
             {stats.map((stat, index) => (
               <div key={index} className="text-center">
-                <div className="text-3xl md:text-4xl font-bold text-blue-600 mb-2">
+                <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-blue-600 mb-1 sm:mb-2">
                   {stat.number}
                 </div>
-                <div className="text-gray-600">{stat.label}</div>
+                <div className="text-sm sm:text-base text-gray-600">{stat.label}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* 인기 투어 섹션 */}
-      <section className="py-16 bg-gray-50">
+      {/* 인기 투어 섹션 - 모바일 최적화 */}
+      <section className="py-8 sm:py-12 lg:py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+          <div className="text-center mb-8 sm:mb-12">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
               인기 투어 상품
             </h2>
-            <p className="text-xl text-gray-600">
+            <p className="text-lg sm:text-xl text-gray-600">
               고객들이 가장 많이 선택하는 베스트 투어를 만나보세요
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
             {featuredProducts.map((product) => (
               <div key={product.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
-                <div className="relative h-48 bg-gray-200">
+                <div className="relative h-40 sm:h-48 bg-gray-200">
                   <img
                     src={product.image}
                     alt={product.name}
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute top-3 left-3">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  <div className="absolute top-2 sm:top-3 left-2 sm:left-3">
+                    <span className="inline-flex items-center px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                       {product.category}
                     </span>
                   </div>
                 </div>
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                <div className="p-4 sm:p-6">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
                     <Link href={`/ko/products/${product.id}`} className="hover:text-blue-600">
                       {product.name}
                     </Link>
                   </h3>
-                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                  <p className="text-gray-600 text-sm mb-3 sm:mb-4 line-clamp-2">
                     {product.description}
                   </p>
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 sm:mb-4 space-y-2 sm:space-y-0">
                     <div className="flex items-center">
                       <Star className="h-4 w-4 text-yellow-400 mr-1" />
-                      <span className="font-medium">{product.rating}</span>
-                      <span className="text-gray-500 text-sm ml-1">
+                      <span className="font-medium text-sm sm:text-base">{product.rating}</span>
+                      <span className="text-gray-500 text-xs sm:text-sm ml-1">
                         ({product.reviewCount})
                       </span>
                     </div>
-                    <div className="text-lg font-bold text-blue-600">
+                    <div className="text-base sm:text-lg font-bold text-blue-600">
                       ${product.price}부터
                     </div>
                   </div>
                   <Link
                     href={`/ko/products/${product.id}`}
-                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-center block"
+                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-center block text-sm sm:text-base"
                   >
                     자세히 보기
                   </Link>
@@ -200,31 +200,31 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 특징 섹션 */}
-      <section className="py-16 bg-white">
+      {/* 특징 섹션 - 모바일 최적화 */}
+      <section className="py-8 sm:py-12 lg:py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+          <div className="text-center mb-8 sm:mb-12">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
               왜 투어투어를 선택해야 할까요?
             </h2>
-            <p className="text-xl text-gray-600">
+            <p className="text-lg sm:text-xl text-gray-600">
               우리만의 특별한 서비스로 최고의 여행 경험을 제공합니다
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
             {features.map((feature, index) => {
               const Icon = feature.icon
               return (
                 <div key={index} className="flex items-start">
                   <div className="flex-shrink-0">
-                    <Icon className="h-8 w-8 text-green-500" />
+                    <Icon className="h-6 w-6 sm:h-8 sm:w-8 text-green-500" />
                   </div>
-                  <div className="ml-4">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  <div className="ml-3 sm:ml-4">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
                       {feature.title}
                     </h3>
-                    <p className="text-gray-600">
+                    <p className="text-sm sm:text-base text-gray-600">
                       {feature.description}
                     </p>
                   </div>
@@ -235,23 +235,23 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* CTA 섹션 */}
-      <section className="py-16 bg-blue-900 text-white">
+      {/* CTA 섹션 - 모바일 최적화 */}
+      <section className="py-8 sm:py-12 lg:py-16 bg-blue-900 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4">
             지금 바로 특별한 여행을 시작하세요
           </h2>
-          <p className="text-xl text-blue-100 mb-8">
+          <p className="text-lg sm:text-xl text-blue-100 mb-6 sm:mb-8">
             궁금한 점이 있으시다면 언제든 문의해주세요
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
             <Link
               href="/ko/products"
-              className="bg-white text-blue-900 hover:bg-gray-100 px-8 py-4 rounded-lg text-lg font-semibold transition-colors"
+              className="bg-white text-blue-900 hover:bg-gray-100 px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-semibold transition-colors"
             >
               투어 둘러보기
             </Link>
-            <button className="border-2 border-white text-white hover:bg-white hover:text-blue-900 px-8 py-4 rounded-lg text-lg font-semibold transition-colors">
+            <button className="border-2 border-white text-white hover:bg-white hover:text-blue-900 px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-semibold transition-colors">
               문의하기
             </button>
           </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, use, useEffect } from 'react'
-import { Plus, Search, Edit, Trash2, Globe, Package } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Globe, Package, Grid, List } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import React from 'react'
 import { supabase } from '@/lib/supabase'
@@ -105,6 +105,7 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null)
   const [showProductSelection, setShowProductSelection] = useState(false)
   const [selectedChannelForProducts, setSelectedChannelForProducts] = useState<Channel | null>(null)
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
 
   // Supabase에서 채널 데이터 가져오기
   useEffect(() => {
@@ -246,21 +247,45 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
-        <div className="flex space-x-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
+        <div className="flex items-center space-x-3">
+          {/* 뷰 전환 버튼 */}
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('card')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'card'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Grid size={16} />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <List size={16} />
+            </button>
+          </div>
           <button
             onClick={() => setShowProductSelection(true)}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center space-x-2"
+            className="bg-purple-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center space-x-2 text-sm sm:text-base"
           >
-            <Package size={20} />
-            <span>상품 선택</span>
+            <Package size={16} className="sm:w-5 sm:h-5" />
+            <span className="hidden sm:inline">상품 선택</span>
+            <span className="sm:hidden">상품</span>
           </button>
           <button
             onClick={() => setShowAddForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 text-sm sm:text-base"
           >
-            <Plus size={20} />
+            <Plus size={16} className="sm:w-5 sm:h-5" />
             <span>{t('addChannel')}</span>
           </button>
         </div>
@@ -407,9 +432,12 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow-md border">
-          <div className="overflow-x-auto">
-            <table className="w-full">
+        <>
+          {viewMode === 'table' ? (
+          /* 테이블 뷰 - 모바일 최적화 */
+          <div className="bg-white rounded-lg shadow-md border">
+            <div className="overflow-x-auto">
+              <table className="w-full">
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('columns.name')}</th>
@@ -521,6 +549,107 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
           </table>
         </div>
       </div>
+        ) : (
+          /* 카드뷰 - 모바일 최적화 */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+            {filteredChannels.map((channel) => (
+              <div key={channel.id} className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
+                <div className="p-4 sm:p-6">
+                  {/* 카드 헤더 */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                        {channel.name}
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        {channel.description || '설명 없음'}
+                      </p>
+                    </div>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      channel.status === 'active' 
+                        ? 'bg-green-100 text-green-800' 
+                        : channel.status === 'inactive'
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {getStatusLabel(channel.status)}
+                    </span>
+                  </div>
+
+                  {/* 카드 내용 */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">타입</span>
+                      <span className="font-medium">{getChannelTypeLabel(channel.type)}</span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">수수료</span>
+                      <span className="font-medium text-blue-600">{channel.commission || 0}%</span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">연결된 상품</span>
+                      <span className="font-medium">{getChannelPricing(channel.id).length}개</span>
+                    </div>
+
+                    {/* 연결된 상품 목록 */}
+                    {getChannelPricing(channel.id).length > 0 && (
+                      <div className="border-t pt-3">
+                        <div className="text-sm">
+                          <span className="text-gray-500">상품 목록</span>
+                          <div className="mt-2 space-y-1">
+                            {getChannelPricing(channel.id).slice(0, 3).map((pricing) => (
+                              <div key={pricing.id} className="text-xs text-gray-600 truncate">
+                                {getProductName(pricing.productId)}
+                              </div>
+                            ))}
+                            {getChannelPricing(channel.id).length > 3 && (
+                              <div className="text-xs text-gray-400">
+                                +{getChannelPricing(channel.id).length - 3}개 더
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 액션 버튼들 */}
+                  <div className="mt-4 pt-4 border-t">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => {
+                          setSelectedChannelForProducts(channel)
+                          setShowProductSelection(true)
+                        }}
+                        className="flex-1 bg-purple-600 text-white py-2 px-3 rounded-md hover:bg-purple-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
+                      >
+                        <Package size={14} />
+                        <span>상품</span>
+                      </button>
+                      <button
+                        onClick={() => setEditingChannel(channel)}
+                        className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
+                      >
+                        <Edit size={14} />
+                        <span>편집</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteChannel(channel.id)}
+                        className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
+                      >
+                        <Trash2 size={14} />
+                        <span>삭제</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          )}
+        </>
       )}
 
       {/* 채널 추가/편집 모달 */}

@@ -986,18 +986,18 @@ export default function ReservationForm({
   }, [])
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-[80vw] max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-[95vw] sm:max-w-[80vw] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 space-y-3 sm:space-y-0">
+          <h2 className="text-lg sm:text-xl font-bold">
             {reservation ? t('form.editTitle') : t('form.title')}
           </h2>
-          <div>
+          <div className="w-full sm:w-auto">
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
             <select
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
               <option value="pending">{t('status.pending')}</option>
               <option value="confirmed">{t('status.confirmed')}</option>
@@ -1025,11 +1025,11 @@ export default function ReservationForm({
           </div>
         )}
         
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* 메인 3열 그리드 레이아웃 */}
-          <div className="grid grid-cols-12 gap-4 h-[940px]">
-            {/* 1열: 고객, 투어 정보, 가격 정보 (6/12 = 50%) */}
-            <div className="col-span-6 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-4">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+          {/* 메인 레이아웃 - 모바일 최적화 */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:h-[940px]">
+            {/* 1열: 고객, 투어 정보, 가격 정보 - 모바일에서는 전체 너비 */}
+            <div className="col-span-1 lg:col-span-6 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4">
               <CustomerSection
                 formData={formData}
                 setFormData={setFormData}
@@ -1069,8 +1069,8 @@ export default function ReservationForm({
               />
             </div>
 
-            {/* 2열: 상품 선택 (3/12 = 25%) */}
-            <div className="col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-4 h-full">
+            {/* 2열: 상품 선택 - 모바일에서는 전체 너비, 데스크톱에서는 25% */}
+            <div className="col-span-1 lg:col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-full">
               <ProductSelectionSection
                 formData={formData}
                 setFormData={setFormData}
@@ -1083,8 +1083,8 @@ export default function ReservationForm({
               />
             </div>
 
-            {/* 3열: 채널 선택 (3/12 = 25%) */}
-            <div className="col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-4 h-full">
+            {/* 3열: 채널 선택 - 모바일에서는 전체 너비, 데스크톱에서는 25% */}
+            <div className="col-span-1 lg:col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-full">
               <ChannelSection
                 formData={formData}
                 setFormData={setFormData}
@@ -1096,17 +1096,17 @@ export default function ReservationForm({
 
 
 
-          <div className="flex space-x-3 pt-4">
+          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 pt-4">
             <button
               type="submit"
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 text-sm sm:text-base"
             >
               {reservation ? tCommon('edit') : tCommon('add')}
             </button>
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
+              className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 text-sm sm:text-base"
             >
               {tCommon('cancel')}
             </button>

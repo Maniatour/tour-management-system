@@ -247,56 +247,62 @@ export default function AdminOffSchedulePage() {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white rounded-lg shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-              <Calendar className="w-6 h-6 mr-2" />
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center">
+              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
               Off 스케줄 관리 (관리자)
             </h1>
           </div>
 
-          <div className="p-6">
-            {/* 필터 및 검색 */}
-            <div className="mb-6 flex flex-wrap gap-4 items-center">
-              <div className="flex items-center space-x-2">
-                <Filter className="w-4 h-4 text-gray-500" />
-                <select
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value as any)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          <div className="p-4 sm:p-6">
+            {/* 필터 및 검색 - 모바일 최적화 */}
+            <div className="mb-6 space-y-4">
+              {/* 필터 그룹 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="flex items-center space-x-2">
+                  <Filter className="w-4 h-4 text-gray-500" />
+                  <select
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value as any)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  >
+                    <option value="all">전체</option>
+                    <option value="pending">대기중</option>
+                    <option value="approved">승인됨</option>
+                    <option value="rejected">거부됨</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    placeholder="날짜별 필터"
+                  />
+                </div>
+                
+                <button
+                  onClick={() => {
+                    setFilter('all')
+                    setSelectedDate('')
+                  }}
+                  className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                 >
-                  <option value="all">전체</option>
-                  <option value="pending">대기중</option>
-                  <option value="approved">승인됨</option>
-                  <option value="rejected">거부됨</option>
-                </select>
+                  필터 초기화
+                </button>
+                
+                {/* 추가 버튼 */}
+                <button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="flex items-center justify-center px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                >
+                  <Plus className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Off 스케줄 추가</span>
+                  <span className="sm:hidden">추가</span>
+                </button>
               </div>
-              <div>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="날짜별 필터"
-                />
-              </div>
-              <button
-                onClick={() => {
-                  setFilter('all')
-                  setSelectedDate('')
-                }}
-                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800"
-              >
-                필터 초기화
-              </button>
-              
-              {/* 추가 버튼 */}
-              <button
-                onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ml-auto"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Off 스케줄 추가
-              </button>
             </div>
 
             {/* Off 신청 관리 */}
@@ -311,47 +317,45 @@ export default function AdminOffSchedulePage() {
                   {offSchedules.map((schedule) => (
                     <div
                       key={schedule.id}
-                      className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
+                      className="p-3 sm:p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
                     >
-                      <div className="flex items-start justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between space-y-3 sm:space-y-0">
                         <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
+                          <div className="flex items-start space-x-3 mb-2">
                             {getStatusIcon(schedule.status)}
-                            <div>
-                              <div className="font-medium text-lg">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-base sm:text-lg">
                                 {dayjs(schedule.off_date).format('YYYY년 MM월 DD일 (ddd)')}
                               </div>
-                              <div className="text-sm text-gray-600 flex items-center">
-                                <User className="w-4 h-4 mr-1" />
-                                {schedule.team?.name_ko || schedule.team_email || 'Unknown User'}
+                              <div className="text-sm text-gray-600 flex items-center mt-1">
+                                <User className="w-4 h-4 mr-1 flex-shrink-0" />
+                                <span className="truncate">{schedule.team?.name_ko || schedule.team_email || 'Unknown User'}</span>
                               </div>
                             </div>
                           </div>
-                          <div className="text-gray-700 mb-2">{schedule.reason}</div>
-                          <div className="text-xs text-gray-500">
-                            신청일: {dayjs(schedule.created_at).format('YYYY-MM-DD HH:mm')}
+                          <div className="text-gray-700 mb-2 text-sm sm:text-base">{schedule.reason}</div>
+                          <div className="text-xs text-gray-500 space-y-1">
+                            <div>신청일: {dayjs(schedule.created_at).format('YYYY-MM-DD HH:mm')}</div>
                             {schedule.approved_at && (
-                              <span className="ml-2">
-                                | 처리일: {dayjs(schedule.approved_at).format('YYYY-MM-DD HH:mm')}
-                              </span>
+                              <div>처리일: {dayjs(schedule.approved_at).format('YYYY-MM-DD HH:mm')}</div>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(schedule.status)}`}>
+                        <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(schedule.status)} self-start`}>
                             {getStatusText(schedule.status)}
                           </span>
                           {schedule.status === 'pending' && (
-                            <div className="flex space-x-1">
+                            <div className="flex space-x-2 sm:space-x-1">
                               <button
                                 onClick={() => handleApproveRequest(schedule.id)}
-                                className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                                className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 flex-1 sm:flex-none"
                               >
                                 승인
                               </button>
                               <button
                                 onClick={() => handleRejectRequest(schedule.id)}
-                                className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                                className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 flex-1 sm:flex-none"
                               >
                                 거부
                               </button>

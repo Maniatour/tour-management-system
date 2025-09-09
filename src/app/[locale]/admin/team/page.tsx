@@ -12,7 +12,9 @@ import {
   Car,
   CreditCard,
   Shield,
-  FileText
+  FileText,
+  Grid,
+  List
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -33,6 +35,7 @@ export default function AdminTeam() {
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
 
   // 팀원 목록 불러오기
   const fetchTeamMembers = async () => {
@@ -218,40 +221,65 @@ export default function AdminTeam() {
   const sortedMembers = getSortedMembers(filteredMembers)
 
   return (
-    <div className="space-y-6">
-      {/* 페이지 헤더 */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      {/* 페이지 헤더 - 모바일 최적화 */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
-          <p className="mt-2 text-gray-600">팀원 정보를 관리하고 모니터링합니다.</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="mt-2 text-sm sm:text-base text-gray-600">팀원 정보를 관리하고 모니터링합니다.</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-        >
-          <Plus size={20} />
-          <span>{t('addMember')}</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          {/* 뷰 전환 버튼 */}
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('card')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'card'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Grid size={16} />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <List size={16} />
+            </button>
+          </div>
+          <button
+            onClick={() => setShowForm(true)}
+            className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2 text-sm sm:text-base"
+          >
+            <Plus size={16} className="sm:w-5 sm:h-5" />
+            <span>{t('addMember')}</span>
+          </button>
+        </div>
       </div>
 
-      {/* 검색 및 필터 */}
-      <div className="flex items-center space-x-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+      {/* 검색 및 필터 - 모바일 최적화 */}
+      <div className="flex flex-col sm:flex-row sm:items-center space-y-3 sm:space-y-0 sm:space-x-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
           <input
             type="text"
             placeholder={t('searchPlaceholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
         </div>
         
-        {/* 상태 필터 버튼들 */}
-        <div className="flex space-x-2">
+        {/* 상태 필터 버튼들 - 모바일 최적화 */}
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setStatusFilter('active')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
               statusFilter === 'active'
                 ? 'bg-green-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -261,7 +289,7 @@ export default function AdminTeam() {
           </button>
           <button
             onClick={() => setStatusFilter('inactive')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
               statusFilter === 'inactive'
                 ? 'bg-red-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -271,7 +299,7 @@ export default function AdminTeam() {
           </button>
           <button
             onClick={() => setStatusFilter('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
               statusFilter === 'all'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -303,13 +331,15 @@ export default function AdminTeam() {
             </div>
           </div>
           
-          <div className="bg-white shadow rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+          {viewMode === 'table' ? (
+            /* 테이블 뷰 - 모바일 최적화 */
+            <div className="bg-white shadow rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('name_ko')}
                     >
                       <div className="flex items-center space-x-1">
@@ -322,7 +352,7 @@ export default function AdminTeam() {
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('email')}
                     >
                       <div className="flex items-center space-x-1">
@@ -335,7 +365,7 @@ export default function AdminTeam() {
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="hidden md:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('phone')}
                     >
                       <div className="flex items-center space-x-1">
@@ -348,7 +378,7 @@ export default function AdminTeam() {
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('position')}
                     >
                       <div className="flex items-center space-x-1">
@@ -361,7 +391,7 @@ export default function AdminTeam() {
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('address')}
                     >
                       <div className="flex items-center space-x-1">
@@ -374,7 +404,7 @@ export default function AdminTeam() {
                       </div>
                     </th>
                     <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('is_active')}
                     >
                       <div className="flex items-center space-x-1">
@@ -386,7 +416,7 @@ export default function AdminTeam() {
                         )}
                       </div>
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {t('columns.actions')}
                     </th>
                   </tr>
@@ -394,47 +424,51 @@ export default function AdminTeam() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {sortedMembers.map((member) => (
                     <tr key={member.email} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10">
+                          <div className="flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10">
                             {member.avatar_url ? (
                               <img
-                                className="h-10 w-10 rounded-full"
+                                className="h-8 w-8 sm:h-10 sm:w-10 rounded-full"
                                 src={member.avatar_url}
                                 alt={member.name_ko}
                               />
                             ) : (
-                              <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
-                                <User className="h-6 w-6 text-gray-600" />
+                              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                                <User className="h-4 w-4 sm:h-6 sm:w-6 text-gray-600" />
                               </div>
                             )}
                           </div>
-                          <div className="ml-4">
+                          <div className="ml-2 sm:ml-4">
                             <div className="text-sm font-medium text-gray-900">
                               {member.name_ko}
                             </div>
                             {member.name_en && (
-                              <div className="text-sm text-gray-500">{member.name_en}</div>
+                              <div className="text-xs sm:text-sm text-gray-500">{member.name_en}</div>
                             )}
+                            {/* 모바일에서 이메일 표시 */}
+                            <div className="sm:hidden text-xs text-gray-500 truncate">
+                              {member.email}
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {member.email}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {member.phone || '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {member.position || '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {member.address || '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => handleToggleActive(member.email, member.is_active ?? true)}
-                          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                          className={`px-2 sm:px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                             member.is_active 
                               ? 'bg-green-100 text-green-800 hover:bg-green-200' 
                               : 'bg-red-100 text-red-800 hover:bg-red-200'
@@ -443,7 +477,7 @@ export default function AdminTeam() {
                           {member.is_active ? '활성' : '비활성'}
                         </button>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center space-x-2">
                           <button
                             onClick={() => {
@@ -477,6 +511,140 @@ export default function AdminTeam() {
               </table>
             </div>
           </div>
+          ) : (
+            /* 카드뷰 - 모바일 최적화 */
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+              {sortedMembers.map((member) => (
+                <div key={member.email} className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
+                  <div className="p-4 sm:p-6">
+                    {/* 카드 헤더 */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex-shrink-0">
+                          {member.avatar_url ? (
+                            <img
+                              src={member.avatar_url}
+                              alt={member.name_ko}
+                              className="h-12 w-12 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center">
+                              <User size={24} className="text-gray-400" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-lg font-semibold text-gray-900 truncate">
+                            {member.name_ko}
+                          </h3>
+                          <p className="text-sm text-gray-600 truncate">
+                            {member.name_en || '영문명 없음'}
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        member.is_active 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {member.is_active ? '활성' : '비활성'}
+                      </span>
+                    </div>
+
+                    {/* 카드 내용 */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">직책</span>
+                        <span className="font-medium">{member.position || '미지정'}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">이메일</span>
+                        <span className="font-medium text-blue-600 truncate ml-2">{member.email}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">전화번호</span>
+                        <span className="font-medium">{member.phone || '미등록'}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">입사일</span>
+                        <span className="font-medium">{member.hire_date || '미등록'}</span>
+                      </div>
+
+                      {member.languages && member.languages.length > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">언어</span>
+                          <span className="font-medium">{member.languages.join(', ')}</span>
+                        </div>
+                      )}
+
+                      {/* 특별 자격사항 */}
+                      <div className="border-t pt-3">
+                        <div className="flex items-center justify-between text-sm mb-2">
+                          <span className="text-gray-500">자격사항</span>
+                        </div>
+                        <div className="flex space-x-2">
+                          {member.cpr && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              <Shield size={12} className="mr-1" />
+                              CPR
+                            </span>
+                          )}
+                          {member.medical_report && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              <FileText size={12} className="mr-1" />
+                              의료보고서
+                            </span>
+                          )}
+                          {member.personal_car_model && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <Car size={12} className="mr-1" />
+                              개인차량
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 액션 버튼들 */}
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => {
+                            setSelectedMember(member)
+                            setShowDetailModal(true)
+                          }}
+                          className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
+                        >
+                          <Eye size={14} />
+                          <span>상세</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingMember(member)
+                            setShowForm(true)
+                          }}
+                          className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
+                        >
+                          <Edit size={14} />
+                          <span>편집</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMember(member.email)}
+                          className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
+                        >
+                          <Trash2 size={14} />
+                          <span>삭제</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -1011,22 +1179,22 @@ function TeamMemberDetailModal({
   onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">팀원 상세 정보</h2>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-[95vw] sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
+          <h2 className="text-lg sm:text-2xl font-bold">팀원 상세 정보</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 p-1"
           >
             <span className="sr-only">닫기</span>
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
           {/* 기본 정보 */}
           <div>
             <h3 className="text-lg font-medium mb-4 flex items-center">

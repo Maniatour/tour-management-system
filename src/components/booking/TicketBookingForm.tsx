@@ -544,16 +544,16 @@ export default function TicketBookingForm({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-[95vw] sm:max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg sm:text-xl font-bold mb-4">
           {booking ? '입장권 부킹 수정' : '새 입장권 부킹'}
         </h2>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 공급업체 티켓 사용 여부 선택 */}
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <div className="flex items-center mb-3">
+        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+          {/* 공급업체 티켓 사용 여부 선택 - 모바일 최적화 */}
+          <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
+            <div className="flex items-center mb-2 sm:mb-3">
               <input
                 type="checkbox"
                 id="useSupplierTicket"
@@ -575,10 +575,10 @@ export default function TicketBookingForm({
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* 공급업체 티켓 선택 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            {/* 공급업체 티켓 선택 - 모바일 최적화 */}
             {useSupplierTicket && (
-              <div className="md:col-span-2">
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   공급업체 티켓 선택 *
                 </label>

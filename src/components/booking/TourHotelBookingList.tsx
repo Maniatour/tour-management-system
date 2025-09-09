@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import TourHotelBookingForm from './TourHotelBookingForm';
 import BookingHistory from './BookingHistory';
+import { Grid, List, Plus, Search, Calendar, Filter } from 'lucide-react';
 
 interface TourHotelBooking {
   id: string;
@@ -44,6 +45,7 @@ export default function TourHotelBookingList() {
   const [dateFilter, setDateFilter] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
 
   useEffect(() => {
     fetchBookings();
@@ -249,186 +251,324 @@ export default function TourHotelBookingList() {
 
   return (
     <div className="space-y-6">
-      {/* 헤더 */}
-      <div className="flex justify-between items-center px-6 py-4">
-        <h2 className="text-2xl font-bold">투어 호텔 부킹 관리</h2>
-        <button
-          onClick={() => setShowForm(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          새 부킹 추가
-        </button>
-      </div>
-
-      {/* 필터 */}
-      <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            검색
-          </label>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="호텔명, 도시, 예약명, RN# 검색..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            상태 필터
-          </label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+      {/* 헤더 - 모바일 최적화 */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center px-4 sm:px-6 py-4 space-y-4 sm:space-y-0">
+        <h2 className="text-xl sm:text-2xl font-bold">투어 호텔 부킹 관리</h2>
+        <div className="flex items-center space-x-3">
+          {/* 뷰 전환 버튼 */}
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('card')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'card'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Grid size={16} />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <List size={16} />
+            </button>
+          </div>
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm sm:text-base flex items-center space-x-2"
           >
-            <option value="all">모든 상태</option>
-            <option value="pending">대기중</option>
-            <option value="confirmed">확정</option>
-            <option value="cancelled">취소</option>
-            <option value="completed">완료</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            체크인 날짜
-          </label>
-          <input
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+            <Plus size={16} />
+            <span className="hidden sm:inline">새 부킹 추가</span>
+            <span className="sm:hidden">추가</span>
+          </button>
         </div>
       </div>
 
-      {/* 테이블 */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  호텔/도시
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  예약자명
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  체크인/아웃
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  객실 정보
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  가격 정보
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  결제 방법
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  상태
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  투어
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  작업
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredBookings.map((booking) => (
-                <tr key={booking.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {booking.hotel}
+      {/* 필터 - 모바일 최적화 */}
+      <div className="px-4 sm:px-6 py-4 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              검색
+            </label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="호텔명, 도시, 예약명, RN# 검색..."
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              상태 필터
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value="all">모든 상태</option>
+              <option value="pending">대기중</option>
+              <option value="confirmed">확정</option>
+              <option value="cancelled">취소</option>
+              <option value="completed">완료</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              체크인 날짜
+            </label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 데이터 표시 영역 */}
+      <div className="px-4 sm:px-6">
+        {viewMode === 'table' ? (
+          /* 테이블 뷰 - 모바일 최적화 */
+          <div className="bg-white shadow overflow-hidden sm:rounded-md">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      호텔/도시
+                    </th>
+                    <th className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      예약자명
+                    </th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      체크인/아웃
+                    </th>
+                    <th className="hidden md:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      객실 정보
+                    </th>
+                    <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      가격 정보
+                    </th>
+                    <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      결제 방법
+                    </th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      상태
+                    </th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      작업
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredBookings.map((booking) => (
+                    <tr key={booking.id} className="hover:bg-gray-50">
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <div className="text-sm font-medium text-gray-900">{booking.hotel}</div>
+                          <div className="text-sm text-gray-500">{booking.city}</div>
+                          <div className="text-xs text-gray-500 sm:hidden">{booking.reservation_name}</div>
+                        </div>
+                      </td>
+                      <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {booking.reservation_name}
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="flex flex-col">
+                          <div>체크인: {booking.check_in_date}</div>
+                          <div>체크아웃: {booking.check_out_date}</div>
+                        </div>
+                      </td>
+                      <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div>객실 수: {booking.rooms}</div>
+                        <div className="text-xs text-gray-500">
+                          {booking.room_type || '타입 미지정'}
+                        </div>
+                      </td>
+                      <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div>단가: ${booking.unit_price}</div>
+                        <div className="font-medium">총액: ${booking.total_price}</div>
+                      </td>
+                      <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="space-y-1">
+                          <div>결제: {getPaymentMethodText(booking.payment_method) || '-'}</div>
+                          <div>
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
+                              {getCCStatusText(booking.cc)}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
+                          {getStatusText(booking.status)}
+                        </span>
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex flex-col sm:flex-row space-y-1 sm:space-y-0 sm:space-x-2">
+                          <button
+                            onClick={() => handleEdit(booking)}
+                            className="text-blue-600 hover:text-blue-900 text-xs sm:text-sm"
+                          >
+                            편집
+                          </button>
+                          <button
+                            onClick={() => handleViewHistory(booking.id)}
+                            className="text-green-600 hover:text-green-900 text-xs sm:text-sm"
+                          >
+                            히스토리
+                          </button>
+                          <button
+                            onClick={() => handleDelete(booking.id)}
+                            className="text-red-600 hover:text-red-900 text-xs sm:text-sm"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          /* 카드뷰 - 모바일 최적화 */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+            {filteredBookings.map((booking) => (
+              <div key={booking.id} className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
+                <div className="p-4 sm:p-6">
+                  {/* 카드 헤더 */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                        {booking.hotel}
+                      </h3>
+                      <p className="text-sm text-gray-600">{booking.city}</p>
+                      <p className="text-xs text-gray-500 mt-1">{booking.reservation_name}</p>
                     </div>
-                    <div className="text-sm text-gray-500">
-                      {booking.city}
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
+                      {getStatusText(booking.status)}
+                    </span>
+                  </div>
+
+                  {/* 카드 내용 */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">체크인</span>
+                      <span className="font-medium">{booking.check_in_date}</span>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {booking.reservation_name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <div>체크인: {booking.check_in_date}</div>
-                    <div>체크아웃: {booking.check_out_date}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <div>객실 수: {booking.rooms}</div>
-                    <div className="text-xs text-gray-500">
-                      {booking.room_type || '타입 미지정'}
+                    
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">체크아웃</span>
+                      <span className="font-medium">{booking.check_out_date}</span>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <div>단가: ${booking.unit_price}</div>
-                    <div className="font-medium">총액: ${booking.total_price}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <div className="space-y-1">
-                      <div>결제: {getPaymentMethodText(booking.payment_method) || '-'}</div>
-                      <div>
+                    
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">객실 수</span>
+                      <span className="font-medium">{booking.rooms}개</span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">객실 타입</span>
+                      <span className="font-medium truncate ml-2">{booking.room_type || '타입 미지정'}</span>
+                    </div>
+                    
+                    <div className="border-t pt-3">
+                      <div className="flex items-center justify-between text-sm mb-1">
+                        <span className="text-gray-500">단가</span>
+                        <span className="font-medium">${booking.unit_price}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">총액</span>
+                        <span className="font-medium text-blue-600">${booking.total_price}</span>
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <div className="text-sm">
+                        <span className="text-gray-500">결제 방법</span>
+                        <div className="mt-1 font-medium">{getPaymentMethodText(booking.payment_method) || '-'}</div>
+                      </div>
+                      <div className="mt-2">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
                           {getCCStatusText(booking.cc)}
                         </span>
                       </div>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
-                      {getStatusText(booking.status)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {booking.tours ? (
-                      <div>
-                        <div>{booking.tours.tour_date}</div>
-                        <div className="text-xs text-gray-500">
-                          {booking.tours.products?.name || '상품명 없음'}
+
+                    {booking.tours && (
+                      <div className="border-t pt-3">
+                        <div className="text-sm">
+                          <span className="text-gray-500">투어</span>
+                          <div className="mt-1">
+                            <div className="font-medium">{booking.tours.tour_date}</div>
+                            <div className="text-xs text-gray-500">
+                              {booking.tours.products?.name || '상품명 없음'}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    ) : (
-                      '투어 없음'
                     )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  </div>
+
+                  {/* 액션 버튼들 */}
+                  <div className="mt-4 pt-4 border-t">
                     <div className="flex space-x-2">
                       <button
                         onClick={() => handleEdit(booking)}
-                        className="text-blue-600 hover:text-blue-900"
+                        className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
                       >
                         편집
                       </button>
                       <button
                         onClick={() => handleViewHistory(booking.id)}
-                        className="text-green-600 hover:text-green-900"
+                        className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
                       >
                         히스토리
                       </button>
                       <button
                         onClick={() => handleDelete(booking.id)}
-                        className="text-red-600 hover:text-red-900"
+                        className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
                       >
                         삭제
                       </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {filteredBookings.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            {searchTerm || statusFilter !== 'all' || dateFilter 
-              ? '검색 조건에 맞는 부킹이 없습니다.' 
-              : '등록된 투어 호텔 부킹이 없습니다.'
-            }
+          <div className="text-center py-12 text-gray-500">
+            <div className="text-lg font-medium mb-2">
+              {searchTerm || statusFilter !== 'all' || dateFilter 
+                ? '검색 조건에 맞는 부킹이 없습니다.' 
+                : '등록된 투어 호텔 부킹이 없습니다.'
+              }
+            </div>
+            <p className="text-sm text-gray-400">
+              {!searchTerm && statusFilter === 'all' && !dateFilter && '새 부킹을 추가해보세요.'}
+            </p>
           </div>
         )}
       </div>

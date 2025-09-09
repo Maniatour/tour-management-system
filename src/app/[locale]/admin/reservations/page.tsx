@@ -734,41 +734,43 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center space-x-4">
-          <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
+    <div className="space-y-4 sm:space-y-6">
+      {/* 헤더 - 모바일 최적화 */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-4 sm:space-y-0">
+        <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
           
-          {/* 뷰 전환 버튼 */}
-          <div className="flex items-center space-x-2">
+          {/* 뷰 전환 버튼 - 모바일에서는 작게 */}
+          <div className="flex items-center space-x-1 sm:space-x-2">
             <button
               onClick={() => setViewMode('card')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg transition-colors text-sm ${
                 viewMode === 'card' 
                   ? 'bg-blue-500 text-white' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               <Grid3X3 className="w-4 h-4" />
-              <span>카드뷰</span>
+              <span className="hidden sm:inline">카드뷰</span>
             </button>
             <button
               onClick={() => setViewMode('calendar')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg transition-colors text-sm ${
                 viewMode === 'calendar' 
                   ? 'bg-blue-500 text-white' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               <CalendarDays className="w-4 h-4" />
-              <span>달력뷰</span>
+              <span className="hidden sm:inline">달력뷰</span>
             </button>
           </div>
         </div>
         
-        <div className="flex items-center space-x-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+        {/* 액션 버튼들 - 모바일에서는 세로 배치 */}
+        <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-3">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
             <input
               type="text"
               placeholder="예약 ID, 고객명, 상품명, 채널명으로 검색..."
@@ -777,14 +779,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 setSearchTerm(e.target.value)
                 setCurrentPage(1) // 검색 시 첫 페이지로 이동
               }}
-              className="w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
           </div>
           <button
             onClick={() => setShowAddForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2 text-sm"
           >
-            <Plus size={20} />
+            <Plus size={16} />
             <span>{t('addReservation')}</span>
           </button>
         </div>
@@ -793,15 +795,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       {/* 검색 및 필터 */}
       <div className="space-y-4">
 
-        {/* 고급 필터 */}
-        <div className="flex flex-wrap gap-4 items-center">
+        {/* 고급 필터 - 모바일 최적화 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <select
             value={selectedStatus}
             onChange={(e) => {
               setSelectedStatus(e.target.value)
               setCurrentPage(1)
             }}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           >
             <option value="all">모든 상태</option>
             <option value="pending">대기중</option>
@@ -817,7 +819,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               setSelectedChannel(e.target.value)
               setCurrentPage(1)
             }}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           >
             <option value="all">모든 채널</option>
             {channels.map(channel => (
@@ -825,8 +827,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             ))}
           </select>
           
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">투어 날짜:</label>
+          <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
+            <label className="text-xs sm:text-sm font-medium text-gray-700">시작일:</label>
             <input
               type="date"
               value={dateRange.start}
@@ -834,9 +836,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 setDateRange(prev => ({ ...prev, start: e.target.value }))
                 setCurrentPage(1)
               }}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
-            <span className="text-gray-500">~</span>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
+            <label className="text-xs sm:text-sm font-medium text-gray-700">종료일:</label>
             <input
               type="date"
               value={dateRange.end}
