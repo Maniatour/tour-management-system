@@ -10,7 +10,7 @@ import CustomerForm from '@/components/CustomerForm'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
-import TourCalendar from '@/components/TourCalendar'
+import ReservationCalendar from '@/components/ReservationCalendar'
 import { useReservationData } from '@/hooks/useReservationData'
 import { 
   getPickupHotelDisplay, 
@@ -299,7 +299,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const calendarReservations = useMemo(() => {
     return filteredReservations.map(reservation => ({
       id: reservation.id,
-      product_id: getProductName(reservation.productId, products),
+      product_id: reservation.productId,
+      product_name: getProductName(reservation.productId, products),
       tour_date: reservation.tourDate,
       tour_status: reservation.status,
       tour_time: reservation.tourTime,
@@ -308,8 +309,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       adults: reservation.adults,
       child: reservation.child,
       infant: reservation.infant,
+      total_people: reservation.totalPeople,
       customer_name: getCustomerName(reservation.customerId, customers as Customer[]),
       channel_name: getChannelName(reservation.channelId, channels),
+      created_at: reservation.addedTime,
       total_price: calculateTotalPrice(reservation, products, optionChoices)
     }))
   }, [filteredReservations, products, customers, channels, optionChoices])
@@ -1116,10 +1119,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         </div>
       ) : viewMode === 'calendar' ? (
         /* 달력뷰 */
-        <TourCalendar 
+        <ReservationCalendar 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          tours={calendarReservations as any} 
-          onTourClick={handleCalendarReservationClick}
+          reservations={calendarReservations as any} 
+          onReservationClick={handleCalendarReservationClick}
         />
       ) : (
         /* 카드뷰 */
