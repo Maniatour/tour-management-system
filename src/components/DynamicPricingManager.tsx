@@ -1,22 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Plus, 
-  Trash2, 
-  Calendar, 
   DollarSign, 
-  Settings, 
   Save,
-  X,
-  Check,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
-  ToggleLeft,
-  ToggleRight,
   Percent,
-  Tag,
   Eye,
   Loader2,
   TrendingUp,
@@ -28,7 +19,6 @@ import { supabase } from '@/lib/supabase';
 import { 
   DynamicPricingRule, 
   CreatePricingRuleDto, 
-  WeekdayPricingDto,
   DAY_NAMES
 } from '@/lib/types/dynamic-pricing';
 import ChangeHistory from './ChangeHistory';
@@ -36,7 +26,6 @@ import ChangeHistory from './ChangeHistory';
 interface DynamicPricingManagerProps {
   productId: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   onSave?: (rule: DynamicPricingRule) => void;
-  onCancel?: () => void;
   isNewProduct?: boolean;
 }
 
@@ -46,26 +35,13 @@ type ChannelType = 'OTA' | 'Self' | 'Partner';
 export default function DynamicPricingManager({ 
   productId, 
   onSave, 
-  onCancel,
   isNewProduct = false
 }: DynamicPricingManagerProps) {
   const [selectedChannel, setSelectedChannel] = useState<string>('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [pricingRules, setPricingRules] = useState<DynamicPricingRule[]>([]);
-  const [isCreating, setIsCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   
-  // 새 규칙 생성 폼 상태
-  const [newRule, setNewRule] = useState<CreatePricingRuleDto>({
-    product_id: productId,
-    channel_id: '',
-    rule_name: '',
-    start_date: '',
-    end_date: '',
-    weekday_pricing: [],
-    required_option_pricing: []
-  });
 
   // 가격 설정 상태
   const [pricingConfig, setPricingConfig] = useState({
@@ -89,12 +65,11 @@ export default function DynamicPricingManager({
     }>
   });
 
-  // 채널 목록 및 상품 판매 여부
+  // 채널 목록
   const [channels, setChannels] = useState<Array<{
     id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
     name: string;
     type: string | null;
-    is_selling_product: boolean;
   }>>([]);
   const [isLoadingChannels, setIsLoadingChannels] = useState(true);
 
@@ -125,7 +100,6 @@ export default function DynamicPricingManager({
     coupon_percent: number;
     is_sale_available: boolean;
   }>>([]);
-  const [isLoadingPricingData, setIsLoadingPricingData] = useState(false);
 
   // 뷰 모드 상태
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
@@ -145,37 +119,12 @@ export default function DynamicPricingManager({
     category: string;
     base_price: number;
   }>>([]);
-  const [isLoadingOptions, setIsLoadingOptions] = useState(true);
 
   // 선택된 필수 옵션 (전체적으로 하나만)
   const [selectedRequiredOption, setSelectedRequiredOption] = useState<string>('');
 
-  // 컴포넌트 마운트 시 channels와 options 데이터 로드
-  useEffect(() => {
-    loadChannels();
-    loadProductOptions();
-    loadDynamicPricingData();
-  }, []);
-
-  // 요일별 가격 초기화
-  useEffect(() => {
-    const initialWeekdayPricing: WeekdayPricingDto[] = Array.from({ length: 7 }, (_, i) => ({
-      day_of_week: i,
-      day_name: DAY_NAMES[i],
-      adult_price: 0,
-      child_price: 0,
-      infant_price: 0,
-      is_active: true
-    }));
-    
-    setNewRule(prev => ({
-      ...prev,
-      weekday_pricing: initialWeekdayPricing
-    }));
-  }, []);
-
   // Supabase에서 channels 데이터 로드
-  const loadChannels = async () => {
+  const loadChannels = useCallback(async () => {
     try {
       setIsLoadingChannels(true);
       
@@ -190,24 +139,24 @@ export default function DynamicPricingManager({
         return;
       }
 
-      // 상품 판매 여부 확인 (product_channels 테이블이 있다면)
-      const channelsWithSellingStatus = channelsData?.map(channel => ({
-        ...channel,
-        is_selling_product: false // 기본값, 실제로는 product_channels 테이블에서 확인
-      })) || [];
+      // 채널 데이터 설정
+      const channelsList = (channelsData as Array<{
+        id: string;
+        name: string;
+        type: string | null;
+      }>) || [];
 
-      setChannels(channelsWithSellingStatus);
+      setChannels(channelsList);
     } catch (error) {
       console.error('Channels 로드 중 오류:', error);
     } finally {
       setIsLoadingChannels(false);
     }
-  };
+  }, []);
 
   // Supabase에서 상품 옵션 데이터 로드
-  const loadProductOptions = async () => {
+  const loadProductOptions = useCallback(async () => {
     try {
-      setIsLoadingOptions(true);
       
       // 병합된 product_options 테이블에서 필수 옵션만 가져옴
       const { data: optionsData, error } = await supabase
@@ -229,23 +178,30 @@ export default function DynamicPricingManager({
         return;
       }
 
-                    // 옵션 데이터를 가격 캘린더용으로 변환 (병합된 테이블 구조)
-        const transformedOptions = optionsData?.map(option => {
-          // 병합된 테이블에서는 각 행이 이미 하나의 선택지를 나타냄
-          const adultPrice = option.adult_price_adjustment || 0;
-          const childPrice = option.child_price_adjustment || 0;
-          const infantPrice = option.infant_price_adjustment || 0;
-          
-          return {
-            id: option.id,
-            name: option.choice_name || option.name,
-            category: '기본', // 기본 카테고리로 설정
-            base_price: adultPrice,
-            adult_price: adultPrice,
-            child_price: childPrice,
-            infant_price: infantPrice
-          };
-        }) || [];
+      // 옵션 데이터를 가격 캘린더용으로 변환 (병합된 테이블 구조)
+      const transformedOptions = (optionsData as Array<{
+        id: string;
+        name: string;
+        choice_name?: string;
+        adult_price_adjustment?: number;
+        child_price_adjustment?: number;
+        infant_price_adjustment?: number;
+      }>)?.map((option) => {
+        // 병합된 테이블에서는 각 행이 이미 하나의 선택지를 나타냄
+        const adultPrice = option.adult_price_adjustment || 0;
+        const childPrice = option.child_price_adjustment || 0;
+        const infantPrice = option.infant_price_adjustment || 0;
+        
+        return {
+          id: option.id,
+          name: option.choice_name || option.name,
+          category: '기본', // 기본 카테고리로 설정
+          base_price: adultPrice,
+          adult_price: adultPrice,
+          child_price: childPrice,
+          infant_price: infantPrice
+        };
+      }) || [];
 
       setOptions(transformedOptions);
       
@@ -271,15 +227,12 @@ export default function DynamicPricingManager({
       }
     } catch (error) {
       console.error('Product options 로드 중 오류:', error);
-    } finally {
-      setIsLoadingOptions(false);
     }
-  };
+  }, [productId]);
 
   // Supabase에서 동적 가격 데이터 로드
-  const loadDynamicPricingData = async () => {
+  const loadDynamicPricingData = useCallback(async () => {
     try {
-      setIsLoadingPricingData(true);
       
       const { data: pricingData, error } = await supabase
         .from('dynamic_pricing')
@@ -295,10 +248,15 @@ export default function DynamicPricingManager({
       setDynamicPricingData(pricingData || []);
     } catch (error) {
       console.error('Dynamic pricing 데이터 로드 중 오류:', error);
-    } finally {
-      setIsLoadingPricingData(false);
     }
-  };
+  }, [productId]);
+
+  // 컴포넌트 마운트 시 channels와 options 데이터 로드
+  useEffect(() => {
+    loadChannels();
+    loadProductOptions();
+    loadDynamicPricingData();
+  }, [loadChannels, loadProductOptions, loadDynamicPricingData]);
 
   // 리스트뷰용 월별 데이터 가져오기
   const getListViewData = () => {
@@ -328,38 +286,6 @@ export default function DynamicPricingManager({
     setListViewMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
   };
 
-  // 카드 클릭 시 가격 설정 날짜 변경
-  const handleCardClick = (date: string) => {
-    console.log('클릭된 날짜 (원본):', date);
-    console.log('날짜 타입:', typeof date);
-    
-    // 날짜가 이미 YYYY-MM-DD 형식인지 확인
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(date)) {
-      console.error('날짜 형식이 올바르지 않습니다:', date);
-      return;
-    }
-    
-    console.log('설정할 날짜:', date);
-    console.log('현재 pricingConfig:', pricingConfig.start_date, pricingConfig.end_date);
-    
-    // 가격 설정의 시작일과 종료일을 해당 날짜로 설정
-    setPricingConfig(prev => {
-      const newConfig = {
-        ...prev,
-        start_date: date,
-        end_date: date
-      };
-      console.log('새로운 pricingConfig:', newConfig.start_date, newConfig.end_date);
-      return newConfig;
-    });
-    
-    // 가격 설정 탭으로 스크롤
-    const pricingSection = document.getElementById('pricing-section');
-    if (pricingSection) {
-      pricingSection.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
 
   // 다중 선택 처리
   const handleMultiSelect = (date: string, index: number, event: React.MouseEvent) => {
@@ -425,26 +351,6 @@ export default function DynamicPricingManager({
     }
   };
 
-  // 선택된 날짜들로 가격 설정 업데이트
-  const applySelectedDates = () => {
-    if (selectedDates.length === 0) return;
-    
-    const sortedDates = selectedDates.sort();
-    const startDate = sortedDates[0];
-    const endDate = sortedDates[sortedDates.length - 1];
-    
-    setPricingConfig(prev => ({
-      ...prev,
-      start_date: startDate,
-      end_date: endDate
-    }));
-    
-    // 가격 설정 탭으로 스크롤
-    const pricingSection = document.getElementById('pricing-section');
-    if (pricingSection) {
-      pricingSection.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
 
   // 선택 초기화
   const clearSelection = () => {
@@ -466,19 +372,6 @@ export default function DynamicPricingManager({
     });
   };
 
-  // 상품 판매 여부 토글 (로컬 상태만 변경, 부모 컴포넌트 상태 변경하지 않음)
-  const toggleProductSelling = (channelId: string) => {
-    // 로컬 상태만 변경
-    setChannels(prev => prev.map(channel => 
-      channel.id === channelId 
-        ? { ...channel, is_selling_product: !channel.is_selling_product }
-        : channel
-    ));
-    console.log(`Channel ${channelId} 판매 여부 토글됨 (로컬 상태만 변경, 저장되지 않음)`);
-    
-    // 중요: 부모 컴포넌트의 상태를 변경하지 않음
-    // 채널 토글은 저장 버튼을 통해서만 실제 저장됨
-  };
 
   // 채널 선택 시 가격 설정 초기화 (저장하지 않고 UI만 업데이트)
   useEffect(() => {
@@ -506,39 +399,6 @@ export default function DynamicPricingManager({
     }));
   };
 
-  // 필수 옵션 추가
-  const handleAddRequiredOption = () => {
-    setPricingConfig(prev => ({
-      ...prev,
-      required_options: [
-        ...prev.required_options,
-        {
-          option_id: '',
-          adult_price: 0,
-          child_price: 0,
-          infant_price: 0
-        }
-      ]
-    }));
-  };
-
-  // 필수 옵션 제거
-  const handleRemoveRequiredOption = (index: number) => {
-    setPricingConfig(prev => ({
-      ...prev,
-      required_options: prev.required_options.filter((_, i) => i !== index)
-    }));
-  };
-
-  // 필수 옵션 변경
-  const handleRequiredOptionChange = (index: number, field: string, value: string | number) => {
-    setPricingConfig(prev => ({
-      ...prev,
-      required_options: prev.required_options.map((option, i) =>
-        i === index ? { ...option, [field]: value } : option
-      )
-    }));
-  };
 
   // 필수 옵션 가격 변경 (새로운 함수)
   const handleRequiredOptionPriceChange = (optionId: string, field: 'adult_price' | 'child_price' | 'infant_price', value: number) => {
@@ -794,9 +654,8 @@ export default function DynamicPricingManager({
     setSaveMessage('')
 
     try {
-      // 1. 채널 판매 여부 저장
-      const channelsToUpdate = channels.filter(channel => channel.is_selling_product);
-      console.log('저장할 채널들:', channelsToUpdate);
+      // 1. 모든 채널에 대해 가격 규칙 생성
+      console.log('저장할 채널들:', channels);
       
       // 2. 가격 설정 저장
       const pricingData = {
@@ -817,8 +676,8 @@ export default function DynamicPricingManager({
       // 3. pricingConfig를 기반으로 pricingRules 생성
       const generatedPricingRules: CreatePricingRuleDto[] = []
       
-      // 선택된 채널들에 대해 가격 규칙 생성
-      const activeChannels = channels.filter(channel => channel.is_selling_product)
+      // 모든 채널에 대해 가격 규칙 생성
+      const activeChannels = channels
       
       for (const channel of activeChannels) {
         // 선택된 요일들에 대해 각각 가격 규칙 생성
@@ -896,7 +755,7 @@ export default function DynamicPricingManager({
 
         const { error: ruleError } = await supabase
           .from('dynamic_pricing')
-          .insert(insertData)
+          .insert(insertData as never)
 
         if (ruleError) {
           console.error('동적 가격 저장 오류:', ruleError)
@@ -939,13 +798,28 @@ export default function DynamicPricingManager({
   const previewPrices = calculatePreviewPrices();
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* 1. 왼쪽 채널 선택 사이드바 */}
-      <div className="w-[15%] bg-white border-r border-gray-200 p-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">채널 관리</h3>
+    <div className="flex flex-col lg:flex-row h-screen bg-gray-50">
+      {/* 1. 왼쪽 채널 선택 사이드바 - 모바일에서는 접을 수 있는 드롭다운 */}
+      <div className="w-full lg:w-[15%] bg-white border-r border-gray-200 p-4 lg:block">
+        {/* 모바일용 채널 선택 드롭다운 */}
+        <div className="lg:hidden mb-4">
+          <select
+            value={selectedChannel}
+            onChange={(e) => setSelectedChannel(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">채널을 선택하세요</option>
+            {channels.map(channel => (
+              <option key={channel.id} value={channel.id}>
+                {channel.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 hidden lg:block">채널 관리</h3>
         
-        {/* 채널 타입 탭 */}
-        <div className="flex space-x-1 mb-4 bg-gray-100 p-1 rounded-lg">
+        {/* 채널 타입 탭 - 모바일에서는 숨김 */}
+        <div className="hidden lg:flex space-x-1 mb-4 bg-gray-100 p-1 rounded-lg">
           <button
             type="button"
             onClick={() => setSelectedChannelType('OTA')}
@@ -999,7 +873,7 @@ export default function DynamicPricingManager({
              <span className="ml-2 text-gray-600">채널 로딩 중...</span>
            </div>
          ) : (
-           <div className="space-y-2">
+           <div className="space-y-2 hidden lg:block">
              {getChannelsByType(selectedChannelType).map(channel => (
                <div
                  key={channel.id}
@@ -1017,23 +891,6 @@ export default function DynamicPricingManager({
                    {channel.name}
                  </div>
                  
-                 {/* 판매 여부 토글 */}
-                 <button
-                   type="button"
-                   onClick={(e) => {
-                     e.stopPropagation();
-                     toggleProductSelling(channel.id);
-                   }}
-                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                     channel.is_selling_product ? 'bg-green-600' : 'bg-gray-300'
-                   }`}
-                 >
-                   <span
-                     className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                       channel.is_selling_product ? 'translate-x-5' : 'translate-x-1'
-                     }`}
-                   />
-                 </button>
                </div>
              ))}
              
@@ -1051,8 +908,8 @@ export default function DynamicPricingManager({
            </div>
          )}
         
-        {/* 채널 및 옵션 새로고침 버튼 */}
-        <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
+        {/* 채널 및 옵션 새로고침 버튼 - 모바일에서는 숨김 */}
+        <div className="mt-4 pt-4 border-t border-gray-200 space-y-2 hidden lg:block">
           <button
             type="button"
             onClick={loadChannels}
@@ -1070,10 +927,10 @@ export default function DynamicPricingManager({
         </div>
       </div>
 
-                              {/* 2. 가격 캘린더 */}
-         <div className="w-[30%] bg-white border-r border-gray-200 p-4">
+      {/* 2. 가격 캘린더 - 모바일에서는 전체 너비 */}
+      <div className="w-full lg:w-[30%] bg-white border-r border-gray-200 p-4 h-[40vh] lg:h-auto overflow-y-auto">
 
-         <div className="flex items-center justify-between mb-4">
+         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 space-y-2 sm:space-y-0">
            <h3 className="text-lg font-semibold text-gray-900">가격 캘린더</h3>
            <div className="flex items-center space-x-2">
              {/* 뷰 모드 전환 버튼 */}
@@ -1127,7 +984,7 @@ export default function DynamicPricingManager({
          {/* 옵션 선택기 */}
          {options.length > 0 && (
            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                           <div className="flex items-center justify-between mb-3">
+             <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 space-y-1 sm:space-y-0">
                 <h4 className="text-sm font-medium text-gray-700">필수 옵션 선택:</h4>
                 <div className="text-xs text-gray-500">
                   하나만 선택
@@ -1156,13 +1013,13 @@ export default function DynamicPricingManager({
                                 console.log(`옵션 선택: ${option.name} (ID: ${option.id})`);
                                 setSelectedRequiredOption(option.id);
                               }}
-                              className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                              className={`px-2 py-1 text-xs rounded-full border transition-colors ${
                                 selectedRequiredOption === option.id
                                   ? 'border-blue-500 bg-blue-500 text-white shadow-sm'
                                   : 'border-gray-300 bg-white text-gray-700 hover:border-blue-300 hover:bg-blue-50'
                               }`}
                             >
-                              {option.name}
+                              <span className="truncate max-w-[120px]">{option.name}</span>
                               {selectedRequiredOption === option.id && (
                                 <span className="ml-1">✓</span>
                               )}
@@ -1190,7 +1047,8 @@ export default function DynamicPricingManager({
          <div className="grid grid-cols-7 gap-1 mb-2">
            {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(day => (
              <div key={day} className="text-center text-xs font-medium text-gray-500 p-1">
-               {day}
+               <span className="hidden sm:inline">{day}</span>
+               <span className="sm:hidden">{day.charAt(0)}</span>
              </div>
            ))}
          </div>
@@ -1220,13 +1078,16 @@ export default function DynamicPricingManager({
                      {day.isCurrentMonth && prices && (
                  <div className="space-y-1">
                    <div className="text-center text-xs font-bold text-blue-600">
-                           ${prices.max.adult.toFixed(2)}
+                     <span className="hidden sm:inline">${prices.max.adult.toFixed(2)}</span>
+                     <span className="sm:hidden">${prices.max.adult.toFixed(0)}</span>
                    </div>
                    <div className="text-center text-xs text-orange-600">
-                           ${prices.discounted.adult.toFixed(2)}
+                     <span className="hidden sm:inline">${prices.discounted.adult.toFixed(2)}</span>
+                     <span className="sm:hidden">${prices.discounted.adult.toFixed(0)}</span>
                    </div>
                    <div className="text-center text-xs text-green-600">
-                           ${prices.net.adult.toFixed(2)}
+                     <span className="hidden sm:inline">${prices.net.adult.toFixed(2)}</span>
+                     <span className="sm:hidden">${prices.net.adult.toFixed(0)}</span>
                    </div>
                  </div>
                )}
@@ -1282,7 +1143,7 @@ export default function DynamicPricingManager({
              )}
 
              {/* 리스트 데이터 */}
-             <div className="space-y-2 h-[800px] overflow-y-auto">
+             <div className="space-y-2 h-[400px] lg:h-[800px] overflow-y-auto">
                {getListViewData().length > 0 ? (
                  getListViewData().map((data, index) => {
                    const prices = calculateDatePrices(data.date, data.channel_id);
@@ -1350,14 +1211,14 @@ export default function DynamicPricingManager({
                        
                        {prices && (
                          <div className="text-xs space-y-1">
-                           <div>
+                           <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0">
                              <span className="text-blue-600 font-bold">최대: ${prices.max.adult.toFixed(2)}</span>
-                             <span className="mx-4 text-gray-400">|</span>
+                             <span className="hidden sm:inline mx-2 text-gray-400">|</span>
                              <span className="text-orange-600 font-bold">할인: ${prices.discounted.adult.toFixed(2)}</span>
-                             <span className="mx-4 text-gray-400">|</span>
+                             <span className="hidden sm:inline mx-2 text-gray-400">|</span>
                              <span className="text-green-600 font-bold">Net: ${prices.net.adult.toFixed(2)}</span>
                            </div>
-                           <div className="text-gray-500 text-xs">
+                           <div className="text-gray-500 text-xs hidden sm:block">
                              기본가 ${data.adult_price.toFixed(2)} + 옵션 ${(prices.max.adult - data.adult_price).toFixed(2)} 
                              → 쿠폰 -${(prices.max.adult - prices.discounted.adult).toFixed(2)} 
                              → 커미션 -${(prices.discounted.adult - prices.net.adult).toFixed(2)}
@@ -1412,7 +1273,7 @@ export default function DynamicPricingManager({
        </div>
 
       {/* 3. 가운데 가격 설정 섹션 */}
-      <div id="pricing-section" className="w-[30%] bg-white p-6 overflow-y-auto">
+      <div id="pricing-section" className="w-full lg:w-[30%] bg-white p-4 lg:p-6 overflow-y-auto h-[60vh] lg:h-auto">
         <div className="max-w-none mx-auto">
                                  <h2 className="text-lg font-semibold text-gray-900 mb-4">
               {selectedChannel ? `${channels.find(c => c.id === selectedChannel)?.name} 가격 설정` : '가격 설정'}
@@ -1424,57 +1285,51 @@ export default function DynamicPricingManager({
                <h3 className="text-lg font-medium text-gray-900 mb-2">채널을 선택해주세요</h3>
                <p className="text-gray-600">가격을 설정하려면 왼쪽에서 채널을 선택하세요.</p>
              </div>
-           ) : !channels.find(c => c.id === selectedChannel)?.is_selling_product ? (
-             <div className="text-center py-12">
-               <AlertCircle className="h-12 w-12 mx-auto mb-4 text-yellow-400" />
-               <h3 className="text-lg font-medium text-gray-900 mb-2">선택된 채널에서 상품을 판매하지 않습니다</h3>
-               <p className="text-gray-600">가격을 설정하려면 채널의 상품 판매를 활성화하세요.</p>
-             </div>
            ) : (
-             <div className="space-y-6">
+             <div className="space-y-4">
 
               {/* 기간 설정 */}
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-2 gap-2 lg:gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
                     시작일 *
                   </label>
                   <input
                     type="date"
                     value={pricingConfig.start_date}
                     onChange={(e) => setPricingConfig(prev => ({ ...prev, start_date: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
                     종료일 *
                   </label>
                   <input
                     type="date"
                     value={pricingConfig.end_date}
                     onChange={(e) => setPricingConfig(prev => ({ ...prev, end_date: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
               </div>
 
                              {/* 요일 선택 */}
                <div>
-                 <div className="flex items-center justify-between mb-3">
-                   <label className="text-sm font-medium text-gray-700">
+                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 space-y-2 sm:space-y-0">
+                   <label className="text-xs font-medium text-gray-700">
                      적용 요일 선택
                    </label>
-                   <div className="flex space-x-2">
+                   <div className="flex space-x-1">
                      <button
                        type="button"
                        onClick={() => setPricingConfig(prev => ({
                          ...prev,
                          selected_weekdays: [0, 1, 2, 3, 4, 5, 6]
                        }))}
-                       className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                       className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                      >
-                       전체 선택
+                       전체
                      </button>
                      <button
                        type="button"
@@ -1482,55 +1337,55 @@ export default function DynamicPricingManager({
                          ...prev,
                          selected_weekdays: []
                        }))}
-                       className="px-3 py-1 text-xs bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+                       className="px-2 py-1 text-xs bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
                      >
-                       전체 해제
+                       해제
                      </button>
                    </div>
                  </div>
-                 <div className="grid grid-cols-7 gap-2">
+                 <div className="grid grid-cols-7 gap-1">
                    {Array.from({ length: 7 }, (_, i) => (
                      <button
                        key={i}
                        type="button"
                        onClick={() => handleWeekdayToggle(i)}
-                       className={`p-3 rounded-lg border transition-colors ${
+                       className={`p-1.5 rounded-lg border transition-colors ${
                          pricingConfig.selected_weekdays.includes(i)
                            ? 'border-blue-500 bg-blue-50 text-blue-700'
                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                        }`}
                      >
-                       <div className="text-sm font-medium">{DAY_NAMES[i]}</div>
+                       <div className="text-xs font-medium">{DAY_NAMES[i]}</div>
                      </button>
                    ))}
                  </div>
                </div>
 
               {/* 판매 가능 여부 */}
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div>
-                  <h4 className="font-medium text-gray-900">판매 가능 여부</h4>
-                  <p className="text-sm text-gray-600">이 기간 동안 상품 판매 허용</p>
+                  <h4 className="text-sm font-medium text-gray-900">판매 가능 여부</h4>
+                  <p className="text-xs text-gray-600">이 기간 동안 상품 판매 허용</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setPricingConfig(prev => ({ ...prev, is_sale_available: !prev.is_sale_available }))}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                     pricingConfig.is_sale_available ? 'bg-blue-600' : 'bg-gray-200'
                   }`}
                 >
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      pricingConfig.is_sale_available ? 'translate-x-6' : 'translate-x-1'
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                      pricingConfig.is_sale_available ? 'translate-x-5' : 'translate-x-1'
                     }`}
                   />
                 </button>
               </div>
 
                                                            {/* 수수료 및 할인 설정 */}
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-4">
                  <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                   <label className="block text-xs font-medium text-gray-700 mb-1">
                      커미션 (%)
                    </label>
                    <div className="relative">
@@ -1541,15 +1396,15 @@ export default function DynamicPricingManager({
                         step="0.01"
                         value={pricingConfig.commission_percent}
                         onChange={(e) => setPricingConfig(prev => ({ ...prev, commission_percent: parseFloat(e.target.value) || 0 }))}
-                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="0"
                       />
-                     <Percent className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                     <Percent className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
                    </div>
                  </div>
                  <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                     업차지 금액 ($)
+                   <label className="block text-xs font-medium text-gray-700 mb-1">
+                     업차지 ($)
                    </label>
                    <div className="relative">
                                           <input
@@ -1558,20 +1413,20 @@ export default function DynamicPricingManager({
                         step="0.01"
                         value={pricingConfig.markup_amount}
                         onChange={(e) => setPricingConfig(prev => ({ ...prev, markup_amount: parseFloat(e.target.value) || 0 }))}
-                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="0"
                       />
-                     <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                     <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
                    </div>
                  </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      쿠폰 할인 우선
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      할인 우선
                     </label>
                     <select
                       value={pricingConfig.discount_priority || 'fixed_first'}
                       onChange={(e) => setPricingConfig(prev => ({ ...prev, discount_priority: e.target.value as 'fixed_first' | 'percentage_first' }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="fixed_first">고정값</option>
                       <option value="percentage_first">퍼센트</option>
@@ -1580,7 +1435,7 @@ export default function DynamicPricingManager({
                   <div>
                     {pricingConfig.discount_priority === 'fixed_first' ? (
                       <>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
                           쿠폰값 ($)
                         </label>
                         <div className="relative">
@@ -1590,15 +1445,15 @@ export default function DynamicPricingManager({
                             step="0.01"
                             value={pricingConfig.coupon_fixed_discount}
                             onChange={(e) => setPricingConfig(prev => ({ ...prev, coupon_fixed_discount: parseFloat(e.target.value) || 0 }))}
-                            className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="0"
                           />
-                          <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                          <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
                         </div>
                       </>
                     ) : (
                       <>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
                           쿠폰 (%)
                         </label>
                         <div className="relative">
@@ -1609,10 +1464,10 @@ export default function DynamicPricingManager({
                             step="0.01"
                             value={pricingConfig.coupon_percentage_discount}
                             onChange={(e) => setPricingConfig(prev => ({ ...prev, coupon_percentage_discount: parseFloat(e.target.value) || 0 }))}
-                            className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="0"
                           />
-                          <Percent className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                          <Percent className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
                         </div>
                       </>
                     )}
@@ -1621,23 +1476,23 @@ export default function DynamicPricingManager({
 
                              {/* 기본 판매가 */}
                <div>
-                 <h4 className="font-medium text-gray-900 mb-3">기본 판매가</h4>
-                 <div className="grid grid-cols-3 gap-4">
+                 <h4 className="text-sm font-medium text-gray-900 mb-2">기본 판매가</h4>
+                 <div className="grid grid-cols-3 gap-2">
                    <div>
-                     <label className="block text-sm font-medium text-gray-700 mb-2">성인 ($)</label>
+                     <label className="block text-xs font-medium text-gray-700 mb-1">성인 ($)</label>
                      <div className="relative">
                        <input
                          type="number"
                          value={pricingConfig.adult_price}
                          onChange={(e) => setPricingConfig(prev => ({ ...prev, adult_price: parseFloat(e.target.value) || 0 }))}
-                         className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                         className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                          placeholder="0"
                        />
-                       <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                       <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
                      </div>
                    </div>
                    <div>
-                     <label className="block text-sm font-medium text-gray-700 mb-2">아동 ($)</label>
+                     <label className="block text-xs font-medium text-gray-700 mb-1">아동 ($)</label>
                      <div className="relative">
                        <input
                          type="number"
@@ -1647,14 +1502,14 @@ export default function DynamicPricingManager({
                            console.log('아동 가격 변경:', value);
                            setPricingConfig(prev => ({ ...prev, child_price: value }));
                          }}
-                         className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                         className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                          placeholder="0"
                        />
-                       <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                       <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
                      </div>
                    </div>
                    <div>
-                     <label className="block text-sm font-medium text-gray-700 mb-2">유아 ($)</label>
+                     <label className="block text-xs font-medium text-gray-700 mb-1">유아 ($)</label>
                      <div className="relative">
                        <input
                          type="number"
@@ -1664,10 +1519,10 @@ export default function DynamicPricingManager({
                            console.log('유아 가격 변경:', value);
                            setPricingConfig(prev => ({ ...prev, infant_price: value }));
                          }}
-                         className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                         className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                          placeholder="0"
                        />
-                       <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                       <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
                      </div>
                    </div>
                  </div>
@@ -1676,7 +1531,7 @@ export default function DynamicPricingManager({
                                {/* 필수 선택 옵션 가격 설정 */}
                 {options.length > 0 && (
                   <div>
-                    <h4 className="font-medium text-gray-900 mb-3">필수 선택 옵션 가격 설정</h4>
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">필수 선택 옵션 가격 설정</h4>
                     <div className="space-y-3">
                       {(() => {
                         const groupedOptions = options.reduce((acc, option) => {
@@ -1709,8 +1564,8 @@ export default function DynamicPricingManager({
                                        </span>
                                      </div>
                                      
-                                     <div className="flex items-center space-x-3">
-                                       <div className="flex items-center space-x-2">
+                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                       <div className="flex flex-col space-y-1">
                                          <span className="text-xs text-gray-600">성인</span>
                                          <div className="relative">
                                            <input
@@ -1719,13 +1574,13 @@ export default function DynamicPricingManager({
                                              step="0.01"
                                              value={existingOption?.adult_price || 0}
                                              onChange={(e) => handleRequiredOptionPriceChange(option.id, 'adult_price', parseFloat(e.target.value) || 0)}
-                                             className="w-20 pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                             className="w-full pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
                                              placeholder="0"
                                            />
                                            <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
                                          </div>
                                        </div>
-                                       <div className="flex items-center space-x-2">
+                                       <div className="flex flex-col space-y-1">
                                          <span className="text-xs text-gray-600">아동</span>
                                          <div className="relative">
                                            <input
@@ -1734,13 +1589,13 @@ export default function DynamicPricingManager({
                                              step="0.01"
                                              value={existingOption?.child_price || 0}
                                              onChange={(e) => handleRequiredOptionPriceChange(option.id, 'child_price', parseFloat(e.target.value) || 0)}
-                                             className="w-20 pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                             className="w-full pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
                                              placeholder="0"
                                            />
                                            <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
                                          </div>
                                        </div>
-                                       <div className="flex items-center space-x-2">
+                                       <div className="flex flex-col space-y-1">
                                          <span className="text-xs text-gray-600">유아</span>
                                          <div className="relative">
                                            <input
@@ -1749,7 +1604,7 @@ export default function DynamicPricingManager({
                                              step="0.01"
                                              value={existingOption?.infant_price || 0}
                                              onChange={(e) => handleRequiredOptionPriceChange(option.id, 'infant_price', parseFloat(e.target.value) || 0)}
-                                             className="w-20 pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                             className="w-full pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
                                              placeholder="0"
                                            />
                                            <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
@@ -1772,7 +1627,7 @@ export default function DynamicPricingManager({
 
                                            {/* 통합 저장 버튼 */}
               <div className="mt-8 pt-6 border-t border-gray-200">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-4 sm:space-y-0">
                   <div className="flex items-center space-x-2">
                     <TrendingUp className="h-5 w-5 text-green-600" />
                     <h4 className="text-lg font-medium text-gray-900">동적 가격 관리</h4>
@@ -1781,7 +1636,7 @@ export default function DynamicPricingManager({
                     type="button"
                     onClick={handleUnifiedSave}
                     disabled={saving || isNewProduct}
-                    className={`px-6 py-3 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
+                    className={`w-full sm:w-auto px-6 py-3 rounded-lg font-medium flex items-center justify-center space-x-2 transition-colors ${
                       saving || isNewProduct
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         : 'bg-green-600 text-white hover:bg-green-700'
@@ -1821,8 +1676,8 @@ export default function DynamicPricingManager({
         </div>
       </div>
 
-      {/* 4. 오른쪽 가격 미리보기 */}
-      <div className="w-[25%] bg-white border-l border-gray-200 p-4">
+      {/* 4. 오른쪽 가격 미리보기 - 모바일에서는 접을 수 있는 아코디언 */}
+      <div className="w-full lg:w-[25%] bg-white border-l border-gray-200 p-4 h-[50vh] lg:h-auto overflow-y-auto">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Eye className="h-5 w-5 text-blue-600 mr-2" />
           가격 미리보기
@@ -1831,10 +1686,6 @@ export default function DynamicPricingManager({
         {!selectedChannel ? (
           <div className="text-center py-8 text-gray-500">
             채널을 선택하면 가격 미리보기가 표시됩니다.
-          </div>
-        ) : !channels.find(c => c.id === selectedChannel)?.is_selling_product ? (
-          <div className="text-center py-8 text-yellow-500">
-            선택된 채널에서 상품을 판매하지 않습니다.
           </div>
         ) : (
           <div className="space-y-4">
@@ -1975,7 +1826,7 @@ export default function DynamicPricingManager({
                                 <div key={option.id} className="border-l-4 border-blue-400 pl-3">
                                   <h6 className="font-medium text-sm text-gray-900 mb-2">- {option.name}</h6>
                                   <div className="text-xs space-y-2 text-gray-600">
-                                    <div className="grid grid-cols-3 gap-2 text-center">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
                                       <div>
                                         <div className="font-medium text-gray-700">성인</div>
                                         <div className="text-xs text-gray-500">기본: ${adultBasePrice}</div>
