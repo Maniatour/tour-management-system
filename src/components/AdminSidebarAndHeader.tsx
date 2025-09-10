@@ -20,7 +20,9 @@ import {
   DollarSign,
   Clock,
   CheckCircle,
-  XCircle
+  XCircle,
+  Home,
+  ChevronDown
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -52,6 +54,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const router = useRouter()
   const { signOut, authUser, userRole } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [currentSession, setCurrentSession] = useState<AttendanceRecord | null>(null)
   const [isCheckingIn, setIsCheckingIn] = useState(false)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
@@ -59,13 +62,6 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
   const [elapsedTime, setElapsedTime] = useState('00:00:00')
 
-  // 디버깅을 위한 사용자 정보 로깅
-  console.log('AdminSidebarAndHeader - User info:', {
-    authUser,
-    userRole,
-    hasName: !!authUser?.name,
-    hasEmail: !!authUser?.email
-  })
 
   // 오늘의 출퇴근 기록 조회
   const fetchTodayRecords = async () => {
@@ -192,7 +188,6 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         return
       }
 
-      alert(`${nextSessionNumber}번째 출근 체크인이 완료되었습니다!`)
       fetchTodayRecords()
       setShowAttendanceModal(false)
     } catch (error) {
@@ -288,9 +283,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     }
   }
 
+  const handleUserMenuClick = () => {
+    setIsUserMenuOpen(false)
+  }
+
   const navigation = [
     { name: '대시보드', href: `/${locale}/admin`, icon: BarChart3 },
     { name: '고객 관리', href: `/${locale}/admin/customers`, icon: Users },
+    { name: '상품 관리', href: `/${locale}/admin/products`, icon: BookOpen },
     { name: '예약 관리', href: `/${locale}/admin/reservations`, icon: Calendar },
     { name: '예약 통계', href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
     { name: '부킹 관리', href: `/${locale}/admin/booking`, icon: BookOpen },
@@ -366,34 +366,81 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 </div>
               )}
               
-              {/* 사용자 정보 - 모바일에서는 간소화 */}
-              <div className="hidden sm:block text-sm text-gray-700">
-                <div className="font-medium">
-                  {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}님, 안녕하세요!
-                </div>
-                <div className="text-xs text-gray-500">
-                  {authUser?.email || '이메일 정보 없음'} | 
-                  {userRole === 'admin' ? ' 관리자' : 
-                   userRole === 'manager' ? ' 매니저' : 
-                   userRole === 'team_member' ? ' 팀원' : 
-                   authUser?.email ? ' 구글 사용자' : ' 고객'}
-                </div>
-              </div>
-              
-              {/* 모바일 사용자 정보 */}
-              <div className="sm:hidden text-xs text-gray-700 truncate max-w-20">
-                {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}님
+              {/* 사용자 정보 드롭다운 */}
+              <div className="relative">
+                <button
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                    <span className="text-white text-sm font-medium">
+                      {(authUser?.name || authUser?.email?.split('@')[0] || '사용자').charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="hidden sm:block text-left">
+                    <div className="text-sm font-medium text-gray-900">
+                      {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}님
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {userRole === 'admin' ? '관리자' : 
+                       userRole === 'manager' ? '매니저' : 
+                       userRole === 'team_member' ? '팀원' : 
+                       authUser?.email ? '구글 사용자' : '고객'}
+                    </div>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                </button>
+
+                {isUserMenuOpen && (
+                  <>
+                    {/* Backdrop */}
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setIsUserMenuOpen(false)}
+                    />
+                    
+                    {/* Dropdown */}
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
+                      <div className="py-1">
+                        <div className="px-4 py-2 border-b border-gray-100">
+                          <p className="text-sm font-medium text-gray-900">
+                            {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}
+                          </p>
+                          <p className="text-xs text-gray-500">{authUser?.email || '이메일 정보 없음'}</p>
+                          {userRole && (
+                            <p className="text-xs text-blue-600 font-medium mt-1">
+                              {userRole === 'admin' ? '관리자' : 
+                               userRole === 'manager' ? '매니저' : 
+                               userRole === 'team_member' ? '팀원' : '고객'}
+                            </p>
+                          )}
+                        </div>
+                        
+                        <Link
+                          href={`/${locale}/dashboard`}
+                          onClick={handleUserMenuClick}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                        >
+                          <Home className="w-4 h-4 mr-2" />
+                          고객 페이지
+                        </Link>
+                        
+                        <div className="border-t border-gray-100 my-1"></div>
+                        
+                        <button
+                          onClick={handleLogout}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                        >
+                          <LogOut className="w-4 h-4 mr-2" />
+                          로그아웃
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
               
               <LanguageSwitcher />
-              <button 
-                onClick={handleLogout}
-                className="flex items-center text-gray-500 hover:text-red-600 transition-colors p-1"
-                title="로그아웃"
-              >
-                <LogOut size={16} className="sm:mr-2" />
-                <span className="hidden sm:inline">로그아웃</span>
-              </button>
             </div>
           </div>
         </div>
@@ -436,7 +483,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`flex items-center px-3 py-2 text-sm font-medium rounded-lg mb-1 transition-colors ${
+                  className={`flex items-center px-3 py-0.5 text-sm font-medium rounded-lg mb-1 transition-colors ${
                     isActive
                       ? 'bg-blue-100 text-blue-700'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -456,7 +503,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               handleLogout()
               setSidebarOpen(false)
             }}
-            className="flex items-center w-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
+            className="flex items-center w-full px-3 py-0.5 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
           >
             <LogOut size={16} className="mr-3" />
             로그아웃
@@ -505,7 +552,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       <div className="pt-16 lg:pl-64">
         {/* 페이지 콘텐츠 */}
         <main className="py-2 sm:py-4 lg:py-6 pb-20 lg:pb-6">
-          <div className="max-w-full mx-auto px-2 sm:px-4 lg:px-6">
+          <div className="max-w-full mx-auto px-1 sm:px-4 lg:px-6">
             {children}
           </div>
         </main>

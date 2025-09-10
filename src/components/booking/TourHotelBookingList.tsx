@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import TourHotelBookingForm from './TourHotelBookingForm';
 import BookingHistory from './BookingHistory';
-import { Grid, List, Plus, Search, Calendar, Filter } from 'lucide-react';
+import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar, Filter } from 'lucide-react';
 
 interface TourHotelBooking {
   id: string;
@@ -45,7 +45,10 @@ export default function TourHotelBookingList() {
   const [dateFilter, setDateFilter] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
+  const [viewMode, setViewMode] = useState<'card' | 'calendar'>('calendar');
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [selectedBookings, setSelectedBookings] = useState<TourHotelBooking[]>([]);
 
   useEffect(() => {
     fetchBookings();
@@ -241,6 +244,23 @@ export default function TourHotelBookingList() {
     }
   };
 
+  const goToPreviousMonth = () => {
+    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const goToNextMonth = () => {
+    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  const goToToday = () => {
+    setCurrentDate(new Date());
+  };
+
+  const handleBookingClick = (bookings: TourHotelBooking[]) => {
+    setSelectedBookings(bookings);
+    setShowBookingModal(true);
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -252,37 +272,37 @@ export default function TourHotelBookingList() {
   return (
     <div className="space-y-6">
       {/* 헤더 - 모바일 최적화 */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center px-4 sm:px-6 py-4 space-y-4 sm:space-y-0">
-        <h2 className="text-xl sm:text-2xl font-bold">투어 호텔 부킹 관리</h2>
-        <div className="flex items-center space-x-3">
+      <div className="flex items-center justify-between px-1 sm:px-6 py-4">
+        <h2 className="text-lg sm:text-2xl font-bold">투어 호텔 부킹 관리</h2>
+        <div className="flex items-center space-x-2">
           {/* 뷰 전환 버튼 */}
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode('card')}
-              className={`p-2 rounded-md transition-colors ${
+              className={`p-1.5 rounded-md transition-colors ${
                 viewMode === 'card'
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              <Grid size={16} />
+              <Grid size={14} />
             </button>
             <button
-              onClick={() => setViewMode('table')}
-              className={`p-2 rounded-md transition-colors ${
-                viewMode === 'table'
+              onClick={() => setViewMode('calendar')}
+              className={`p-1.5 rounded-md transition-colors ${
+                viewMode === 'calendar'
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              <List size={16} />
+              <CalendarIcon size={14} />
             </button>
           </div>
           <button
             onClick={() => setShowForm(true)}
-            className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm sm:text-base flex items-center space-x-2"
+            className="px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs sm:text-base flex items-center space-x-1"
           >
-            <Plus size={16} />
+            <Plus size={14} />
             <span className="hidden sm:inline">새 부킹 추가</span>
             <span className="sm:hidden">추가</span>
           </button>
@@ -290,32 +310,32 @@ export default function TourHotelBookingList() {
       </div>
 
       {/* 필터 - 모바일 최적화 */}
-      <div className="px-4 sm:px-6 py-4 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+      <div className="px-1 sm:px-6 py-4">
+        <div className="flex flex-row sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
               검색
             </label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="호텔명, 도시, 예약명, RN# 검색..."
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                placeholder="검색..."
+                className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              상태 필터
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              상태
             </label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
             >
               <option value="all">모든 상태</option>
               <option value="pending">대기중</option>
@@ -325,17 +345,17 @@ export default function TourHotelBookingList() {
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
               체크인 날짜
             </label>
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <Calendar className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
               <input
                 type="date"
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
               />
             </div>
           </div>
@@ -343,110 +363,238 @@ export default function TourHotelBookingList() {
       </div>
 
       {/* 데이터 표시 영역 */}
-      <div className="px-4 sm:px-6">
-        {viewMode === 'table' ? (
-          /* 테이블 뷰 - 모바일 최적화 */
-          <div className="bg-white shadow overflow-hidden sm:rounded-md">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      호텔/도시
-                    </th>
-                    <th className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      예약자명
-                    </th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      체크인/아웃
-                    </th>
-                    <th className="hidden md:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      객실 정보
-                    </th>
-                    <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      가격 정보
-                    </th>
-                    <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      결제 방법
-                    </th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      상태
-                    </th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      작업
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredBookings.map((booking) => (
-                    <tr key={booking.id} className="hover:bg-gray-50">
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                        <div className="flex flex-col">
-                          <div className="text-sm font-medium text-gray-900">{booking.hotel}</div>
-                          <div className="text-sm text-gray-500">{booking.city}</div>
-                          <div className="text-xs text-gray-500 sm:hidden">{booking.reservation_name}</div>
+      <div className="px-1 sm:px-6">
+        {viewMode === 'calendar' ? (
+          /* 달력 뷰 - 실제 달력 UI에 라벨로 표시 */
+          <div>
+            <div>
+              {(() => {
+                console.log('필터된 호텔 부킹 데이터:', filteredBookings);
+                console.log('호텔 부킹 개수:', filteredBookings.length);
+                
+                // 체크인 날짜별로 그룹화 (날짜 형식 변환)
+                const groupedByDate = filteredBookings.reduce((groups, booking) => {
+                  // ISO 타임스탬프를 YYYY-MM-DD 형식으로 변환
+                  const date = new Date(booking.check_in_date).toISOString().split('T')[0];
+                  if (!groups[date]) {
+                    groups[date] = [];
+                  }
+                  groups[date].push(booking);
+                  return groups;
+                }, {} as Record<string, TourHotelBooking[]>);
+                
+                console.log('날짜별 그룹화된 호텔 데이터:', groupedByDate);
+                
+                console.log('최종 호텔 그룹화된 데이터:', groupedByDate);
+
+                // 선택된 월 기준으로 달력 생성
+                const now = new Date();
+                const currentYear = currentDate.getFullYear();
+                const currentMonth = currentDate.getMonth();
+                
+                // 이번 달의 첫 번째 날
+                const firstDay = new Date(currentYear, currentMonth, 1);
+                const startDate = new Date(firstDay);
+                startDate.setDate(startDate.getDate() - firstDay.getDay()); // 일요일부터 시작
+                
+                // 6주 표시를 위해 42일 생성
+                const calendarDays = [];
+                for (let i = 0; i < 42; i++) {
+                  const date = new Date(startDate);
+                  date.setDate(startDate.getDate() + i);
+                  calendarDays.push(date);
+                }
+
+                const monthNames = [
+                  '1월', '2월', '3월', '4월', '5월', '6월',
+                  '7월', '8월', '9월', '10월', '11월', '12월'
+                ];
+
+                const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+                return (
+                  <div className="space-y-4">
+                    {/* 달력 헤더 */}
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={goToPreviousMonth}
+                        className="p-2 hover:bg-gray-100 rounded-md transition-colors"
+                        title="이전 달"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      
+                      <div className="text-center">
+                        <h4 className="text-xl font-semibold text-gray-900">
+                          {currentYear}년 {monthNames[currentMonth]}
+                        </h4>
+                        <button
+                          onClick={goToToday}
+                          className="text-sm text-blue-600 hover:text-blue-800 mt-1"
+                        >
+                          오늘로 이동
+                        </button>
+                      </div>
+                      
+                      <button
+                        onClick={goToNextMonth}
+                        className="p-2 hover:bg-gray-100 rounded-md transition-colors"
+                        title="다음 달"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {/* 요일 헤더 */}
+                    <div className="grid grid-cols-7 gap-1">
+                      {dayNames.map((day) => (
+                        <div key={day} className="p-2 text-center text-sm font-medium text-gray-500 bg-gray-50">
+                          {day}
                         </div>
-                      </td>
-                      <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {booking.reservation_name}
-                      </td>
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div className="flex flex-col">
-                          <div>체크인: {booking.check_in_date}</div>
-                          <div>체크아웃: {booking.check_out_date}</div>
+                      ))}
                         </div>
-                      </td>
-                      <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div>객실 수: {booking.rooms}</div>
-                        <div className="text-xs text-gray-500">
-                          {booking.room_type || '타입 미지정'}
+
+                    {/* 달력 그리드 */}
+                    <div className="grid grid-cols-7 gap-1">
+                      {calendarDays.map((date, index) => {
+                        const dateString = date.toISOString().split('T')[0];
+                        const isCurrentMonth = date.getMonth() === currentMonth;
+                        const isToday = date.toDateString() === now.toDateString();
+                        const dayBookings = groupedByDate[dateString] || [];
+                        const totalRooms = dayBookings.reduce((sum, booking) => sum + booking.rooms, 0);
+                        
+                        // 디버깅: 해당 날짜에 호텔 부킹이 있는지 확인
+                        if (dayBookings.length > 0) {
+                          console.log(`${dateString}에 호텔 부킹 ${dayBookings.length}개:`, dayBookings);
+                        }
+                        const hotels = [...new Set(dayBookings.map(b => b.hotel))];
+
+                        return (
+                          <div
+                            key={index}
+                            className={`min-h-[120px] p-2 border border-gray-200 ${
+                              isCurrentMonth ? 'bg-white' : 'bg-gray-50'
+                            } ${isToday ? 'ring-2 ring-blue-500' : ''}`}
+                          >
+                            <div className={`text-sm font-medium mb-1 ${
+                              isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
+                            } ${isToday ? 'text-blue-600' : ''}`}>
+                              {date.getDate()}
                         </div>
-                      </td>
-                      <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div>단가: ${booking.unit_price}</div>
-                        <div className="font-medium">총액: ${booking.total_price}</div>
-                      </td>
-                      <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div className="space-y-1">
-                          <div>결제: {getPaymentMethodText(booking.payment_method) || '-'}</div>
-                          <div>
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
-                              {getCCStatusText(booking.cc)}
+                            
+                             {/* 호텔 부킹 정보 라벨 */}
+                             {dayBookings.length > 0 && (
+                               <div className="space-y-0.5">
+                                 <div className="text-xs text-blue-600 font-semibold">
+                                   총 {totalRooms}개 객실
+                                 </div>
+                                {(() => {
+                                  // 호텔별로 그룹화하고 체크인 시간순으로 정렬
+                                  const hotelGroups = dayBookings.reduce((groups, booking) => {
+                                    const hotel = booking.hotel;
+                                    if (!groups[hotel]) {
+                                      groups[hotel] = [];
+                                    }
+                                    groups[hotel].push(booking);
+                                    return groups;
+                                  }, {} as Record<string, TourHotelBooking[]>);
+
+                                  // 각 호텔별로 체크인 시간순 정렬
+                                  Object.keys(hotelGroups).forEach(hotel => {
+                                    hotelGroups[hotel].sort((a, b) => a.check_in_date.localeCompare(b.check_in_date));
+                                  });
+
+                                  // 호텔별로 정렬 (체크인 시간순)
+                                  const sortedHotels = Object.keys(hotelGroups).sort((a, b) => {
+                                    const aTime = hotelGroups[a][0].check_in_date;
+                                    const bTime = hotelGroups[b][0].check_in_date;
+                                    return aTime.localeCompare(bTime);
+                                  });
+
+                                  return sortedHotels.map((hotel) => {
+                                    const hotelBookings = hotelGroups[hotel];
+                                    const hotelTotal = hotelBookings.reduce((sum, booking) => sum + booking.rooms, 0);
+                                    const firstBooking = hotelBookings[0];
+                                    
+                                     // 호텔명 단축 및 색상 구분
+                                     let displayName = hotel;
+                                     let hotelBgColor = '';
+                                     if (hotel.length > 8) {
+                                       displayName = hotel.substring(0, 8) + '...';
+                                     }
+                                     
+                                     // 호텔별로 다른 색상 적용
+                                     const hotelColors = ['bg-purple-200 text-purple-800', 'bg-orange-200 text-orange-800', 'bg-pink-200 text-pink-800', 'bg-indigo-200 text-indigo-800'];
+                                     const colorIndex = hotel.length % hotelColors.length;
+                                     hotelBgColor = hotelColors[colorIndex];
+
+                                     return (
+                                      <div
+                                        key={hotel}
+                                        className={`px-0.5 py-0 rounded truncate ${hotelBgColor} text-[8px] sm:text-[12px] cursor-pointer hover:opacity-80`}
+                                        title={`${hotel} - ${hotelBookings.map(b => `${b.room_type || '기본'} (${b.rooms}개)`).join(', ')}`}
+                                        onClick={() => handleBookingClick(hotelBookings)}
+                                      >
+                                        <div className="block sm:hidden">
+                                          <div className="font-bold">{firstBooking.check_in_date}</div>
+                                          <div>{hotelTotal}개 ({hotelBookings.length})</div>
+                                        </div>
+                                        <div className="hidden sm:block">
+                                          <span className="font-bold">{firstBooking.check_in_date}</span> <span>{hotelTotal}개</span> <span>({hotelBookings.length})</span>
+                                        </div>
+                                      </div>
+                                     );
+                                  });
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                     {/* 범례 */}
+                     <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                       <div className="text-sm font-medium text-gray-700 mb-2">상태 범례</div>
+                       <div className="flex flex-wrap gap-2">
+                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                           대기중
+                         </span>
+                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                           확정
+                         </span>
+                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                           취소
+                         </span>
+                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                           완료
+                         </span>
+                       </div>
+                       <div className="mt-3">
+                         <div className="text-sm font-medium text-gray-700 mb-2">호텔 구분</div>
+                         <div className="flex flex-wrap gap-2">
+                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-200 text-purple-800">
+                             호텔 A
+                           </span>
+                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-orange-200 text-orange-800">
+                             호텔 B
+                           </span>
+                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-pink-200 text-pink-800">
+                             호텔 C
+                           </span>
+                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-indigo-200 text-indigo-800">
+                             호텔 D
                             </span>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
-                          {getStatusText(booking.status)}
-                        </span>
-                      </td>
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex flex-col sm:flex-row space-y-1 sm:space-y-0 sm:space-x-2">
-                          <button
-                            onClick={() => handleEdit(booking)}
-                            className="text-blue-600 hover:text-blue-900 text-xs sm:text-sm"
-                          >
-                            편집
-                          </button>
-                          <button
-                            onClick={() => handleViewHistory(booking.id)}
-                            className="text-green-600 hover:text-green-900 text-xs sm:text-sm"
-                          >
-                            히스토리
-                          </button>
-                          <button
-                            onClick={() => handleDelete(booking.id)}
-                            className="text-red-600 hover:text-red-900 text-xs sm:text-sm"
-                          >
-                            삭제
-                          </button>
+                     </div>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                );
+              })()}
             </div>
           </div>
         ) : (
@@ -596,6 +744,141 @@ export default function TourHotelBookingList() {
           }}
         />
       )}
+
+      {/* 부킹 상세 모달 */}
+      {showBookingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold">호텔 예약 상세 정보</h3>
+                <button
+                  onClick={() => setShowBookingModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {selectedBookings.map((booking) => (
+                  <div key={booking.id} className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                          {booking.hotel}
+                        </h4>
+                        <p className="text-sm text-gray-600">{booking.city}</p>
+                        <p className="text-xs text-gray-500 mt-1">{booking.reservation_name}</p>
+                      </div>
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
+                        {getStatusText(booking.status)}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">체크인</span>
+                        <span className="font-medium">{booking.check_in_date}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">체크아웃</span>
+                        <span className="font-medium">{booking.check_out_date}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">객실 수</span>
+                        <span className="font-medium">{booking.rooms}개</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">객실 타입</span>
+                        <span className="font-medium truncate ml-2">{booking.room_type || '타입 미지정'}</span>
+                      </div>
+                      
+                      <div className="border-t pt-2">
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-gray-500">단가</span>
+                          <span className="font-medium">${booking.unit_price}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">총액</span>
+                          <span className="font-medium text-blue-600">${booking.total_price}</span>
+                        </div>
+                      </div>
+
+                      <div className="border-t pt-2">
+                        <div className="text-sm">
+                          <span className="text-gray-500">결제 방법</span>
+                          <div className="mt-1 font-medium">{getPaymentMethodText(booking.payment_method) || '-'}</div>
+                        </div>
+                        <div className="mt-2">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
+                            {getCCStatusText(booking.cc)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {booking.tours && (
+                        <div className="border-t pt-2">
+                          <div className="text-sm">
+                            <span className="text-gray-500">투어</span>
+                            <div className="mt-1">
+                              <div className="font-medium">{booking.tours.tour_date}</div>
+                              <div className="text-xs text-gray-500">
+                                {booking.tours.products?.name || '상품명 없음'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t">
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => {
+                            setEditingBooking(booking);
+                            setShowForm(true);
+                            setShowBookingModal(false);
+                          }}
+                          className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
+                        >
+                          편집
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedBookingId(booking.id);
+                            setShowHistory(true);
+                            setShowBookingModal(false);
+                          }}
+                          className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
+                        >
+                          히스토리
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleDelete(booking.id);
+                            setShowBookingModal(false);
+                          }}
+                          className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+

@@ -312,6 +312,15 @@ export interface Database {
           reservation_ids: string[] | null
           tour_status: string | null
           is_private_tour: boolean
+          tour_guide_id: string | null
+          assistant_id: string | null
+          tour_car_id: string | null
+          tour_start_datetime: string | null
+          tour_end_datetime: string | null
+          guide_fee: number | null
+          assistant_fee: number | null
+          team_type: string | null
+          tour_note: string | null
           created_at: string | null
           updated_at: string | null
         }
@@ -322,6 +331,15 @@ export interface Database {
           reservation_ids?: string[] | null
           tour_status?: string | null
           is_private_tour?: boolean
+          tour_guide_id?: string | null
+          assistant_id?: string | null
+          tour_car_id?: string | null
+          tour_start_datetime?: string | null
+          tour_end_datetime?: string | null
+          guide_fee?: number | null
+          assistant_fee?: number | null
+          team_type?: string | null
+          tour_note?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -332,6 +350,158 @@ export interface Database {
           reservation_ids?: string[] | null
           tour_status?: string | null
           is_private_tour?: boolean
+          tour_guide_id?: string | null
+          assistant_id?: string | null
+          tour_car_id?: string | null
+          tour_start_datetime?: string | null
+          tour_end_datetime?: string | null
+          guide_fee?: number | null
+          assistant_fee?: number | null
+          team_type?: string | null
+          tour_note?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      ticket_bookings: {
+        Row: {
+          id: string
+          tour_id: string | null
+          company: string | null
+          category: string | null
+          time: string | null
+          ea: number | null
+          rn_number: string | null
+          status: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          tour_id?: string | null
+          company?: string | null
+          category?: string | null
+          time?: string | null
+          ea?: number | null
+          rn_number?: string | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          tour_id?: string | null
+          company?: string | null
+          category?: string | null
+          time?: string | null
+          ea?: number | null
+          rn_number?: string | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      tour_hotel_bookings: {
+        Row: {
+          id: string
+          tour_id: string | null
+          hotel_name: string | null
+          check_in_date: string | null
+          check_out_date: string | null
+          booking_reference: string | null
+          status: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          tour_id?: string | null
+          hotel_name?: string | null
+          check_in_date?: string | null
+          check_out_date?: string | null
+          booking_reference?: string | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          tour_id?: string | null
+          hotel_name?: string | null
+          check_in_date?: string | null
+          check_out_date?: string | null
+          booking_reference?: string | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      pickup_hotels: {
+        Row: {
+          id: string
+          hotel: string
+          pick_up_location: string
+          link: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          hotel: string
+          pick_up_location: string
+          link?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          hotel?: string
+          pick_up_location?: string
+          link?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      vehicles: {
+        Row: {
+          id: string
+          vehicle_category: string | null
+          vehicle_number: string | null
+          vehicle_type: string | null
+          capacity: number | null
+          vehicle_status: string | null
+          rental_company: string | null
+          rental_start_date: string | null
+          rental_end_date: string | null
+          rental_status: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          vehicle_category?: string | null
+          vehicle_number?: string | null
+          vehicle_type?: string | null
+          capacity?: number | null
+          vehicle_status?: string | null
+          rental_company?: string | null
+          rental_start_date?: string | null
+          rental_end_date?: string | null
+          rental_status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          vehicle_category?: string | null
+          vehicle_number?: string | null
+          vehicle_type?: string | null
+          capacity?: number | null
+          vehicle_status?: string | null
+          rental_company?: string | null
+          rental_start_date?: string | null
+          rental_end_date?: string | null
+          rental_status?: string | null
           created_at?: string | null
           updated_at?: string | null
         }

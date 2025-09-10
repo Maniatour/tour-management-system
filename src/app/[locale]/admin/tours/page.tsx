@@ -141,24 +141,26 @@ export default function AdminTours() {
         const key = `${tour.product_id}-${tour.tour_date}`
         const tourReservations = reservationMap.get(key) || []
         
-        // 총인원 계산 - 해당 상품/날짜의 모든 예약의 total_people 합산
-        const totalPeople = tourReservations.reduce((sum, res) => 
-          sum + (res.total_people || 0), 0
-        )
+        // 총인원 계산 - Recruiting 또는 Confirmed 상태의 예약만 포함 (대소문자 구분 없이)
+        const totalPeople = tourReservations
+          .filter(res => {
+            const status = res.status?.toLowerCase()
+            return status === 'recruiting' || status === 'confirmed'
+          })
+          .reduce((sum, res) => sum + (res.total_people || 0), 0)
         
-        // 배정된 인원 계산 - reservation_ids 배열의 각 ID에 해당하는 예약의 total_people 합산
+        // 배정된 인원 계산 - reservation_ids 배열의 각 ID에 해당하는 예약 중 Recruiting 또는 Confirmed 상태만 포함
         let assignedPeople = 0
         if (tour.reservation_ids && Array.isArray(tour.reservation_ids) && tour.reservation_ids.length > 0) {
           // reservation_ids 배열의 각 ID에 대해 해당하는 예약 찾기
           const assignedReservations = tourReservations.filter(res => 
-            tour.reservation_ids.includes(res.id)
+            tour.reservation_ids.includes(res.id) && 
+            (res.status?.toLowerCase() === 'recruiting' || res.status?.toLowerCase() === 'confirmed')
           )
           
           assignedPeople = assignedReservations.reduce((sum, res) => 
             sum + (res.total_people || 0), 0
           )
-          
-          
         }
 
         const guide = tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null

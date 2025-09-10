@@ -190,7 +190,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
                   const hasUnassignedReservations = totalPeople > assignedPeople
                   
                   // 툴팁 텍스트 구성
-                  let tooltipText = `${tour.product_name || tour.product_id} | 배정: ${assignedPeople}명 / 총: ${totalPeople}명`
+                  let tooltipText = `${tour.product_name || tour.product_id} | 배정: ${assignedPeople}명 / 총: ${totalPeople}명 (Recruiting/Confirmed만)`
                   if (hasUnassignedReservations) {
                     tooltipText += ' (미배정 있음)'
                   }

@@ -483,8 +483,8 @@ export default function ScheduleView() {
         const dayTours = productTours.filter(tour => tour.tour_date === dateString)
         const dayReservations = reservations.filter(res => 
           res.product_id === productId && 
-          res.tour_date === dateString && 
-          (res.status === 'Confirmed' || res.status === 'Recruiting')
+          res.tour_date === dateString &&
+          (res.status?.toLowerCase() === 'confirmed' || res.status?.toLowerCase() === 'recruiting')
         )
 
         const dayTotalPeople = dayReservations.reduce((sum, res) => sum + (res.total_people || 0), 0)
@@ -566,7 +566,8 @@ export default function ScheduleView() {
       monthDays.forEach(({ dateString }) => {
         const dayTours = memberTours.filter(tour => tour.tour_date === dateString)
         const dayReservations = reservations.filter(res => 
-          res.tour_date === dateString
+          res.tour_date === dateString &&
+          (res.status?.toLowerCase() === 'confirmed' || res.status?.toLowerCase() === 'recruiting')
         )
 
         const dayTotalPeople = dayReservations.reduce((sum, res) => sum + (res.total_people || 0), 0)
@@ -1075,8 +1076,12 @@ export default function ScheduleView() {
     const productName = tour.products?.name || 'N/A'
     const tourDate = tour.tour_date
     
-    // 인원 계산
-    const dayReservations = reservations.filter(r => r.tour_date === tour.tour_date && r.product_id === tour.product_id)
+    // 인원 계산 (Recruiting/Confirmed 상태만)
+    const dayReservations = reservations.filter(r => 
+      r.tour_date === tour.tour_date && 
+      r.product_id === tour.product_id &&
+      (r.status?.toLowerCase() === 'confirmed' || r.status?.toLowerCase() === 'recruiting')
+    )
     const totalPeopleAll = dayReservations.reduce((s, r) => s + (r.total_people || 0), 0)
     let assignedPeople = 0
     if (tour.reservation_ids && Array.isArray(tour.reservation_ids)) {
@@ -1444,8 +1449,11 @@ export default function ScheduleView() {
                     const end = start.add(mdays - 1, 'day')
                     // 이번 달에 걸쳐 있는 경우만 추가
                     if (!end.isBefore(firstDayOfMonth, 'day')) {
-                      // 역할/인원/색상 계산
-                      const dayReservations = reservations.filter(res => res.tour_date === start.format('YYYY-MM-DD'))
+                      // 역할/인원/색상 계산 (Recruiting/Confirmed 상태만)
+                      const dayReservations = reservations.filter(res => 
+                        res.tour_date === start.format('YYYY-MM-DD') &&
+                        (res.status?.toLowerCase() === 'confirmed' || res.status?.toLowerCase() === 'recruiting')
+                      )
                       const assignedPeople = (() => {
                         if (!tour.reservation_ids || !Array.isArray(tour.reservation_ids)) return 0
                         const assigned = dayReservations.filter(res => tour.reservation_ids.includes(res.id))

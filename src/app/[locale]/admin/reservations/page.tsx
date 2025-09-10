@@ -736,59 +736,63 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* 헤더 - 모바일 최적화 */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-4 sm:space-y-0">
-        <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
+      <div className="space-y-4">
+        {/* 첫 번째 줄: 타이틀과 액션 버튼들 */}
+        <div className="flex items-center justify-between space-x-2">
+          <div className="flex items-center space-x-3">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 flex-shrink-0">{t('title')}</h1>
+            
+            {/* 뷰 전환 버튼 - 제목 바로 오른쪽에 배치 */}
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => setViewMode('card')}
+                className={`flex items-center space-x-1 px-2 py-1 rounded-md transition-colors text-xs ${
+                  viewMode === 'card' 
+                    ? 'bg-blue-500 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <Grid3X3 className="w-3 h-3" />
+                <span className="hidden sm:inline">카드</span>
+              </button>
+              <button
+                onClick={() => setViewMode('calendar')}
+                className={`flex items-center space-x-1 px-2 py-1 rounded-md transition-colors text-xs ${
+                  viewMode === 'calendar' 
+                    ? 'bg-blue-500 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <CalendarDays className="w-3 h-3" />
+                <span className="hidden sm:inline">달력</span>
+              </button>
+            </div>
+          </div>
           
-          {/* 뷰 전환 버튼 - 모바일에서는 작게 */}
-          <div className="flex items-center space-x-1 sm:space-x-2">
+          {/* 검색창과 새예약 추가 버튼 */}
+          <div className="flex items-center space-x-2 flex-1 max-w-xs">
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
+              <input
+                type="text"
+                placeholder="검색..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value)
+                  setCurrentPage(1) // 검색 시 첫 페이지로 이동
+                }}
+                className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+              />
+            </div>
             <button
-              onClick={() => setViewMode('card')}
-              className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg transition-colors text-sm ${
-                viewMode === 'card' 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+              onClick={() => setShowAddForm(true)}
+              className="bg-blue-600 text-white px-2 sm:px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center space-x-1 text-xs sm:text-sm flex-shrink-0"
             >
-              <Grid3X3 className="w-4 h-4" />
-              <span className="hidden sm:inline">카드뷰</span>
-            </button>
-            <button
-              onClick={() => setViewMode('calendar')}
-              className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1 sm:py-2 rounded-lg transition-colors text-sm ${
-                viewMode === 'calendar' 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              <CalendarDays className="w-4 h-4" />
-              <span className="hidden sm:inline">달력뷰</span>
+              <Plus size={14} />
+              <span className="hidden sm:inline">{t('addReservation')}</span>
+              <span className="sm:hidden">추가</span>
             </button>
           </div>
-        </div>
-        
-        {/* 액션 버튼들 - 모바일에서는 세로 배치 */}
-        <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-3">
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-            <input
-              type="text"
-              placeholder="예약 ID, 고객명, 상품명, 채널명으로 검색..."
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value)
-                setCurrentPage(1) // 검색 시 첫 페이지로 이동
-              }}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            />
-          </div>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2 text-sm"
-          >
-            <Plus size={16} />
-            <span>{t('addReservation')}</span>
-          </button>
         </div>
       </div>
 
@@ -796,39 +800,39 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       <div className="space-y-4">
 
         {/* 고급 필터 - 모바일 최적화 */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <select
-            value={selectedStatus}
-            onChange={(e) => {
-              setSelectedStatus(e.target.value)
-              setCurrentPage(1)
-            }}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-          >
-            <option value="all">모든 상태</option>
-            <option value="pending">대기중</option>
-            <option value="confirmed">확정</option>
-            <option value="completed">완료</option>
-            <option value="cancelled">취소</option>
-            <option value="recruiting">모집중</option>
-          </select>
-          
-          <select
-            value={selectedChannel}
-            onChange={(e) => {
-              setSelectedChannel(e.target.value)
-              setCurrentPage(1)
-            }}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-          >
-            <option value="all">모든 채널</option>
-            {channels.map(channel => (
-              <option key={channel.id} value={channel.id}>{channel.name}</option>
-            ))}
-          </select>
-          
-          <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
-            <label className="text-xs sm:text-sm font-medium text-gray-700">시작일:</label>
+        <div className="space-y-3">
+          {/* 첫 번째 줄: 상태, 채널, 시작일, 종료일 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+            <select
+              value={selectedStatus}
+              onChange={(e) => {
+                setSelectedStatus(e.target.value)
+                setCurrentPage(1)
+              }}
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+            >
+              <option value="all">모든 상태</option>
+              <option value="pending">대기중</option>
+              <option value="confirmed">확정</option>
+              <option value="completed">완료</option>
+              <option value="cancelled">취소</option>
+              <option value="recruiting">모집중</option>
+            </select>
+            
+            <select
+              value={selectedChannel}
+              onChange={(e) => {
+                setSelectedChannel(e.target.value)
+                setCurrentPage(1)
+              }}
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+            >
+              <option value="all">모든 채널</option>
+              {channels.map(channel => (
+                <option key={channel.id} value={channel.id}>{channel.name}</option>
+              ))}
+            </select>
+            
             <input
               type="date"
               value={dateRange.start}
@@ -836,12 +840,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 setDateRange(prev => ({ ...prev, start: e.target.value }))
                 setCurrentPage(1)
               }}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+              placeholder="시작일"
             />
-          </div>
-          
-          <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
-            <label className="text-xs sm:text-sm font-medium text-gray-700">종료일:</label>
+            
             <input
               type="date"
               value={dateRange.end}
@@ -849,141 +851,148 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 setDateRange(prev => ({ ...prev, end: e.target.value }))
                 setCurrentPage(1)
               }}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
+              placeholder="종료일"
             />
           </div>
           
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">정렬:</label>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'created_at' | 'tour_date' | 'customer_name' | 'product_name')}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="created_at">등록일</option>
-              <option value="tour_date">투어 날짜</option>
-              <option value="customer_name">고객명</option>
-              <option value="product_name">상품명</option>
-            </select>
-            <button
-              onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-              className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              {sortOrder === 'asc' ? '↑' : '↓'}
-            </button>
-          </div>
+          {/* 두 번째 줄: 정렬, 그룹화, 페이지당, 초기화 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+            <div className="flex items-center space-x-1">
+              <label className="text-xs font-medium text-gray-700 whitespace-nowrap">정렬:</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'created_at' | 'tour_date' | 'customer_name' | 'product_name')}
+                className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs flex-1"
+              >
+                <option value="created_at">등록일</option>
+                <option value="tour_date">투어 날짜</option>
+                <option value="customer_name">고객명</option>
+                <option value="product_name">상품명</option>
+              </select>
+              <button
+                onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                className="px-2 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs"
+              >
+                {sortOrder === 'asc' ? '↑' : '↓'}
+              </button>
+            </div>
 
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">그룹화:</label>
             <button
               onClick={() => setGroupByDate(!groupByDate)}
-              className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+              className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 groupByDate 
                   ? 'bg-blue-600 text-white hover:bg-blue-700' 
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              {groupByDate ? '날짜별 그룹화 ON' : '날짜별 그룹화 OFF'}
+              {groupByDate ? '그룹화 ON' : '그룹화 OFF'}
             </button>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">페이지당:</label>
+            
             <select
               value={itemsPerPage}
               onChange={(e) => {
                 setItemsPerPage(Number(e.target.value))
                 setCurrentPage(1)
               }}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
+              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs"
+            >
               <option value={10}>10개</option>
               <option value={20}>20개</option>
               <option value={50}>50개</option>
               <option value={100}>100개</option>
-        </select>
+            </select>
+            
+            <button
+              onClick={() => {
+                setSearchTerm('')
+                setSelectedStatus('all')
+                setSelectedChannel('all')
+                setDateRange({start: '', end: ''})
+                setSortBy('created_at')
+                setSortOrder('desc')
+                setGroupByDate(true) // 그룹화 상태도 초기화
+                setCurrentPage(1)
+                setCurrentWeek(0) // 주간 페이지네이션도 현재 주로 초기화
+              }}
+              className="px-2 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+            >
+              초기화
+            </button>
           </div>
-          
-          <button
-            onClick={() => {
-              setSearchTerm('')
-              setSelectedStatus('all')
-              setSelectedChannel('all')
-              setDateRange({start: '', end: ''})
-              setSortBy('created_at')
-              setSortOrder('desc')
-              setGroupByDate(true) // 그룹화 상태도 초기화
-              setCurrentPage(1)
-              setCurrentWeek(0) // 주간 페이지네이션도 현재 주로 초기화
-            }}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            필터 초기화
-          </button>
         </div>
         
         {/* 주간 페이지네이션 및 통계 통합 패널 - 날짜별 그룹화가 활성화된 경우에만 표시 */}
         {groupByDate && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg">
-            {/* 주간 네비게이션 헤더 */}
-            <div className="p-4 border-b border-blue-200">
+            {/* 주간 네비게이션 헤더 - 초컴팩트 모바일 최적화 */}
+            <div className="p-2 sm:p-4 border-b border-blue-200">
               <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-4 text-sm">
-                    <h3 className="text-lg font-semibold text-blue-900">
+                {/* 제목과 통계 정보 - 한 줄에 압축 */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center space-x-2 sm:space-x-4">
+                    <h3 className="text-sm sm:text-lg font-semibold text-blue-900 whitespace-nowrap">
                       {currentWeek === 0 ? '이번 주' : 
                        currentWeek < 0 ? `${Math.abs(currentWeek)}주 전` : 
                        `${currentWeek}주 후`}
                     </h3>
-                    <div className="text-blue-700">
+                    <div className="text-xs sm:text-sm text-blue-700 whitespace-nowrap">
                       {formatWeekRange(currentWeek).display}
                     </div>
-                    <div className="text-blue-600">
-                      <span className="font-semibold">{Object.keys(groupedReservations).length}개</span> 등록일, 
-                      <span className="font-semibold"> 총 {Object.values(groupedReservations).flat().length}개</span> 예약,
-                      <span className="font-semibold"> {Math.round(Object.values(groupedReservations).flat().length / Math.max(Object.keys(groupedReservations).length, 1))}개</span> 일평균
-                    </div>
-                    <div className="text-green-600">
-                      <span className="font-semibold">총 {weeklyStats.totalPeople}명</span> 예약,
-                      <span className="font-semibold"> {Math.round(weeklyStats.totalPeople / Math.max(Object.keys(groupedReservations).length, 1))}명</span> 일평균
-                    </div>
+                  </div>
+                  
+                  {/* 통계 정보 - 한 줄에 압축 */}
+                  <div className="mt-1 flex items-center space-x-3 text-xs">
+                    <span className="text-blue-600">
+                      <span className="font-semibold">{Object.keys(groupedReservations).length}일</span>
+                    </span>
+                    <span className="text-blue-600">
+                      <span className="font-semibold">{Object.values(groupedReservations).flat().length}예약</span>
+                    </span>
+                    <span className="text-green-600">
+                      <span className="font-semibold">{weeklyStats.totalPeople}명</span>
+                    </span>
+                    <span className="text-green-600">
+                      <span className="font-semibold">{Math.round(weeklyStats.totalPeople / Math.max(Object.keys(groupedReservations).length, 1))}/일</span>
+                    </span>
                   </div>
                 </div>
                 
-                <div className="flex items-center space-x-2">
+                {/* 네비게이션 버튼들 - 초컴팩트 */}
+                <div className="flex items-center space-x-1">
                   <button
                     onClick={() => setCurrentWeek(prev => prev - 1)}
-                    className="px-3 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-300 rounded-md hover:bg-blue-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-1.5 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
                   >
-                    ← 이전 주
+                    ←
                   </button>
                   
                   <button
                     onClick={() => setCurrentWeek(0)}
-                    className={`px-3 py-2 text-sm font-medium rounded-md ${
+                    className={`px-1.5 py-1 text-xs font-medium rounded ${
                       currentWeek === 0
                         ? 'text-white bg-blue-600 border border-blue-600'
                         : 'text-blue-700 bg-white border border-blue-300 hover:bg-blue-50'
                     }`}
                   >
-                    이번 주
+                    이번주
                   </button>
                   
                   <button
                     onClick={() => setCurrentWeek(prev => prev + 1)}
-                    className="px-3 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-300 rounded-md hover:bg-blue-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-1.5 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
                   >
-                    다음 주 →
+                    →
                   </button>
                   
                   {/* 아코디언 화살표 */}
                   {weeklyStats.totalReservations > 0 && (
                     <button
                       onClick={() => setIsWeeklyStatsCollapsed(!isWeeklyStatsCollapsed)}
-                      className="p-2 text-blue-500 hover:bg-blue-100 rounded-md transition-colors"
+                      className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors"
                     >
                       <svg 
-                        className={`w-5 h-5 transition-transform ${isWeeklyStatsCollapsed ? 'rotate-180' : ''}`}
+                        className={`w-3 h-3 transition-transform ${isWeeklyStatsCollapsed ? 'rotate-180' : ''}`}
                         fill="none" 
                         stroke="currentColor" 
                         viewBox="0 0 24 24"
@@ -996,63 +1005,73 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               </div>
             </div>
 
-            {/* 주간 통계 아코디언 */}
+            {/* 주간 통계 아코디언 - 초컴팩트 모바일 최적화 */}
             {weeklyStats.totalReservations > 0 && !isWeeklyStatsCollapsed && (
-              <div className="p-4">
-                <div className="flex flex-wrap gap-4">
+              <div className="p-2 sm:p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                   {/* 상품별 인원 통계 */}
-                  <div className="flex-1 min-w-0 bg-white border border-blue-200 rounded-lg p-4 shadow-sm">
-                    <h5 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-                      <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">
+                    <h5 className="text-xs font-semibold text-gray-800 mb-1.5 flex items-center">
+                      <svg className="w-3 h-3 mr-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                       </svg>
-                      상품별 인원
+                      상품별
                     </h5>
-                    <div className="space-y-1">
-                      {weeklyStats.productStats.map(([productName, count]) => (
-                        <div key={productName} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded text-xs">
-                          <span className="text-gray-700 truncate flex-1 mr-2">{productName}</span>
-                          <span className="font-semibold bg-blue-100 text-blue-800 px-2 py-1 rounded-full min-w-0">
+                    <div className="space-y-0.5">
+                      {weeklyStats.productStats.slice(0, 3).map(([productName, count]) => (
+                        <div key={productName} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
+                          <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{productName}</span>
+                          <span className="font-semibold bg-blue-100 text-blue-800 px-1 py-0.5 rounded text-xs">
                             {count}명
                           </span>
                         </div>
                       ))}
+                      {weeklyStats.productStats.length > 3 && (
+                        <div className="text-xs text-gray-500 text-center py-0.5">
+                          +{weeklyStats.productStats.length - 3}개
+                        </div>
+                      )}
                     </div>
                   </div>
                   
                   {/* 채널별 인원 통계 */}
-                  <div className="flex-1 min-w-0 bg-white border border-blue-200 rounded-lg p-4 shadow-sm">
-                    <h5 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-                      <svg className="w-4 h-4 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">
+                    <h5 className="text-xs font-semibold text-gray-800 mb-1.5 flex items-center">
+                      <svg className="w-3 h-3 mr-1 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                       </svg>
-                      채널별 인원
+                      채널별
                     </h5>
-                    <div className="space-y-1">
-                      {weeklyStats.channelStats.map(([channelName, count]) => (
-                        <div key={channelName} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded text-xs">
-                          <span className="text-gray-700 truncate flex-1 mr-2">{channelName}</span>
-                          <span className="font-semibold bg-green-100 text-green-800 px-2 py-1 rounded-full min-w-0">
+                    <div className="space-y-0.5">
+                      {weeklyStats.channelStats.slice(0, 3).map(([channelName, count]) => (
+                        <div key={channelName} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
+                          <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{channelName}</span>
+                          <span className="font-semibold bg-green-100 text-green-800 px-1 py-0.5 rounded text-xs">
                             {count}명
                           </span>
                         </div>
                       ))}
+                      {weeklyStats.channelStats.length > 3 && (
+                        <div className="text-xs text-gray-500 text-center py-0.5">
+                          +{weeklyStats.channelStats.length - 3}개
+                        </div>
+                      )}
                     </div>
                   </div>
                   
                   {/* 상태별 인원 통계 */}
-                  <div className="flex-1 min-w-0 bg-white border border-blue-200 rounded-lg p-4 shadow-sm">
-                    <h5 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-                      <svg className="w-4 h-4 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">
+                    <h5 className="text-xs font-semibold text-gray-800 mb-1.5 flex items-center">
+                      <svg className="w-3 h-3 mr-1 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      상태별 인원
+                      상태별
                     </h5>
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       {weeklyStats.statusStats.map(([status, count]) => (
-                        <div key={status} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded text-xs">
-                          <span className="text-gray-700 truncate flex-1 mr-2">{getStatusLabel(status, t)}</span>
-                          <span className="font-semibold bg-purple-100 text-purple-800 px-2 py-1 rounded-full min-w-0">
+                        <div key={status} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
+                          <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{getStatusLabel(status, t)}</span>
+                          <span className="font-semibold bg-purple-100 text-purple-800 px-1 py-0.5 rounded text-xs">
                             {count}명
                           </span>
                         </div>
