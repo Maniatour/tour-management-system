@@ -1,5 +1,2 @@
-[33me778b1e[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m 출퇴근 모달 컨펌 및 경과 시간 표시 기능 추가
-[33m6ac8a3f[m 모바일 대시보드 UI 개선 및 사이드바 텍스트 삭제
-[33m0f758c1[m feat: 단독투어 기능 구현 및 시각적 구분 추가
-[33m16f8cb5[m feat: Implement comprehensive authentication system with role-based access control and off-schedule management
-[33m42a2f52[m feat: Add Off Schedule Management System
+src/app/[locale]/admin/vehicles/page.tsx
+supabase/migrations/20250101000100_add_rental_fields_to_vehicles.sql

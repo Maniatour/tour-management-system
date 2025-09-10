@@ -187,23 +187,46 @@ export default function VehiclesPage() {
 
   const handleSaveVehicle = async (vehicleData: Partial<Vehicle>) => {
     try {
+      // 데이터베이스에 존재하는 필드만 필터링
+      const allowedFields = [
+        'vehicle_number', 'vin', 'vehicle_type', 'capacity', 'year',
+        'mileage_at_purchase', 'purchase_amount', 'purchase_date', 'memo',
+        'engine_oil_change_cycle', 'current_mileage', 'recent_engine_oil_change_mileage',
+        'vehicle_status', 'front_tire_size', 'rear_tire_size', 'windshield_wiper_size',
+        'headlight_model', 'headlight_model_name', 'is_installment', 'installment_amount',
+        'interest_rate', 'monthly_payment', 'additional_payment', 'payment_due_date',
+        'installment_start_date', 'installment_end_date', 'vehicle_image_url',
+        'vehicle_category', 'rental_company', 'daily_rate', 'rental_start_date',
+        'rental_end_date', 'rental_pickup_location', 'rental_return_location',
+        'rental_total_cost', 'rental_status', 'rental_notes'
+      ]
+      
+      const filteredData = Object.keys(vehicleData)
+        .filter(key => allowedFields.includes(key))
+        .reduce((obj, key) => {
+          obj[key] = vehicleData[key as keyof Vehicle]
+          return obj
+        }, {} as Partial<Vehicle>)
+
+      console.log('저장할 데이터:', filteredData)
+
       if (selectedVehicle) {
         // 수정
         const { error } = await supabase
           .from('vehicles')
-          .update(vehicleData)
+          .update(filteredData)
           .eq('id', selectedVehicle.id)
 
         if (error) throw error
         
         setVehicles(vehicles.map(v => 
-          v.id === selectedVehicle.id ? { ...v, ...vehicleData } : v
+          v.id === selectedVehicle.id ? { ...v, ...filteredData } : v
         ))
       } else {
         // 추가
         const { data, error } = await supabase
           .from('vehicles')
-          .insert([vehicleData])
+          .insert([filteredData])
           .select()
           .single()
 
@@ -217,7 +240,12 @@ export default function VehiclesPage() {
       alert('차량 정보가 성공적으로 저장되었습니다.')
     } catch (error) {
       console.error('차량 저장 중 오류가 발생했습니다:', error)
-      alert('차량 저장 중 오류가 발생했습니다.')
+      console.error('오류 상세 정보:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        error: error
+      })
+      alert(`차량 저장 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
     }
   }
 
