@@ -16,6 +16,9 @@ import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
 import TourHotelBookingForm from '@/components/booking/TourHotelBookingForm'
+import TourPhotoUpload from '@/components/TourPhotoUpload'
+import TourChatRoom from '@/components/TourChatRoom'
+import SupabaseConnectionTest from '@/components/SupabaseConnectionTest'
 
 // 모든 타입을 any로 사용하여 타입 에러 방지
 
@@ -335,13 +338,18 @@ export default function TourDetailPage() {
       const assignedVehicleIds = assignedVehicles?.map(t => t.tour_car_id).filter(Boolean) || []
 
       // 사용 가능한 차량들만 가져오기
-      const { data, error } = await supabase
+      let query = supabase
         .from('vehicles')
         .select('*')
-        .or(`and(vehicle_category.eq.company,vehicle_status.eq.운행 가능),and(vehicle_category.eq.rental,rental_status.neq.returned)`)
-        .not('id', 'in', `(${assignedVehicleIds.join(',')})`)
         .order('vehicle_category', { ascending: true })
         .order('vehicle_number', { ascending: true })
+
+      // 배정된 차량이 있는 경우에만 제외 조건 추가
+      if (assignedVehicleIds.length > 0) {
+        query = query.not('id', 'in', `(${assignedVehicleIds.join(',')})`)
+      }
+
+      const { data, error } = await query
 
       if (error) throw error
       
@@ -1065,6 +1073,45 @@ export default function TourDetailPage() {
             </div>
             </div>
           </div>
+
+            {/* 투어 사진 업로드 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <TourPhotoUpload
+                  tourId={tour.id}
+                  uploadedBy="guide@tour.com" // 실제로는 현재 로그인한 가이드의 이메일
+                  onPhotosUpdated={() => {
+                    // 사진 업데이트 시 필요한 로직
+                    console.log('Photos updated')
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* 투어 채팅방 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">고객과의 채팅방</h3>
+                  <div className="text-sm text-gray-500">
+                    고객들에게 링크를 공유하여 실시간 소통하세요
+                  </div>
+                </div>
+                <TourChatRoom
+                  tourId={tour.id}
+                  guideEmail="guide@tour.com" // 실제로는 현재 로그인한 가이드의 이메일
+                  tourDate={tour.tour_date}
+                />
+              </div>
+            </div>
+
+            {/* Supabase 연결 테스트 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <SupabaseConnectionTest />
+              </div>
+            </div>
+          </div>
         </div>
 
           {/* 2열: 팀 구성, 배정 관리 */}
@@ -1272,18 +1319,18 @@ export default function TourDetailPage() {
                             </span>
                             {/* 예약 상태 */}
                             <span className={`text-xs px-2 py-1 rounded-full ${
-                              reservation.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                              reservation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                              reservation.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                              reservation.status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
-                              reservation.status === 'completed' ? 'bg-purple-100 text-purple-800' :
+                              reservation.status?.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-800' :
+                              reservation.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              reservation.status?.toLowerCase() === 'cancelled' ? 'bg-red-100 text-red-800' :
+                              reservation.status?.toLowerCase() === 'recruiting' ? 'bg-blue-100 text-blue-800' :
+                              reservation.status?.toLowerCase() === 'completed' ? 'bg-purple-100 text-purple-800' :
                               'bg-gray-100 text-gray-800'
                             }`}>
-                              {reservation.status === 'confirmed' ? '확정' :
-                               reservation.status === 'pending' ? '대기' :
-                               reservation.status === 'cancelled' ? '취소' :
-                               reservation.status === 'recruiting' ? '모집중' :
-                               reservation.status === 'completed' ? '완료' :
+                              {reservation.status?.toLowerCase() === 'confirmed' ? '확정' :
+                               reservation.status?.toLowerCase() === 'pending' ? '대기' :
+                               reservation.status?.toLowerCase() === 'cancelled' ? '취소' :
+                               reservation.status?.toLowerCase() === 'recruiting' ? '모집중' :
+                               reservation.status?.toLowerCase() === 'completed' ? '완료' :
                                reservation.status || '미정'}
                             </span>
                           </div>
@@ -1351,18 +1398,18 @@ export default function TourDetailPage() {
                             </span>
                             {/* 예약 상태 */}
                             <span className={`text-xs px-2 py-1 rounded-full ${
-                              reservation.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                              reservation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                              reservation.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                              reservation.status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
-                              reservation.status === 'completed' ? 'bg-purple-100 text-purple-800' :
+                              reservation.status?.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-800' :
+                              reservation.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              reservation.status?.toLowerCase() === 'cancelled' ? 'bg-red-100 text-red-800' :
+                              reservation.status?.toLowerCase() === 'recruiting' ? 'bg-blue-100 text-blue-800' :
+                              reservation.status?.toLowerCase() === 'completed' ? 'bg-purple-100 text-purple-800' :
                               'bg-gray-100 text-gray-800'
                             }`}>
-                              {reservation.status === 'confirmed' ? '확정' :
-                               reservation.status === 'pending' ? '대기' :
-                               reservation.status === 'cancelled' ? '취소' :
-                               reservation.status === 'recruiting' ? '모집중' :
-                               reservation.status === 'completed' ? '완료' :
+                              {reservation.status?.toLowerCase() === 'confirmed' ? '확정' :
+                               reservation.status?.toLowerCase() === 'pending' ? '대기' :
+                               reservation.status?.toLowerCase() === 'cancelled' ? '취소' :
+                               reservation.status?.toLowerCase() === 'recruiting' ? '모집중' :
+                               reservation.status?.toLowerCase() === 'completed' ? '완료' :
                                reservation.status || '미정'}
                             </span>
                           </div>
@@ -1650,11 +1697,10 @@ export default function TourDetailPage() {
             </div>
           </div>
         </div>
-      </div>
 
       {/* 픽업시간 수정 모달 */}
       {showTimeModal && selectedReservation && (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">픽업시간 수정</h3>

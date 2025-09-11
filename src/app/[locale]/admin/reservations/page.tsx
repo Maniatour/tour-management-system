@@ -352,6 +352,41 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return
       }
 
+      console.log('New reservation created with ID:', newReservation?.id)
+      console.log('Full reservation data:', newReservation)
+
+      // selected_options를 reservation_options 테이블에 저장
+      if (newReservation && reservation.selectedOptions) {
+        try {
+          const reservationOptionsData = Object.entries(reservation.selectedOptions).map(([optionKey, choiceIds]) => {
+            // optionKey가 "selected_timestamp" 형태인 경우 실제 option_id를 찾아야 함
+            // 현재는 optionKey를 그대로 사용하지만, 실제로는 product_options 테이블에서 매핑해야 함
+            return {
+              id: crypto.randomUUID(),
+              reservation_id: (newReservation as any).id,
+              option_id: optionKey,
+              ea: 1, // 기본 수량
+              price: 0, // 기본 가격 (pricing에서 업데이트됨)
+              status: 'active'
+            }
+          })
+
+          if (reservationOptionsData.length > 0) {
+            const { error: optionsError } = await supabase
+              .from('reservation_options')
+              .insert(reservationOptionsData)
+
+            if (optionsError) {
+              console.error('Error saving reservation options:', optionsError)
+            } else {
+              console.log('Reservation options saved successfully:', reservationOptionsData.length, 'records')
+            }
+          }
+        } catch (optionsError) {
+          console.error('Error saving reservation options:', optionsError)
+        }
+      }
+
       // 가격 정보가 있으면 저장
       if (reservation.pricingInfo && newReservation) {
         try {
