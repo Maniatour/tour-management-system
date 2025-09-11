@@ -22,7 +22,8 @@ import {
   CheckCircle,
   XCircle,
   Home,
-  ChevronDown
+  ChevronDown,
+  MessageCircle
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -294,6 +295,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: '예약 관리', href: `/${locale}/admin/reservations`, icon: Calendar },
     { name: '예약 통계', href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
     { name: '부킹 관리', href: `/${locale}/admin/booking`, icon: BookOpen },
+    { name: '채팅 관리', href: `/${locale}/admin/chat-management`, icon: MessageCircle },
     { name: '출퇴근 관리', href: `/${locale}/admin/attendance`, icon: Clock },
     { name: '공급업체 관리', href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: '공급업체 정산', href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },

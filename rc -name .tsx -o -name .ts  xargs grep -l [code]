@@ -1,0 +1,5 @@
+[33m974f5c9[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m feat: 채팅방 기능 추가 및 406 오류 해결
+[33m976a4f9[m[33m ([m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m Add rental fields to vehicles and update admin vehicles page
+[33m923dde7[m 모바일 최적화: DynamicPricingManager 컴포넌트 모바일 친화적 레이아웃 및 컴팩트 디자인 적용
+[33m6ebb8d8[m Update tour management system with latest changes
+[33me778b1e[m 출퇴근 모달 컨펌 및 경과 시간 표시 기능 추가
