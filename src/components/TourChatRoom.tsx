@@ -32,6 +32,15 @@ interface ChatRoom {
   created_at: string
 }
 
+interface ChatAnnouncement {
+  id: string
+  title: string
+  content: string
+  language: string
+  is_active: boolean
+  created_at: string
+}
+
 interface TourChatRoomProps {
   tourId: string
   guideEmail: string
@@ -60,8 +69,39 @@ export default function TourChatRoom({
   const [showShareModal, setShowShareModal] = useState(false)
   const [translatedMessages, setTranslatedMessages] = useState<{ [key: string]: string }>({})
   const [translating, setTranslating] = useState<{ [key: string]: boolean }>({})
+  const [announcements, setAnnouncements] = useState<ChatAnnouncement[]>([])
+  const [showAnnouncements, setShowAnnouncements] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 사용자별 채팅 색상 팔레트
+  const chatColors = [
+    'bg-blue-100 text-blue-900 border-blue-200',
+    'bg-green-100 text-green-900 border-green-200',
+    'bg-purple-100 text-purple-900 border-purple-200',
+    'bg-pink-100 text-pink-900 border-pink-200',
+    'bg-yellow-100 text-yellow-900 border-yellow-200',
+    'bg-indigo-100 text-indigo-900 border-indigo-200',
+    'bg-red-100 text-red-900 border-red-200',
+    'bg-teal-100 text-teal-900 border-teal-200',
+    'bg-orange-100 text-orange-900 border-orange-200',
+    'bg-cyan-100 text-cyan-900 border-cyan-200'
+  ]
+
+  // 사용자별 색상 할당 함수
+  const getUserColor = (senderName: string) => {
+    if (senderName === '가이드' || senderName === 'Guide') {
+      return 'bg-blue-600 text-white border-blue-700'
+    }
+    
+    // 고객 이름을 기반으로 일관된 색상 할당
+    let hash = 0
+    for (let i = 0; i < senderName.length; i++) {
+      hash = senderName.charCodeAt(i) + ((hash << 5) - hash)
+    }
+    const colorIndex = Math.abs(hash) % chatColors.length
+    return chatColors[colorIndex]
+  }
 
   // 채팅방 로드 또는 생성
   useEffect(() => {
@@ -114,6 +154,7 @@ export default function TourChatRoom({
       setRoom(room)
       if (room) {
         await loadMessages(room.id)
+        await loadAnnouncements(room.id)
       }
     } catch (error) {
       console.error('Error loading room by code:', error)
@@ -139,6 +180,7 @@ export default function TourChatRoom({
       if (existingRoom) {
         setRoom(existingRoom)
         await loadMessages(existingRoom.id)
+        await loadAnnouncements(existingRoom.id)
       } else {
         console.warn('Chat room not found. Please wait a moment after the tour is created.')
         setRoom(null)
@@ -163,6 +205,77 @@ export default function TourChatRoom({
       scrollToBottom()
     } catch (error) {
       console.error('Error loading messages:', error)
+    }
+  }
+
+  const loadAnnouncements = async (roomId: string) => {
+    try {
+      // 채팅방별 공지사항 로드
+      const { data: roomAnnouncements, error: roomError } = await supabase
+        .from('chat_room_announcements')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+
+      if (roomError) throw roomError
+
+      // 투어별 공지사항 로드
+      const { data: tourAnnouncements, error: tourError } = await supabase
+        .from('tour_announcements')
+        .select('*')
+        .eq('tour_id', tourId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+
+      if (tourError) throw tourError
+
+      // 기본 공지사항 템플릿 로드
+      const { data: templateAnnouncements, error: templateError } = await supabase
+        .from('chat_announcement_templates')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+
+      if (templateError) throw templateError
+
+      // 상품의 채팅 공지사항 로드
+      const { data: productAnnouncements, error: productError } = await supabase
+        .from('product_details')
+        .select('chat_announcement')
+        .eq('product_id', tourId)
+        .not('chat_announcement', 'is', null)
+
+      if (productError) throw productError
+
+      // 상품 공지사항을 공지사항 형식으로 변환
+      const productAnnouncementList = (productAnnouncements || [])
+        .filter(p => p.chat_announcement)
+        .map(p => ({
+          id: `product_${tourId}`,
+          title: '상품 공지사항',
+          content: p.chat_announcement,
+          language: customerLanguage,
+          is_active: true,
+          created_at: new Date().toISOString()
+        }))
+
+      // 모든 공지사항을 합치고 언어별로 필터링
+      const allAnnouncements = [
+        ...(roomAnnouncements || []),
+        ...(tourAnnouncements || []),
+        ...(templateAnnouncements || []),
+        ...productAnnouncementList
+      ]
+
+      // 고객 언어에 맞는 공지사항만 필터링
+      const filteredAnnouncements = allAnnouncements.filter(announcement => 
+        announcement.language === customerLanguage || announcement.language === 'ko'
+      )
+
+      setAnnouncements(filteredAnnouncements)
+    } catch (error) {
+      console.error('Error loading announcements:', error)
     }
   }
 
@@ -332,6 +445,51 @@ export default function TourChatRoom({
         </div>
       )}
 
+      {/* 공지사항 영역 */}
+      {announcements.length > 0 && showAnnouncements && (
+        <div className="bg-yellow-50 border-b border-yellow-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-yellow-800 flex items-center">
+              <MessageCircle size={16} className="mr-2" />
+              공지사항
+            </h4>
+            <button
+              onClick={() => setShowAnnouncements(false)}
+              className="text-yellow-600 hover:text-yellow-800 text-sm"
+            >
+              닫기
+            </button>
+          </div>
+          <div className="space-y-2">
+            {announcements.map((announcement) => (
+              <div
+                key={announcement.id}
+                className="bg-white rounded-lg p-3 border border-yellow-200"
+              >
+                <h5 className="text-sm font-medium text-gray-900 mb-1">
+                  {announcement.title}
+                </h5>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                  {announcement.content}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 공지사항 토글 버튼 (공지사항이 숨겨진 경우) */}
+      {announcements.length > 0 && !showAnnouncements && (
+        <div className="bg-yellow-50 border-b border-yellow-200 p-2 text-center">
+          <button
+            onClick={() => setShowAnnouncements(true)}
+            className="text-yellow-600 hover:text-yellow-800 text-sm font-medium"
+          >
+            공지사항 보기 ({announcements.length}개)
+          </button>
+        </div>
+      )}
+
       {/* 메시지 목록 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((message) => {
@@ -345,12 +503,10 @@ export default function TourChatRoom({
               className={`flex ${message.sender_type === 'guide' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                  message.sender_type === 'guide'
-                    ? 'bg-blue-600 text-white'
-                    : message.sender_type === 'system'
+                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg border ${
+                  message.sender_type === 'system'
                     ? 'bg-gray-200 text-gray-700 text-center'
-                    : 'bg-gray-100 text-gray-900'
+                    : getUserColor(message.sender_name)
                 }`}
               >
                 {message.sender_type !== 'system' && (

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Package, Users, DollarSign, Star, Edit, MapPin, Clock } from 'lucide-react'
+import { Package, Users, DollarSign, Star, Clock, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -215,7 +215,7 @@ export default function ProductCard({ product, locale, onStatusChange }: Product
               </div>
               <div>
                 <h3 className="text-base font-semibold text-gray-900 line-clamp-2 group-hover:text-blue-600 transition-colors">
-                  {product.name}
+                  {product.name_ko}
                 </h3>
                 <div className="flex items-center space-x-1 mt-1">
                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(localStatus)}`}>
@@ -313,8 +313,18 @@ export default function ProductCard({ product, locale, onStatusChange }: Product
                 {product.duration || '시간 미정'}
               </span>
             </div>
-            <div className="text-sm text-gray-500 group-hover:text-blue-600 transition-colors">
-              편집하려면 클릭하세요
+            <div className="flex items-center space-x-2">
+              <Link
+                href={`/${locale}/admin/products/${product.id}/details`}
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center text-sm text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                <FileText className="h-4 w-4 mr-1" />
+                세부정보
+              </Link>
+              <div className="text-sm text-gray-500 group-hover:text-blue-600 transition-colors">
+                편집하려면 클릭하세요
+              </div>
             </div>
           </div>
         </div>

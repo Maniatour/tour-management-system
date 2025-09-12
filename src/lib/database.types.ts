@@ -133,6 +133,12 @@ export interface Database {
           name_ko: string
           name_en: string | null
           sub_category: string | null
+          category: string | null
+          base_price: number | null
+          duration: string | null
+          max_participants: number | null
+          status: string | null
+          tags: string[] | null
           created_at: string | null
           updated_at: string | null
         }
@@ -141,6 +147,12 @@ export interface Database {
           name_ko: string
           name_en?: string | null
           sub_category?: string | null
+          category?: string | null
+          base_price?: number | null
+          duration?: string | null
+          max_participants?: number | null
+          status?: string | null
+          tags?: string[] | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -149,6 +161,77 @@ export interface Database {
           name_ko?: string
           name_en?: string | null
           sub_category?: string | null
+          category?: string | null
+          base_price?: number | null
+          duration?: string | null
+          max_participants?: number | null
+          status?: string | null
+          tags?: string[] | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      product_details: {
+        Row: {
+          id: string
+          product_id: string
+          slogan1: string | null
+          slogan2: string | null
+          slogan3: string | null
+          description: string | null
+          included: string | null
+          not_included: string | null
+          pickup_drop_info: string | null
+          luggage_info: string | null
+          tour_operation_info: string | null
+          preparation_info: string | null
+          small_group_info: string | null
+          companion_info: string | null
+          exclusive_booking_info: string | null
+          cancellation_policy: string | null
+          chat_announcement: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          slogan1?: string | null
+          slogan2?: string | null
+          slogan3?: string | null
+          description?: string | null
+          included?: string | null
+          not_included?: string | null
+          pickup_drop_info?: string | null
+          luggage_info?: string | null
+          tour_operation_info?: string | null
+          preparation_info?: string | null
+          small_group_info?: string | null
+          companion_info?: string | null
+          exclusive_booking_info?: string | null
+          cancellation_policy?: string | null
+          chat_announcement?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          slogan1?: string | null
+          slogan2?: string | null
+          slogan3?: string | null
+          description?: string | null
+          included?: string | null
+          not_included?: string | null
+          pickup_drop_info?: string | null
+          luggage_info?: string | null
+          tour_operation_info?: string | null
+          preparation_info?: string | null
+          small_group_info?: string | null
+          companion_info?: string | null
+          exclusive_booking_info?: string | null
+          cancellation_policy?: string | null
+          chat_announcement?: string | null
           created_at?: string | null
           updated_at?: string | null
         }

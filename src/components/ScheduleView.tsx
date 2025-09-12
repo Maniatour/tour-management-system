@@ -141,67 +141,67 @@ export default function ScheduleView() {
   // 사용자 설정 불러오기
   const loadUserSettings = useCallback(async () => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('user_settings' as any)
-        .select('setting_key, setting_value')
-        .eq('user_id', currentUserId)
-        .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members'])
-
-      if (error) {
-        console.error('Error loading user settings:', error)
-        // fallback to localStorage
-        const savedProducts = localStorage.getItem('schedule_selected_products')
-        const savedTeamMembers = localStorage.getItem('schedule_selected_team_members')
-        
-        if (savedProducts) {
-          setSelectedProducts(JSON.parse(savedProducts))
-        }
-        if (savedTeamMembers) {
-          setSelectedTeamMembers(JSON.parse(savedTeamMembers))
-        }
-        return
-      }
-
-      // 데이터베이스에서 설정 불러오기
-      const settings = data || []
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const productsSetting = settings.find((s: any) => s.setting_key === 'schedule_selected_products')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const teamMembersSetting = settings.find((s: any) => s.setting_key === 'schedule_selected_team_members')
-
-      if (productsSetting?.setting_value) {
-        setSelectedProducts(productsSetting.setting_value)
-      } else {
-        // fallback to localStorage
-        const savedProducts = localStorage.getItem('schedule_selected_products')
-        if (savedProducts) {
-          setSelectedProducts(JSON.parse(savedProducts))
-        }
-      }
-
-      if (teamMembersSetting?.setting_value) {
-        setSelectedTeamMembers(teamMembersSetting.setting_value)
-      } else {
-        // fallback to localStorage
-        const savedTeamMembers = localStorage.getItem('schedule_selected_team_members')
-        if (savedTeamMembers) {
-          setSelectedTeamMembers(JSON.parse(savedTeamMembers))
-        }
-      }
-    } catch (error) {
-      console.error('Error loading user settings:', error)
-      // fallback to localStorage
+      // 먼저 localStorage에서 설정 불러오기 (기본값)
       const savedProducts = localStorage.getItem('schedule_selected_products')
       const savedTeamMembers = localStorage.getItem('schedule_selected_team_members')
       
       if (savedProducts) {
-        setSelectedProducts(JSON.parse(savedProducts))
+        try {
+          setSelectedProducts(JSON.parse(savedProducts))
+        } catch (parseError) {
+          console.warn('Error parsing saved products from localStorage:', parseError)
+        }
       }
       if (savedTeamMembers) {
-        setSelectedTeamMembers(JSON.parse(savedTeamMembers))
+        try {
+          setSelectedTeamMembers(JSON.parse(savedTeamMembers))
+        } catch (parseError) {
+          console.warn('Error parsing saved team members from localStorage:', parseError)
+        }
       }
+
+      // 사용자 ID가 없으면 데이터베이스 조회 건너뛰기
+      if (!currentUserId) {
+        console.log('No current user ID, skipping database user settings load')
+        return
+      }
+
+      // 데이터베이스에서 사용자 설정 불러오기 (선택사항)
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (supabase as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('user_settings' as any)
+          .select('setting_key, setting_value')
+          .eq('user_id', currentUserId)
+          .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members'])
+
+        if (error) {
+          console.warn('User settings table not available or error occurred:', error)
+          // localStorage 설정을 이미 로드했으므로 여기서는 아무것도 하지 않음
+          return
+        }
+
+        // 데이터베이스에서 설정 불러오기
+        const settings = data || []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const productsSetting = settings.find((s: any) => s.setting_key === 'schedule_selected_products')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const teamMembersSetting = settings.find((s: any) => s.setting_key === 'schedule_selected_team_members')
+
+        if (productsSetting?.setting_value) {
+          setSelectedProducts(productsSetting.setting_value)
+        }
+
+        if (teamMembersSetting?.setting_value) {
+          setSelectedTeamMembers(teamMembersSetting.setting_value)
+        }
+      } catch (dbError) {
+        console.warn('Database user settings load failed, using localStorage only:', dbError)
+      }
+    } catch (error) {
+      console.warn('Error in loadUserSettings, using localStorage fallback:', error)
+      // localStorage 설정은 이미 위에서 로드했으므로 여기서는 아무것도 하지 않음
     }
   }, [currentUserId])
 
@@ -426,8 +426,12 @@ export default function ScheduleView() {
       setTicketBookings(ticketBookingsData || [])
       setOffSchedules(offSchedulesData || [])
 
-      // 저장된 사용자 설정 불러오기
-      await loadUserSettings()
+      // 저장된 사용자 설정 불러오기 (오류가 발생해도 계속 진행)
+      try {
+        await loadUserSettings()
+      } catch (settingsError) {
+        console.warn('Failed to load user settings, continuing with default values:', settingsError)
+      }
 
       // 미 배정된 투어 가져오기
       await fetchUnassignedTours()
