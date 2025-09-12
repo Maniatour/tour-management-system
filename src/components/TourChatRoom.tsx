@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Send, Image as ImageIcon, File, Users, Copy, Share2, MessageCircle } from 'lucide-react'
+import { Send, Image as ImageIcon, File, Users, Copy, Share2, MessageCircle, Languages } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
+import { translateText, detectLanguage, SupportedLanguage } from '@/lib/translation'
 
 interface ChatMessage {
   id: string
@@ -38,6 +39,7 @@ interface TourChatRoomProps {
   roomCode?: string
   tourDate?: string
   customerName?: string
+  customerLanguage?: SupportedLanguage
 }
 
 export default function TourChatRoom({ 
@@ -46,7 +48,8 @@ export default function TourChatRoom({
   isPublicView = false, 
   roomCode,
   tourDate,
-  customerName
+  customerName,
+  customerLanguage = 'en'
 }: TourChatRoomProps) {
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -55,6 +58,8 @@ export default function TourChatRoom({
   const [sending, setSending] = useState(false)
   const [participantCount, setParticipantCount] = useState(0)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [translatedMessages, setTranslatedMessages] = useState<{ [key: string]: string }>({})
+  const [translating, setTranslating] = useState<{ [key: string]: boolean }>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -248,6 +253,34 @@ export default function TourChatRoom({
     })
   }
 
+  // 메시지 번역 함수
+  const translateMessage = async (messageId: string, messageText: string) => {
+    if (translating[messageId]) return // 이미 번역 중이면 스킵
+    
+    setTranslating(prev => ({ ...prev, [messageId]: true }))
+    
+    try {
+      const result = await translateText(messageText, customerLanguage)
+      setTranslatedMessages(prev => ({
+        ...prev,
+        [messageId]: result.translatedText
+      }))
+    } catch (error) {
+      console.error('Translation error:', error)
+    } finally {
+      setTranslating(prev => ({ ...prev, [messageId]: false }))
+    }
+  }
+
+  // 메시지가 번역이 필요한지 확인
+  const needsTranslation = (message: ChatMessage) => {
+    if (isPublicView && message.sender_type === 'guide') {
+      const messageLanguage = detectLanguage(message.message)
+      return messageLanguage !== customerLanguage
+    }
+    return false
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -265,76 +298,107 @@ export default function TourChatRoom({
   }
 
   return (
-    <div className="flex flex-col h-96 bg-white rounded-lg border">
-      {/* 채팅방 헤더 */}
-      <div className="flex items-center justify-between p-4 border-b bg-gray-50">
-        <div className="flex items-center space-x-3">
-          <MessageCircle size={20} className="text-blue-600" />
-          <div>
-            <h3 className="font-semibold text-gray-900">{room.room_name}</h3>
-            <p className="text-sm text-gray-500">{room.description}</p>
+    <div className="flex flex-col h-96">
+      {/* 채팅방 헤더 (관리자 뷰에서만 표시) */}
+      {!isPublicView && (
+        <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+          <div className="flex items-center space-x-3">
+            <MessageCircle size={20} className="text-blue-600" />
+            <div>
+              <h3 className="font-semibold text-gray-900">{room.room_name}</h3>
+              <p className="text-sm text-gray-500">{room.description}</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center text-sm text-gray-500">
+              <Users size={16} className="mr-1" />
+              {participantCount}명
+            </div>
+            <button
+              onClick={copyRoomLink}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+              title="링크 복사"
+            >
+              <Copy size={16} />
+            </button>
+            <button
+              onClick={shareRoomLink}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+              title="공유"
+            >
+              <Share2 size={16} />
+            </button>
           </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <div className="flex items-center text-sm text-gray-500">
-            <Users size={16} className="mr-1" />
-            {participantCount}명
-          </div>
-          {!isPublicView && (
-            <>
-              <button
-                onClick={copyRoomLink}
-                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-                title="링크 복사"
-              >
-                <Copy size={16} />
-              </button>
-              <button
-                onClick={shareRoomLink}
-                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-                title="공유"
-              >
-                <Share2 size={16} />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* 메시지 목록 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.sender_type === 'guide' ? 'justify-end' : 'justify-start'}`}
-          >
+        {messages.map((message) => {
+          const needsTrans = needsTranslation(message)
+          const hasTranslation = translatedMessages[message.id]
+          const isTranslating = translating[message.id]
+          
+          return (
             <div
-              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                message.sender_type === 'guide'
-                  ? 'bg-blue-600 text-white'
-                  : message.sender_type === 'system'
-                  ? 'bg-gray-200 text-gray-700 text-center'
-                  : 'bg-gray-100 text-gray-900'
-              }`}
+              key={message.id}
+              className={`flex ${message.sender_type === 'guide' ? 'justify-end' : 'justify-start'}`}
             >
-              {message.sender_type !== 'system' && (
-                <div className="text-xs font-medium mb-1">
-                  {message.sender_name}
+              <div
+                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                  message.sender_type === 'guide'
+                    ? 'bg-blue-600 text-white'
+                    : message.sender_type === 'system'
+                    ? 'bg-gray-200 text-gray-700 text-center'
+                    : 'bg-gray-100 text-gray-900'
+                }`}
+              >
+                {message.sender_type !== 'system' && (
+                  <div className="text-xs font-medium mb-1">
+                    {message.sender_name}
+                  </div>
+                )}
+                
+                {/* 원본 메시지 */}
+                <div className="text-sm">{message.message}</div>
+                
+                {/* 번역된 메시지 (가이드 메시지이고 번역이 필요한 경우) */}
+                {isPublicView && message.sender_type === 'guide' && needsTrans && (
+                  <div className="mt-2 pt-2 border-t border-white/20">
+                    {isTranslating ? (
+                      <div className="text-xs opacity-70 flex items-center">
+                        <Languages size={12} className="mr-1 animate-spin" />
+                        Translating...
+                      </div>
+                    ) : hasTranslation ? (
+                      <div className="text-xs opacity-90">
+                        {hasTranslation}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => translateMessage(message.id, message.message)}
+                        className="text-xs opacity-70 hover:opacity-100 flex items-center"
+                      >
+                        <Languages size={12} className="mr-1" />
+                        Translate
+                      </button>
+                    )}
+                  </div>
+                )}
+                
+                <div className="text-xs mt-1 opacity-70">
+                  {formatTime(message.created_at)}
                 </div>
-              )}
-              <div className="text-sm">{message.message}</div>
-              <div className="text-xs mt-1 opacity-70">
-                {formatTime(message.created_at)}
               </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
         <div ref={messagesEndRef} />
       </div>
 
       {/* 메시지 입력 */}
       {room.is_active && (
-        <div className="p-4 border-t bg-gray-50">
+        <div className={`${isPublicView ? 'p-4' : 'p-4 border-t bg-gray-50'}`}>
           <div className="flex items-center space-x-2">
             <input
               type="text"

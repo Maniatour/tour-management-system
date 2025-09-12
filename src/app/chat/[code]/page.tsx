@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ArrowLeft, MessageCircle, Users, Globe } from 'lucide-react'
+import { ArrowLeft, MessageCircle, Users, Globe, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
+import { SUPPORTED_LANGUAGES, SupportedLanguage } from '@/lib/translation'
 import { supabase } from '@/lib/supabase'
 
 interface ChatRoom {
@@ -31,12 +32,50 @@ export default function PublicChatPage({ params }: { params: { code: string } })
   const [error, setError] = useState<string | null>(null)
   const [customerName, setCustomerName] = useState('')
   const [tempName, setTempName] = useState('')
+  const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('en')
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
+  const [showNameEdit, setShowNameEdit] = useState(false)
 
   const { code } = params
 
   useEffect(() => {
     loadRoomInfo()
+    loadSavedUserData()
   }, [code])
+
+  // 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showLanguageDropdown) {
+        const target = event.target as HTMLElement
+        if (!target.closest('.language-dropdown')) {
+          setShowLanguageDropdown(false)
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showLanguageDropdown])
+
+  // 저장된 사용자 데이터 불러오기
+  const loadSavedUserData = () => {
+    if (typeof window !== 'undefined') {
+      const savedName = localStorage.getItem('tour_chat_customer_name')
+      const savedLanguage = localStorage.getItem('tour_chat_language') as 'ko' | 'en' | null
+      
+      if (savedName) {
+        setCustomerName(savedName)
+        // 저장된 이름이 있으면 임시 이름도 설정
+        setTempName(savedName)
+      }
+      if (savedLanguage && ['ko', 'en'].includes(savedLanguage)) {
+        setSelectedLanguage(savedLanguage)
+      }
+    }
+  }
 
   const loadRoomInfo = async () => {
     try {
@@ -91,6 +130,13 @@ export default function PublicChatPage({ params }: { params: { code: string } })
     
     // 임시 이름을 실제 이름으로 설정
     setCustomerName(trimmedName)
+    
+    // localStorage에 저장
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tour_chat_customer_name', trimmedName)
+      localStorage.setItem('tour_chat_language', selectedLanguage)
+    }
+    
     console.log('Customer joined chat:', trimmedName)
   }
 
@@ -99,6 +145,32 @@ export default function PublicChatPage({ params }: { params: { code: string } })
       e.preventDefault()
       handleJoinChat()
     }
+  }
+
+  // 이름 변경 함수
+  const handleNameChange = () => {
+    const trimmedName = tempName.trim()
+    
+    if (!trimmedName) {
+      alert('Please enter your name.')
+      return
+    }
+    
+    if (trimmedName.length < 2) {
+      alert('Please enter a name with at least 2 characters.')
+      return
+    }
+    
+    // 이름 업데이트
+    setCustomerName(trimmedName)
+    
+    // localStorage에 저장
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tour_chat_customer_name', trimmedName)
+    }
+    
+    setShowNameEdit(false)
+    console.log('Customer name updated:', trimmedName)
   }
 
   if (loading) {
@@ -209,6 +281,51 @@ export default function PublicChatPage({ params }: { params: { code: string } })
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Preferred Language
+                </label>
+                <div className="relative language-dropdown">
+                  <button
+                    type="button"
+                    onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between"
+                  >
+                    <span className="flex items-center">
+                      <span className="mr-2">
+                        {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.flag}
+                      </span>
+                      {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.name}
+                    </span>
+                    <ChevronDown size={16} className="text-gray-400" />
+                  </button>
+                  
+                  {showLanguageDropdown && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {SUPPORTED_LANGUAGES.map((language) => (
+                        <button
+                          key={language.code}
+                          type="button"
+                          onClick={() => {
+                            setSelectedLanguage(language.code)
+                            setShowLanguageDropdown(false)
+                            // 언어 변경 시 즉시 저장
+                            if (typeof window !== 'undefined') {
+                              localStorage.setItem('tour_chat_language', language.code)
+                            }
+                          }}
+                          className={`w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center ${
+                            selectedLanguage === language.code ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                          }`}
+                        >
+                          <span className="mr-3">{language.flag}</span>
+                          <span className="text-sm">{language.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
               <button
                 onClick={handleJoinChat}
                 disabled={!tempName.trim()}
@@ -234,6 +351,14 @@ export default function PublicChatPage({ params }: { params: { code: string } })
                     </p>
                   </div>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setShowNameEdit(true)}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Change Name
+                  </button>
+                </div>
               </div>
             </div>
             <div className="p-4">
@@ -243,6 +368,7 @@ export default function PublicChatPage({ params }: { params: { code: string } })
                 isPublicView={true}
                 roomCode={room.room_code}
                 customerName={customerName}
+                customerLanguage={selectedLanguage}
               />
             </div>
           </div>
@@ -258,6 +384,54 @@ export default function PublicChatPage({ params }: { params: { code: string } })
             <li>• The chat room will remain available for a certain period after the tour ends.</li>
           </ul>
         </div>
+
+        {/* 이름 변경 모달 */}
+        {showNameEdit && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Name</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Enter your new name
+                  </label>
+                  <input
+                    type="text"
+                    value={tempName}
+                    onChange={(e) => setTempName(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleNameChange()
+                      }
+                    }}
+                    placeholder="e.g., John Smith"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={handleNameChange}
+                    disabled={!tempName.trim()}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Update Name
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowNameEdit(false)
+                      setTempName(customerName) // 원래 이름으로 되돌리기
+                    }}
+                    className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
