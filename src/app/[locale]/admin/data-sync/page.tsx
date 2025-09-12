@@ -6,7 +6,7 @@ import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settin
 interface SheetInfo {
   name: string
   rowCount: number
-  sampleData: any[]
+  sampleData: Record<string, unknown>[]
   columns: string[]
   error?: string
 }
@@ -14,7 +14,12 @@ interface SheetInfo {
 interface SyncResult {
   success: boolean
   message: string
-  data?: any
+  data?: {
+    inserted?: number
+    updated?: number
+    errors?: number
+    [key: string]: unknown
+  }
   syncTime?: string
 }
 
@@ -42,10 +47,11 @@ export default function DataSyncPage() {
   const [availableTables, setAvailableTables] = useState<TableInfo[]>([])
   const [tableColumns, setTableColumns] = useState<ColumnInfo[]>([])
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({})
-  const [mappingSuggestions, setMappingSuggestions] = useState<{ [key: string]: ColumnMapping }>({})
+  // const [mappingSuggestions] = useState<{ [key: string]: ColumnMapping }>({})
   const [loading, setLoading] = useState(false)
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
+  const [enableIncrementalSync, setEnableIncrementalSync] = useState(true)
   const [showMappingModal, setShowMappingModal] = useState(false)
 
   // 컬럼 매핑을 localStorage에 저장
@@ -83,7 +89,7 @@ export default function DataSyncPage() {
     dbColumns.forEach(dbCol => {
       const dbLower = dbCol.name.toLowerCase()
       
-      // 정확한 매칭
+      // 정확한 매칭 (대소문자 무시)
       if (dbLower === sheetLower) {
         suggestions.unshift(dbCol.name) // 정확한 매칭을 맨 앞에
         return
@@ -91,6 +97,14 @@ export default function DataSyncPage() {
       
       // 부분 매칭 (포함 관계)
       if (dbLower.includes(sheetLower) || sheetLower.includes(dbLower)) {
+        suggestions.push(dbCol.name)
+        return
+      }
+      
+      // 언더스코어 제거 후 매칭 (예: customer_name -> customername)
+      const dbWithoutUnderscore = dbLower.replace(/_/g, '')
+      const sheetWithoutUnderscore = sheetLower.replace(/_/g, '')
+      if (dbWithoutUnderscore === sheetWithoutUnderscore) {
         suggestions.push(dbCol.name)
         return
       }
@@ -136,6 +150,21 @@ export default function DataSyncPage() {
     return [...new Set(suggestions)].slice(0, 5) // 최대 5개 제안
   }
 
+  // 자동 매핑 함수 (구글 시트 컬럼과 데이터베이스 컬럼을 자동으로 매핑)
+  const getAutoMapping = (sheetColumns: string[], dbColumns: ColumnInfo[]): ColumnMapping => {
+    const mapping: ColumnMapping = {}
+    
+    sheetColumns.forEach(sheetColumn => {
+      const suggestions = getAutoCompleteSuggestions(sheetColumn, dbColumns)
+      if (suggestions.length > 0) {
+        // 가장 높은 우선순위의 제안을 선택
+        mapping[sheetColumn] = suggestions[0]
+      }
+    })
+    
+    return mapping
+  }
+
   // 사용 가능한 테이블 가져오기 (모든 Supabase 테이블)
   const getAvailableTables = async () => {
     try {
@@ -155,6 +184,8 @@ export default function DataSyncPage() {
   const getTableSchema = async (tableName: string) => {
     try {
       console.log('Fetching table schema for:', tableName)
+      setTableColumns([]) // 로딩 상태를 위해 초기화
+      
       const response = await fetch(`/api/sync/schema?table=${tableName}`)
       const result = await response.json()
       
@@ -162,7 +193,21 @@ export default function DataSyncPage() {
       
       if (result.success) {
         console.log('Setting table columns:', result.data.columns)
+        console.log('Data source:', result.data.source)
         setTableColumns(result.data.columns)
+        
+        // 자동 매핑 적용 (저장된 매핑이 없는 경우)
+        const savedMapping = loadColumnMapping(tableName)
+        if (Object.keys(savedMapping).length === 0) {
+          const sheet = sheetInfo.find(s => s.name === selectedSheet)
+          if (sheet && sheet.columns.length > 0) {
+            const autoMapping = getAutoMapping(sheet.columns, result.data.columns)
+            if (Object.keys(autoMapping).length > 0) {
+              console.log('Applying auto-mapping:', autoMapping)
+              setColumnMapping(autoMapping)
+            }
+          }
+        }
       } else {
         console.error('Error getting table schema:', result.message)
         // 폴백: 하드코딩된 컬럼 목록 사용
@@ -203,7 +248,7 @@ export default function DataSyncPage() {
         { name: 'added_by', type: 'text', nullable: true, default: null },
         { name: 'status', type: 'text', nullable: true, default: 'pending' },
         { name: 'event_note', type: 'text', nullable: true, default: null },
-        { name: 'is_private_tour', type: 'boolean', nullable: true, default: false },
+        { name: 'is_private_tour', type: 'boolean', nullable: true, default: 'false' },
         { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
         { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
       ],
@@ -215,7 +260,7 @@ export default function DataSyncPage() {
         { name: 'tour_guide_id', type: 'uuid', nullable: true, default: null },
         { name: 'assistant_id', type: 'uuid', nullable: true, default: null },
         { name: 'tour_car_id', type: 'uuid', nullable: true, default: null },
-        { name: 'is_private_tour', type: 'boolean', nullable: true, default: false },
+        { name: 'is_private_tour', type: 'boolean', nullable: true, default: 'false' },
         { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
         { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
       ],
@@ -288,7 +333,8 @@ export default function DataSyncPage() {
       const result = await response.json()
       
       if (result.success) {
-        setMappingSuggestions(result.data.suggestions)
+        // setMappingSuggestions(result.data.suggestions)
+        console.log('Mapping suggestions:', result.data.suggestions)
       }
     } catch (error) {
       console.error('Error getting mapping suggestions:', error)
@@ -314,6 +360,25 @@ export default function DataSyncPage() {
     }
   }
 
+  // 마지막 동기화 시간 조회
+  const fetchLastSyncTime = async (tableName: string) => {
+    if (!spreadsheetId) return
+    
+    try {
+      const response = await fetch(`/api/sync/history?table=${tableName}&spreadsheetId=${spreadsheetId}`)
+      const result = await response.json()
+      
+      if (result.success && result.data.lastSyncTime) {
+        setLastSyncTime(result.data.lastSyncTime)
+      } else {
+        setLastSyncTime(null)
+      }
+    } catch (error) {
+      console.error('Error fetching last sync time:', error)
+      setLastSyncTime(null)
+    }
+  }
+
   // 테이블 선택 시 기본 매핑 설정
   const handleTableSelect = (tableName: string) => {
     console.log('Table selected:', tableName)
@@ -325,11 +390,20 @@ export default function DataSyncPage() {
       console.log('Fetching schema for table:', tableName)
       getTableSchema(tableName)
       
+      // 마지막 동기화 시간 조회
+      fetchLastSyncTime(tableName)
+      
       // 저장된 컬럼 매핑 불러오기
       const savedMapping = loadColumnMapping(tableName)
       if (Object.keys(savedMapping).length > 0) {
         console.log('Loaded saved column mapping:', savedMapping)
         setColumnMapping(savedMapping)
+      } else {
+        // 저장된 매핑이 없으면 자동 매핑 시도
+        const sheet = sheetInfo.find(s => s.name === selectedSheet)
+        if (sheet && sheet.columns.length > 0) {
+          console.log('No saved mapping found, will try auto-mapping when schema loads')
+        }
       }
       
       // 선택된 시트가 있으면 매핑 제안 가져오기
@@ -367,6 +441,7 @@ export default function DataSyncPage() {
           sheetName: selectedSheet,
           targetTable: selectedTable,
           columnMapping,
+          enableIncrementalSync,
         }),
       })
 
@@ -398,46 +473,46 @@ export default function DataSyncPage() {
     }
   }, [])
 
-  // 주기적 동기화
-  const handlePeriodicSync = async () => {
-    if (!spreadsheetId.trim()) {
-      alert('스프레드시트 ID를 입력해주세요.')
-      return
-    }
+  // 주기적 동기화 (사용하지 않음)
+  // const handlePeriodicSync = async () => {
+  //   if (!spreadsheetId.trim()) {
+  //     alert('스프레드시트 ID를 입력해주세요.')
+  //     return
+  //   }
 
-    setLoading(true)
-    setSyncResult(null)
+  //   setLoading(true)
+  //   setSyncResult(null)
 
-    try {
-      const response = await fetch('/api/sync/periodic', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          spreadsheetId,
-          reservationsSheet,
-          toursSheet,
-          lastSyncTime,
-        }),
-      })
+  //   try {
+  //     const response = await fetch('/api/sync/periodic', {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //       },
+  //       body: JSON.stringify({
+  //         spreadsheetId,
+  //         reservationsSheet: '',
+  //         toursSheet: '',
+  //         lastSyncTime,
+  //       }),
+  //     })
 
-      const result = await response.json()
-      setSyncResult(result)
+  //     const result = await response.json()
+  //     setSyncResult(result)
       
-      if (result.success) {
-        setLastSyncTime(result.syncTime)
-      }
-    } catch (error) {
-      console.error('Error syncing data:', error)
-      setSyncResult({
-        success: false,
-        message: '데이터 동기화 중 오류가 발생했습니다.'
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
+  //     if (result.success) {
+  //       setLastSyncTime(result.syncTime)
+  //     }
+  //   } catch (error) {
+  //     console.error('Error syncing data:', error)
+  //     setSyncResult({
+  //       success: false,
+  //       message: '데이터 동기화 중 오류가 발생했습니다.'
+  //     })
+  //   } finally {
+  //     setLoading(false)
+  //   }
+  // }
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -538,6 +613,30 @@ export default function DataSyncPage() {
             <Settings className="h-5 w-5 mr-2" />
             동기화 설정
           </h3>
+          
+          {/* 증분 동기화 옵션 */}
+          <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="incrementalSync"
+                checked={enableIncrementalSync}
+                onChange={(e) => setEnableIncrementalSync(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="incrementalSync" className="text-sm font-medium text-gray-700">
+                증분 동기화 활성화
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              활성화하면 마지막 동기화 이후 변경된 데이터만 업데이트합니다. (updated_at 컬럼이 있는 테이블에만 적용)
+            </p>
+            {lastSyncTime && (
+              <p className="text-xs text-blue-600 mt-1">
+                마지막 동기화: {new Date(lastSyncTime).toLocaleString('ko-KR')}
+              </p>
+            )}
+          </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* 테이블 선택 */}
@@ -654,7 +753,7 @@ export default function DataSyncPage() {
                               <tr key={i} className="border-t">
                                 {sheet.columns.map((col, j) => (
                                   <td key={j} className="px-2 py-1 text-gray-600">
-                                    {row[col] || '-'}
+                                    {String(row[col] || '-')}
                                   </td>
                                 ))}
                               </tr>
@@ -687,7 +786,7 @@ export default function DataSyncPage() {
             {tableColumns.length === 0 ? (
               <div className="flex items-center justify-center py-8">
                 <RefreshCw className="h-5 w-5 animate-spin text-blue-600 mr-2" />
-                <span className="text-gray-600">테이블 스키마를 불러오는 중...</span>
+                <span className="text-gray-600">실제 데이터베이스에서 테이블 스키마를 불러오는 중...</span>
               </div>
             ) : (
               <div className="space-y-6">
@@ -701,6 +800,11 @@ export default function DataSyncPage() {
                     <div>
                       <span className="font-medium text-blue-800">데이터베이스 컬럼 수:</span>
                       <span className="ml-2 text-blue-600">{tableColumns.length}개</span>
+                      {tableColumns.length > 0 && (
+                        <span className="ml-2 text-xs text-green-600">
+                          (실시간 조회)
+                        </span>
+                      )}
                     </div>
                     <div>
                       <span className="font-medium text-blue-800">시트 컬럼 수:</span>
@@ -817,25 +921,43 @@ export default function DataSyncPage() {
               </div>
             )}
 
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setShowMappingModal(false)}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                취소
-              </button>
+            <div className="flex justify-between mt-6">
               <button
                 onClick={() => {
-                  // 컬럼 매핑을 localStorage에 저장
-                  if (selectedTable && Object.keys(columnMapping).length > 0) {
-                    saveColumnMapping(selectedTable, columnMapping)
+                  // 자동 매핑 적용
+                  const sheet = sheetInfo.find(s => s.name === selectedSheet)
+                  if (sheet && sheet.columns.length > 0 && tableColumns.length > 0) {
+                    const autoMapping = getAutoMapping(sheet.columns, tableColumns)
+                    console.log('Applying auto-mapping:', autoMapping)
+                    setColumnMapping(autoMapping)
                   }
-                  setShowMappingModal(false)
                 }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
               >
-                저장
+                <RefreshCw className="h-4 w-4 mr-2" />
+                자동 매핑
               </button>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowMappingModal(false)}
+                  className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={() => {
+                    // 컬럼 매핑을 localStorage에 저장
+                    if (selectedTable && Object.keys(columnMapping).length > 0) {
+                      saveColumnMapping(selectedTable, columnMapping)
+                    }
+                    setShowMappingModal(false)
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  저장
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -8,7 +8,8 @@ export async function POST(request: NextRequest) {
       spreadsheetId, 
       sheetName, 
       targetTable, 
-      columnMapping 
+      columnMapping,
+      enableIncrementalSync = true
     } = body
 
     if (!spreadsheetId || !sheetName || !targetTable) {
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     console.log(`Column mapping:`, columnMapping)
     
     // 유연한 동기화 실행
-    const result = await flexibleSync(spreadsheetId, sheetName, targetTable, columnMapping)
+    const result = await flexibleSync(spreadsheetId, sheetName, targetTable, columnMapping, enableIncrementalSync)
 
     if (result.success) {
       return NextResponse.json({

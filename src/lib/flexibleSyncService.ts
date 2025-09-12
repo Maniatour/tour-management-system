@@ -145,15 +145,64 @@ const processCustomer = async (customerData: any) => {
   }
 }
 
-// 유연한 데이터 동기화
+// 마지막 동기화 시간 조회
+const getLastSyncTime = async (tableName: string, spreadsheetId: string): Promise<Date | null> => {
+  try {
+    const response = await fetch(`/api/sync/history?table=${tableName}&spreadsheetId=${spreadsheetId}`)
+    const result = await response.json()
+    
+    if (result.success && result.data.lastSyncTime) {
+      return new Date(result.data.lastSyncTime)
+    }
+    return null
+  } catch (error) {
+    console.error('Error fetching last sync time:', error)
+    return null
+  }
+}
+
+// 동기화 히스토리 저장
+const saveSyncHistory = async (tableName: string, spreadsheetId: string, recordCount: number) => {
+  try {
+    const response = await fetch('/api/sync/history', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tableName,
+        spreadsheetId,
+        lastSyncTime: new Date().toISOString(),
+        recordCount
+      })
+    })
+    
+    const result = await response.json()
+    if (!result.success) {
+      console.error('Failed to save sync history:', result.message)
+    }
+  } catch (error) {
+    console.error('Error saving sync history:', error)
+  }
+}
+
+// 유연한 데이터 동기화 (증분 동기화 지원)
 export const flexibleSync = async (
   spreadsheetId: string, 
   sheetName: string, 
   targetTable: string, 
-  columnMapping: { [key: string]: string }
+  columnMapping: { [key: string]: string },
+  enableIncrementalSync: boolean = true
 ) => {
   try {
     console.log(`Starting flexible sync for spreadsheet: ${spreadsheetId}, sheet: ${sheetName}, table: ${targetTable}`)
+    
+    // 마지막 동기화 시간 조회 (증분 동기화가 활성화된 경우)
+    let lastSyncTime: Date | null = null
+    if (enableIncrementalSync) {
+      lastSyncTime = await getLastSyncTime(targetTable, spreadsheetId)
+      console.log(`Last sync time: ${lastSyncTime ? lastSyncTime.toISOString() : 'No previous sync'}`)
+    }
     
     // 구글 시트에서 데이터 읽기
     const sheetData = await readSheetData(spreadsheetId, sheetName)
@@ -163,21 +212,35 @@ export const flexibleSync = async (
       return { success: true, message: 'No data to sync', count: 0 }
     }
 
-    // 데이터 변환
-    const transformedData = sheetData.map(row => {
-      const transformed: any = {}
-      
-      // 사용자 정의 컬럼 매핑 적용
-      Object.entries(columnMapping).forEach(([sheetColumn, dbColumn]) => {
-        if (row[sheetColumn] !== undefined && row[sheetColumn] !== '') {
-          transformed[dbColumn] = row[sheetColumn]
+    // 데이터 변환 및 필터링 (증분 동기화)
+    const transformedData = sheetData
+      .map(row => {
+        const transformed: any = {}
+        
+        // 사용자 정의 컬럼 매핑 적용
+        Object.entries(columnMapping).forEach(([sheetColumn, dbColumn]) => {
+          if (row[sheetColumn] !== undefined && row[sheetColumn] !== '') {
+            transformed[dbColumn] = row[sheetColumn]
+          }
+        })
+
+        return convertDataTypes(transformed, targetTable)
+      })
+      .filter(row => {
+        // 증분 동기화가 활성화되고 updated_at 컬럼이 있는 경우
+        if (enableIncrementalSync && lastSyncTime && row.updated_at) {
+          try {
+            const rowUpdatedAt = new Date(row.updated_at)
+            return rowUpdatedAt > lastSyncTime
+          } catch (error) {
+            console.warn(`Invalid updated_at format for row ${row.id}:`, row.updated_at)
+            return true // 파싱 실패 시 포함
+          }
         }
+        return true // 증분 동기화가 비활성화되거나 updated_at이 없는 경우 모든 데이터 포함
       })
 
-      return convertDataTypes(transformed, targetTable)
-    })
-
-    console.log(`Transformed ${transformedData.length} rows`)
+    console.log(`Transformed ${transformedData.length} rows (${enableIncrementalSync && lastSyncTime ? 'incremental' : 'full'} sync)`)
 
     // 동기화 실행
     const results = {
@@ -248,6 +311,12 @@ export const flexibleSync = async (
     }
 
     console.log('Flexible sync completed:', results)
+    
+    // 동기화 히스토리 저장
+    if (results.inserted > 0 || results.updated > 0) {
+      await saveSyncHistory(targetTable, spreadsheetId, results.inserted + results.updated)
+    }
+    
     return {
       success: results.errors === 0,
       message: `Sync completed: ${results.inserted} inserted, ${results.updated} updated, ${results.errors} errors`,
