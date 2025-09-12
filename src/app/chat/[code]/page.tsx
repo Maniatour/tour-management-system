@@ -361,7 +361,7 @@ export default function PublicChatPage({ params }: { params: { code: string } })
                 </div>
               </div>
             </div>
-            <div className="p-4">
+            <div className="h-96">
               <TourChatRoom
                 tourId={room.tour_id}
                 guideEmail={room.created_by}

@@ -1,151 +1,129 @@
--- 상품 세부정보를 위한 별도 테이블 생성
--- 이 마이그레이션은 products 테이블에서 세부정보 필드들을 분리하여 별도 테이블로 만듭니다.
+-- 수정된 상품 세부정보 마이그레이션
+-- 이 마이그레이션은 기존 products 테이블의 상태를 확인하고 안전하게 처리합니다.
 
--- 상품 세부정보 테이블 생성
+-- product_details 테이블 생성 (이미 존재하지 않는 경우에만)
 CREATE TABLE IF NOT EXISTS product_details (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     product_id TEXT NOT NULL,
-    
-    -- 기본 정보
     slogan1 TEXT,
     slogan2 TEXT,
     slogan3 TEXT,
     description TEXT,
-    
-    -- 포함/불포함 사항
     included TEXT,
     not_included TEXT,
-    
-    -- 투어 정보
     pickup_drop_info TEXT,
     luggage_info TEXT,
     tour_operation_info TEXT,
     preparation_info TEXT,
-    
-    -- 그룹 정보
     small_group_info TEXT,
     companion_info TEXT,
-    
-    -- 예약 및 정책 정보
     exclusive_booking_info TEXT,
     cancellation_policy TEXT,
-    
-    -- 채팅 공지사항
     chat_announcement TEXT,
-    
-    -- 메타데이터
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
-    -- 외래키 제약조건
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-    
-    -- 유니크 제약조건 (상품당 하나의 세부정보만)
     UNIQUE(product_id)
 );
 
 -- 인덱스 생성
 CREATE INDEX IF NOT EXISTS idx_product_details_product_id ON product_details(product_id);
 
--- RLS (Row Level Security) 정책 설정
+-- RLS 설정
 ALTER TABLE product_details ENABLE ROW LEVEL SECURITY;
 
--- 모든 작업에 대한 정책 (인증된 사용자)
-CREATE POLICY "Allow all operations on product_details for authenticated users" 
-ON product_details FOR ALL 
-TO authenticated 
-USING (true);
-
--- 공개 읽기 정책 (고객용)
-CREATE POLICY "Allow public read access to product_details" 
-ON product_details FOR SELECT 
-TO anon 
-USING (true);
-
--- 업데이트 시간 자동 갱신을 위한 트리거
-CREATE TRIGGER update_product_details_updated_at 
-    BEFORE UPDATE ON product_details 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- 기존 products 테이블에서 세부정보 필드들 제거
-ALTER TABLE products 
-DROP COLUMN IF EXISTS included,
-DROP COLUMN IF EXISTS not_included,
-DROP COLUMN IF EXISTS slogan1,
-DROP COLUMN IF EXISTS slogan2,
-DROP COLUMN IF EXISTS slogan3,
-DROP COLUMN IF EXISTS description,
-DROP COLUMN IF EXISTS pickup_drop_info,
-DROP COLUMN IF EXISTS luggage_info,
-DROP COLUMN IF EXISTS tour_operation_info,
-DROP COLUMN IF EXISTS preparation_info,
-DROP COLUMN IF EXISTS small_group_info,
-DROP COLUMN IF EXISTS companion_info,
-DROP COLUMN IF EXISTS exclusive_booking_info,
-DROP COLUMN IF EXISTS cancellation_policy,
-DROP COLUMN IF EXISTS chat_announcement;
-
--- 기존 products 테이블의 코멘트 제거 (컬럼이 존재하는 경우에만)
+-- 정책 생성 (이미 존재하지 않는 경우에만)
 DO $$ 
 BEGIN
+    -- 모든 작업에 대한 정책 (인증된 사용자)
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'product_details' AND policyname = 'Allow all operations on product_details for authenticated users') THEN
+        CREATE POLICY "Allow all operations on product_details for authenticated users" 
+        ON product_details FOR ALL 
+        TO authenticated 
+        USING (true);
+    END IF;
+    
+    -- 공개 읽기 정책 (고객용)
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'product_details' AND policyname = 'Allow public read access to product_details') THEN
+        CREATE POLICY "Allow public read access to product_details" 
+        ON product_details FOR SELECT 
+        TO anon 
+        USING (true);
+    END IF;
+END $$;
+
+-- 트리거 생성 (이미 존재하지 않는 경우에만)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_product_details_updated_at') THEN
+        CREATE TRIGGER update_product_details_updated_at 
+            BEFORE UPDATE ON product_details 
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;
+
+-- 기존 products 테이블에서 세부정보 필드들이 있는지 확인하고 제거
+DO $$ 
+BEGIN
+    -- 각 컬럼이 존재하는지 확인하고 제거
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'included') THEN
-        COMMENT ON COLUMN products.included IS NULL;
+        ALTER TABLE products DROP COLUMN included;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'not_included') THEN
-        COMMENT ON COLUMN products.not_included IS NULL;
+        ALTER TABLE products DROP COLUMN not_included;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'slogan1') THEN
-        COMMENT ON COLUMN products.slogan1 IS NULL;
+        ALTER TABLE products DROP COLUMN slogan1;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'slogan2') THEN
-        COMMENT ON COLUMN products.slogan2 IS NULL;
+        ALTER TABLE products DROP COLUMN slogan2;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'slogan3') THEN
-        COMMENT ON COLUMN products.slogan3 IS NULL;
+        ALTER TABLE products DROP COLUMN slogan3;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'description') THEN
-        COMMENT ON COLUMN products.description IS NULL;
+        ALTER TABLE products DROP COLUMN description;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'pickup_drop_info') THEN
-        COMMENT ON COLUMN products.pickup_drop_info IS NULL;
+        ALTER TABLE products DROP COLUMN pickup_drop_info;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'luggage_info') THEN
-        COMMENT ON COLUMN products.luggage_info IS NULL;
+        ALTER TABLE products DROP COLUMN luggage_info;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'tour_operation_info') THEN
-        COMMENT ON COLUMN products.tour_operation_info IS NULL;
+        ALTER TABLE products DROP COLUMN tour_operation_info;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'preparation_info') THEN
-        COMMENT ON COLUMN products.preparation_info IS NULL;
+        ALTER TABLE products DROP COLUMN preparation_info;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'small_group_info') THEN
-        COMMENT ON COLUMN products.small_group_info IS NULL;
+        ALTER TABLE products DROP COLUMN small_group_info;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'companion_info') THEN
-        COMMENT ON COLUMN products.companion_info IS NULL;
+        ALTER TABLE products DROP COLUMN companion_info;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'exclusive_booking_info') THEN
-        COMMENT ON COLUMN products.exclusive_booking_info IS NULL;
+        ALTER TABLE products DROP COLUMN exclusive_booking_info;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'cancellation_policy') THEN
-        COMMENT ON COLUMN products.cancellation_policy IS NULL;
+        ALTER TABLE products DROP COLUMN cancellation_policy;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'chat_announcement') THEN
-        COMMENT ON COLUMN products.chat_announcement IS NULL;
+        ALTER TABLE products DROP COLUMN chat_announcement;
     END IF;
 END $$;
 

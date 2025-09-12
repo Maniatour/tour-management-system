@@ -411,7 +411,7 @@ export default function TourChatRoom({
   }
 
   return (
-    <div className="flex flex-col h-96">
+    <div className="flex flex-col h-full max-h-screen">
       {/* 채팅방 헤더 (관리자 뷰에서만 표시) */}
       {!isPublicView && (
         <div className="flex items-center justify-between p-4 border-b bg-gray-50">
@@ -447,7 +447,7 @@ export default function TourChatRoom({
 
       {/* 공지사항 영역 */}
       {announcements.length > 0 && showAnnouncements && (
-        <div className="bg-yellow-50 border-b border-yellow-200 p-4">
+        <div className="bg-yellow-50 border-b border-yellow-200 p-4 max-h-64 overflow-y-auto">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-semibold text-yellow-800 flex items-center">
               <MessageCircle size={16} className="mr-2" />
@@ -491,7 +491,7 @@ export default function TourChatRoom({
       )}
 
       {/* 메시지 목록 */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         {messages.map((message) => {
           const needsTrans = needsTranslation(message)
           const hasTranslation = translatedMessages[message.id]

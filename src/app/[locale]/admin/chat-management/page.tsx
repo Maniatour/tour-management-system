@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { MessageCircle, Users, Calendar, MapPin, DollarSign, Clock, Search, Filter } from 'lucide-react'
+import { MessageCircle, Calendar, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ChatRoom {
@@ -24,10 +24,12 @@ interface ChatRoom {
     tour_car_id?: string
     status: string
     product?: {
-      name: string
+      name_ko?: string
+      name_en?: string
+      name?: string
       description?: string
     }
-  }
+  } | null
 }
 
 interface ChatMessage {
@@ -53,7 +55,9 @@ interface TourInfo {
   assistant_id?: string
   tour_car_id?: string
   product?: {
-    name: string
+    name_ko?: string
+    name_en?: string
+    name?: string
     description?: string
   }
   reservations?: Array<{
@@ -89,56 +93,101 @@ export default function ChatManagementPage() {
   // 채팅방 목록 가져오기
   const fetchChatRooms = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      // 먼저 기본 채팅방 정보만 가져오기
+      const { data: chatRoomsData, error: chatRoomsError } = await supabase
         .from('chat_rooms')
-        .select(`
-          *,
-          tour:tours(
-            id,
-            product_id,
-            tour_date,
-            tour_guide_id,
-            assistant_id,
-            tour_car_id,
-            product:products(
-              name_ko,
-              name_en,
-              description
-            )
-          )
-        `)
+        .select('*')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
 
-      if (error) throw error
+      if (chatRoomsError) throw chatRoomsError
 
-      // 투어 정보와 함께 채팅방 데이터 처리
-      const roomsWithTour = data?.map(room => ({
-        ...room,
-        tour: room.tour,
-        unread_count: 0 // 실제로는 메시지 테이블에서 계산해야 함
-      })) || []
-
-      // 각 채팅방의 읽지 않은 메시지 수 계산
-      for (const room of roomsWithTour) {
-        try {
-          const { count } = await supabase
-            .from('chat_messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('room_id', room.id)
-            .eq('sender_type', 'customer')
-            .eq('is_read', false)
-          
-          room.unread_count = count || 0
-        } catch (error) {
-          console.error(`Error counting unread messages for room ${room.id}:`, error)
-          room.unread_count = 0
-        }
+      if (!chatRoomsData || chatRoomsData.length === 0) {
+        setChatRooms([])
+        return
       }
 
-      setChatRooms(roomsWithTour)
-    } catch (error) {
+      // 각 채팅방에 대해 투어 정보를 별도로 가져오기
+      const roomsWithTour = await Promise.all(
+        chatRoomsData.map(async (room: any) => {
+          try {
+            const { data: tourData, error: tourError } = await supabase
+              .from('tours')
+              .select(`
+                id,
+                product_id,
+                tour_date,
+                tour_guide_id,
+                assistant_id,
+                tour_car_id,
+                product:products(
+                  name_ko,
+                  name_en,
+                  description
+                )
+              `)
+              .eq('id', room.tour_id)
+              .single()
+
+            if (tourError) {
+              console.warn(`Error fetching tour for room ${room.id}:`, tourError)
+              return {
+                ...room,
+                tour: null,
+                unread_count: 0
+              }
+            }
+
+            return {
+              ...room,
+              tour: tourData,
+              unread_count: 0
+            }
+          } catch (error) {
+            console.warn(`Error processing room ${room.id}:`, error)
+            return {
+              ...room,
+              tour: null,
+              unread_count: 0
+            }
+          }
+        })
+      )
+
+      // 이제 읽지 않은 메시지 수 계산
+      const roomsWithUnreadCount = await Promise.all(
+        roomsWithTour.map(async (room: any) => {
+          try {
+            const { count } = await supabase
+              .from('chat_messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('room_id', room.id)
+              .eq('sender_type', 'customer')
+              .eq('is_read', false)
+            
+            return {
+              ...room,
+              unread_count: count || 0
+            }
+          } catch (error) {
+            console.error(`Error counting unread messages for room ${room.id}:`, error)
+            return {
+              ...room,
+              unread_count: 0
+            }
+          }
+        })
+      )
+
+      setChatRooms(roomsWithUnreadCount)
+    } catch (error: any) {
       console.error('Error fetching chat rooms:', error)
+      console.error('Error details:', {
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        code: error?.code
+      })
       setChatRooms([]) // 오류 시 빈 배열로 설정
     } finally {
       setLoading(false)
@@ -264,7 +313,7 @@ export default function ChatManagementPage() {
           sender_email: 'admin@kovegas.com',
           message: messageText,
           message_type: 'text'
-        })
+        } as any)
         .select()
         .single()
 
@@ -299,7 +348,7 @@ export default function ChatManagementPage() {
     try {
       await supabase
         .from('chat_messages')
-        .update({ is_read: true })
+        .update({ is_read: true } as any)
         .eq('room_id', room.id)
         .eq('sender_type', 'customer')
         .eq('is_read', false)
@@ -318,7 +367,8 @@ export default function ChatManagementPage() {
   // 필터링된 채팅방 목록
   const filteredRooms = chatRooms.filter(room => {
     const matchesSearch = room.room_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         room.tour?.product?.name_ko?.toLowerCase().includes(searchTerm.toLowerCase())
+                         room.tour?.product?.name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         room.tour?.product?.name?.toLowerCase().includes(searchTerm.toLowerCase())
     
     if (filterStatus === 'all') return matchesSearch
     // 투어 상태 필터링은 일단 제거 (status 컬럼이 없음)
@@ -431,7 +481,7 @@ export default function ChatManagementPage() {
                 <div className="flex-1 min-w-0">
                   {/* 상품 이름 */}
                   <h3 className="font-medium text-gray-900 text-xs truncate mb-0.5">
-                    {room.tour?.product?.name_ko || room.room_name}
+                    {room.tour?.product?.name_ko || room.tour?.product?.name || room.room_name}
                   </h3>
                   
                   {/* 투어 날짜와 방 코드를 한 줄에 */}
@@ -469,7 +519,7 @@ export default function ChatManagementPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">
-                    {selectedRoom.tour?.product?.name_ko || selectedRoom.room_name}
+                    {selectedRoom.tour?.product?.name_ko || selectedRoom.tour?.product?.name || selectedRoom.room_name}
                   </h2>
                   <p className="text-sm text-gray-500">
                     {selectedRoom.tour?.tour_date ? formatDate(selectedRoom.tour.tour_date) : '날짜 미정'}
@@ -553,7 +603,7 @@ export default function ChatManagementPage() {
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-gray-700">상품</label>
-                <p className="text-sm text-gray-900">{tourInfo.product?.name_ko}</p>
+                <p className="text-sm text-gray-900">{tourInfo.product?.name_ko || tourInfo.product?.name}</p>
               </div>
               
               <div>
@@ -584,7 +634,7 @@ export default function ChatManagementPage() {
             {/* 고객 정보 */}
             <div className="mt-6">
               <h4 className="font-medium text-gray-900 mb-3">고객정보</h4>
-              {tourInfo.reservations?.map((reservation, index) => (
+              {tourInfo.reservations?.map((reservation) => (
                 <div key={reservation.id} className="mb-3 p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm font-medium text-gray-900">{reservation.customer_name}</p>
                   <p className="text-xs text-gray-500">{reservation.customer_email}</p>
