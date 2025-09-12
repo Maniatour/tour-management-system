@@ -302,7 +302,6 @@ export default function DataSyncPage() {
         { name: 'id', type: 'text', nullable: false, default: null },
         { name: 'category', type: 'text', nullable: true, default: null },
         { name: 'submit_on', type: 'date', nullable: true, default: null },
-        { name: 'submitted_by', type: 'text', nullable: true, default: null },
         { name: 'check_in_date', type: 'date', nullable: true, default: null },
         { name: 'time', type: 'time', nullable: true, default: null },
         { name: 'company', type: 'text', nullable: true, default: null },

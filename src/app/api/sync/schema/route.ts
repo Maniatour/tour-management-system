@@ -178,7 +178,6 @@ function getFallbackColumns(tableName: string): any[] {
       { name: 'id', type: 'text', nullable: false, default: null },
       { name: 'category', type: 'character varying', nullable: true, default: null },
       { name: 'submit_on', type: 'date', nullable: true, default: null },
-      { name: 'submitted_by', type: 'character varying', nullable: true, default: null },
       { name: 'check_in_date', type: 'date', nullable: true, default: null },
       { name: 'time', type: 'time', nullable: true, default: null },
       { name: 'company', type: 'character varying', nullable: true, default: null },

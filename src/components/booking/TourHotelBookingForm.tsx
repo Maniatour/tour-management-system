@@ -9,7 +9,6 @@ interface TourHotelBooking {
   check_in_date: string;
   check_out_date: string;
   reservation_name: string;
-  submitted_by: string;
   cc: string;
   rooms: number;
   city: string;
@@ -44,7 +43,6 @@ export default function TourHotelBookingForm({
       check_in_date: '',
       check_out_date: '',
       reservation_name: '',
-      submitted_by: 'admin@example.com',
       cc: 'not_sent',
       rooms: 1,
       city: '',
@@ -67,7 +65,6 @@ export default function TourHotelBookingForm({
         check_in_date: booking.check_in_date ?? initialData.check_in_date,
         check_out_date: booking.check_out_date ?? initialData.check_out_date,
         reservation_name: booking.reservation_name ?? initialData.reservation_name,
-        submitted_by: booking.submitted_by ?? initialData.submitted_by,
         cc: booking.cc ?? initialData.cc,
         rooms: booking.rooms ?? initialData.rooms,
         city: booking.city ?? initialData.city,

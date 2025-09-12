@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase';
 interface TicketBooking {
   id?: string;
   category: string;
-  submitted_by: string;
   check_in_date: string;
   time: string;
   company: string;
@@ -61,7 +60,6 @@ export default function TicketBookingForm({
     
     const initialData = {
       category: '',
-      submitted_by: 'admin@example.com', // 기본값 설정, 실제로는 현재 사용자 이메일
       check_in_date: '',
       time: '',
       company: '',
@@ -108,7 +106,6 @@ export default function TicketBookingForm({
         ...booking,
         // 명시적으로 각 필드를 설정하여 undefined 값 처리
         category: booking.category ?? initialData.category,
-        submitted_by: booking.submitted_by ?? initialData.submitted_by,
         check_in_date: booking.check_in_date ?? initialData.check_in_date,
         time: formatTimeForDropdown(booking.time) ?? initialData.time,
         company: booking.company ?? initialData.company,
@@ -675,21 +672,6 @@ export default function TicketBookingForm({
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                제출자 *
-              </label>
-              <input
-                type="email"
-                name="submitted_by"
-                value={formData.submitted_by}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                readOnly
-                title="현재 사용자 이메일이 자동으로 입력됩니다"
-              />
-            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
