@@ -145,41 +145,46 @@ const processCustomer = async (customerData: any) => {
   }
 }
 
-// 마지막 동기화 시간 조회
+// 마지막 동기화 시간 조회 (직접 데이터베이스 접근)
 const getLastSyncTime = async (tableName: string, spreadsheetId: string): Promise<Date | null> => {
   try {
-    const response = await fetch(`/api/sync/history?table=${tableName}&spreadsheetId=${spreadsheetId}`)
-    const result = await response.json()
-    
-    if (result.success && result.data.lastSyncTime) {
-      return new Date(result.data.lastSyncTime)
+    // 직접 Supabase에서 조회
+    const { data, error } = await supabase
+      .from('sync_history')
+      .select('last_sync_time')
+      .eq('table_name', tableName)
+      .eq('spreadsheet_id', spreadsheetId)
+      .order('last_sync_time', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (error && error.code !== 'PGRST116') { // PGRST116은 "no rows found" 에러
+      console.error('Error fetching sync history:', error)
+      return null
     }
-    return null
+
+    return data?.last_sync_time ? new Date(data.last_sync_time) : null
   } catch (error) {
     console.error('Error fetching last sync time:', error)
     return null
   }
 }
 
-// 동기화 히스토리 저장
+// 동기화 히스토리 저장 (직접 데이터베이스 접근)
 const saveSyncHistory = async (tableName: string, spreadsheetId: string, recordCount: number) => {
   try {
-    const response = await fetch('/api/sync/history', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        tableName,
-        spreadsheetId,
-        lastSyncTime: new Date().toISOString(),
-        recordCount
+    // 직접 Supabase에 저장
+    const { error } = await supabase
+      .from('sync_history')
+      .insert({
+        table_name: tableName,
+        spreadsheet_id: spreadsheetId,
+        last_sync_time: new Date().toISOString(),
+        record_count: recordCount
       })
-    })
-    
-    const result = await response.json()
-    if (!result.success) {
-      console.error('Failed to save sync history:', result.message)
+
+    if (error) {
+      console.error('Failed to save sync history:', error)
     }
   } catch (error) {
     console.error('Error saving sync history:', error)
