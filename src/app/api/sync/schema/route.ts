@@ -196,26 +196,26 @@ function getFallbackColumns(tableName: string): any[] {
       { name: 'reservation_id', type: 'text', nullable: true, default: null }
     ],
     tour_hotel_bookings: [
-      { name: 'id', type: 'text', nullable: false, default: null },
+      { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
       { name: 'tour_id', type: 'text', nullable: true, default: null },
-      { name: 'hotel_name', type: 'character varying', nullable: true, default: null },
-      { name: 'hotel_address', type: 'text', nullable: true, default: null },
-      { name: 'check_in_date', type: 'date', nullable: true, default: null },
-      { name: 'check_out_date', type: 'date', nullable: true, default: null },
+      { name: 'event_date', type: 'date', nullable: false, default: null },
+      { name: 'submit_on', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'check_in_date', type: 'date', nullable: false, default: null },
+      { name: 'check_out_date', type: 'date', nullable: false, default: null },
+      { name: 'reservation_name', type: 'character varying', nullable: false, default: null },
+      { name: 'cc', type: 'character varying', nullable: true, default: null },
+      { name: 'rooms', type: 'integer', nullable: false, default: '1' },
+      { name: 'city', type: 'character varying', nullable: false, default: null },
+      { name: 'hotel', type: 'character varying', nullable: false, default: null },
       { name: 'room_type', type: 'character varying', nullable: true, default: null },
-      { name: 'room_count', type: 'integer', nullable: true, default: null },
-      { name: 'guest_count', type: 'integer', nullable: true, default: null },
-      { name: 'price_per_night', type: 'numeric', nullable: true, default: null },
-      { name: 'total_price', type: 'numeric', nullable: true, default: null },
-      { name: 'booking_status', type: 'character varying', nullable: true, default: "'pending'" },
-      { name: 'confirmation_number', type: 'character varying', nullable: true, default: null },
-      { name: 'special_requests', type: 'text', nullable: true, default: null },
-      { name: 'contact_person', type: 'character varying', nullable: true, default: null },
-      { name: 'contact_phone', type: 'character varying', nullable: true, default: null },
-      { name: 'contact_email', type: 'character varying', nullable: true, default: null },
+      { name: 'unit_price', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'total_price', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'payment_method', type: 'character varying', nullable: true, default: null },
+      { name: 'website', type: 'character varying', nullable: true, default: null },
+      { name: 'rn_number', type: 'character varying', nullable: true, default: null },
+      { name: 'status', type: 'character varying', nullable: true, default: "'pending'" },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
-      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
-      { name: 'reservation_id', type: 'text', nullable: true, default: null }
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ]
   }
   
