@@ -5,6 +5,7 @@ import { readSheetData } from './googleSheets'
 
 // 데이터 타입 변환 함수
 const convertDataTypes = (data: any, tableName: string) => {
+  console.log(`convertDataTypes called with tableName: ${tableName}`)
   const converted = { ...data }
 
   // 숫자 필드 변환
@@ -50,11 +51,14 @@ const convertDataTypes = (data: any, tableName: string) => {
   // tour_hotel_bookings 테이블 특별 처리
   if (tableName === 'tour_hotel_bookings') {
     console.log('Processing tour_hotel_bookings data:', Object.keys(converted))
+    console.log('Checking for submitted_by field:', converted.submitted_by)
     
     // submitted_by 필드 명시적으로 제거 (다른 곳에서 추가될 수 있음)
     if (converted.submitted_by !== undefined) {
       console.log('Removing submitted_by field that was added elsewhere')
       delete converted.submitted_by
+    } else {
+      console.log('No submitted_by field found in converted data')
     }
     
     // 존재하지 않는 필드 제거
@@ -244,11 +248,12 @@ export const flexibleSync = async (
   spreadsheetId: string, 
   sheetName: string, 
   targetTable: string, 
-  columnMapping: { [key: string]: string },
+  columnMapping: { [key: string]: string }, 
   enableIncrementalSync: boolean = true
 ) => {
   try {
     console.log(`Starting flexible sync for spreadsheet: ${spreadsheetId}, sheet: ${sheetName}, table: ${targetTable}`)
+    console.log(`Target table type: ${typeof targetTable}, value: "${targetTable}"`)
     
     // 마지막 동기화 시간 조회 (증분 동기화가 활성화된 경우)
     let lastSyncTime: Date | null = null
