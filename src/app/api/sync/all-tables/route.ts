@@ -1,48 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase-server'
+import { createServerSupabase } from '@/lib/supabase-server'
 
 export async function GET(request: NextRequest) {
   try {
-    // 하드코딩된 테이블 목록 (Supabase의 모든 주요 테이블)
-    const allTables = [
-      'reservations',
-      'tours', 
-      'customers',
-      'products',
-      'channels',
-      'employees',
-      'options',
-      'product_options',
-      'reservation_pricing',
-      'dynamic_pricing',
-      'suppliers',
-      'rental_cars',
-      'rental_car_reservations',
-      'chat_rooms',
-      'chat_messages',
-      'chat_announcements',
-      'audit_logs',
-      'product_details'
-    ]
+    const supabase = await createServerSupabase()
+    
+    // RPC 함수를 사용하여 테이블 목록 조회
+    const { data: tables, error } = await supabase
+      .rpc('get_all_tables')
+
+    if (error) {
+      console.error('Error fetching tables from database:', error)
+      // 데이터베이스 조회 실패 시 하드코딩된 목록 사용
+      return getHardcodedTables()
+    }
 
     // 테이블 목록을 표시명과 함께 반환
-    const tables = allTables.map(tableName => ({
-      name: tableName,
-      displayName: getTableDisplayName(tableName)
+    const tableList = tables.map((table: any) => ({
+      name: table.table_name,
+      displayName: getTableDisplayName(table.table_name)
     }))
 
     return NextResponse.json({
       success: true,
-      data: { tables }
+      data: { tables: tableList }
     })
 
   } catch (error) {
     console.error('Get all tables error:', error)
-    return NextResponse.json(
-      { success: false, message: `Failed to get all tables: ${error}` },
-      { status: 500 }
-    )
+    // 오류 발생 시 하드코딩된 목록 사용
+    return getHardcodedTables()
   }
+}
+
+// 하드코딩된 테이블 목록 (백업용)
+function getHardcodedTables() {
+  const allTables = [
+    'reservations',
+    'tours', 
+    'customers',
+    'products',
+    'channels',
+    'employees',
+    'options',
+    'product_options',
+    'reservation_pricing',
+    'dynamic_pricing',
+    'suppliers',
+    'rental_cars',
+    'rental_car_reservations',
+    'chat_rooms',
+    'chat_messages',
+    'chat_announcements',
+    'audit_logs',
+    'product_details',
+    'product_schedules',
+    'reservation_options',
+    'sync_history'
+  ]
+
+  // 테이블 목록을 표시명과 함께 반환
+  const tables = allTables.map(tableName => ({
+    name: tableName,
+    displayName: getTableDisplayName(tableName)
+  }))
+
+  return NextResponse.json({
+    success: true,
+    data: { tables }
+  })
 }
 
 // 테이블 표시명 가져오기
@@ -65,7 +91,10 @@ function getTableDisplayName(tableName: string): string {
     chat_messages: '채팅 메시지',
     chat_announcements: '채팅 공지사항',
     audit_logs: '감사 로그',
-    product_details: '상품 상세정보'
+    product_details: '상품 상세정보',
+    product_schedules: '상품 일정',
+    reservation_options: '예약 옵션',
+    sync_history: '동기화 히스토리'
   }
   return displayNames[tableName] || tableName
 }
