@@ -101,7 +101,8 @@ export default function ChatManagementPage() {
             assistant_id,
             tour_car_id,
             product:products(
-              name,
+              name_ko,
+              name_en,
               description
             )
           )
@@ -138,6 +139,9 @@ export default function ChatManagementPage() {
       setChatRooms(roomsWithTour)
     } catch (error) {
       console.error('Error fetching chat rooms:', error)
+      setChatRooms([]) // 오류 시 빈 배열로 설정
+    } finally {
+      setLoading(false)
     }
   }, [])
 
@@ -314,7 +318,7 @@ export default function ChatManagementPage() {
   // 필터링된 채팅방 목록
   const filteredRooms = chatRooms.filter(room => {
     const matchesSearch = room.room_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         room.tour?.product?.name.toLowerCase().includes(searchTerm.toLowerCase())
+                         room.tour?.product?.name_ko?.toLowerCase().includes(searchTerm.toLowerCase())
     
     if (filterStatus === 'all') return matchesSearch
     // 투어 상태 필터링은 일단 제거 (status 컬럼이 없음)
@@ -427,7 +431,7 @@ export default function ChatManagementPage() {
                 <div className="flex-1 min-w-0">
                   {/* 상품 이름 */}
                   <h3 className="font-medium text-gray-900 text-xs truncate mb-0.5">
-                    {room.tour?.product?.name || room.room_name}
+                    {room.tour?.product?.name_ko || room.room_name}
                   </h3>
                   
                   {/* 투어 날짜와 방 코드를 한 줄에 */}
@@ -465,7 +469,7 @@ export default function ChatManagementPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">
-                    {selectedRoom.tour?.product?.name || selectedRoom.room_name}
+                    {selectedRoom.tour?.product?.name_ko || selectedRoom.room_name}
                   </h2>
                   <p className="text-sm text-gray-500">
                     {selectedRoom.tour?.tour_date ? formatDate(selectedRoom.tour.tour_date) : '날짜 미정'}
@@ -549,7 +553,7 @@ export default function ChatManagementPage() {
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-gray-700">상품</label>
-                <p className="text-sm text-gray-900">{tourInfo.product?.name}</p>
+                <p className="text-sm text-gray-900">{tourInfo.product?.name_ko}</p>
               </div>
               
               <div>
