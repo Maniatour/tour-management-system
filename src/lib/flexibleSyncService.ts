@@ -46,8 +46,13 @@ const convertDataTypes = (data: any, tableName: string) => {
   // created_at, updated_at은 구글 시트 값 그대로 사용 (문자열로 유지)
   // tour_id도 구글 시트 값 그대로 사용
 
-  // JSONB 필드 정리 (줄바꿈 문자 제거)
-  const jsonbFields = ['selected_options', 'selected_option_prices']
+  // JSONB 필드 정리 (줄바꿈 문자 제거) - 테이블별로 다르게 처리
+  let jsonbFields: string[] = []
+  if (tableName === 'reservations') {
+    jsonbFields = ['selected_options', 'selected_option_prices']
+  }
+  // 다른 테이블들은 JSONB 필드가 없으므로 빈 배열
+  
   jsonbFields.forEach(field => {
     if (converted[field]) {
       try {
