@@ -114,3 +114,49 @@ DO $$ BEGIN
             FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
     END IF;
 END $$;
+
+-- customers, tours, reservations 테이블에 updated_at 컬럼 추가
+-- customers 테이블에 updated_at 컬럼 추가 (이미 존재하면 스킵)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'customers' AND column_name = 'updated_at') THEN
+        ALTER TABLE customers ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    END IF;
+END $$;
+
+-- tours 테이블에 updated_at 컬럼 추가 (이미 존재하면 스킵)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tours' AND column_name = 'updated_at') THEN
+        ALTER TABLE tours ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    END IF;
+END $$;
+
+-- reservations 테이블에 updated_at 컬럼 추가 (이미 존재하면 스킵)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'reservations' AND column_name = 'updated_at') THEN
+        ALTER TABLE reservations ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    END IF;
+END $$;
+
+-- customers 테이블 업데이트 트리거 생성 (이미 존재하면 스킵)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_customers_updated_at') THEN
+        CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;
+
+-- tours 테이블 업데이트 트리거 생성 (이미 존재하면 스킵)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_tours_updated_at') THEN
+        CREATE TRIGGER update_tours_updated_at BEFORE UPDATE ON tours
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;
+
+-- reservations 테이블 업데이트 트리거 생성 (이미 존재하면 스킵)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_reservations_updated_at') THEN
+        CREATE TRIGGER update_reservations_updated_at BEFORE UPDATE ON reservations
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;

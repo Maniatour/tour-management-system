@@ -231,27 +231,53 @@ export default function ChatManagementPage() {
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedRoom || sending) return
 
+    const messageText = newMessage.trim()
     setSending(true)
+    
+    // 즉시 UI에 메시지 표시 (낙관적 업데이트)
+    const tempMessage: ChatMessage = {
+      id: `temp_${Date.now()}`,
+      room_id: selectedRoom.id,
+      sender_type: 'admin',
+      sender_name: '관리자',
+      sender_email: 'admin@kovegas.com',
+      message: messageText,
+      message_type: 'text',
+      is_read: false,
+      created_at: new Date().toISOString()
+    }
+    
+    setMessages(prev => [...prev, tempMessage])
+    setNewMessage('')
+
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('chat_messages')
         .insert({
           room_id: selectedRoom.id,
           sender_type: 'admin',
           sender_name: '관리자',
           sender_email: 'admin@kovegas.com',
-          message: newMessage.trim(),
+          message: messageText,
           message_type: 'text'
         })
+        .select()
+        .single()
 
       if (error) throw error
-      setNewMessage('')
       
-      // 메시지 목록 새로고침
-      await fetchMessages(selectedRoom.id)
+      // 실제 메시지로 교체
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === tempMessage.id ? data : msg
+        )
+      )
     } catch (error) {
       console.error('Error sending message:', error)
       alert('메시지 전송 중 오류가 발생했습니다.')
+      
+      // 실패 시 임시 메시지 제거
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
     } finally {
       setSending(false)
     }

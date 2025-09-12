@@ -39,3 +39,4 @@ LEFT JOIN products p ON t.product_id = p.id
 LEFT JOIN chat_rooms cr ON t.id = cr.tour_id
 WHERE t.tour_status IN ('Recruiting', 'Confirmed')
 ORDER BY t.tour_date DESC;
+

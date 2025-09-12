@@ -37,6 +37,7 @@ interface TourChatRoomProps {
   isPublicView?: boolean
   roomCode?: string
   tourDate?: string
+  customerName?: string
 }
 
 export default function TourChatRoom({ 
@@ -44,7 +45,8 @@ export default function TourChatRoom({
   guideEmail, 
   isPublicView = false, 
   roomCode,
-  tourDate
+  tourDate,
+  customerName
 }: TourChatRoomProps) {
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -61,7 +63,7 @@ export default function TourChatRoom({
     if (isPublicView && roomCode) {
       loadRoomByCode(roomCode)
     } else {
-      loadOrCreateRoom()
+      loadRoom()
     }
   }, [tourId, isPublicView, roomCode])
 
@@ -115,9 +117,9 @@ export default function TourChatRoom({
     }
   }
 
-  const loadOrCreateRoom = async () => {
+  const loadRoom = async () => {
     try {
-      // 기존 채팅방 찾기
+      // 기존 채팅방 찾기 (데이터베이스 트리거에 의해 자동 생성됨)
       const { data: existingRooms, error: findError } = await supabase
         .from('chat_rooms')
         .select('*')
@@ -125,31 +127,19 @@ export default function TourChatRoom({
         .eq('is_active', true)
         .limit(1)
 
+      if (findError) throw findError
+
       const existingRoom = existingRooms?.[0]
 
       if (existingRoom) {
         setRoom(existingRoom)
         await loadMessages(existingRoom.id)
       } else {
-        // 새 채팅방 생성
-        const roomCode = generateRoomCode()
-        const { data: newRoom, error: createError } = await supabase
-          .from('chat_rooms')
-          .insert({
-            tour_id: tourId,
-            room_name: `투어 채팅방`,
-            room_code: roomCode,
-            description: '투어 관련 소통을 위한 채팅방입니다.',
-            created_by: guideEmail
-          })
-          .select()
-          .single()
-
-        if (createError) throw createError
-        setRoom(newRoom)
+        console.warn('Chat room not found. Please wait a moment after the tour is created.')
+        setRoom(null)
       }
     } catch (error) {
-      console.error('Error loading or creating room:', error)
+      console.error('Error loading room:', error)
     } finally {
       setLoading(false)
     }
@@ -171,9 +161,6 @@ export default function TourChatRoom({
     }
   }
 
-  const generateRoomCode = () => {
-    return Math.random().toString(36).substring(2, 8).toUpperCase()
-  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -182,24 +169,54 @@ export default function TourChatRoom({
   const sendMessage = async () => {
     if (!newMessage.trim() || !room || sending) return
 
+    const messageText = newMessage.trim()
     setSending(true)
+    
+    // 즉시 UI에 메시지 표시 (낙관적 업데이트)
+    const tempMessage: ChatMessage = {
+      id: `temp_${Date.now()}`,
+      room_id: room.id,
+      sender_type: isPublicView ? 'customer' : 'guide',
+      sender_name: isPublicView ? (customerName || '고객') : '가이드',
+      sender_email: isPublicView ? undefined : guideEmail,
+      message: messageText,
+      message_type: 'text',
+      is_read: false,
+      created_at: new Date().toISOString()
+    }
+    
+    setMessages(prev => [...prev, tempMessage])
+    setNewMessage('')
+    scrollToBottom()
+
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('chat_messages')
         .insert({
           room_id: room.id,
           sender_type: isPublicView ? 'customer' : 'guide',
-          sender_name: isPublicView ? '고객' : '가이드',
+          sender_name: isPublicView ? (customerName || '고객') : '가이드',
           sender_email: isPublicView ? undefined : guideEmail,
-          message: newMessage.trim(),
+          message: messageText,
           message_type: 'text'
         })
+        .select()
+        .single()
 
       if (error) throw error
-      setNewMessage('')
+      
+      // 실제 메시지로 교체
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === tempMessage.id ? data : msg
+        )
+      )
     } catch (error) {
       console.error('Error sending message:', error)
-      alert('메시지 전송 중 오류가 발생했습니다.')
+      alert('An error occurred while sending the message.')
+      
+      // 실패 시 임시 메시지 제거
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
     } finally {
       setSending(false)
     }
@@ -216,7 +233,7 @@ export default function TourChatRoom({
     if (!room) return
     const link = `https://www.kovegas.com/chat/${room.room_code}`
     navigator.clipboard.writeText(link)
-    alert('채팅방 링크가 클립보드에 복사되었습니다.')
+    alert('Chat room link has been copied to clipboard.')
   }
 
   const shareRoomLink = () => {
@@ -234,7 +251,7 @@ export default function TourChatRoom({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">채팅방을 불러오는 중...</div>
+        <div className="text-gray-500">Loading chat room...</div>
       </div>
     )
   }
@@ -242,7 +259,7 @@ export default function TourChatRoom({
   if (!room) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">채팅방을 찾을 수 없습니다.</div>
+        <div className="text-gray-500">Chat room not found.</div>
       </div>
     )
   }
@@ -324,7 +341,7 @@ export default function TourChatRoom({
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="메시지를 입력하세요..."
+              placeholder="Type your message..."
               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={sending}
             />
@@ -334,7 +351,7 @@ export default function TourChatRoom({
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Send size={16} />
-              <span>{sending ? '전송 중...' : '전송'}</span>
+              <span>{sending ? 'Sending...' : 'Send'}</span>
             </button>
           </div>
         </div>

@@ -43,3 +43,4 @@ LEFT JOIN chat_rooms cr ON t.id = cr.tour_id
 WHERE t.tour_status IN ('Recruiting', 'Confirmed')
 AND t.tour_date >= CURRENT_DATE
 ORDER BY t.tour_date ASC;
+

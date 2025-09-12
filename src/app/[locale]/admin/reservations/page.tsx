@@ -320,6 +320,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const handleAddReservation = async (reservation: Omit<Reservation, 'id'>) => {
     try {
       // Supabase에 저장할 데이터 준비
+      // tour_id는 먼저 null로 설정하고, 투어 생성 후 업데이트
       const reservationData = {
         customer_id: reservation.customerId,
         product_id: reservation.productId,
@@ -335,7 +336,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         channel_id: reservation.channelId,
         channel_rn: reservation.channelRN,
         added_by: reservation.addedBy,
-        tour_id: reservation.tourId,
+        tour_id: null, // 먼저 null로 설정
         status: reservation.status,
         selected_options: reservation.selectedOptions,
         selected_option_prices: reservation.selectedOptionPrices,
@@ -355,111 +356,38 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return
       }
 
-      console.log('New reservation created with ID:', newReservation?.id)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      console.log('New reservation created with ID:', (newReservation as any)?.id)
       console.log('Full reservation data:', newReservation)
 
-      // selected_options를 reservation_options 테이블에 저장
-      if (newReservation && reservation.selectedOptions) {
+      // 투어 자동 생성 또는 업데이트
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (newReservation && (newReservation as any).id) {
         try {
-          const reservationOptionsData = Object.entries(reservation.selectedOptions).map(([optionKey, choiceIds]) => {
-            // optionKey가 "selected_timestamp" 형태인 경우 실제 option_id를 찾아야 함
-            // 현재는 optionKey를 그대로 사용하지만, 실제로는 product_options 테이블에서 매핑해야 함
-            return {
-              id: crypto.randomUUID(),
-              reservation_id: (newReservation as any).id,
-              option_id: optionKey,
-              ea: 1, // 기본 수량
-              price: 0, // 기본 가격 (pricing에서 업데이트됨)
-              status: 'active'
-            }
-          })
-
-          if (reservationOptionsData.length > 0) {
-            const { error: optionsError } = await supabase
-              .from('reservation_options')
-              .insert(reservationOptionsData)
-
-            if (optionsError) {
-              console.error('Error saving reservation options:', optionsError)
-            } else {
-              console.log('Reservation options saved successfully:', reservationOptionsData.length, 'records')
-            }
-          }
-        } catch (optionsError) {
-          console.error('Error saving reservation options:', optionsError)
-        }
-      }
-
-      // 가격 정보가 있으면 저장
-      if (reservation.pricingInfo && newReservation) {
-        try {
-          const pricingData = {
-            id: crypto.randomUUID(),
+          const tourResult = await autoCreateOrUpdateTour(
+            reservation.productId,
+            reservation.tourDate,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            reservation_id: (newReservation as any).id,
-            adult_product_price: reservation.pricingInfo.adultProductPrice,
-            child_product_price: reservation.pricingInfo.childProductPrice,
-            infant_product_price: reservation.pricingInfo.infantProductPrice,
-            product_price_total: reservation.pricingInfo.productPriceTotal,
-            required_options: reservation.pricingInfo.requiredOptions,
-            required_option_total: reservation.pricingInfo.requiredOptionTotal,
-            subtotal: reservation.pricingInfo.subtotal,
-            coupon_code: reservation.pricingInfo.couponCode,
-            coupon_discount: reservation.pricingInfo.couponDiscount,
-            additional_discount: reservation.pricingInfo.additionalDiscount,
-            additional_cost: reservation.pricingInfo.additionalCost,
-            card_fee: reservation.pricingInfo.cardFee,
-            tax: reservation.pricingInfo.tax,
-            prepayment_cost: reservation.pricingInfo.prepaymentCost,
-            prepayment_tip: reservation.pricingInfo.prepaymentTip,
-            selected_options: reservation.pricingInfo.selectedOptionalOptions,
-            option_total: reservation.pricingInfo.optionTotal,
-            total_price: reservation.pricingInfo.totalPrice,
-            deposit_amount: reservation.pricingInfo.depositAmount,
-            balance_amount: reservation.pricingInfo.balanceAmount,
-            private_tour_additional_cost: reservation.pricingInfo.privateTourAdditionalCost,
-            commission_percent: reservation.pricingInfo.commission_percent || 0
-          }
-
-          const { error: pricingError } = await supabase
-            .from('reservation_pricing')
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .upsert(pricingData as any, { 
-              onConflict: 'reservation_id',
-              ignoreDuplicates: false 
-            })
-
-          if (pricingError) {
-            console.error('Error saving pricing info:', pricingError)
-            // 가격 정보 저장 실패는 예약 성공에 영향을 주지 않음
+            (newReservation as any).id,
+            reservation.isPrivateTour
+          )
+          
+          if (tourResult.success && tourResult.tourId) {
+            console.log('Tour created/updated successfully:', tourResult.tourId)
           } else {
-            console.log('가격 정보가 성공적으로 저장되었습니다.')
+            console.warn('Tour creation failed:', tourResult.message)
           }
-        } catch (pricingError) {
-          console.error('Error saving pricing info:', pricingError)
+        } catch (tourError) {
+          console.error('Error in tour auto-creation:', tourError)
         }
       }
 
-      // Mania Tour 또는 Mania Service인 경우 자동으로 투어 생성 또는 업데이트
-      if (newReservation) {
-        const tourResult = await autoCreateOrUpdateTour(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (newReservation as any).product_id,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (newReservation as any).tour_date,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (newReservation as any).id,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (newReservation as any).is_private_tour
-        )
-        
-        if (tourResult.success) {
-          console.log('투어 자동 생성/업데이트 성공:', tourResult.message)
-        } else {
-          console.warn('투어 자동 생성/업데이트 실패:', tourResult.message)
-          // 투어 생성 실패는 예약 성공에 영향을 주지 않음
-        }
-      }
+      // selected_options는 reservations 테이블의 selected_options 컬럼에 저장됨
+      // 별도의 reservation_options 테이블 저장은 현재 비활성화
+
+      // 가격 정보는 현재 reservations 테이블의 selected_option_prices 컬럼에 저장됨
+      // 별도의 reservation_pricing 테이블 저장은 현재 비활성화
+
 
       // 성공 시 예약 목록 새로고침
       await refreshReservations()

@@ -7,7 +7,18 @@ RETURNS TRIGGER AS $$
 DECLARE
     product_name TEXT;
     room_code TEXT;
+    existing_room_count INTEGER;
 BEGIN
+    -- 이미 해당 투어에 대한 채팅방이 있는지 확인
+    SELECT COUNT(*) INTO existing_room_count
+    FROM chat_rooms
+    WHERE tour_id = NEW.id;
+    
+    -- 이미 채팅방이 있으면 생성하지 않음
+    IF existing_room_count > 0 THEN
+        RETURN NEW;
+    END IF;
+    
     -- 상품명 가져오기
     SELECT name INTO product_name
     FROM products
@@ -70,3 +81,4 @@ CREATE TRIGGER trigger_update_chat_room_on_tour_status_change
     FOR EACH ROW
     WHEN (OLD.tour_status IS DISTINCT FROM NEW.tour_status)
     EXECUTE FUNCTION update_chat_room_status();
+

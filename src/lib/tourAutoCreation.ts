@@ -67,7 +67,9 @@ export async function autoCreateOrUpdateTour(
     if (existingTours && existingTours.length > 0) {
       // 3. 기존 투어가 있는 경우: reservation_ids에 새 예약 ID 추가
       const existingTour = existingTours[0]
-      const updatedReservationIds = [...(existingTour.reservation_ids || []), reservationId]
+      // reservation_ids를 TEXT[] 형식으로 처리
+      const currentReservationIds = existingTour.reservation_ids || []
+      const updatedReservationIds = [...currentReservationIds, reservationId]
 
       // 투어에 단독투어 예약이 추가되면 투어도 단독투어로 표시
       const shouldUpdateToPrivate = isPrivateTour || false
@@ -119,12 +121,16 @@ export async function autoCreateOrUpdateTour(
       }
     } else {
       // 5. 기존 투어가 없는 경우: 새 투어 생성
+      // TEXT 형식의 ID를 명시적으로 생성
+      const tourId = `tour_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      
       const { data: newTour, error: createError } = await supabase
         .from('tours')
         .insert({
+          id: tourId,
           product_id: productId,
           tour_date: tourDate,
-          reservation_ids: [reservationId],
+          reservation_ids: [reservationId], // TEXT[] 형식으로 저장
           tour_status: 'scheduled',
           is_private_tour: isPrivateTour || false
         })
