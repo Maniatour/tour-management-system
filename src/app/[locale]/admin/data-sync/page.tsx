@@ -186,7 +186,18 @@ export default function DataSyncPage() {
       console.log('Fetching table schema for:', tableName)
       setTableColumns([]) // 로딩 상태를 위해 초기화
       
-      const response = await fetch(`/api/sync/schema?table=${tableName}`)
+      // 타임아웃 설정 (5초)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        console.warn('Schema fetch timed out, using fallback data')
+        controller.abort()
+      }, 5000)
+      
+      const response = await fetch(`/api/sync/schema?table=${tableName}`, {
+        signal: controller.signal
+      })
+      
+      clearTimeout(timeoutId)
       const result = await response.json()
       
       console.log('Table schema response:', result)
@@ -217,6 +228,12 @@ export default function DataSyncPage() {
       }
     } catch (error) {
       console.error('Error getting table schema:', error)
+      
+      // 타임아웃 에러인 경우 특별 처리
+      if (error.name === 'AbortError') {
+        console.warn('Schema fetch timed out, using fallback data')
+      }
+      
       // 폴백: 하드코딩된 컬럼 목록 사용
       const fallbackColumns = getFallbackColumns(tableName)
       console.log('Using fallback columns due to error:', fallbackColumns)
@@ -280,6 +297,27 @@ export default function DataSyncPage() {
         { name: 'price', type: 'numeric', nullable: true, default: null },
         { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
         { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
+      ],
+      ticket_bookings: [
+        { name: 'id', type: 'text', nullable: false, default: null },
+        { name: 'category', type: 'text', nullable: true, default: null },
+        { name: 'submit_on', type: 'date', nullable: true, default: null },
+        { name: 'submitted_by', type: 'text', nullable: true, default: null },
+        { name: 'check_in_date', type: 'date', nullable: true, default: null },
+        { name: 'time', type: 'time', nullable: true, default: null },
+        { name: 'company', type: 'text', nullable: true, default: null },
+        { name: 'ea', type: 'integer', nullable: true, default: null },
+        { name: 'expense', type: 'numeric', nullable: true, default: null },
+        { name: 'income', type: 'numeric', nullable: true, default: null },
+        { name: 'payment_method', type: 'text', nullable: true, default: null },
+        { name: 'rn_number', type: 'text', nullable: true, default: null },
+        { name: 'tour_id', type: 'text', nullable: true, default: null },
+        { name: 'note', type: 'text', nullable: true, default: null },
+        { name: 'status', type: 'text', nullable: true, default: null },
+        { name: 'season', type: 'text', nullable: true, default: null },
+        { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'reservation_id', type: 'text', nullable: true, default: null }
       ]
     }
     

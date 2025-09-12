@@ -173,6 +173,27 @@ function getFallbackColumns(tableName: string): any[] {
       { name: 'is_active', type: 'boolean', nullable: true, default: 'true' },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
+    ],
+    ticket_bookings: [
+      { name: 'id', type: 'text', nullable: false, default: null },
+      { name: 'category', type: 'character varying', nullable: true, default: null },
+      { name: 'submit_on', type: 'date', nullable: true, default: null },
+      { name: 'submitted_by', type: 'character varying', nullable: true, default: null },
+      { name: 'check_in_date', type: 'date', nullable: true, default: null },
+      { name: 'time', type: 'time', nullable: true, default: null },
+      { name: 'company', type: 'character varying', nullable: true, default: null },
+      { name: 'ea', type: 'integer', nullable: true, default: null },
+      { name: 'expense', type: 'numeric', nullable: true, default: null },
+      { name: 'income', type: 'numeric', nullable: true, default: null },
+      { name: 'payment_method', type: 'character varying', nullable: true, default: null },
+      { name: 'rn_number', type: 'character varying', nullable: true, default: null },
+      { name: 'tour_id', type: 'text', nullable: true, default: null },
+      { name: 'note', type: 'text', nullable: true, default: null },
+      { name: 'status', type: 'character varying', nullable: true, default: null },
+      { name: 'season', type: 'character varying', nullable: true, default: null },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'reservation_id', type: 'text', nullable: true, default: null }
     ]
   }
   

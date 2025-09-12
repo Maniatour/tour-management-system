@@ -27,17 +27,28 @@ CREATE INDEX IF NOT EXISTS idx_product_schedules_day_number ON product_schedules
 ALTER TABLE product_schedules ENABLE ROW LEVEL SECURITY;
 
 -- RLS policies for product_schedules
-CREATE POLICY "Anyone can view product schedules" ON product_schedules
-    FOR SELECT USING (true);
-
-CREATE POLICY "Authenticated users can insert product schedules" ON product_schedules
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
-CREATE POLICY "Authenticated users can update product schedules" ON product_schedules
-    FOR UPDATE USING (auth.role() = 'authenticated');
-
-CREATE POLICY "Authenticated users can delete product schedules" ON product_schedules
-    FOR DELETE USING (auth.role() = 'authenticated');
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'product_schedules' AND policyname = 'Anyone can view product schedules') THEN
+        CREATE POLICY "Anyone can view product schedules" ON product_schedules
+            FOR SELECT USING (true);
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'product_schedules' AND policyname = 'Authenticated users can insert product schedules') THEN
+        CREATE POLICY "Authenticated users can insert product schedules" ON product_schedules
+            FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'product_schedules' AND policyname = 'Authenticated users can update product schedules') THEN
+        CREATE POLICY "Authenticated users can update product schedules" ON product_schedules
+            FOR UPDATE USING (auth.role() = 'authenticated');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'product_schedules' AND policyname = 'Authenticated users can delete product schedules') THEN
+        CREATE POLICY "Authenticated users can delete product schedules" ON product_schedules
+            FOR DELETE USING (auth.role() = 'authenticated');
+    END IF;
+END $$;
 
 -- Create trigger for updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -48,7 +59,12 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-CREATE TRIGGER update_product_schedules_updated_at
-    BEFORE UPDATE ON product_schedules
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_product_schedules_updated_at') THEN
+        CREATE TRIGGER update_product_schedules_updated_at
+            BEFORE UPDATE ON product_schedules
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;

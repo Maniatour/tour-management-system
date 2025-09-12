@@ -1,5 +1,8 @@
+-- 기존 함수가 있다면 삭제
+DROP FUNCTION IF EXISTS get_all_tables();
+
 -- 모든 테이블 목록을 반환하는 RPC 함수 생성
-CREATE OR REPLACE FUNCTION get_all_tables()
+CREATE FUNCTION get_all_tables()
 RETURNS TABLE(table_name text)
 LANGUAGE plpgsql
 SECURITY DEFINER
