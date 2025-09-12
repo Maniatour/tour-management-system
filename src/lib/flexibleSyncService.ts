@@ -51,6 +51,12 @@ const convertDataTypes = (data: any, tableName: string) => {
   if (tableName === 'tour_hotel_bookings') {
     console.log('Processing tour_hotel_bookings data:', Object.keys(converted))
     
+    // submitted_by 필드 명시적으로 제거 (다른 곳에서 추가될 수 있음)
+    if (converted.submitted_by !== undefined) {
+      console.log('Removing submitted_by field that was added elsewhere')
+      delete converted.submitted_by
+    }
+    
     // 존재하지 않는 필드 제거
     const validFields = [
       'id', 'tour_id', 'event_date', 'submit_on', 'check_in_date', 'check_out_date',
