@@ -194,6 +194,28 @@ function getFallbackColumns(tableName: string): any[] {
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'reservation_id', type: 'text', nullable: true, default: null }
+    ],
+    tour_hotel_bookings: [
+      { name: 'id', type: 'text', nullable: false, default: null },
+      { name: 'tour_id', type: 'text', nullable: true, default: null },
+      { name: 'hotel_name', type: 'character varying', nullable: true, default: null },
+      { name: 'hotel_address', type: 'text', nullable: true, default: null },
+      { name: 'check_in_date', type: 'date', nullable: true, default: null },
+      { name: 'check_out_date', type: 'date', nullable: true, default: null },
+      { name: 'room_type', type: 'character varying', nullable: true, default: null },
+      { name: 'room_count', type: 'integer', nullable: true, default: null },
+      { name: 'guest_count', type: 'integer', nullable: true, default: null },
+      { name: 'price_per_night', type: 'numeric', nullable: true, default: null },
+      { name: 'total_price', type: 'numeric', nullable: true, default: null },
+      { name: 'booking_status', type: 'character varying', nullable: true, default: "'pending'" },
+      { name: 'confirmation_number', type: 'character varying', nullable: true, default: null },
+      { name: 'special_requests', type: 'text', nullable: true, default: null },
+      { name: 'contact_person', type: 'character varying', nullable: true, default: null },
+      { name: 'contact_phone', type: 'character varying', nullable: true, default: null },
+      { name: 'contact_email', type: 'character varying', nullable: true, default: null },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'reservation_id', type: 'text', nullable: true, default: null }
     ]
   }
   

@@ -230,7 +230,7 @@ export default function DataSyncPage() {
       console.error('Error getting table schema:', error)
       
       // 타임아웃 에러인 경우 특별 처리
-      if (error.name === 'AbortError') {
+      if (error instanceof Error && error.name === 'AbortError') {
         console.warn('Schema fetch timed out, using fallback data')
       }
       
@@ -315,6 +315,28 @@ export default function DataSyncPage() {
         { name: 'note', type: 'text', nullable: true, default: null },
         { name: 'status', type: 'text', nullable: true, default: null },
         { name: 'season', type: 'text', nullable: true, default: null },
+        { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'reservation_id', type: 'text', nullable: true, default: null }
+      ],
+      tour_hotel_bookings: [
+        { name: 'id', type: 'text', nullable: false, default: null },
+        { name: 'tour_id', type: 'text', nullable: true, default: null },
+        { name: 'hotel_name', type: 'text', nullable: true, default: null },
+        { name: 'hotel_address', type: 'text', nullable: true, default: null },
+        { name: 'check_in_date', type: 'date', nullable: true, default: null },
+        { name: 'check_out_date', type: 'date', nullable: true, default: null },
+        { name: 'room_type', type: 'text', nullable: true, default: null },
+        { name: 'room_count', type: 'integer', nullable: true, default: null },
+        { name: 'guest_count', type: 'integer', nullable: true, default: null },
+        { name: 'price_per_night', type: 'numeric', nullable: true, default: null },
+        { name: 'total_price', type: 'numeric', nullable: true, default: null },
+        { name: 'booking_status', type: 'text', nullable: true, default: 'pending' },
+        { name: 'confirmation_number', type: 'text', nullable: true, default: null },
+        { name: 'special_requests', type: 'text', nullable: true, default: null },
+        { name: 'contact_person', type: 'text', nullable: true, default: null },
+        { name: 'contact_phone', type: 'text', nullable: true, default: null },
+        { name: 'contact_email', type: 'text', nullable: true, default: null },
         { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
         { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' },
         { name: 'reservation_id', type: 'text', nullable: true, default: null }
