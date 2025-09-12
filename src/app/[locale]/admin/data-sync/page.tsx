@@ -48,6 +48,94 @@ export default function DataSyncPage() {
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
   const [showMappingModal, setShowMappingModal] = useState(false)
 
+  // 컬럼 매핑을 localStorage에 저장
+  const saveColumnMapping = (tableName: string, mapping: ColumnMapping) => {
+    try {
+      const key = `column-mapping-${tableName}`
+      localStorage.setItem(key, JSON.stringify(mapping))
+      console.log('Column mapping saved to localStorage:', key, mapping)
+    } catch (error) {
+      console.error('Error saving column mapping to localStorage:', error)
+    }
+  }
+
+  // 컬럼 매핑을 localStorage에서 불러오기
+  const loadColumnMapping = (tableName: string): ColumnMapping => {
+    try {
+      const key = `column-mapping-${tableName}`
+      const saved = localStorage.getItem(key)
+      if (saved) {
+        const mapping = JSON.parse(saved)
+        console.log('Column mapping loaded from localStorage:', key, mapping)
+        return mapping
+      }
+    } catch (error) {
+      console.error('Error loading column mapping from localStorage:', error)
+    }
+    return {}
+  }
+
+  // 자동 완성 함수 (구글 시트 컬럼명과 데이터베이스 컬럼명 매칭)
+  const getAutoCompleteSuggestions = (sheetColumn: string, dbColumns: ColumnInfo[]): string[] => {
+    const suggestions: string[] = []
+    const sheetLower = sheetColumn.toLowerCase()
+    
+    dbColumns.forEach(dbCol => {
+      const dbLower = dbCol.name.toLowerCase()
+      
+      // 정확한 매칭
+      if (dbLower === sheetLower) {
+        suggestions.unshift(dbCol.name) // 정확한 매칭을 맨 앞에
+        return
+      }
+      
+      // 부분 매칭 (포함 관계)
+      if (dbLower.includes(sheetLower) || sheetLower.includes(dbLower)) {
+        suggestions.push(dbCol.name)
+        return
+      }
+      
+      // 한글 매핑 (일반적인 패턴)
+      const koreanMappings: { [key: string]: string[] } = {
+        '예약번호': ['id'],
+        '고객명': ['name', 'customer_name'],
+        '이메일': ['email', 'customer_email'],
+        '전화번호': ['phone', 'customer_phone'],
+        '성인수': ['adults'],
+        '아동수': ['child'],
+        '유아수': ['infant'],
+        '총인원': ['total_people'],
+        '투어날짜': ['tour_date'],
+        '투어시간': ['tour_time'],
+        '상품ID': ['product_id'],
+        '투어ID': ['tour_id'],
+        '픽업호텔': ['pickup_hotel'],
+        '픽업시간': ['pickup_time'],
+        '채널': ['channel_id'],
+        '상태': ['status', 'tour_status'],
+        '비고': ['notes', 'tour_note', 'event_note'],
+        '개인투어': ['is_private_tour'],
+        '가이드': ['tour_guide_id', 'guide_id'],
+        '어시스턴트': ['assistant_id'],
+        '차량': ['vehicle_id', 'tour_car_id'],
+        '가격': ['price', 'guide_fee', 'assistant_fee'],
+        '날짜': ['created_at', 'updated_at', 'tour_date'],
+        '시간': ['created_at', 'updated_at', 'tour_time']
+      }
+      
+      if (koreanMappings[sheetColumn]) {
+        koreanMappings[sheetColumn].forEach(mapping => {
+          if (dbLower.includes(mapping.toLowerCase())) {
+            suggestions.push(dbCol.name)
+          }
+        })
+      }
+    })
+    
+    // 중복 제거 및 정렬
+    return [...new Set(suggestions)].slice(0, 5) // 최대 5개 제안
+  }
+
   // 사용 가능한 테이블 가져오기 (모든 Supabase 테이블)
   const getAvailableTables = async () => {
     try {
@@ -236,6 +324,13 @@ export default function DataSyncPage() {
       // 테이블 스키마 가져오기
       console.log('Fetching schema for table:', tableName)
       getTableSchema(tableName)
+      
+      // 저장된 컬럼 매핑 불러오기
+      const savedMapping = loadColumnMapping(tableName)
+      if (Object.keys(savedMapping).length > 0) {
+        console.log('Loaded saved column mapping:', savedMapping)
+        setColumnMapping(savedMapping)
+      }
       
       // 선택된 시트가 있으면 매핑 제안 가져오기
       const sheet = sheetInfo.find(s => s.name === selectedSheet)
@@ -642,28 +737,61 @@ export default function DataSyncPage() {
                             <ArrowRight className="h-4 w-4 text-gray-400 mx-auto" />
                           </div>
                           <div className="col-span-7">
-                            <select
-                              value={columnMapping[sheetColumn] || ''}
-                              onChange={(e) => {
-                                const newMapping = { ...columnMapping }
-                                if (e.target.value) {
-                                  newMapping[sheetColumn] = e.target.value
-                                } else {
-                                  delete newMapping[sheetColumn]
-                                }
-                                setColumnMapping(newMapping)
-                              }}
-                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            >
-                              <option value="">매핑하지 않음</option>
-                              {tableColumns.map((column) => (
-                                <option key={`${column.name}-${index}`} value={column.name}>
-                                  {column.name} ({column.type})
-                                  {!column.nullable && ' *'}
-                                  {column.default && ` - 기본값: ${column.default}`}
-                                </option>
-                              ))}
-                            </select>
+                            <div className="relative">
+                              <select
+                                value={columnMapping[sheetColumn] || ''}
+                                onChange={(e) => {
+                                  const newMapping = { ...columnMapping }
+                                  if (e.target.value) {
+                                    newMapping[sheetColumn] = e.target.value
+                                  } else {
+                                    delete newMapping[sheetColumn]
+                                  }
+                                  setColumnMapping(newMapping)
+                                }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              >
+                                <option value="">매핑하지 않음</option>
+                                {tableColumns.map((column) => (
+                                  <option key={`${column.name}-${index}`} value={column.name}>
+                                    {column.name} ({column.type})
+                                    {!column.nullable && ' *'}
+                                    {column.default && ` - 기본값: ${column.default}`}
+                                  </option>
+                                ))}
+                              </select>
+                              
+                              {/* 자동 완성 제안 */}
+                              {(() => {
+                                const suggestions = getAutoCompleteSuggestions(sheetColumn, tableColumns)
+                                const currentValue = columnMapping[sheetColumn] || ''
+                                const hasSuggestion = suggestions.length > 0 && !currentValue
+                                
+                                return hasSuggestion && (
+                                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-10">
+                                    <div className="p-2 text-xs text-gray-500 border-b">
+                                      추천: {suggestions.slice(0, 3).join(', ')}
+                                    </div>
+                                    {suggestions.slice(0, 3).map((suggestion, idx) => (
+                                      <button
+                                        key={`suggestion-${idx}`}
+                                        onClick={() => {
+                                          const newMapping = { ...columnMapping }
+                                          newMapping[sheetColumn] = suggestion
+                                          setColumnMapping(newMapping)
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center"
+                                      >
+                                        <span className="text-blue-600 font-medium">{suggestion}</span>
+                                        <span className="ml-2 text-gray-500">
+                                          {tableColumns.find(col => col.name === suggestion)?.type}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )
+                              })()}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -697,7 +825,13 @@ export default function DataSyncPage() {
                 취소
               </button>
               <button
-                onClick={() => setShowMappingModal(false)}
+                onClick={() => {
+                  // 컬럼 매핑을 localStorage에 저장
+                  if (selectedTable && Object.keys(columnMapping).length > 0) {
+                    saveColumnMapping(selectedTable, columnMapping)
+                  }
+                  setShowMappingModal(false)
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 저장
