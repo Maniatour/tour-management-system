@@ -46,6 +46,20 @@ const convertDataTypes = (data: any, tableName: string) => {
   // created_at, updated_at은 구글 시트 값 그대로 사용 (문자열로 유지)
   // tour_id도 구글 시트 값 그대로 사용
 
+  // 배열 필드 변환 (쉼표로 구분된 문자열을 PostgreSQL 배열로 변환)
+  const arrayFields = ['reservation_ids']
+  arrayFields.forEach(field => {
+    if (converted[field] && typeof converted[field] === 'string') {
+      // 쉼표로 구분된 문자열을 배열로 변환
+      const arrayValue = converted[field]
+        .split(',')
+        .map(item => item.trim())
+        .filter(item => item !== '') // 빈 문자열 제거
+      
+      converted[field] = arrayValue
+    }
+  })
+
   // JSONB 필드 정리 (줄바꿈 문자 제거) - 테이블별로 다르게 처리
   let jsonbFields: string[] = []
   if (tableName === 'reservations') {
