@@ -49,6 +49,8 @@ const convertDataTypes = (data: any, tableName: string) => {
 
   // tour_hotel_bookings 테이블 특별 처리
   if (tableName === 'tour_hotel_bookings') {
+    console.log('Processing tour_hotel_bookings data:', Object.keys(converted))
+    
     // 존재하지 않는 필드 제거
     const validFields = [
       'id', 'tour_id', 'event_date', 'submit_on', 'check_in_date', 'check_out_date',
@@ -58,11 +60,19 @@ const convertDataTypes = (data: any, tableName: string) => {
     ]
     
     // 유효하지 않은 필드 제거
+    const removedFields: string[] = []
     Object.keys(converted).forEach(key => {
       if (!validFields.includes(key)) {
+        removedFields.push(key)
         delete converted[key]
       }
     })
+    
+    if (removedFields.length > 0) {
+      console.log('Removed invalid fields:', removedFields)
+    }
+    
+    console.log('Final converted data keys:', Object.keys(converted))
     
     // submit_on 필드가 있으면 타임스탬프로 변환
     if (converted.submit_on && converted.submit_on !== '') {
@@ -251,7 +261,7 @@ export const flexibleSync = async (
 
     // 데이터 변환 및 필터링 (증분 동기화)
     const transformedData = sheetData
-      .map(row => {
+      .map((row, index) => {
         const transformed: any = {}
         
         // 사용자 정의 컬럼 매핑 적용
@@ -261,7 +271,23 @@ export const flexibleSync = async (
           }
         })
 
-        return convertDataTypes(transformed, targetTable)
+        // 첫 번째 행에 대한 디버그 로그
+        if (index === 0) {
+          console.log('First row mapping:', {
+            originalRow: Object.keys(row),
+            columnMapping: columnMapping,
+            transformedBeforeConversion: Object.keys(transformed)
+          })
+        }
+
+        const converted = convertDataTypes(transformed, targetTable)
+        
+        // 첫 번째 행에 대한 디버그 로그
+        if (index === 0) {
+          console.log('First row after conversion:', Object.keys(converted))
+        }
+        
+        return converted
       })
       .filter(row => {
         // 증분 동기화가 활성화되고 updated_at 컬럼이 있는 경우
