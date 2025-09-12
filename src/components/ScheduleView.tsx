@@ -102,56 +102,9 @@ export default function ScheduleView() {
         return
       }
 
-      // 먼저 기존 설정이 있는지 확인
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: existingData } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('user_settings' as any)
-        .select('id')
-        .eq('user_id', currentUserId)
-        .eq('setting_key', key)
-        .single()
-
-      if (existingData) {
-        // 기존 설정이 있으면 업데이트
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error } = await (supabase as any)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .from('user_settings' as any)
-          .update({
-            setting_value: value,
-            updated_at: new Date().toISOString()
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          } as any)
-          .eq('user_id', currentUserId)
-          .eq('setting_key', key)
-        
-        if (error) {
-          console.error('Error updating user setting:', error)
-          // fallback to localStorage
-          localStorage.setItem(key, JSON.stringify(value))
-        }
-      } else {
-        // 기존 설정이 없으면 새로 삽입
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error } = await (supabase as any)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .from('user_settings' as any)
-          .insert({
-            user_id: currentUserId,
-            setting_key: key,
-            setting_value: value,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          } as any)
-        
-        if (error) {
-          console.error('Error inserting user setting:', error)
-          // fallback to localStorage
-          localStorage.setItem(key, JSON.stringify(value))
-        }
-      }
+      // localStorage에 저장
+      localStorage.setItem(key, JSON.stringify(value))
+      console.log('User setting saved to localStorage:', key, value)
     } catch (error) {
       console.error('Error saving user setting:', error)
       // fallback to localStorage
@@ -181,50 +134,12 @@ export default function ScheduleView() {
         }
       }
 
-      // 사용자 ID가 없으면 데이터베이스 조회 건너뛰기
-      if (!currentUserId) {
-        console.log('No current user ID, skipping database user settings load')
-        return
-      }
-
-      // 데이터베이스에서 사용자 설정 불러오기 (선택사항)
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data, error } = await (supabase as any)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .from('user_settings' as any)
-          .select('setting_key, setting_value')
-          .eq('user_id', currentUserId)
-          .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members'])
-
-        if (error) {
-          console.warn('User settings table not available or error occurred:', error)
-          // localStorage 설정을 이미 로드했으므로 여기서는 아무것도 하지 않음
-          return
-        }
-
-        // 데이터베이스에서 설정 불러오기
-        const settings = data || []
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const productsSetting = settings.find((s: any) => s.setting_key === 'schedule_selected_products')
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const teamMembersSetting = settings.find((s: any) => s.setting_key === 'schedule_selected_team_members')
-
-        if (productsSetting?.setting_value) {
-          setSelectedProducts(productsSetting.setting_value)
-        }
-
-        if (teamMembersSetting?.setting_value) {
-          setSelectedTeamMembers(teamMembersSetting.setting_value)
-        }
-      } catch (dbError) {
-        console.warn('Database user settings load failed, using localStorage only:', dbError)
-      }
+      // localStorage만 사용하므로 데이터베이스 조회 제거
     } catch (error) {
       console.warn('Error in loadUserSettings, using localStorage fallback:', error)
       // localStorage 설정은 이미 위에서 로드했으므로 여기서는 아무것도 하지 않음
     }
-  }, [currentUserId])
+  }, [])
 
   // 색상 팔레트 정의 (원색)
   const colorPalette = useMemo(() => [
