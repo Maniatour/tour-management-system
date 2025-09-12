@@ -8,10 +8,10 @@ const convertDataTypes = (data: any, tableName: string) => {
   const converted = { ...data }
 
   // 숫자 필드 변환
-  const numberFields = ['adults', 'child', 'infant', 'total_people', 'price']
+  const numberFields = ['adults', 'child', 'infant', 'total_people', 'price', 'rooms', 'unit_price', 'total_price']
   numberFields.forEach(field => {
     if (converted[field] !== undefined && converted[field] !== '') {
-      converted[field] = parseInt(converted[field]) || 0
+      converted[field] = parseFloat(converted[field]) || 0
     }
   })
 
@@ -31,8 +31,12 @@ const convertDataTypes = (data: any, tableName: string) => {
     }
   })
 
-  // 날짜 필드 변환 (tour_date만 날짜 형식으로 변환)
-  const dateFields = ['tour_date']
+  // 날짜 필드 변환
+  let dateFields: string[] = ['tour_date']
+  if (tableName === 'tour_hotel_bookings') {
+    dateFields = ['event_date', 'check_in_date', 'check_out_date']
+  }
+  
   dateFields.forEach(field => {
     if (converted[field] && converted[field] !== '') {
       try {
@@ -42,6 +46,34 @@ const convertDataTypes = (data: any, tableName: string) => {
       }
     }
   })
+
+  // tour_hotel_bookings 테이블 특별 처리
+  if (tableName === 'tour_hotel_bookings') {
+    // 존재하지 않는 필드 제거
+    const validFields = [
+      'id', 'tour_id', 'event_date', 'submit_on', 'check_in_date', 'check_out_date',
+      'reservation_name', 'cc', 'rooms', 'city', 'hotel', 'room_type',
+      'unit_price', 'total_price', 'payment_method', 'website', 'rn_number',
+      'status', 'created_at', 'updated_at'
+    ]
+    
+    // 유효하지 않은 필드 제거
+    Object.keys(converted).forEach(key => {
+      if (!validFields.includes(key)) {
+        delete converted[key]
+      }
+    })
+    
+    // submit_on 필드가 있으면 타임스탬프로 변환
+    if (converted.submit_on && converted.submit_on !== '') {
+      try {
+        converted.submit_on = new Date(converted.submit_on).toISOString()
+      } catch (error) {
+        console.warn(`Invalid submit_on format:`, converted.submit_on)
+        converted.submit_on = new Date().toISOString()
+      }
+    }
+  }
 
   // created_at, updated_at은 구글 시트 값 그대로 사용 (문자열로 유지)
   // tour_id도 구글 시트 값 그대로 사용
