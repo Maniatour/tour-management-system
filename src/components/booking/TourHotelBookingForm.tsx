@@ -9,6 +9,7 @@ interface TourHotelBooking {
   check_in_date: string;
   check_out_date: string;
   reservation_name: string;
+  submitted_by: string;
   cc: string;
   rooms: number;
   city: string;
@@ -43,6 +44,7 @@ export default function TourHotelBookingForm({
       check_in_date: '',
       check_out_date: '',
       reservation_name: '',
+      submitted_by: 'admin@maniatour.com',
       cc: 'not_sent',
       rooms: 1,
       city: '',
@@ -539,6 +541,21 @@ export default function TourHotelBookingForm({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                제출자 이메일 *
+              </label>
+              <input
+                type="email"
+                name="submitted_by"
+                value={formData.submitted_by}
+                onChange={handleChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="제출자 이메일을 입력하세요"
+              />
             </div>
 
             <div>

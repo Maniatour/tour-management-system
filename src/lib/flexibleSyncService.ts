@@ -48,17 +48,27 @@ const convertDataTypes = (data: any, tableName: string) => {
     }
   })
 
-  // tour_hotel_bookings 테이블 특별 처리
-  if (tableName === 'tour_hotel_bookings') {
+  // tour_hotel_bookings 및 ticket_bookings 테이블 특별 처리
+  if (tableName === 'tour_hotel_bookings' || tableName === 'ticket_bookings') {
     console.log('Processing tour_hotel_bookings data:', Object.keys(converted))
     
     // 존재하지 않는 필드 제거
-    const validFields = [
-      'id', 'tour_id', 'event_date', 'submit_on', 'check_in_date', 'check_out_date',
-      'reservation_name', 'cc', 'rooms', 'city', 'hotel', 'room_type',
-      'unit_price', 'total_price', 'payment_method', 'website', 'rn_number',
-      'status', 'created_at', 'updated_at'
-    ]
+    let validFields: string[] = []
+    
+    if (tableName === 'tour_hotel_bookings') {
+      validFields = [
+        'id', 'tour_id', 'event_date', 'submit_on', 'check_in_date', 'check_out_date',
+        'reservation_name', 'submitted_by', 'cc', 'rooms', 'city', 'hotel', 'room_type',
+        'unit_price', 'total_price', 'payment_method', 'website', 'rn_number',
+        'status', 'created_at', 'updated_at'
+      ]
+    } else if (tableName === 'ticket_bookings') {
+      validFields = [
+        'id', 'category', 'submit_on', 'submitted_by', 'check_in_date', 'time',
+        'company', 'ea', 'expense', 'income', 'payment_method', 'rn_number',
+        'tour_id', 'note', 'status', 'season', 'created_at', 'updated_at', 'reservation_id'
+      ]
+    }
     
     // 유효하지 않은 필드 제거
     const removedFields: string[] = []

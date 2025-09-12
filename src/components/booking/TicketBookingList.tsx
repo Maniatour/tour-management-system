@@ -15,6 +15,7 @@ interface TicketBooking {
   category: string;
   ea: number;
   reservation_name: string;
+  submitted_by: string;
   cc: string;
   unit_price: number;
   total_price: number;

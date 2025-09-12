@@ -90,6 +90,7 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
   const getFieldDisplayName = (field: string) => {
     const fieldNames: { [key: string]: string } = {
       category: '카테고리',
+      submitted_by: '제출자',
       check_in_date: '체크인 날짜',
       time: '시간',
       company: '공급업체',

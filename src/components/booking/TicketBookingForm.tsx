@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 interface TicketBooking {
   id?: string;
   category: string;
+  submitted_by: string;
   check_in_date: string;
   time: string;
   company: string;
@@ -60,6 +61,7 @@ export default function TicketBookingForm({
     
     const initialData = {
       category: '',
+      submitted_by: 'admin@maniatour.com',
       check_in_date: '',
       time: '',
       company: '',
@@ -672,6 +674,21 @@ export default function TicketBookingForm({
               )}
             </div>
 
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                제출자 이메일 *
+              </label>
+              <input
+                type="email"
+                name="submitted_by"
+                value={formData.submitted_by}
+                onChange={handleChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="제출자 이메일을 입력하세요"
+              />
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
