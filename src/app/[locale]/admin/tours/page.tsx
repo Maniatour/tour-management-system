@@ -337,36 +337,11 @@ export default function AdminTours() {
     <div className="space-y-4 sm:space-y-6">
       {/* 헤더 - 모바일 최적화 */}
       <div className="flex flex-col space-y-4">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
-        
-        <div className="flex flex-col space-y-3">
-          {/* 검색 및 필터 - 모바일 최적화 */}
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-              <input
-                type="text"
-                placeholder={t('searchPlaceholder')}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-              />
-            </div>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            >
-              <option value="all">{t('filter.allStatus')}</option>
-              <option value="scheduled">{t('status.scheduled')}</option>
-              <option value="inProgress">{t('status.inProgress')}</option>
-              <option value="completed">{t('status.completed')}</option>
-              <option value="cancelled">{t('status.cancelled')}</option>
-              <option value="delayed">{t('status.delayed')}</option>
-            </select>
-          </div>
-
-          {/* 뷰 모드 전환 버튼 - 모바일 최적화 */}
+        {/* 제목과 뷰 모드 버튼들 */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
+          
+          {/* 뷰 모드 전환 버튼 - 오른쪽 끝 정렬 */}
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setViewMode('list')}
@@ -402,14 +377,39 @@ export default function AdminTours() {
               <span className="hidden sm:inline">스케줄 뷰</span>
             </button>
           </div>
+        </div>
+        
+        {/* 검색, 필터, 새 투어 추가 - 한 줄에 배치 (모바일 포함) */}
+        <div className="flex flex-row gap-2 overflow-x-auto">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+            <input
+              type="text"
+              placeholder={t('searchPlaceholder')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            />
+          </div>
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm whitespace-nowrap flex-shrink-0"
+          >
+            <option value="all">{t('filter.allStatus')}</option>
+            <option value="scheduled">{t('status.scheduled')}</option>
+            <option value="inProgress">{t('status.inProgress')}</option>
+            <option value="completed">{t('status.completed')}</option>
+            <option value="cancelled">{t('status.cancelled')}</option>
+            <option value="delayed">{t('status.delayed')}</option>
+          </select>
 
-          {/* 투어 추가 버튼 - 모바일 최적화 */}
           <button
             onClick={() => setShowAddForm(true)}
-            className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2 text-sm"
+            className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2 text-sm whitespace-nowrap flex-shrink-0"
           >
             <Plus size={16} />
-            <span>{t('addTour')}</span>
+            <span className="hidden xs:inline">{t('addTour')}</span>
           </button>
         </div>
       </div>

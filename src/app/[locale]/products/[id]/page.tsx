@@ -4,6 +4,9 @@ import React, { useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import ProductScheduleDisplay from '@/components/ProductScheduleDisplay'
+import ProductFaqDisplay from '@/components/ProductFaqDisplay'
+import ProductMediaDisplay from '@/components/ProductMediaDisplay'
 
 interface Product {
   id: string
@@ -130,7 +133,8 @@ export default function ProductDetailPage() {
     { id: 'overview', label: '개요' },
     { id: 'itinerary', label: '일정' },
     { id: 'details', label: '상세정보' },
-    { id: 'faq', label: 'FAQ' }
+    { id: 'faq', label: 'FAQ' },
+    { id: 'media', label: '미디어' }
   ]
 
   return (
@@ -271,16 +275,7 @@ export default function ProductDetailPage() {
 
                 {/* 일정 탭 */}
                 {activeTab === 'itinerary' && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-gray-900">투어 일정</h3>
-                    <div className="space-y-4">
-                      {product.itinerary.map((day, index) => (
-                        <div key={index} className="border-l-4 border-blue-500 pl-4 py-2">
-                          <div className="font-medium text-gray-900">{day}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  <ProductScheduleDisplay productId={productId} />
                 )}
 
                 {/* 상세정보 탭 */}
@@ -328,21 +323,12 @@ export default function ProductDetailPage() {
 
                 {/* FAQ 탭 */}
                 {activeTab === 'faq' && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-gray-900">자주 묻는 질문</h3>
-                    <div className="space-y-4">
-                      {product.faq.map((item, index) => (
-                        <div key={index} className="border border-gray-200 rounded-lg">
-                          <button className="w-full px-4 py-3 text-left font-medium text-gray-900 hover:bg-gray-50">
-                            {item.question}
-                          </button>
-                          <div className="px-4 pb-3 text-gray-700">
-                            {item.answer}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  <ProductFaqDisplay productId={productId} />
+                )}
+
+                {/* 미디어 탭 */}
+                {activeTab === 'media' && (
+                  <ProductMediaDisplay productId={productId} />
                 )}
               </div>
             </div>

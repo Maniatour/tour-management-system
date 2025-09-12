@@ -65,6 +65,10 @@ export default function ScheduleView() {
   const [messageModalContent, setMessageModalContent] = useState({ title: '', message: '', type: 'success' as 'success' | 'error' })
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {} })
+  const [showGuideModal, setShowGuideModal] = useState(false)
+  const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '' })
+
+  // 통합 스크롤 컨테이너는 하나의 스크롤로 동기화됨
 
   // 메시지 모달 표시 함수
   const showMessage = (title: string, message: string, type: 'success' | 'error' = 'success') => {
@@ -78,9 +82,26 @@ export default function ScheduleView() {
     setShowConfirmModal(true)
   }
 
+  // 가이드 모달 표시 함수
+  const showGuideModalContent = (title: string, content: string) => {
+    setGuideModalContent({ title, content })
+    setShowGuideModal(true)
+  }
+
   // 사용자 설정 저장
   const saveUserSetting = async (key: string, value: string[] | number | boolean) => {
     try {
+      // 빈 배열이나 유효하지 않은 값은 저장하지 않음
+      if (Array.isArray(value) && value.length === 0) {
+        console.log('Skipping save for empty array:', key)
+        return
+      }
+      
+      if (value === null || value === undefined) {
+        console.log('Skipping save for null/undefined value:', key)
+        return
+      }
+
       // 먼저 기존 설정이 있는지 확인
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: existingData } = await (supabase as any)
@@ -722,10 +743,12 @@ export default function ScheduleView() {
     
     setSelectedProducts(newSelection)
     
-    // 데이터베이스에 저장
-    await saveUserSetting('schedule_selected_products', newSelection)
+    // 데이터베이스에 저장 (빈 배열이 아닐 때만)
+    if (newSelection.length > 0) {
+      await saveUserSetting('schedule_selected_products', newSelection)
+    }
     
-    // 로컬 스토리지에도 저장 (fallback)
+    // 로컬 스토리지에는 항상 저장 (fallback)
     localStorage.setItem('schedule_selected_products', JSON.stringify(newSelection))
   }
 
@@ -737,10 +760,12 @@ export default function ScheduleView() {
     
     setSelectedTeamMembers(newSelection)
     
-    // 데이터베이스에 저장
-    await saveUserSetting('schedule_selected_team_members', newSelection)
+    // 데이터베이스에 저장 (빈 배열이 아닐 때만)
+    if (newSelection.length > 0) {
+      await saveUserSetting('schedule_selected_team_members', newSelection)
+    }
     
-    // 로컬 스토리지에도 저장 (fallback)
+    // 로컬 스토리지에는 항상 저장 (fallback)
     localStorage.setItem('schedule_selected_team_members', JSON.stringify(newSelection))
   }
 
@@ -1195,19 +1220,29 @@ export default function ScheduleView() {
               {/* 상품 선택 버튼 */}
               <button
                 onClick={() => setShowProductModal(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                className="flex items-center justify-center w-10 h-10 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors relative"
+                title={`상품 선택 (${selectedProducts.length}개)`}
               >
-                <MapPin className="w-4 h-4" />
-                <span>상품 선택 ({selectedProducts.length}개)</span>
+                <MapPin className="w-5 h-5" />
+                {selectedProducts.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {selectedProducts.length}
+                  </span>
+                )}
               </button>
 
               {/* 팀원 선택 버튼 */}
               <button
                 onClick={() => setShowTeamModal(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                className="flex items-center justify-center w-10 h-10 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors relative"
+                title={`팀원 선택 (${selectedTeamMembers.length}개)`}
               >
-                <Users className="w-4 h-4" />
-                <span>팀원 선택 ({selectedTeamMembers.length}개)</span>
+                <Users className="w-5 h-5" />
+                {selectedTeamMembers.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {selectedTeamMembers.length}
+                  </span>
+                )}
               </button>
 
             </div>
@@ -1221,7 +1256,7 @@ export default function ScheduleView() {
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h3 className="text-xl font-semibold text-gray-900 whitespace-nowrap">
+            <h3 className="text-sm font-semibold text-gray-900 whitespace-nowrap">
               {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
             </h3>
             <button
@@ -1240,17 +1275,34 @@ export default function ScheduleView() {
         </div>
       </div>
 
-      {/* 상품별 스케줄 테이블 */}
+      {/* 통합 스케줄 테이블 컨테이너 */}
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <MapPin className="w-5 h-5 mr-2 text-blue-500" />
-          상품별 투어 인원
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{tableLayout: 'fixed', width: '100%'}}>
+        {/* 드래그 가능한 스크롤 컨테이너 */}
+        <div 
+          className="relative overflow-x-auto scrollbar-hide border-2 border-dashed border-gray-300 rounded-lg p-2 bg-gray-50"
+          id="unified-schedule-scroll"
+          style={{ 
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch'
+          }}
+        >
+          {/* 드래그 안내 텍스트 */}
+          <div className="absolute top-2 left-2 text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm z-10">
+            ← 좌우로 드래그하여 스크롤 →
+          </div>
+          
+          {/* 상품별 스케줄 테이블 */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
+              <MapPin className="w-5 h-5 mr-2 text-blue-500" />
+              상품별 투어 인원
+            </h3>
+            <div className="overflow-visible">
+          <table className="w-full" style={{tableLayout: 'fixed', minWidth: '1200px'}}>
             <thead className="bg-blue-50">
               <tr>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   상품명
                 </th>
                 {monthDays.map(({ date, dayOfWeek, dateString }) => (
@@ -1261,13 +1313,13 @@ export default function ScheduleView() {
                         ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
                         : ''
                     }`}
-                    style={{ minWidth: '44px' }}
+                    style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
                   >
                     <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}일</div>
                     <div className={`text-xs ${isToday(dateString) ? 'text-red-600' : 'text-gray-500'}`}>{dayOfWeek}</div>
                   </th>
                 ))}
-                <th className="px-2 py-2 text-center text-xs font-medium text-gray-700" style={{width: '100px', minWidth: '100px', maxWidth: '100px'}}>
+                <th className="px-2 py-2 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   합계
                 </th>
               </tr>
@@ -1279,7 +1331,7 @@ export default function ScheduleView() {
                 
                 return (
                   <tr key={productId} className="hover:bg-gray-50">
-                    <td className={`px-2 py-2 text-xs font-medium ${colorClass}`} style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
+                    <td className={`px-2 py-2 text-xs font-medium ${colorClass}`} style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                       {product.product_name}
                     </td>
                     {monthDays.map(({ dateString }) => {
@@ -1292,7 +1344,7 @@ export default function ScheduleView() {
                               ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
                               : ''
                           }`}
-                          style={{ minWidth: '44px' }}
+                          style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
                         >
                           {dayData ? (
                             <div className={`font-medium ${
@@ -1310,7 +1362,7 @@ export default function ScheduleView() {
                         </td>
                       )
                     })}
-                <td className="px-2 py-2 text-center text-xs font-medium bg-white" style={{width: '100px', minWidth: '100px', maxWidth: '100px'}}>
+                <td className="px-2 py-2 text-center text-xs font-medium bg-white" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   <div className={`font-medium ${
                     product.totalPeople === 0 
                       ? 'text-gray-300' 
@@ -1325,7 +1377,7 @@ export default function ScheduleView() {
 
               {/* 상품별 총계 행 - 가장 아래로 이동 */}
               <tr className="bg-blue-100 font-semibold">
-                <td className="px-2 py-2 text-xs text-gray-900" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
+                <td className="px-2 py-2 text-xs text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
@@ -1338,7 +1390,7 @@ export default function ScheduleView() {
                           ? 'border-2 border-red-500 bg-red-50' 
                           : ''
                       }`}
-                      style={{ minWidth: '44px' }}
+                      style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
                     >
                       <div className={`font-medium ${
                         dayTotal.totalPeople === 0 
@@ -1350,23 +1402,21 @@ export default function ScheduleView() {
                     </td>
                   )
                 })}
-                <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '100px', minWidth: '100px', maxWidth: '100px'}}>
+                <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   <div>{Object.values(productScheduleData).reduce((sum, product) => sum + product.totalPeople, 0)}</div>
                 </td>
               </tr>
             </tbody>
           </table>
-        </div>
-      </div>
-
-
-      {/* 가이드별 스케줄 테이블 */}
-      <div>
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{tableLayout: 'fixed', width: '100%'}}>
+            </div>
+          </div>
+          {/* 가이드별 스케줄 테이블 */}
+          <div>
+            <div className="overflow-visible">
+          <table className="w-full" style={{tableLayout: 'fixed', minWidth: '1200px'}}>
             <thead className="bg-green-50 hidden">
               <tr>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   가이드명
                 </th>
                 {monthDays.map(({ date, dateString }) => (
@@ -1377,12 +1427,12 @@ export default function ScheduleView() {
                         ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
                         : ''
                     }`}
-                    style={{ minWidth: '44px' }}
+                    style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
                   >
                     <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}</div>
                   </th>
                 ))}
-                <th className="px-2 py-2 text-center text-xs font-medium text-gray-700" style={{width: '100px', minWidth: '100px', maxWidth: '100px'}}>
+                <th className="px-2 py-2 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   합계
                 </th>
               </tr>
@@ -1390,7 +1440,7 @@ export default function ScheduleView() {
             <tbody className="divide-y divide-gray-200">
               {/* 가이드별 총계 행 */}
               <tr className="bg-green-100 font-semibold">
-                <td className="px-2 py-2 text-xs text-gray-900" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
+                <td className="px-2 py-2 text-xs text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
@@ -1403,7 +1453,7 @@ export default function ScheduleView() {
                           ? 'border-2 border-red-500 bg-red-50' 
                           : ''
                       }`}
-                      style={{ minWidth: '44px' }}
+                      style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
                     >
                       <div className={`font-medium ${
                         dayTotal.assignedPeople === 0 
@@ -1415,7 +1465,7 @@ export default function ScheduleView() {
                     </td>
                   )
                 })}
-                <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '100px', minWidth: '100px', maxWidth: '100px'}}>
+                <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   <div>{Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalAssignedPeople, 0)} ({Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalTours, 0)}일)</div>
                 </td>
               </tr>
@@ -1506,12 +1556,12 @@ export default function ScheduleView() {
                 
                 return (
                   <tr key={teamMemberId} className="hover:bg-gray-50">
-                    <td className="px-2 py-1 text-xs" style={{width: '150px', minWidth: '150px', maxWidth: '150px'}}>
+                    <td className="px-2 py-1 text-xs" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                       <div className="font-medium text-gray-900">{guide.team_member_name}</div>
                     </td>
                     <td className="p-0" colSpan={monthDays.length}>
                       <div className="relative">
-                        <div className="grid" style={{gridTemplateColumns: `repeat(${monthDays.length}, minmax(44px, 1fr))`}}>
+                        <div className="grid" style={{gridTemplateColumns: `repeat(${monthDays.length}, 40px)`}}>
                           {monthDays.map(({ dateString }) => {
                           const dayData = guide.dailyData[dateString]
                           
@@ -1537,7 +1587,7 @@ export default function ScheduleView() {
                                     ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
                                     : ''
                                 }`}
-                                style={{ minWidth: '44px' }}
+                                style={{ minWidth: '40px' }}
                               >
                                 <div
                                   className={`relative h-[32px] ${
@@ -1707,7 +1757,11 @@ export default function ScheduleView() {
                                               handleTourDoubleClick(guideTours[0].id)
                                             }
                                           }}
-                                          title={guideTours.length > 0 ? getTourSummary(guideTours[0]) : ''}
+                                          onClick={() => {
+                                            if (guideTours.length > 0) {
+                                              showGuideModalContent('투어 상세 정보', getTourSummary(guideTours[0]))
+                                            }
+                                          }}
                                         >
                                           {hasPrivateTour && <span>🔒</span>}
                                           <span>{dayData.assignedPeople}</span>
@@ -1752,7 +1806,11 @@ export default function ScheduleView() {
                                               handleTourDoubleClick(assistantTours[0].id)
                                             }
                                           }}
-                                          title={assistantTours.length > 0 ? getTourSummary(assistantTours[0]) : ''}
+                                          onClick={() => {
+                                            if (assistantTours.length > 0) {
+                                              showGuideModalContent('투어 상세 정보', getTourSummary(assistantTours[0]))
+                                            }
+                                          }}
                                         >
                                           {hasPrivateTour && <span>🔒</span>}
                                           <span>{dayData.guideInitials || 'A'}</span>
@@ -1898,7 +1956,7 @@ export default function ScheduleView() {
                         })}
                       </div>
                     </td>
-                    <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '100px', minWidth: '100px', maxWidth: '100px'}}>
+                    <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                       <div className={`font-medium ${
                         guide.totalAssignedPeople === 0 
                           ? 'text-gray-300' 
@@ -1912,6 +1970,8 @@ export default function ScheduleView() {
               })}
             </tbody>
           </table>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2311,6 +2371,36 @@ export default function ScheduleView() {
                 className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
               >
                 삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 가이드 모달 */}
+      {showGuideModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {guideModalContent.title}
+              </h3>
+              <button
+                onClick={() => setShowGuideModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="text-sm text-gray-700 whitespace-pre-line">
+              {guideModalContent.content}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowGuideModal(false)}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                확인
               </button>
             </div>
           </div>

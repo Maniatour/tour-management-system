@@ -3,7 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Calendar, BookOpen, MapPin } from 'lucide-react'
+import { Home, Users, Calendar, BookOpen, MapPin } from 'lucide-react'
 
 interface MobileFooterProps {
   locale: string
@@ -13,6 +13,12 @@ export default function MobileFooter({ locale }: MobileFooterProps) {
   const pathname = usePathname()
 
   const footerItems = [
+    {
+      name: '홈',
+      href: `/${locale}/admin`,
+      icon: Home,
+      adminOnly: true
+    },
     {
       name: '고객 관리',
       href: `/${locale}/admin/customers`,
@@ -45,7 +51,7 @@ export default function MobileFooter({ locale }: MobileFooterProps) {
 
   return (
     <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
-      <div className="grid grid-cols-4 h-16">
+      <div className="grid grid-cols-5 h-16">
         {footerItems.map((item) => {
           const Icon = item.icon
           const active = isActive(item.href)

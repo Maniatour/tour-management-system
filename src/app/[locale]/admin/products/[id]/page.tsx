@@ -23,6 +23,10 @@ import DynamicPricingManager from '@/components/DynamicPricingManager'
 import ChangeHistory from '@/components/ChangeHistory'
 import BasicInfoTab from '@/components/product/BasicInfoTab'
 import OptionsTab from '@/components/product/OptionsTab'
+import ProductDetailsTab from '@/components/product/ProductDetailsTab'
+import ProductScheduleTab from '@/components/product/ProductScheduleTab'
+import ProductFaqTab from '@/components/product/ProductFaqTab'
+import ProductMediaTab from '@/components/product/ProductMediaTab'
 import GlobalOptionModal from '@/components/product/GlobalOptionModal'
 import OptionsManualModal from '@/components/product/OptionsManualModal'
 
@@ -141,6 +145,24 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     childAgeMin: number
     childAgeMax: number
     infantAge: number
+    // product_details 필드들
+    productDetails: {
+      slogan1: string
+      slogan2: string
+      slogan3: string
+      description: string
+      included: string
+      not_included: string
+      pickup_drop_info: string
+      luggage_info: string
+      tour_operation_info: string
+      preparation_info: string
+      small_group_info: string
+      companion_info: string
+      exclusive_booking_info: string
+      cancellation_policy: string
+      chat_announcement: string
+    }
   }>({
     name: '',
     productCode: '',
@@ -183,7 +205,25 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     adultAge: 13,
     childAgeMin: 3,
     childAgeMax: 12,
-    infantAge: 2
+    infantAge: 2,
+    // product_details 초기값
+    productDetails: {
+      slogan1: '',
+      slogan2: '',
+      slogan3: '',
+      description: '',
+      included: '',
+      not_included: '',
+      pickup_drop_info: '',
+      luggage_info: '',
+      tour_operation_info: '',
+      preparation_info: '',
+      small_group_info: '',
+      companion_info: '',
+      exclusive_booking_info: '',
+      cancellation_policy: '',
+      chat_announcement: ''
+    }
   })
 
   const [newTag, setNewTag] = useState('')
@@ -289,7 +329,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             .from('products')
             .select('*')
             .eq('id', id)
-            .single()
+            .single() as any
 
           if (productError) throw productError
 
@@ -307,13 +347,24 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             .from('product_options')
             .select('*')
             .eq('product_id', id)
-            .order('name', { ascending: true })
+            .order('name', { ascending: true }) as any
 
           if (optionsError) throw optionsError
 
+          // 3. 상품 세부정보 로드
+          const { data: detailsData, error: detailsError } = await supabase
+            .from('product_details')
+            .select('*')
+            .eq('product_id', id)
+            .single() as any
+
+          if (detailsError && detailsError.code !== 'PGRST116') { // PGRST116은 데이터가 없을 때 발생
+            throw detailsError
+          }
 
 
-          // 3. 폼 데이터 설정
+
+          // 4. 폼 데이터 설정
           setFormData(prevData => ({
             ...prevData,
             name: productData.name || '',
@@ -340,6 +391,40 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             childAgeMin: productData.child_age_min || 3,
             childAgeMax: productData.child_age_max || 12,
             infantAge: productData.infant_age || 2,
+            // product_details 데이터 설정
+            productDetails: detailsData ? {
+              slogan1: detailsData.slogan1 || '',
+              slogan2: detailsData.slogan2 || '',
+              slogan3: detailsData.slogan3 || '',
+              description: detailsData.description || '',
+              included: detailsData.included || '',
+              not_included: detailsData.not_included || '',
+              pickup_drop_info: detailsData.pickup_drop_info || '',
+              luggage_info: detailsData.luggage_info || '',
+              tour_operation_info: detailsData.tour_operation_info || '',
+              preparation_info: detailsData.preparation_info || '',
+              small_group_info: detailsData.small_group_info || '',
+              companion_info: detailsData.companion_info || '',
+              exclusive_booking_info: detailsData.exclusive_booking_info || '',
+              cancellation_policy: detailsData.cancellation_policy || '',
+              chat_announcement: detailsData.chat_announcement || ''
+            } : {
+              slogan1: '',
+              slogan2: '',
+              slogan3: '',
+              description: '',
+              included: '',
+              not_included: '',
+              pickup_drop_info: '',
+              luggage_info: '',
+              tour_operation_info: '',
+              preparation_info: '',
+              small_group_info: '',
+              companion_info: '',
+              exclusive_booking_info: '',
+              cancellation_policy: '',
+              chat_announcement: ''
+            },
                          productOptions: (() => {
                // 새로운 통합 구조에 맞게 그룹화
                const optionsMap = new Map<string, {
@@ -454,7 +539,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       let productId = id
       if (isNewProduct) {
         // 새 상품 생성
-        const { data: productData, error: productError } = await supabase
+        const { data: productData, error: productError } = await (supabase as any)
           .from('products')
           .insert({
             name: formData.name.trim(),
@@ -479,7 +564,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             infant_age: formData.infantAge
           })
           .select()
-          .single()
+          .single() as any
 
         if (productError) {
           console.error('상품 생성 오류:', productError)
@@ -490,7 +575,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         console.log('새 상품 생성됨:', productId)
       } else {
         // 기존 상품 업데이트
-        const { error: productError } = await supabase
+        const { error: productError } = await (supabase as any)
           .from('products')
           .update({
             name: formData.name.trim(),
@@ -516,7 +601,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           })
           .eq('id', productId)
           .select()
-          .single()
+          .single() as any
 
         if (productError) {
           console.error('상품 업데이트 오류:', productError)
@@ -529,7 +614,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       // 2. 기존 product_options 삭제 (업데이트 시)
       if (!isNewProduct && formData.productOptions.length > 0) {
         console.log('기존 옵션 삭제 시작')
-        const { error: deleteError } = await supabase
+        const { error: deleteError } = await (supabase as any)
           .from('product_options')
           .delete()
           .eq('product_id', productId)
@@ -549,7 +634,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           // 새로운 통합 구조: choices가 있는 경우, 각 choice를 별도의 product_options 행으로 저장
           if (option.choices && option.choices.length > 0) {
             for (const choice of option.choices) {
-              const { data: optionData, error: optionError } = await supabase
+              const { data: optionData, error: optionError } = await (supabase as any)
                 .from('product_options')
                 .insert({
                   product_id: productId,
@@ -566,7 +651,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                   is_default: choice.isDefault || false
                 })
                 .select()
-                .single()
+                .single() as any
 
               if (optionError) {
                 console.error('옵션 저장 오류:', optionError)
@@ -577,7 +662,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             }
           } else {
             // choices가 없는 경우, 기본 옵션만 저장
-            const { data: optionData, error: optionError } = await supabase
+            const { data: optionData, error: optionError } = await (supabase as any)
               .from('product_options')
               .insert({
                 product_id: productId,
@@ -594,7 +679,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 is_default: true
               })
               .select()
-              .single()
+              .single() as any
 
             if (optionError) {
               console.error('옵션 저장 오류:', optionError)
@@ -604,6 +689,61 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             console.log('옵션 저장됨:', optionData.id)
           }
         }
+      }
+
+      // 4. product_details 저장
+      console.log('product_details 저장 시작')
+      const { data: existingDetails } = await (supabase as any)
+        .from('product_details')
+        .select('id')
+        .eq('product_id', productId)
+        .single()
+
+      const detailsData = {
+        product_id: productId,
+        slogan1: formData.productDetails.slogan1,
+        slogan2: formData.productDetails.slogan2,
+        slogan3: formData.productDetails.slogan3,
+        description: formData.productDetails.description,
+        included: formData.productDetails.included,
+        not_included: formData.productDetails.not_included,
+        pickup_drop_info: formData.productDetails.pickup_drop_info,
+        luggage_info: formData.productDetails.luggage_info,
+        tour_operation_info: formData.productDetails.tour_operation_info,
+        preparation_info: formData.productDetails.preparation_info,
+        small_group_info: formData.productDetails.small_group_info,
+        companion_info: formData.productDetails.companion_info,
+        exclusive_booking_info: formData.productDetails.exclusive_booking_info,
+        cancellation_policy: formData.productDetails.cancellation_policy,
+        chat_announcement: formData.productDetails.chat_announcement
+      }
+
+      if (existingDetails) {
+        // 업데이트
+        const { error: detailsError } = await (supabase as any)
+          .from('product_details')
+          .update({
+            ...detailsData,
+            updated_at: new Date().toISOString()
+          })
+          .eq('product_id', productId)
+
+        if (detailsError) {
+          console.error('product_details 업데이트 오류:', detailsError)
+          throw new Error(`상품 세부정보 업데이트 실패: ${detailsError.message}`)
+        }
+        console.log('product_details 업데이트 완료')
+      } else {
+        // 새로 생성
+        const { error: detailsError } = await (supabase as any)
+          .from('product_details')
+          .insert([detailsData])
+
+        if (detailsError) {
+          console.error('product_details 생성 오류:', detailsError)
+          throw new Error(`상품 세부정보 생성 실패: ${detailsError.message}`)
+        }
+        console.log('product_details 생성 완료')
       }
 
       console.log('상품 저장 완료!')
@@ -993,33 +1133,44 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           />
         )}
 
-        {/* 나머지 탭들 - 추후 구현 */}
+        {/* 세부정보 탭 */}
         {activeTab === 'details' && (
-          <div className="text-center py-8 text-gray-500">
-            <Tag className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p>세부정보 탭 - 추후 구현 예정</p>
-          </div>
+          <ProductDetailsTab
+            productId={id}
+            isNewProduct={isNewProduct}
+            formData={formData}
+            setFormData={setFormData}
+          />
         )}
 
+        {/* 일정 탭 */}
         {activeTab === 'schedule' && (
-          <div className="text-center py-8 text-gray-500">
-            <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p>일정 탭 - 추후 구현 예정</p>
-          </div>
+          <ProductScheduleTab
+            productId={id}
+            isNewProduct={isNewProduct}
+            formData={formData}
+            setFormData={setFormData}
+          />
         )}
 
+        {/* FAQ 탭 */}
         {activeTab === 'faq' && (
-          <div className="text-center py-8 text-gray-500">
-            <MessageCircle className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p>FAQ 탭 - 추후 구현 예정</p>
-          </div>
+          <ProductFaqTab
+            productId={id}
+            isNewProduct={isNewProduct}
+            formData={formData}
+            setFormData={setFormData}
+          />
         )}
 
+        {/* 미디어 탭 */}
         {activeTab === 'media' && (
-          <div className="text-center py-8 text-gray-500">
-            <Image className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p>미디어 탭 - 추후 구현 예정</p>
-          </div>
+          <ProductMediaTab
+            productId={id}
+            isNewProduct={isNewProduct}
+            formData={formData}
+            setFormData={setFormData}
+          />
         )}
 
         {/* 변경 내역 탭 */}

@@ -314,14 +314,17 @@ export default function ProductCard({ product, locale, onStatusChange }: Product
               </span>
             </div>
             <div className="flex items-center space-x-2">
-              <Link
-                href={`/${locale}/admin/products/${product.id}/details`}
-                onClick={(e) => e.stopPropagation()}
+              <button
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  window.location.href = `/${locale}/admin/products/${product.id}/details`
+                }}
                 className="flex items-center text-sm text-blue-600 hover:text-blue-800 transition-colors"
               >
                 <FileText className="h-4 w-4 mr-1" />
                 세부정보
-              </Link>
+              </button>
               <div className="text-sm text-gray-500 group-hover:text-blue-600 transition-colors">
                 편집하려면 클릭하세요
               </div>

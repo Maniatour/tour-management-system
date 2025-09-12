@@ -120,9 +120,9 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
   const dayNames = ['일', '월', '화', '수', '목', '금', '토']
 
   return (
-    <div className="bg-white rounded-lg shadow-md border p-6">
+    <div className="bg-white rounded-lg shadow-md border p-2 sm:p-4">
       {/* 달력 헤더 */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-3 sm:mb-4">
         <h2 className="text-xl font-semibold text-gray-900 flex items-center">
           <CalendarIcon className="w-5 h-5 mr-2" />
           예약 달력
@@ -147,11 +147,11 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
       </div>
 
       {/* 요일 헤더 */}
-      <div className="grid grid-cols-7 gap-1 mb-2">
+      <div className="grid grid-cols-7 gap-1 mb-1">
         {dayNames.map((day, index) => (
           <div
             key={day}
-            className={`p-2 text-center text-sm font-medium ${
+            className={`p-1 text-center text-sm font-medium ${
               index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-gray-700'
             }`}
           >
@@ -170,19 +170,19 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
           return (
             <div
               key={index}
-              className={`min-h-[120px] p-2 border border-gray-200 ${
+              className={`min-h-[120px] p-1 border border-gray-200 ${
                 isCurrentMonthDay ? 'bg-white' : 'bg-gray-50'
               } ${isTodayDate ? 'ring-2 ring-blue-500' : ''}`}
             >
               {/* 날짜 */}
-              <div className={`text-sm font-medium mb-1 ${
+              <div className={`text-sm font-medium mb-0.5 ${
                 isCurrentMonthDay ? 'text-gray-900' : 'text-gray-400'
               } ${isTodayDate ? 'text-blue-600 font-bold' : ''}`}>
                 {date.getDate()}
               </div>
 
               {/* 투어 라벨들 */}
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {dayTours.map((tour, tourIndex) => {
                   // 배정된 인원 수와 총 인원 수
                   const assignedPeople = tour.assigned_people || 0
@@ -215,7 +215,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
                     <div
                       key={uniqueKey}
                       onClick={() => onTourClick(tour)}
-                      className={`text-xs p-1 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
+                      className={`text-xs px-1 py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
                         getProductColor(tour.product_id)
                       } ${hasUnassignedReservations ? 'ring-2 ring-red-500 ring-opacity-75' : ''} ${
                         isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
@@ -239,8 +239,8 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
       </div>
 
       {/* 예약 상태 범례 */}
-      <div className="mt-6 pt-4 border-t border-gray-200">
-        <h3 className="text-sm font-medium text-gray-700 mb-3">예약 상태</h3>
+      <div className="mt-3 pt-3 border-t border-gray-200">
+        <h3 className="text-sm font-medium text-gray-700 mb-2">예약 상태</h3>
         <div className="flex flex-wrap gap-3">
           {[
             { status: 'pending', label: '대기중' },
@@ -257,8 +257,8 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
         </div>
         
         {/* 단독투어 범례 */}
-        <div className="mt-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">투어 유형</h3>
+        <div className="mt-3">
+          <h3 className="text-sm font-medium text-gray-700 mb-2">투어 유형</h3>
           <div className="flex flex-wrap gap-3">
             <div className="flex items-center space-x-2">
               <div className="w-3 h-3 rounded-full bg-purple-400 ring-2 ring-purple-400 ring-opacity-50" />

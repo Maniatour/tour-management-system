@@ -29,7 +29,8 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import LanguageSwitcher from '@/components/LanguageSwitcher'
+import { useLocale } from 'next-intl'
+import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 
@@ -56,6 +57,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const pathname = usePathname()
   const router = useRouter()
   const { signOut, authUser, userRole } = useAuth()
+  const currentLocale = locale
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [currentSession, setCurrentSession] = useState<AttendanceRecord | null>(null)
@@ -290,6 +292,23 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     setIsUserMenuOpen(false)
   }
 
+  // 언어 전환 함수
+  const handleLanguageToggle = () => {
+    const newLocale = currentLocale === 'ko' ? 'en' : 'ko'
+    // 현재 경로에서 locale 부분을 정확히 교체
+    const newPath = pathname.replace(/^\/[a-z]{2}/, `/${newLocale}`)
+    console.log('Current path:', pathname)
+    console.log('New path:', newPath)
+    console.log('Current locale:', currentLocale)
+    console.log('New locale:', newLocale)
+    window.location.href = newPath
+  }
+
+  // 언어 플래그 함수
+  const getLanguageFlag = () => {
+    return currentLocale === 'ko' ? 'KR' : 'US'
+  }
+
   const navigation = [
     { name: '대시보드', href: `/${locale}/admin`, icon: BarChart3 },
     { name: '고객 관리', href: `/${locale}/admin/customers`, icon: Users },
@@ -445,7 +464,22 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 )}
               </div>
               
-              <LanguageSwitcher />
+              {/* 언어 스위처 */}
+              <button
+                onClick={handleLanguageToggle}
+                className="flex items-center p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                title={`Switch to ${currentLocale === 'ko' ? 'English' : '한국어'}`}
+              >
+                <ReactCountryFlag
+                  countryCode={getLanguageFlag()}
+                  svg
+                  style={{
+                    width: '24px',
+                    height: '18px',
+                    borderRadius: '2px'
+                  }}
+                />
+              </button>
             </div>
           </div>
         </div>

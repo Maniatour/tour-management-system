@@ -1,18 +1,17 @@
 'use client'
 
 import { useLocale } from 'next-intl'
-import { useRouter, usePathname } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { Globe } from 'lucide-react'
 
 const LanguageSwitcher = () => {
   const locale = useLocale()
-  const router = useRouter()
   const pathname = usePathname()
 
   const handleLanguageToggle = () => {
     const newLocale = locale === 'ko' ? 'en' : 'ko'
     const newPath = pathname.replace(`/${locale}`, `/${newLocale}`)
-    router.push(newPath)
+    window.location.href = newPath
   }
 
   const getLanguageDisplay = () => {
