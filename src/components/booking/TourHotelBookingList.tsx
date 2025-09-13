@@ -372,20 +372,27 @@ export default function TourHotelBookingList() {
                 console.log('필터된 호텔 부킹 데이터:', filteredBookings);
                 console.log('호텔 부킹 개수:', filteredBookings.length);
                 
-                // 체크인 날짜별로 그룹화 (날짜 형식 변환)
-                const groupedByDate = filteredBookings.reduce((groups, booking) => {
-                  // ISO 타임스탬프를 YYYY-MM-DD 형식으로 변환
-                  const date = new Date(booking.check_in_date).toISOString().split('T')[0];
-                  if (!groups[date]) {
-                    groups[date] = [];
+                // 체크인-체크아웃 날짜 범위로 그룹화 (2박 예약의 경우 오버래핑)
+                const groupedByDateRange = filteredBookings.reduce((groups, booking) => {
+                  const checkInDate = new Date(booking.check_in_date);
+                  const checkOutDate = new Date(booking.check_out_date);
+                  
+                  // 체크인부터 체크아웃 전날까지 모든 날짜에 추가
+                  const currentDate = new Date(checkInDate);
+                  while (currentDate < checkOutDate) {
+                    const dateString = currentDate.toISOString().split('T')[0];
+                    if (!groups[dateString]) {
+                      groups[dateString] = [];
+                    }
+                    groups[dateString].push(booking);
+                    currentDate.setDate(currentDate.getDate() + 1);
                   }
-                  groups[date].push(booking);
                   return groups;
                 }, {} as Record<string, TourHotelBooking[]>);
                 
-                console.log('날짜별 그룹화된 호텔 데이터:', groupedByDate);
+                console.log('날짜별 그룹화된 호텔 데이터:', groupedByDateRange);
                 
-                console.log('최종 호텔 그룹화된 데이터:', groupedByDate);
+                console.log('최종 호텔 그룹화된 데이터:', groupedByDateRange);
 
                 // 선택된 월 기준으로 달력 생성
                 const now = new Date();
@@ -464,7 +471,7 @@ export default function TourHotelBookingList() {
                         const dateString = date.toISOString().split('T')[0];
                         const isCurrentMonth = date.getMonth() === currentMonth;
                         const isToday = date.toDateString() === now.toDateString();
-                        const dayBookings = groupedByDate[dateString] || [];
+                        const dayBookings = groupedByDateRange[dateString] || [];
                         const totalRooms = dayBookings.reduce((sum, booking) => sum + booking.rooms, 0);
                         
                         // 디버깅: 해당 날짜에 호텔 부킹이 있는지 확인
@@ -523,28 +530,45 @@ export default function TourHotelBookingList() {
                                      // 호텔명 단축 및 색상 구분
                                      let displayName = hotel;
                                      let hotelBgColor = '';
-                                     if (hotel.length > 8) {
-                                       displayName = hotel.substring(0, 8) + '...';
+                                     if (hotel.length > 10) {
+                                       displayName = hotel.substring(0, 10) + '...';
                                      }
                                      
                                      // 호텔별로 다른 색상 적용
-                                     const hotelColors = ['bg-purple-200 text-purple-800', 'bg-orange-200 text-orange-800', 'bg-pink-200 text-pink-800', 'bg-indigo-200 text-indigo-800'];
+                                     const hotelColors = ['bg-purple-200 text-purple-800', 'bg-orange-200 text-orange-800', 'bg-pink-200 text-pink-800', 'bg-indigo-200 text-indigo-800', 'bg-green-200 text-green-800', 'bg-red-200 text-red-800'];
                                      const colorIndex = hotel.length % hotelColors.length;
                                      hotelBgColor = hotelColors[colorIndex];
+
+                                     // 룸타입별로 그룹화
+                                     const roomTypeGroups = hotelBookings.reduce((groups, booking) => {
+                                       const roomType = booking.room_type || '기본';
+                                       if (!groups[roomType]) {
+                                         groups[roomType] = 0;
+                                       }
+                                       groups[roomType] += booking.rooms;
+                                       return groups;
+                                     }, {} as Record<string, number>);
+
+                                     const roomTypeText = Object.entries(roomTypeGroups)
+                                       .map(([type, count]) => `${type}(${count})`)
+                                       .join(', ');
 
                                      return (
                                       <div
                                         key={hotel}
-                                        className={`px-0.5 py-0 rounded truncate ${hotelBgColor} text-[8px] sm:text-[12px] cursor-pointer hover:opacity-80`}
-                                        title={`${hotel} - ${hotelBookings.map(b => `${b.room_type || '기본'} (${b.rooms}개)`).join(', ')}`}
+                                        className={`px-1 py-0.5 rounded text-[8px] sm:text-[10px] cursor-pointer hover:opacity-80 ${hotelBgColor}`}
+                                        title={`${hotel} - ${roomTypeText} - 체크인: ${firstBooking.check_in_date} ~ 체크아웃: ${firstBooking.check_out_date}`}
                                         onClick={() => handleBookingClick(hotelBookings)}
                                       >
                                         <div className="block sm:hidden">
-                                          <div className="font-bold">{firstBooking.check_in_date}</div>
-                                          <div>{hotelTotal}개 ({hotelBookings.length})</div>
+                                          <div className="font-bold truncate">{displayName}</div>
+                                          <div className="text-[7px]">{roomTypeText}</div>
+                                          <div className="text-[7px]">{firstBooking.check_in_date}~{firstBooking.check_out_date}</div>
                                         </div>
                                         <div className="hidden sm:block">
-                                          <span className="font-bold">{firstBooking.check_in_date}</span> <span>{hotelTotal}개</span> <span>({hotelBookings.length})</span>
+                                          <div className="font-bold truncate">{displayName}</div>
+                                          <div className="text-[8px]">{roomTypeText}</div>
+                                          <div className="text-[8px]">{firstBooking.check_in_date}~{firstBooking.check_out_date}</div>
                                         </div>
                                       </div>
                                      );
@@ -575,7 +599,7 @@ export default function TourHotelBookingList() {
                          </span>
                        </div>
                        <div className="mt-3">
-                         <div className="text-sm font-medium text-gray-700 mb-2">호텔 구분</div>
+                         <div className="text-sm font-medium text-gray-700 mb-2">호텔 구분 (자동 색상 할당)</div>
                          <div className="flex flex-wrap gap-2">
                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-200 text-purple-800">
                              호텔 A
@@ -588,7 +612,17 @@ export default function TourHotelBookingList() {
                            </span>
                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-indigo-200 text-indigo-800">
                              호텔 D
-                            </span>
+                           </span>
+                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-200 text-green-800">
+                             호텔 E
+                           </span>
+                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-200 text-red-800">
+                             호텔 F
+                           </span>
+                          </div>
+                          <div className="mt-2 text-xs text-gray-600">
+                            • 라벨에 호텔명, 룸타입(갯수), 체크인~체크아웃 날짜 표시<br/>
+                            • 2박 이상 예약은 체크인부터 체크아웃 전날까지 모든 날짜에 표시
                           </div>
                         </div>
                      </div>
