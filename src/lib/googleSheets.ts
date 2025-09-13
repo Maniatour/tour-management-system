@@ -64,13 +64,13 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string) => {
 
 // 구글 시트에서 특정 시트의 모든 데이터 읽기
 export const readSheetData = async (spreadsheetId: string, sheetName: string) => {
-  const range = `${sheetName}!A:Z` // A부터 Z열까지 읽기
+  const range = `${sheetName}!A:ZZ` // A부터 ZZ열까지 읽기 (최대 702개 컬럼)
   return await readGoogleSheet(spreadsheetId, range)
 }
 
 // 구글 시트에서 특정 범위의 데이터 읽기
 export const readSheetRange = async (spreadsheetId: string, sheetName: string, startRow: number, endRow: number) => {
-  const range = `${sheetName}!A${startRow}:Z${endRow}`
+  const range = `${sheetName}!A${startRow}:ZZ${endRow}`
   return await readGoogleSheet(spreadsheetId, range)
 }
 
@@ -89,5 +89,67 @@ export const getSheetNames = async (spreadsheetId: string) => {
   } catch (error) {
     console.error('Error getting sheet names:', error)
     throw error
+  }
+}
+
+// 시트의 실제 사용된 범위 확인
+export const getSheetUsedRange = async (spreadsheetId: string, sheetName: string) => {
+  try {
+    const auth = getAuthClient()
+    const sheets = google.sheets({ version: 'v4', auth })
+
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId,
+      ranges: [`${sheetName}!A1:ZZ1000`], // 충분히 큰 범위로 요청
+      includeGridData: false
+    })
+
+    const sheet = response.data.sheets?.[0]
+    const gridProperties = sheet?.properties?.gridProperties
+    
+    if (gridProperties) {
+      return {
+        rowCount: gridProperties.rowCount || 0,
+        columnCount: gridProperties.columnCount || 0
+      }
+    }
+    
+    return { rowCount: 0, columnCount: 0 }
+  } catch (error) {
+    console.error('Error getting sheet used range:', error)
+    // 에러 발생 시 기본값 반환
+    return { rowCount: 1000, columnCount: 26 }
+  }
+}
+
+// 동적으로 시트의 실제 사용된 범위로 데이터 읽기
+export const readSheetDataDynamic = async (spreadsheetId: string, sheetName: string) => {
+  try {
+    const usedRange = await getSheetUsedRange(spreadsheetId, sheetName)
+    console.log(`Sheet ${sheetName} used range:`, usedRange)
+    
+    // 실제 사용된 컬럼 수에 맞춰 범위 설정 (최소 26개, 최대 702개)
+    const columnCount = Math.max(26, Math.min(usedRange.columnCount || 26, 702))
+    const columnRange = getColumnRange(columnCount)
+    
+    const range = `${sheetName}!A:${columnRange}`
+    console.log(`Reading range: ${range}`)
+    
+    return await readGoogleSheet(spreadsheetId, range)
+  } catch (error) {
+    console.error('Error reading sheet data dynamically:', error)
+    // 폴백: 기본 범위로 읽기
+    return await readSheetData(spreadsheetId, sheetName)
+  }
+}
+
+// 컬럼 수에 따른 범위 문자열 생성
+const getColumnRange = (columnCount: number): string => {
+  if (columnCount <= 26) {
+    return String.fromCharCode(64 + columnCount) // A-Z
+  } else {
+    const firstChar = String.fromCharCode(64 + Math.floor((columnCount - 1) / 26))
+    const secondChar = String.fromCharCode(64 + ((columnCount - 1) % 26) + 1)
+    return firstChar + secondChar
   }
 }

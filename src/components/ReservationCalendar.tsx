@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, memo } from 'react'
+import { useState, useMemo, useCallback, memo, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Filter } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { Database } from '@/lib/supabase'
@@ -15,19 +15,31 @@ interface ReservationCalendarProps {
     channel_name?: string;
   })[]
   onReservationClick: (reservation: Reservation) => void
+  onLoadComplete?: () => void
 }
 
 const ReservationCalendar = memo(function ReservationCalendar({ 
   reservations, 
-  onReservationClick 
+  onReservationClick,
+  onLoadComplete
 }: ReservationCalendarProps) {
   const t = useTranslations('reservations')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [dateFilter, setDateFilter] = useState<'created_at' | 'tour_date'>('created_at')
 
+  // 컴포넌트 마운트 시 로딩 완료 알림
+  useEffect(() => {
+    if (onLoadComplete) {
+      onLoadComplete()
+    }
+  }, [onLoadComplete])
+
   // 현재 월의 첫 번째 날과 마지막 날 계산
-  const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
-  const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+  const { firstDayOfMonth, lastDayOfMonth } = useMemo(() => {
+    const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
+    const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+    return { firstDayOfMonth: firstDay, lastDayOfMonth: lastDay }
+  }, [currentDate])
   
   // 달력에 표시할 날짜들 계산 (이전/다음 달의 일부 포함)
   const calendarDays = useMemo(() => {
@@ -44,7 +56,33 @@ const ReservationCalendar = memo(function ReservationCalendar({
     return days
   }, [firstDayOfMonth])
 
-  // 특정 날짜의 예약들 가져오기 (메모이제이션)
+  // 예약 데이터를 날짜별로 미리 그룹화 (성능 최적화)
+  const reservationsByDate = useMemo(() => {
+    const groups: { [key: string]: typeof reservations } = {}
+    
+    reservations.forEach(reservation => {
+      let dateString: string
+      
+      if (dateFilter === 'created_at') {
+        // 등록일 기준 필터링
+        const utcDate = new Date(reservation.created_at)
+        const lasVegasCreatedDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+        dateString = lasVegasCreatedDate.toISOString().split('T')[0]
+      } else {
+        // 투어일 기준 필터링
+        dateString = reservation.tour_date
+      }
+      
+      if (!groups[dateString]) {
+        groups[dateString] = []
+      }
+      groups[dateString].push(reservation)
+    })
+    
+    return groups
+  }, [reservations, dateFilter])
+
+  // 특정 날짜의 예약들 가져오기 (최적화된 버전)
   const getReservationsForDate = useCallback((date: Date) => {
     // 라스베가스 시간대 (Pacific Time) 기준으로 날짜 문자열 생성
     const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -57,28 +95,17 @@ const ReservationCalendar = memo(function ReservationCalendar({
     const lasVegasDate = formatter.format(date)
     const dateString = lasVegasDate // YYYY-MM-DD 형식
     
-    return reservations.filter(reservation => {
-      if (dateFilter === 'created_at') {
-        // 등록일 기준 필터링
-        const utcDate = new Date(reservation.created_at)
-        const lasVegasCreatedDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
-        const createdDateString = lasVegasCreatedDate.toISOString().split('T')[0]
-        return createdDateString === dateString
-      } else {
-        // 투어일 기준 필터링
-        return reservation.tour_date === dateString
-      }
-    })
-  }, [reservations, dateFilter])
+    return reservationsByDate[dateString] || []
+  }, [reservationsByDate])
 
   // 이전/다음 월로 이동 (메모이제이션)
   const goToPreviousMonth = useCallback(() => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))
-  }, [currentDate])
+    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+  }, [])
 
   const goToNextMonth = useCallback(() => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))
-  }, [currentDate])
+    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+  }, [])
 
   // 오늘 날짜인지 확인 (메모이제이션)
   const isToday = useCallback((date: Date) => {
@@ -137,6 +164,92 @@ const ReservationCalendar = memo(function ReservationCalendar({
   ]
 
   const dayNames = ['일', '월', '화', '수', '목', '금', '토']
+
+  // 달력 날짜 셀 컴포넌트 (메모이제이션)
+  const CalendarDayCell = memo(({ 
+    date, 
+    dayReservations, 
+    isCurrentMonthDay, 
+    isTodayDate 
+  }: {
+    date: Date
+    dayReservations: typeof reservations
+    isCurrentMonthDay: boolean
+    isTodayDate: boolean
+  }) => {
+    // 예약 상태에 따른 색상 반환 (로컬 함수)
+    const getReservationStatusColor = (status: string) => {
+      switch (status) {
+        case 'pending': return 'bg-yellow-500'
+        case 'confirmed': return 'bg-green-500'
+        case 'completed': return 'bg-blue-500'
+        case 'cancelled': return 'bg-red-500'
+        case 'recruiting': return 'bg-purple-500'
+        default: return 'bg-gray-500'
+      }
+    }
+    return (
+      <div
+        className={`min-h-[120px] p-2 border border-gray-200 ${
+          isCurrentMonthDay ? 'bg-white' : 'bg-gray-50'
+        } ${isTodayDate ? 'ring-2 ring-blue-500' : ''}`}
+      >
+        {/* 날짜 */}
+        <div className={`text-sm font-medium mb-1 ${
+          isCurrentMonthDay ? 'text-gray-900' : 'text-gray-400'
+        } ${isTodayDate ? 'text-blue-600 font-bold' : ''}`}>
+          {date.getDate()}
+        </div>
+
+        {/* 예약 라벨들 */}
+        <div className="space-y-1">
+          {dayReservations.map((reservation, reservationIndex) => {
+            // 예약 데이터에서 정보 추출
+            const customerName = reservation.customer_name || '고객명 없음'
+            const productName = reservation.product_name || reservation.product_id || '상품명 없음'
+            const totalPeople = reservation.total_people || 0
+            const status = reservation.status || '상태 없음'
+            
+            // 툴팁 텍스트 구성
+            let tooltipText = `고객: ${customerName}\n상품: ${productName}\n총인원: ${totalPeople}명\n상태: ${status}`
+            
+            // 추가 정보가 있으면 툴팁에 포함
+            if (reservation.pickup_hotel) {
+              tooltipText += `\n픽업호텔: ${reservation.pickup_hotel}`
+            }
+            if (reservation.pickup_time) {
+              tooltipText += `\n픽업시간: ${reservation.pickup_time}`
+            }
+            if (reservation.channel_name) {
+              tooltipText += `\n채널: ${reservation.channel_name}`
+            }
+            
+            // 상태에 따른 색상 결정
+            const statusColor = getReservationStatusColor(status)
+            
+            // 고유한 key 생성
+            const uniqueKey = `${reservation.id}-${reservationIndex}-${date.getTime()}`
+            
+            return (
+              <div
+                key={uniqueKey}
+                onClick={() => onReservationClick(reservation)}
+                className={`text-xs p-1 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${statusColor}`}
+                title={tooltipText}
+              >
+                <div className="truncate">
+                  <div className="font-medium">{customerName}</div>
+                  <div className="opacity-90 text-xs">
+                    {productName} | {totalPeople}명 | {status}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  })
 
   return (
     <div className="bg-white rounded-lg shadow-md border p-6">
@@ -200,66 +313,13 @@ const ReservationCalendar = memo(function ReservationCalendar({
           const isTodayDate = isToday(date)
 
           return (
-            <div
-              key={index}
-              className={`min-h-[120px] p-2 border border-gray-200 ${
-                isCurrentMonthDay ? 'bg-white' : 'bg-gray-50'
-              } ${isTodayDate ? 'ring-2 ring-blue-500' : ''}`}
-            >
-              {/* 날짜 */}
-              <div className={`text-sm font-medium mb-1 ${
-                isCurrentMonthDay ? 'text-gray-900' : 'text-gray-400'
-              } ${isTodayDate ? 'text-blue-600 font-bold' : ''}`}>
-                {date.getDate()}
-              </div>
-
-              {/* 예약 라벨들 */}
-              <div className="space-y-1">
-                {dayReservations.map((reservation, reservationIndex) => {
-                  // 예약 데이터에서 정보 추출
-                  const customerName = reservation.customer_name || '고객명 없음'
-                  const productName = reservation.product_name || reservation.product_id || '상품명 없음'
-                  const totalPeople = reservation.total_people || 0
-                  const status = reservation.status || '상태 없음'
-                  
-                  // 툴팁 텍스트 구성
-                  let tooltipText = `고객: ${customerName}\n상품: ${productName}\n총인원: ${totalPeople}명\n상태: ${status}`
-                  
-                  // 추가 정보가 있으면 툴팁에 포함
-                  if (reservation.pickup_hotel) {
-                    tooltipText += `\n픽업호텔: ${reservation.pickup_hotel}`
-                  }
-                  if (reservation.pickup_time) {
-                    tooltipText += `\n픽업시간: ${reservation.pickup_time}`
-                  }
-                  if (reservation.channel_name) {
-                    tooltipText += `\n채널: ${reservation.channel_name}`
-                  }
-                  
-                  // 상태에 따른 색상 결정
-                  const statusColor = getReservationStatusColor(status)
-                  
-                  // 고유한 key 생성
-                  const uniqueKey = `${reservation.id}-${reservationIndex}-${date.getTime()}`
-                  
-                  return (
-                    <div
-                      key={uniqueKey}
-                      onClick={() => onReservationClick(reservation)}
-                      className={`text-xs p-1 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${statusColor}`}
-                      title={tooltipText}
-                    >
-                      <div className="truncate">
-                        <div className="font-medium">{customerName}</div>
-                        <div className="opacity-90 text-xs">
-                          {productName} | {totalPeople}명 | {status}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+            <CalendarDayCell
+              key={`${date.getTime()}-${index}`}
+              date={date}
+              dayReservations={dayReservations}
+              isCurrentMonthDay={isCurrentMonthDay}
+              isTodayDate={isTodayDate}
+            />
           )
         })}
       </div>

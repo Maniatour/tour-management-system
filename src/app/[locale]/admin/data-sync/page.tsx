@@ -81,23 +81,23 @@ export default function DataSyncPage() {
     return {}
   }
 
-  // 자동 완성 함수 (구글 시트 컬럼명과 데이터베이스 컬럼명 매칭)
-  const getAutoCompleteSuggestions = (sheetColumn: string, dbColumns: ColumnInfo[]): string[] => {
+  // 자동 완성 함수 (데이터베이스 컬럼명과 구글 시트 컬럼명 매칭)
+  const getAutoCompleteSuggestions = (dbColumn: string, sheetColumns: string[]): string[] => {
     const suggestions: string[] = []
-    const sheetLower = sheetColumn.toLowerCase()
+    const dbLower = dbColumn.toLowerCase()
     
-    dbColumns.forEach(dbCol => {
-      const dbLower = dbCol.name.toLowerCase()
+    sheetColumns.forEach(sheetCol => {
+      const sheetLower = sheetCol.toLowerCase()
       
       // 정확한 매칭 (대소문자 무시)
       if (dbLower === sheetLower) {
-        suggestions.unshift(dbCol.name) // 정확한 매칭을 맨 앞에
+        suggestions.unshift(sheetCol) // 정확한 매칭을 맨 앞에
         return
       }
       
       // 부분 매칭 (포함 관계)
       if (dbLower.includes(sheetLower) || sheetLower.includes(dbLower)) {
-        suggestions.push(dbCol.name)
+        suggestions.push(sheetCol)
         return
       }
       
@@ -105,42 +105,78 @@ export default function DataSyncPage() {
       const dbWithoutUnderscore = dbLower.replace(/_/g, '')
       const sheetWithoutUnderscore = sheetLower.replace(/_/g, '')
       if (dbWithoutUnderscore === sheetWithoutUnderscore) {
-        suggestions.push(dbCol.name)
+        suggestions.push(sheetCol)
         return
       }
       
-      // 한글 매핑 (일반적인 패턴)
+      // 한글 매핑 (일반적인 패턴) - 역방향 매핑
       const koreanMappings: { [key: string]: string[] } = {
-        '예약번호': ['id'],
-        '고객명': ['name', 'customer_name'],
-        '이메일': ['email', 'customer_email'],
-        '전화번호': ['phone', 'customer_phone'],
-        '성인수': ['adults'],
-        '아동수': ['child'],
-        '유아수': ['infant'],
-        '총인원': ['total_people'],
-        '투어날짜': ['tour_date'],
-        '투어시간': ['tour_time'],
-        '상품ID': ['product_id'],
-        '투어ID': ['tour_id'],
-        '픽업호텔': ['pickup_hotel'],
-        '픽업시간': ['pickup_time'],
-        '채널': ['channel_id'],
-        '상태': ['status', 'tour_status'],
-        '비고': ['notes', 'tour_note', 'event_note'],
-        '개인투어': ['is_private_tour'],
-        '가이드': ['tour_guide_id', 'guide_id'],
-        '어시스턴트': ['assistant_id'],
-        '차량': ['vehicle_id', 'tour_car_id'],
-        '가격': ['price', 'guide_fee', 'assistant_fee'],
-        '날짜': ['created_at', 'updated_at', 'tour_date'],
-        '시간': ['created_at', 'updated_at', 'tour_time']
+        'id': ['예약번호', 'ID', '아이디'],
+        'name': ['고객명', '이름', 'Name'],
+        'customer_name': ['고객명', '이름', 'Name'],
+        'email': ['이메일', 'Email', '메일'],
+        'customer_email': ['이메일', 'Email', '메일'],
+        'phone': ['전화번호', 'Phone', '연락처'],
+        'customer_phone': ['전화번호', 'Phone', '연락처'],
+        'adults': ['성인수', '성인', 'Adults'],
+        'child': ['아동수', '아동', 'Child'],
+        'infant': ['유아수', '유아', 'Infant'],
+        'total_people': ['총인원', '인원', 'Total'],
+        'tour_date': ['투어날짜', '날짜', 'Date'],
+        'tour_time': ['투어시간', '시간', 'Time'],
+        'product_id': ['상품ID', '상품', 'Product'],
+        'tour_id': ['투어ID', '투어', 'Tour'],
+        'pickup_hotel': ['픽업호텔', '호텔', 'Hotel'],
+        'pickup_time': ['픽업시간', '픽업', 'Pickup'],
+        'channel_id': ['채널', 'Channel'],
+        'status': ['상태', 'Status'],
+        'tour_status': ['상태', 'Status'],
+        'notes': ['비고', '메모', 'Notes'],
+        'tour_note': ['비고', '메모', 'Notes'],
+        'event_note': ['비고', '메모', 'Notes'],
+        'is_private_tour': ['개인투어', 'Private'],
+        'tour_guide_id': ['가이드', 'Guide'],
+        'guide_id': ['가이드', 'Guide'],
+        'assistant_id': ['어시스턴트', 'Assistant'],
+        'vehicle_id': ['차량', 'Vehicle'],
+        'tour_car_id': ['차량', 'Vehicle'],
+        'price': ['가격', 'Price'],
+        'guide_fee': ['가이드비', 'Guide Fee'],
+        'assistant_fee': ['어시스턴트비', 'Assistant Fee'],
+        'created_at': ['생성일', 'Created'],
+        'updated_at': ['수정일', 'Updated'],
+        // Vehicles 테이블 매핑
+        'vehicle_number': ['차량번호', 'Vehicle Number', '차량 번호'],
+        'vin': ['VIN', '차대번호', '차대 번호'],
+        'vehicle_type': ['차량종류', 'Vehicle Type', '차량 종류', '타입'],
+        'capacity': ['정원', 'Capacity', '수용인원', '수용 인원'],
+        'year': ['연식', 'Year', '연도'],
+        'mileage_at_purchase': ['구매시주행거리', 'Purchase Mileage', '구매시 주행거리'],
+        'purchase_amount': ['구매금액', 'Purchase Amount', '구매 금액', '가격'],
+        'purchase_date': ['구매일', 'Purchase Date', '구매 날짜'],
+        'memo': ['메모', 'Memo', '비고', 'Notes'],
+        'engine_oil_change_cycle': ['엔진오일교환주기', 'Oil Change Cycle', '엔진오일 교환주기'],
+        'current_mileage': ['현재주행거리', 'Current Mileage', '현재 주행거리'],
+        'recent_engine_oil_change_mileage': ['최근엔진오일교환주행거리', 'Recent Oil Change Mileage', '최근 엔진오일 교환 주행거리'],
+        'vehicle_status': ['차량상태', 'Vehicle Status', '차량 상태', '상태'],
+        'front_tire_size': ['앞타이어사이즈', 'Front Tire Size', '앞 타이어 사이즈'],
+        'rear_tire_size': ['뒤타이어사이즈', 'Rear Tire Size', '뒤 타이어 사이즈'],
+        'windshield_wiper_size': ['와이퍼사이즈', 'Wiper Size', '와이퍼 사이즈'],
+        'headlight_model': ['헤드라이트모델', 'Headlight Model', '헤드라이트 모델'],
+        'headlight_model_name': ['헤드라이트모델명', 'Headlight Model Name', '헤드라이트 모델명'],
+        'is_installment': ['할부여부', 'Installment', '할부 여부'],
+        'installment_amount': ['할부금액', 'Installment Amount', '할부 금액'],
+        'interest_rate': ['이자율', 'Interest Rate', '이자율'],
+        'monthly_payment': ['월납입금', 'Monthly Payment', '월 납입금'],
+        'additional_payment': ['추가납입금', 'Additional Payment', '추가 납입금'],
+        'payment_due_date': ['납입일', 'Payment Due Date', '납입 날짜'],
+        'installment_start_date': ['할부시작일', 'Installment Start Date', '할부 시작일']
       }
       
-      if (koreanMappings[sheetColumn]) {
-        koreanMappings[sheetColumn].forEach(mapping => {
-          if (dbLower.includes(mapping.toLowerCase())) {
-            suggestions.push(dbCol.name)
+      if (koreanMappings[dbColumn]) {
+        koreanMappings[dbColumn].forEach(mapping => {
+          if (sheetLower.includes(mapping.toLowerCase())) {
+            suggestions.push(sheetCol)
           }
         })
       }
@@ -150,15 +186,15 @@ export default function DataSyncPage() {
     return [...new Set(suggestions)].slice(0, 5) // 최대 5개 제안
   }
 
-  // 자동 매핑 함수 (구글 시트 컬럼과 데이터베이스 컬럼을 자동으로 매핑)
-  const getAutoMapping = (sheetColumns: string[], dbColumns: ColumnInfo[]): ColumnMapping => {
+  // 자동 매핑 함수 (데이터베이스 컬럼과 구글 시트 컬럼을 자동으로 매핑)
+  const getAutoMapping = (dbColumns: ColumnInfo[], sheetColumns: string[]): ColumnMapping => {
     const mapping: ColumnMapping = {}
     
-    sheetColumns.forEach(sheetColumn => {
-      const suggestions = getAutoCompleteSuggestions(sheetColumn, dbColumns)
+    dbColumns.forEach(dbColumn => {
+      const suggestions = getAutoCompleteSuggestions(dbColumn.name, sheetColumns)
       if (suggestions.length > 0) {
         // 가장 높은 우선순위의 제안을 선택
-        mapping[sheetColumn] = suggestions[0]
+        mapping[suggestions[0]] = dbColumn.name
       }
     })
     
@@ -212,7 +248,7 @@ export default function DataSyncPage() {
         if (Object.keys(savedMapping).length === 0) {
           const sheet = sheetInfo.find(s => s.name === selectedSheet)
           if (sheet && sheet.columns.length > 0) {
-            const autoMapping = getAutoMapping(sheet.columns, result.data.columns)
+            const autoMapping = getAutoMapping(result.data.columns, sheet.columns)
             if (Object.keys(autoMapping).length > 0) {
               console.log('Applying auto-mapping:', autoMapping)
               setColumnMapping(autoMapping)
@@ -339,6 +375,36 @@ export default function DataSyncPage() {
         { name: 'website', type: 'text', nullable: true, default: null },
         { name: 'rn_number', type: 'text', nullable: true, default: null },
         { name: 'status', type: 'text', nullable: true, default: 'pending' },
+        { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
+      ],
+      vehicles: [
+        { name: 'id', type: 'text', nullable: false, default: null },
+        { name: 'vehicle_number', type: 'text', nullable: true, default: null },
+        { name: 'vin', type: 'text', nullable: true, default: null },
+        { name: 'vehicle_type', type: 'text', nullable: true, default: null },
+        { name: 'capacity', type: 'integer', nullable: true, default: null },
+        { name: 'year', type: 'integer', nullable: true, default: null },
+        { name: 'mileage_at_purchase', type: 'integer', nullable: true, default: null },
+        { name: 'purchase_amount', type: 'numeric', nullable: true, default: null },
+        { name: 'purchase_date', type: 'date', nullable: true, default: null },
+        { name: 'memo', type: 'text', nullable: true, default: null },
+        { name: 'engine_oil_change_cycle', type: 'integer', nullable: true, default: null },
+        { name: 'current_mileage', type: 'integer', nullable: true, default: null },
+        { name: 'recent_engine_oil_change_mileage', type: 'integer', nullable: true, default: null },
+        { name: 'vehicle_status', type: 'text', nullable: true, default: null },
+        { name: 'front_tire_size', type: 'text', nullable: true, default: null },
+        { name: 'rear_tire_size', type: 'text', nullable: true, default: null },
+        { name: 'windshield_wiper_size', type: 'text', nullable: true, default: null },
+        { name: 'headlight_model', type: 'text', nullable: true, default: null },
+        { name: 'headlight_model_name', type: 'text', nullable: true, default: null },
+        { name: 'is_installment', type: 'boolean', nullable: true, default: 'false' },
+        { name: 'installment_amount', type: 'numeric', nullable: true, default: null },
+        { name: 'interest_rate', type: 'numeric', nullable: true, default: null },
+        { name: 'monthly_payment', type: 'numeric', nullable: true, default: null },
+        { name: 'additional_payment', type: 'numeric', nullable: true, default: null },
+        { name: 'payment_due_date', type: 'date', nullable: true, default: null },
+        { name: 'installment_start_date', type: 'date', nullable: true, default: null },
         { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
         { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
       ]
@@ -744,9 +810,9 @@ export default function DataSyncPage() {
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {Object.entries(columnMapping).map(([sheetCol, dbCol]) => (
                   <div key={sheetCol} className="flex items-center">
-                    <span className="text-gray-600">{sheetCol}</span>
+                    <span className="text-gray-600">{dbCol}</span>
                     <ArrowRight className="h-3 w-3 mx-2 text-gray-400" />
-                    <span className="text-gray-900 font-medium">{dbCol}</span>
+                    <span className="text-gray-900 font-medium">{sheetCol}</span>
                   </div>
                 ))}
               </div>
@@ -882,20 +948,27 @@ export default function DataSyncPage() {
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                     <div className="grid grid-cols-12 gap-4 text-sm font-medium text-gray-700">
-                      <div className="col-span-4">구글 시트 컬럼</div>
+                      <div className="col-span-4">데이터베이스 컬럼</div>
                       <div className="col-span-1 text-center">→</div>
-                      <div className="col-span-7">데이터베이스 컬럼</div>
+                      <div className="col-span-7">구글 시트 컬럼</div>
                     </div>
                   </div>
                   
                   <div className="divide-y divide-gray-200">
-                    {sheetInfo.find(s => s.name === selectedSheet)?.columns.map((sheetColumn, index) => (
-                      <div key={`${sheetColumn}-${index}`} className="px-4 py-3 hover:bg-gray-50">
+                    {tableColumns.map((dbColumn, index) => (
+                      <div key={`${dbColumn.name}-${index}`} className="px-4 py-3 hover:bg-gray-50">
                         <div className="grid grid-cols-12 gap-4 items-center">
                           <div className="col-span-4">
                             <div className="flex items-center">
-                              <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                              <span className="text-sm font-medium text-gray-900">{sheetColumn}</span>
+                              <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-gray-900">{dbColumn.name}</span>
+                                <span className="text-xs text-gray-500">
+                                  {dbColumn.type}
+                                  {!dbColumn.nullable && ' *'}
+                                  {dbColumn.default && ` (기본값: ${dbColumn.default})`}
+                                </span>
+                              </div>
                             </div>
                           </div>
                           <div className="col-span-1 text-center">
@@ -904,32 +977,42 @@ export default function DataSyncPage() {
                           <div className="col-span-7">
                             <div className="relative">
                               <select
-                                value={columnMapping[sheetColumn] || ''}
+                                value={(() => {
+                                  // 현재 데이터베이스 컬럼에 매핑된 구글시트 컬럼 찾기
+                                  const mappedSheetColumn = Object.entries(columnMapping).find(([, dbCol]) => dbCol === dbColumn.name)?.[0] || ''
+                                  return mappedSheetColumn
+                                })()}
                                 onChange={(e) => {
                                   const newMapping = { ...columnMapping }
+                                  
+                                  // 기존 매핑에서 이 데이터베이스 컬럼을 사용하는 구글시트 컬럼 제거
+                                  Object.keys(newMapping).forEach(sheetCol => {
+                                    if (newMapping[sheetCol] === dbColumn.name) {
+                                      delete newMapping[sheetCol]
+                                    }
+                                  })
+                                  
+                                  // 새로운 매핑 추가
                                   if (e.target.value) {
-                                    newMapping[sheetColumn] = e.target.value
-                                  } else {
-                                    delete newMapping[sheetColumn]
+                                    newMapping[e.target.value] = dbColumn.name
                                   }
+                                  
                                   setColumnMapping(newMapping)
                                 }}
                                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               >
                                 <option value="">매핑하지 않음</option>
-                                {tableColumns.map((column) => (
-                                  <option key={`${column.name}-${index}`} value={column.name}>
-                                    {column.name} ({column.type})
-                                    {!column.nullable && ' *'}
-                                    {column.default && ` - 기본값: ${column.default}`}
+                                {sheetInfo.find(s => s.name === selectedSheet)?.columns.map((sheetColumn) => (
+                                  <option key={`${sheetColumn}-${index}`} value={sheetColumn}>
+                                    {sheetColumn}
                                   </option>
                                 ))}
                               </select>
                               
                               {/* 자동 완성 제안 */}
                               {(() => {
-                                const suggestions = getAutoCompleteSuggestions(sheetColumn, tableColumns)
-                                const currentValue = columnMapping[sheetColumn] || ''
+                                const suggestions = getAutoCompleteSuggestions(dbColumn.name, sheetInfo.find(s => s.name === selectedSheet)?.columns || [])
+                                const currentValue = Object.entries(columnMapping).find(([, dbCol]) => dbCol === dbColumn.name)?.[0] || ''
                                 const hasSuggestion = suggestions.length > 0 && !currentValue
                                 
                                 return hasSuggestion && (
@@ -942,15 +1025,21 @@ export default function DataSyncPage() {
                                         key={`suggestion-${idx}`}
                                         onClick={() => {
                                           const newMapping = { ...columnMapping }
-                                          newMapping[sheetColumn] = suggestion
+                                          
+                                          // 기존 매핑에서 이 데이터베이스 컬럼을 사용하는 구글시트 컬럼 제거
+                                          Object.keys(newMapping).forEach(sheetCol => {
+                                            if (newMapping[sheetCol] === dbColumn.name) {
+                                              delete newMapping[sheetCol]
+                                            }
+                                          })
+                                          
+                                          // 새로운 매핑 추가
+                                          newMapping[suggestion] = dbColumn.name
                                           setColumnMapping(newMapping)
                                         }}
                                         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center"
                                       >
                                         <span className="text-blue-600 font-medium">{suggestion}</span>
-                                        <span className="ml-2 text-gray-500">
-                                          {tableColumns.find(col => col.name === suggestion)?.type}
-                                        </span>
                                       </button>
                                     ))}
                                   </div>
@@ -971,9 +1060,9 @@ export default function DataSyncPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                       {Object.entries(columnMapping).map(([sheetCol, dbCol]) => (
                         <div key={`${sheetCol}-${dbCol}`} className="flex items-center">
-                          <span className="text-green-700 font-medium">{sheetCol}</span>
+                          <span className="text-green-700 font-medium">{dbCol}</span>
                           <ArrowRight className="h-3 w-3 text-green-500 mx-2" />
-                          <span className="text-green-600">{dbCol}</span>
+                          <span className="text-green-600">{sheetCol}</span>
                         </div>
                       ))}
                     </div>
@@ -988,7 +1077,7 @@ export default function DataSyncPage() {
                   // 자동 매핑 적용
                   const sheet = sheetInfo.find(s => s.name === selectedSheet)
                   if (sheet && sheet.columns.length > 0 && tableColumns.length > 0) {
-                    const autoMapping = getAutoMapping(sheet.columns, tableColumns)
+                    const autoMapping = getAutoMapping(tableColumns, sheet.columns)
                     console.log('Applying auto-mapping:', autoMapping)
                     setColumnMapping(autoMapping)
                   }

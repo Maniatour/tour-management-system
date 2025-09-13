@@ -1,6 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+// 값의 타입을 추론하는 함수
+function getColumnType(value: any): string {
+  if (value === null || value === undefined) {
+    return 'text' // null 값은 타입을 알 수 없으므로 기본값
+  }
+  
+  if (typeof value === 'boolean') {
+    return 'boolean'
+  }
+  
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? 'integer' : 'numeric'
+  }
+  
+  if (typeof value === 'string') {
+    // 날짜 형식 체크
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return 'date'
+    }
+    
+    // 시간 형식 체크
+    if (/^\d{2}:\d{2}:\d{2}/.test(value)) {
+      return 'time'
+    }
+    
+    // 타임스탬프 형식 체크
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
+      return 'timestamp'
+    }
+    
+    // UUID 형식 체크
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+      return 'uuid'
+    }
+    
+    return 'text'
+  }
+  
+  if (Array.isArray(value)) {
+    return 'array'
+  }
+  
+  if (typeof value === 'object') {
+    return 'jsonb'
+  }
+  
+  return 'text' // 기본값
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -13,71 +62,71 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // 실제 Supabase 프로젝트에 직접 연결
-    const supabaseUrl = 'https://tyilwbytyuqrhxekjxcd.supabase.co'
-    const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5aWx3Ynl0eXVxcmh4ZWtqeGNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU3MzQwMDAsImV4cCI6MjA1MTMxMDAwMH0.Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8'
+    // 환경 변수에서 Supabase 설정 가져오기
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Supabase environment variables not configured')
+      throw new Error('Supabase configuration missing')
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // 실제 데이터베이스에서 테이블 컬럼 정보를 가져오기
-    // 직접 SQL 쿼리 사용
-    const { data, error } = await supabase
-      .from('information_schema.columns')
-      .select('column_name, data_type, is_nullable, column_default')
-      .eq('table_schema', 'public')
-      .eq('table_name', tableName)
-      .order('ordinal_position')
+    // Supabase RPC 함수를 사용하여 테이블 스키마 조회
+    // 먼저 테이블이 존재하는지 확인
+    const { data: tableExists, error: tableCheckError } = await supabase
+      .from(tableName)
+      .select('*')
+      .limit(1)
 
-    if (error) {
-      console.error('Error getting table columns from database:', error)
-      
-      // 폴백: 하드코딩된 스키마 사용
+    if (tableCheckError) {
+      console.error('Table does not exist or access denied:', tableCheckError)
+      throw new Error(`Table '${tableName}' does not exist or access denied`)
+    }
+
+    // 테이블이 존재하면 샘플 데이터를 가져와서 컬럼 정보 추출
+    const { data: sampleData, error: sampleError } = await supabase
+      .from(tableName)
+      .select('*')
+      .limit(1)
+
+    if (sampleError) {
+      console.error('Error getting sample data:', sampleError)
+      throw new Error(`Error accessing table '${tableName}': ${sampleError.message}`)
+    }
+
+    // 샘플 데이터에서 컬럼 정보 추출
+    if (!sampleData || sampleData.length === 0) {
+      // 빈 테이블인 경우 폴백 사용
       const fallbackColumns = getFallbackColumns(tableName)
-      console.log('Using fallback columns due to database error:', fallbackColumns)
-      
       return NextResponse.json({
         success: true,
         data: {
           tableName,
           columns: fallbackColumns,
-          source: 'fallback'
+          source: 'fallback_empty_table'
         }
       })
     }
 
-    if (!data || data.length === 0) {
-      console.warn(`No columns found for table: ${tableName}`)
-      
-      // 폴백: 하드코딩된 스키마 사용
-      const fallbackColumns = getFallbackColumns(tableName)
-      console.log('Using fallback columns - no data returned:', fallbackColumns)
-      
-      return NextResponse.json({
-        success: true,
-        data: {
-          tableName,
-          columns: fallbackColumns,
-          source: 'fallback'
-        }
-      })
-    }
-
-    // 데이터베이스에서 가져온 컬럼 정보를 변환
-    const transformedData = data.map((column: any) => ({
-      name: column.column_name,
-      type: column.data_type,
-      nullable: column.is_nullable === 'YES',
-      default: column.column_default || null
+    // 첫 번째 행에서 컬럼 정보 추출
+    const firstRow = sampleData[0]
+    const columns = Object.keys(firstRow).map(columnName => ({
+      name: columnName,
+      type: getColumnType(firstRow[columnName]),
+      nullable: firstRow[columnName] === null,
+      default: null // 타입만으로는 기본값을 알 수 없음
     }))
 
-    console.log(`Successfully retrieved ${transformedData.length} columns for table ${tableName} from database`)
+    console.log(`Successfully retrieved ${columns.length} columns for table ${tableName} from sample data`)
 
     return NextResponse.json({
       success: true,
       data: {
         tableName,
-        columns: transformedData,
-        source: 'database'
+        columns: columns,
+        source: 'sample_data'
       }
     })
 
@@ -217,6 +266,36 @@ function getFallbackColumns(tableName: string): any[] {
       { name: 'status', type: 'character varying', nullable: true, default: "'pending'" },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
+    ],
+    vehicles: [
+      { name: 'id', type: 'text', nullable: false, default: null },
+      { name: 'vehicle_number', type: 'text', nullable: true, default: null },
+      { name: 'vin', type: 'text', nullable: true, default: null },
+      { name: 'vehicle_type', type: 'text', nullable: true, default: null },
+      { name: 'capacity', type: 'integer', nullable: true, default: null },
+      { name: 'year', type: 'integer', nullable: true, default: null },
+      { name: 'mileage_at_purchase', type: 'integer', nullable: true, default: null },
+      { name: 'purchase_amount', type: 'numeric', nullable: true, default: null },
+      { name: 'purchase_date', type: 'date', nullable: true, default: null },
+      { name: 'memo', type: 'text', nullable: true, default: null },
+      { name: 'engine_oil_change_cycle', type: 'integer', nullable: true, default: null },
+      { name: 'current_mileage', type: 'integer', nullable: true, default: null },
+      { name: 'recent_engine_oil_change_mileage', type: 'integer', nullable: true, default: null },
+      { name: 'vehicle_status', type: 'text', nullable: true, default: null },
+      { name: 'front_tire_size', type: 'text', nullable: true, default: null },
+      { name: 'rear_tire_size', type: 'text', nullable: true, default: null },
+      { name: 'windshield_wiper_size', type: 'text', nullable: true, default: null },
+      { name: 'headlight_model', type: 'text', nullable: true, default: null },
+      { name: 'headlight_model_name', type: 'text', nullable: true, default: null },
+      { name: 'is_installment', type: 'boolean', nullable: true, default: 'false' },
+      { name: 'installment_amount', type: 'numeric', nullable: true, default: null },
+      { name: 'interest_rate', type: 'numeric', nullable: true, default: null },
+      { name: 'monthly_payment', type: 'numeric', nullable: true, default: null },
+      { name: 'additional_payment', type: 'numeric', nullable: true, default: null },
+      { name: 'payment_due_date', type: 'date', nullable: true, default: null },
+      { name: 'installment_start_date', type: 'date', nullable: true, default: null },
+      { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
     ]
   }
   

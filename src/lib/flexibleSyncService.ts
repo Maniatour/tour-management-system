@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { readSheetData } from './googleSheets'
+import { readSheetData, readSheetDataDynamic } from './googleSheets'
 
 // 하드코딩된 매핑 제거 - 실제 데이터베이스 스키마 기반으로 동적 매핑 생성
 
@@ -263,8 +263,8 @@ export const flexibleSync = async (
       console.log(`Last sync time: ${lastSyncTime ? lastSyncTime.toISOString() : 'No previous sync'}`)
     }
     
-    // 구글 시트에서 데이터 읽기
-    const sheetData = await readSheetData(spreadsheetId, sheetName)
+    // 구글 시트에서 데이터 읽기 (동적 범위 사용)
+    const sheetData = await readSheetDataDynamic(spreadsheetId, sheetName)
     console.log(`Read ${sheetData.length} rows from Google Sheet`)
 
     if (sheetData.length === 0) {

@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase-server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('Supabase environment variables not configured')
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createServerSupabase()
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
     
     // RPC 함수를 사용하여 테이블 목록 조회
     const { data: tables, error } = await supabase
@@ -56,7 +63,10 @@ function getHardcodedTables() {
     'product_details',
     'product_schedules',
     'reservation_options',
-    'sync_history'
+    'sync_history',
+    'vehicles',
+    'ticket_bookings',
+    'tour_hotel_bookings'
   ]
 
   // 테이블 목록을 표시명과 함께 반환
@@ -94,7 +104,10 @@ function getTableDisplayName(tableName: string): string {
     product_details: '상품 상세정보',
     product_schedules: '상품 일정',
     reservation_options: '예약 옵션',
-    sync_history: '동기화 히스토리'
+    sync_history: '동기화 히스토리',
+    vehicles: '차량',
+    ticket_bookings: '티켓 예약',
+    tour_hotel_bookings: '투어 호텔 예약'
   }
   return displayNames[tableName] || tableName
 }

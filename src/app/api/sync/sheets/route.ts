@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSheetNames, readSheetData } from '@/lib/googleSheets'
+import { getSheetNames, readSheetData, readSheetDataDynamic } from '@/lib/googleSheets'
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,7 +22,9 @@ export async function POST(request: NextRequest) {
     const sheetInfo = await Promise.all(
       sheetNames.map(async (sheetName) => {
         try {
-          const sampleData = await readSheetData(spreadsheetId, sheetName)
+          // 동적 범위로 데이터 읽기 시도
+          const sampleData = await readSheetDataDynamic(spreadsheetId, sheetName)
+          console.log(`Sheet ${sheetName} columns:`, sampleData.length > 0 ? Object.keys(sampleData[0]).length : 0)
           return {
             name: sheetName,
             rowCount: sampleData.length,
@@ -31,12 +33,24 @@ export async function POST(request: NextRequest) {
           }
         } catch (error) {
           console.error(`Error reading sheet ${sheetName}:`, error)
-          return {
-            name: sheetName,
-            rowCount: 0,
-            sampleData: [],
-            columns: [],
-            error: error.message
+          // 폴백: 기본 범위로 읽기 시도
+          try {
+            const fallbackData = await readSheetData(spreadsheetId, sheetName)
+            return {
+              name: sheetName,
+              rowCount: fallbackData.length,
+              sampleData: fallbackData.slice(0, 5),
+              columns: fallbackData.length > 0 ? Object.keys(fallbackData[0]) : []
+            }
+          } catch (fallbackError) {
+            console.error(`Fallback also failed for sheet ${sheetName}:`, fallbackError)
+            return {
+              name: sheetName,
+              rowCount: 0,
+              sampleData: [],
+              columns: [],
+              error: error.message
+            }
           }
         }
       })

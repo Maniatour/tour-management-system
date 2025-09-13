@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase-server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('Supabase environment variables not configured')
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +21,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const supabase = await createServerSupabase()
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // 마지막 동기화 시간 조회
     const { data: history, error } = await supabase
@@ -64,7 +71,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const supabase = await createServerSupabase()
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // 동기화 히스토리 저장
     const { data, error } = await supabase

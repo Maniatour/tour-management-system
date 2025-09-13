@@ -339,8 +339,8 @@ export default function PublicChatPage({ params }: { params: { code: string } })
 
         {/* 채팅방 */}
         {customerName && (
-          <div className="bg-white rounded-lg shadow-sm border">
-            <div className="p-4 border-b bg-gray-50">
+          <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden" style={{ height: '70vh' }}>
+            <div className="p-4 border-b bg-gray-50 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <MessageCircle size={20} className="text-blue-600" />
@@ -361,7 +361,7 @@ export default function PublicChatPage({ params }: { params: { code: string } })
                 </div>
               </div>
             </div>
-            <div className="h-96">
+            <div className="flex-1 overflow-hidden">
               <TourChatRoom
                 tourId={room.tour_id}
                 guideEmail={room.created_by}

@@ -562,21 +562,21 @@ export default function ChatManagementPage() {
             </div>
 
             {/* 메시지 입력 */}
-            <div className="bg-white border-t border-gray-200 p-4">
-              <div className="flex items-center space-x-2">
+            <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0">
+              <div className="flex items-center space-x-2 w-full">
                 <input
                   type="text"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                   placeholder="메시지를 입력하세요..."
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   disabled={sending}
                 />
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim() || sending}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-shrink-0 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {sending ? '전송 중...' : '전송'}
                 </button>

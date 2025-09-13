@@ -411,7 +411,7 @@ export default function TourChatRoom({
   }
 
   return (
-    <div className="flex flex-col h-full max-h-screen">
+    <div className="flex flex-col h-full max-h-screen overflow-hidden">
       {/* 채팅방 헤더 (관리자 뷰에서만 표시) */}
       {!isPublicView && (
         <div className="flex items-center justify-between p-4 border-b bg-gray-50">
@@ -554,24 +554,24 @@ export default function TourChatRoom({
 
       {/* 메시지 입력 */}
       {room.is_active && (
-        <div className={`${isPublicView ? 'p-4' : 'p-4 border-t bg-gray-50'}`}>
-          <div className="flex items-center space-x-2">
+        <div className={`${isPublicView ? 'p-4' : 'p-4 border-t bg-gray-50'} flex-shrink-0`}>
+          <div className="flex items-center space-x-2 w-full">
             <input
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Type your message..."
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={sending}
             />
             <button
               onClick={sendMessage}
               disabled={!newMessage.trim() || sending}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="flex-shrink-0 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Send size={16} />
-              <span>{sending ? 'Sending...' : 'Send'}</span>
+              <span className="hidden sm:inline">{sending ? 'Sending...' : 'Send'}</span>
             </button>
           </div>
         </div>

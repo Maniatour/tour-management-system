@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
 import BookingHistory from './BookingHistory';
@@ -35,6 +36,7 @@ interface TicketBooking {
 }
 
 export default function TicketBookingList() {
+  const router = useRouter();
   const [bookings, setBookings] = useState<TicketBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -42,16 +44,14 @@ export default function TicketBookingList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
+  const [tourFilter, setTourFilter] = useState('all'); // 'all', 'connected', 'unconnected'
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
   const [viewMode, setViewMode] = useState<'card' | 'calendar'>('calendar');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
-
-  useEffect(() => {
-    fetchBookings();
-  }, []);
+  const [tourEvents, setTourEvents] = useState<any[]>([]);
 
   const fetchBookings = async () => {
     try {
@@ -146,6 +146,186 @@ export default function TicketBookingList() {
     }
   };
 
+  const fetchTourEvents = useCallback(async () => {
+    try {
+      // 현재 달력에 표시되는 월의 시작일과 종료일 계산
+      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      
+      console.log('투어 이벤트 조회 기간:', startDate.toISOString().split('T')[0], '~', endDate.toISOString().split('T')[0]);
+
+      // 먼저 투어 데이터만 조회 (reservation_ids 포함)
+      const { data: toursData, error: toursError } = await supabase
+        .from('tours')
+        .select(`
+          id,
+          tour_date,
+          reservation_ids,
+          products (
+            name
+          )
+        `)
+        .gte('tour_date', startDate.toISOString().split('T')[0])
+        .lte('tour_date', endDate.toISOString().split('T')[0])
+        .order('tour_date', { ascending: true });
+
+      if (toursError) {
+        console.error('투어 데이터 조회 오류:', toursError);
+        throw toursError;
+      }
+
+      console.log('투어 데이터:', toursData);
+      console.log('투어 데이터 상세:', JSON.stringify(toursData, null, 2));
+
+      if (!toursData || toursData.length === 0) {
+        console.log('투어 데이터가 없음');
+        setTourEvents([]);
+        return;
+      }
+
+      // 각 투어별로 예약 데이터 조회 (reservation_ids 사용)
+      const tourEventsWithReservations = await Promise.all(
+        toursData.map(async (tour: any) => {
+          try {
+            console.log(`투어 ${tour.id} 처리 시작:`, {
+              tour_id: tour.id,
+              reservation_ids: tour.reservation_ids,
+              reservation_ids_length: tour.reservation_ids?.length || 0
+            });
+
+            // reservation_ids가 없거나 비어있는 경우
+            if (!tour.reservation_ids || tour.reservation_ids.length === 0) {
+              console.log(`투어 ${tour.id}에 배정된 예약이 없음 (reservation_ids: ${tour.reservation_ids})`);
+              return {
+                ...tour,
+                total_reservations: 0,
+                total_people: 0,
+                adults: 0,
+                child: 0,
+                infant: 0
+              };
+            }
+
+            console.log(`투어 ${tour.id}의 reservation_ids로 예약 조회:`, tour.reservation_ids);
+
+            // reservation_ids에 있는 예약 ID들로 예약 데이터 조회 (상태 필터 제거)
+            const { data: reservationsData, error: reservationsError } = await supabase
+              .from('reservations')
+              .select('id, adults, child, infant, total_people, status')
+              .in('id', tour.reservation_ids);
+
+            console.log(`투어 ${tour.id} 예약 조회 결과:`, {
+              reservationsData,
+              error: reservationsError
+            });
+
+            if (reservationsError) {
+              console.error(`투어 ${tour.id} 예약 조회 오류:`, reservationsError);
+              // Fallback: tour_id로 예약 조회 시도
+              console.log(`투어 ${tour.id} fallback: tour_id로 예약 조회 시도`);
+              const { data: fallbackReservations, error: fallbackError } = await supabase
+                .from('reservations')
+                .select('id, adults, child, infant, total_people, status')
+                .eq('tour_id', tour.id);
+              
+              if (fallbackError) {
+                console.error(`투어 ${tour.id} fallback 조회도 실패:`, fallbackError);
+                return {
+                  ...tour,
+                  total_reservations: 0,
+                  total_people: 0,
+                  adults: 0,
+                  child: 0,
+                  infant: 0
+                };
+              }
+              
+              console.log(`투어 ${tour.id} fallback 조회 성공:`, fallbackReservations);
+              const fallbackTotalPeople = fallbackReservations?.reduce((sum: number, reservation: any) => {
+                return sum + (reservation.total_people || 0);
+              }, 0) || 0;
+              
+              return {
+                ...tour,
+                total_reservations: fallbackReservations?.length || 0,
+                total_people: fallbackTotalPeople,
+                adults: 0,
+                child: 0,
+                infant: 0
+              };
+            }
+
+            const totalReservations = reservationsData?.length || 0;
+            
+            console.log(`투어 ${tour.id} 예약 데이터 상세:`, reservationsData);
+            
+            // reservation_ids에 있는 예약들의 total_people 합산
+            const totalPeople = reservationsData?.reduce((sum: number, reservation: any) => {
+              console.log(`예약 ${reservation.id} total_people:`, reservation.total_people);
+              return sum + (reservation.total_people || 0);
+            }, 0) || 0;
+            
+            // adults, child, infant도 계산 (상세 정보용)
+            const totalAdults = reservationsData?.reduce((sum: number, reservation: any) => {
+              return sum + (reservation.adults || 0);
+            }, 0) || 0;
+            
+            const totalChild = reservationsData?.reduce((sum: number, reservation: any) => {
+              return sum + (reservation.child || 0);
+            }, 0) || 0;
+            
+            const totalInfant = reservationsData?.reduce((sum: number, reservation: any) => {
+              return sum + (reservation.infant || 0);
+            }, 0) || 0;
+
+            console.log(`투어 ${tour.id} 인원 정보 (reservation_ids 사용):`, {
+              reservation_ids: tour.reservation_ids,
+              adults: totalAdults,
+              child: totalChild,
+              infant: totalInfant,
+              total_people: totalPeople,
+              reservations: totalReservations
+            });
+
+            return {
+              ...tour,
+              total_reservations: totalReservations,
+              total_people: totalPeople,
+              adults: totalAdults,
+              child: totalChild,
+              infant: totalInfant
+            };
+          } catch (error) {
+            console.error(`투어 ${tour.id} 처리 오류:`, error);
+            return {
+              ...tour,
+              total_reservations: 0,
+              total_people: 0,
+              adults: 0,
+              child: 0,
+              infant: 0
+            };
+          }
+        })
+      );
+
+      console.log('최종 투어 이벤트 데이터:', tourEventsWithReservations);
+      setTourEvents(tourEventsWithReservations);
+    } catch (error) {
+      console.error('투어 이벤트 조회 오류:', error);
+      console.error('오류 상세:', JSON.stringify(error, null, 2));
+      setTourEvents([]);
+    }
+  }, [currentDate]);
+
+  useEffect(() => {
+    fetchBookings();
+  }, []);
+
+  useEffect(() => {
+    fetchTourEvents();
+  }, [fetchTourEvents]);
+
   const handleEdit = (booking: TicketBooking) => {
     setEditingBooking(booking);
     setShowForm(true);
@@ -197,7 +377,12 @@ export default function TicketBookingList() {
     
     const matchesDate = !dateFilter || booking.submit_on === dateFilter;
 
-    return matchesSearch && matchesStatus && matchesDate;
+    const matchesTour = 
+      tourFilter === 'all' || 
+      (tourFilter === 'connected' && booking.tour_id) ||
+      (tourFilter === 'unconnected' && !booking.tour_id);
+
+    return matchesSearch && matchesStatus && matchesDate && matchesTour;
   });
 
   const getStatusColor = (status: string) => {
@@ -265,6 +450,10 @@ export default function TicketBookingList() {
     setShowBookingModal(true);
   };
 
+  const handleTourClick = (tourId: string) => {
+    router.push(`/ko/admin/tours/${tourId}`);
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -315,7 +504,7 @@ export default function TicketBookingList() {
 
       {/* 필터 - 모바일 최적화 */}
       <div className="px-1 sm:px-6 py-4">
-        <div className="flex flex-row sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
+        <div className="flex flex-row sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
               검색
@@ -346,6 +535,21 @@ export default function TicketBookingList() {
               <option value="confirmed">확정</option>
               <option value="cancelled">취소</option>
               <option value="completed">완료</option>
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              투어 연결
+            </label>
+            <select
+              value={tourFilter}
+              onChange={(e) => setTourFilter(e.target.value)}
+              className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
+            >
+              <option value="all">모든 부킹</option>
+              <option value="connected">투어 연결됨</option>
+              <option value="unconnected">투어 미연결</option>
             </select>
           </div>
 
@@ -471,15 +675,23 @@ export default function TicketBookingList() {
                         const dayBookings = groupedByDate[dateString] || [];
                         const totalQuantity = dayBookings.reduce((sum, booking) => sum + booking.ea, 0);
                         
+                        // 해당 날짜의 투어 이벤트 조회
+                        const dayTours = tourEvents.filter(tour => tour.tour_date === dateString);
+                        
                         // 디버깅: 해당 날짜에 부킹이 있는지 확인
                         if (dayBookings.length > 0) {
                           console.log(`${dateString}에 부킹 ${dayBookings.length}개:`, dayBookings);
+                        }
+                        
+                        // 디버깅: 해당 날짜에 투어가 있는지 확인
+                        if (dayTours.length > 0) {
+                          console.log(`${dateString}에 투어 ${dayTours.length}개:`, dayTours);
                         }
 
                         return (
                           <div
                             key={index}
-                            className={`min-h-[120px] p-2 border border-gray-200 ${
+                            className={`min-h-[160px] p-2 border border-gray-200 ${
                               isCurrentMonth ? 'bg-white' : 'bg-gray-50'
                             } ${isToday ? 'ring-2 ring-blue-500' : ''}`}
                           >
@@ -488,6 +700,40 @@ export default function TicketBookingList() {
                             } ${isToday ? 'text-blue-600' : ''}`}>
                               {date.getDate()}
                             </div>
+                            
+                            {/* 투어 이벤트 정보 */}
+                            {dayTours.length > 0 && (
+                              <div className="space-y-1 mb-2">
+                                {dayTours.map((tour, tourIndex) => (
+                  <div
+                    key={tourIndex}
+                    className="px-1 py-0.5 bg-purple-100 text-purple-800 rounded text-[8px] sm:text-[10px] font-medium cursor-pointer hover:bg-purple-200 transition-colors"
+                    title={`${tour.products?.name || '투어'} - 성인:${tour.adults}명, 아동:${tour.child}명, 유아:${tour.infant}명 (총 ${tour.total_people}명) (클릭하여 상세보기)`}
+                    onClick={() => handleTourClick(tour.id)}
+                  >
+                    <div className="truncate">
+                      {(() => {
+                        const tourName = tour.products?.name || '투어';
+                        const totalPeople = tour.total_people;
+                        const child = tour.child || 0;
+                        const infant = tour.infant || 0;
+                        
+                        // 아동이나 유아가 있을 때만 괄호 안에 표시
+                        if (child > 0 || infant > 0) {
+                          const childText = child > 0 ? `아동${child}` : '';
+                          const infantText = infant > 0 ? `유아${infant}` : '';
+                          const additionalText = [childText, infantText].filter(Boolean).join(' ');
+                          return `${tourName} ${totalPeople}명 (${additionalText})`;
+                        } else {
+                          // 성인만 있을 경우
+                          return `${tourName} ${totalPeople}명`;
+                        }
+                      })()}
+                    </div>
+                  </div>
+                                ))}
+                              </div>
+                            )}
                             
                             {/* 부킹 정보 라벨 */}
                             {dayBookings.length > 0 && (
@@ -523,14 +769,16 @@ export default function TicketBookingList() {
                                     const companyTotal = companyBookings.reduce((sum, booking) => sum + booking.ea, 0);
                                     const firstBooking = companyBookings[0];
                                     
-                                    // 공급업체별 색상 구분
+                                    // 공급업체별 색상 구분 (투어 연결 상태 고려)
                                     let companyBgColor = '';
+                                    const hasTourConnection = companyBookings.some(booking => booking.tour_id);
+                                    
                                     if (company === 'SEE CANYON') {
-                                      companyBgColor = 'bg-blue-200 text-blue-800';
+                                      companyBgColor = hasTourConnection ? 'bg-blue-200 text-blue-800' : 'bg-blue-100 text-blue-600';
                                     } else if (company === 'Antelope X') {
-                                      companyBgColor = 'bg-green-200 text-green-800';
+                                      companyBgColor = hasTourConnection ? 'bg-green-200 text-green-800' : 'bg-green-100 text-green-600';
                                     } else {
-                                      companyBgColor = getStatusColor(firstBooking.status);
+                                      companyBgColor = hasTourConnection ? getStatusColor(firstBooking.status) : 'bg-gray-100 text-gray-600';
                                     }
 
                                     return (
@@ -576,13 +824,27 @@ export default function TicketBookingList() {
                         </span>
                       </div>
                       <div className="mt-3">
+                        <div className="text-sm font-medium text-gray-700 mb-2">투어 이벤트</div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
+                            투어명 인원수
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-3">
                         <div className="text-sm font-medium text-gray-700 mb-2">공급업체 구분</div>
                         <div className="flex flex-wrap gap-2">
                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-200 text-blue-800">
-                            L (SEE CANYON)
+                            L (SEE CANYON) - 투어 연결됨
+                          </span>
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-600">
+                            L (SEE CANYON) - 투어 미연결
                           </span>
                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-200 text-green-800">
-                            X (Antelope X)
+                            X (Antelope X) - 투어 연결됨
+                          </span>
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-600">
+                            X (Antelope X) - 투어 미연결
                           </span>
                         </div>
                       </div>
@@ -652,19 +914,31 @@ export default function TicketBookingList() {
                       </div>
                     </div>
 
-                    {booking.tours && (
-                      <div className="border-t pt-3">
-                        <div className="text-sm">
-                          <span className="text-gray-500">투어</span>
-                          <div className="mt-1">
-                            <div className="font-medium">{booking.tours.tour_date}</div>
-                            <div className="text-xs text-gray-500">
-                              {booking.tours.products?.name || '상품명 없음'}
+                    <div className="border-t pt-3">
+                      <div className="text-sm">
+                        <span className="text-gray-500">투어 연결</span>
+                        <div className="mt-1">
+                          {booking.tours ? (
+                            <div>
+                              <div className="font-medium">{booking.tours.tour_date}</div>
+                              <div className="text-xs text-gray-500">
+                                {booking.tours.products?.name || '상품명 없음'}
+                              </div>
+                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 mt-1">
+                                연결됨
+                              </span>
                             </div>
-                          </div>
+                          ) : (
+                            <div>
+                              <span className="text-gray-400">투어 미연결</span>
+                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 mt-1">
+                                미연결
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
 
                   {/* 액션 버튼들 */}

@@ -4,15 +4,26 @@ import { useState, useMemo, useCallback, memo } from 'react'
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { Database } from '@/lib/supabase'
+import { calculateAssignedPeople, calculateTotalPeopleForSameProductDate, calculateUnassignedPeople } from '@/utils/tourUtils'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
-interface TourCalendarProps {
-  tours: (Tour & { product_name?: string; total_people?: number; assigned_people?: number; guide_name?: string; assistant_name?: string })[] // 투어 데이터 + 상품명 + 총인원 + 배정인원 + 가이드명 + 어시스턴트명
-  onTourClick: (tour: Tour) => void
+interface ExtendedTour extends Tour {
+  product_name?: string | null;
+  total_people?: number;
+  assigned_people?: number;
+  unassigned_people?: number;
+  guide_name?: string | null;
+  assistant_name?: string | null;
 }
 
-const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCalendarProps) {
+interface TourCalendarProps {
+  tours: ExtendedTour[]
+  onTourClick: (tour: ExtendedTour) => void
+  allReservations?: Database['public']['Tables']['reservations']['Row'][]
+}
+
+const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [] }: TourCalendarProps) {
   const t = useTranslations('tours')
   const [currentDate, setCurrentDate] = useState(new Date())
 
@@ -184,15 +195,15 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
               {/* 투어 라벨들 */}
               <div className="space-y-0.5">
                 {dayTours.map((tour, tourIndex) => {
-                  // 배정된 인원 수와 총 인원 수
-                  const assignedPeople = tour.assigned_people || 0
-                  const totalPeople = tour.total_people || 0
-                  const hasUnassignedReservations = totalPeople > assignedPeople
+                  // 인원 계산
+                  const assignedPeople = calculateAssignedPeople(tour, allReservations)
+                  const totalPeople = calculateTotalPeopleForSameProductDate(tour, allReservations)
+                  const unassignedPeople = calculateUnassignedPeople(tour, allReservations)
                   
                   // 툴팁 텍스트 구성
                   let tooltipText = `${tour.product_name || tour.product_id} | 배정: ${assignedPeople}명 / 총: ${totalPeople}명 (Recruiting/Confirmed만)`
-                  if (hasUnassignedReservations) {
-                    tooltipText += ' (미배정 있음)'
+                  if (unassignedPeople > 0) {
+                    tooltipText += `\n미배정: ${unassignedPeople}명`
                   }
                   
                   // 가이드 정보 추가
@@ -217,7 +228,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
                       onClick={() => onTourClick(tour)}
                       className={`text-xs px-1 py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
                         getProductColor(tour.product_id)
-                      } ${hasUnassignedReservations ? 'ring-2 ring-red-500 ring-opacity-75' : ''} ${
+                      } ${unassignedPeople > 0 ? 'ring-2 ring-red-500 ring-opacity-75' : ''} ${
                         isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
                       }`}
                       title={tooltipText + (isPrivateTour ? '\n단독투어' : '')}
@@ -226,8 +237,10 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick }: TourCale
                         <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
                           {isPrivateTour ? '🔒 ' : ''}{tour.product_name || tour.product_id}
                         </span>
-                        <span className="mx-1">|</span>
-                        <span className="opacity-90">{assignedPeople} / {totalPeople}명</span>
+                        <span className="mx-1">{assignedPeople}/{totalPeople}</span>
+                        {unassignedPeople > 0 && (
+                          <span className="opacity-90"> ({unassignedPeople}명)</span>
+                        )}
                       </div>
                     </div>
                   )
