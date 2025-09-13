@@ -60,6 +60,8 @@ export default function ReservationForm({
   const t = useTranslations('reservations')
   const tCommon = useTranslations('common')
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
+  const rez: any = reservation || {}
+  const [showRawDetails, setShowRawDetails] = useState(false)
   
   const [formData, setFormData] = useState<{
     customerId: string
@@ -116,38 +118,38 @@ export default function ReservationForm({
     commission_percent: number
     productRequiredOptions: ProductOption[]
   }>({
-    customerId: reservation?.customerId || '',
+    customerId: reservation?.customerId || rez.customer_id || '',
     customerSearch: reservation?.customerId ? 
-      customers.find(c => c.id === reservation.customerId)?.name || '' : '',
+      customers.find(c => c.id === reservation.customerId)?.name || '' : (rez.customer_id ? (customers.find(c => c.id === rez.customer_id)?.name || '') : ''),
     showCustomerDropdown: false,
-    productId: reservation?.productId || '',
+    productId: reservation?.productId || rez.product_id || '',
     selectedProductCategory: '',
     selectedProductSubCategory: '',
     productSearch: '',
-    tourDate: reservation?.tourDate || '',
-    tourTime: reservation?.tourTime || '',
-    eventNote: reservation?.eventNote || '',
-    pickUpHotel: reservation?.pickUpHotel || '',
-    pickUpHotelSearch: reservation?.pickUpHotel ? 
-      pickupHotels.find(h => h.id === reservation.pickUpHotel) ? 
-        `${pickupHotels.find(h => h.id === reservation.pickUpHotel)?.hotel} - ${pickupHotels.find(h => h.id === reservation.pickUpHotel)?.pick_up_location}` : '' : '',
+    tourDate: reservation?.tourDate || rez.tour_date || '',
+    tourTime: reservation?.tourTime || rez.tour_time || '',
+    eventNote: reservation?.eventNote || rez.event_note || '',
+    pickUpHotel: reservation?.pickUpHotel || rez.pickup_hotel || '',
+    pickUpHotelSearch: (reservation?.pickUpHotel || rez.pickup_hotel) ? 
+      (pickupHotels.find(h => h.id === (reservation?.pickUpHotel || rez.pickup_hotel)) ? 
+        `${pickupHotels.find(h => h.id === (reservation?.PickUpHotel || rez.pickup_hotel))?.hotel} - ${pickupHotels.find(h => h.id === (reservation?.PickUpHotel || rez.pickup_hotel))?.pick_up_location}` : '') : '',
     showPickupHotelDropdown: false,
-    pickUpTime: reservation?.pickUpTime || '',
-    adults: reservation?.adults || 1,
-    child: reservation?.child || 0,
-    infant: reservation?.infant || 0,
-    totalPeople: reservation?.totalPeople || 1,
-    channelId: reservation?.channelId || '',
+    pickUpTime: reservation?.pickUpTime || (rez.pickup_time ? String(rez.pickup_time).substring(0,5) : ''),
+    adults: reservation?.adults || rez.adults || 1,
+    child: reservation?.child || rez.child || 0,
+    infant: reservation?.infant || rez.infant || 0,
+    totalPeople: reservation?.totalPeople || rez.total_people || 1,
+    channelId: reservation?.channelId || rez.channel_id || '',
     selectedChannelType: reservation?.channelId ? 
-      (channels.find(c => c.id === reservation?.channelId)?.type || 'self') : 'self',
+      (channels.find(c => c.id === reservation?.channelId)?.type || 'self') : (rez.channel_id ? (channels.find(c => c.id === rez.channel_id)?.type || 'self') : 'self'),
     channelSearch: '',
-    channelRN: reservation?.channelRN || '',
-    addedBy: reservation?.addedBy || '',
-    addedTime: reservation?.addedTime || new Date().toISOString().slice(0, 16).replace('T', ' '),
-    tourId: reservation?.tourId || '',
-    status: reservation?.status || 'pending',
-    selectedOptions: reservation?.selectedOptions || {},
-    selectedOptionPrices: reservation?.selectedOptionPrices || {},
+    channelRN: reservation?.channelRN || rez.channel_rn || '',
+    addedBy: reservation?.addedBy || rez.added_by || '',
+    addedTime: reservation?.addedTime || rez.created_at || new Date().toISOString().slice(0, 16).replace('T', ' '),
+    tourId: reservation?.tourId || rez.tour_id || '',
+    status: (reservation as any) || rez.status || 'pending',
+    selectedOptions: reservation?.selectedOptions || rez.selected_options || {},
+    selectedOptionPrices: reservation?.selectedOptionPrices || rez.selected_option_prices || {},
     // 가격 정보 초기값 (loadPricingInfo 함수에서 동적으로 로드)
     adultProductPrice: 0,
     childProductPrice: 0,
@@ -169,7 +171,7 @@ export default function ReservationForm({
     totalPrice: 0,
     depositAmount: 0,
     balanceAmount: 0,
-    isPrivateTour: false,
+    isPrivateTour: (reservation as any)?.isPrivateTour || rez.is_private_tour || false,
     privateTourAdditionalCost: 0,
     commission_percent: 0,
     productRequiredOptions: []
@@ -1030,6 +1032,17 @@ export default function ReservationForm({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:h-[940px]">
             {/* 1열: 고객, 투어 정보, 가격 정보 - 모바일에서는 전체 너비 */}
             <div className="col-span-1 lg:col-span-6 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">모든 필드가 보이지 않나요?</div>
+                <button type="button" onClick={() => setShowRawDetails(!showRawDetails)} className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200">
+                  {showRawDetails ? '숨기기' : '전체 데이터 보기'}
+                </button>
+              </div>
+              {showRawDetails && (
+                <div className="p-2 bg-gray-50 rounded border overflow-x-auto">
+                  <pre className="text-xs whitespace-pre-wrap break-all">{JSON.stringify(reservation ?? rez, null, 2)}</pre>
+                </div>
+              )}
               <CustomerSection
                 formData={formData}
                 setFormData={setFormData}

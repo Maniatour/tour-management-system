@@ -16,8 +16,7 @@ import {
   calculateAssignedPeople, 
   calculateTotalPeopleForSameProductDate, 
   calculateUnassignedPeople,
-  getPendingReservations,
-  getOtherToursAssignedReservations
+  getPendingReservations
 } from '@/utils/tourUtils'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
@@ -159,9 +158,12 @@ export default function TourDetailPage() {
   const [reservations, setReservations] = useState<any[]>([])
   const [allReservations, setAllReservations] = useState<any[]>([])
   const [allTours, setAllTours] = useState<any[]>([])
+  const [allProducts, setAllProducts] = useState<any[]>([])
+  const [channels, setChannels] = useState<any[]>([])
   const [assignedReservations, setAssignedReservations] = useState<any[]>([])
   const [pendingReservations, setPendingReservations] = useState<any[]>([])
   const [otherToursAssignedReservations, setOtherToursAssignedReservations] = useState<any[]>([])
+  const [inactiveReservations, setInactiveReservations] = useState<any[]>([])
   const [pickupHotels, setPickupHotels] = useState<any[]>([])
   const [pickupTimeValue, setPickupTimeValue] = useState<string>('')
   const [showTimeModal, setShowTimeModal] = useState(false)
@@ -222,49 +224,55 @@ export default function TourDetailPage() {
     }
   }, [])
 
-  // 같은 날 같은 투어명의 다른 투어에 배정된 고객 조회
-  const fetchOtherToursAssignedReservations = useCallback(async (tour: any) => {
-    if (!tour || !tour.product_id || !tour.tour_date) {
-      console.log('fetchOtherToursAssignedReservations: 투어 정보가 없습니다', { tour })
-      return
-    }
-
-    console.log('=== 다른 투어에 배정된 예약 조회 시작 ===')
-    console.log('투어 정보:', {
-      product_id: tour.product_id,
-      tour_date: tour.tour_date,
-      tour_id: tour.id
-    })
-
+  // 같은 날 같은 상품의 다른 투어에 배정된 예약들을 조회하여 표시
+  const fetchOtherToursAssignedReservations = useCallback(async (targetTour: any) => {
     try {
-      if (!allTours || allTours.length === 0) {
-        console.log('allTours가 아직 로드되지 않음:', allTours)
-        return
-      }
-      
-      if (!allReservations || allReservations.length === 0) {
-        console.log('allReservations가 아직 로드되지 않음:', allReservations)
+      if (!targetTour || !targetTour.product_id || !targetTour.tour_date) return
+
+      // 1) 같은 상품/날짜의 모든 투어 가져오기
+      const { data: siblingTours, error: toursError } = await supabase
+        .from('tours')
+        .select('id, reservation_ids, product_id, tour_date')
+        .eq('product_id', targetTour.product_id)
+        .eq('tour_date', targetTour.tour_date)
+
+      if (toursError) {
+        console.error('Error fetching sibling tours:', toursError)
         return
       }
 
-      console.log('allTours 수:', allTours.length)
-      console.log('allReservations 수:', allReservations.length)
-      console.log('allTours:', allTours.map(t => ({
-        id: t.id,
-        product_id: t.product_id,
-        tour_date: t.tour_date,
-        reservation_ids: t.reservation_ids
-      })))
+      // 2) 다른 투어들에서 배정된 예약 ID 수집 (현재 투어 제외)
+      const assignedIds = new Set<string>()
+      for (const t of siblingTours || []) {
+        if (!t || t.id === targetTour.id) continue
+        const ids = Array.isArray(t.reservation_ids) ? t.reservation_ids : []
+        for (const rid of ids) {
+          if (rid) assignedIds.add(String(rid))
+        }
+      }
 
-      // 새로운 유틸리티 함수 사용
-      const otherToursReservations = getOtherToursAssignedReservations(tour, allTours, allReservations)
-      
-      console.log('다른 투어에 배정된 예약들:', otherToursReservations)
-      setOtherToursAssignedReservations(otherToursReservations)
+      if (assignedIds.size === 0) {
+        setOtherToursAssignedReservations([])
+        return
+      }
+
+      // 3) 해당 예약들을 reservations에서 조회 (상태 제한 없음)
+      const idList = Array.from(assignedIds)
+      const { data: resvData, error: resvError } = await supabase
+        .from('reservations')
+        .select('*')
+        .in('id', idList)
+
+      if (resvError) {
+        console.error('Error fetching reservations by ids:', resvError)
+        return
+      }
+
+      setOtherToursAssignedReservations(resvData || [])
     } catch (error) {
       console.error('다른 투어 배정 예약 조회 오류:', error)
     }
-  }, [allTours, allReservations])
+  }, [])
 
   const fetchTourData = useCallback(async (tourId: string) => {
     try {
@@ -313,6 +321,24 @@ export default function TourDetailPage() {
             .single()
           setProduct(productData)
 
+          // 같은 카테고리의 전체 상품 목록 로드 (모달용)
+          try {
+            const { data: productsAll } = await supabase
+              .from('products')
+              .select('*')
+              .order('name')
+            setAllProducts(productsAll || [])
+          } catch {}
+
+          // 채널 목록 로드 (모달용)
+          try {
+            const { data: channelsAll } = await supabase
+              .from('channels')
+              .select('*')
+              .order('name')
+            setChannels(channelsAll || [])
+          } catch {}
+
           // 모든 투어에서 기존 팀 타입 유지
 
           // 같은 상품 ID의 예약들을 가져오기
@@ -344,6 +370,12 @@ export default function TourDetailPage() {
           reservations = allReservations || []
           setReservations(reservations)
           setAllReservations(allReservations || [])
+          // recruiting/confirmed가 아닌 예약들 (대소문자 무관)
+          const inactive = (allReservations || []).filter((r: any) => {
+            const s = (r.status || '').toString().toLowerCase()
+            return s !== 'confirmed' && s !== 'recruiting'
+          })
+          setInactiveReservations(inactive)
         }
         
         // 모든 투어 데이터 가져오기 (다른 투어에 배정된 예약을 위해)
@@ -684,17 +716,26 @@ export default function TourDetailPage() {
     return assigned
   }
 
-  const getTotalPeople = () => {
+  // 필터(confirmed/recruiting) 합계
+  const getTotalPeopleFiltered = () => {
     if (!tour || !allReservations || allReservations.length === 0) return 0
-    const total = calculateTotalPeopleForSameProductDate(tour, allReservations)
-    console.log('getTotalPeople:', total, 'tour.product_id:', tour.product_id, 'tour.tour_date:', tour.tour_date)
+    const total = allReservations
+      .filter((r: any) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
+      .filter((r: any) => {
+        const s = (r.status || '').toString().toLowerCase()
+        return s === 'confirmed' || s === 'recruiting'
+      })
+      .reduce((sum: number, r: any) => sum + (r.total_people || 0), 0)
     return total
   }
 
-  const getUnassignedPeople = () => {
+  // 전체 합계 (상태 무관)
+  const getTotalPeopleAll = () => {
     if (!tour || !allReservations || allReservations.length === 0) return 0
-    const unassigned = calculateUnassignedPeople(tour, allReservations)
-    return unassigned
+    const total = allReservations
+      .filter((r: any) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
+      .reduce((sum: number, r: any) => sum + (r.total_people || 0), 0)
+    return total
   }
 
   const handleAssignAllReservations = async () => {
@@ -1090,10 +1131,10 @@ export default function TourDetailPage() {
               {/* 총 배정 인원 표시 */}
               <div className="text-center bg-blue-50 rounded-lg px-4 py-3 border border-blue-200">
                 <div className="text-3xl font-bold text-blue-600">
-                  {getTotalAssignedPeople()}명 / {getTotalPeople()}명 ({getUnassignedPeople()}명)
+                  {getTotalAssignedPeople()}명 / {getTotalPeopleFiltered()}명 ({Math.max(getTotalPeopleAll() - getTotalPeopleFiltered(), 0)}명)
                 </div>
                 <div className="text-xs text-blue-600 mt-1">
-                  이 투어에 배정된 예약 인원 / 해당일 같은 투어 상품의 전체 예약 인원 (미배정 인원)
+                  이 투어 배정 / 해당일 같은 상품의 Recruiting·Confirmed 합계 (상태무관 차이)
                 </div>
               </div>
               <div className="flex space-x-2">
@@ -1781,6 +1822,62 @@ export default function TourDetailPage() {
       </div>
     </div>
 
+                {/* 4. 취소/기타 상태 예약 (recruiting/confirmed 이외) */}
+                <div className="mb-3">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">4. 취소/기타 상태 예약 ({inactiveReservations.length})</h3>
+                  <div className="space-y-2">
+                    {inactiveReservations.map((reservation) => (
+                      <div 
+                        key={reservation.id} 
+                        className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => handleEditReservationClick(reservation)}
+                      >
+                        {/* 첫 번째 줄: 국기 | 이름 인원 | 상태 */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
+                            <ReactCountryFlag
+                              countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
+                              svg
+                              style={{
+                                width: '16px',
+                                height: '12px'
+                              }}
+                            />
+                            <span className="font-medium text-sm">{getCustomerName(reservation.customer_id || '')}</span>
+                            <span className="text-xs text-gray-600">
+                              {reservation.total_people || 0}명
+                            </span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              reservation.status?.toLowerCase() === 'cancelled' ? 'bg-red-100 text-red-800' :
+                              reservation.status?.toLowerCase() === 'completed' ? 'bg-purple-100 text-purple-800' :
+                              reservation.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {reservation.status || '미정'}
+                            </span>
+                            {reservation.tour_id && (
+                              <span className="text-xs text-gray-500">배정 투어: {reservation.tour_id}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 두 번째 줄: 픽업시간 | 픽업 호텔 */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-1">
+                            <Clock size={10} className="text-gray-400" />
+                            <span className="text-xs text-gray-600">
+                              {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-500 text-right flex-1 ml-2">
+                            {getPickupHotelName(reservation.pickup_hotel || '')}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 {/* 요약 */}
                 <div className="p-2 bg-gray-100 rounded text-xs text-gray-600">
                   총 예약: {reservations.length}건 | 배정: {assignedReservations.length}건 | 대기: {pendingReservations.length}건
@@ -2129,8 +2226,8 @@ export default function TourDetailPage() {
         <ReservationForm
           reservation={editingReservation}
           customers={customers}
-          products={product ? [product] : []}
-          channels={[]}
+          products={allProducts}
+          channels={channels}
           productOptions={[]}
           optionChoices={[]}
           options={[]}

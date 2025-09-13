@@ -9,7 +9,6 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import TourCalendar from '@/components/TourCalendar'
 import ScheduleView from '@/components/ScheduleView'
-import { calculateAssignedPeople, calculateTotalPeopleForSameProductDate, calculateUnassignedPeople } from '@/utils/tourUtils'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Tour & {
@@ -93,10 +92,10 @@ export default function AdminTours() {
       const productIds = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.product_id).filter(Boolean))]
       const { data: productsData } = await supabase
         .from('products')
-        .select('id, name_ko, name_en')
+        .select('id, name, name_ko, name_en')
         .in('id', productIds)
 
-      const productMap = new Map(productsData?.map((p: Product) => [p.id, p.name_ko || p.name_en || p.id]) || [])
+      const productMap = new Map((productsData || []).map((p: any) => [p.id, (p.name as string) || p.name_ko || p.name_en || p.id]))
 
       // 3. 가이드와 어시스턴트 정보 가져오기
       const guideEmails = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.tour_guide_id).filter(Boolean))]
@@ -110,11 +109,34 @@ export default function AdminTours() {
 
       const teamMap = new Map(teamMembers?.map((member: Employee) => [member.email, member]) || [])
 
-      // 4. 모든 예약 데이터 가져오기 (confirmed, recruiting만)
-      const { data: reservationsData, error: reservationsError } = await supabase
-        .from('reservations')
-        .select('*')
-        .in('status', ['confirmed', 'recruiting'])
+      // 4. 현재 달력 그리드 범위를 커버하는 날짜 구간으로 예약 데이터 조회 (URL 길이/성능 고려)
+      // 그리드 시작: 이번 달 1일에서 요일만큼 빼기, 끝: 시작에서 41일 더하기 (6주)
+      const now = new Date()
+      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      const gridStart = new Date(firstOfMonth)
+      gridStart.setDate(gridStart.getDate() - gridStart.getDay())
+      const gridEnd = new Date(gridStart)
+      gridEnd.setDate(gridEnd.getDate() + 41)
+
+      const fmt = (d: Date) => {
+        const y = d.getFullYear()
+        const m = String(d.getMonth() + 1).padStart(2, '0')
+        const day = String(d.getDate()).padStart(2, '0')
+        return `${y}-${m}-${day}`
+      }
+
+      let reservationsData: Database['public']['Tables']['reservations']['Row'][] | null = []
+      let reservationsError: any = null
+      if (productIds.length > 0) {
+        const { data, error } = await supabase
+          .from('reservations')
+          .select('*')
+          .in('product_id', productIds)
+          .gte('tour_date', fmt(gridStart))
+          .lte('tour_date', fmt(gridEnd))
+        reservationsData = data
+        reservationsError = error
+      }
 
       if (reservationsError) {
         console.error('Error fetching reservations:', reservationsError)
@@ -124,11 +146,53 @@ export default function AdminTours() {
       // 5. allReservations 상태 설정
       setAllReservations(reservationsData || [])
 
-      // 6. 각 투어에 대해 인원 계산
+      // 6. 사전 계산 맵 구성 (성능 최적화)
+      const reservationIdToPeople = new Map<string, number>()
+      const productDateKeyToTotalPeople = new Map<string, number>()
+      const productDateKeyToUnassignedPeople = new Map<string, number>()
+
+      for (const res of reservationsData || []) {
+        if (res && res.id) {
+          reservationIdToPeople.set(String(res.id).trim(), res.total_people || 0)
+        }
+        const productId = (res?.product_id ? String(res.product_id) : '').trim()
+        const date = (res?.tour_date ? String(res.tour_date) : '').trim()
+        const key = `${productId}__${date}`
+        productDateKeyToTotalPeople.set(key, (productDateKeyToTotalPeople.get(key) || 0) + (res?.total_people || 0))
+        if (res?.tour_id === null) {
+          productDateKeyToUnassignedPeople.set(key, (productDateKeyToUnassignedPeople.get(key) || 0) + (res?.total_people || 0))
+        }
+      }
+
+      // 7. 각 투어에 대해 인원 계산
       const toursWithDetails: ExtendedTour[] = (toursData || []).map((tour: ExtendedTour) => {
-        const assignedPeople = calculateAssignedPeople(tour, reservationsData || [])
-        const totalPeople = calculateTotalPeopleForSameProductDate(tour, reservationsData || [])
-        const unassignedPeople = calculateUnassignedPeople(tour, reservationsData || [])
+        // 배정 인원: reservation_ids 합산
+        let assignedPeople = 0
+        // reservation_ids 정규화: 배열/JSON/콤마 지원
+        const normalize = (value: unknown): string[] => {
+          if (!value) return []
+          if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(v => v.length > 0)
+          if (typeof value === 'string') {
+            const trimmed = value.trim()
+            if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+              try {
+                const parsed = JSON.parse(trimmed)
+                return Array.isArray(parsed) ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0) : []
+              } catch { return [] }
+            }
+            if (trimmed.includes(',')) return trimmed.split(',').map(s => s.trim()).filter(s => s.length > 0)
+            return trimmed.length > 0 ? [trimmed] : []
+          }
+          return []
+        }
+        const ids = normalize(tour.reservation_ids as unknown)
+        for (const id of ids) {
+          assignedPeople += reservationIdToPeople.get(String(id).trim()) || 0
+        }
+        // 같은 상품/날짜 총 인원
+        const key = `${tour.product_id || ''}__${tour.tour_date || ''}`
+        const totalPeople = productDateKeyToTotalPeople.get(key) || 0
+        const unassignedPeople = productDateKeyToUnassignedPeople.get(key) || 0
 
         const guide = tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null
         const assistant = tour.assistant_id ? teamMap.get(tour.assistant_id) : null
