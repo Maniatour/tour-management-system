@@ -556,20 +556,11 @@ export default function TourHotelBookingList() {
                                      return (
                                       <div
                                         key={hotel}
-                                        className={`px-1 py-0.5 rounded text-[8px] sm:text-[10px] cursor-pointer hover:opacity-80 ${hotelBgColor}`}
+                                        className={`px-1 py-0.5 rounded text-[8px] sm:text-[10px] cursor-pointer hover:opacity-80 ${hotelBgColor} truncate`}
                                         title={`${hotel} - ${roomTypeText} - 체크인: ${firstBooking.check_in_date} ~ 체크아웃: ${firstBooking.check_out_date}`}
                                         onClick={() => handleBookingClick(hotelBookings)}
                                       >
-                                        <div className="block sm:hidden">
-                                          <div className="font-bold truncate">{displayName}</div>
-                                          <div className="text-[7px]">{roomTypeText}</div>
-                                          <div className="text-[7px]">{firstBooking.check_in_date}~{firstBooking.check_out_date}</div>
-                                        </div>
-                                        <div className="hidden sm:block">
-                                          <div className="font-bold truncate">{displayName}</div>
-                                          <div className="text-[8px]">{roomTypeText}</div>
-                                          <div className="text-[8px]">{firstBooking.check_in_date}~{firstBooking.check_out_date}</div>
-                                        </div>
+                                        <span className="font-bold">{displayName}</span> <span>{roomTypeText}</span>
                                       </div>
                                      );
                                   });
@@ -621,8 +612,9 @@ export default function TourHotelBookingList() {
                            </span>
                           </div>
                           <div className="mt-2 text-xs text-gray-600">
-                            • 라벨에 호텔명, 룸타입(갯수), 체크인~체크아웃 날짜 표시<br/>
-                            • 2박 이상 예약은 체크인부터 체크아웃 전날까지 모든 날짜에 표시
+                            • 라벨에 호텔명과 룸타입(갯수)만 표시<br/>
+                            • 2박 이상 예약은 체크인부터 체크아웃 전날까지 모든 날짜에 표시<br/>
+                            • 마우스 오버 시 상세 정보(날짜 포함) 확인 가능
                           </div>
                         </div>
                      </div>
