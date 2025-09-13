@@ -1112,7 +1112,6 @@ export default function TourDetailPage() {
               </div>
             </div>
           </div>
-        </div>
 
           {/* 2열: 팀 구성, 배정 관리 */}
           <div className="space-y-6">
@@ -1450,10 +1449,10 @@ export default function TourDetailPage() {
                 {/* 요약 */}
                 <div className="p-2 bg-gray-100 rounded text-xs text-gray-600">
                   총 예약: {reservations.length}건 | 배정: {assignedReservations.length}건 | 대기: {pendingReservations.length}건
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
           {/* 3열: 부킹 관리 */}
           <div className="space-y-6">
