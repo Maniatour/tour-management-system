@@ -1696,6 +1696,7 @@ export default function TourDetailPage() {
             </div>
           </div>
         </div>
+      </div>
 
       {/* 픽업시간 수정 모달 */}
       {showTimeModal && selectedReservation && (
