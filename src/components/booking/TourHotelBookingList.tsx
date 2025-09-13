@@ -553,14 +553,18 @@ export default function TourHotelBookingList() {
                                        .map(([type, count]) => `${type}(${count})`)
                                        .join(', ');
 
+                                     // 투어 상품 이름 가져오기
+                                     const tourProductName = firstBooking.tours?.products?.name || '';
+                                     const tourInfo = tourProductName ? ` [${tourProductName}]` : '';
+
                                      return (
                                       <div
                                         key={hotel}
                                         className={`px-1 py-0.5 rounded text-[8px] sm:text-[10px] cursor-pointer hover:opacity-80 ${hotelBgColor} truncate`}
-                                        title={`${hotel} - ${roomTypeText} - 체크인: ${firstBooking.check_in_date} ~ 체크아웃: ${firstBooking.check_out_date}`}
+                                        title={`${hotel} - ${roomTypeText} - 체크인: ${firstBooking.check_in_date} ~ 체크아웃: ${firstBooking.check_out_date}${tourInfo ? ` - 투어: ${tourProductName}` : ''}`}
                                         onClick={() => handleBookingClick(hotelBookings)}
                                       >
-                                        <span className="font-bold">{displayName}</span> <span>{roomTypeText}</span>
+                                        <span className="font-bold">{displayName}</span> <span>{roomTypeText}</span>{tourInfo}
                                       </div>
                                      );
                                   });
@@ -612,7 +616,7 @@ export default function TourHotelBookingList() {
                            </span>
                           </div>
                           <div className="mt-2 text-xs text-gray-600">
-                            • 라벨에 호텔명과 룸타입(갯수)만 표시<br/>
+                            • 라벨에 호텔명, 룸타입(갯수), 투어상품명 표시<br/>
                             • 2박 이상 예약은 체크인부터 체크아웃 전날까지 모든 날짜에 표시<br/>
                             • 마우스 오버 시 상세 정보(날짜 포함) 확인 가능
                           </div>
