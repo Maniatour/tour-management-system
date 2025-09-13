@@ -18,7 +18,6 @@ import TicketBookingForm from '@/components/booking/TicketBookingForm'
 import TourHotelBookingForm from '@/components/booking/TourHotelBookingForm'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
 import TourChatRoom from '@/components/TourChatRoom'
-import SupabaseConnectionTest from '@/components/SupabaseConnectionTest'
 
 // 모든 타입을 any로 사용하여 타입 에러 방지
 
@@ -30,6 +29,83 @@ export default function TourDetailPage() {
   const [isPrivateTour, setIsPrivateTour] = useState<boolean>(false)
   const [showPrivateTourModal, setShowPrivateTourModal] = useState(false)
   const [pendingPrivateTourValue, setPendingPrivateTourValue] = useState<boolean>(false)
+  const [connectionStatus, setConnectionStatus] = useState<{[key: string]: boolean}>({})
+
+  // 연결 상태 라벨 컴포넌트
+  const ConnectionStatusLabel = ({ status, section }: { status: boolean, section: string }) => (
+    <span 
+      className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
+        status 
+          ? 'bg-green-100 text-green-800' 
+          : 'bg-red-100 text-red-800'
+      }`}
+      title={status ? `${section} 데이터베이스 연결됨` : `${section} 데이터베이스 연결 실패`}
+    >
+      {status ? '✓' : '✗'}
+    </span>
+  )
+
+  // 데이터베이스 연결 상태 확인 함수
+  const checkConnectionStatus = async () => {
+    const status: {[key: string]: boolean} = {}
+    
+    try {
+      // 투어 데이터 확인
+      const { error: tourError } = await supabase
+        .from('tours')
+        .select('id')
+        .limit(1)
+      status.tours = !tourError
+    } catch {
+      status.tours = false
+    }
+
+    try {
+      // 예약 데이터 확인
+      const { error: reservationError } = await supabase
+        .from('reservations')
+        .select('id')
+        .limit(1)
+      status.reservations = !reservationError
+    } catch {
+      status.reservations = false
+    }
+
+    try {
+      // 팀 멤버 데이터 확인
+      const { error: teamError } = await supabase
+        .from('team')
+        .select('id')
+        .limit(1)
+      status.team = !teamError
+    } catch {
+      status.team = false
+    }
+
+    try {
+      // 부킹 데이터 확인
+      const { error: bookingError } = await supabase
+        .from('ticket_bookings')
+        .select('id')
+        .limit(1)
+      status.bookings = !bookingError
+    } catch {
+      status.bookings = false
+    }
+
+    try {
+      // 호텔 부킹 데이터 확인
+      const { error: hotelBookingError } = await supabase
+        .from('tour_hotel_bookings')
+        .select('id')
+        .limit(1)
+      status.hotelBookings = !hotelBookingError
+    } catch {
+      status.hotelBookings = false
+    }
+
+    setConnectionStatus(status)
+  }
 
   // 단독투어 상태 업데이트 함수
   const updatePrivateTourStatus = async (newValue: boolean) => {
@@ -319,6 +395,7 @@ export default function TourDetailPage() {
     if (tourId) {
       fetchTourData(tourId)
     }
+    checkConnectionStatus()
   }, [params.id, fetchTourData])
 
   const fetchVehicles = useCallback(async () => {
@@ -923,7 +1000,10 @@ export default function TourDetailPage() {
         {/* 기본 정보 */}
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
-                <h2 className="text-md font-semibold text-gray-900 mb-3">기본 정보</h2>
+                <h2 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
+                  기본 정보
+                  <ConnectionStatusLabel status={connectionStatus.tours} section="투어" />
+                </h2>
                 <div className="space-y-2">
             <div className="flex justify-between">
                     <span className="text-gray-600 text-sm">투어명:</span>
@@ -985,7 +1065,10 @@ export default function TourDetailPage() {
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-md font-semibold text-gray-900">픽업 스케줄</h2>
+                  <h2 className="text-md font-semibold text-gray-900 flex items-center">
+                    픽업 스케줄
+                    <ConnectionStatusLabel status={connectionStatus.reservations} section="예약" />
+                  </h2>
                   <button className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
                     자동생성
                   </button>
@@ -1105,12 +1188,6 @@ export default function TourDetailPage() {
               </div>
             </div>
 
-            {/* Supabase 연결 테스트 */}
-            <div className="bg-white rounded-lg shadow-sm border">
-              <div className="p-4">
-                <SupabaseConnectionTest />
-              </div>
-            </div>
           </div>
 
           {/* 2열: 팀 구성, 배정 관리 */}
@@ -1118,7 +1195,10 @@ export default function TourDetailPage() {
             {/* 팀 구성 */}
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
-                <h2 className="text-md font-semibold text-gray-900 mb-3">팀 구성</h2>
+                <h2 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
+                  팀 구성
+                  <ConnectionStatusLabel status={connectionStatus.team} section="팀" />
+                </h2>
           <div className="space-y-3">
                   {/* 팀 타입 선택 */}
                   <div className="flex space-x-2">
@@ -1459,7 +1539,10 @@ export default function TourDetailPage() {
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-md font-semibold text-gray-900">부킹 관리</h2>
+                  <h2 className="text-md font-semibold text-gray-900 flex items-center">
+                    부킹 관리
+                    <ConnectionStatusLabel status={connectionStatus.bookings && connectionStatus.hotelBookings} section="부킹" />
+                  </h2>
                   <div className="flex space-x-2">
                     <button
                       onClick={handleAddTicketBooking}
@@ -1608,7 +1691,10 @@ export default function TourDetailPage() {
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
-                <h2 className="text-md font-semibold text-gray-900 mb-3">정산 관리</h2>
+                <h2 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
+                  정산 관리
+                  <ConnectionStatusLabel status={connectionStatus.bookings} section="정산" />
+                </h2>
                 
                 {/* 수익, 지출, 정산 */}
                 <div className="grid grid-cols-3 gap-3 mb-4">
