@@ -317,7 +317,11 @@
       "basePrice": "Base Price",
       "markup": "Markup",
       "status": "Status",
-      "description": "Description"
+      "description": "Description",
+      "selectType": "Select Type",
+      "selectStatus": "Select Status",
+      "favicon": "Favicon",
+      "faviconHelp": "Upload an image to use as the browser tab/app icon (PNG/SVG/ICO)"
     }
   },
   "admin": {

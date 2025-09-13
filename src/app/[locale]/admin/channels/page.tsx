@@ -725,8 +725,12 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
     website: channel?.website || '',
     commission: channel?.commission || null,
     status: channel?.status || '',
-    description: channel?.description || ''
+    description: channel?.description || '',
+    favicon_url: (channel as any)?.favicon_url || ''
   })
+
+  const [uploadingFavicon, setUploadingFavicon] = useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -771,6 +775,50 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
               onChange={(e) => setFormData({ ...formData, website: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.favicon')}</label>
+            <div className="flex items-center space-x-3">
+              {formData.favicon_url ? (
+                <img src={formData.favicon_url} alt="favicon preview" className="w-8 h-8 rounded" />
+              ) : (
+                <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">-</div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon,image/jpeg,image/webp"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  try {
+                    setUploadingFavicon(true)
+                    const fileExt = file.name.split('.').pop()
+                    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
+                    const filePath = `channels/${fileName}`
+                    const { error: uploadError } = await (supabase as any).storage
+                      .from('channel-icons')
+                      .upload(filePath, file)
+                    if (uploadError) throw uploadError
+                    const { data: urlData } = (supabase as any).storage
+                      .from('channel-icons')
+                      .getPublicUrl(filePath)
+                    setFormData({ ...formData, favicon_url: urlData.publicUrl })
+                  } catch (err) {
+                    console.error('Error uploading favicon:', err)
+                    alert('파비콘 업로드 중 오류가 발생했습니다.')
+                  } finally {
+                    setUploadingFavicon(false)
+                    if (fileInputRef.current) fileInputRef.current.value = ''
+                  }
+                }}
+                className="flex-1 text-sm"
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-500">{t('form.faviconHelp')}</p>
+            {uploadingFavicon && (
+              <div className="mt-1 text-xs text-gray-500">업로드 중...</div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.commission')} (%)</label>
