@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight } from 'lucide-react'
 
 interface SheetInfo {
@@ -51,8 +51,12 @@ export default function DataSyncPage() {
   const [loading, setLoading] = useState(false)
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
-  const [enableIncrementalSync, setEnableIncrementalSync] = useState(true)
+  // 증분 동기화는 제거됨 (항상 전체 동기화)
+  const [truncateReservations, setTruncateReservations] = useState(false)
   const [showMappingModal, setShowMappingModal] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [etaMs, setEtaMs] = useState<number | null>(null)
+  const progressTimerRef = useRef<number | null>(null)
 
   // 컬럼 매핑을 localStorage에 저장
   const saveColumnMapping = (tableName: string, mapping: ColumnMapping) => {
@@ -216,33 +220,40 @@ export default function DataSyncPage() {
     }
   }
 
-  // 테이블 스키마 가져오기
+  // 테이블 스키마 가져오기 (재시도 + 장시간 타임아웃)
   const getTableSchema = async (tableName: string) => {
+    const attempt = async (timeoutMs: number) => {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+      try {
+        const response = await fetch(`/api/sync/schema?table=${tableName}`, { signal: controller.signal })
+        clearTimeout(timeoutId)
+        return await response.json()
+      } catch (err) {
+        clearTimeout(timeoutId)
+        throw err
+      }
+    }
+
     try {
       console.log('Fetching table schema for:', tableName)
-      setTableColumns([]) // 로딩 상태를 위해 초기화
+      setTableColumns([])
+
+      // 1차 시도: 15초
+      let result = await attempt(15000)
       
-      // 타임아웃 설정 (5초)
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => {
-        console.warn('Schema fetch timed out, using fallback data')
-        controller.abort()
-      }, 5000)
-      
-      const response = await fetch(`/api/sync/schema?table=${tableName}`, {
-        signal: controller.signal
-      })
-      
-      clearTimeout(timeoutId)
-      const result = await response.json()
-      
-      console.log('Table schema response:', result)
-      
-      if (result.success) {
+      // 실패 혹은 success=false이면 2차 재시도(25초)
+      if (!result?.success) {
+        console.warn('Schema first attempt failed, retrying with longer timeout...')
+        await new Promise(r => setTimeout(r, 500))
+        result = await attempt(25000)
+      }
+
+      if (result?.success) {
         console.log('Setting table columns:', result.data.columns)
         console.log('Data source:', result.data.source)
         setTableColumns(result.data.columns)
-        
+
         // 자동 매핑 적용 (저장된 매핑이 없는 경우)
         const savedMapping = loadColumnMapping(tableName)
         if (Object.keys(savedMapping).length === 0) {
@@ -256,23 +267,15 @@ export default function DataSyncPage() {
           }
         }
       } else {
-        console.error('Error getting table schema:', result.message)
         // 폴백: 하드코딩된 컬럼 목록 사용
         const fallbackColumns = getFallbackColumns(tableName)
-        console.log('Using fallback columns:', fallbackColumns)
+        console.warn('Using fallback columns (schema fetch returned unsuccessful):', fallbackColumns)
         setTableColumns(fallbackColumns)
       }
     } catch (error) {
-      console.error('Error getting table schema:', error)
-      
-      // 타임아웃 에러인 경우 특별 처리
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.warn('Schema fetch timed out, using fallback data')
-      }
-      
       // 폴백: 하드코딩된 컬럼 목록 사용
       const fallbackColumns = getFallbackColumns(tableName)
-      console.log('Using fallback columns due to error:', fallbackColumns)
+      console.warn('Using fallback columns due to error:', error)
       setTableColumns(fallbackColumns)
     }
   }
@@ -556,9 +559,28 @@ export default function DataSyncPage() {
 
     setLoading(true)
     setSyncResult(null)
+    setProgress(1)
+    // 추정 처리속도 학습값 (ms/row)
+    const defaultMsPerRow = Number(localStorage.getItem('flex-sync-ms-per-row')) || 10
+    const sheet = sheetInfo.find(s => s.name === selectedSheet)
+    const estimatedRows = Math.max(sheet?.rowCount || 200, 1)
+    const estimatedDurationMs = Math.max(estimatedRows * defaultMsPerRow, 1500)
+    const startTs = Date.now()
+    setEtaMs(estimatedDurationMs)
+    // 진행률 타이머 시작 (최대 95%까지)
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current)
+      progressTimerRef.current = null
+    }
+    progressTimerRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - startTs
+      const pct = Math.min(95, Math.floor((elapsed / estimatedDurationMs) * 95))
+      setProgress(pct)
+      setEtaMs(Math.max(estimatedDurationMs - elapsed, 0))
+    }, 200)
 
     try {
-      const response = await fetch('/api/sync/flexible', {
+      const response = await fetch('/api/sync/flexible/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -568,15 +590,69 @@ export default function DataSyncPage() {
           sheetName: selectedSheet,
           targetTable: selectedTable,
           columnMapping,
-          enableIncrementalSync,
+          enableIncrementalSync: false,
+          truncateReservations,
         }),
       })
 
-      const result = await response.json()
-      setSyncResult(result)
-      
-      if (result.success) {
-        setLastSyncTime(new Date().toISOString())
+      if (!response.body) throw new Error('No response body')
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffered = ''
+      let finalResult: SyncResult | null = null
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffered += decoder.decode(value, { stream: true })
+        const lines = buffered.split('\n')
+        buffered = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const evt = JSON.parse(line)
+            if (evt.type === 'start' && evt.total) {
+              // 서버가 총량을 알려주면 그에 맞춰 ETA 재계산
+              const msPerRow = Number(localStorage.getItem('flex-sync-ms-per-row')) || 10
+              const newEstimated = Math.max(evt.total * msPerRow, 1500)
+              setEtaMs(newEstimated)
+            }
+            if (evt.type === 'progress' && evt.total) {
+              const pctRaw = Math.floor((evt.processed / evt.total) * 100)
+              setProgress(prev => Math.min(99, Math.max(prev, pctRaw)))
+              const elapsed = Date.now() - startTs
+              const perRow = (evt.processed > 0) ? Math.round(elapsed / evt.processed) : (Number(localStorage.getItem('flex-sync-ms-per-row')) || 10)
+              const remain = Math.max((evt.total - evt.processed) * perRow, 0)
+              setEtaMs(remain)
+            }
+            if (evt.type === 'result') {
+              finalResult = {
+                success: !!evt.success,
+                message: String(evt.message || ''),
+                data: evt.details,
+                syncTime: new Date().toISOString()
+              }
+            }
+          } catch {
+            // 무시 (부분 라인)
+          }
+        }
+      }
+
+      if (finalResult) {
+        setSyncResult(finalResult)
+        if (finalResult.success) {
+          setLastSyncTime(new Date().toISOString())
+          const durationMs = Date.now() - startTs
+          const inserted = finalResult.data?.inserted ?? 0
+          const updated = finalResult.data?.updated ?? 0
+          const processedSum = inserted + updated
+          const rowsProcessed = Math.max(processedSum > 0 ? processedSum : estimatedRows, 1)
+          const msPerRow = Math.min(Math.max(Math.round(durationMs / rowsProcessed), 3), 200)
+          localStorage.setItem('flex-sync-ms-per-row', String(msPerRow))
+        }
+      } else {
+        setSyncResult({ success: false, message: '동기화 결과를 수신하지 못했습니다.' })
       }
     } catch (error) {
       console.error('Error syncing data:', error)
@@ -585,7 +661,13 @@ export default function DataSyncPage() {
         message: '데이터 동기화 중 오류가 발생했습니다.'
       })
     } finally {
-      setLoading(false)
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current)
+        progressTimerRef.current = null
+      }
+      setProgress(100)
+      setEtaMs(0)
+      setTimeout(() => setLoading(false), 500)
     }
   }
 
@@ -741,25 +823,24 @@ export default function DataSyncPage() {
             동기화 설정
           </h3>
           
-          {/* 증분 동기화 옵션 */}
+          {/* 동기화 옵션 (초기화 후 전체 동기화) */}
           <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-            <div className="flex items-center space-x-3">
-              <input
-                type="checkbox"
-                id="incrementalSync"
-                checked={enableIncrementalSync}
-                onChange={(e) => setEnableIncrementalSync(e.target.checked)}
-                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <label htmlFor="incrementalSync" className="text-sm font-medium text-gray-700">
-                증분 동기화 활성화
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={truncateReservations}
+                  onChange={(e) => setTruncateReservations(e.target.checked)}
+                  className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500"
+                />
+                <span className="text-sm font-medium text-gray-700">동기화 전에 reservations 전체 삭제</span>
               </label>
+              <div className="text-xs text-gray-500">
+                필요한 경우에만 사용하세요. 복구 불가이므로 사전 백업 권장.
+              </div>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              활성화하면 마지막 동기화 이후 변경된 데이터만 업데이트합니다. (updated_at 컬럼이 있는 테이블에만 적용)
-            </p>
             {lastSyncTime && (
-              <p className="text-xs text-blue-600 mt-1">
+              <p className="text-xs text-blue-600 mt-2">
                 마지막 동기화: {new Date(lastSyncTime).toLocaleString('ko-KR')}
               </p>
             )}
@@ -1150,12 +1231,39 @@ export default function DataSyncPage() {
         </div>
       )}
 
-      {/* 로딩 상태 */}
+      {/* 로딩/진행률 오버레이 */}
       {loading && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 flex items-center space-x-3">
-            <RefreshCw className="h-5 w-5 animate-spin text-blue-600" />
-            <span className="text-gray-700">동기화 중...</span>
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-2">
+                <RefreshCw className="h-5 w-5 animate-spin text-blue-600" />
+                <span className="text-gray-900 font-medium">동기화 중...</span>
+              </div>
+              {truncateReservations && (
+                <span className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded border border-red-200">초기화 후 전체 동기화</span>
+              )}
+            </div>
+            <div className="text-xs text-gray-500 mb-2">
+              {selectedSheet && <span>시트: {selectedSheet}</span>}
+              {selectedTable && <span className="ml-2">테이블: {selectedTable}</span>}
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all duration-200"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between mt-2 text-xs text-gray-600">
+              <span>{progress}% 완료</span>
+              <span>
+                {etaMs !== null && etaMs > 1000
+                  ? `남은 예상 시간: ${Math.ceil(etaMs / 1000)}초`
+                  : etaMs !== null
+                    ? '마무리 중...'
+                    : ''}
+              </span>
+            </div>
           </div>
         </div>
       )}

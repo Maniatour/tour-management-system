@@ -3,6 +3,33 @@ import { readSheetData, readSheetDataDynamic } from './googleSheets'
 
 // 하드코딩된 매핑 제거 - 실제 데이터베이스 스키마 기반으로 동적 매핑 생성
 
+// 안전한 문자열→문자열 배열 변환
+const coerceStringToStringArray = (raw: unknown): string[] => {
+  if (Array.isArray(raw)) {
+    return raw.map(v => String(v)).filter(v => v.length > 0)
+  }
+  if (typeof raw === 'string') {
+    const value = raw.trim()
+    // JSON 배열 형태: "[\"R1\",\"R2\"]"
+    if (value.startsWith('[') && value.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(value)
+        if (Array.isArray(parsed)) {
+          return parsed.map(v => String(v)).filter(v => v.length > 0)
+        }
+      } catch {
+        // 무시하고 아래 분기 사용
+      }
+    }
+    // 콤마 구분 문자열: R1, R2, R3 형태 또는 잘못 split된 잔여물 정리
+    return value
+      .split(',')
+      .map(part => part.trim().replace(/^[\[\"\']+|[\]\\"\']+$/g, ''))
+      .filter(part => part.length > 0)
+  }
+  return []
+}
+
 // 데이터 타입 변환 함수
 const convertDataTypes = (data: any, tableName: string) => {
   console.log(`convertDataTypes called with tableName: ${tableName}`)
@@ -99,60 +126,43 @@ const convertDataTypes = (data: any, tableName: string) => {
   // created_at, updated_at은 구글 시트 값 그대로 사용 (문자열로 유지)
   // tour_id도 구글 시트 값 그대로 사용
 
-  // 배열 필드 변환 (쉼표로 구분된 문자열을 PostgreSQL 배열로 변환)
-  const arrayFields = ['reservation_ids']
+  // 배열/JSONB 배열 필드 변환
+  const arrayFields = ['reservation_ids', 'reservations_ids'] // 예약 ID 목록 (오타 방지 포함)
   arrayFields.forEach(field => {
-    if (converted[field] && typeof converted[field] === 'string') {
-      // 쉼표로 구분된 문자열을 배열로 변환
-      const arrayValue = converted[field]
-        .split(',')
-        .map(item => item.trim())
-        .filter(item => item !== '') // 빈 문자열 제거
-      
-      converted[field] = arrayValue
+    if (converted[field] !== undefined && converted[field] !== null) {
+      converted[field] = coerceStringToStringArray(converted[field])
     }
   })
+  // 필드명 통일: reservations_ids → reservation_ids
+  if (converted.reservations_ids && !converted.reservation_ids) {
+    converted.reservation_ids = converted.reservations_ids
+    delete converted.reservations_ids
+  }
 
-  // JSONB 필드 정리 (줄바꿈 문자 제거) - 테이블별로 다르게 처리
+  // JSONB 필드 정리 (존재할 때만 정리하고, 없으면 건드리지 않음)
   let jsonbFields: string[] = []
   if (tableName === 'reservations') {
     jsonbFields = ['selected_options', 'selected_option_prices']
   }
-  // 다른 테이블들은 JSONB 필드가 없으므로 빈 배열
   
   jsonbFields.forEach(field => {
-    if (converted[field]) {
+    if (converted[field] !== undefined && converted[field] !== null) {
       try {
-        // 문자열인 경우 JSON으로 파싱 후 다시 문자열화하여 정리
         if (typeof converted[field] === 'string') {
+          // 문자열이면 JSON으로 파싱하여 객체로 저장 (JSONB에 적합)
           const parsed = JSON.parse(converted[field])
-          converted[field] = JSON.stringify(parsed)
+          converted[field] = parsed
         }
+        // 객체/배열이면 그대로 둠
       } catch (error) {
         console.warn(`Invalid JSON format for ${field}:`, converted[field])
-        // JSON 파싱 실패 시 빈 객체로 설정
-        converted[field] = '{}'
+        // 파싱 실패 시 빈 객체로 설정 (문자열이 아닌 JSONB 값으로 저장)
+        converted[field] = {}
       }
-    } else {
-      // 값이 없으면 빈 객체로 설정
-      converted[field] = '{}'
     }
   })
 
-  // 기본값 설정
-  if (tableName === 'reservations') {
-    converted.status = converted.status || 'pending'
-    converted.channel_id = converted.channel_id || 'default'
-  }
-  if (tableName === 'tours') {
-    converted.tour_status = converted.tour_status || 'Recruiting'
-  }
-  if (tableName === 'customers') {
-    converted.language = converted.language || 'ko'
-  }
-
-  // created_at, updated_at, tour_id는 구글 시트 값 그대로 사용
-  // 시스템에서 자동 생성하지 않음
+  // 기본값은 삽입 시에만 적용하도록 이 단계에서는 설정하지 않음
 
   return converted
 }
@@ -250,18 +260,23 @@ export const flexibleSync = async (
   sheetName: string, 
   targetTable: string, 
   columnMapping: { [key: string]: string }, 
-  enableIncrementalSync: boolean = true
+  enableIncrementalSync: boolean = true,
+  onProgress?: (event: {
+    type: 'start' | 'progress' | 'complete'
+    total?: number
+    processed?: number
+    inserted?: number
+    updated?: number
+    errors?: number
+    mode?: 'incremental' | 'full'
+  }) => void
 ) => {
   try {
     console.log(`Starting flexible sync for spreadsheet: ${spreadsheetId}, sheet: ${sheetName}, table: ${targetTable}`)
     console.log(`Target table type: ${typeof targetTable}, value: "${targetTable}"`)
     
-    // 마지막 동기화 시간 조회 (증분 동기화가 활성화된 경우)
+    // 증분 동기화 비활성화: 항상 전체 동기화
     let lastSyncTime: Date | null = null
-    if (enableIncrementalSync) {
-      lastSyncTime = await getLastSyncTime(targetTable, spreadsheetId)
-      console.log(`Last sync time: ${lastSyncTime ? lastSyncTime.toISOString() : 'No previous sync'}`)
-    }
     
     // 구글 시트에서 데이터 읽기 (동적 범위 사용)
     const sheetData = await readSheetDataDynamic(spreadsheetId, sheetName)
@@ -271,7 +286,7 @@ export const flexibleSync = async (
       return { success: true, message: 'No data to sync', count: 0 }
     }
 
-    // 데이터 변환 및 필터링 (증분 동기화)
+    // 데이터 변환 (전체 동기화)
     const transformedData = sheetData
       .map((row, index) => {
         const transformed: any = {}
@@ -301,35 +316,60 @@ export const flexibleSync = async (
         
         return converted
       })
-      .filter(row => {
-        // 증분 동기화가 활성화되고 updated_at 컬럼이 있는 경우
-        if (enableIncrementalSync && lastSyncTime && row.updated_at) {
-          try {
-            const rowUpdatedAt = new Date(row.updated_at)
-            return rowUpdatedAt > lastSyncTime
-          } catch (error) {
-            console.warn(`Invalid updated_at format for row ${row.id}:`, row.updated_at)
-            return true // 파싱 실패 시 포함
-          }
-        }
-        return true // 증분 동기화가 비활성화되거나 updated_at이 없는 경우 모든 데이터 포함
-      })
 
-    console.log(`Transformed ${transformedData.length} rows (${enableIncrementalSync && lastSyncTime ? 'incremental' : 'full'} sync)`)
+    const totalRows = transformedData.length
+    const mode: 'incremental' | 'full' = 'full'
+    console.log(`Transformed ${totalRows} rows (${mode} sync)`)
+    onProgress?.({ type: 'start', total: totalRows, mode })
 
-    // 동기화 실행
+    // 동기화 실행 (배치 upsert로 성능 개선, ID가 없으면 생성)
     const results = {
       inserted: 0,
       updated: 0,
       errors: 0,
       errorDetails: [] as string[]
     }
+    let processed = 0
+    const batchSize = 500
+    const rowsBuffer: any[] = []
 
-    for (const row of transformedData) {
+    const flush = async () => {
+      if (rowsBuffer.length === 0) return
       try {
+        const nowIso = new Date().toISOString()
+        const payload = rowsBuffer.map(r => ({ ...r, updated_at: nowIso }))
+        const { error } = await supabase
+          .from(targetTable)
+          .upsert(payload, { onConflict: 'id' })
+        if (error) {
+          console.error('Upsert batch error:', error)
+          results.errors += rowsBuffer.length
+          results.errorDetails.push(`Upsert batch failed: ${error.message}`)
+        } else {
+          // 구분이 어려우므로 processed 만큼을 모두 updated로 간주
+          results.updated += rowsBuffer.length
+        }
+      } catch (err: any) {
+        console.error('Upsert batch exception:', err)
+        results.errors += rowsBuffer.length
+        results.errorDetails.push(`Upsert batch exception: ${String(err)}`)
+      } finally {
+        rowsBuffer.length = 0
+      }
+    }
+
+    for (const originalRow of transformedData) {
+      try {
+        const row = { ...originalRow }
+
+        // ID가 없으면 생성하여 스킵 방지
         if (!row.id) {
-          console.warn('Skipping row without id:', row)
-          continue
+          try {
+            // Node 18+ 환경
+            row.id = (globalThis as any).crypto?.randomUUID ? (globalThis as any).crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`
+          } catch {
+            row.id = `${Date.now()}_${Math.random().toString(36).slice(2)}`
+          }
         }
 
         // 고객 정보 처리 (reservations 테이블인 경우)
@@ -340,64 +380,39 @@ export const flexibleSync = async (
           }
         }
 
-        // 기존 데이터 확인
-        const { data: existingRecord } = await supabase
-          .from(targetTable)
-          .select('id')
-          .eq('id', row.id)
-          .single()
-
-        if (existingRecord) {
-          // 업데이트
-          const { error: updateError } = await supabase
-            .from(targetTable)
-            .update({
-              ...row,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', row.id)
-
-          if (updateError) {
-            console.error('Update error:', updateError)
-            results.errors++
-            results.errorDetails.push(`Update failed for ${row.id}: ${updateError.message}`)
-          } else {
-            results.updated++
-          }
-        } else {
-          // 삽입
-          const { error: insertError } = await supabase
-            .from(targetTable)
-            .insert(row)
-
-          if (insertError) {
-            console.error('Insert error:', insertError)
-            results.errors++
-            results.errorDetails.push(`Insert failed for ${row.id}: ${insertError.message}`)
-          } else {
-            results.inserted++
-          }
-        }
+        // 삽입 시 기본값 보완
+        const prepared = applyInsertDefaults(targetTable, row)
+        rowsBuffer.push(prepared)
       } catch (error) {
-        console.error('Error processing row:', error)
+        console.error('Error preparing row:', error)
         results.errors++
-        results.errorDetails.push(`Processing failed for ${row.id}: ${error}`)
+        results.errorDetails.push(`Prepare failed for ${originalRow.id}: ${error}`)
+      }
+      processed++
+      onProgress?.({ type: 'progress', processed, total: totalRows, inserted: results.inserted, updated: results.updated, errors: results.errors })
+      if (rowsBuffer.length >= batchSize) {
+        await flush()
       }
     }
+
+    // 마지막 배치 flush
+    await flush()
 
     console.log('Flexible sync completed:', results)
     
     // 동기화 히스토리 저장
-    if (results.inserted > 0 || results.updated > 0) {
-      await saveSyncHistory(targetTable, spreadsheetId, results.inserted + results.updated)
+    if (processed > 0) {
+      await saveSyncHistory(targetTable, spreadsheetId, processed)
     }
     
-    return {
+    const summary = {
       success: results.errors === 0,
       message: `Sync completed: ${results.inserted} inserted, ${results.updated} updated, ${results.errors} errors`,
-      count: results.inserted + results.updated,
+      count: processed,
       details: results
     }
+    onProgress?.({ type: 'complete' })
+    return summary
 
   } catch (error) {
     console.error('Flexible sync error:', error)
@@ -407,6 +422,28 @@ export const flexibleSync = async (
       count: 0
     }
   }
+}
+
+// 삽입 시에만 기본값을 적용 (업데이트 시에는 기존 DB 값을 보존)
+const applyInsertDefaults = (tableName: string, row: any) => {
+  const payload = { ...row }
+  const nowIso = new Date().toISOString()
+
+  if (!payload.created_at) payload.created_at = nowIso
+  if (!payload.updated_at) payload.updated_at = nowIso
+
+  if (tableName === 'reservations') {
+    if (!payload.status) payload.status = 'pending'
+    if (!payload.channel_id) payload.channel_id = 'default'
+  }
+  if (tableName === 'tours') {
+    if (!payload.tour_status) payload.tour_status = 'Recruiting'
+  }
+  if (tableName === 'customers') {
+    if (!payload.language) payload.language = 'ko'
+  }
+
+  return payload
 }
 
 // 사용 가능한 테이블 목록 가져오기 (하드코딩 제거)

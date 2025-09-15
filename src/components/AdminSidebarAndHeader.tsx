@@ -351,6 +351,28 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 투어 관리 시스템
               </h1>
               
+              {/* 데스크톱 전용 빠른 이동 */}
+              <div className="hidden lg:flex items-center space-x-2">
+                <Link
+                  href={`/${locale}/admin/reservations`}
+                  className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors"
+                >
+                  예약 관리
+                </Link>
+                <Link
+                  href={`/${locale}/admin/booking`}
+                  className="px-3 py-1.5 text-sm border rounded-md text-indigo-600 border-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors"
+                >
+                  부킹 관리
+                </Link>
+                <Link
+                  href={`/${locale}/admin/tours`}
+                  className="px-3 py-1.5 text-sm border rounded-md text-green-600 border-green-600 hover:bg-green-600 hover:text-white transition-colors"
+                >
+                  투어 관리
+                </Link>
+              </div>
+              
             </div>
             
             <div className="flex items-center space-x-1 sm:space-x-4">

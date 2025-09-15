@@ -15,6 +15,7 @@ type Product = any
 type Team = Database['public']['Tables']['team']['Row']
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Reservation = any
+type Customer = Database['public']['Tables']['customers']['Row']
 
 interface DailyData {
   totalPeople: number
@@ -47,13 +48,14 @@ export default function ScheduleView() {
   const [teamMembers, setTeamMembers] = useState<Team[]>([])
   const [tours, setTours] = useState<Tour[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [selectedTeamMembers, setSelectedTeamMembers] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [showProductModal, setShowProductModal] = useState(false)
   const [showTeamModal, setShowTeamModal] = useState(false)
   const [productColors, setProductColors] = useState<{ [productId: string]: string }>({})
-  const [currentUserId] = useState('admin') // 실제로는 인증된 사용자 ID를 사용해야 함
+  // const [currentUserId] = useState('admin') // 실제로는 인증된 사용자 ID를 사용해야 함
   const [draggedTour, setDraggedTour] = useState<Tour | null>(null)
   const [dragOverCell, setDragOverCell] = useState<string | null>(null)
   const [unassignedTours, setUnassignedTours] = useState<Tour[]>([])
@@ -61,12 +63,17 @@ export default function ScheduleView() {
   const [highlightedDate, setHighlightedDate] = useState<string | null>(null)
   const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string }>>([])
   const [draggedUnassignedTour, setDraggedUnassignedTour] = useState<Tour | null>(null)
+  const [draggedRole, setDraggedRole] = useState<'guide' | 'assistant' | null>(null)
   const [showMessageModal, setShowMessageModal] = useState(false)
   const [messageModalContent, setMessageModalContent] = useState({ title: '', message: '', type: 'success' as 'success' | 'error' })
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {} })
   const [showGuideModal, setShowGuideModal] = useState(false)
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '' })
+
+  // 배치 저장용 변경 대기 상태
+  const [pendingChanges, setPendingChanges] = useState<{ [tourId: string]: Partial<Tour> }>({})
+  const pendingCount = useMemo(() => Object.keys(pendingChanges).length, [pendingChanges])
 
   // 통합 스크롤 컨테이너는 하나의 스크롤로 동기화됨
 
@@ -251,6 +258,11 @@ export default function ScheduleView() {
     return days
   }, [currentDate])
 
+  // 날짜 컬럼 공통 스타일 계산: 최소 40px, 남는 공간은 균등 분배
+  const fixedSideColumnsPx = 160 // 좌측 라벨 80 + 우측 합계 80
+  const dayColumnWidthCalc = useMemo(() => `calc((100% - ${fixedSideColumnsPx}px) / ${monthDays.length})`, [monthDays.length])
+  const dynamicMinTableWidthPx = useMemo(() => fixedSideColumnsPx + monthDays.length * 40, [monthDays.length])
+
   // 미 배정된 투어 가져오기
   const fetchUnassignedTours = useCallback(async () => {
     try {
@@ -329,6 +341,17 @@ export default function ScheduleView() {
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
 
+      // 고객 데이터 가져오기 (해당 예약의 고객만)
+      let customersData: Pick<Customer, 'id' | 'language'>[] | null = []
+      const customerIds = Array.from(new Set((reservationsData || []).map((r: { customer_id?: string | null }) => r.customer_id).filter(Boolean)))
+      if (customerIds.length > 0) {
+        const { data: customersFetched } = await supabase
+          .from('customers')
+          .select('id, language')
+          .in('id', customerIds)
+        customersData = customersFetched as Pick<Customer, 'id' | 'language'>[] | null
+      }
+
       // 부킹(입장권) 데이터 가져오기: hover summary용 confirmed EA 합계 계산
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: ticketBookingsData } = await (supabase as any)
@@ -359,6 +382,7 @@ export default function ScheduleView() {
       setTeamMembers(teamData || [])
       setTours(toursData || [])
       setReservations(reservationsData || [])
+      setCustomers((customersData || []) as Customer[])
       setTicketBookings(ticketBookingsData || [])
       setOffSchedules(offSchedulesData || [])
 
@@ -402,11 +426,30 @@ export default function ScheduleView() {
     }
   }, [products, colorPalette])
 
+  // 고객 언어 맵 (customer_id -> ko 여부)
+  const customerIdToIsKo = useMemo(() => {
+    const map = new Map<string, boolean>()
+    for (const c of customers) {
+      const lang = (c?.language || '').toString().toLowerCase()
+      const isKo = lang === 'ko' || lang === 'kr' || lang === '한국어' || lang === 'korean'
+      map.set(String(c.id), isKo)
+    }
+    return map
+  }, [customers])
+
   // 상품별 스케줄 데이터 계산
   const productScheduleData = useMemo(() => {
     if (!tours.length || !reservations.length) return []
 
-    const data: { [productId: string]: { product_name: string; dailyData: { [date: string]: { totalPeople: number; tours: number } }; totalPeople: number; totalTours: number } } = {}
+    // 고객 언어 맵: customer_id -> isKo
+    const idToIsKo = new Map<string, boolean>()
+    for (const c of customers) {
+      const lang = (c?.language || '').toString().toLowerCase()
+      const isKo = lang === 'ko' || lang === 'kr' || lang === '한국어' || lang === 'korean'
+      idToIsKo.set(String(c.id), isKo)
+    }
+
+    const data: { [productId: string]: { product_name: string; dailyData: { [date: string]: { totalPeople: number; tours: number; koPeople: number; enPeople: number } }; totalPeople: number; totalTours: number } } = {}
 
     // 선택된 상품별로 데이터 생성
     selectedProducts.forEach(productId => {
@@ -414,7 +457,7 @@ export default function ScheduleView() {
       if (!product) return
 
       const productTours = tours.filter(tour => tour.product_id === productId)
-      const dailyData: { [date: string]: { totalPeople: number; tours: number } } = {}
+      const dailyData: { [date: string]: { totalPeople: number; tours: number; koPeople: number; enPeople: number } } = {}
       let totalPeople = 0
       let totalTours = 0
 
@@ -428,31 +471,22 @@ export default function ScheduleView() {
         )
 
         const dayTotalPeople = dayReservations.reduce((sum, res) => sum + (res.total_people || 0), 0)
+        const dayKoPeople = dayReservations.reduce((sum, res) => {
+          const cid = String(res.customer_id || '')
+          const isKo = idToIsKo.get(cid) === true
+          return sum + (isKo ? (res.total_people || 0) : 0)
+        }, 0)
+        const dayEnPeople = Math.max(dayTotalPeople - dayKoPeople, 0)
 
-        // 멀티데이 투어 처리
-        const multiDayDays = getMultiDayTourDays(productId)
-
-        // 멀티데이 투어인 경우, 시작일부터 멀티데이 동안 표시
-        if (multiDayDays > 1) {
-          const start = dayjs(dateString)
-          for (let i = 0; i < multiDayDays; i++) {
-            const d = start.add(i, 'day')
-            const ds = d.format('YYYY-MM-DD')
-            // 현재 월 범위 내에 있는지 확인 (포함 비교)
-            if (!d.isBefore(firstDayOfMonth, 'day') && !d.isAfter(lastDayOfMonth, 'day')) {
-              if (!dailyData[ds]) {
-                dailyData[ds] = { totalPeople: 0, tours: 0 }
-              }
-              dailyData[ds].totalPeople += dayTotalPeople
-              dailyData[ds].tours += dayTours.length
-            }
-          }
-        } else {
-          dailyData[dateString] = {
-            totalPeople: dayTotalPeople,
-            tours: dayTours.length
-          }
+        // 멀티데이 투어 처리: 시작일에만 인원 표시
+        if (!dailyData[dateString]) {
+          dailyData[dateString] = { totalPeople: 0, tours: 0, koPeople: 0, enPeople: 0 }
         }
+        // 멀티데이든 1일 투어든, 해당 날짜(시작일)에만 합산
+        dailyData[dateString].totalPeople += dayTotalPeople
+        dailyData[dateString].koPeople += dayKoPeople
+        dailyData[dateString].enPeople += dayEnPeople
+        dailyData[dateString].tours += dayTours.length
 
         totalPeople += dayTotalPeople
         totalTours += dayTours.length
@@ -467,7 +501,7 @@ export default function ScheduleView() {
     })
 
     return data
-  }, [tours, reservations, products, selectedProducts, monthDays, firstDayOfMonth, lastDayOfMonth])
+  }, [tours, reservations, customers, products, selectedProducts, monthDays])
 
   // 가이드별 스케줄 데이터 계산
   const guideScheduleData = useMemo(() => {
@@ -814,41 +848,30 @@ export default function ScheduleView() {
     }
 
     try {
-      // 투어 업데이트
+      // 즉시 저장 대신 변경 누적 + 로컬 미리보기 반영
+      // draggedRole이 있으면 우선 사용 (가이드/어시스턴트 재배정 구분)
+      const effectiveRole = draggedRole || role
       const updateData: Partial<Tour> = {}
-      if (role === 'guide') {
+      if (effectiveRole === 'guide') {
         updateData.tour_guide_id = teamMemberId
-        // 기존 어시스턴트는 유지
-      } else if (role === 'assistant') {
+      } else if (effectiveRole === 'assistant') {
         updateData.assistant_id = teamMemberId
-        // 기존 가이드는 유지
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('tours' as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .update(updateData as any)
-        .eq('id', draggedTour.id)
+      setPendingChanges(prev => ({
+        ...prev,
+        [draggedTour.id]: {
+          ...(prev[draggedTour.id] || {}),
+          ...updateData
+        }
+      }))
 
-      if (error) {
-        console.error('Error updating tour:', error)
-        alert('투어 배정에 실패했습니다.')
-        return
-      }
-
-      // 성공 시 데이터 새로고침
-      await fetchData()
-      await fetchUnassignedTours()
-      alert('투어가 성공적으로 재배정되었습니다.')
-      
-    } catch (error) {
-      console.error('Error assigning tour:', error)
-      alert('투어 배정 중 오류가 발생했습니다.')
+      // tours 상태에 즉시 반영하여 화면에서 미리보기 가능하게 함
+      setTours(prev => prev.map(t => t.id === draggedTour.id ? { ...t, ...updateData } : t))
     } finally {
       setDraggedTour(null)
       setHighlightedDate(null)
+      setDraggedRole(null)
     }
   }
 
@@ -860,32 +883,25 @@ export default function ScheduleView() {
     if (!draggedTour) return
 
     try {
-      // 투어 배정 해제 (가이드와 어시스턴트 모두 null로 설정)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('tours' as any)
-        .update({
+      // 즉시 저장 대신 변경 누적 (해제)
+      setPendingChanges(prev => ({
+        ...prev,
+        [draggedTour.id]: {
+          ...(prev[draggedTour.id] || {}),
           tour_guide_id: null,
           assistant_id: null
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any)
-        .eq('id', draggedTour.id)
+        }
+      }))
 
-      if (error) {
-        console.error('Error unassigning tour:', error)
-        alert('투어 배정 해제에 실패했습니다.')
-        return
-      }
+      // tours 상태에도 반영
+      setTours(prev => prev.map(t => t.id === draggedTour.id ? { ...t, tour_guide_id: null, assistant_id: null } : t))
 
-      // 성공 시 데이터 새로고침
-      await fetchData()
-      await fetchUnassignedTours()
-      alert('투어 배정이 해제되었습니다.')
-      
-    } catch (error) {
-      console.error('Error unassigning tour:', error)
-      alert('투어 배정 해제 중 오류가 발생했습니다.')
+      // 미배정 목록에 추가 (이미 있지 않은 경우)
+      setUnassignedTours(prev => {
+        const exists = prev.some(t => t.id === draggedTour.id)
+        const updatedTour = { ...draggedTour, tour_guide_id: null, assistant_id: null }
+        return exists ? prev.map(t => t.id === draggedTour.id ? updatedTour : t) : [...prev, updatedTour]
+      })
     } finally {
       setDraggedTour(null)
       setHighlightedDate(null)
@@ -974,43 +990,33 @@ export default function ScheduleView() {
     if (!draggedUnassignedTour) return
     
     try {
-      // 역할에 따라 적절한 필드 업데이트
+      // 즉시 저장 대신 변경 누적
       const updateData: Partial<Tour> = {
         tour_date: dateString
       }
-      
       if (role === 'guide') {
         updateData.tour_guide_id = teamMemberId
       } else if (role === 'assistant') {
         updateData.assistant_id = teamMemberId
       }
-      
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('tours' as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .update(updateData as any)
-        .eq('id', draggedUnassignedTour.id)
 
-      if (error) {
-        console.error('Error assigning tour:', error)
-        alert('투어 배정에 실패했습니다.')
-        return
-      }
+      setPendingChanges(prev => ({
+        ...prev,
+        [draggedUnassignedTour.id]: {
+          ...(prev[draggedUnassignedTour.id] || {}),
+          ...updateData
+        }
+      }))
 
-      // 성공 시 데이터 새로고침
-      await fetchData()
-      await fetchUnassignedTours()
-      alert(`${role === 'guide' ? '가이드' : '어시스턴트'}가 성공적으로 배정되었습니다.`)
-      
-    } catch (error) {
-      console.error('Error assigning tour:', error)
-      alert('투어 배정 중 오류가 발생했습니다.')
+      // tours 상태 업데이트
+      setTours(prev => prev.map(t => t.id === draggedUnassignedTour.id ? { ...t, ...updateData } : t))
+
+      // 미배정 목록에서는 제거
+      setUnassignedTours(prev => prev.filter(t => t.id !== draggedUnassignedTour.id))
     } finally {
       setDraggedUnassignedTour(null)
       setDragOverCell(null)
-      setHighlightedDate(null) // 하이라이트 제거
+      setHighlightedDate(null)
     }
   }
 
@@ -1028,10 +1034,17 @@ export default function ScheduleView() {
     )
     const totalPeopleAll = dayReservations.reduce((s, r) => s + (r.total_people || 0), 0)
     let assignedPeople = 0
+    let assignedKo = 0
     if (tour.reservation_ids && Array.isArray(tour.reservation_ids)) {
       const assigned = dayReservations.filter(r => tour.reservation_ids!.includes(r.id))
       assignedPeople = assigned.reduce((s, r) => s + (r.total_people || 0), 0)
+      assignedKo = assigned.reduce((s, r) => {
+        const cid = String(r.customer_id || '')
+        const isKo = customerIdToIsKo.get(cid) === true
+        return s + (isKo ? (r.total_people || 0) : 0)
+      }, 0)
     }
+    const assignedEn = Math.max(assignedPeople - assignedKo, 0)
 
     // 가이드/어시스턴트 이름
     const guide = teamMembers.find(t => t.email === tour.tour_guide_id)
@@ -1041,6 +1054,7 @@ export default function ScheduleView() {
 
     // 차량 번호(가능한 필드 우선 사용)
     const vehicleNumber = tour.vehicle_number || tour.vehicle_id || '-'
+    const vehicleAssigned = tour.tour_car_id && String(tour.tour_car_id).trim().length > 0
 
     // 부킹 Confirm EA 합계
     const confirmedEa = ticketBookings
@@ -1054,9 +1068,11 @@ export default function ScheduleView() {
       `투어: ${productName}${isPrivateTour ? ' (단독투어)' : ''}`,
       `날짜: ${tourDate}`,
       `인원: ${assignedPeople} / ${totalPeopleAll}`,
+      `배정 언어: ko ${assignedKo} / en ${assignedEn}`,
       `가이드: ${guideName}`,
       `어시스턴트: ${assistantName}`,
       `차량: ${vehicleNumber}`,
+      `배차: ${vehicleAssigned ? '배차 완료' : '미배차'}`,
       `Confirm EA: ${confirmedEa}`
     ].join('\n')
   }
@@ -1098,11 +1114,15 @@ export default function ScheduleView() {
           if (dayData.isMultiDay) {
             const actualTourDays = Math.min(dayData.multiDayDays, monthDays.length - monthDays.findIndex(d => d.dateString === dateString))
             dailyTotals[dateString].totalPeople += dayData.totalPeople * actualTourDays
-            dailyTotals[dateString].assignedPeople += dayData.assignedPeople * actualTourDays
+            // assistant는 제외하고 guide 역할의 배정 인원만 합산
+            const assignedForGuides = dayData.role === 'guide' ? dayData.assignedPeople : 0
+            dailyTotals[dateString].assignedPeople += assignedForGuides * actualTourDays
             dailyTotals[dateString].tours += actualTourDays
           } else {
             dailyTotals[dateString].totalPeople += dayData.totalPeople
-            dailyTotals[dateString].assignedPeople += dayData.assignedPeople
+            // assistant는 제외하고 guide 역할의 배정 인원만 합산
+            const assignedForGuides = dayData.role === 'guide' ? dayData.assignedPeople : 0
+            dailyTotals[dateString].assignedPeople += assignedForGuides
             dailyTotals[dateString].tours += dayData.tours
           }
         }
@@ -1165,6 +1185,56 @@ export default function ScheduleView() {
 
           {/* 오른쪽: 월 이동 버튼들 */}
           <div className="flex items-center space-x-4 flex-shrink-0">
+            {/* 대기 변경 배지 및 버튼 */}
+            {pendingCount > 0 && (
+              <span className="px-2 py-1 text-xs bg-amber-100 text-amber-800 rounded-full">
+                변경 {pendingCount}건 대기중
+              </span>
+            )}
+            <button
+              onClick={async () => {
+                // 일괄 저장: pendingChanges를 순회하며 업데이트
+                try {
+                  const entries = Object.entries(pendingChanges)
+                  for (const [tourId, updateData] of entries) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const { error } = await (supabase as any)
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      .from('tours' as any)
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      .update(updateData as any)
+                      .eq('id', tourId)
+                    if (error) {
+                      console.error('Batch save error:', error)
+                      showMessage('저장 실패', '일부 변경사항 저장에 실패했습니다.', 'error')
+                      return
+                    }
+                  }
+                  setPendingChanges({})
+                  await fetchData()
+                  await fetchUnassignedTours()
+                  showMessage('저장 완료', '변경사항이 저장되었습니다.', 'success')
+                } catch (err) {
+                  console.error('Batch save unexpected error:', err)
+                  showMessage('오류', '변경사항 저장 중 오류가 발생했습니다.', 'error')
+                }
+              }}
+              disabled={pendingCount === 0}
+              className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+            >
+              저장
+            </button>
+            <button
+              onClick={async () => {
+                setPendingChanges({})
+                await fetchData()
+                await fetchUnassignedTours()
+              }}
+              disabled={pendingCount === 0}
+              className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-600 text-white hover:bg-gray-700'}`}
+            >
+              취소
+            </button>
             <button
               onClick={goToPreviousMonth}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -1214,7 +1284,7 @@ export default function ScheduleView() {
               상품별 투어 인원
             </h3>
             <div className="overflow-visible">
-          <table className="w-full" style={{tableLayout: 'fixed', minWidth: '1200px'}}>
+          <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
             <thead className="bg-blue-50">
               <tr>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
@@ -1223,15 +1293,13 @@ export default function ScheduleView() {
                 {monthDays.map(({ date, dayOfWeek, dateString }) => (
                   <th 
                     key={date} 
-                    className={`px-1 py-2 text-center text-xs font-medium text-gray-700 ${
-                      isToday(dateString) 
-                        ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
-                        : ''
-                    }`}
-                    style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
+                    className={"p-0 text-center text-xs font-medium text-gray-700"}
+                    style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
-                    <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}일</div>
-                    <div className={`text-xs ${isToday(dateString) ? 'text-red-600' : 'text-gray-500'}`}>{dayOfWeek}</div>
+                    <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} px-1 py-2`}>
+                      <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}일</div>
+                      <div className={`text-xs ${isToday(dateString) ? 'text-red-600' : 'text-gray-500'}`}>{dayOfWeek}</div>
+                    </div>
                   </th>
                 ))}
                 <th className="px-2 py-2 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
@@ -1254,26 +1322,38 @@ export default function ScheduleView() {
                       return (
                         <td 
                           key={dateString} 
-                          className={`px-1 py-2 text-center text-xs bg-white ${
-                            isToday(dateString) 
-                              ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
-                              : ''
-                          }`}
-                          style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
+                          className="p-0 text-center text-xs"
+                          style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                         >
-                          {dayData ? (
-                            <div className={`font-medium ${
-                              dayData.totalPeople === 0 
-                                ? 'text-gray-300' 
-                                : dayData.totalPeople < 4 
-                                  ? 'text-blue-600' 
-                                  : 'text-red-600'
-                            } ${isToday(dateString) ? 'text-red-700' : ''}`}>
-                              {dayData.totalPeople}
-                            </div>
-                          ) : (
-                            <div className="text-gray-300">-</div>
-                          )}
+                          {(() => {
+                            const langBgClass = dayData ? (() => {
+                              const hasKo = (dayData.koPeople || 0) > 0
+                              const hasEn = (dayData.enPeople || 0) > 0
+                              if (hasKo && hasEn) return 'bg-orange-100'
+                              if (hasKo) return 'bg-yellow-100'
+                              if (hasEn) return 'bg-red-100'
+                              return 'bg-white'
+                            })() : 'bg-white'
+                            const todayWrapClass = isToday(dateString)
+                              ? `${langBgClass} border-l-2 border-r-2 border-red-500`
+                              : langBgClass
+                            const titleText = dayData ? `ko ${dayData.koPeople || 0} / en ${dayData.enPeople || 0}` : undefined
+                            return (
+                              <div className={`${todayWrapClass} px-1 py-2`} title={titleText}>
+                                {dayData ? (
+                                  <div className={`font-medium ${
+                                    dayData.totalPeople === 0 
+                                      ? 'text-gray-300' 
+                                      : dayData.totalPeople < 4 
+                                        ? 'text-blue-600' 
+                                        : 'text-red-600'
+                                  } ${isToday(dateString) ? 'text-red-700' : ''}`}>{dayData.totalPeople}</div>
+                                ) : (
+                                  <div className="text-gray-300">-</div>
+                                )}
+                              </div>
+                            )
+                          })()}
                         </td>
                       )
                     })}
@@ -1300,20 +1380,18 @@ export default function ScheduleView() {
                   return (
                     <td 
                       key={dateString} 
-                      className={`px-1 py-2 text-center text-xs ${
-                        isToday(dateString) 
-                          ? 'border-2 border-red-500 bg-red-50' 
-                          : ''
-                      }`}
-                      style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
+                      className="p-0 text-center text-xs"
+                      style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                     >
-                      <div className={`font-medium ${
-                        dayTotal.totalPeople === 0 
-                          ? 'text-gray-300' 
-                          : dayTotal.totalPeople < 4 
-                            ? 'text-blue-600' 
-                            : 'text-red-600'
-                      } ${isToday(dateString) ? 'text-red-700' : ''}`}>{dayTotal.totalPeople}</div>
+                      <div className={`${isToday(dateString) ? 'border-2 border-red-500 bg-red-50' : ''} px-1 py-2`}>
+                        <div className={`font-medium ${
+                          dayTotal.totalPeople === 0 
+                            ? 'text-gray-300' 
+                            : dayTotal.totalPeople < 4 
+                              ? 'text-blue-600' 
+                              : 'text-red-600'
+                        } ${isToday(dateString) ? 'text-red-700' : ''}`}>{dayTotal.totalPeople}</div>
+                      </div>
                     </td>
                   )
                 })}
@@ -1328,23 +1406,22 @@ export default function ScheduleView() {
           {/* 가이드별 스케줄 테이블 */}
           <div>
             <div className="overflow-visible">
-          <table className="w-full" style={{tableLayout: 'fixed', minWidth: '1200px'}}>
+          <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
             <thead className="bg-green-50 hidden">
               <tr>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   가이드명
                 </th>
-                {monthDays.map(({ date, dateString }) => (
+                {monthDays.map(({ date, dayOfWeek, dateString }) => (
                   <th 
                     key={date} 
-                    className={`px-1 py-2 text-center text-xs font-medium text-gray-700 ${
-                      isToday(dateString) 
-                        ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
-                        : ''
-                    }`}
-                    style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
+                    className="p-0 text-center text-xs font-medium text-gray-700"
+                    style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
-                    <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}</div>
+                    <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} px-1 py-2`}>
+                      <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}일</div>
+                      <div className={`text-xs ${isToday(dateString) ? 'text-red-600' : 'text-gray-500'}`}>{dayOfWeek}</div>
+                    </div>
                   </th>
                 ))}
                 <th className="px-2 py-2 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
@@ -1368,7 +1445,7 @@ export default function ScheduleView() {
                           ? 'border-2 border-red-500 bg-red-50' 
                           : ''
                       }`}
-                      style={{ width: '40px', minWidth: '40px', maxWidth: '40px' }}
+                      style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                     >
                       <div className={`font-medium ${
                         dayTotal.assignedPeople === 0 
@@ -1476,7 +1553,7 @@ export default function ScheduleView() {
                     </td>
                     <td className="p-0" colSpan={monthDays.length}>
                       <div className="relative">
-                        <div className="grid" style={{gridTemplateColumns: `repeat(${monthDays.length}, 40px)`}}>
+                        <div className="grid" style={{gridTemplateColumns: `repeat(${monthDays.length}, minmax(40px, 1fr))`, width: '100%', minWidth: `calc(${monthDays.length} * 40px)`}}>
                           {monthDays.map(({ dateString }) => {
                           const dayData = guide.dailyData[dateString]
                           
@@ -1502,7 +1579,7 @@ export default function ScheduleView() {
                                     ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
                                     : ''
                                 }`}
-                                style={{ minWidth: '40px' }}
+                                style={{ minWidth: '40px', boxSizing: 'border-box' }}
                               >
                                 <div
                                   className={`relative h-[32px] ${
@@ -1583,7 +1660,7 @@ export default function ScheduleView() {
                                   ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
                                   : ''
                               } ${highlightedDate === dateString ? 'bg-yellow-200' : ''}`}
-                              style={{ minWidth: '44px' }}
+                              style={{ minWidth: '40px', boxSizing: 'border-box' }}
                             >
                               <div
                                 className={`relative h-[32px] ${
@@ -1649,6 +1726,8 @@ export default function ScheduleView() {
                                         tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
                                       )
                                       
+                                      // 차량 배차 여부
+                                      const hasUnassignedVehicle = guideTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
                                       return (
                                         <div 
                                           className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
@@ -1664,6 +1743,7 @@ export default function ScheduleView() {
                                           draggable
                                           onDragStart={(e) => {
                                             if (guideTours.length > 0) {
+                                              setDraggedRole('guide')
                                               handleDragStart(e, guideTours[0])
                                             }
                                           }}
@@ -1678,6 +1758,9 @@ export default function ScheduleView() {
                                             }
                                           }}
                                         >
+                                          {hasUnassignedVehicle && (
+                                            <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
+                                          )}
                                           {hasPrivateTour && <span>🔒</span>}
                                           <span>{dayData.assignedPeople}</span>
                                           {dayData.extendsToNextMonth && (
@@ -1698,6 +1781,8 @@ export default function ScheduleView() {
                                         tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
                                       )
                                       
+                                      // 차량 배차 여부
+                                      const hasUnassignedVehicle = assistantTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
                                       return (
                                         <div 
                                           className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
@@ -1713,6 +1798,7 @@ export default function ScheduleView() {
                                           draggable
                                           onDragStart={(e) => {
                                             if (assistantTours.length > 0) {
+                                              setDraggedRole('assistant')
                                               handleDragStart(e, assistantTours[0])
                                             }
                                           }}
@@ -1727,6 +1813,9 @@ export default function ScheduleView() {
                                             }
                                           }}
                                         >
+                                          {hasUnassignedVehicle && (
+                                            <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
+                                          )}
                                           {hasPrivateTour && <span>🔒</span>}
                                           <span>{dayData.guideInitials || 'A'}</span>
                                           {dayData.extendsToNextMonth && (
@@ -1805,8 +1894,20 @@ export default function ScheduleView() {
                               style={{ left: `calc(${visibleStartIdx} * (100% / ${monthDays.length}))`, width: `calc(${spanDays} * (100% / ${monthDays.length}))` }}
                             >
                               <div
-                                className={`w-full h-full rounded font-bold text-white px-2 py-0 text-xs flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400' : ''}`}
-                                style={{ background: tour.dayData.assignedPeople > 0 && hasColors ? gradient : undefined }}
+                                className={`w-full h-full rounded font-bold px-2 py-0 text-xs flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400 text-white' : ''}`}
+                                style={{ 
+                                  background: tour.dayData.assignedPeople > 0 && hasColors ? gradient : undefined,
+                                  color: (() => {
+                                    const guideTours = tours.filter(tourItem => 
+                                      tourItem.tour_date === tour.startDate && 
+                                      (tour.dayData.role === 'guide' 
+                                        ? tourItem.tour_guide_id === teamMemberId 
+                                        : tourItem.assistant_id === teamMemberId)
+                                    )
+                                    const hasUnassignedVehicle = guideTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
+                                    return hasUnassignedVehicle ? '#dc2626' : undefined
+                                  })()
+                                }}
                                 draggable
                                 onDragStart={(e) => {
                                   const guideTours = tours.filter(tourItem => 
