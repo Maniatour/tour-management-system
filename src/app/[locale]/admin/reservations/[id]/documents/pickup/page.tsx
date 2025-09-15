@@ -91,12 +91,14 @@ export default function PickupNotificationPage() {
       <h1 className="text-2xl font-bold">Pick up Notification</h1>
       <div className="text-sm text-gray-500">Reservation ID: {data.id}</div>
       <div className="border rounded p-4 space-y-2" dangerouslySetInnerHTML={{ __html: rendered || '' }} />
-      <button
-        onClick={() => window.print()}
-        className="px-3 py-2 rounded bg-gray-100 hover:bg-gray-200"
-      >
-        Print / Save PDF
-      </button>
+      {!location.pathname.includes('/embed') && (
+        <button
+          onClick={() => window.print()}
+          className="px-3 py-2 rounded bg-gray-100 hover:bg-gray-200"
+        >
+          Print / Save PDF
+        </button>
+      )}
     </div>
   )
 }

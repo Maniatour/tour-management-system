@@ -56,9 +56,10 @@ export default async function LocaleLayout({
   const headersList = await headers();
   const pathname = headersList.get('x-pathname') || '';
   const isAdminPage = pathname.includes('/admin');
+  const isEmbedPage = pathname.includes('/embed');
 
-  // Admin 페이지인 경우 기본 레이아웃만 제공
-  if (isAdminPage) {
+  // Admin 또는 Embed 페이지인 경우 기본 레이아웃만 제공
+  if (isAdminPage || isEmbedPage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <AuthProvider>

@@ -33,6 +33,7 @@ export default function ReservationDetailsPage() {
   const [loadingReservation, setLoadingReservation] = useState<boolean>(false)
   const [reservation, setReservation] = useState<Reservation | null>(null)
   const reservationId = params?.id || ''
+  const [previewDoc, setPreviewDoc] = useState<null | 'confirmation' | 'pickup' | 'receipt'>(null)
 
   // Try to use already-loaded list; if not found, fetch just this reservation
   useEffect(() => {
@@ -216,30 +217,21 @@ export default function ReservationDetailsPage() {
           {reservation && (
             <>
               <button
-                onClick={() => {
-                  const base = `/${params?.locale || 'ko'}/admin/reservations/${reservation.id}/documents/confirmation`
-                  window.open(base, '_blank')
-                }}
+                onClick={() => setPreviewDoc('confirmation')}
                 className="p-2 bg-white border border-gray-200 rounded hover:bg-gray-50"
                 title="Reservation Confirmation 미리보기"
               >
                 <FileText className="w-4 h-4" />
               </button>
               <button
-                onClick={() => {
-                  const base = `/${params?.locale || 'ko'}/admin/reservations/${reservation.id}/documents/pickup`
-                  window.open(base, '_blank')
-                }}
+                onClick={() => setPreviewDoc('pickup')}
                 className="p-2 bg-white border border-gray-200 rounded hover:bg-gray-50"
                 title="Pick up Notification 미리보기"
               >
                 <Printer className="w-4 h-4" />
               </button>
               <button
-                onClick={() => {
-                  const base = `/${params?.locale || 'ko'}/admin/reservations/${reservation.id}/documents/receipt`
-                  window.open(base, '_blank')
-                }}
+                onClick={() => setPreviewDoc('receipt')}
                 className="p-2 bg-white border border-gray-200 rounded hover:bg-gray-50"
                 title="Reservation Receipt 미리보기"
               >
@@ -271,6 +263,41 @@ export default function ReservationDetailsPage() {
         </div>
       </div>
       {content}
+
+      {/* 문서 미리보기 모달 */}
+      {previewDoc && reservation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-2 sm:p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-[95vw] sm:max-w-[90vw] h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-3 py-2 border-b">
+              <div className="text-sm font-medium text-gray-700">
+                {previewDoc === 'confirmation' && 'Reservation Confirmation 미리보기'}
+                {previewDoc === 'pickup' && 'Pick up Notification 미리보기'}
+                {previewDoc === 'receipt' && 'Reservation Receipt 미리보기'}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const base = `/${params?.locale || 'ko'}/admin/reservations/${reservation.id}/documents/${previewDoc}`
+                    window.open(base, '_blank')
+                  }}
+                  className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+                >새 창</button>
+                <button
+                  onClick={() => setPreviewDoc(null)}
+                  className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+                >닫기</button>
+              </div>
+            </div>
+            <div className="flex-1">
+              <iframe
+                title="document-preview"
+                src={`/${params?.locale || 'ko'}/admin/reservations/${reservation.id}/documents/${previewDoc}?mode=embed`}
+                className="w-full h-full"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
