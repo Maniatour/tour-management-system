@@ -310,25 +310,20 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   }
 
   const navigation = [
-    { name: '대시보드', href: `/${locale}/admin`, icon: BarChart3 },
-    { name: '고객 관리', href: `/${locale}/admin/customers`, icon: Users },
+    // removed from sidebar: 대시보드, 고객 관리, 예약 관리, 부킹 관리, 투어 관리, 채팅 관리
     { name: '상품 관리', href: `/${locale}/admin/products`, icon: BookOpen },
-    { name: '예약 관리', href: `/${locale}/admin/reservations`, icon: Calendar },
+    { name: '옵션 관리', href: `/${locale}/admin/options`, icon: Settings },
+    { name: '채널 관리', href: `/${locale}/admin/channels`, icon: Settings },
+    { name: '픽업 호텔 관리', href: `/${locale}/admin/pickup-hotels`, icon: Building },
+    { name: '차량 관리', href: `/${locale}/admin/vehicles`, icon: Car },
+    { name: '쿠폰 관리', href: `/${locale}/admin/coupons`, icon: Ticket },
     { name: '예약 통계', href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
-    { name: '부킹 관리', href: `/${locale}/admin/booking`, icon: BookOpen },
-    { name: '채팅 관리', href: `/${locale}/admin/chat-management`, icon: MessageCircle },
-    { name: '데이터 동기화', href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
+    { name: '팀 관리', href: `/${locale}/admin/team`, icon: Users },
     { name: '출퇴근 관리', href: `/${locale}/admin/attendance`, icon: Clock },
     { name: '공급업체 관리', href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: '공급업체 정산', href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
+    { name: '데이터 동기화', href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
     { name: '데이터 검수', href: `/${locale}/admin/data-review`, icon: FileCheck },
-    { name: '픽업 호텔 관리', href: `/${locale}/admin/pickup-hotels`, icon: Building },
-    { name: '차량 관리', href: `/${locale}/admin/vehicles`, icon: Car },
-    { name: '팀 관리', href: `/${locale}/admin/team`, icon: Users },
-    { name: '옵션 관리', href: `/${locale}/admin/options`, icon: Settings },
-    { name: '투어 관리', href: `/${locale}/admin/tours`, icon: MapPin },
-    { name: '채널 관리', href: `/${locale}/admin/channels`, icon: Settings },
-    { name: '쿠폰 관리', href: `/${locale}/admin/coupons`, icon: Ticket },
     { name: '감사 추적', href: `/${locale}/admin/audit-logs`, icon: History },
   ]
 
@@ -347,12 +342,22 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               </button>
               
               {/* 시스템 제목 */}
-              <h1 className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate">
+              <button
+                onClick={() => router.push(`/${locale}/admin`)}
+                className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate hover:text-blue-600"
+                title="대시보드로 이동"
+              >
                 MANIA TOUR
-              </h1>
+              </button>
               
               {/* 데스크톱 전용 빠른 이동 */}
               <div className="hidden lg:flex items-center space-x-2">
+                <Link
+                  href={`/${locale}/admin/customers`}
+                  className="px-3 py-1.5 text-sm border rounded-md text-teal-600 border-teal-600 hover:bg-teal-600 hover:text-white transition-colors"
+                >
+                  고객 관리
+                </Link>
                 <Link
                   href={`/${locale}/admin/reservations`}
                   className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors"
@@ -370,6 +375,12 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   className="px-3 py-1.5 text-sm border rounded-md text-green-600 border-green-600 hover:bg-green-600 hover:text-white transition-colors"
                 >
                   투어 관리
+                </Link>
+                <Link
+                  href={`/${locale}/admin/chat-management`}
+                  className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors"
+                >
+                  채팅 관리
                 </Link>
               </div>
               
@@ -522,7 +533,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-          <h1 className="text-xl font-bold text-gray-900">MANIA TOUR</h1>
+          <button
+            onClick={() => { router.push(`/${locale}/admin`); setSidebarOpen(false) }}
+            className="text-left text-xl font-bold text-gray-900 hover:text-blue-600"
+            title="대시보드로 이동"
+          >
+            MANIA TOUR
+          </button>
           <button
             onClick={() => setSidebarOpen(false)}
             className="text-gray-500 hover:text-gray-700"

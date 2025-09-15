@@ -39,6 +39,7 @@ interface ReservationFormProps {
   onCancel: () => void
   onRefreshCustomers: () => Promise<void>
   onDelete: (id: string) => void
+  layout?: 'modal' | 'page'
 }
 
 export default function ReservationForm({ 
@@ -54,7 +55,8 @@ export default function ReservationForm({
   onSubmit, 
   onCancel, 
   onRefreshCustomers, 
-  onDelete 
+  onDelete,
+  layout = 'modal'
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const t = useTranslations('reservations')
@@ -130,9 +132,15 @@ export default function ReservationForm({
     tourTime: reservation?.tourTime || rez.tour_time || '',
     eventNote: reservation?.eventNote || rez.event_note || '',
     pickUpHotel: reservation?.pickUpHotel || rez.pickup_hotel || '',
-    pickUpHotelSearch: (reservation?.pickUpHotel || rez.pickup_hotel) ? 
-      (pickupHotels.find(h => h.id === (reservation?.pickUpHotel || rez.pickup_hotel)) ? 
-        `${pickupHotels.find(h => h.id === (reservation?.PickUpHotel || rez.pickup_hotel))?.hotel} - ${pickupHotels.find(h => h.id === (reservation?.PickUpHotel || rez.pickup_hotel))?.pick_up_location}` : '') : '',
+    pickUpHotelSearch: (() => {
+      const pickUpHotelId = reservation?.pickUpHotel || rez.pickup_hotel || ''
+      const matched = pickupHotels.find(h => h.id === pickUpHotelId)
+      if (matched) {
+        return `${matched.hotel} - ${matched.pick_up_location}`
+      }
+      // fallback: if stored value is already a label or unknown id, show it as-is
+      return pickUpHotelId || ''
+    })(),
     showPickupHotelDropdown: false,
     pickUpTime: reservation?.pickUpTime || (rez.pickup_time ? String(rez.pickup_time).substring(0,5) : ''),
     adults: reservation?.adults || rez.adults || 1,
@@ -987,9 +995,14 @@ export default function ReservationForm({
     }
   }, [])
 
+  const isModal = layout !== 'page'
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-[95vw] sm:max-w-[80vw] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+    <div className={isModal ? "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4" : "w-full"}>
+      <div className={isModal 
+        ? "bg-white rounded-lg p-4 sm:p-6 w-full max-w-[95vw] sm:max-w-[80vw] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto"
+        : "bg-white rounded-lg p-4 sm:p-6 w-full"}
+      >
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 space-y-3 sm:space-y-0">
           <h2 className="text-lg sm:text-xl font-bold">
             {reservation ? t('form.editTitle') : t('form.title')}

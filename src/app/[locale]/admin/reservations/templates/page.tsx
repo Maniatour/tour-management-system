@@ -1,0 +1,414 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { renderTemplateString } from '@/lib/template'
+
+type DocTemplate = {
+  id: string
+  template_key: string
+  language: string
+  name: string
+  subject: string | null
+  content: string
+}
+
+export default function ReservationTemplatesPage() {
+  const [templates, setTemplates] = useState<DocTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [showHtml, setShowHtml] = useState<Record<string, boolean>>({})
+  const [tinyReady, setTinyReady] = useState(false)
+  const [editors, setEditors] = useState<Record<string, any>>({})
+  const availableLanguages = ['ko', 'en', 'ja', 'zh']
+  const [activeKey, setActiveKey] = useState<'reservation_confirmation' | 'pickup_notification' | 'reservation_receipt'>('reservation_confirmation')
+  const [showVarModal, setShowVarModal] = useState<{ open: boolean; tplId?: string; relation?: string }>({ open: false })
+  const filteredTemplates = useMemo(() => templates.filter(t => t.template_key === activeKey), [templates, activeKey])
+
+  const load = async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('document_templates')
+      .select('*')
+      .in('template_key', ['reservation_confirmation', 'pickup_notification', 'reservation_receipt'])
+      .order('template_key', { ascending: true })
+    if (!error) {
+      const rows = (data || []) as unknown as DocTemplate[]
+      if (!rows || rows.length === 0) {
+        // 초기 템플릿이 없으면 편집 가능한 로컬 템플릿을 만들어줌 (저장 시 upsert)
+        setTemplates([
+          { id: crypto.randomUUID(), template_key: 'reservation_confirmation', language: 'ko', name: '예약 확인서', subject: '[예약 확인서] {{reservation.id}}', content: '<h1>예약 확인서</h1><p>{{customer.name}}님, 예약번호 {{reservation.id}}</p>' },
+          { id: crypto.randomUUID(), template_key: 'pickup_notification', language: 'ko', name: '픽업 안내', subject: '[픽업 안내] {{reservation.id}}', content: '<h1>픽업 안내</h1><p>픽업 호텔: {{pickup.display}} / 시간: {{reservation.pickup_time}}</p>' },
+          { id: crypto.randomUUID(), template_key: 'reservation_receipt', language: 'ko', name: '예약 영수증', subject: '[예약 영수증] {{reservation.id}}', content: '<h1>예약 영수증</h1><p>총액: {{pricing.total_locale}}원</p>' }
+        ])
+      } else {
+        setTemplates(rows)
+      }
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const updateField = (id: string, field: keyof DocTemplate, value: string) => {
+    setTemplates(prev => prev.map(t => t.id === id ? { ...t, [field]: value } as DocTemplate : t))
+  }
+
+  const save = async () => {
+    setSaving(true)
+    for (const tpl of templates) {
+      // upsert by (template_key, language)
+      const { error } = await supabase
+        .from('document_templates')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .upsert({ id: tpl.id, template_key: tpl.template_key, language: tpl.language, name: tpl.name, subject: tpl.subject, content: tpl.content } as any, {
+          onConflict: 'template_key,language',
+          ignoreDuplicates: false
+        })
+      if (error) {
+        alert('저장 실패: ' + error.message)
+        setSaving(false)
+        return
+      }
+    }
+    setSaving(false)
+    alert('저장되었습니다.')
+  }
+
+  // Load TinyMCE from CDN once
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if ((window as any).tinymce) {
+      setTinyReady(true)
+      return
+    }
+    const script = document.createElement('script')
+    // Use non-cloud build to avoid API key requirement and read-only mode
+    script.src = 'https://cdn.jsdelivr.net/npm/tinymce@6.8.3/tinymce.min.js'
+    script.async = true
+    script.referrerPolicy = 'origin'
+    script.onload = () => setTimeout(() => setTinyReady(true), 0)
+    document.body.appendChild(script)
+    return () => {
+      // leave assets in place
+    }
+  }, [])
+
+  // Initialize TinyMCE editors for visible templates (non-HTML mode)
+  useEffect(() => {
+    if (!tinyReady) return
+    // 현재 탭의 템플릿만 초기화하여 성능/타이밍 이슈 완화
+    filteredTemplates.forEach(t => {
+      if (showHtml[t.id]) return
+      if (editors[t.id]) return
+      const el = document.getElementById(`tpl-editor-${t.id}`)
+      if (!el) return
+      try {
+        const tinymce = (window as any).tinymce
+        tinymce.init({
+          target: el,
+          inline: true,
+          menubar: false,
+          plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table help wordcount codesample pagebreak',
+          toolbar: 'undo redo | styles fontsize | bold italic underline forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | table link image media codesample | removeformat | preview fullscreen',
+          toolbar_mode: 'sliding',
+          branding: false,
+          fixed_toolbar_container: `#tpl-toolbar-${t.id}`,
+          setup: (editor: any) => {
+            editor.on('init', () => {
+              editor.setContent(t.content || '')
+            })
+            editor.on('Change KeyUp Undo Redo', () => {
+              updateField(t.id, 'content', editor.getContent())
+            })
+            setEditors(prev => ({ ...prev, [t.id]: editor }))
+          }
+        })
+      } catch (e) {
+        // fallback ignored
+      }
+    })
+  }, [tinyReady, filteredTemplates, showHtml, editors])
+
+  const getTplById = (id?: string) => templates.find(t => t.id === id)
+  const insertVarToEditor = (tplId: string, variable: string) => {
+    const editor = editors[tplId]
+    if (!editor) return
+    if (editor.insertContent) {
+      editor.insertContent(variable)
+    } else if (editor.execCommand) {
+      editor.execCommand('mceInsertContent', false, variable)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">예약 문서 템플릿</h1>
+        <button onClick={save} disabled={saving} className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
+      </div>
+      {/* Tabs */}
+      <div className="flex items-center gap-2 border-b">
+        {[
+          { key: 'reservation_confirmation', label: 'Reservation Confirmation' },
+          { key: 'pickup_notification', label: 'Pick up Notification' },
+          { key: 'reservation_receipt', label: 'Reservation Receipt' }
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveKey(tab.key as any)}
+            className={`px-3 py-2 text-sm -mb-px border-b-2 ${activeKey === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {loading ? (
+        <div className="p-6">로딩 중...</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6">
+          {filteredTemplates.map(t => (
+            <div key={t.id} className="bg-white rounded border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-500 flex items-center gap-2">
+                  <span>{t.template_key}</span>
+                  <select
+                    className="text-xs border rounded px-2 py-1"
+                    value={t.language}
+                    onChange={(e) => updateField(t.id, 'language', e.target.value)}
+                  >
+                    {availableLanguages.map(l => (
+                      <option key={l} value={l}>{l}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="text-xs px-2 py-1 border rounded hover:bg-gray-50"
+                    onClick={() => {
+                      const lang = prompt('추가할 언어 코드(예: en, ja, zh, ko)를 입력하세요', 'en') || ''
+                      if (!lang) return
+                      if (!availableLanguages.includes(lang)) {
+                        alert('지원하지 않는 언어 코드입니다.')
+                        return
+                      }
+                      const exists = templates.find(x => x.template_key === t.template_key && x.language === lang)
+                      if (exists) {
+                        alert('해당 언어 템플릿이 이미 존재합니다.')
+                        return
+                      }
+                      setTemplates(prev => ([...prev, {
+                        id: crypto.randomUUID(),
+                        template_key: t.template_key,
+                        language: lang,
+                        name: t.name + ` (${lang})`,
+                        subject: t.subject,
+                        content: t.content
+                      }]))
+                    }}
+                  >언어 추가</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
+                  <input value={t.name} onChange={e => updateField(t.id, 'name', e.target.value)} className="w-full px-3 py-2 border rounded" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">제목</label>
+                  <input value={t.subject || ''} onChange={e => updateField(t.id, 'subject', e.target.value)} className="w-full px-3 py-2 border rounded" />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">내용 (비개발자용 편집기)</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowHtml(prev => ({ ...prev, [t.id]: !prev[t.id] }))}
+                    className="text-xs px-2 py-1 border rounded hover:bg-gray-50"
+                  >
+                    {showHtml[t.id] ? '에디터 보기' : 'HTML 보기'}
+                  </button>
+                </div>
+
+                {!showHtml[t.id] && (
+                  <>
+                    {/* Relation quick buttons */}
+                    <div className="flex items-center flex-wrap gap-2 mb-2">
+                      {[
+                        { key: 'reservation', label: '예약' },
+                        { key: 'customer', label: '고객' },
+                        { key: 'product', label: '상품' },
+                        { key: 'channel', label: '채널' },
+                        { key: 'pickup', label: '픽업' },
+                        { key: 'pricing', label: '가격' }
+                      ].map(btn => (
+                        <button
+                          key={btn.key}
+                          type="button"
+                          className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+                          onClick={() => setShowVarModal({ open: true, tplId: t.id, relation: btn.key })}
+                        >{btn.label}</button>
+                      ))}
+                    </div>
+
+                    {/* TinyMCE external toolbar container */}
+                    <div id={`tpl-toolbar-${t.id}`} className="mb-2 sticky top-16 z-20 bg-white" />
+                    {/* Editor host */}
+                    <div id={`tpl-editor-${t.id}`} className="w-full min-h-56 border rounded p-3" />
+                  </>
+                )}
+
+                {showHtml[t.id] && (
+                  <textarea
+                    value={t.content}
+                    onChange={e => updateField(t.id, 'content', e.target.value)}
+                    rows={12}
+                    className="w-full px-3 py-2 border rounded font-mono text-sm"
+                  />
+                )}
+              </div>
+              <div className="text-xs text-gray-500">
+                사용가능 변수: {'{{reservation.id}}'}, {'{{reservation.tour_date}}'}, {'{{reservation.tour_time}}'}, {'{{reservation.pickup_time}}'}, {'{{customer.name}}'}, {'{{customer.email}}'}, {'{{product.name}}'}, {'{{pickup.display}}'}, {'{{pricing.total}}'}, {'{{pricing.total_locale}}'}
+                <div className="mt-1">고급: {'{{channel.name}}'}, {'{{channel.type}}'}, {'{{reservation.selected_options}}'}, {'{{reservation.selected_option_prices}}'}</div>
+                <div className="mt-1">JSON 경로도 지원: 예) {'{{customer.address.city}}'}, {'{{product.display_name.ko}}'}</div>
+              </div>
+
+              {/* Live preview */}
+              <div className="mt-4 border-t pt-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-medium">미리보기</span>
+                </div>
+                <div className="border rounded p-3">
+                  <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: renderTemplateString(t.content, {
+                    reservation: { id: 'R-EXAMPLE', tour_date: '2025-01-01', tour_time: '09:00', pickup_time: '08:30', adults: 2, child: 1, infant: 0 },
+                    customer: { name: '홍길동', email: 'hong@example.com' },
+                    product: { name: '그랜드캐니언 데이투어', display_name: { ko: '그랜드캐니언' } },
+                    channel: { name: 'Direct', type: 'self' },
+                    pickup: { display: 'Bellagio - Main Lobby' },
+                    pricing: { total: 123000, total_locale: '123,000' }
+                  }) }} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <VarPickerModal
+        open={showVarModal.open}
+        relation={showVarModal.relation}
+        onClose={() => setShowVarModal({ open: false })}
+        onPick={(variable) => {
+          const tplId = showVarModal.tplId
+          if (!tplId) return
+          insertVarToEditor(tplId, variable)
+        }}
+      />
+    </div>
+  )
+}
+
+// Variable picker modal
+// Simple static columns per relation; can be extended to read DB schema if needed
+function VarPickerModal({ open, onClose, onPick, relation }: { open: boolean; onClose: () => void; onPick: (variable: string) => void; relation?: string }) {
+  if (!open) return null
+  const columnsMap: Record<string, { key: string; label: string }[]> = {
+    reservation: [
+      { key: 'id', label: '예약번호' },
+      { key: 'tour_date', label: '투어 날짜' },
+      { key: 'tour_time', label: '투어 시간' },
+      { key: 'pickup_time', label: '픽업 시간' },
+      { key: 'adults', label: '성인 수' },
+      { key: 'child', label: '아동 수' },
+      { key: 'infant', label: '유아 수' },
+      { key: 'selected_options', label: '선택 옵션(JSON)' },
+      { key: 'selected_option_prices', label: '선택 옵션 금액(JSON)' }
+    ],
+    customer: [
+      { key: 'name', label: '고객명' },
+      { key: 'email', label: '이메일' },
+      { key: 'phone', label: '전화번호' },
+      { key: 'language', label: '언어' }
+    ],
+    product: [
+      { key: 'id', label: '상품 ID' },
+      { key: 'name', label: '상품명' },
+      { key: 'name_ko', label: '상품명(한)' },
+      { key: 'name_en', label: '상품명(영)' },
+      { key: 'display_name', label: '표시명(JSON)' },
+      { key: 'category', label: '카테고리' },
+      { key: 'sub_category', label: '서브카테고리' },
+      { key: 'description', label: '설명' },
+      { key: 'duration', label: '소요 시간' },
+      { key: 'base_price', label: '기본가' },
+      { key: 'max_participants', label: '최대 인원' },
+      { key: 'status', label: '상태' },
+      { key: 'tags', label: '태그(JSON)' },
+      { key: 'created_at', label: '생성일' }
+    ],
+    channel: [
+      { key: 'name', label: '채널명' },
+      { key: 'type', label: '유형' }
+    ],
+    pickup: [
+      { key: 'display', label: '픽업 표기' },
+      { key: 'hotel', label: '호텔명' },
+      { key: 'pick_up_location', label: '픽업 위치' },
+      { key: 'address', label: '주소' },
+      { key: 'link', label: '링크' },
+      { key: 'pin', label: '핀' },
+      { key: 'description_ko', label: '설명(한)' },
+      { key: 'description_en', label: '설명(영)' },
+      { key: 'media', label: '미디어(JSON)' }
+    ],
+    pricing: [
+      { key: 'adult_product_price', label: '성인 상품가' },
+      { key: 'child_product_price', label: '아동 상품가' },
+      { key: 'infant_product_price', label: '유아 상품가' },
+      { key: 'product_price_total', label: '상품가 합계' },
+      { key: 'required_options', label: '필수옵션(JSON)' },
+      { key: 'required_option_total', label: '필수옵션 합계' },
+      { key: 'subtotal', label: '소계' },
+      { key: 'coupon_code', label: '쿠폰 코드' },
+      { key: 'coupon_discount', label: '쿠폰 할인' },
+      { key: 'additional_discount', label: '추가 할인' },
+      { key: 'additional_cost', label: '추가 비용' },
+      { key: 'card_fee', label: '카드 수수료' },
+      { key: 'tax', label: '세금' },
+      { key: 'prepayment_cost', label: '선결제 금액' },
+      { key: 'prepayment_tip', label: '선결제 팁' },
+      { key: 'selected_options', label: '선택옵션(JSON)' },
+      { key: 'option_total', label: '옵션 합계' },
+      { key: 'total_price', label: '총액' },
+      { key: 'deposit_amount', label: '보증금' },
+      { key: 'balance_amount', label: '잔액' },
+      { key: 'private_tour_additional_cost', label: '프라이빗 추가비' },
+      { key: 'commission_percent', label: '커미션(%)' },
+      { key: 'total_locale', label: '총액(로케일)' }
+    ]
+  }
+  const cols = columnsMap[relation || 'reservation'] || []
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded w-full max-w-md p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="text-lg font-semibold mb-3">변수 선택</div>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {cols.map(c => (
+            <button
+              key={c.key}
+              onClick={() => { onPick(`{{${relation}.${c.key}}}`); onClose() }}
+              className="px-2 py-2 border rounded text-sm hover:bg-gray-50 text-left"
+            >
+              <div className="font-medium">{c.label}</div>
+              <div className="text-xs text-gray-500">{`{{${relation}.${c.key}}}`}</div>
+            </button>
+          ))}
+        </div>
+        <div className="text-right">
+          <button onClick={onClose} className="px-3 py-2 border rounded">닫기</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+

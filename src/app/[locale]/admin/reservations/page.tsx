@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
@@ -32,6 +33,9 @@ interface AdminReservationsProps {
 
 export default function AdminReservations({ }: AdminReservationsProps) {
   const t = useTranslations('reservations')
+  const router = useRouter()
+  const routeParams = useParams() as { locale?: string }
+  const locale = routeParams?.locale || 'ko'
   
   // 커스텀 훅으로 데이터 관리
   const {
@@ -1275,7 +1279,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   {reservations.map((reservation) => (
             <div
               key={reservation.id}
-              onClick={() => handleEditReservationClick(reservation)}
+              onClick={() => router.push(`/${locale}/admin/reservations/${reservation.id}`)}
               className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 cursor-pointer group"
             >
               {/* 카드 헤더 - 상태 표시 */}
@@ -1401,6 +1405,26 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         </svg>
                         <span>가격</span>
                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditReservationClick(reservation);
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors border border-blue-200"
+                        title="빠른 수정"
+                      >
+                        수정
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/${locale}/admin/reservations/${reservation.id}`)
+                        }}
+                        className="px-2 py-1 text-xs bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors border border-gray-200"
+                        title="상세 보기"
+                      >
+                        상세
+                      </button>
                       
                       {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
                       {(() => {
@@ -1464,7 +1488,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               {paginatedReservations.map((reservation) => (
               <div
                 key={reservation.id}
-                onClick={() => handleEditReservationClick(reservation)}
+                onClick={() => router.push(`/${locale}/admin/reservations/${reservation.id}`)}
                 className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 cursor-pointer group"
               >
                 {/* 카드 헤더 - 상태 표시 */}
@@ -1589,6 +1613,26 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         </svg>
                         <span>가격</span>
                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditReservationClick(reservation);
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors border border-blue-200"
+                        title="빠른 수정"
+                      >
+                        수정
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/${locale}/admin/reservations/${reservation.id}`)
+                        }}
+                        className="px-2 py-1 text-xs bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors border border-gray-200"
+                        title="상세 보기"
+                      >
+                        상세
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1676,6 +1720,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }}
           onRefreshCustomers={refreshCustomers}
           onDelete={handleDeleteReservation}
+          layout="modal"
         />
       )}
 
