@@ -348,7 +348,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               
               {/* 시스템 제목 */}
               <h1 className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate">
-                투어 관리 시스템
+                MANIA TOUR
               </h1>
               
               {/* 데스크톱 전용 빠른 이동 */}
@@ -522,7 +522,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
-          <h1 className="text-xl font-bold text-gray-900">투어 관리 시스템</h1>
+          <h1 className="text-xl font-bold text-gray-900">MANIA TOUR</h1>
           <button
             onClick={() => setSidebarOpen(false)}
             className="text-gray-500 hover:text-gray-700"
