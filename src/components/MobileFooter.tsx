@@ -3,7 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Users, Calendar, BookOpen, MapPin } from 'lucide-react'
+import { Home, Users, Calendar, BookOpen, MapPin, MessageCircle } from 'lucide-react'
 
 interface MobileFooterProps {
   locale: string
@@ -20,27 +20,33 @@ export default function MobileFooter({ locale }: MobileFooterProps) {
       adminOnly: true
     },
     {
-      name: '고객 관리',
+      name: '고객',
       href: `/${locale}/admin/customers`,
       icon: Users,
       adminOnly: true
     },
     {
-      name: '예약 관리',
+      name: '예약',
       href: `/${locale}/admin/reservations`,
       icon: Calendar,
       adminOnly: true
     },
     {
-      name: '부킹 관리',
+      name: '부킹',
       href: `/${locale}/admin/booking`,
       icon: BookOpen,
       adminOnly: true
     },
     {
-      name: '투어 관리',
+      name: '투어',
       href: `/${locale}/admin/tours`,
       icon: MapPin,
+      adminOnly: true
+    },
+    {
+      name: '채팅',
+      href: `/${locale}/admin/chat-management`,
+      icon: MessageCircle,
       adminOnly: true
     }
   ]
@@ -51,7 +57,7 @@ export default function MobileFooter({ locale }: MobileFooterProps) {
 
   return (
     <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
-      <div className="grid grid-cols-5 h-16">
+      <div className="grid grid-cols-6 h-16">
         {footerItems.map((item) => {
           const Icon = item.icon
           const active = isActive(item.href)

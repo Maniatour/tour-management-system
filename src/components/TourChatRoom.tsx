@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Send, Image as ImageIcon, File, Users, Copy, Share2, MessageCircle, Languages } from 'lucide-react'
+import { Send, Image as ImageIcon, File, Users, Copy, Share2, MessageCircle, Languages, Calendar, Gift, Megaphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
 import { translateText, detectLanguage, SupportedLanguage } from '@/lib/translation'
@@ -67,10 +67,43 @@ export default function TourChatRoom({
   const [sending, setSending] = useState(false)
   const [participantCount, setParticipantCount] = useState(0)
   const [showShareModal, setShowShareModal] = useState(false)
+  // Generate or read client_id for soft-ban
+  const getClientId = () => {
+    if (typeof window === 'undefined') return 'unknown'
+    const key = 'tour_chat_client_id'
+    let id = localStorage.getItem(key)
+    if (!id) {
+      id = crypto.randomUUID()
+      localStorage.setItem(key, id)
+    }
+    return id
+  }
+
+  const clientId = getClientId()
+
+  const checkBanned = async (roomId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('chat_bans')
+        .select('id, banned_until')
+        .eq('room_id', roomId)
+        .or(`client_id.eq.${clientId},customer_name.eq.${customerName || ''}`)
+        .limit(1)
+      if (error) return false
+      if (!data || data.length === 0) return false
+      const bannedUntil = data[0].banned_until ? new Date(data[0].banned_until) : null
+      if (!bannedUntil) return true
+      return bannedUntil.getTime() > Date.now()
+    } catch {
+      return false
+    }
+  }
   const [translatedMessages, setTranslatedMessages] = useState<{ [key: string]: string }>({})
   const [translating, setTranslating] = useState<{ [key: string]: boolean }>({})
+  // 공지사항 (모달용)
   const [announcements, setAnnouncements] = useState<ChatAnnouncement[]>([])
-  const [showAnnouncements, setShowAnnouncements] = useState(true)
+  const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(false)
+  const [togglingActive, setTogglingActive] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -153,6 +186,11 @@ export default function TourChatRoom({
       const room = rooms?.[0]
       setRoom(room)
       if (room) {
+        // soft-ban check on mount
+        const banned = await checkBanned(room.id)
+        if (banned) {
+          setRoom({ ...room, is_active: false })
+        }
         await loadMessages(room.id)
         await loadAnnouncements(room.id)
       }
@@ -208,72 +246,29 @@ export default function TourChatRoom({
     }
   }
 
+  // 공지사항 로드 (모달 전용)
   const loadAnnouncements = async (roomId: string) => {
     try {
-      // 채팅방별 공지사항 로드
-      const { data: roomAnnouncements, error: roomError } = await supabase
+      const { data: roomAnnouncements } = await supabase
         .from('chat_room_announcements')
         .select('*')
         .eq('room_id', roomId)
         .eq('is_active', true)
         .order('created_at', { ascending: false })
 
-      if (roomError) throw roomError
-
-      // 투어별 공지사항 로드
-      const { data: tourAnnouncements, error: tourError } = await supabase
+      const { data: tourAnnouncements } = await supabase
         .from('tour_announcements')
         .select('*')
         .eq('tour_id', tourId)
         .eq('is_active', true)
         .order('created_at', { ascending: false })
 
-      if (tourError) throw tourError
-
-      // 기본 공지사항 템플릿 로드
-      const { data: templateAnnouncements, error: templateError } = await supabase
-        .from('chat_announcement_templates')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-
-      if (templateError) throw templateError
-
-      // 상품의 채팅 공지사항 로드
-      const { data: productAnnouncements, error: productError } = await supabase
-        .from('product_details')
-        .select('chat_announcement')
-        .eq('product_id', tourId)
-        .not('chat_announcement', 'is', null)
-
-      if (productError) throw productError
-
-      // 상품 공지사항을 공지사항 형식으로 변환
-      const productAnnouncementList = (productAnnouncements || [])
-        .filter(p => p.chat_announcement)
-        .map(p => ({
-          id: `product_${tourId}`,
-          title: '상품 공지사항',
-          content: p.chat_announcement,
-          language: customerLanguage,
-          is_active: true,
-          created_at: new Date().toISOString()
-        }))
-
-      // 모든 공지사항을 합치고 언어별로 필터링
-      const allAnnouncements = [
+      const merged = [
         ...(roomAnnouncements || []),
-        ...(tourAnnouncements || []),
-        ...(templateAnnouncements || []),
-        ...productAnnouncementList
-      ]
+        ...(tourAnnouncements || [])
+      ] as ChatAnnouncement[]
 
-      // 고객 언어에 맞는 공지사항만 필터링
-      const filteredAnnouncements = allAnnouncements.filter(announcement => 
-        announcement.language === customerLanguage || announcement.language === 'ko'
-      )
-
-      setAnnouncements(filteredAnnouncements)
+      setAnnouncements(merged)
     } catch (error) {
       console.error('Error loading announcements:', error)
     }
@@ -286,6 +281,11 @@ export default function TourChatRoom({
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !room || sending) return
+    // block banned customers
+    if (await checkBanned(room.id)) {
+      alert('You are blocked from this chat room.')
+      return
+    }
 
     const messageText = newMessage.trim()
     setSending(true)
@@ -359,6 +359,26 @@ export default function TourChatRoom({
     setShowShareModal(true)
   }
 
+  const toggleRoomActive = async () => {
+    if (!room || togglingActive) return
+    try {
+      setTogglingActive(true)
+      const next = !room.is_active
+      const { error } = await supabase
+        .from('chat_rooms')
+        .update({ is_active: next })
+        .eq('id', room.id)
+      if (error) {
+        console.error('Failed to toggle chat room active:', error)
+        alert('채팅방 상태 변경에 실패했습니다.')
+        return
+      }
+      setRoom({ ...room, is_active: next })
+    } finally {
+      setTogglingActive(false)
+    }
+  }
+
   const formatTime = (dateString: string) => {
     return new Date(dateString).toLocaleTimeString('ko-KR', {
       hour: '2-digit',
@@ -413,82 +433,96 @@ export default function TourChatRoom({
   return (
     <div className="flex flex-col h-full max-h-screen overflow-hidden">
       {/* 채팅방 헤더 (관리자 뷰에서만 표시) */}
-      {!isPublicView && (
-        <div className="flex items-center justify-between p-4 border-b bg-gray-50">
-          <div className="flex items-center space-x-3">
-            <MessageCircle size={20} className="text-blue-600" />
-            <div>
-              <h3 className="font-semibold text-gray-900">{room.room_name}</h3>
-              <p className="text-sm text-gray-500">{room.description}</p>
+      {(
+        <div className="p-4 border-b bg-gray-50">
+          {!isPublicView && (
+            <div className="flex items-center space-x-3">
+              <MessageCircle size={20} className="text-blue-600" />
+              <h3 className="font-semibold text-gray-900 truncate">{room.room_name}</h3>
             </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center text-sm text-gray-500">
-              <Users size={16} className="mr-1" />
-              {participantCount}명
+          )}
+          <div className="mt-2 flex items-center gap-2 justify-between">
+            <div className="flex items-center gap-2">
+              {/* 방 활성/비활성 스위치 - 가장 왼쪽, 관리자 전용 */}
+              {!isPublicView && (
+                <button
+                  onClick={toggleRoomActive}
+                  disabled={togglingActive}
+                  className="flex items-center focus:outline-none"
+                  title={room.is_active ? '비활성화' : '활성화'}
+                  aria-label={room.is_active ? '비활성화' : '활성화'}
+                >
+                  <span
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${room.is_active ? 'bg-green-500' : 'bg-gray-300'} ${togglingActive ? 'opacity-60' : ''}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${room.is_active ? 'translate-x-4' : 'translate-x-1'}`}
+                    />
+                  </span>
+                </button>
+              )}
+              <button
+              onClick={() => setIsAnnouncementsOpen(true)}
+              className="px-2.5 py-1.5 text-xs bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200 flex items-center justify-center"
+              title="공지사항"
+              aria-label="공지사항"
+            >
+              <Megaphone size={14} />
+            </button>
+            <a
+              href="#pickup-schedule"
+              className="px-2.5 py-1.5 text-xs bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200 flex items-center justify-center"
+              title="픽업 스케쥴"
+              aria-label="픽업 스케쥴"
+            >
+              <Calendar size={14} />
+            </a>
+            <a
+              href="#options"
+              className="px-2.5 py-1.5 text-xs bg-emerald-100 text-emerald-800 rounded border border-emerald-200 hover:bg-emerald-200 flex items-center justify-center"
+              title="옵션 상품"
+              aria-label="옵션 상품"
+            >
+              <Gift size={14} />
+            </a>
+            {isPublicView && (
+              <a
+                href="#tour-photos"
+                className="px-2.5 py-1.5 text-xs bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200 flex items-center justify-center"
+                title="투어 사진"
+                aria-label="투어 사진"
+              >
+                <ImageIcon size={14} />
+              </a>
+            )}
             </div>
-            <button
-              onClick={copyRoomLink}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-              title="링크 복사"
-            >
-              <Copy size={16} />
-            </button>
-            <button
-              onClick={shareRoomLink}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-              title="공유"
-            >
-              <Share2 size={16} />
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={copyRoomLink}
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+                title="링크 복사"
+                aria-label="링크 복사"
+              >
+                <Copy size={16} />
+              </button>
+              <button
+                onClick={shareRoomLink}
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+                title="공유"
+                aria-label="공유"
+              >
+                <Share2 size={16} />
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* 공지사항 영역 */}
-      {announcements.length > 0 && showAnnouncements && (
-        <div className="bg-yellow-50 border-b border-yellow-200 p-4 max-h-64 overflow-y-auto">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-semibold text-yellow-800 flex items-center">
-              <MessageCircle size={16} className="mr-2" />
-              공지사항
-            </h4>
-            <button
-              onClick={() => setShowAnnouncements(false)}
-              className="text-yellow-600 hover:text-yellow-800 text-sm"
-            >
-              닫기
-            </button>
-          </div>
-          <div className="space-y-2">
-            {announcements.map((announcement) => (
-              <div
-                key={announcement.id}
-                className="bg-white rounded-lg p-3 border border-yellow-200"
-              >
-                <h5 className="text-sm font-medium text-gray-900 mb-1">
-                  {announcement.title}
-                </h5>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                  {announcement.content}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* 공지사항 토글/박스 제거 */}
 
       {/* 공지사항 토글 버튼 (공지사항이 숨겨진 경우) */}
-      {announcements.length > 0 && !showAnnouncements && (
-        <div className="bg-yellow-50 border-b border-yellow-200 p-2 text-center">
-          <button
-            onClick={() => setShowAnnouncements(true)}
-            className="text-yellow-600 hover:text-yellow-800 text-sm font-medium"
-          >
-            공지사항 보기 ({announcements.length}개)
-          </button>
-        </div>
-      )}
+      {/* 공지사항 토글 제거 */}
 
       {/* 메시지 목록 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
@@ -577,15 +611,44 @@ export default function TourChatRoom({
         </div>
       )}
 
-      {/* 공유 모달 */}
-      {!isPublicView && room && (
+      {/* 공유 모달 (관리자/고객 공통) */}
+      {room && (
         <ChatRoomShareModal
           isOpen={showShareModal}
           onClose={() => setShowShareModal(false)}
           roomCode={room.room_code}
           roomName={room.room_name}
           tourDate={tourDate}
+          isPublicView={isPublicView}
+          language={customerLanguage}
         />
+      )}
+
+      {/* 공지사항 모달 */}
+      {!isPublicView && (
+        <div className={`${isAnnouncementsOpen ? 'fixed' : 'hidden'} inset-0 bg-black/50 z-50 flex items-center justify-center p-4`}>
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h4 className="text-lg font-semibold text-gray-900">공지사항</h4>
+              <button onClick={() => setIsAnnouncementsOpen(false)} className="px-2 py-1 rounded hover:bg-gray-100">닫기</button>
+            </div>
+            <div className="p-4 space-y-3">
+              {announcements.length === 0 ? (
+                <div className="text-sm text-gray-500">등록된 공지사항이 없습니다.</div>
+              ) : (
+                announcements.map((a) => (
+                  <div key={a.id} className="border rounded-lg p-3">
+                    <div className="text-sm font-medium text-gray-900 mb-1">{a.title}</div>
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">{a.content}</div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="p-3 border-t text-right">
+              <button onClick={() => setIsAnnouncementsOpen(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">닫기</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -232,7 +232,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <span className="text-lg font-medium text-gray-900">
+          <span className="text-sm sm:text-base font-medium text-gray-900">
             {currentDate.getFullYear()}년 {monthNames[currentDate.getMonth()]}
           </span>
           <button

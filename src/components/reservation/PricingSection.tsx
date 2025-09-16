@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 interface ProductOption {
   id: string
   name: string
@@ -54,6 +56,8 @@ interface PricingSectionProps {
     depositAmount: number
     balanceAmount: number
     commission_percent: number
+    onlinePaymentAmount?: number
+    onSiteBalanceAmount?: number
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
@@ -65,9 +69,9 @@ interface PricingSectionProps {
   coupons: Array<{
     id: string
     coupon_code: string
-    discount_type: string
-    percentage_value?: number
-    fixed_value?: number
+    discount_type: 'percentage' | 'fixed'
+    percentage_value?: number | null
+    fixed_value?: number | null
   }>
   getOptionalOptionsForProduct: (productId: string) => ProductOption[]
   getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
@@ -89,6 +93,7 @@ export default function PricingSection({
   options,
   autoSelectCoupon
 }: PricingSectionProps) {
+  const [showHelp, setShowHelp] = useState(false)
   return (
     <div>
       {/* 구분선 */}
@@ -144,6 +149,7 @@ export default function PricingSection({
               />
             </div>
           )}
+          {/* 상품가에 필수옵션 포함 처리: 필수옵션 가격 입력칸을 0으로 입력하면 이중계산 없이 반영됩니다 */}
           <button
             type="button"
             onClick={async () => {
@@ -705,7 +711,16 @@ export default function PricingSection({
         {/* 3열: 가격 계산 (2줄 높이) */}
         <div className="row-span-2">
           <div className="bg-white p-4 rounded border border-gray-200 h-full">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">가격 계산</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-gray-900">가격 계산</h4>
+              <button
+                type="button"
+                onClick={() => setShowHelp(true)}
+                className="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+              >
+                계산 안내
+              </button>
+            </div>
             
             {/* 소계 */}
             <div className="flex justify-between items-center mb-2">
@@ -783,6 +798,38 @@ export default function PricingSection({
                 <span className="text-lg font-bold text-blue-600">${formData.totalPrice.toFixed(2)}</span>
               </div>
               
+              {/* OTA/현장 분리 입력 - 같은 줄 배치 (라벨과 입력칸을 한 줄에) */}
+              <div className="flex flex-col gap-2 mb-2">
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-600">OTA 판매가</span>
+                  <div className="relative">
+                    <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                    <input
+                      type="number"
+                      value={formData.onlinePaymentAmount || 0}
+                      onChange={(e) => setFormData({ ...formData, onlinePaymentAmount: Number(e.target.value) || 0 })}
+                      className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                      step="0.01"
+                      placeholder="220.00"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-600">balance</span>
+                  <div className="relative">
+                    <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                    <input
+                      type="number"
+                      value={formData.onSiteBalanceAmount || 0}
+                      onChange={(e) => setFormData({ ...formData, onSiteBalanceAmount: Number(e.target.value) || 0, balanceAmount: Number(e.target.value) || 0 })}
+                      className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                      step="0.01"
+                      placeholder="90.00"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* 커미션 퍼센트 입력 */}
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-700">커미션</span>
@@ -799,7 +846,7 @@ export default function PricingSection({
                   />
                   <span className="text-xs text-gray-500">%</span>
                   <span className="text-sm font-medium text-red-600">
-                    -${(formData.totalPrice * (formData.commission_percent / 100)).toFixed(2)}
+                    -${(((formData.onlinePaymentAmount ?? formData.totalPrice) * (formData.commission_percent / 100)).toFixed(2))}
                   </span>
                 </div>
               </div>
@@ -807,7 +854,7 @@ export default function PricingSection({
               <div className="flex justify-between items-center">
                 <span className="text-base font-bold text-green-800">Net 가격</span>
                 <span className="text-lg font-bold text-green-600">
-                  ${(formData.totalPrice * (1 - formData.commission_percent / 100)).toFixed(2)}
+                  ${(((formData.onlinePaymentAmount ?? formData.totalPrice) * (1 - formData.commission_percent / 100)).toFixed(2))}
                 </span>
               </div>
             </div>
@@ -834,6 +881,66 @@ export default function PricingSection({
           </div>
         </div>
       </div>
+      {showHelp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black bg-opacity-50" onClick={() => setShowHelp(false)}></div>
+          <div className="relative bg-white w-full max-w-2xl max-h-[80vh] rounded-lg shadow-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900">가격 계산 안내</h3>
+              <button className="text-gray-400 hover:text-gray-600" onClick={() => setShowHelp(false)}>✕</button>
+            </div>
+            <div className="p-4 overflow-y-auto text-sm text-gray-800 space-y-3">
+              <div>
+                <div className="font-semibold text-gray-900 mb-1">1) 판매가 구성</div>
+                <p>상품가(성인/아동/유아 단가×인원) + 필수옵션 합계 = 소계(Subtotal)</p>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-900 mb-1">2) 할인 적용</div>
+                <p>소계에서 쿠폰 할인 + 추가 할인 차감</p>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-900 mb-1">3) 추가 비용</div>
+                <p>추가비용, 세금, 카드수수료, 단독투어 추가비, 선결제 비용/팁, 선택옵션 합계 가산</p>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-900 mb-1">4) 총 판매가</div>
+                <p>2단계 결과 + 3단계 결과</p>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-900 mb-1">5) 분할 결제(해당 채널일 때)</div>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>OTA 판매가: 고객이 OTA에서 결제한 금액</li>
+                  <li>커미션 금액 = OTA 판매가 × 커미션%</li>
+                  <li>Net = OTA 판매가 − 커미션 금액</li>
+                  <li>balance: 현장 수금 잔액</li>
+                  <li>고객 총지불액 = OTA 판매가 + balance</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-900 mb-1">6) 용어 간단 설명</div>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>소계: 상품가와 필수옵션만 더한 중간합</li>
+                  <li>총 판매가: 모든 할인과 추가비용을 반영한 고객 기준 최종금액</li>
+                  <li>커미션: OTA 수수료(퍼센트 기준)</li>
+                  <li>Net: 커미션 차감 후 우리 측에 귀속되는 금액</li>
+                  <li>보증금/잔액: 선결제·현장 수금 분배</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-900 mb-1">7) 저장 매핑</div>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>commission_percent, commission_amount 저장</li>
+                  <li>deposit_amount = OTA 판매가, balance_amount = balance</li>
+                  <li>total_price = 고객 총지불액</li>
+                </ul>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-gray-200 text-right">
+              <button className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700" onClick={() => setShowHelp(false)}>닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

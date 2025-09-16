@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { ArrowLeft, MessageCircle, Users, Globe, ChevronDown } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { ArrowLeft, Home as HomeIcon, ChevronDown, SquarePen } from 'lucide-react'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
 import { SUPPORTED_LANGUAGES, SupportedLanguage } from '@/lib/translation'
@@ -25,7 +25,13 @@ interface TourInfo {
   tour_status: string
 }
 
-export default function PublicChatPage({ params }: { params: { code: string } }) {
+interface ProductNames {
+  name?: string | null
+  name_ko?: string | null
+  name_en?: string | null
+}
+
+export default function PublicChatPage({ params }: { params: Promise<{ code: string }> }) {
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -35,12 +41,14 @@ export default function PublicChatPage({ params }: { params: { code: string } })
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('en')
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
   const [showNameEdit, setShowNameEdit] = useState(false)
+  const [productNames, setProductNames] = useState<ProductNames | null>(null)
 
-  const { code } = params
+  const { code } = React.use(params)
 
   useEffect(() => {
     loadRoomInfo()
     loadSavedUserData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code])
 
   // 드롭다운 외부 클릭 시 닫기
@@ -105,8 +113,25 @@ export default function PublicChatPage({ params }: { params: { code: string } })
         return
       }
 
-      setRoom(roomData)
-      setTourInfo(roomData.tours)
+      setRoom(roomData as unknown as ChatRoom)
+      setTourInfo((roomData as unknown as { tours: TourInfo }).tours)
+
+      // 상품 명칭 로드 (영/한)
+      if ((roomData as unknown as { tours?: TourInfo }).tours?.product_id) {
+        const { data: productData } = await supabase
+          .from('products')
+          .select('name, name_ko, name_en')
+          .eq('id', (roomData as unknown as { tours: TourInfo }).tours.product_id)
+          .single()
+        if (productData) {
+          const pd = productData as { name?: string | null; name_ko?: string | null; name_en?: string | null }
+          setProductNames({
+            name: pd.name ?? null,
+            name_ko: pd.name_ko ?? null,
+            name_en: pd.name_en ?? null,
+          })
+        }
+      }
     } catch (error) {
       console.error('Error loading room info:', error)
       setError('An error occurred while loading the chat room.')
@@ -189,7 +214,7 @@ export default function PublicChatPage({ params }: { params: { code: string } })
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-6">
           <div className="text-red-500 mb-4">
-            <MessageCircle size={64} className="mx-auto" />
+            {/* icon removed */}
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Chat Room Not Found</h1>
           <p className="text-gray-600 mb-6">{error}</p>
@@ -225,21 +250,34 @@ export default function PublicChatPage({ params }: { params: { code: string } })
               <Link
                 href="/"
                 className="flex items-center text-gray-600 hover:text-gray-900"
+                aria-label="Home"
+                title="Home"
               >
-                <ArrowLeft size={20} className="mr-2" />
-                Home
+                <HomeIcon size={20} />
               </Link>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">{room.room_name}</h1>
-                <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+                  {selectedLanguage === 'en'
+                    ? (productNames?.name_en || productNames?.name || room.room_name)
+                    : (productNames?.name_ko || productNames?.name || room.room_name)}
+                </h1>
+                <div className="flex items-center text-sm text-gray-600 mt-1">
                   <div className="flex items-center">
-                    <Globe size={16} className="mr-1" />
-                    Tour Date: {new Date(tourInfo.tour_date).toLocaleDateString()}
+                    {new Date(tourInfo.tour_date).toLocaleDateString()}
                   </div>
-                  <div className="flex items-center">
-                    <Users size={16} className="mr-1" />
-                    Chat with Guide
-                  </div>
+                  {customerName && (
+                    <div className="ml-auto flex items-center space-x-2">
+                      <span className="text-gray-700">Hi! {customerName}</span>
+                      <button
+                        onClick={() => setShowNameEdit(true)}
+                        className="p-1 rounded hover:bg-gray-100"
+                        aria-label="Change Name"
+                        title="Change Name"
+                      >
+                        <SquarePen size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -249,19 +287,7 @@ export default function PublicChatPage({ params }: { params: { code: string } })
 
       {/* 컨텐츠 */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 채팅방 안내 */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-          <div className="flex items-start space-x-3">
-            <MessageCircle size={20} className="text-blue-600 mt-0.5" />
-            <div>
-              <h3 className="font-semibold text-blue-900">Chat Room Information</h3>
-              <p className="text-sm text-blue-700 mt-1">
-                This chat room is for tour-related communication. 
-                You can communicate with your guide in real-time about pickup times, locations, special requests, and more.
-              </p>
-            </div>
-          </div>
-        </div>
+        {/* 채팅방 안내 제거 */}
 
         {/* 고객 이름 입력 (첫 방문 시) */}
         {!customerName && (
@@ -340,27 +366,6 @@ export default function PublicChatPage({ params }: { params: { code: string } })
         {/* 채팅방 */}
         {customerName && (
           <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden" style={{ height: '70vh' }}>
-            <div className="p-4 border-b bg-gray-50 flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <MessageCircle size={20} className="text-blue-600" />
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Live Chat</h3>
-                    <p className="text-sm text-gray-500">
-                      Hello, {customerName}! Chat with your guide here.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setShowNameEdit(true)}
-                    className="text-xs text-blue-600 hover:text-blue-800 underline"
-                  >
-                    Change Name
-                  </button>
-                </div>
-              </div>
-            </div>
             <div className="flex-1 overflow-hidden">
               <TourChatRoom
                 tourId={room.tour_id}

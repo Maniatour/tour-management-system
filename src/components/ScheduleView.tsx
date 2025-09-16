@@ -1011,8 +1011,20 @@ export default function ScheduleView() {
       // tours 상태 업데이트
       setTours(prev => prev.map(t => t.id === draggedUnassignedTour.id ? { ...t, ...updateData } : t))
 
-      // 미배정 목록에서는 제거
-      setUnassignedTours(prev => prev.filter(t => t.id !== draggedUnassignedTour.id))
+      // 미배정 목록 업데이트 (투어 전체 제거 대신 역할별 필요 여부에 따라 유지)
+      setUnassignedTours(prev => {
+        const exists = prev.some(t => t.id === draggedUnassignedTour.id)
+        if (!exists) return prev
+        return prev
+          .map(t => {
+            if (t.id !== draggedUnassignedTour.id) return t
+            const updated = { ...t, ...updateData }
+            const needsGuide = !updated.tour_guide_id
+            const needsAssistant = updated.team_type !== '1guide' && !updated.assistant_id
+            return needsGuide || needsAssistant ? updated : null
+          })
+          .filter(Boolean) as Tour[]
+      })
     } finally {
       setDraggedUnassignedTour(null)
       setDragOverCell(null)
@@ -1143,24 +1155,22 @@ export default function ScheduleView() {
   return (
     <div className="bg-white rounded-lg shadow-md border p-2">
       {/* 헤더 */}
-      <div className="mb-4">
+      <div className="mb-2">
         {/* 메인 헤더 - 모든 요소를 한 줄에 배치 */}
-        <div className="flex items-center justify-between gap-4 mb-4">
-          {/* 왼쪽: 제목과 선택 버튼들 */}
-          <div className="flex items-center gap-4 flex-1">
-            <h2 className="text-2xl font-bold text-gray-900 whitespace-nowrap">스케줄 뷰</h2>
-            
+        <div className="flex items-center justify-between gap-2 mb-2">
+          {/* 왼쪽: 선택 버튼들 (제목 제거) */}
+          <div className="flex items-center gap-2 flex-1">
             {/* 선택 버튼들 */}
-            <div className="flex gap-4">
+            <div className="flex gap-2">
               {/* 상품 선택 버튼 */}
               <button
                 onClick={() => setShowProductModal(true)}
-                className="flex items-center justify-center w-10 h-10 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors relative"
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors relative"
                 title={`상품 선택 (${selectedProducts.length}개)`}
               >
-                <MapPin className="w-5 h-5" />
+                <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
                 {selectedProducts.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
                     {selectedProducts.length}
                   </span>
                 )}
@@ -1169,12 +1179,12 @@ export default function ScheduleView() {
               {/* 팀원 선택 버튼 */}
               <button
                 onClick={() => setShowTeamModal(true)}
-                className="flex items-center justify-center w-10 h-10 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors relative"
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors relative"
                 title={`팀원 선택 (${selectedTeamMembers.length}개)`}
               >
-                <Users className="w-5 h-5" />
+                <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                 {selectedTeamMembers.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] sm:text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center">
                     {selectedTeamMembers.length}
                   </span>
                 )}
@@ -1183,8 +1193,8 @@ export default function ScheduleView() {
             </div>
           </div>
 
-          {/* 오른쪽: 월 이동 버튼들 */}
-          <div className="flex items-center space-x-4 flex-shrink-0">
+          {/* 오른쪽: 월 이동/저장 버튼들 */}
+          <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
             {/* 대기 변경 배지 및 버튼 */}
             {pendingCount > 0 && (
               <span className="px-2 py-1 text-xs bg-amber-100 text-amber-800 rounded-full">
@@ -1220,7 +1230,7 @@ export default function ScheduleView() {
                 }
               }}
               disabled={pendingCount === 0}
-              className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+              className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
             >
               저장
             </button>
@@ -1231,28 +1241,30 @@ export default function ScheduleView() {
                 await fetchUnassignedTours()
               }}
               disabled={pendingCount === 0}
-              className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-600 text-white hover:bg-gray-700'}`}
+              className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-600 text-white hover:bg-gray-700'}`}
             >
               취소
             </button>
-            <button
-              onClick={goToPreviousMonth}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <h3 className="text-sm font-semibold text-gray-900 whitespace-nowrap">
-              {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
-            </h3>
-            <button
-              onClick={goToNextMonth}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
+            <div className="flex items-center space-x-1 sm:space-x-4">
+              <button
+                onClick={goToPreviousMonth}
+                className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap">
+                {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
+              </h3>
+              <button
+                onClick={goToNextMonth}
+                className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            </div>
             <button
               onClick={goToToday}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors whitespace-nowrap"
+              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors whitespace-nowrap text-xs sm:text-sm"
             >
               오늘
             </button>
@@ -1272,10 +1284,7 @@ export default function ScheduleView() {
             WebkitOverflowScrolling: 'touch'
           }}
         >
-          {/* 드래그 안내 텍스트 */}
-          <div className="absolute top-2 left-2 text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm z-10">
-            ← 좌우로 드래그하여 스크롤 →
-          </div>
+          {/* 드래그 안내 텍스트 제거 */}
           
           {/* 상품별 스케줄 테이블 */}
           <div>

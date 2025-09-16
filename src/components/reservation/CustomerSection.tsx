@@ -5,8 +5,8 @@ import { RefObject } from 'react'
 interface Customer {
   id: string
   name: string
-  email?: string
-  phone?: string
+  email?: string | null
+  phone?: string | null
 }
 
 interface CustomerSectionProps {

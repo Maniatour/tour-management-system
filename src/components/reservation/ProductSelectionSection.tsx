@@ -2,9 +2,11 @@
 
 interface Product {
   id: string
-  name: string
-  category?: string
-  sub_category?: string
+  name?: string | null
+  name_ko: string
+  name_en?: string | null
+  category?: string | null
+  sub_category?: string | null
 }
 
 interface ProductOption {
@@ -35,13 +37,6 @@ interface ProductSelectionSectionProps {
   setFormData: (data: any) => void
   products: Product[]
   getRequiredOptionsForProduct: (productId: string) => Record<string, ProductOption[]>
-  getChoicesForOption: (optionId: string) => Array<{
-    id: string
-    name: string
-    adult_price_adjustment?: number
-    child_price_adjustment?: number
-    infant_price_adjustment?: number
-  }>
   loadRequiredOptionsForProduct: (productId: string) => Promise<void>
   getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
   t: (key: string) => string
@@ -52,7 +47,6 @@ export default function ProductSelectionSection({
   setFormData,
   products,
   getRequiredOptionsForProduct,
-  getChoicesForOption,
   loadRequiredOptionsForProduct,
   getDynamicPricingForOption,
   t
@@ -138,9 +132,10 @@ export default function ProductSelectionSection({
             .filter(product => {
               const matchesCategory = !formData.selectedProductCategory || product.category === formData.selectedProductCategory
               const matchesSubCategory = !formData.selectedProductSubCategory || product.sub_category === formData.selectedProductSubCategory
+              const displayName = (product.name || product.name_ko || product.name_en || '')?.toLowerCase()
               const matchesSearch = !formData.productSearch || 
-                product.name?.toLowerCase().includes(formData.productSearch.toLowerCase()) ||
-                product.sub_category?.toLowerCase().includes(formData.productSearch.toLowerCase())
+                displayName.includes(formData.productSearch.toLowerCase()) ||
+                (product.sub_category || '').toLowerCase().includes(formData.productSearch.toLowerCase())
               return matchesCategory && matchesSubCategory && matchesSearch
             })
             .map(product => (
@@ -169,7 +164,7 @@ export default function ProductSelectionSection({
                   formData.productId === product.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
                 }`}
               >
-                <div className="text-sm text-gray-900">{product.name}</div>
+                <div className="text-sm text-gray-900">{product.name || product.name_ko || product.name_en}</div>
               </div>
             ))}
         </div>
@@ -183,7 +178,7 @@ export default function ProductSelectionSection({
             const selectedProduct = products.find(p => p.id === formData.productId)
             return selectedProduct ? (
               <div className="space-y-2">
-                <div className="font-medium text-gray-900">{selectedProduct.name}</div>
+                <div className="font-medium text-gray-900">{selectedProduct.name || selectedProduct.name_ko || selectedProduct.name_en}</div>
 
               </div>
             ) : null

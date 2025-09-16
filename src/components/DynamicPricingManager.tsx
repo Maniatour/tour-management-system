@@ -57,6 +57,7 @@ export default function DynamicPricingManager({
     adult_price: 0,
     child_price: 0,
     infant_price: 0,
+    not_included_price: 0,
     required_options: [] as Array<{
       option_id: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
       adult_price: number;
@@ -82,6 +83,7 @@ export default function DynamicPricingManager({
     adult_price: number;
     child_price: number;
     infant_price: number;
+    not_included_price?: number | null;
     options_pricing: Array<{
       option_id: string;
       adult_price: number;
@@ -742,7 +744,8 @@ export default function DynamicPricingManager({
             commission_percent: pricingConfig.commission_percent,
             markup_amount: pricingConfig.markup_amount,
           coupon_percent: pricingConfig.coupon_percentage_discount || 0,
-            is_sale_available: pricingConfig.is_sale_available
+            is_sale_available: pricingConfig.is_sale_available,
+            not_included_price: pricingConfig.not_included_price || 0
         }
 
         console.log('동적 가격 저장 데이터:', insertData)
@@ -1645,6 +1648,24 @@ export default function DynamicPricingManager({
                     <Save className="h-4 w-4" />
                     <span>{saving ? '저장 중...' : '가격 정보 저장'}</span>
                   </button>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    not_included_price ($)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pricingConfig.not_included_price}
+                      onChange={(e) => setPricingConfig(prev => ({ ...prev, not_included_price: parseFloat(e.target.value) || 0 }))}
+                      className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                    <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
+                  </div>
+                  <p className="mt-1 text-[10px] text-gray-500">OTA 성인가: 성인가격 − not_included</p>
                 </div>
                 {saveMessage && (
                   <div className={`mt-3 p-3 rounded-lg text-sm ${

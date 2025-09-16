@@ -9,6 +9,8 @@ interface ChatRoomShareModalProps {
   roomCode: string
   roomName: string
   tourDate?: string
+  isPublicView?: boolean
+  language?: 'en' | 'ko'
 }
 
 export default function ChatRoomShareModal({ 
@@ -16,7 +18,9 @@ export default function ChatRoomShareModal({
   onClose, 
   roomCode, 
   roomName,
-  tourDate 
+  tourDate,
+  isPublicView = false,
+  language = 'ko'
 }: ChatRoomShareModalProps) {
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
@@ -39,9 +43,10 @@ export default function ChatRoomShareModal({
   const shareLink = async () => {
     if (navigator.share) {
       try {
+        const isEn = language === 'en'
         await navigator.share({
-          title: '투어 채팅방',
-          text: `${roomName} - 투어 관련 소통을 위한 채팅방입니다.`,
+          title: isEn ? 'Tour Chat' : '투어 채팅방',
+          text: isPublicView && isEn ? `Join the tour chat: ${roomName}` : `${roomName}`,
           url: chatUrl
         })
       } catch (error) {
@@ -52,15 +57,13 @@ export default function ChatRoomShareModal({
     }
   }
 
-  const shareText = `🗺️ 투어 채팅방에 참여하세요!
-
-📅 투어 날짜: ${tourDate || '확인 필요'}
-💬 채팅방: ${roomName}
-
-아래 링크를 클릭하여 가이드와 실시간으로 소통하세요:
-${chatUrl}
-
-※ 픽업 시간, 장소, 특이사항 등에 대해 언제든지 문의하실 수 있습니다.`
+  const shareText = (() => {
+    const isEn = language === 'en'
+    if (isPublicView && isEn) {
+      return `Join the tour chat\n\nChat room: ${roomName}\n${chatUrl}`
+    }
+    return `🗺️ 투어 채팅방에 참여하세요!\n\n📅 투어 날짜: ${tourDate || '확인 필요'}\n💬 채팅방: ${roomName}\n\n아래 링크를 클릭하여 가이드와 실시간으로 소통하세요:\n${chatUrl}`
+  })()
 
   const copyShareText = async () => {
     try {
@@ -79,7 +82,7 @@ ${chatUrl}
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center space-x-3">
             <MessageCircle size={24} className="text-blue-600" />
-            <h2 className="text-xl font-semibold text-gray-900">채팅방 공유</h2>
+            <h2 className="text-xl font-semibold text-gray-900">채팅</h2>
           </div>
           <button
             onClick={onClose}
