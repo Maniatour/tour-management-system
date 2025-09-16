@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
+import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import TourCalendar from '@/components/TourCalendar'
 import ScheduleView from '@/components/ScheduleView'
@@ -29,9 +29,10 @@ type Product = Database['public']['Tables']['products']['Row']
 
 export default function AdminTours() {
   const t = useTranslations('tours')
+  const supabase = createClientSupabase()
   
   // 직원 데이터 (Supabase에서 가져옴)
-  const [, setEmployees] = useState<Employee[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
   const [, setProducts] = useState<Product[]>([])
   const [tours, setTours] = useState<ExtendedTour[]>([])
   const [allReservations, setAllReservations] = useState<Database['public']['Tables']['reservations']['Row'][]>([])
@@ -40,11 +41,7 @@ export default function AdminTours() {
   const [statusOptions, setStatusOptions] = useState<string[]>([])
   const [gridMonth, setGridMonth] = useState<Date>(new Date())
 
-  const getMonthKey = (d: Date) => {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    return `${y}-${m}`
-  }
+  // month key helper was unused; removed to satisfy linter
 
   const goToPrevGridMonth = () => {
     setGridMonth(new Date(gridMonth.getFullYear(), gridMonth.getMonth() - 1, 1))
@@ -78,7 +75,7 @@ export default function AdminTours() {
     }
   }
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('team')
@@ -95,9 +92,9 @@ export default function AdminTours() {
     } catch (error) {
       console.error('Error fetching employees:', error)
     }
-  }
+  }, [supabase])
 
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('products')
@@ -113,7 +110,7 @@ export default function AdminTours() {
     } catch (error) {
       console.error('Error fetching products:', error)
     }
-  }
+  }, [supabase])
 
   const fetchTours = useCallback(async () => {
     try {
@@ -149,7 +146,7 @@ export default function AdminTours() {
         .select('email, name_ko')
         .in('email', allEmails)
 
-      const teamMap = new Map(teamMembers?.map((member: Employee) => [member.email, member]) || [])
+      const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string }) => [member.email, member]))
 
       // 3-1. 차량 정보 가져오기 (카드에 차량 번호 표시)
       const vehicleIds = [...new Set((toursData || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter(Boolean))]
@@ -277,33 +274,50 @@ export default function AdminTours() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [supabase])
 
   useEffect(() => {
     fetchEmployees()
     fetchProducts()
     fetchTours()
-  }, [fetchTours])
+  }, [fetchEmployees, fetchProducts, fetchTours])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [asGuideEmail, setAsGuideEmail] = useState<string>('')
+  const [showAllList, setShowAllList] = useState<boolean>(false)
+
+  // 가이드/어시스턴트 드롭다운 옵션 (활성 팀원 중 position에 guide/assistant 포함)
+  const guideOptions = useMemo(() => {
+    const toLower = (v: unknown) => (v ? String(v).toLowerCase() : '')
+    const list = (employees || []).filter(e => {
+      const p = toLower(e.position)
+      return p.includes('guide') || p.includes('assistant')
+    })
+    return list.sort((a, b) => (a.name_ko || '').localeCompare(b.name_ko || ''))
+  }, [employees])
 
   // 필터링된 투어 목록
   const filteredTours = tours.filter(tour => {
     const matchesSearch = !searchTerm || 
-      tour.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tour.product_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tour.guide_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tour.assistant_name?.toLowerCase().includes(searchTerm.toLowerCase())
+      (tour.id || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (tour.product_id || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (tour.guide_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (tour.assistant_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesStatus = selectedStatus === 'all' || tour.status === selectedStatus
 
-    return matchesSearch && matchesStatus
+    const email = asGuideEmail.trim().toLowerCase()
+    const matchesAsGuide = !email ||
+      (tour.tour_guide_id && tour.tour_guide_id.toLowerCase() === email) ||
+      (tour.assistant_id && tour.assistant_id.toLowerCase() === email)
+
+    return matchesSearch && matchesStatus && matchesAsGuide
   })
 
   // 리스트(카드) 뷰 전용: 선택된 gridMonth로 월 필터링
   const listMonthPrefix = `${gridMonth.getFullYear()}-${String(gridMonth.getMonth() + 1).padStart(2, '0')}-`
-  const listViewTours = filteredTours.filter(t => (t.tour_date || '').startsWith(listMonthPrefix))
+  const listViewTours = showAllList ? filteredTours : filteredTours.filter(t => (t.tour_date || '').startsWith(listMonthPrefix))
 
   const handleTourClick = (tour: ExtendedTour) => {
     window.location.href = `/ko/admin/tours/${tour.id}`
@@ -396,6 +410,51 @@ export default function AdminTours() {
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
+
+          {/* 관리자용: 특정 가이드로 보기 (드롭다운) */}
+          <div className="flex items-center gap-2">
+            <select
+              value={asGuideEmail}
+              onChange={(e) => setAsGuideEmail(e.target.value)}
+              className="w-56 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
+            >
+              <option value="">모든 가이드</option>
+              {guideOptions.map((m) => (
+                <option key={m.email} value={m.email}>
+                  {(m.name_ko || m.name_en || m.email) as string}
+                </option>
+              ))}
+            </select>
+            {asGuideEmail && (
+              <button
+                type="button"
+                onClick={() => setAsGuideEmail('')}
+                className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded"
+              >
+                지우기
+              </button>
+            )}
+          </div>
+
+          {/* 리스트 뷰: 전체 보기 토글 & 필터 초기화 */}
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1 text-sm text-gray-700 select-none">
+              <input
+                type="checkbox"
+                checked={showAllList}
+                onChange={(e) => setShowAllList(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              전체 보기(리스트)
+            </label>
+            <button
+              type="button"
+              onClick={() => { setSearchTerm(''); setSelectedStatus('all'); setAsGuideEmail(''); setShowAllList(false) }}
+              className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded"
+            >
+              필터 초기화
+            </button>
+          </div>
         </div>
 
         {/* (데스크톱에서는 위의 줄 그대로 사용) */}

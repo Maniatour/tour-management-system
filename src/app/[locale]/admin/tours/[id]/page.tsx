@@ -22,6 +22,7 @@ import TicketBookingForm from '@/components/booking/TicketBookingForm'
 import TourHotelBookingForm from '@/components/booking/TourHotelBookingForm'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
 import TourChatRoom from '@/components/TourChatRoom'
+import { useAuth } from '@/contexts/AuthContext'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -65,6 +66,8 @@ const TourHotelBookingFormAny = TourHotelBookingForm as any
 export default function TourDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { hasPermission, userRole } = useAuth()
+  const isStaff = hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager')
   
   const [tour, setTour] = useState<TourRow | null>(null)
   const [isPrivateTour, setIsPrivateTour] = useState<boolean>(false)
@@ -1042,6 +1045,7 @@ export default function TourDetailPage() {
 
   // 예약 편집 모달 열기
   const handleEditReservationClick = (reservation: any) => {
+    if (!isStaff) return
     setEditingReservation(reservation)
   }
 
@@ -1636,11 +1640,11 @@ export default function TourDetailPage() {
                     {assignedReservations.map((reservation) => (
                       <div 
                         key={reservation.id} 
-                        className="p-3 bg-blue-50 rounded-lg border cursor-pointer hover:bg-blue-100 transition-colors"
+                        className={`flex items-center justify-between p-2 rounded border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
                         onClick={() => handleEditReservationClick(reservation)}
                       >
                         {/* 첫 번째 줄: 국기 | 이름 인원 */}
-                        <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
                           <div className="flex items-center space-x-2">
                             {/* 언어 국기 아이콘 */}
                             <ReactCountryFlag
@@ -1719,11 +1723,11 @@ export default function TourDetailPage() {
                       {otherToursAssignedReservations.map((reservation) => (
                         <div 
                           key={reservation.id} 
-                          className="p-3 bg-orange-50 rounded-lg border border-orange-200 cursor-pointer hover:bg-orange-100 transition-colors"
+                          className={`flex items-center justify-between p-2 rounded border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
                           onClick={() => handleEditReservationClick(reservation)}
                         >
                           {/* 첫 번째 줄: 국기 | 이름 인원 */}
-                          <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2">
                             <div className="flex items-center space-x-2">
                               {/* 언어 국기 아이콘 */}
                               <ReactCountryFlag
@@ -1802,11 +1806,11 @@ export default function TourDetailPage() {
                     {pendingReservations.map((reservation) => (
                       <div 
                         key={reservation.id} 
-                        className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                        className={`flex items-center justify-between p-2 rounded border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
                         onClick={() => handleEditReservationClick(reservation)}
                       >
                         {/* 첫 번째 줄: 국기 | 이름 인원 */}
-                        <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
                           <div className="flex items-center space-x-2">
                             {/* 언어 국기 아이콘 */}
                             <ReactCountryFlag
@@ -1881,11 +1885,11 @@ export default function TourDetailPage() {
                     {inactiveReservations.map((reservation) => (
                       <div 
                         key={reservation.id} 
-                        className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                        className={`flex items-center justify-between p-2 rounded border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
                         onClick={() => handleEditReservationClick(reservation)}
                       >
                         {/* 첫 번째 줄: 국기 | 이름 인원 | 상태 */}
-                        <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
                           <div className="flex items-center space-x-2">
                             <ReactCountryFlag
                               countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
@@ -1992,7 +1996,7 @@ export default function TourDetailPage() {
                         {filteredTicketBookings.map((booking) => (
                           <div 
                             key={booking.id} 
-                            className="p-2 border rounded cursor-pointer hover:bg-gray-50 transition-colors"
+                            className={`p-2 border rounded cursor-pointer hover:bg-gray-50 transition-colors ${isStaff ? '' : 'cursor-not-allowed'}`}
                             onClick={() => handleEditTicketBooking(booking)}
                           >
                             {/* 첫 번째 줄: company와 status */}
@@ -2049,7 +2053,7 @@ export default function TourDetailPage() {
                         {tourHotelBookings.map((booking) => (
                           <div 
                             key={booking.id} 
-                            className="border rounded p-3 cursor-pointer hover:bg-gray-50"
+                            className={`border rounded p-3 cursor-pointer hover:bg-gray-50 ${isStaff ? '' : 'cursor-not-allowed'}`}
                             onClick={() => handleEditTourHotelBooking(booking)}
                           >
                             {/* 호텔 부킹 제목과 예약번호 */}
