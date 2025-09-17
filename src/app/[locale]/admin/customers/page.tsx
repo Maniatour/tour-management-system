@@ -357,14 +357,21 @@ export default function AdminCustomers() {
       if (customer.created_at) {
         // UTC 시간을 한국 시간대로 변환
         const utcDate = new Date(customer.created_at)
-        const koreaDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "Asia/Seoul"}))
         
-        date = koreaDate.toLocaleDateString('ko-KR', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          weekday: 'long'
-        })
+        // 유효한 날짜인지 확인
+        if (!isNaN(utcDate.getTime())) {
+          const koreaDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "Asia/Seoul"}))
+          
+          // 변환된 날짜가 유효한지 확인
+          if (!isNaN(koreaDate.getTime())) {
+            date = koreaDate.toLocaleDateString('ko-KR', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              weekday: 'long'
+            })
+          }
+        }
       }
       
       if (!groups[date]) {

@@ -226,8 +226,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     
     filteredReservations.forEach(reservation => {
       // created_at 날짜를 한국 시간대로 변환하여 YYYY-MM-DD 형식으로 변환
+      if (!reservation.created_at) {
+        return // created_at이 없으면 건너뛰기
+      }
+      
       const utcDate = new Date(reservation.created_at)
+      
+      // 유효한 날짜인지 확인
+      if (isNaN(utcDate.getTime())) {
+        return // 유효하지 않은 날짜면 건너뛰기
+      }
+      
       const koreaDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "Asia/Seoul"}))
+      
+      // 변환된 날짜가 유효한지 확인
+      if (isNaN(koreaDate.getTime())) {
+        return // 유효하지 않은 날짜면 건너뛰기
+      }
+      
       const createdDate = koreaDate.toISOString().split('T')[0]
       
       // 현재 주 범위에 포함되는지 확인
