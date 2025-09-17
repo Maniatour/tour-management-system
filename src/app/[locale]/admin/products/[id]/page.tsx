@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, use } from 'react'
+import React, { useState, useEffect, use, useCallback } from 'react'
 // import { useTranslations } from 'next-intl'
 import { 
   DollarSign, 
@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClientSupabase } from '@/lib/supabase'
 // import type { Database } from '@/lib/supabase'
 import DynamicPricingManager from '@/components/DynamicPricingManager'
 import ChangeHistory from '@/components/ChangeHistory'
@@ -33,6 +33,30 @@ import OptionsManualModal from '@/components/product/OptionsManualModal'
 // 타입 정의는 필요에 따라 추가
 
 // 기존 인터페이스들은 폼에서 사용하기 위해 유지
+type ProductDetailsFields = {
+  slogan1: string
+  slogan2: string
+  slogan3: string
+  description: string
+  included: string
+  not_included: string
+  pickup_drop_info: string
+  luggage_info: string
+  tour_operation_info: string
+  preparation_info: string
+  small_group_info: string
+  companion_info: string
+  exclusive_booking_info: string
+  cancellation_policy: string
+  chat_announcement: string
+}
+
+type ProductDetailsFormData = {
+  useCommonDetails: boolean
+  productDetails: ProductDetailsFields
+}
+
+type DetailsRow = Partial<ProductDetailsFields>
 interface ProductOptionChoice {
   id: string // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   name: string
@@ -113,6 +137,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   // 번역은 필요에 따라 사용
   const router = useRouter()
   const isNewProduct = id === 'new'
+  const supabase = createClientSupabase()
   
   const [activeTab, setActiveTab] = useState('basic')
   const [showManualModal, setShowManualModal] = useState(false)
@@ -145,6 +170,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     childAgeMin: number
     childAgeMax: number
     infantAge: number
+    // 공통 세부정보 사용 여부
+    useCommonDetails: boolean
     // product_details 필드들
     productDetails: {
       slogan1: string
@@ -206,6 +233,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     childAgeMin: 3,
     childAgeMax: 12,
     infantAge: 2,
+    // 공통 세부정보 사용 여부 초기값
+    useCommonDetails: false,
     // product_details 초기값
     productDetails: {
       slogan1: '',
@@ -231,7 +260,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   const [loadingOptions, setLoadingOptions] = useState(false)
 
   // 글로벌 옵션 불러오기
-  const fetchGlobalOptions = async () => {
+  const fetchGlobalOptions = useCallback(async () => {
     try {
       setLoadingOptions(true)
       const { data, error } = await supabase
@@ -246,11 +275,23 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       }
 
       if (data) {
-        const formattedOptions: GlobalOption[] = data.map(option => ({
+        type OptionRow = {
+          id: string
+          name: string
+          category: string
+          description: string | null
+          adult_price: number | null
+          child_price: number | null
+          infant_price: number | null
+          price_type: 'perPerson' | 'perTour' | 'perHour' | 'fixed'
+          status: 'active' | 'inactive' | 'seasonal'
+          tags: string[] | null
+        }
+        const formattedOptions: GlobalOption[] = (data as unknown as OptionRow[]).map((option) => ({
           id: option.id,
           name: option.name,
           category: option.category,
-          description: option.description,
+          description: option.description || '',
           adultPrice: option.adult_price || 0,
           childPrice: option.child_price || 0,
           infantPrice: option.infant_price || 0,
@@ -265,7 +306,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     } finally {
       setLoadingOptions(false)
     }
-  }
+  }, [supabase])
 
   // 새 상품 생성 시 기본값 설정
   useEffect(() => {
@@ -317,7 +358,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   // 컴포넌트 마운트 시 글로벌 옵션 불러오기
   useEffect(() => {
     fetchGlobalOptions()
-  }, [])
+  }, [fetchGlobalOptions])
 
   // 기존 상품 데이터 로드 (편집 시)
   useEffect(() => {
@@ -329,7 +370,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             .from('products')
             .select('*')
             .eq('id', id)
-            .single() as any
+            .single()
 
           if (productError) throw productError
 
@@ -347,16 +388,30 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             .from('product_options')
             .select('*')
             .eq('product_id', id)
-            .order('name', { ascending: true }) as any
+            .order('name', { ascending: true })
 
           if (optionsError) throw optionsError
 
-          // 3. 상품 세부정보 로드
-          const { data: detailsData, error: detailsError } = await supabase
-            .from('product_details')
-            .select('*')
-            .eq('product_id', id)
-            .single() as any
+          // 3. 상품 세부정보 로드 (공통 여부 반영)
+          let detailsData: DetailsRow | null = null
+          let detailsError: { code?: string } | null = null
+          if (productData?.use_common_details) {
+            const { data: commonData, error: commonError } = await supabase
+              .from('product_details_common')
+              .select('*')
+              .eq('sub_category', productData.sub_category)
+              .maybeSingle()
+            detailsData = commonData
+            detailsError = commonError
+          } else {
+            const { data: ownData, error: ownError } = await supabase
+              .from('product_details')
+              .select('*')
+              .eq('product_id', id)
+              .maybeSingle()
+            detailsData = ownData
+            detailsError = ownError
+          }
 
           if (detailsError && detailsError.code !== 'PGRST116') { // PGRST116은 데이터가 없을 때 발생
             throw detailsError
@@ -391,6 +446,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             childAgeMin: productData.child_age_min || 3,
             childAgeMax: productData.child_age_max || 12,
             infantAge: productData.infant_age || 2,
+            useCommonDetails: !!productData.use_common_details,
             // product_details 데이터 설정
             productDetails: detailsData ? {
               slogan1: detailsData.slogan1 || '',
@@ -501,7 +557,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     }
 
     fetchProductData()
-  }, [id, isNewProduct])
+  }, [id, isNewProduct, supabase])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -539,7 +595,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       let productId = id
       if (isNewProduct) {
         // 새 상품 생성
-        const { data: productData, error: productError } = await (supabase as any)
+        const { data: productData, error: productError } = await supabase
           .from('products')
           .insert({
             name: formData.name.trim(),
@@ -561,10 +617,11 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             adult_age: formData.adultAge,
             child_age_min: formData.childAgeMin,
             child_age_max: formData.childAgeMax,
-            infant_age: formData.infantAge
+            infant_age: formData.infantAge,
+            use_common_details: formData.useCommonDetails
           })
           .select()
-          .single() as any
+          .single()
 
         if (productError) {
           console.error('상품 생성 오류:', productError)
@@ -575,7 +632,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         console.log('새 상품 생성됨:', productId)
       } else {
         // 기존 상품 업데이트
-        const { error: productError } = await (supabase as any)
+        const { error: productError } = await supabase
           .from('products')
           .update({
             name: formData.name.trim(),
@@ -597,11 +654,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             adult_age: formData.adultAge,
             child_age_min: formData.childAgeMin,
             child_age_max: formData.childAgeMax,
-            infant_age: formData.infantAge
+            infant_age: formData.infantAge,
+            use_common_details: formData.useCommonDetails
           })
           .eq('id', productId)
           .select()
-          .single() as any
+          .single()
 
         if (productError) {
           console.error('상품 업데이트 오류:', productError)
@@ -614,7 +672,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       // 2. 기존 product_options 삭제 (업데이트 시)
       if (!isNewProduct && formData.productOptions.length > 0) {
         console.log('기존 옵션 삭제 시작')
-        const { error: deleteError } = await (supabase as any)
+        const { error: deleteError } = await supabase
           .from('product_options')
           .delete()
           .eq('product_id', productId)
@@ -634,7 +692,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           // 새로운 통합 구조: choices가 있는 경우, 각 choice를 별도의 product_options 행으로 저장
           if (option.choices && option.choices.length > 0) {
             for (const choice of option.choices) {
-              const { data: optionData, error: optionError } = await (supabase as any)
+              const { data: optionData, error: optionError } = await supabase
                 .from('product_options')
                 .insert({
                   product_id: productId,
@@ -651,7 +709,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                   is_default: choice.isDefault || false
                 })
                 .select()
-                .single() as any
+                .single()
 
               if (optionError) {
                 console.error('옵션 저장 오류:', optionError)
@@ -662,7 +720,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             }
           } else {
             // choices가 없는 경우, 기본 옵션만 저장
-            const { data: optionData, error: optionError } = await (supabase as any)
+            const { data: optionData, error: optionError } = await supabase
               .from('product_options')
               .insert({
                 product_id: productId,
@@ -679,7 +737,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 is_default: true
               })
               .select()
-              .single() as any
+              .single()
 
             if (optionError) {
               console.error('옵션 저장 오류:', optionError)
@@ -691,59 +749,66 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         }
       }
 
-      // 4. product_details 저장
+      // 4. product_details 저장 (공통 미사용 시에만)
       console.log('product_details 저장 시작')
-      const { data: existingDetails } = await (supabase as any)
-        .from('product_details')
-        .select('id')
-        .eq('product_id', productId)
-        .single()
-
-      const detailsData = {
-        product_id: productId,
-        slogan1: formData.productDetails.slogan1,
-        slogan2: formData.productDetails.slogan2,
-        slogan3: formData.productDetails.slogan3,
-        description: formData.productDetails.description,
-        included: formData.productDetails.included,
-        not_included: formData.productDetails.not_included,
-        pickup_drop_info: formData.productDetails.pickup_drop_info,
-        luggage_info: formData.productDetails.luggage_info,
-        tour_operation_info: formData.productDetails.tour_operation_info,
-        preparation_info: formData.productDetails.preparation_info,
-        small_group_info: formData.productDetails.small_group_info,
-        companion_info: formData.productDetails.companion_info,
-        exclusive_booking_info: formData.productDetails.exclusive_booking_info,
-        cancellation_policy: formData.productDetails.cancellation_policy,
-        chat_announcement: formData.productDetails.chat_announcement
-      }
-
-      if (existingDetails) {
-        // 업데이트
-        const { error: detailsError } = await (supabase as any)
+      if (!formData.useCommonDetails) {
+        const { data: existingDetails, error: selectDetailsError } = await supabase
           .from('product_details')
-          .update({
-            ...detailsData,
-            updated_at: new Date().toISOString()
-          })
+          .select('id')
           .eq('product_id', productId)
+          .maybeSingle()
 
-        if (detailsError) {
-          console.error('product_details 업데이트 오류:', detailsError)
-          throw new Error(`상품 세부정보 업데이트 실패: ${detailsError.message}`)
+        if (selectDetailsError) {
+          console.error('product_details 존재 여부 확인 오류:', selectDetailsError)
+          throw new Error(`상품 세부정보 조회 실패: ${selectDetailsError.message}`)
         }
-        console.log('product_details 업데이트 완료')
-      } else {
-        // 새로 생성
-        const { error: detailsError } = await (supabase as any)
-          .from('product_details')
-          .insert([detailsData])
 
-        if (detailsError) {
-          console.error('product_details 생성 오류:', detailsError)
-          throw new Error(`상품 세부정보 생성 실패: ${detailsError.message}`)
+        const detailsData = {
+          product_id: productId,
+          slogan1: formData.productDetails.slogan1,
+          slogan2: formData.productDetails.slogan2,
+          slogan3: formData.productDetails.slogan3,
+          description: formData.productDetails.description,
+          included: formData.productDetails.included,
+          not_included: formData.productDetails.not_included,
+          pickup_drop_info: formData.productDetails.pickup_drop_info,
+          luggage_info: formData.productDetails.luggage_info,
+          tour_operation_info: formData.productDetails.tour_operation_info,
+          preparation_info: formData.productDetails.preparation_info,
+          small_group_info: formData.productDetails.small_group_info,
+          companion_info: formData.productDetails.companion_info,
+          exclusive_booking_info: formData.productDetails.exclusive_booking_info,
+          cancellation_policy: formData.productDetails.cancellation_policy,
+          chat_announcement: formData.productDetails.chat_announcement
         }
-        console.log('product_details 생성 완료')
+
+        if (existingDetails) {
+          // 업데이트
+          const { error: detailsError } = await supabase
+            .from('product_details')
+            .update({
+              ...detailsData,
+              updated_at: new Date().toISOString()
+            })
+            .eq('product_id', productId)
+
+          if (detailsError) {
+            console.error('product_details 업데이트 오류:', detailsError)
+            throw new Error(`상품 세부정보 업데이트 실패: ${detailsError.message}`)
+          }
+          console.log('product_details 업데이트 완료')
+        } else {
+          // 새로 생성
+          const { error: detailsError } = await supabase
+            .from('product_details')
+            .insert([detailsData])
+
+          if (detailsError) {
+            console.error('product_details 생성 오류:', detailsError)
+            throw new Error(`상품 세부정보 생성 실패: ${detailsError.message}`)
+          }
+          console.log('product_details 생성 완료')
+        }
       }
 
       console.log('상품 저장 완료!')
@@ -814,19 +879,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     setFormData(prevData => ({ ...prevData, tags: prevData.tags.filter(tag => tag !== tagToRemove) }))
   }
 
-  const addProductOption = () => {
-    const newOption: ProductOption = {
-      id: `opt-${Date.now()}`,
-      name: '',
-      description: '',
-      isRequired: false,
-      isMultiple: false,
-      choices: [],
-      linkedOptionId: undefined
-    }
-    setFormData(prevData => ({ ...prevData, productOptions: [...prevData.productOptions, newOption] }))
-  }
-
   const addProductOptionFromGlobal = (globalOption: GlobalOption) => {
     try {
       // 글로벌 옵션 데이터 검증
@@ -893,74 +945,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     }))
   }
 
-  const addOptionChoice = (optionId: string) => {
-    const newChoice: ProductOptionChoice = {
-      id: `choice-${Date.now()}`,
-      name: '',
-      description: '',
-      priceAdjustment: { adult: 0, child: 0, infant: 0 }
-    }
-    setFormData(prevData => ({
-      ...prevData,
-      productOptions: prevData.productOptions.map(opt =>
-        opt.id === optionId 
-          ? { ...opt, choices: [...opt.choices, newChoice] }
-          : opt
-      )
-    }))
-  }
-
-  const removeOptionChoice = (optionId: string, choiceId: string) => {
-    setFormData(prevData => ({
-      ...prevData,
-      productOptions: prevData.productOptions.map(opt =>
-        opt.id === optionId 
-          ? { ...opt, choices: opt.choices.filter(choice => choice.id !== choiceId) }
-          : opt
-      )
-    }))
-  }
-
-  const updateOptionChoice = (optionId: string, choiceId: string, updates: Partial<ProductOptionChoice>) => {
-    setFormData(prevData => ({
-      ...prevData,
-      productOptions: prevData.productOptions.map(opt =>
-        opt.id === optionId 
-          ? { 
-              ...opt, 
-              choices: opt.choices.map(choice =>
-        choice.id === choiceId ? { ...choice, ...updates } : choice
-      )
-            }
-          : opt
-      )
-    }))
-  }
-
-  const linkToGlobalOption = (optionId: string, globalOptionId: string) => {
-    const globalOption = globalOptions.find(go => go.id === globalOptionId)
-    if (globalOption) {
-      // 글로벌 옵션과 연결하고 기본 선택 항목 생성
-      const defaultChoice: ProductOptionChoice = {
-        id: `choice-${Date.now()}`,
-        name: globalOption.name,
-        description: globalOption.description,
-        priceAdjustment: {
-          adult: globalOption.adultPrice,
-          child: globalOption.childPrice,
-          infant: globalOption.infantPrice
-        },
-        isDefault: true
-      }
-
-      updateProductOption(optionId, {
-        name: globalOption.name,
-        description: globalOption.description,
-        linkedOptionId: globalOptionId,
-        choices: [defaultChoice]
-      })
-    }
-  }
+  // addProductOption, addOptionChoice 등은 현재 UI에서 사용하지 않아 제거
 
   // 통합 가격 관련 함수들 (현재 사용되지 않음)
   /*
@@ -1138,8 +1123,28 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           <ProductDetailsTab
             productId={id}
             isNewProduct={isNewProduct}
-            formData={formData}
-            setFormData={setFormData}
+            locale={locale}
+            formData={{
+              useCommonDetails: formData.useCommonDetails,
+              productDetails: formData.productDetails
+            }}
+            setFormData={(updater) => {
+              setFormData(prev => {
+                const current: ProductDetailsFormData = {
+                  useCommonDetails: prev.useCommonDetails,
+                  productDetails: prev.productDetails
+                }
+                const next = typeof updater === 'function'
+                  ? (updater as (p: ProductDetailsFormData) => ProductDetailsFormData)(current)
+                  : updater
+                return {
+                  ...prev,
+                  useCommonDetails: next.useCommonDetails,
+                  productDetails: next.productDetails
+                }
+              })
+            }}
+            subCategory={formData.subCategory}
           />
         )}
 

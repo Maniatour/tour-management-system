@@ -2,11 +2,9 @@
 
 import React, { useState, useEffect } from 'react'
 import { FileText, Save, AlertCircle } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { createClientSupabase } from '@/lib/supabase'
 
-interface ProductDetailsData {
-  id?: string
-  product_id: string
+interface ProductDetailsFields {
   slogan1: string
   slogan2: string
   slogan3: string
@@ -24,16 +22,25 @@ interface ProductDetailsData {
   chat_announcement: string
 }
 
+interface ProductDetailsFormData {
+  useCommonDetails: boolean
+  productDetails: ProductDetailsFields
+}
+
 interface ProductDetailsTabProps {
   productId: string
   isNewProduct: boolean
-  formData: any
-  setFormData: React.Dispatch<React.SetStateAction<any>>
+  locale: string
+  subCategory: string
+  formData: ProductDetailsFormData
+  setFormData: React.Dispatch<React.SetStateAction<ProductDetailsFormData>>
 }
 
 export default function ProductDetailsTab({
   productId,
   isNewProduct,
+  locale,
+  subCategory,
   formData,
   setFormData
 }: ProductDetailsTabProps) {
@@ -42,14 +49,73 @@ export default function ProductDetailsTab({
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
   const [loading, setLoading] = useState(true)
+  const [commonPreview, setCommonPreview] = useState<ProductDetailsFields | null>(null)
+  // const [loadingCommon, setLoadingCommon] = useState(false)
+
+  const supabase = createClientSupabase()
 
   // 로딩 상태는 부모 컴포넌트에서 관리
   useEffect(() => {
     setLoading(false)
   }, [])
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({
+  // 공통 세부정보 프리뷰 로드
+  useEffect(() => {
+    const loadCommon = async () => {
+      if (!formData.useCommonDetails || !subCategory) {
+        setCommonPreview(null)
+        return
+      }
+      // setLoadingCommon(true)
+      try {
+        const { data, error } = await supabase
+          .from('product_details_common')
+          .select('*')
+          .eq('sub_category', subCategory)
+          .maybeSingle()
+
+        if (error) throw error
+
+        if (data) {
+          const mapped: ProductDetailsFields = {
+            slogan1: data.slogan1 || '',
+            slogan2: data.slogan2 || '',
+            slogan3: data.slogan3 || '',
+            description: data.description || '',
+            included: data.included || '',
+            not_included: data.not_included || '',
+            pickup_drop_info: data.pickup_drop_info || '',
+            luggage_info: data.luggage_info || '',
+            tour_operation_info: data.tour_operation_info || '',
+            preparation_info: data.preparation_info || '',
+            small_group_info: data.small_group_info || '',
+            companion_info: data.companion_info || '',
+            exclusive_booking_info: data.exclusive_booking_info || '',
+            cancellation_policy: data.cancellation_policy || '',
+            chat_announcement: data.chat_announcement || ''
+          }
+          setCommonPreview(mapped)
+        } else {
+          setCommonPreview(null)
+        }
+      } catch {
+        setCommonPreview(null)
+      } finally {
+        // setLoadingCommon(false)
+      }
+    }
+    loadCommon()
+  }, [formData.useCommonDetails, subCategory, supabase])
+
+  const getValue = (field: keyof ProductDetailsFields) => {
+    if (formData.useCommonDetails) {
+      return (commonPreview?.[field] ?? '') as string
+    }
+    return formData.productDetails[field]
+  }
+
+  const handleInputChange = (field: keyof ProductDetailsFields, value: string) => {
+    setFormData((prev) => ({
       ...prev,
       productDetails: {
         ...prev.productDetails,
@@ -64,16 +130,25 @@ export default function ProductDetailsTab({
       return
     }
 
+    // 공통 세부정보 사용 시 개별 저장 차단
+    if (formData.useCommonDetails) {
+      setSaveMessage('공통 세부정보 사용 중입니다. 개별 저장은 비활성화됩니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+      return
+    }
+
     setSaving(true)
     setSaveMessage('')
 
     try {
       // 기존 데이터가 있는지 확인
-      const { data: existingData } = await supabase
+      const { data: existingData, error: selectError } = await supabase
         .from('product_details')
         .select('id')
         .eq('product_id', productId)
-        .single()
+        .maybeSingle()
+
+      if (selectError) throw selectError
 
       if (existingData) {
         // 업데이트
@@ -101,10 +176,12 @@ export default function ProductDetailsTab({
 
       setSaveMessage('상품 세부정보가 성공적으로 저장되었습니다!')
       setTimeout(() => setSaveMessage(''), 3000)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
-      console.error('상품 세부정보 저장 오류:', errorMessage)
-      setSaveMessage(`저장에 실패했습니다: ${errorMessage}`)
+    } catch (error: unknown) {
+      const e = error as { message?: string; status?: string | number; code?: string }
+      const errorMessage = e?.message || '알 수 없는 오류가 발생했습니다.'
+      const status = e?.status || e?.code || 'unknown'
+      console.error('상품 세부정보 저장 오류:', { status, error: e })
+      setSaveMessage(`저장에 실패했습니다: [${String(status)}] ${errorMessage}`)
       setTimeout(() => setSaveMessage(''), 5000)
     } finally {
       setSaving(false)
@@ -140,7 +217,7 @@ export default function ProductDetailsTab({
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || isNewProduct}
+            disabled={saving || isNewProduct || formData.useCommonDetails}
             className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save className="h-4 w-4 mr-2" />
@@ -149,16 +226,33 @@ export default function ProductDetailsTab({
         </div>
       </div>
 
-      {isNewProduct && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
-            <p className="text-yellow-800">
-              새 상품의 경우 전체 저장을 사용해주세요. 개별 저장은 상품 생성 후에 가능합니다.
-            </p>
-          </div>
+      {/* 공통 세부정보 토글/안내 */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={!!formData.useCommonDetails}
+              onChange={(e) => setFormData((prev: ProductDetailsFormData) => ({ ...prev, useCommonDetails: e.target.checked }))}
+              className="h-4 w-4"
+            />
+            <span className="text-sm text-gray-800">sub_category 공통 세부정보 사용</span>
+          </label>
+          <a
+            href={`/${locale}/admin/products/common-details`}
+            className="text-sm text-blue-600 hover:underline"
+            target="_blank"
+            rel="noreferrer"
+          >
+            공통 세부정보 관리 열기
+          </a>
         </div>
-      )}
+        {formData.useCommonDetails && (
+          <p className="mt-2 text-sm text-gray-600">
+            공통 세부정보 사용 중입니다. 아래 입력 필드는 읽기 전용으로 표시됩니다.
+          </p>
+        )}
+      </div>
 
       {/* 슬로건 섹션 */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -170,9 +264,10 @@ export default function ProductDetailsTab({
             </label>
             <input
               type="text"
-              value={formData.productDetails.slogan1}
+              value={getValue('slogan1')}
               onChange={(e) => handleInputChange('slogan1', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={!!formData.useCommonDetails}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
               placeholder="예: 최고의 투어 경험"
             />
           </div>
@@ -182,9 +277,10 @@ export default function ProductDetailsTab({
             </label>
             <input
               type="text"
-              value={formData.productDetails.slogan2}
+              value={getValue('slogan2')}
               onChange={(e) => handleInputChange('slogan2', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={!!formData.useCommonDetails}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
               placeholder="예: 전문 가이드와 함께"
             />
           </div>
@@ -194,9 +290,10 @@ export default function ProductDetailsTab({
             </label>
             <input
               type="text"
-              value={formData.productDetails.slogan3}
+              value={getValue('slogan3')}
               onChange={(e) => handleInputChange('slogan3', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={!!formData.useCommonDetails}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
               placeholder="예: 잊지 못할 추억"
             />
           </div>
@@ -211,11 +308,12 @@ export default function ProductDetailsTab({
             상세 설명
           </label>
           <textarea
-            value={formData.productDetails.description}
+            value={getValue('description')}
             onChange={(e) => handleInputChange('description', e.target.value)}
             rows={4}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="상품에 대한 자세한 설명을 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>
@@ -229,11 +327,12 @@ export default function ProductDetailsTab({
               포함 사항
             </label>
             <textarea
-              value={formData.productDetails.included}
+              value={getValue('included')}
               onChange={(e) => handleInputChange('included', e.target.value)}
               rows={4}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="포함되는 사항들을 입력해주세요"
+              disabled={!!formData.useCommonDetails}
             />
           </div>
           <div>
@@ -241,11 +340,12 @@ export default function ProductDetailsTab({
               불포함 사항
             </label>
             <textarea
-              value={formData.productDetails.not_included}
+              value={getValue('not_included')}
               onChange={(e) => handleInputChange('not_included', e.target.value)}
               rows={4}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="불포함되는 사항들을 입력해주세요"
+              disabled={!!formData.useCommonDetails}
             />
           </div>
         </div>
@@ -259,11 +359,12 @@ export default function ProductDetailsTab({
             픽업 및 드롭 정보
           </label>
           <textarea
-            value={formData.productDetails.pickup_drop_info}
+            value={getValue('pickup_drop_info')}
             onChange={(e) => handleInputChange('pickup_drop_info', e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="픽업 및 드롭에 대한 정보를 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>
@@ -276,11 +377,12 @@ export default function ProductDetailsTab({
             수하물 관련 정보
           </label>
           <textarea
-            value={formData.productDetails.luggage_info}
+            value={getValue('luggage_info')}
             onChange={(e) => handleInputChange('luggage_info', e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="수하물 관련 규정 및 정보를 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>
@@ -293,11 +395,12 @@ export default function ProductDetailsTab({
             투어 운영 관련 정보
           </label>
           <textarea
-            value={formData.productDetails.tour_operation_info}
+            value={getValue('tour_operation_info')}
             onChange={(e) => handleInputChange('tour_operation_info', e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="투어 운영 방식 및 특별 사항을 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>
@@ -310,11 +413,12 @@ export default function ProductDetailsTab({
             준비해야 할 사항들
           </label>
           <textarea
-            value={formData.productDetails.preparation_info}
+            value={getValue('preparation_info')}
             onChange={(e) => handleInputChange('preparation_info', e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="투어 전 준비해야 할 사항들을 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>
@@ -327,11 +431,12 @@ export default function ProductDetailsTab({
             소그룹 투어 관련 정보
           </label>
           <textarea
-            value={formData.productDetails.small_group_info}
+            value={getValue('small_group_info')}
             onChange={(e) => handleInputChange('small_group_info', e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="소그룹 투어의 특징 및 장점을 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>
@@ -344,11 +449,12 @@ export default function ProductDetailsTab({
             동반자 관련 정보
           </label>
           <textarea
-            value={formData.productDetails.companion_info}
+            value={getValue('companion_info')}
             onChange={(e) => handleInputChange('companion_info', e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="동반자 관련 규정 및 정보를 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>
@@ -361,11 +467,12 @@ export default function ProductDetailsTab({
             독점 예약 관련 정보
           </label>
           <textarea
-            value={formData.productDetails.exclusive_booking_info}
+            value={getValue('exclusive_booking_info')}
             onChange={(e) => handleInputChange('exclusive_booking_info', e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="독점 예약 관련 특별 사항을 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>
@@ -378,11 +485,12 @@ export default function ProductDetailsTab({
             취소 및 환불 정책
           </label>
           <textarea
-            value={formData.productDetails.cancellation_policy}
+            value={getValue('cancellation_policy')}
             onChange={(e) => handleInputChange('cancellation_policy', e.target.value)}
             rows={4}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="취소 및 환불 정책을 자세히 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>
@@ -395,11 +503,12 @@ export default function ProductDetailsTab({
             채팅방 공지사항
           </label>
           <textarea
-            value={formData.productDetails.chat_announcement}
+            value={getValue('chat_announcement')}
             onChange={(e) => handleInputChange('chat_announcement', e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="채팅방에 표시될 공지사항을 입력해주세요"
+            disabled={!!formData.useCommonDetails}
           />
         </div>
       </div>

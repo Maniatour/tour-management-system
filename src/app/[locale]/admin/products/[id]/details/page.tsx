@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Save, Globe, FileText, Users, Info, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
+import { createClientSupabase } from '@/lib/supabase'
 
 interface Product {
   id: string
@@ -43,6 +43,7 @@ export default function ProductDetailsPage() {
   const params = useParams()
   const router = useRouter()
   const productId = params.id as string
+  const supabase = createClientSupabase()
 
   const [product, setProduct] = useState<Product | null>(null)
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
@@ -100,7 +101,7 @@ export default function ProductDetailsPage() {
           .from('product_details')
           .select('*')
           .eq('product_id', productId)
-          .single()
+          .maybeSingle()
 
         if (detailsError && detailsError.code !== 'PGRST116') { // PGRST116은 "not found" 오류
           throw detailsError
