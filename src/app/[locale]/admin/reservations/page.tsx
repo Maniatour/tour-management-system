@@ -225,10 +225,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const weekEnd = new Date(weekRange.end)
     
     filteredReservations.forEach(reservation => {
-      // created_at 날짜를 라스베가스 현지 시간으로 변환하여 YYYY-MM-DD 형식으로 변환
-      const utcDate = new Date(reservation.addedTime)
-      const lasVegasDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
-      const createdDate = lasVegasDate.toISOString().split('T')[0]
+      // created_at 날짜를 한국 시간대로 변환하여 YYYY-MM-DD 형식으로 변환
+      const utcDate = new Date(reservation.created_at)
+      const koreaDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "Asia/Seoul"}))
+      const createdDate = koreaDate.toISOString().split('T')[0]
       
       // 현재 주 범위에 포함되는지 확인
       const reservationDate = new Date(createdDate)

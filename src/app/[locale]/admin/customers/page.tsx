@@ -352,12 +352,20 @@ export default function AdminCustomers() {
     const groups: { [key: string]: Customer[] } = {}
     
     customers.forEach(customer => {
-      const date = customer.created_at ? new Date(customer.created_at).toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        weekday: 'long'
-      }) : '날짜 없음'
+      let date = '날짜 없음'
+      
+      if (customer.created_at) {
+        // UTC 시간을 한국 시간대로 변환
+        const utcDate = new Date(customer.created_at)
+        const koreaDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "Asia/Seoul"}))
+        
+        date = koreaDate.toLocaleDateString('ko-KR', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          weekday: 'long'
+        })
+      }
       
       if (!groups[date]) {
         groups[date] = []
