@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useMemo, useCallback, memo } from 'react'
+import { useState, useMemo, useCallback, memo, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react'
 import type { Database } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -23,6 +24,7 @@ interface TourCalendarProps {
 
 const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [] }: TourCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date())
+  const [productMetaById, setProductMetaById] = useState<{[id: string]: { name: string; sub_category: string }}>({})
 
   // 현재 월의 첫 번째 날 계산 (메모이제이션)
   const firstDayOfMonth = useMemo(() => {
@@ -217,6 +219,59 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     return productDateKeyToTotalPeopleAll.get(key) || 0
   }, [productDateKeyToTotalPeopleAll])
 
+  // 현재 달력에 표시된 투어들의 상품 메타(이름, 서브카테고리) 로드
+  useEffect(() => {
+    const loadProductMeta = async () => {
+      try {
+        const ids = Array.from(new Set((tours || []).map(t => (t.product_id ? String(t.product_id) : '').trim()).filter(Boolean)))
+        if (ids.length === 0) return
+
+        // 이미 로드된 항목 제외
+        const missing = ids.filter(id => !productMetaById[id])
+        if (missing.length === 0) return
+
+        const { data, error } = await supabase
+          .from('products')
+          .select('id, name, name_ko, name_en, sub_category')
+          .in('id', missing)
+
+        if (error) {
+          console.warn('제품 메타 로드 실패:', error)
+          return
+        }
+
+        const next: {[id: string]: { name: string; sub_category: string }} = {}
+        ;(data as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; sub_category?: string | null }> | null || []).forEach((p) => {
+          const label = (p.name as string) || p.name_ko || p.name_en || p.id
+          next[p.id] = { name: label, sub_category: p.sub_category || '' }
+        })
+
+        setProductMetaById(prev => ({ ...prev, ...next }))
+      } catch (e) {
+        console.warn('제품 메타 로드 중 예외:', e)
+      }
+    }
+    loadProductMeta()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tours])
+
+  // 상품 색상 범례 (Mania Tour / Mania Service만)
+  const productLegend = useMemo(() => {
+    const allowed = new Set(['Mania Tour', 'Mania Service'])
+    const added = new Set<string>()
+    const items: Array<{ id: string; label: string; colorClass: string }> = []
+    for (const t of tours || []) {
+      const pid = (t.product_id ? String(t.product_id) : '').trim()
+      if (!pid || added.has(pid)) continue
+      const meta = productMetaById[pid]
+      if (!meta) continue
+      if (!allowed.has(meta.sub_category)) continue
+      items.push({ id: pid, label: meta.name, colorClass: getProductColor(pid) })
+      added.add(pid)
+    }
+    return items
+  }, [tours, productMetaById, getProductColor])
+
   return (
     <div className="bg-white rounded-lg shadow-md border p-2 sm:p-4">
       {/* 달력 헤더 */}
@@ -300,18 +355,18 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                     <div
                       key={uniqueKey}
                       onClick={() => onTourClick(tour)}
-                      className={`text-xs px-1 py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
+                      className={`text-[10px] sm:text-xs px-0.5 sm:px-1 py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
                         getProductColor(tour.product_id)
                       } ${
                         isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
                       }`}
                       title={`${tour.product_name || tour.product_id} | 배정: ${assignedPeople}명 / 총: ${totalPeopleFiltered}명 (${othersPeople}명)${isPrivateTour ? '\n단독투어' : ''}`}
                     >
-                      <div className="truncate">
+                      <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
                         <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
                           {isPrivateTour ? '🔒 ' : ''}{tour.product_name || tour.product_id}
                         </span>
-                        <span className="mx-1">{assignedPeople}/{totalPeopleFiltered} ({othersPeople})</span>
+                        <span className="mx-0.5 sm:mx-1">{assignedPeople}/{totalPeopleFiltered} ({othersPeople})</span>
                       </div>
                     </div>
                   )
@@ -322,22 +377,20 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
         })}
       </div>
 
-      {/* 예약 상태 범례 */}
+      {/* 상품 색상 범례 (Mania Tour / Mania Service만) */}
       <div className="mt-3 pt-3 border-t border-gray-200">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">예약 상태</h3>
+        <h3 className="text-sm font-medium text-gray-700 mb-2">상품 색상</h3>
         <div className="flex flex-wrap gap-3">
-          {[
-            { status: 'pending', label: '대기중' },
-            { status: 'confirmed', label: '확정' },
-            { status: 'completed', label: '완료' },
-            { status: 'cancelled', label: '취소' },
-            { status: 'recruiting', label: '모집중' }
-          ].map(({ status, label }) => (
-            <div key={status} className="flex items-center space-x-2">
-              <div className={`w-3 h-3 rounded-full ${getTourStatusColor(status)}`} />
-              <span className="text-sm text-gray-600">{label}</span>
-            </div>
-          ))}
+          {productLegend.length > 0 ? (
+            productLegend.map((p: { id: string; label: string; colorClass: string }) => (
+              <div key={p.id} className="flex items-center space-x-2">
+                <div className={`w-3 h-3 rounded-full ${p.colorClass}`} />
+                <span className="text-sm text-gray-600">{p.label}</span>
+              </div>
+            ))
+          ) : (
+            <span className="text-sm text-gray-500">표시할 상품 색상이 없습니다 (Mania Tour / Mania Service)</span>
+          )}
         </div>
         
         {/* 단독투어 범례 */}

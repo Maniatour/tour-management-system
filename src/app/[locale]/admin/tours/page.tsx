@@ -127,18 +127,34 @@ export default function AdminTours() {
         return
       }
 
-      // 2. 상품 정보 가져오기
-      const productIds = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.product_id).filter(Boolean))]
+      // 2. 상품 정보 가져오기 (status 포함) 및 비활성 상품 제외
+      const productIdsAll = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.product_id).filter(Boolean))]
       const { data: productsData } = await supabase
         .from('products')
-        .select('id, name, name_ko, name_en')
-        .in('id', productIds)
+        .select('id, name, name_ko, name_en, status')
+        .in('id', productIdsAll)
 
-      const productMap = new Map((productsData || []).map((p: ProductNameRow) => [p.id, (p.name as string) || p.name_ko || p.name_en || p.id]))
+      const activeProductIds = new Set(
+        ((productsData || []) as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; status?: string | null }>)
+          .filter((p) => (String(p.status || '').toLowerCase() !== 'inactive'))
+          .map((p) => p.id)
+      )
+
+      // 비활성 상품의 투어 제거
+      const toursDataActive = (toursData || []).filter((tour: ExtendedTour) => {
+        const pid = tour.product_id as unknown as string | null
+        return pid ? activeProductIds.has(pid) : true
+      })
+
+      const productMap = new Map(
+        (((productsData || []) as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null }>))
+          .filter((p) => activeProductIds.has(p.id))
+          .map((p) => [p.id, (p.name as string) || p.name_ko || p.name_en || p.id])
+      )
 
       // 3. 가이드와 어시스턴트 정보 가져오기
-      const guideEmails = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.tour_guide_id).filter(Boolean))]
-      const assistantEmails = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.assistant_id).filter(Boolean))]
+      const guideEmails = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.tour_guide_id).filter(Boolean))]
+      const assistantEmails = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.assistant_id).filter(Boolean))]
       const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
 
       const { data: teamMembers } = await supabase
@@ -149,7 +165,7 @@ export default function AdminTours() {
       const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string }) => [member.email, member]))
 
       // 3-1. 차량 정보 가져오기 (카드에 차량 번호 표시)
-      const vehicleIds = [...new Set((toursData || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter(Boolean))]
+      const vehicleIds = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter(Boolean))]
       let vehicleMap = new Map<string, string | null>()
       if (vehicleIds.length > 0) {
         const { data: vehiclesData } = await supabase
@@ -177,11 +193,12 @@ export default function AdminTours() {
 
       let reservationsData: Database['public']['Tables']['reservations']['Row'][] | null = []
       let reservationsError: unknown = null
-      if (productIds.length > 0) {
+      const productIdsActive = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.product_id).filter(Boolean))]
+      if (productIdsActive.length > 0) {
         const { data, error } = await supabase
           .from('reservations')
           .select('*')
-          .in('product_id', productIds)
+          .in('product_id', productIdsActive)
           .gte('tour_date', fmt(gridStart))
           .lte('tour_date', fmt(gridEnd))
         reservationsData = data
@@ -215,7 +232,7 @@ export default function AdminTours() {
       }
 
       // 7. 각 투어에 대해 인원 계산
-      const toursWithDetails: ExtendedTour[] = (toursData || []).map((tour: ExtendedTour) => {
+      const toursWithDetails: ExtendedTour[] = (toursDataActive || []).map((tour: ExtendedTour) => {
         // 배정 인원: reservation_ids 합산
         let assignedPeople = 0
         // reservation_ids 정규화: 배열/JSON/콤마 지원
@@ -285,7 +302,7 @@ export default function AdminTours() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [asGuideEmail, setAsGuideEmail] = useState<string>('')
-  const [showAllList, setShowAllList] = useState<boolean>(false)
+  // 전체 보기(리스트) 기능 제거
 
   // 가이드/어시스턴트 드롭다운 옵션 (활성 팀원 중 position에 guide/assistant 포함)
   const guideOptions = useMemo(() => {
@@ -317,7 +334,7 @@ export default function AdminTours() {
 
   // 리스트(카드) 뷰 전용: 선택된 gridMonth로 월 필터링
   const listMonthPrefix = `${gridMonth.getFullYear()}-${String(gridMonth.getMonth() + 1).padStart(2, '0')}-`
-  const listViewTours = showAllList ? filteredTours : filteredTours.filter(t => (t.tour_date || '').startsWith(listMonthPrefix))
+  const listViewTours = filteredTours.filter(t => (t.tour_date || '').startsWith(listMonthPrefix))
 
   const handleTourClick = (tour: ExtendedTour) => {
     window.location.href = `/ko/admin/tours/${tour.id}`
@@ -388,8 +405,8 @@ export default function AdminTours() {
         </div>
 
         {/* 검색 및 필터 */}
-        <div className="flex items-stretch gap-2 sm:gap-4 mb-4">
-          <div className="relative flex-1 min-w-0">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-stretch sm:gap-4 mb-4">
+          <div className="relative sm:flex-1 min-w-0 col-span-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
@@ -403,7 +420,7 @@ export default function AdminTours() {
           <select
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
-            className="px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
+            className="w-full sm:w-auto col-span-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
           >
             <option value="all">모든 상태</option>
             {statusOptions.sort().map((s) => (
@@ -412,11 +429,11 @@ export default function AdminTours() {
           </select>
 
           {/* 관리자용: 특정 가이드로 보기 (드롭다운) */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 col-span-1">
             <select
               value={asGuideEmail}
               onChange={(e) => setAsGuideEmail(e.target.value)}
-              className="w-56 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
+              className="w-full sm:w-56 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
             >
               <option value="">모든 가이드</option>
               {guideOptions.map((m) => (
@@ -436,21 +453,12 @@ export default function AdminTours() {
             )}
           </div>
 
-          {/* 리스트 뷰: 전체 보기 토글 & 필터 초기화 */}
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1 text-sm text-gray-700 select-none">
-              <input
-                type="checkbox"
-                checked={showAllList}
-                onChange={(e) => setShowAllList(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              전체 보기(리스트)
-            </label>
+          {/* 리스트 뷰: 필터 초기화 */}
+          <div className="flex items-center gap-2 col-span-1">
             <button
               type="button"
-              onClick={() => { setSearchTerm(''); setSelectedStatus('all'); setAsGuideEmail(''); setShowAllList(false) }}
-              className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded"
+              onClick={() => { setSearchTerm(''); setSelectedStatus('all'); setAsGuideEmail('') }}
+              className="w-full sm:w-auto px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded"
             >
               필터 초기화
             </button>

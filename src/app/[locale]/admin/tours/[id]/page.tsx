@@ -75,6 +75,7 @@ export default function TourDetailPage() {
   const [showPrivateTourModal, setShowPrivateTourModal] = useState(false)
   const [pendingPrivateTourValue, setPendingPrivateTourValue] = useState<boolean>(false)
   const [connectionStatus, setConnectionStatus] = useState<{[key: string]: boolean}>({})
+  const [productOptions, setProductOptions] = useState<{[productId: string]: {[optionId: string]: {id: string, name: string, choice_name?: string}}}>({})
 
   // 연결 상태 라벨 컴포넌트
   const ConnectionStatusLabel = ({ status, section }: { status: boolean, section: string }) => (
@@ -89,6 +90,51 @@ export default function TourDetailPage() {
       {status ? '✓' : '✗'}
     </span>
   )
+
+  // 상품 옵션 정보 로드 함수
+  const loadProductOptions = useCallback(async (productId: string) => {
+    if (!productId) return
+    
+    try {
+      const { data, error } = await supabase
+        .from('product_options')
+        .select('id, name, choice_name')
+        .eq('product_id', productId)
+        .eq('is_required', true)
+      
+      if (error) {
+        console.error('상품 옵션 로드 오류:', error)
+        return
+      }
+      
+      const optionsMap: {[optionId: string]: {id: string, name: string, choice_name?: string}} = {}
+      data?.forEach((option: any) => {
+        optionsMap[option.id] = {
+          id: option.id,
+          name: option.name,
+          choice_name: option.choice_name
+        }
+      })
+      
+      setProductOptions(prev => ({
+        ...prev,
+        [productId]: optionsMap
+      }))
+    } catch (error) {
+      console.error('상품 옵션 로드 오류:', error)
+    }
+  }, [])
+
+  // 옵션 이름 가져오기 함수
+  const getOptionName = (optionId: string, productId: string) => {
+    const productOptionsData = productOptions[productId]
+    if (!productOptionsData || !productOptionsData[optionId]) {
+      return optionId // 옵션 이름을 찾을 수 없으면 ID 반환
+    }
+    
+    const option = productOptionsData[optionId]
+    return option.choice_name || option.name || optionId
+  }
 
   // 데이터베이스 연결 상태 확인 함수
   const checkConnectionStatus = async () => {
@@ -527,6 +573,13 @@ export default function TourDetailPage() {
     }
     checkConnectionStatus()
   }, [params.id, fetchTourData])
+
+  // 투어가 로드되면 상품 옵션도 로드
+  useEffect(() => {
+    if (tour?.product_id) {
+      loadProductOptions(tour.product_id)
+    }
+  }, [tour?.product_id, loadProductOptions])
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -1611,28 +1664,29 @@ export default function TourDetailPage() {
                     {assignedReservations.map((reservation) => (
                       <div 
                         key={reservation.id} 
-                        className={`flex items-center justify-between p-2 rounded border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
+                        className={`p-3 rounded-lg border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
                         onClick={() => handleEditReservationClick(reservation)}
                       >
-                        {/* 첫 번째 줄: 국기 | 이름 인원 */}
-                        <div className="flex items-center space-x-2">
+                        {/* 상단: 국기/이름 | 총인원/상태 */}
+                        <div className="flex items-center justify-between mb-2">
+                          {/* 왼쪽 상단: 국기, 이름 */}
                           <div className="flex items-center space-x-2">
-                            {/* 언어 국기 아이콘 */}
                             <ReactCountryFlag
                               countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
                               svg
                               style={{
-                                width: '16px',
-                                height: '12px'
+                                width: '20px',
+                                height: '15px'
                               }}
                             />
-                            {/* 고객 이름 */}
                             <span className="font-medium text-sm">{getCustomerName(reservation.customer_id || '')}</span>
-                            {/* 총인원 */}
-                            <span className="text-xs text-gray-600">
+                          </div>
+                          
+                          {/* 오른쪽 상단: 총인원, 상태 */}
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-medium text-gray-700">
                               {reservation.total_people || 0}명
                             </span>
-                            {/* 예약 상태 */}
                             <span className={`text-xs px-2 py-1 rounded-full ${
                               reservation.status?.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-800' :
                               reservation.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
@@ -1648,36 +1702,59 @@ export default function TourDetailPage() {
                                reservation.status?.toLowerCase() === 'completed' ? '완료' :
                                reservation.status || '미정'}
                             </span>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleUnassignReservation(reservation.id)
+                              }}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              <X size={14} />
+                            </button>
                           </div>
-                          <button 
-                            onClick={() => handleUnassignReservation(reservation.id)}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            <X size={14} />
-                          </button>
                         </div>
                         
-                        {/* 두 번째 줄: 픽업시간 | 픽업 호텔 */}
-            <div className="flex items-center justify-between">
-                          {/* 픽업 시간 */}
+                        {/* 중단: 필수 선택 옵션 */}
+                        <div className="mb-2">
+                          {reservation.selected_options && Object.entries(reservation.selected_options).some(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0) ? (
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(reservation.selected_options)
+                                .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
+                                .map(([optionId, choices]) => (
+                                  <span key={optionId} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    {getOptionName(optionId, tour?.product_id || '')}
+                                  </span>
+                                ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">선택된 옵션 없음</span>
+                          )}
+                        </div>
+                        
+                        {/* 하단: 픽업 시간 | 픽업 정보 */}
+                        <div className="flex items-center justify-between">
+                          {/* 왼쪽 하단: 픽업 시간 */}
                           <div className="flex items-center space-x-1">
-                            <Clock size={10} className="text-gray-400" />
-                            <span className="text-xs text-gray-600">
+                            <Clock size={12} className="text-gray-400" />
+                            <span className="text-sm text-gray-700">
                               {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
                             </span>
                             <button
-                              onClick={() => handleEditPickupTime(reservation)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditPickupTime(reservation)
+                              }}
                               className="text-blue-600 hover:text-blue-800"
                             >
-                              <Edit size={10} />
+                              <Edit size={12} />
                             </button>
-            </div>
+                          </div>
                           
-                          {/* 픽업 호텔 이름 */}
-                          <span className="text-xs text-gray-500 text-right flex-1 ml-2">
+                          {/* 오른쪽 하단: 픽업 정보 */}
+                          <span className="text-sm text-gray-600 text-right">
                             {getPickupHotelName(reservation.pickup_hotel || '')}
                           </span>
-          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1694,28 +1771,29 @@ export default function TourDetailPage() {
                       {otherToursAssignedReservations.map((reservation) => (
                         <div 
                           key={reservation.id} 
-                          className={`flex items-center justify-between p-2 rounded border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
+                          className={`p-3 rounded-lg border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
                           onClick={() => handleEditReservationClick(reservation)}
                         >
-                          {/* 첫 번째 줄: 국기 | 이름 인원 */}
-                          <div className="flex items-center space-x-2">
+                          {/* 상단: 국기/이름 | 총인원/상태 */}
+                          <div className="flex items-center justify-between mb-2">
+                            {/* 왼쪽 상단: 국기, 이름 */}
                             <div className="flex items-center space-x-2">
-                              {/* 언어 국기 아이콘 */}
                               <ReactCountryFlag
                                 countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
                                 svg
                                 style={{
-                                  width: '16px',
-                                  height: '12px'
+                                  width: '20px',
+                                  height: '15px'
                                 }}
                               />
-                              {/* 고객 이름 */}
                               <span className="font-medium text-sm">{getCustomerName(reservation.customer_id || '')}</span>
-                              {/* 총인원 */}
-                              <span className="text-xs text-gray-600">
+                            </div>
+                            
+                            {/* 오른쪽 상단: 총인원, 상태 */}
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-medium text-gray-700">
                                 {reservation.total_people || 0}명
                               </span>
-                              {/* 예약 상태 */}
                               <span className={`text-xs px-2 py-1 rounded-full ${
                                 reservation.status?.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-800' :
                                 reservation.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
@@ -1731,38 +1809,54 @@ export default function TourDetailPage() {
                                  reservation.status?.toLowerCase() === 'completed' ? '완료' :
                                  reservation.status || '미정'}
                               </span>
-                              {/* 배정된 투어 ID */}
-                              <span className="text-xs text-orange-600 font-medium">
-                                투어: {reservation.assigned_tour_id}
-                              </span>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleReassignFromOtherTour(reservation.id as string, (reservation as any).assigned_tour_id as string)
+                                }}
+                                className="text-orange-600 hover:text-orange-800 flex items-center space-x-1"
+                                title="이 투어로 재배정"
+                              >
+                                <ArrowLeft size={14} />
+                                <span className="text-xs">재배정</span>
+                              </button>
                             </div>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleReassignFromOtherTour(reservation.id as string, (reservation as any).assigned_tour_id as string)
-                              }}
-                              className="text-orange-600 hover:text-orange-800 flex items-center space-x-1"
-                              title="이 투어로 재배정"
-                            >
-                              <ArrowLeft size={14} />
-                              <span className="text-xs">재배정</span>
-                            </button>
                           </div>
                           
-                          {/* 두 번째 줄: 픽업시간 | 픽업 호텔 */}
+                          {/* 중단: 필수 선택 옵션 */}
+                          <div className="mb-2">
+                            {reservation.selected_options && Object.entries(reservation.selected_options).some(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0) ? (
+                              <div className="flex flex-wrap gap-1">
+                                {Object.entries(reservation.selected_options).map(([optionId, choices]) => (
+                                  <span key={optionId} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    {getOptionName(optionId, tour?.product_id || '')}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">선택된 옵션 없음</span>
+                            )}
+                          </div>
+                          
+                          {/* 하단: 픽업 시간 | 픽업 정보 */}
                           <div className="flex items-center justify-between">
-                            {/* 픽업 시간 */}
+                            {/* 왼쪽 하단: 픽업 시간 */}
                             <div className="flex items-center space-x-1">
-                              <Clock size={10} className="text-gray-400" />
-                              <span className="text-xs text-gray-600">
+                              <Clock size={12} className="text-gray-400" />
+                              <span className="text-sm text-gray-700">
                                 {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
                               </span>
                             </div>
                             
-                            {/* 픽업 호텔 이름 */}
-                            <span className="text-xs text-gray-500 text-right flex-1 ml-2">
-                              {getPickupHotelName(reservation.pickup_hotel || '')}
-                            </span>
+                            {/* 오른쪽 하단: 픽업 정보 */}
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm text-gray-600">
+                                {getPickupHotelName(reservation.pickup_hotel || '')}
+                              </span>
+                              <span className="text-xs text-orange-600 font-medium">
+                                투어: {reservation.assigned_tour_id}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1777,28 +1871,29 @@ export default function TourDetailPage() {
                     {pendingReservations.map((reservation) => (
                       <div 
                         key={reservation.id} 
-                        className={`flex items-center justify-between p-2 rounded border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
+                        className={`p-3 rounded-lg border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
                         onClick={() => handleEditReservationClick(reservation)}
                       >
-                        {/* 첫 번째 줄: 국기 | 이름 인원 */}
-                        <div className="flex items-center space-x-2">
+                        {/* 상단: 국기/이름 | 총인원/상태 */}
+                        <div className="flex items-center justify-between mb-2">
+                          {/* 왼쪽 상단: 국기, 이름 */}
                           <div className="flex items-center space-x-2">
-                            {/* 언어 국기 아이콘 */}
                             <ReactCountryFlag
                               countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
                               svg
                               style={{
-                                width: '16px',
-                                height: '12px'
+                                width: '20px',
+                                height: '15px'
                               }}
                             />
-                            {/* 고객 이름 */}
                             <span className="font-medium text-sm">{getCustomerName(reservation.customer_id || '')}</span>
-                            {/* 총인원 */}
-                            <span className="text-xs text-gray-600">
+                          </div>
+                          
+                          {/* 오른쪽 상단: 총인원, 상태 */}
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-medium text-gray-700">
                               {reservation.total_people || 0}명
                             </span>
-                            {/* 예약 상태 */}
                             <span className={`text-xs px-2 py-1 rounded-full ${
                               reservation.status?.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-800' :
                               reservation.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
@@ -1814,37 +1909,60 @@ export default function TourDetailPage() {
                                reservation.status?.toLowerCase() === 'completed' ? '완료' :
                                reservation.status || '미정'}
                             </span>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleAssignReservation(reservation.id)
+                              }}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <Check size={14} />
+                            </button>
                           </div>
-                          <button 
-                            onClick={() => handleAssignReservation(reservation.id)}
-                            className="text-green-600 hover:text-green-800"
-                          >
-                            <Check size={14} />
-                          </button>
                         </div>
                         
-                        {/* 두 번째 줄: 픽업시간 | 픽업 호텔 */}
-            <div className="flex items-center justify-between">
-                          {/* 픽업 시간 */}
+                        {/* 중단: 필수 선택 옵션 */}
+                        <div className="mb-2">
+                          {reservation.selected_options && Object.entries(reservation.selected_options).some(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0) ? (
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(reservation.selected_options)
+                                .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
+                                .map(([optionId, choices]) => (
+                                  <span key={optionId} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    {getOptionName(optionId, tour?.product_id || '')}
+                                  </span>
+                                ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">선택된 옵션 없음</span>
+                          )}
+                        </div>
+                        
+                        {/* 하단: 픽업 시간 | 픽업 정보 */}
+                        <div className="flex items-center justify-between">
+                          {/* 왼쪽 하단: 픽업 시간 */}
                           <div className="flex items-center space-x-1">
-                            <Clock size={10} className="text-gray-400" />
-                            <span className="text-xs text-gray-600">
+                            <Clock size={12} className="text-gray-400" />
+                            <span className="text-sm text-gray-700">
                               {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
                             </span>
                             <button
-                              onClick={() => handleEditPickupTime(reservation)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditPickupTime(reservation)
+                              }}
                               className="text-blue-600 hover:text-blue-800"
                             >
-                              <Edit size={10} />
+                              <Edit size={12} />
                             </button>
-            </div>
+                          </div>
                           
-                          {/* 픽업 호텔 이름 */}
-                          <span className="text-xs text-gray-500 text-right flex-1 ml-2">
+                          {/* 오른쪽 하단: 픽업 정보 */}
+                          <span className="text-sm text-gray-600 text-right">
                             {getPickupHotelName(reservation.pickup_hotel || '')}
                           </span>
-          </div>
-        </div>
+                        </div>
+                      </div>
                     ))}
       </div>
     </div>
@@ -1856,22 +1974,27 @@ export default function TourDetailPage() {
                     {inactiveReservations.map((reservation) => (
                       <div 
                         key={reservation.id} 
-                        className={`flex items-center justify-between p-2 rounded border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
+                        className={`p-3 rounded-lg border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
                         onClick={() => handleEditReservationClick(reservation)}
                       >
-                        {/* 첫 번째 줄: 국기 | 이름 인원 | 상태 */}
-                        <div className="flex items-center space-x-2">
+                        {/* 상단: 국기/이름 | 총인원/상태 */}
+                        <div className="flex items-center justify-between mb-2">
+                          {/* 왼쪽 상단: 국기, 이름 */}
                           <div className="flex items-center space-x-2">
                             <ReactCountryFlag
                               countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
                               svg
                               style={{
-                                width: '16px',
-                                height: '12px'
+                                width: '20px',
+                                height: '15px'
                               }}
                             />
                             <span className="font-medium text-sm">{getCustomerName(reservation.customer_id || '')}</span>
-                            <span className="text-xs text-gray-600">
+                          </div>
+                          
+                          {/* 오른쪽 상단: 총인원, 상태 */}
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-medium text-gray-700">
                               {reservation.total_people || 0}명
                             </span>
                             <span className={`text-xs px-2 py-1 rounded-full ${
@@ -1887,16 +2010,36 @@ export default function TourDetailPage() {
                             )}
                           </div>
                         </div>
-
-                        {/* 두 번째 줄: 픽업시간 | 픽업 호텔 */}
+                        
+                        {/* 중단: 필수 선택 옵션 */}
+                        <div className="mb-2">
+                          {reservation.selected_options && Object.entries(reservation.selected_options).some(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0) ? (
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(reservation.selected_options)
+                                .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
+                                .map(([optionId, choices]) => (
+                                  <span key={optionId} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    {getOptionName(optionId, tour?.product_id || '')}
+                                  </span>
+                                ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">선택된 옵션 없음</span>
+                          )}
+                        </div>
+                        
+                        {/* 하단: 픽업 시간 | 픽업 정보 */}
                         <div className="flex items-center justify-between">
+                          {/* 왼쪽 하단: 픽업 시간 */}
                           <div className="flex items-center space-x-1">
-                            <Clock size={10} className="text-gray-400" />
-                            <span className="text-xs text-gray-600">
+                            <Clock size={12} className="text-gray-400" />
+                            <span className="text-sm text-gray-700">
                               {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
                             </span>
                           </div>
-                          <span className="text-xs text-gray-500 text-right flex-1 ml-2">
+                          
+                          {/* 오른쪽 하단: 픽업 정보 */}
+                          <span className="text-sm text-gray-600 text-right">
                             {getPickupHotelName(reservation.pickup_hotel || '')}
                           </span>
                         </div>
