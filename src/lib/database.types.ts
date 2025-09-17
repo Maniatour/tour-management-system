@@ -614,6 +614,105 @@ export interface Database {
     Enums: {
       [key: string]: string
     }
+    tour_expenses: {
+      Row: {
+        id: string
+        tour_id: string
+        submit_on: string
+        paid_to: string | null
+        paid_for: string
+        amount: number
+        payment_method: string | null
+        note: string | null
+        tour_date: string
+        product_id: string | null
+        submitted_by: string
+        image_url: string | null
+        file_path: string | null
+        audited_by: string | null
+        checked_by: string | null
+        checked_on: string | null
+        status: 'pending' | 'approved' | 'rejected'
+        created_at: string
+        updated_at: string
+      }
+      Insert: {
+        id?: string
+        tour_id: string
+        submit_on?: string
+        paid_to: string | null
+        paid_for: string
+        amount: number
+        payment_method?: string | null
+        note?: string | null
+        tour_date: string
+        product_id?: string | null
+        submitted_by: string
+        image_url?: string | null
+        file_path?: string | null
+        audited_by?: string | null
+        checked_by?: string | null
+        checked_on?: string | null
+        status?: 'pending' | 'approved' | 'rejected'
+        created_at?: string
+        updated_at?: string
+      }
+      Update: {
+        id?: string
+        tour_id?: string
+        submit_on?: string
+        paid_to?: string
+        paid_for?: string
+        amount?: number
+        payment_method?: string | null
+        note?: string | null
+        tour_date?: string
+        product_id?: string | null
+        submitted_by?: string
+        image_url?: string | null
+        file_path?: string | null
+        audited_by?: string | null
+        checked_by?: string | null
+        checked_on?: string | null
+        status?: 'pending' | 'approved' | 'rejected'
+        created_at?: string
+        updated_at?: string
+      }
+    }
+    expense_categories: {
+      Row: {
+        id: string
+        name: string
+        created_at: string
+      }
+      Insert: {
+        id?: string
+        name: string
+        created_at?: string
+      }
+      Update: {
+        id?: string
+        name?: string
+        created_at?: string
+      }
+    }
+    expense_vendors: {
+      Row: {
+        id: string
+        name: string
+        created_at: string
+      }
+      Insert: {
+        id?: string
+        name: string
+        created_at?: string
+      }
+      Update: {
+        id?: string
+        name?: string
+        created_at?: string
+      }
+    }
     CompositeTypes: {
       [key: string]: Record<string, any>
     }

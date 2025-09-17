@@ -29,9 +29,9 @@ export async function POST(request: NextRequest) {
 
         ;(async () => {
           try {
-            write({ type: 'info', message: 'sync-started' })
+            write({ type: 'info', message: '동기화 시작' })
             if (truncateReservations && targetTable === 'reservations') {
-              write({ type: 'info', message: 'truncate-reservations-start' })
+              write({ type: 'info', message: '예약 테이블 초기화 시작' })
               // 안전하게 reservations 테이블 비우기
               const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/reservations?select=id`, {
                 method: 'DELETE',
@@ -41,9 +41,9 @@ export async function POST(request: NextRequest) {
                 }
               })
               if (!res.ok) {
-                write({ type: 'warn', message: 'failed-to-truncate-reservations' })
+                write({ type: 'warn', message: '예약 테이블 초기화 실패' })
               } else {
-                write({ type: 'info', message: 'truncate-reservations-done' })
+                write({ type: 'info', message: '예약 테이블 초기화 완료' })
               }
             }
             const summary = await flexibleSync(
@@ -55,8 +55,9 @@ export async function POST(request: NextRequest) {
               (event) => write(event)
             )
             write({ type: 'result', ...summary })
+            write({ type: 'info', message: '동기화 완료' })
           } catch (error) {
-            write({ type: 'error', message: String(error) })
+            write({ type: 'error', message: `동기화 오류: ${String(error)}` })
           } finally {
             controller.close()
           }

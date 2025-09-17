@@ -18,7 +18,7 @@ interface SyncResult {
     inserted?: number
     updated?: number
     errors?: number
-    [key: string]: unknown
+    errorDetails?: string[]
   }
   syncTime?: string
 }
@@ -57,6 +57,15 @@ export default function DataSyncPage() {
   const [progress, setProgress] = useState(0)
   const [etaMs, setEtaMs] = useState<number | null>(null)
   const progressTimerRef = useRef<number | null>(null)
+  const [syncLogs, setSyncLogs] = useState<string[]>([])
+  const [realTimeStats, setRealTimeStats] = useState<{
+    processed: number
+    inserted: number
+    updated: number
+    errors: number
+  }>({ processed: 0, inserted: 0, updated: 0, errors: 0 })
+  const [logFilter, setLogFilter] = useState<string>('all') // 'all', 'info', 'warn', 'error'
+  const [showFullLogs, setShowFullLogs] = useState(false)
 
   // 컬럼 매핑을 localStorage에 저장
   const saveColumnMapping = (tableName: string, mapping: ColumnMapping) => {
@@ -410,6 +419,27 @@ export default function DataSyncPage() {
         { name: 'installment_start_date', type: 'date', nullable: true, default: null },
         { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
         { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
+      ],
+      tour_expenses: [
+        { name: 'id', type: 'text', nullable: false, default: null },
+        { name: 'tour_id', type: 'text', nullable: false, default: null },
+        { name: 'submit_on', type: 'timestamp', nullable: true, default: 'now()' },
+        { name: 'paid_to', type: 'text', nullable: true, default: null },
+        { name: 'paid_for', type: 'text', nullable: false, default: null },
+        { name: 'amount', type: 'numeric', nullable: false, default: null },
+        { name: 'payment_method', type: 'text', nullable: true, default: null },
+        { name: 'note', type: 'text', nullable: true, default: null },
+        { name: 'tour_date', type: 'date', nullable: false, default: null },
+        { name: 'product_id', type: 'text', nullable: true, default: null },
+        { name: 'submitted_by', type: 'text', nullable: false, default: null },
+        { name: 'image_url', type: 'text', nullable: true, default: null },
+        { name: 'file_path', type: 'text', nullable: true, default: null },
+        { name: 'audited_by', type: 'text', nullable: true, default: null },
+        { name: 'checked_by', type: 'text', nullable: true, default: null },
+        { name: 'checked_on', type: 'timestamp', nullable: true, default: null },
+        { name: 'status', type: 'text', nullable: true, default: 'pending' },
+        { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
       ]
     }
     
@@ -560,6 +590,8 @@ export default function DataSyncPage() {
     setLoading(true)
     setSyncResult(null)
     setProgress(1)
+    setSyncLogs([])
+    setRealTimeStats({ processed: 0, inserted: 0, updated: 0, errors: 0 })
     // 추정 처리속도 학습값 (ms/row)
     const defaultMsPerRow = Number(localStorage.getItem('flex-sync-ms-per-row')) || 10
     const sheet = sheetInfo.find(s => s.name === selectedSheet)
@@ -611,11 +643,22 @@ export default function DataSyncPage() {
           if (!line.trim()) continue
           try {
             const evt = JSON.parse(line)
+            
+            // 실시간 로그 추가
+            if (evt.type === 'info') {
+              setSyncLogs(prev => [...prev, `[INFO] ${evt.message}`])
+            } else if (evt.type === 'warn') {
+              setSyncLogs(prev => [...prev, `[WARN] ${evt.message}`])
+            } else if (evt.type === 'error') {
+              setSyncLogs(prev => [...prev, `[ERROR] ${evt.message}`])
+            }
+            
             if (evt.type === 'start' && evt.total) {
               // 서버가 총량을 알려주면 그에 맞춰 ETA 재계산
               const msPerRow = Number(localStorage.getItem('flex-sync-ms-per-row')) || 10
               const newEstimated = Math.max(evt.total * msPerRow, 1500)
               setEtaMs(newEstimated)
+              setSyncLogs(prev => [...prev, `[START] 동기화 시작 - 총 ${evt.total}개 행 처리 예정`])
             }
             if (evt.type === 'progress' && evt.total) {
               const pctRaw = Math.floor((evt.processed / evt.total) * 100)
@@ -624,6 +667,19 @@ export default function DataSyncPage() {
               const perRow = (evt.processed > 0) ? Math.round(elapsed / evt.processed) : (Number(localStorage.getItem('flex-sync-ms-per-row')) || 10)
               const remain = Math.max((evt.total - evt.processed) * perRow, 0)
               setEtaMs(remain)
+              
+              // 실시간 통계 업데이트
+              setRealTimeStats({
+                processed: evt.processed || 0,
+                inserted: evt.inserted || 0,
+                updated: evt.updated || 0,
+                errors: evt.errors || 0
+              })
+              
+              // 진행 상황 로그 (10% 단위로)
+              if (evt.processed > 0 && evt.processed % Math.max(1, Math.floor(evt.total / 10)) === 0) {
+                setSyncLogs(prev => [...prev, `[PROGRESS] ${evt.processed}/${evt.total} 처리 완료 (${pctRaw}%) - 삽입: ${evt.inserted || 0}, 업데이트: ${evt.updated || 0}, 오류: ${evt.errors || 0}`])
+              }
             }
             if (evt.type === 'result') {
               finalResult = {
@@ -632,6 +688,7 @@ export default function DataSyncPage() {
                 data: evt.details,
                 syncTime: new Date().toISOString()
               }
+              setSyncLogs(prev => [...prev, `[RESULT] 동기화 완료 - ${finalResult?.message || '알 수 없는 결과'}`])
             }
           } catch {
             // 무시 (부분 라인)
@@ -667,7 +724,8 @@ export default function DataSyncPage() {
       }
       setProgress(100)
       setEtaMs(0)
-      setTimeout(() => setLoading(false), 500)
+      // 로딩 상태를 즉시 false로 변경하지 않고, 결과가 표시된 후에 변경
+      setLoading(false)
     }
   }
 
@@ -738,6 +796,11 @@ export default function DataSyncPage() {
           <FileSpreadsheet className="h-5 w-5 mr-2" />
           구글 시트 설정
         </h2>
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm text-blue-800">
+            <strong>📋 필터링:</strong> 첫 글자가 &apos;S&apos;로 시작하는 시트만 표시됩니다.
+          </p>
+        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
@@ -927,56 +990,69 @@ export default function DataSyncPage() {
         </div>
       )}
 
-      {/* 시트 정보 표시 */}
-      {sheetInfo.length > 0 && (
+      {/* 실시간 동기화 진행 상황 */}
+      {loading && (
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">시트 정보</h3>
-          <div className="space-y-4">
-            {sheetInfo.map((sheet, index) => (
-              <div key={index} className="border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium text-gray-900">{sheet.name}</h4>
-                  <span className="text-sm text-gray-500">{sheet.rowCount}행</span>
-                </div>
-                
-                {sheet.error ? (
-                  <p className="text-red-500 text-sm">{sheet.error}</p>
-                ) : (
-                  <div>
-                    <p className="text-sm text-gray-600 mb-2">컬럼: {sheet.columns.join(', ')}</p>
-                    {sheet.sampleData.length > 0 && (
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-xs">
-                          <thead>
-                            <tr className="bg-gray-50">
-                              {sheet.columns.map((col, i) => (
-                                <th key={i} className="px-2 py-1 text-left font-medium text-gray-700">
-                                  {col}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sheet.sampleData.map((row, i) => (
-                              <tr key={i} className="border-t">
-                                {sheet.columns.map((col, j) => (
-                                  <td key={j} className="px-2 py-1 text-gray-600">
-                                    {String(row[col] || '-')}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+            <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+            동기화 진행 중
+          </h3>
+          
+          {/* 진행률 바 */}
+          <div className="mb-4">
+            <div className="flex justify-between text-sm text-gray-600 mb-2">
+              <span>진행률</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            {etaMs && etaMs > 0 && (
+              <div className="text-xs text-gray-500 mt-1">
+                예상 완료 시간: {Math.ceil(etaMs / 1000)}초 후
               </div>
-            ))}
+            )}
+          </div>
+
+          {/* 실시간 통계 */}
+          <div className="grid grid-cols-4 gap-4 mb-4">
+            <div className="bg-blue-50 p-3 rounded-lg text-center">
+              <div className="text-2xl font-bold text-blue-600">{realTimeStats.processed}</div>
+              <div className="text-sm text-blue-800">처리됨</div>
+            </div>
+            <div className="bg-green-50 p-3 rounded-lg text-center">
+              <div className="text-2xl font-bold text-green-600">{realTimeStats.inserted}</div>
+              <div className="text-sm text-green-800">삽입됨</div>
+            </div>
+            <div className="bg-yellow-50 p-3 rounded-lg text-center">
+              <div className="text-2xl font-bold text-yellow-600">{realTimeStats.updated}</div>
+              <div className="text-sm text-yellow-800">업데이트됨</div>
+            </div>
+            <div className="bg-red-50 p-3 rounded-lg text-center">
+              <div className="text-2xl font-bold text-red-600">{realTimeStats.errors}</div>
+              <div className="text-sm text-red-800">오류</div>
+            </div>
+          </div>
+
+          {/* 실시간 로그 */}
+          <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm max-h-64 overflow-y-auto">
+            <div className="text-gray-400 text-xs mb-2">실시간 로그:</div>
+            {syncLogs.length === 0 ? (
+              <div className="text-gray-500">로그를 기다리는 중...</div>
+            ) : (
+              syncLogs.map((log, index) => (
+                <div key={index} className="mb-1">
+                  {log}
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
+
 
       {/* 컬럼 매핑 모달 */}
       {showMappingModal && (
@@ -1197,76 +1273,188 @@ export default function DataSyncPage() {
       {/* 결과 표시 */}
       {syncResult && (
         <div className="bg-white rounded-lg shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">동기화 결과</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              {syncResult.success ? (
+                <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
+              ) : (
+                <XCircle className="h-5 w-5 text-red-500 mr-2" />
+              )}
+              동기화 결과
+            </h3>
+            <button
+              onClick={() => setSyncResult(null)}
+              className="text-gray-400 hover:text-gray-600 text-sm"
+            >
+              ✕ 닫기
+            </button>
+          </div>
           
-          <div className={`p-4 rounded-lg flex items-start ${
+          {/* 상태 메시지 */}
+          <div className={`p-4 rounded-lg mb-4 ${
             syncResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
           }`}>
-            {syncResult.success ? (
-              <CheckCircle className="h-5 w-5 text-green-500 mr-3 mt-0.5" />
-            ) : (
-              <XCircle className="h-5 w-5 text-red-500 mr-3 mt-0.5" />
-            )}
-            <div>
-              <p className={`font-medium ${
-                syncResult.success ? 'text-green-800' : 'text-red-800'
-              }`}>
-                {syncResult.message}
+            <p className={`font-medium ${
+              syncResult.success ? 'text-green-800' : 'text-red-800'
+            }`}>
+              {syncResult.message}
+            </p>
+            {syncResult.syncTime && (
+              <p className="text-sm text-gray-600 mt-1">
+                완료 시간: {new Date(syncResult.syncTime).toLocaleString('ko-KR')}
               </p>
-              {syncResult.data && (
-                <div className="mt-2 text-sm text-gray-600">
-                  {syncResult.data.inserted && (
-                    <p>삽입: {syncResult.data.inserted}개</p>
-                  )}
-                  {syncResult.data.updated && (
-                    <p>업데이트: {syncResult.data.updated}개</p>
-                  )}
-                  {syncResult.data.errors && syncResult.data.errors > 0 && (
-                    <p className="text-red-600">오류: {syncResult.data.errors}개</p>
-                  )}
-                </div>
-              )}
-            </div>
+            )}
           </div>
+
+          {/* 상세 통계 */}
+          {syncResult.data && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <div className="bg-blue-50 p-4 rounded-lg text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {(syncResult.data.inserted || 0) + (syncResult.data.updated || 0)}
+                </div>
+                <div className="text-sm text-blue-800">총 처리</div>
+              </div>
+              <div className="bg-green-50 p-4 rounded-lg text-center">
+                <div className="text-2xl font-bold text-green-600">{syncResult.data.inserted || 0}</div>
+                <div className="text-sm text-green-800">삽입됨</div>
+              </div>
+              <div className="bg-yellow-50 p-4 rounded-lg text-center">
+                <div className="text-2xl font-bold text-yellow-600">{syncResult.data.updated || 0}</div>
+                <div className="text-sm text-yellow-800">업데이트됨</div>
+              </div>
+              <div className="bg-red-50 p-4 rounded-lg text-center">
+                <div className="text-2xl font-bold text-red-600">{syncResult.data.errors || 0}</div>
+                <div className="text-sm text-red-800">오류</div>
+              </div>
+            </div>
+          )}
+
+          {/* 오류 상세 정보 */}
+          {syncResult.data && syncResult.data.errorDetails && Array.isArray(syncResult.data.errorDetails) && syncResult.data.errorDetails.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <h4 className="font-medium text-red-800 mb-2 flex items-center">
+                <XCircle className="h-4 w-4 mr-1" />
+                오류 상세 ({syncResult.data.errorDetails.length}개)
+              </h4>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {syncResult.data.errorDetails.map((error: string, index: number) => (
+                  <div key={index} className="text-sm text-red-700 font-mono bg-red-100 p-2 rounded border-l-4 border-red-400">
+                    <div className="font-semibold">오류 #{index + 1}:</div>
+                    <div className="mt-1">{error}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-xs text-red-600">
+                💡 <strong>해결 방법:</strong> 구글 시트의 데이터 형식을 확인하고, 필수 필드가 비어있지 않은지 확인하세요.
+              </div>
+            </div>
+          )}
+
+          {/* 전체 실행 로그 */}
+          {syncLogs.length > 0 && (
+            <div className="mt-4">
+              <div className="flex justify-between items-center mb-2">
+                <div>
+                  <h4 className="font-medium text-gray-800">실행 로그 전체 ({syncLogs.length}개 항목):</h4>
+                  <div className="text-xs text-gray-600 mt-1">
+                    정보: {syncLogs.filter(log => log.includes('[INFO]')).length}개 | 
+                    경고: {syncLogs.filter(log => log.includes('[WARN]')).length}개 | 
+                    오류: {syncLogs.filter(log => log.includes('[ERROR]')).length}개 | 
+                    결과: {syncLogs.filter(log => log.includes('[RESULT]')).length}개
+                  </div>
+                </div>
+                <div className="flex gap-2 items-center">
+                  {/* 로그 필터 */}
+                  <select
+                    value={logFilter}
+                    onChange={(e) => setLogFilter(e.target.value)}
+                    className="px-2 py-1 text-xs border rounded"
+                  >
+                    <option value="all">전체</option>
+                    <option value="info">정보만</option>
+                    <option value="warn">경고만</option>
+                    <option value="error">오류만</option>
+                  </select>
+                  
+                  {/* 전체 로그 토글 */}
+                  <button
+                    onClick={() => setShowFullLogs(!showFullLogs)}
+                    className={`px-3 py-1 text-xs rounded ${
+                      showFullLogs 
+                        ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
+                        : 'bg-gray-500 text-white hover:bg-gray-600'
+                    }`}
+                  >
+                    {showFullLogs ? '간소화' : '전체보기'}
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      const logText = syncLogs.join('\n')
+                      navigator.clipboard.writeText(logText)
+                      alert('로그가 클립보드에 복사되었습니다.')
+                    }}
+                    className="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                  >
+                    로그 복사
+                  </button>
+                  <button
+                    onClick={() => {
+                      const logText = syncLogs.join('\n')
+                      const blob = new Blob([logText], { type: 'text/plain' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `sync-log-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+                      document.body.appendChild(a)
+                      a.click()
+                      document.body.removeChild(a)
+                      URL.revokeObjectURL(url)
+                    }}
+                    className="px-3 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
+                  >
+                    로그 다운로드
+                  </button>
+                </div>
+              </div>
+              <div 
+                ref={(el) => {
+                  if (el && !showFullLogs) {
+                    el.scrollTop = el.scrollHeight
+                  }
+                }}
+                className={`bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm overflow-y-auto border ${
+                  showFullLogs ? 'max-h-screen' : 'max-h-96'
+                }`}
+              >
+                {syncLogs
+                  .filter(log => {
+                    if (logFilter === 'all') return true
+                    if (logFilter === 'info') return log.includes('[INFO]')
+                    if (logFilter === 'warn') return log.includes('[WARN]')
+                    if (logFilter === 'error') return log.includes('[ERROR]')
+                    return true
+                  })
+                  .map((log, index) => {
+                    let logColor = 'text-green-400'
+                    if (log.includes('[ERROR]')) logColor = 'text-red-400'
+                    else if (log.includes('[WARN]')) logColor = 'text-yellow-400'
+                    else if (log.includes('[INFO]')) logColor = 'text-blue-400'
+                    else if (log.includes('[RESULT]')) logColor = 'text-purple-400'
+                    
+                    return (
+                      <div key={index} className={`mb-1 whitespace-pre-wrap ${logColor}`}>
+                        {log}
+                      </div>
+                    )
+                  })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* 로딩/진행률 오버레이 */}
-      {loading && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-2">
-                <RefreshCw className="h-5 w-5 animate-spin text-blue-600" />
-                <span className="text-gray-900 font-medium">동기화 중...</span>
-              </div>
-              {truncateReservations && (
-                <span className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded border border-red-200">초기화 후 전체 동기화</span>
-              )}
-            </div>
-            <div className="text-xs text-gray-500 mb-2">
-              {selectedSheet && <span>시트: {selectedSheet}</span>}
-              {selectedTable && <span className="ml-2">테이블: {selectedTable}</span>}
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-200"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between mt-2 text-xs text-gray-600">
-              <span>{progress}% 완료</span>
-              <span>
-                {etaMs !== null && etaMs > 1000
-                  ? `남은 예상 시간: ${Math.ceil(etaMs / 1000)}초`
-                  : etaMs !== null
-                    ? '마무리 중...'
-                    : ''}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

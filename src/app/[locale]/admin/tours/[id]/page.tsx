@@ -22,6 +22,7 @@ import TicketBookingForm from '@/components/booking/TicketBookingForm'
 import TourHotelBookingForm from '@/components/booking/TourHotelBookingForm'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
 import TourChatRoom from '@/components/TourChatRoom'
+import TourExpenseManager from '@/components/TourExpenseManager'
 import { useAuth } from '@/contexts/AuthContext'
 
 // 타입 정의 (DB 스키마 기반)
@@ -1376,36 +1377,6 @@ export default function TourDetailPage() {
             </div>
           </div>
 
-            {/* 투어 채팅방 (부킹 관리 아래) */}
-            <div className="bg-white rounded-lg shadow-sm border">
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">채팅</h3>
-                </div>
-                <div id="announcements" />
-                <div id="pickup-schedule" />
-                <div id="options" />
-                <TourChatRoom
-                  tourId={tour.id}
-                  guideEmail="guide@tour.com" // 실제로는 현재 로그인한 가이드의 이메일
-                  tourDate={tour.tour_date}
-                />
-              </div>
-            </div>
-
-            {/* 투어 사진 (채팅 아래) */}
-            <div className="bg-white rounded-lg shadow-sm border">
-              <div className="p-4" id="tour-photos">
-                <TourPhotoUpload
-                  tourId={tour.id}
-                  uploadedBy="guide@tour.com" // 실제로는 현재 로그인한 가이드의 이메일
-                  onPhotosUpdated={() => {
-                    // 사진 업데이트 시 필요한 로직
-                    console.log('Photos updated')
-                  }}
-                />
-              </div>
-            </div>
 
           </div>
 
@@ -2117,6 +2088,40 @@ export default function TourDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* 투어 채팅방 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">채팅</h3>
+                </div>
+                <div id="announcements" />
+                <div id="pickup-schedule" />
+                <div id="options" />
+                <TourChatRoom
+                  tourId={tour.id}
+                  guideEmail="guide@tour.com" // 실제로는 현재 로그인한 가이드의 이메일
+                  tourDate={tour.tour_date}
+                />
+              </div>
+            </div>
+
+            {/* 투어 사진 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <div className="p-4" id="tour-photos">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">투어 사진</h3>
+                </div>
+                <TourPhotoUpload
+                  tourId={tour.id}
+                  uploadedBy="guide@tour.com" // 실제로는 현재 로그인한 가이드의 이메일
+                  onPhotosUpdated={() => {
+                    // 사진 업데이트 시 필요한 로직
+                    console.log('Photos updated')
+                  }}
+                />
+              </div>
+            </div>
           </div>
 
           {/* 4열: 정산 관리 */}
@@ -2128,91 +2133,21 @@ export default function TourDetailPage() {
                   <ConnectionStatusLabel status={connectionStatus.bookings} section="정산" />
                 </h2>
                 
-                {/* 수익, 지출, 정산 */}
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  <div className="text-center p-3 bg-green-50 rounded">
-                    <div className="text-lg font-bold text-green-600">$0</div>
-                    <div className="text-xs text-gray-600">총 수입</div>
-                  </div>
-                  <div className="text-center p-3 bg-red-50 rounded">
-                    <div className="text-lg font-bold text-red-600">$665.5</div>
-                    <div className="text-xs text-gray-600">총 지출</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-50 rounded">
-                    <div className="text-lg font-bold text-gray-600">$-665.5</div>
-                    <div className="text-xs text-gray-600">순이익</div>
-                  </div>
-                </div>
-
-                {/* 지출 카테고리별 요약 */}
-                <div className="mb-4">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">지출 카테고리별 요약</h3>
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded text-xs">
-                      <span className="font-medium">antelope_booking</span>
-                      <span className="text-gray-600">$250 (1건, 앤텔로프 캐년 투어 예약, 2024-01-15, 미상환)</span>
-            </div>
-                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded text-xs">
-                      <span className="font-medium">hotel_booking</span>
-                      <span className="text-gray-600">$180 (1건, 투어 호텔 예약, 2024-01-14, 상환완료)</span>
-            </div>
-                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded text-xs">
-                      <span className="font-medium">연료비</span>
-                      <span className="text-gray-600">$85.5 (1건, Shell Station 연료비, 2024-01-13, 미상환)</span>
-            </div>
-                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded text-xs">
-                      <span className="font-medium">가이드비</span>
-                      <span className="text-gray-600">$150 (1건, 가이드 비용, 2024-01-12, 미상환)</span>
-            </div>
-            </div>
-            </div>
-
-                {/* 지출 관리 */}
-            <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-medium text-gray-700">지출 관리</h3>
-                    <button className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 flex items-center space-x-1">
-                      <Plus size={10} />
-                      <span>추가</span>
-                    </button>
-                  </div>
-                  <div className="text-xs text-gray-600 mb-2">
-                    투어 운영 지출 | 총 지출: $665.5 | 미상환: $485.5 | 상환완료: $180
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center p-2 border rounded text-xs">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium text-red-600">미상환</span>
-                        <span>antelope_booking</span>
-                      </div>
-                      <div className="text-gray-600">앤텔로프 캐년 투어 예약, 2024-01-15 - $250</div>
-                    </div>
-                    <div className="flex justify-between items-center p-2 border rounded text-xs">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium text-green-600">상환완료</span>
-                        <span>hotel_booking</span>
-                      </div>
-                      <div className="text-gray-600">투어 호텔 예약, 2024-01-14 - $180</div>
-                    </div>
-                    <div className="flex justify-between items-center p-2 border rounded text-xs">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium text-red-600">미상환</span>
-                        <span>연료비</span>
-                      </div>
-                      <div className="text-gray-600">Shell Station 연료비, 2024-01-13 - $85.5 (엔텔로프 투어 차량)</div>
-                    </div>
-                    <div className="flex justify-between items-center p-2 border rounded text-xs">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium text-red-600">미상환</span>
-                        <span>가이드비</span>
-                      </div>
-                      <div className="text-gray-600">가이드 비용, 2024-01-12 - $150</div>
-                    </div>
-                  </div>
-                </div>
+                {/* 투어 지출 관리 */}
+                <TourExpenseManager
+                  tourId={tour.id}
+                  tourDate={tour.tour_date}
+                  productId={tour.product_id}
+                  submittedBy={userRole === 'admin' ? 'admin@tour.com' : 'guide@tour.com'}
+                  onExpenseUpdated={() => {
+                    // 지출 업데이트 시 필요한 로직
+                    console.log('Expenses updated')
+                  }}
+                />
               </div>
             </div>
           </div>
+
         </div>
       </div>
 

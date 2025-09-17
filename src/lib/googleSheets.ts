@@ -74,7 +74,7 @@ export const readSheetRange = async (spreadsheetId: string, sheetName: string, s
   return await readGoogleSheet(spreadsheetId, range)
 }
 
-// 구글 시트의 시트 목록 가져오기
+// 구글 시트의 시트 목록 가져오기 (첫 글자가 'S'인 시트만 필터링)
 export const getSheetNames = async (spreadsheetId: string) => {
   try {
     const auth = getAuthClient()
@@ -84,8 +84,17 @@ export const getSheetNames = async (spreadsheetId: string) => {
       spreadsheetId,
     })
 
-    const sheetNames = response.data.sheets?.map(sheet => sheet.properties?.title) || []
-    return sheetNames
+    const allSheetNames = response.data.sheets?.map(sheet => sheet.properties?.title) || []
+    
+    // 첫 글자가 'S'인 시트만 필터링 (대소문자 구분 없음)
+    const filteredSheetNames = allSheetNames.filter(sheetName => 
+      sheetName && sheetName.charAt(0).toUpperCase() === 'S'
+    )
+    
+    console.log(`Total sheets: ${allSheetNames.length}, Filtered sheets (starting with 'S'): ${filteredSheetNames.length}`)
+    console.log('Filtered sheet names:', filteredSheetNames)
+    
+    return filteredSheetNames
   } catch (error) {
     console.error('Error getting sheet names:', error)
     throw error

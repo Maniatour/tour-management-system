@@ -296,6 +296,27 @@ function getFallbackColumns(tableName: string): any[] {
       { name: 'installment_start_date', type: 'date', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
       { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
+    ],
+    tour_expenses: [
+      { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+      { name: 'tour_id', type: 'text', nullable: false, default: null },
+      { name: 'submit_on', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'paid_to', type: 'character varying', nullable: true, default: null },
+      { name: 'paid_for', type: 'text', nullable: false, default: null },
+      { name: 'amount', type: 'numeric', nullable: false, default: null },
+      { name: 'payment_method', type: 'character varying', nullable: true, default: null },
+      { name: 'note', type: 'text', nullable: true, default: null },
+      { name: 'tour_date', type: 'date', nullable: false, default: null },
+      { name: 'product_id', type: 'text', nullable: true, default: null },
+      { name: 'submitted_by', type: 'character varying', nullable: false, default: null },
+      { name: 'image_url', type: 'text', nullable: true, default: null },
+      { name: 'file_path', type: 'text', nullable: true, default: null },
+      { name: 'audited_by', type: 'character varying', nullable: true, default: null },
+      { name: 'checked_by', type: 'character varying', nullable: true, default: null },
+      { name: 'checked_on', type: 'timestamp with time zone', nullable: true, default: null },
+      { name: 'status', type: 'character varying', nullable: true, default: "'pending'" },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ]
   }
   

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { MessageCircle, Calendar, Search } from 'lucide-react'
+import { MessageCircle, Calendar, Search, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ChatRoom {
@@ -89,6 +89,22 @@ export default function ChatManagementPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  // 새로고침 함수
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await fetchChatRooms()
+      if (selectedRoom) {
+        await fetchMessages(selectedRoom.id)
+      }
+    } catch (error) {
+      console.error('새로고침 중 오류:', error)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   // 채팅방 목록 가져오기
   const fetchChatRooms = useCallback(async () => {
@@ -437,8 +453,18 @@ export default function ChatManagementPage() {
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-lg font-semibold text-gray-900">채팅 관리</h1>
-            <div className="text-sm text-gray-500">
-              읽지않은 메시지 ({chatRooms.reduce((sum, room) => sum + room.unread_count, 0)})
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-500">
+                읽지않은 메시지 ({chatRooms.reduce((sum, room) => sum + room.unread_count, 0)})
+              </div>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+                <span>{refreshing ? '새로고침 중...' : '새로고침'}</span>
+              </button>
             </div>
           </div>
           
