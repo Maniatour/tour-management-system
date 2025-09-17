@@ -224,13 +224,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const weekStart = new Date(weekRange.start)
     const weekEnd = new Date(weekRange.end)
     
-    filteredReservations.forEach(reservation => {
-      // created_at 날짜를 한국 시간대로 변환하여 YYYY-MM-DD 형식으로 변환
-      if (!reservation.created_at) {
-        return // created_at이 없으면 건너뛰기
+    
+    filteredReservations.forEach((reservation, index) => {
+      // addedTime 날짜를 한국 시간대로 변환하여 YYYY-MM-DD 형식으로 변환
+      if (!reservation.addedTime) {
+        return // addedTime이 없으면 건너뛰기
       }
       
-      const utcDate = new Date(reservation.created_at)
+      const utcDate = new Date(reservation.addedTime)
       
       // 유효한 날짜인지 확인
       if (isNaN(utcDate.getTime())) {
@@ -244,17 +245,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return // 유효하지 않은 날짜면 건너뛰기
       }
       
-      const createdDate = koreaDate.toISOString().split('T')[0]
+      const addedDate = koreaDate.toISOString().split('T')[0]
       
       // 현재 주 범위에 포함되는지 확인
-      const reservationDate = new Date(createdDate)
-      if (reservationDate >= weekStart && reservationDate <= weekEnd) {
-        if (!groups[createdDate]) {
-          groups[createdDate] = []
+      const reservationDate = new Date(addedDate)
+      const isInRange = reservationDate >= weekStart && reservationDate <= weekEnd
+      
+      
+      if (isInRange) {
+        if (!groups[addedDate]) {
+          groups[addedDate] = []
         }
-        groups[createdDate].push(reservation)
+        groups[addedDate].push(reservation)
       }
     })
+    
     
     // 날짜별로 정렬 (최신 날짜부터)
     const sortedGroups: { [key: string]: typeof filteredReservations } = {}
