@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import LoginForm from '@/components/auth/LoginForm'
 import SignUpForm from '@/components/auth/SignUpForm'
@@ -13,12 +13,22 @@ export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
   const { user, loading } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const pathname = usePathname()
+
+  // 현재 로케일 추출 (/ko, /en, /ja, /ko-KR 등 첫 세그먼트)
+  const currentLocale = (() => {
+    const segments = (pathname || '/').split('/').filter(Boolean)
+    return segments[0] || 'ko'
+  })()
+
+  const redirectToParam = searchParams?.get('redirectTo') || `/${currentLocale}`
 
   useEffect(() => {
     if (!loading && user) {
-      router.push('/')
+      router.push(redirectToParam)
     }
-  }, [user, loading, router])
+  }, [user, loading, router, redirectToParam])
 
   if (loading) {
     return (
@@ -33,7 +43,7 @@ export default function AuthPage() {
   }
 
   const handleSuccess = () => {
-    router.push('/')
+    router.push(redirectToParam)
   }
 
   const renderForm = () => {

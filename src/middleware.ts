@@ -63,16 +63,24 @@ export async function middleware(req: NextRequest) {
   const adminRoutes = ['/admin']
   const teamRoutes = ['/reservations', '/customers', '/tours', '/schedule']
   const authRoutes = ['/auth']
+
+  // 로케일 접두어 제거 (예: /ko, /en, /ja 또는 /ko-KR)
+  const stripLocale = (pathname: string) => {
+    const segments = pathname.split('/').filter(Boolean)
+    if (segments.length === 0) return pathname
+    const first = segments[0]
+    const localeRegex = /^[a-z]{2}(?:-[A-Z]{2})?$/
+    if (localeRegex.test(first)) {
+      return '/' + segments.slice(1).join('/')
+    }
+    return pathname
+  }
+
+  const path = stripLocale(req.nextUrl.pathname)
   
-  const isAdminRoute = adminRoutes.some(route => 
-    req.nextUrl.pathname.startsWith(route)
-  )
-  const isTeamRoute = teamRoutes.some(route => 
-    req.nextUrl.pathname.startsWith(route)
-  )
-  const isAuthRoute = authRoutes.some(route => 
-    req.nextUrl.pathname.startsWith(route)
-  )
+  const isAdminRoute = adminRoutes.some(route => path.startsWith(route))
+  const isTeamRoute = teamRoutes.some(route => path.startsWith(route))
+  const isAuthRoute = authRoutes.some(route => path.startsWith(route))
 
   // 로그인하지 않은 경우
   if (!session) {

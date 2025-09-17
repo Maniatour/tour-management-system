@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { FileText, Save, AlertCircle } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface ProductDetailsFields {
   slogan1: string
@@ -53,6 +54,7 @@ export default function ProductDetailsTab({
   // const [loadingCommon, setLoadingCommon] = useState(false)
 
   const supabase = createClientSupabase()
+  const { user, loading: authLoading } = useAuth()
 
   // 로딩 상태는 부모 컴포넌트에서 관리
   useEffect(() => {
@@ -137,41 +139,82 @@ export default function ProductDetailsTab({
       return
     }
 
+    // AuthContext를 통한 인증 확인
+    if (authLoading) {
+      setSaveMessage('인증 상태를 확인하는 중입니다...')
+      return
+    }
+
+    if (!user) {
+      setSaveMessage('로그인이 필요합니다. 페이지를 새로고침 후 다시 시도해주세요.')
+      setTimeout(() => setSaveMessage(''), 5000)
+      return
+    }
+
     setSaving(true)
     setSaveMessage('')
 
     try {
-      // 기존 데이터가 있는지 확인
-      const { data: existingData, error: selectError } = await supabase
+      // 메인 페이지와 동일한 방식으로 저장
+      console.log('product_details 저장 시작')
+      console.log('AuthContext 사용자:', { email: user.email, id: user.id })
+      
+      const { data: existingDetails, error: selectDetailsError } = await supabase
         .from('product_details')
         .select('id')
         .eq('product_id', productId)
         .maybeSingle()
 
-      if (selectError) throw selectError
+      if (selectDetailsError) {
+        console.error('product_details 존재 여부 확인 오류:', selectDetailsError)
+        throw new Error(`상품 세부정보 조회 실패: ${selectDetailsError.message}`)
+      }
 
-      if (existingData) {
+      const detailsData = {
+        product_id: productId,
+        slogan1: formData.productDetails.slogan1,
+        slogan2: formData.productDetails.slogan2,
+        slogan3: formData.productDetails.slogan3,
+        description: formData.productDetails.description,
+        included: formData.productDetails.included,
+        not_included: formData.productDetails.not_included,
+        pickup_drop_info: formData.productDetails.pickup_drop_info,
+        luggage_info: formData.productDetails.luggage_info,
+        tour_operation_info: formData.productDetails.tour_operation_info,
+        preparation_info: formData.productDetails.preparation_info,
+        small_group_info: formData.productDetails.small_group_info,
+        companion_info: formData.productDetails.companion_info,
+        exclusive_booking_info: formData.productDetails.exclusive_booking_info,
+        cancellation_policy: formData.productDetails.cancellation_policy,
+        chat_announcement: formData.productDetails.chat_announcement
+      }
+
+      if (existingDetails) {
         // 업데이트
-      const { error } = await supabase
-        .from('product_details')
-        .update({
-          product_id: productId,
-          ...formData.productDetails,
-          updated_at: new Date().toISOString()
-        })
-        .eq('product_id', productId)
+        const { error: detailsError } = await supabase
+          .from('product_details')
+          .update({
+            ...detailsData,
+            updated_at: new Date().toISOString()
+          })
+          .eq('product_id', productId)
 
-        if (error) throw error
+        if (detailsError) {
+          console.error('product_details 업데이트 오류:', detailsError)
+          throw new Error(`상품 세부정보 업데이트 실패: ${detailsError.message}`)
+        }
+        console.log('product_details 업데이트 완료')
       } else {
         // 새로 생성
-        const { error } = await supabase
+        const { error: detailsError } = await supabase
           .from('product_details')
-          .insert([{
-            product_id: productId,
-            ...formData.productDetails
-          }])
+          .insert([detailsData])
 
-        if (error) throw error
+        if (detailsError) {
+          console.error('product_details 생성 오류:', detailsError)
+          throw new Error(`상품 세부정보 생성 실패: ${detailsError.message}`)
+        }
+        console.log('product_details 생성 완료')
       }
 
       setSaveMessage('상품 세부정보가 성공적으로 저장되었습니다!')

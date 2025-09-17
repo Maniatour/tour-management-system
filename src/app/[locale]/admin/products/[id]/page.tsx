@@ -18,6 +18,7 @@ import {
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 // import type { Database } from '@/lib/supabase'
 import DynamicPricingManager from '@/components/DynamicPricingManager'
 import ChangeHistory from '@/components/ChangeHistory'
@@ -138,6 +139,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   const router = useRouter()
   const isNewProduct = id === 'new'
   const supabase = createClientSupabase()
+  const { user, loading: authLoading } = useAuth()
   
   const [activeTab, setActiveTab] = useState('basic')
   const [showManualModal, setShowManualModal] = useState(false)
@@ -307,6 +309,13 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       setLoadingOptions(false)
     }
   }, [supabase])
+
+  // 인증 체크: AuthContext 기반으로 안전한 리다이렉트
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push(`/${locale}/auth?redirectTo=/${locale}/admin/products/${id}`)
+    }
+  }, [authLoading, user, router, locale, id])
 
   // 새 상품 생성 시 기본값 설정
   useEffect(() => {
@@ -1012,6 +1021,10 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
 
   return (
     <div className="space-y-6">
+      {authLoading || !user ? (
+        <div className="text-gray-600">인증 확인 중...</div>
+      ) : (
+        <>
       {/* 페이지 헤더 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -1264,6 +1277,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   )

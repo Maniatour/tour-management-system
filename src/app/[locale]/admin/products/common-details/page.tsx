@@ -5,6 +5,8 @@ import { use } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { Save, Plus, Trash2, ArrowLeft } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface CommonDetailsRow {
   id?: string
@@ -34,11 +36,18 @@ export default function CommonDetailsAdminPage({ params }: PageProps) {
   const { locale } = use(params)
   // const router = useRouter()
   const supabase = createClientSupabase()
+  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
 
   const [rows, setRows] = useState<CommonDetailsRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string>('')
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push(`/${locale}/auth?redirectTo=/${locale}/admin/products/common-details`)
+    }
+  }, [authLoading, user, router, locale])
 
   const fetchRows = async () => {
     try {
@@ -192,6 +201,10 @@ export default function CommonDetailsAdminPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
+      {authLoading || !user ? (
+        <div className="text-gray-600">인증 확인 중...</div>
+      ) : (
+      <>
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Link href={`/${locale}/admin/products`} className="text-gray-500 hover:text-gray-700">
@@ -322,6 +335,8 @@ export default function CommonDetailsAdminPage({ params }: PageProps) {
             </div>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   )
