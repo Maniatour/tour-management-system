@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight } from 'lucide-react'
+import { createClientSupabase } from '@/lib/supabase'
 
 interface SheetInfo {
   name: string
@@ -183,7 +184,38 @@ export default function DataSyncPage() {
         'monthly_payment': ['월납입금', 'Monthly Payment', '월 납입금'],
         'additional_payment': ['추가납입금', 'Additional Payment', '추가 납입금'],
         'payment_due_date': ['납입일', 'Payment Due Date', '납입 날짜'],
-        'installment_start_date': ['할부시작일', 'Installment Start Date', '할부 시작일']
+        'installment_start_date': ['할부시작일', 'Installment Start Date', '할부 시작일'],
+        // 새로 추가된 필드
+        'reservation_pricing': [
+          { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+          { name: 'reservation_id', type: 'text', nullable: false, default: null },
+          { name: 'adult_product_price', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'child_product_price', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'infant_product_price', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'product_price_total', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'required_options', type: 'jsonb', nullable: true, default: '{}' },
+          { name: 'required_option_total', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'subtotal', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'coupon_code', type: 'text', nullable: true, default: null },
+          { name: 'coupon_discount', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'additional_discount', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'additional_cost', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'card_fee', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'tax', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'prepayment_cost', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'prepayment_tip', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'selected_options', type: 'jsonb', nullable: true, default: '{}' },
+          { name: 'option_total', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'is_private_tour', type: 'boolean', nullable: true, default: 'false' },
+          { name: 'private_tour_additional_cost', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'total_price', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'deposit_amount', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'balance_amount', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'commission_percent', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'commission_amount', type: 'numeric', nullable: true, default: '0.00' },
+          { name: 'created_at', type: 'timestamp', nullable: true, default: 'now()' },
+          { name: 'updated_at', type: 'timestamp', nullable: true, default: 'now()' }
+        ]
       }
       
       if (koreanMappings[dbColumn]) {
@@ -292,6 +324,19 @@ export default function DataSyncPage() {
   // 폴백 컬럼 목록
   const getFallbackColumns = (tableName: string): ColumnInfo[] => {
     const fallbackColumns: { [key: string]: ColumnInfo[] } = {
+      pickup_hotels: [
+        { name: 'id', type: 'text', nullable: false, default: null },
+        { name: 'hotel', type: 'text', nullable: false, default: null },
+        { name: 'pick_up_location', type: 'text', nullable: false, default: null },
+        { name: 'address', type: 'text', nullable: true, default: null },
+        { name: 'pin', type: 'text', nullable: true, default: null },
+        { name: 'link', type: 'text', nullable: true, default: null },
+        { name: 'media', type: 'text[]', nullable: true, default: null },
+        { name: 'description_ko', type: 'text', nullable: true, default: null },
+        { name: 'description_en', type: 'text', nullable: true, default: null },
+        { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' },
+      ],
       reservations: [
         { name: 'id', type: 'uuid', nullable: false, default: null },
         { name: 'customer_id', type: 'text', nullable: true, default: null },
@@ -315,7 +360,7 @@ export default function DataSyncPage() {
         { name: 'event_note', type: 'text', nullable: true, default: null },
         { name: 'is_private_tour', type: 'boolean', nullable: true, default: 'false' },
         { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
-        { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
+        { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' },
       ],
       tours: [
         { name: 'id', type: 'text', nullable: false, default: null },
@@ -440,6 +485,37 @@ export default function DataSyncPage() {
         { name: 'status', type: 'text', nullable: true, default: 'pending' },
         { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
         { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
+      ],
+      team: [
+        { name: 'email', type: 'text', nullable: false, default: null },
+        { name: 'name_ko', type: 'text', nullable: false, default: null },
+        { name: 'name_en', type: 'text', nullable: true, default: null },
+        { name: 'phone', type: 'text', nullable: false, default: null },
+        { name: 'position', type: 'text', nullable: true, default: null },
+        { name: 'languages', type: 'text[]', nullable: true, default: '{}' },
+        { name: 'avatar_url', type: 'text', nullable: true, default: null },
+        { name: 'is_active', type: 'boolean', nullable: true, default: 'true' },
+        { name: 'hire_date', type: 'date', nullable: true, default: null },
+        { name: 'status', type: 'text', nullable: true, default: 'active' },
+        { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'emergency_contact', type: 'text', nullable: true, default: null },
+        { name: 'date_of_birth', type: 'date', nullable: true, default: null },
+        { name: 'ssn', type: 'text', nullable: true, default: null },
+        { name: 'personal_car_model', type: 'text', nullable: true, default: null },
+        { name: 'car_year', type: 'integer', nullable: true, default: null },
+        { name: 'car_plate', type: 'text', nullable: true, default: null },
+        { name: 'bank_name', type: 'text', nullable: true, default: null },
+        { name: 'account_holder', type: 'text', nullable: true, default: null },
+        { name: 'bank_number', type: 'text', nullable: true, default: null },
+        { name: 'routing_number', type: 'text', nullable: true, default: null },
+        { name: 'cpr', type: 'boolean', nullable: true, default: 'false' },
+        { name: 'cpr_acquired', type: 'date', nullable: true, default: null },
+        { name: 'cpr_expired', type: 'date', nullable: true, default: null },
+        { name: 'medical_report', type: 'boolean', nullable: true, default: 'false' },
+        { name: 'medical_acquired', type: 'date', nullable: true, default: null },
+        { name: 'medical_expired', type: 'date', nullable: true, default: null },
+        { name: 'address', type: 'text', nullable: true, default: null }
       ]
     }
     
@@ -577,6 +653,15 @@ export default function DataSyncPage() {
 
   // 유연한 데이터 동기화
   const handleFlexibleSync = async () => {
+    const supabase = createClientSupabase()
+    // 세션을 강제로 한 번 더 조회하여 토큰을 보장
+    const { data: { session } } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
+    if (!accessToken) {
+      alert('로그인 정보가 확인되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.')
+      setLoading(false)
+      return
+    }
     if (!spreadsheetId.trim() || !selectedSheet || !selectedTable) {
       alert('스프레드시트 ID, 시트, 테이블을 모두 선택해주세요.')
       return
@@ -616,6 +701,7 @@ export default function DataSyncPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
         },
         body: JSON.stringify({
           spreadsheetId,

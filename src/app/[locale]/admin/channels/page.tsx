@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import React from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import ProtectedRoute from '@/components/auth/ProtectedRoute'
 
 type Channel = Database['public']['Tables']['channels']['Row']
 
@@ -246,6 +247,7 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
   }
 
   return (
+    <ProtectedRoute requiredPermission="canManageChannels">
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
@@ -706,6 +708,7 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
         />
       )}
     </div>
+    </ProtectedRoute>
   )
 }
 

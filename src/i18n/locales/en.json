@@ -474,6 +474,8 @@
       "guide": "Guide",
       "transportation": "Transportation",
       "meal": "Meal",
+      "extra_courses": "Extra Courses",
+      "surcharge": "Surcharge",
       "insurance": "Insurance",
       "equipment": "Equipment",
       "activity": "Activity",
@@ -783,6 +785,30 @@
         "All changes are automatically recorded in history and can be viewed anytime.",
         "Update status from tentative booking to confirmed booking when appropriate."
       ]
+    }
+  },
+  "teamBoard": {
+    "title": "Team Board",
+    "announcements": "Announcements",
+    "newAnnouncement": "New Announcement",
+    "noAnnouncements": "No announcements yet.",
+    "comments": "Comments",
+    "acknowledged": "Acknowledged",
+    "confirm": "Acknowledge",
+    "unconfirm": "Unacknowledge",
+    "newTodo": "New ToDo",
+    "checklist": "Checklist",
+    "tasks": "Tasks",
+    "noTodos": "No ToDos yet.",
+    "filters": {
+      "scopeAll": "All",
+      "scopeCommon": "Common",
+      "scopeIndividual": "Individual",
+      "catDaily": "Daily",
+      "catMonthly": "Monthly",
+      "catYearly": "Yearly",
+      "catAll": "All",
+      "onlyMine": "Only mine"
     }
   }
 }

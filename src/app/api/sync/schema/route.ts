@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 // 값의 타입을 추론하는 함수
-function getColumnType(value: any): string {
+function getColumnType(value: unknown): string {
   if (value === null || value === undefined) {
     return 'text' // null 값은 타입을 알 수 없으므로 기본값
   }
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
     // Supabase RPC 함수를 사용하여 테이블 스키마 조회
     // 먼저 테이블이 존재하는지 확인
-    const { data: tableExists, error: tableCheckError } = await supabase
+    const { error: tableCheckError } = await supabase
       .from(tableName)
       .select('*')
       .limit(1)
@@ -150,8 +150,28 @@ export async function GET(request: NextRequest) {
 }
 
 // 폴백용 하드코딩된 컬럼 목록 (실제 데이터베이스 스키마 기반)
-function getFallbackColumns(tableName: string): any[] {
-  const fallbackColumns: { [key: string]: any[] } = {
+interface ColumnInfo {
+  name: string
+  type: string
+  nullable: boolean
+  default: string | null
+}
+
+function getFallbackColumns(tableName: string): ColumnInfo[] {
+  const fallbackColumns: Record<string, ColumnInfo[]> = {
+    pickup_hotels: [
+      { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+      { name: 'hotel', type: 'character varying', nullable: false, default: null },
+      { name: 'pick_up_location', type: 'character varying', nullable: false, default: null },
+      { name: 'address', type: 'text', nullable: true, default: null },
+      { name: 'pin', type: 'character varying', nullable: true, default: null },
+      { name: 'link', type: 'character varying', nullable: true, default: null },
+      { name: 'media', type: 'text[]', nullable: true, default: null },
+      { name: 'description_ko', type: 'text', nullable: true, default: null },
+      { name: 'description_en', type: 'text', nullable: true, default: null },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
+    ],
     reservations: [
       { name: 'id', type: 'uuid', nullable: false, default: 'gen_random_uuid()' },
       { name: 'customer_id', type: 'text', nullable: true, default: null },
@@ -315,6 +335,67 @@ function getFallbackColumns(tableName: string): any[] {
       { name: 'checked_by', type: 'character varying', nullable: true, default: null },
       { name: 'checked_on', type: 'timestamp with time zone', nullable: true, default: null },
       { name: 'status', type: 'character varying', nullable: true, default: "'pending'" },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
+    ],
+    team: [
+      { name: 'email', type: 'character varying', nullable: false, default: null },
+      { name: 'name_ko', type: 'character varying', nullable: false, default: null },
+      { name: 'name_en', type: 'character varying', nullable: true, default: null },
+      { name: 'phone', type: 'character varying', nullable: false, default: null },
+      { name: 'position', type: 'character varying', nullable: true, default: null },
+      { name: 'languages', type: 'text[]', nullable: true, default: "'{}'" },
+      { name: 'avatar_url', type: 'text', nullable: true, default: null },
+      { name: 'is_active', type: 'boolean', nullable: true, default: 'true' },
+      { name: 'hire_date', type: 'date', nullable: true, default: null },
+      { name: 'status', type: 'character varying', nullable: true, default: "'active'" },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'emergency_contact', type: 'character varying', nullable: true, default: null },
+      { name: 'date_of_birth', type: 'date', nullable: true, default: null },
+      { name: 'ssn', type: 'character varying', nullable: true, default: null },
+      { name: 'personal_car_model', type: 'character varying', nullable: true, default: null },
+      { name: 'car_year', type: 'integer', nullable: true, default: null },
+      { name: 'car_plate', type: 'character varying', nullable: true, default: null },
+      { name: 'bank_name', type: 'character varying', nullable: true, default: null },
+      { name: 'account_holder', type: 'character varying', nullable: true, default: null },
+      { name: 'bank_number', type: 'character varying', nullable: true, default: null },
+      { name: 'routing_number', type: 'character varying', nullable: true, default: null },
+      { name: 'cpr', type: 'boolean', nullable: true, default: 'false' },
+      { name: 'cpr_acquired', type: 'date', nullable: true, default: null },
+      { name: 'cpr_expired', type: 'date', nullable: true, default: null },
+      { name: 'medical_report', type: 'boolean', nullable: true, default: 'false' },
+      { name: 'medical_acquired', type: 'date', nullable: true, default: null },
+      { name: 'medical_expired', type: 'date', nullable: true, default: null },
+      { name: 'address', type: 'text', nullable: true, default: null }
+    ],
+    reservation_pricing: [
+      { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+      { name: 'reservation_id', type: 'text', nullable: false, default: null },
+      { name: 'adult_product_price', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'child_product_price', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'infant_product_price', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'product_price_total', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'required_options', type: 'jsonb', nullable: true, default: "'{}'" },
+      { name: 'required_option_total', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'subtotal', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'coupon_code', type: 'text', nullable: true, default: null },
+      { name: 'coupon_discount', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'additional_discount', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'additional_cost', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'card_fee', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'tax', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'prepayment_cost', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'prepayment_tip', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'selected_options', type: 'jsonb', nullable: true, default: "'{}'" },
+      { name: 'option_total', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'is_private_tour', type: 'boolean', nullable: true, default: 'false' },
+      { name: 'private_tour_additional_cost', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'total_price', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'deposit_amount', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'balance_amount', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'commission_percent', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'commission_amount', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ]

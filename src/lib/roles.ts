@@ -2,6 +2,12 @@
 
 export type UserRole = 'customer' | 'team_member' | 'admin' | 'manager'
 
+// 슈퍼관리자 화이트리스트 (항상 관리자 권한 부여)
+const SUPER_ADMIN_EMAILS: string[] = [
+  'info@maniatour.com',
+  'wooyong.shim09@gmail.com',
+]
+
 export interface UserPermissions {
   canViewAdmin: boolean
   canManageProducts: boolean
@@ -14,6 +20,7 @@ export interface UserPermissions {
   canViewAuditLogs: boolean
   canManageChannels: boolean
   canManageOptions: boolean
+  canViewFinance: boolean
 }
 
 export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
@@ -29,6 +36,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
     canViewAuditLogs: false,
     canManageChannels: false,
     canManageOptions: false,
+    canViewFinance: false,
   },
   team_member: {
     canViewAdmin: true,
@@ -42,6 +50,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
     canViewAuditLogs: false,
     canManageChannels: false,
     canManageOptions: false,
+    canViewFinance: false,
   },
   manager: {
     canViewAdmin: true,
@@ -55,6 +64,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
     canViewAuditLogs: true,
     canManageChannels: true,
     canManageOptions: true,
+    canViewFinance: true,
   },
   admin: {
     canViewAdmin: true,
@@ -68,11 +78,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
     canViewAuditLogs: true,
     canManageChannels: true,
     canManageOptions: true,
+    canViewFinance: true,
   },
 }
 
 export function getUserRole(email: string, teamData?: any): UserRole {
   console.log('getUserRole called with:', { email, teamData })
+
+  // 슈퍼관리자 이메일은 team 데이터와 무관하게 무조건 관리자
+  const normalizedEmail = (email || '').toLowerCase()
+  if (normalizedEmail && SUPER_ADMIN_EMAILS.includes(normalizedEmail)) {
+    return 'admin'
+  }
   
   // 팀 데이터가 있고 이메일이 팀 테이블에 있는 경우
   if (teamData && teamData.is_active) {

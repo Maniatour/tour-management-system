@@ -22,6 +22,12 @@ export async function GET(request: NextRequest) {
       return getHardcodedTables()
     }
 
+    // RPC 결과에 pickup_hotels가 누락된 경우 보강
+    const names = new Set<string>(tables.map((t: any) => t.table_name))
+    if (!names.has('pickup_hotels')) {
+      (tables as any[]).push({ table_name: 'pickup_hotels' })
+    }
+
     // 테이블 목록을 표시명과 함께 반환
     const tableList = tables.map((table: any) => ({
       name: table.table_name,
@@ -48,7 +54,8 @@ function getHardcodedTables() {
     'customers',
     'products',
     'channels',
-    'employees',
+    'team',
+    'pickup_hotels',
     'options',
     'product_options',
     'reservation_pricing',
@@ -61,12 +68,14 @@ function getHardcodedTables() {
     'chat_announcements',
     'audit_logs',
     'product_details',
+    'product_details_common',
     'product_schedules',
     'reservation_options',
     'sync_history',
     'vehicles',
     'ticket_bookings',
-    'tour_hotel_bookings'
+    'tour_hotel_bookings',
+    'tour_expenses'
   ]
 
   // 테이블 목록을 표시명과 함께 반환
@@ -89,7 +98,8 @@ function getTableDisplayName(tableName: string): string {
     customers: '고객',
     products: '상품',
     channels: '채널',
-    employees: '직원',
+    team: '팀원',
+      pickup_hotels: '픽업 호텔',
     options: '옵션',
     product_options: '상품 옵션',
     reservation_pricing: '예약 가격',
@@ -102,12 +112,14 @@ function getTableDisplayName(tableName: string): string {
     chat_announcements: '채팅 공지사항',
     audit_logs: '감사 로그',
     product_details: '상품 상세정보',
+    product_details_common: '공통 상품 세부정보',
     product_schedules: '상품 일정',
     reservation_options: '예약 옵션',
     sync_history: '동기화 히스토리',
     vehicles: '차량',
     ticket_bookings: '티켓 예약',
-    tour_hotel_bookings: '투어 호텔 예약'
+    tour_hotel_bookings: '투어 호텔 예약',
+    tour_expenses: '투어 지출'
   }
   return displayNames[tableName] || tableName
 }

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { flexibleSync } from '@/lib/flexibleSyncService'
+import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 
@@ -22,6 +23,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Authorization 헤더에서 JWT 추출
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
+
+    // JWT 기반 Supabase 클라이언트 생성 (없으면 익명키로 생성)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
+    const client = createClient(supabaseUrl, anonKey, token ? { global: { headers: { Authorization: `Bearer ${token}` } } } : undefined)
+
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         const encoder = new TextEncoder()
@@ -30,10 +40,11 @@ export async function POST(request: NextRequest) {
         ;(async () => {
           try {
             write({ type: 'info', message: '동기화 시작' })
-            if (truncateReservations && targetTable === 'reservations') {
-              write({ type: 'info', message: '예약 테이블 초기화 시작' })
-              // 안전하게 reservations 테이블 비우기
-              const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/reservations?select=id`, {
+            if (truncateReservations && (targetTable === 'reservations' || targetTable === 'channels')) {
+              const tableToTruncate = targetTable
+              write({ type: 'info', message: `${tableToTruncate} 테이블 초기화 시작` })
+              // 안전하게 대상 테이블 비우기
+              const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/${tableToTruncate}?select=id`, {
                 method: 'DELETE',
                 headers: {
                   'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
@@ -41,9 +52,9 @@ export async function POST(request: NextRequest) {
                 }
               })
               if (!res.ok) {
-                write({ type: 'warn', message: '예약 테이블 초기화 실패' })
+                write({ type: 'warn', message: `${tableToTruncate} 테이블 초기화 실패` })
               } else {
-                write({ type: 'info', message: '예약 테이블 초기화 완료' })
+                write({ type: 'info', message: `${tableToTruncate} 테이블 초기화 완료` })
               }
             }
             const summary = await flexibleSync(
@@ -52,7 +63,9 @@ export async function POST(request: NextRequest) {
               targetTable,
               columnMapping,
               enableIncrementalSync,
-              (event) => write(event)
+              (event) => write(event),
+              client,
+              token
             )
             write({ type: 'result', ...summary })
             write({ type: 'info', message: '동기화 완료' })

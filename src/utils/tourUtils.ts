@@ -11,16 +11,28 @@ export const calculateAssignedPeople = (tour: Tour, allReservations: Reservation
   if (!tour.reservation_ids || tour.reservation_ids.length === 0) {
     return 0
   }
-  
+
+  const counted = new Set<string>()
   let totalPeople = 0
-  
+
   for (const reservationId of tour.reservation_ids) {
-    const reservation = allReservations.find(r => r.id === reservationId)
-    if (reservation && reservation.total_people) {
+    const rid = String(reservationId)
+    if (counted.has(rid)) continue
+    counted.add(rid)
+
+    const reservation = allReservations.find(r => String(r.id) === rid)
+    if (!reservation) continue
+
+    // 동일한 상품/날짜 + 상태(recruiting/confirmed)만 합산 (대소문자 무시)
+    const status = String(reservation.status || '').toLowerCase()
+    const isValidStatus = status === 'recruiting' || status === 'confirmed'
+    const isSameProductDate = reservation.product_id === tour.product_id && reservation.tour_date === tour.tour_date
+
+    if (isValidStatus && isSameProductDate && reservation.total_people) {
       totalPeople += reservation.total_people
     }
   }
-  
+
   return totalPeople
 }
 

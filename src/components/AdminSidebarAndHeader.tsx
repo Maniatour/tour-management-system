@@ -1,11 +1,10 @@
 'use client'
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, useEffect } from 'react'
 import { 
   Users, 
-  Calendar, 
   Settings, 
-  MapPin, 
   BarChart3,
   FileText,
   LogOut,
@@ -25,12 +24,10 @@ import {
   Home,
   ChevronDown,
   MessageCircle,
-  FileSpreadsheet,
-  RefreshCw
+  FileSpreadsheet
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useLocale } from 'next-intl'
 import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -51,7 +48,6 @@ interface AttendanceRecord {
   notes: string | null
   session_number: number
   employee_name: string
-  employee_email: string
 }
 
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
@@ -75,8 +71,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
     try {
       // 먼저 이메일로 직원 정보 조회
-      const { data: employeeData, error: employeeError } = await supabase
-        .from('team')
+      const { data: employeeData, error: employeeError } = await (supabase as any)
+        .from('team' as any)
         .select('name_ko, email')
         .eq('email', authUser.email)
         .eq('is_active', true)
@@ -95,8 +91,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       }
 
       // 오늘의 모든 출퇴근 기록 조회
-      const { data, error } = await supabase
-        .from('attendance_records')
+      const { data, error } = await (supabase as any)
+        .from('attendance_records' as any)
         .select('*')
         .eq('employee_email', employeeData.email)
         .eq('date', new Date().toISOString().split('T')[0])
@@ -109,10 +105,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       }
 
       if (data && data.length > 0) {
-        const records = data.map(record => ({
+        const records = (data as any[]).map((record: any) => ({
           ...record,
-          employee_name: employeeData.name_ko,
-          employee_email: employeeData.email
+          employee_name: (employeeData as any).name_ko,
+          employee_email: (employeeData as any).email
         }))
         
         // 현재 진행 중인 세션 찾기 (퇴근하지 않은 세션)
@@ -147,8 +143,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     setIsCheckingIn(true)
     try {
       // 먼저 이메일로 직원 정보 조회
-      const { data: employeeData, error: employeeError } = await supabase
-        .from('team')
+      const { data: employeeData, error: employeeError } = await (supabase as any)
+        .from('team' as any)
         .select('name_ko, email')
         .eq('email', authUser.email)
         .eq('is_active', true)
@@ -166,22 +162,22 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       }
 
       // 오늘의 기존 기록 조회하여 다음 세션 번호 계산
-      const { data: existingRecords } = await supabase
-        .from('attendance_records')
+      const { data: existingRecords } = await (supabase as any)
+        .from('attendance_records' as any)
         .select('session_number')
-        .eq('employee_email', employeeData.email)
+        .eq('employee_email', (employeeData as any).email)
         .eq('date', new Date().toISOString().split('T')[0])
         .order('session_number', { ascending: false })
         .limit(1)
 
-      const nextSessionNumber = existingRecords && existingRecords.length > 0 
-        ? existingRecords[0].session_number + 1 
+      const nextSessionNumber = existingRecords && (existingRecords as any[]).length > 0 
+        ? (existingRecords as any[])[0].session_number + 1 
         : 1
 
-      const { error } = await supabase
-        .from('attendance_records')
+      const { error } = await (supabase as any)
+        .from('attendance_records' as any)
         .insert({
-          employee_email: employeeData.email,
+          employee_email: (employeeData as any).email,
           date: new Date().toISOString().split('T')[0],
           check_in_time: new Date().toISOString(),
           status: 'present',
@@ -209,8 +205,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     if (!currentSession) return
 
     try {
-      const { error } = await supabase
-        .from('attendance_records')
+      const { error } = await (supabase as any)
+        .from('attendance_records' as any)
         .update({
           check_out_time: new Date().toISOString()
         })
@@ -324,6 +320,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: '출퇴근 관리', href: `/${locale}/admin/attendance`, icon: Clock },
     { name: '공급업체 관리', href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: '공급업체 정산', href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
+    { name: '팀 보드', href: `/${locale}/admin/team-board`, icon: MessageCircle },
     { name: '데이터 동기화', href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
     { name: '데이터 검수', href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: '감사 추적', href: `/${locale}/admin/audit-logs`, icon: History },

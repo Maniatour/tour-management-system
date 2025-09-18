@@ -354,7 +354,20 @@ export default function TourDetailPage() {
         return
       }
 
-      setOtherToursAssignedReservations((resvData as any[]) || [])
+      // 현재 투어에 배정된 예약은 제외하고, 상태는 recruiting/confirmed만 표시 (대소문자 무시)
+      const currentTourReservationIds: string[] = Array.isArray((targetTour as any)?.reservation_ids)
+        ? ((targetTour as any).reservation_ids as any[]).map((v: any) => String(v))
+        : []
+
+      const filtered = ((resvData as any[]) || [])
+        .filter((r: any) => {
+          const s = String(r?.status || '').toLowerCase()
+          return s === 'recruiting' || s === 'confirmed'
+        })
+        .filter((r: any) => r?.product_id === targetTour.product_id && r?.tour_date === targetTour.tour_date)
+        .filter((r: any) => !currentTourReservationIds.includes(String(r?.id)))
+
+      setOtherToursAssignedReservations(filtered)
     } catch (error) {
       console.error('다른 투어 배정 예약 조회 오류:', error)
     }
@@ -2267,30 +2280,31 @@ export default function TourDetailPage() {
             </div>
           </div>
 
-          {/* 4열: 정산 관리 */}
+          {/* 4열: 정산 관리 (재무 권한 보유자만) */}
+          {hasPermission && hasPermission('canViewFinance') && (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border">
-              <div className="p-4">
-                <h2 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
-                  정산 관리
-                  <ConnectionStatusLabel status={connectionStatus.bookings} section="정산" />
-                </h2>
-                
-                {/* 투어 지출 관리 */}
-                <TourExpenseManager
-                  tourId={tour.id}
-                  tourDate={tour.tour_date}
-                  productId={tour.product_id}
-                  submittedBy={userRole === 'admin' ? 'admin@tour.com' : 'guide@tour.com'}
-                  onExpenseUpdated={() => {
-                    // 지출 업데이트 시 필요한 로직
-                    console.log('Expenses updated')
-                  }}
-                />
-              </div>
-            </div>
+             <div className="bg-white rounded-lg shadow-sm border">
+               <div className="p-4">
+                 <h2 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
+                   정산 관리
+                   <ConnectionStatusLabel status={connectionStatus.bookings} section="정산" />
+                 </h2>
+                 
+                 {/* 투어 지출 관리 */}
+                 <TourExpenseManager
+                   tourId={tour.id}
+                   tourDate={tour.tour_date}
+                   productId={tour.product_id}
+                   submittedBy={userRole === 'admin' ? 'admin@tour.com' : 'guide@tour.com'}
+                   onExpenseUpdated={() => {
+                     // 지출 업데이트 시 필요한 로직
+                     console.log('Expenses updated')
+                   }}
+                 />
+               </div>
+             </div>
           </div>
-
+          )}
         </div>
       </div>
 

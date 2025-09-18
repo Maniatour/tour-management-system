@@ -540,6 +540,8 @@
       "meal": "식사",
       "meals": "식사",
       "food": "식사",
+      "extra_courses": "추가 코스",
+      "surcharge": "추가 요금",
       "insurance": "보험",
       "equipment": "장비",
       "activity": "액티비티",
@@ -825,6 +827,30 @@
         "모든 변경사항은 자동으로 히스토리에 기록되며, 언제든지 확인할 수 있습니다.",
         "가예약 상태에서 실예약으로 변경 시 상태를 업데이트해주세요."
       ]
+    }
+  },
+  "teamBoard": {
+    "title": "팀 보드",
+    "announcements": "전달사항",
+    "newAnnouncement": "새 공지",
+    "noAnnouncements": "등록된 공지가 없습니다.",
+    "comments": "댓글",
+    "acknowledged": "확인",
+    "confirm": "확인",
+    "unconfirm": "확인 취소",
+    "newTodo": "새 ToDo",
+    "checklist": "체크리스트",
+    "tasks": "업무",
+    "noTodos": "등록된 ToDo가 없습니다.",
+    "filters": {
+      "scopeAll": "전체",
+      "scopeCommon": "공통",
+      "scopeIndividual": "개별",
+      "catDaily": "Daily",
+      "catMonthly": "Monthly",
+      "catYearly": "Yearly",
+      "catAll": "All",
+      "onlyMine": "내 업무만"
     }
   }
 }

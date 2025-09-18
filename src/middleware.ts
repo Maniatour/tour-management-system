@@ -64,7 +64,7 @@ export async function middleware(req: NextRequest) {
   const teamRoutes = ['/reservations', '/customers', '/tours', '/schedule']
   const authRoutes = ['/auth']
 
-  // 로케일 접두어 제거 (예: /ko, /en, /ja 또는 /ko-KR)
+  // 로케일 접두어 제거
   const stripLocale = (pathname: string) => {
     const segments = pathname.split('/').filter(Boolean)
     if (segments.length === 0) return pathname
@@ -82,40 +82,19 @@ export async function middleware(req: NextRequest) {
   const isTeamRoute = teamRoutes.some(route => path.startsWith(route))
   const isAuthRoute = authRoutes.some(route => path.startsWith(route))
 
-  // 로그인하지 않은 경우
-  if (!session) {
-    if (isAdminRoute || isTeamRoute) {
-      const redirectUrl = new URL('/auth', req.url)
-      redirectUrl.searchParams.set('redirectTo', req.nextUrl.pathname)
-      return NextResponse.redirect(redirectUrl)
-    }
-  } else {
-    // 로그인한 상태에서 인증 페이지에 접근하는 경우
-    if (isAuthRoute) {
-      const redirectTo = req.nextUrl.searchParams.get('redirectTo') || '/'
-      return NextResponse.redirect(new URL(redirectTo, req.url))
-    }
-
-    // 팀원/관리자 권한이 필요한 라우트 체크
-    if (isTeamRoute || isAdminRoute) {
-      // 여기서는 기본적으로 로그인만 확인하고, 
-      // 실제 권한 체크는 각 페이지에서 수행
-      // (미들웨어에서는 데이터베이스 조회가 제한적이므로)
-    }
+  // 서버단 강제 리다이렉트는 최소화: 클라이언트 보호(ProtectedRoute)로 위임
+  // 로그인한 상태에서 인증 페이지 접근 시에만 원래 경로로 보내기
+  if (session && isAuthRoute) {
+    const redirectTo = req.nextUrl.searchParams.get('redirectTo') || '/'
+    return NextResponse.redirect(new URL(redirectTo, req.url))
   }
 
+  // 나머지는 통과 (클라이언트에서 권한 체크 및 리다이렉트)
   return response
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

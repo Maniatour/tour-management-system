@@ -20,10 +20,24 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_A
 let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null
 let clientSupabaseInstance: ReturnType<typeof createClientComponentClient<Database>> | null = null
 
+// 주의: 브라우저에서는 auth-helpers 클라이언트와 스토리지를 공유하지 않도록 비지속 모드 사용
 export const supabase = (() => {
   if (!supabaseInstance) {
+    const isBrowser = typeof window !== 'undefined'
     console.log('Creating new Supabase client instance')
-    supabaseInstance = createClient<Database>(supabaseUrl, supabaseAnonKey)
+    supabaseInstance = createClient<Database>(
+      supabaseUrl,
+      supabaseAnonKey,
+      isBrowser
+        ? {
+            auth: {
+              persistSession: false,
+              autoRefreshToken: false,
+              storage: undefined,
+            },
+          }
+        : undefined
+    )
   }
   return supabaseInstance
 })()

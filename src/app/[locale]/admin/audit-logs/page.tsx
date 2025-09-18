@@ -14,6 +14,7 @@ import {
   ArrowUpDown
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import ProtectedRoute from '@/components/auth/ProtectedRoute'
 
 interface AuditLog {
   id: string
@@ -253,6 +254,7 @@ export default function AdminAuditLogs() {
   }
 
   return (
+    <ProtectedRoute requiredPermission="canViewAuditLogs">
     <div className="space-y-6">
       {/* 페이지 헤더 */}
       <div className="flex items-center justify-between">
@@ -492,5 +494,6 @@ export default function AdminAuditLogs() {
         )}
       </div>
     </div>
+    </ProtectedRoute>
   )
 }

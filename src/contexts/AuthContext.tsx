@@ -62,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         canViewAuditLogs: hasPermission(role, 'canViewAuditLogs'),
         canManageChannels: hasPermission(role, 'canManageChannels'),
         canManageOptions: hasPermission(role, 'canManageOptions'),
+        canViewFinance: hasPermission(role, 'canViewFinance'),
       }
 
       console.log('User role check result:', {
@@ -136,6 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   canViewAuditLogs: hasPermission(sessionData.userRole, 'canViewAuditLogs'),
                   canManageChannels: hasPermission(sessionData.userRole, 'canManageChannels'),
                   canManageOptions: hasPermission(sessionData.userRole, 'canManageOptions'),
+                  canViewFinance: hasPermission(sessionData.userRole, 'canViewFinance'),
                 }
                 setPermissions(userPermissions)
               }
@@ -270,6 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                       canViewAuditLogs: hasPermission(sessionData.userRole, 'canViewAuditLogs'),
                       canManageChannels: hasPermission(sessionData.userRole, 'canManageChannels'),
                       canManageOptions: hasPermission(sessionData.userRole, 'canManageOptions'),
+                      canViewFinance: hasPermission(sessionData.userRole, 'canViewFinance'),
                     }
                     setPermissions(userPermissions)
                   }

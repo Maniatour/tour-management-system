@@ -36,7 +36,7 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
   const converted = { ...data }
 
   // 숫자 필드 변환
-  const numberFields = ['adults', 'child', 'infant', 'total_people', 'price', 'rooms', 'unit_price', 'total_price']
+  const numberFields = ['adults', 'child', 'infant', 'total_people', 'price', 'rooms', 'unit_price', 'total_price', 'base_price', 'commission_amount', 'commission_percent']
   numberFields.forEach(field => {
     if (converted[field] !== undefined && converted[field] !== '') {
       converted[field] = parseFloat(String(converted[field])) || 0
@@ -75,6 +75,12 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
     }
   })
 
+  // tour_id 정리: 공백 트리밍만 수행 (TEXT PK 허용). 빈 문자열은 null 처리
+  if (converted.tour_id !== undefined && converted.tour_id !== null) {
+    const val = String(converted.tour_id).trim()
+    converted.tour_id = val.length === 0 ? null : val
+  }
+
   // tour_hotel_bookings 및 ticket_bookings 테이블 특별 처리
   if (tableName === 'tour_hotel_bookings' || tableName === 'ticket_bookings') {
     console.log('Processing tour_hotel_bookings data:', Object.keys(converted))
@@ -89,12 +95,19 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
         'unit_price', 'total_price', 'payment_method', 'website', 'rn_number',
         'status', 'created_at', 'updated_at'
       ]
+
+      if (converted.submitted_by === '') converted.submitted_by = null
     } else if (tableName === 'ticket_bookings') {
       validFields = [
         'id', 'category', 'submit_on', 'submitted_by', 'check_in_date', 'time',
         'company', 'ea', 'expense', 'income', 'payment_method', 'rn_number',
         'tour_id', 'note', 'status', 'season', 'created_at', 'updated_at', 'reservation_id'
       ]
+
+      // 입력 보정: 빈 문자열을 NULL/0으로 정리
+      if (converted.time === '') converted.time = null
+      if (converted.company === '') converted.company = null
+      if (converted.ea === '' || converted.ea === undefined || converted.ea === null) converted.ea = 0
     }
     
     // 유효하지 않은 필드 제거
@@ -137,6 +150,13 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
   if (converted.reservations_ids && !converted.reservation_ids) {
     converted.reservation_ids = converted.reservations_ids
     delete converted.reservations_ids
+  }
+
+  // team 테이블 전용: languages(TEXT[])는 항상 문자열 배열로 변환
+  if (tableName === 'team') {
+    if (converted.languages !== undefined && converted.languages !== null) {
+      converted.languages = coerceStringToStringArray(converted.languages)
+    }
   }
 
   // JSONB 필드 정리 (존재할 때만 정리하고, 없으면 건드리지 않음)
@@ -248,9 +268,13 @@ export const flexibleSync = async (
     updated?: number
     errors?: number
     mode?: 'incremental' | 'full'
-  }) => void
+  }) => void,
+  // 주입 가능한 Supabase 클라이언트 (JWT 포함)
+  injectedSupabaseClient?: unknown,
+  jwtToken?: string
 ) => {
   try {
+    const db = (injectedSupabaseClient as any) || (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
     console.log(`Starting flexible sync for spreadsheet: ${spreadsheetId}, sheet: ${sheetName}, table: ${targetTable}`)
     console.log(`Target table type: ${typeof targetTable}, value: "${targetTable}"`)
     
@@ -308,6 +332,22 @@ export const flexibleSync = async (
     onProgress?.({ type: 'info', message: `데이터 변환 완료 - ${totalRows}개 행 (${mode} 동기화)` })
     onProgress?.({ type: 'start', total: totalRows, mode })
 
+    // 대상 테이블의 컬럼 존재 여부 확인 (샘플 1행 조회)
+    let tableColumns: Set<string> | null = null
+    try {
+      const { data: sampleForColumns } = await (db as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .from(targetTable)
+        .select('*')
+        .limit(1)
+      if (sampleForColumns && sampleForColumns.length > 0) {
+        tableColumns = new Set(Object.keys(sampleForColumns[0] as Record<string, unknown>))
+      } else {
+        tableColumns = new Set()
+      }
+    } catch {
+      tableColumns = new Set()
+    }
+
     // tour_expenses 테이블에 대한 특별한 처리
     if (targetTable === 'tour_expenses') {
       onProgress?.({ type: 'info', message: 'tour_expenses 테이블 동기화 - 외래 키 검증을 건너뜁니다...' })
@@ -315,19 +355,11 @@ export const flexibleSync = async (
       // 외래 키 검증을 건너뛰고 모든 레코드를 처리
       onProgress?.({ type: 'warn', message: '외래 키 검증을 건너뛰고 모든 레코드를 동기화합니다.' })
       
-      // 유효하지 않은 외래 키를 NULL로 설정하여 제약 조건 오류 방지
+      // 외래 키 정리: 공백 트리밍만 수행 (TEXT 키 허용). 비어 있으면 null
       transformedData.forEach(row => {
-        if (row.tour_id && typeof row.tour_id === 'string' && row.tour_id.length < 8) {
-          // OE로 시작하는 짧은 ID들은 NULL로 설정
-          row.tour_id = null
-        }
-        if (row.product_id && typeof row.product_id === 'string' && row.product_id.length < 10) {
-          // 짧은 product_id들은 NULL로 설정
-          row.product_id = null
-        }
+        if (typeof row.tour_id === 'string') row.tour_id = row.tour_id.trim() || null
+        if (typeof row.product_id === 'string') row.product_id = row.product_id.trim() || null
       })
-      
-      onProgress?.({ type: 'info', message: '유효하지 않은 외래 키 참조를 NULL로 설정했습니다.' })
       
       // 외래 키 검증을 건너뛰므로 주석 처리
       /*
@@ -420,11 +452,18 @@ export const flexibleSync = async (
     // 현재 사용자 정보 확인
     onProgress?.({ type: 'info', message: '현재 사용자 정보를 확인합니다...' })
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      onProgress?.({ type: 'info', message: `현재 사용자: ${user?.email || 'unknown'}` })
+      let userEmail = ''
+      if (jwtToken) {
+        const { data: { user } } = await db.auth.getUser(jwtToken)
+        userEmail = user?.email || ''
+      } else {
+        const { data: { user } } = await db.auth.getUser()
+        userEmail = user?.email || ''
+      }
+      onProgress?.({ type: 'info', message: `현재 사용자: ${userEmail || 'unknown'}` })
       
       // is_staff 함수 테스트
-      const { data: staffCheck } = await (supabase as any).rpc('is_staff', { p_email: user?.email || '' }) // eslint-disable-line @typescript-eslint/no-explicit-any
+      const { data: staffCheck } = await db.rpc('is_staff', { p_email: userEmail || '' })
       onProgress?.({ type: 'info', message: `Staff 권한: ${staffCheck ? 'YES' : 'NO'}` })
     } catch {
       onProgress?.({ type: 'warn', message: '사용자 정보 확인 실패' })
@@ -448,12 +487,10 @@ export const flexibleSync = async (
       try {
         const nowIso = new Date().toISOString()
         
-        // updated_at 컬럼이 있는 테이블만 추가
+        // updated_at 컬럼이 실제로 존재하는 경우에만 추가
         const payload = rowsBuffer.map(r => {
           const row = { ...r }
-          // updated_at 컬럼이 있는 테이블들만 추가
-          const tablesWithUpdatedAt = ['reservations', 'tours', 'customers', 'products', 'ticket_bookings', 'tour_hotel_bookings', 'vehicles', 'sync_history', 'tour_expenses']
-          if (tablesWithUpdatedAt.includes(targetTable)) {
+          if (tableColumns && tableColumns.has('updated_at')) {
             row.updated_at = nowIso
           }
           return row
@@ -462,9 +499,9 @@ export const flexibleSync = async (
         // API 할당량을 고려한 지연 시간 추가 (100ms)
         await new Promise(resolve => setTimeout(resolve, 100))
         
-        const { error } = await (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        const { error } = await (db as any) // eslint-disable-line @typescript-eslint/no-explicit-any
           .from(targetTable)
-          .upsert(payload, { onConflict: 'id' })
+          .upsert(payload, { onConflict: targetTable === 'team' ? 'email' : 'id' })
         if (error) {
           console.error('Upsert batch error:', error)
           results.errors += rowsBuffer.length
@@ -515,10 +552,15 @@ export const flexibleSync = async (
         // ID가 없으면 생성하여 스킵 방지
         if (!row.id) {
           try {
-            // Node 18+ 환경
-            row.id = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto?.randomUUID ? (globalThis as { crypto: { randomUUID: () => string } }).crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`
+            // team 테이블은 PK가 email이므로 id를 생성하지 않음
+            if (targetTable !== 'team') {
+              // Node 18+ 환경
+              row.id = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto?.randomUUID ? (globalThis as { crypto: { randomUUID: () => string } }).crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`
+            }
           } catch {
-            row.id = `${Date.now()}_${Math.random().toString(36).slice(2)}`
+            if (targetTable !== 'team') {
+              row.id = `${Date.now()}_${Math.random().toString(36).slice(2)}`
+            }
           }
         }
 
@@ -531,7 +573,7 @@ export const flexibleSync = async (
         }
 
         // 삽입 시 기본값 보완
-        const prepared = applyInsertDefaults(targetTable, row)
+        const prepared = applyInsertDefaults(targetTable, row, tableColumns)
         rowsBuffer.push(prepared)
       } catch (error) {
         console.error('Error preparing row:', error)
@@ -593,27 +635,32 @@ export const flexibleSync = async (
 }
 
 // 삽입 시에만 기본값을 적용 (업데이트 시에는 기존 DB 값을 보존)
-const applyInsertDefaults = (tableName: string, row: Record<string, unknown>) => {
+const applyInsertDefaults = (tableName: string, row: Record<string, unknown>, tableColumns?: Set<string> | null) => {
   const payload = { ...row }
   const nowIso = new Date().toISOString()
 
-  // created_at과 updated_at이 있는 테이블만 추가
-  const tablesWithTimestamps = ['reservations', 'tours', 'customers', 'products', 'ticket_bookings', 'tour_hotel_bookings', 'vehicles', 'sync_history', 'tour_expenses']
-  
-  if (tablesWithTimestamps.includes(tableName)) {
-    if (!payload.created_at) payload.created_at = nowIso
-    if (!payload.updated_at) payload.updated_at = nowIso
+  // created_at/updated_at 컬럼이 실제로 존재하는 경우에만 보완
+  if (tableColumns && tableColumns.has('created_at') && !payload.created_at) {
+    payload.created_at = nowIso
+  }
+  if (tableColumns && tableColumns.has('updated_at') && !payload.updated_at) {
+    payload.updated_at = nowIso
   }
 
   if (tableName === 'reservations') {
-    if (!payload.status) payload.status = 'pending'
-    if (!payload.channel_id) payload.channel_id = 'default'
+    if (tableColumns?.has('status') && !payload.status) payload.status = 'pending'
+    if (tableColumns?.has('channel_id') && !payload.channel_id) payload.channel_id = 'default'
   }
   if (tableName === 'tours') {
-    if (!payload.tour_status) payload.tour_status = 'Recruiting'
+    if (tableColumns?.has('tour_status') && !payload.tour_status) payload.tour_status = 'Recruiting'
   }
   if (tableName === 'customers') {
-    if (!payload.language) payload.language = 'ko'
+    if (tableColumns?.has('language') && !payload.language) payload.language = 'ko'
+  }
+  if (tableName === 'products') {
+    if (tableColumns?.has('base_price') && (payload.base_price === undefined || payload.base_price === null || payload.base_price === '')) {
+      payload.base_price = 0
+    }
   }
 
   return payload

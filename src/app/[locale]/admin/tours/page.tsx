@@ -10,7 +10,7 @@ import TourCalendar from '@/components/TourCalendar'
 import ScheduleView from '@/components/ScheduleView'
 
 type Tour = Database['public']['Tables']['tours']['Row']
-type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
+// type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
 
 type ExtendedTour = Tour & {
   product_name?: string | null;
@@ -194,6 +194,30 @@ export default function AdminTours() {
       let reservationsData: Database['public']['Tables']['reservations']['Row'][] | null = []
       let reservationsError: unknown = null
       const productIdsActive = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.product_id).filter(Boolean))]
+
+      // 미리 모든 투어의 reservation_ids 수집 (배정 인원 계산 정확도 보장)
+      const normalizeIds = (value: unknown): string[] => {
+        if (!value) return []
+        if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(v => v.length > 0)
+        if (typeof value === 'string') {
+          const trimmed = value.trim()
+          if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+            try {
+              const parsed = JSON.parse(trimmed)
+              return Array.isArray(parsed) ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0) : []
+            } catch { return [] }
+          }
+          if (trimmed.includes(',')) return trimmed.split(',').map(s => s.trim()).filter(s => s.length > 0)
+          return trimmed.length > 0 ? [trimmed] : []
+        }
+        return []
+      }
+      const assignedIdsSet = new Set<string>()
+      for (const t of (toursDataActive || [])) {
+        const ids = normalizeIds((t as unknown as { reservation_ids?: unknown }).reservation_ids)
+        ids.forEach(id => assignedIdsSet.add(id))
+      }
+
       if (productIdsActive.length > 0) {
         const { data, error } = await supabase
           .from('reservations')
@@ -203,6 +227,21 @@ export default function AdminTours() {
           .lte('tour_date', fmt(gridEnd))
         reservationsData = data
         reservationsError = error
+      }
+
+      // 누락된 배정 예약(id 기반)이 있으면 추가로 가져와 병합
+      if (!reservationsError && assignedIdsSet.size > 0) {
+        const existingIds = new Set((reservationsData || []).map(r => String(r.id)))
+        const missingIds = [...assignedIdsSet].filter(id => !existingIds.has(id))
+        if (missingIds.length > 0) {
+          const { data: extraReservations, error: extraErr } = await supabase
+            .from('reservations')
+            .select('*')
+            .in('id', missingIds)
+          if (!extraErr && extraReservations && extraReservations.length > 0) {
+            reservationsData = [...(reservationsData || []), ...extraReservations]
+          }
+        }
       }
 
       if (reservationsError) {
@@ -215,12 +254,15 @@ export default function AdminTours() {
 
       // 6. 사전 계산 맵 구성 (성능 최적화)
       const reservationIdToPeople = new Map<string, number>()
+      const reservationIdToRow = new Map<string, Database['public']['Tables']['reservations']['Row']>()
       const productDateKeyToTotalPeople = new Map<string, number>()
       const productDateKeyToUnassignedPeople = new Map<string, number>()
 
       for (const res of reservationsData || []) {
         if (res && res.id) {
-          reservationIdToPeople.set(String(res.id).trim(), res.total_people || 0)
+          const rid = String(res.id).trim()
+          reservationIdToPeople.set(rid, res.total_people || 0)
+          reservationIdToRow.set(rid, res)
         }
         const productId = (res?.product_id ? String(res.product_id) : '').trim()
         const date = (res?.tour_date ? String(res.tour_date) : '').trim()
@@ -235,6 +277,7 @@ export default function AdminTours() {
       const toursWithDetails: ExtendedTour[] = (toursDataActive || []).map((tour: ExtendedTour) => {
         // 배정 인원: reservation_ids 합산
         let assignedPeople = 0
+        const counted = new Set<string>()
         // reservation_ids 정규화: 배열/JSON/콤마 지원
         const normalize = (value: unknown): string[] => {
           if (!value) return []
@@ -254,7 +297,15 @@ export default function AdminTours() {
         }
         const ids = normalize(tour.reservation_ids as unknown)
         for (const id of ids) {
-          assignedPeople += reservationIdToPeople.get(String(id).trim()) || 0
+          const rid = String(id).trim()
+          if (counted.has(rid)) continue
+          counted.add(rid)
+          const row = reservationIdToRow.get(rid)
+          if (!row) continue
+          // 동일한 상품/날짜에 속하는 예약만 합산 (잘못 연결된 ID 방지)
+          if ((row.product_id || '') === (tour.product_id || '') && (row.tour_date || '') === (tour.tour_date || '')) {
+            assignedPeople += row.total_people || 0
+          }
         }
         // 같은 상품/날짜 총 인원
         const key = `${tour.product_id || ''}__${tour.tour_date || ''}`
