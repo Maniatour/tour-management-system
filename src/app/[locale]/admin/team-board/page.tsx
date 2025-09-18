@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { use } from 'react'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/contexts/AuthContext'
-import { createClientSupabase } from '@/lib/supabase'
+import { supabase, createClientSupabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import { Check, CheckCircle2, ChevronDown, ChevronUp, Loader2, MessageCircle, Pin, PinOff, Plus, Send, X } from 'lucide-react'
 
@@ -60,7 +60,7 @@ type OpTodo = {
 export default function TeamBoardPage({ params }: TeamBoardPageProps) {
   const { locale } = use(params)
   const { authUser } = useAuth()
-  const supabase = createClientSupabase()
+  // supabase 클라이언트는 AuthContext에서 관리됨
   
   // useTranslations 훅을 조건부로 사용
   let t: (key: string) => string
@@ -296,17 +296,58 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
 
   const createTodo = async () => {
     if (!newTodo.title.trim() || !authUser?.email) return
-    if (newTodo.scope === 'individual' && !newTodo.assigned_to.trim()) {
-      alert('개별 업무는 담당자 이메일이 필요합니다.')
+    
+    // 세션 상태 확인
+    const { data: { session } } = await supabase.auth.getSession()
+    console.log('createTodo - Session check:', {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      email: session?.user?.email,
+      authUserEmail: authUser.email,
+      accessToken: session?.access_token ? 'present' : 'missing',
+      refreshToken: session?.refresh_token ? 'present' : 'missing',
+      expiresAt: session?.expires_at,
+      tokenType: session?.token_type
+    })
+    
+    // 세션이 없으면 에러
+    if (!session || !session.user) {
+      console.error('No valid session found for database operation')
+      
+      // localStorage에서 세션 복원 시도
+      const storedSession = localStorage.getItem('auth_session')
+      if (storedSession) {
+        try {
+          const sessionData = JSON.parse(storedSession)
+          if (sessionData.session) {
+            console.log('createTodo: Attempting to restore session from localStorage...')
+            const { data: restoredSession, error } = await supabase.auth.setSession(sessionData.session)
+            if (error) {
+              console.error('createTodo: Failed to restore session:', error)
+              alert('세션이 만료되었습니다. 다시 로그인해주세요.')
+              return
+            } else {
+              console.log('createTodo: Session restored successfully, retrying...')
+              // 세션 복원 후 재시도
+              return createTodo()
+            }
+          }
+        } catch (error) {
+          console.error('Error parsing stored session:', error)
+        }
+      }
+      
+      alert('세션이 만료되었습니다. 다시 로그인해주세요.')
       return
     }
+    
     try {
       const payload: any = {
         title: newTodo.title.trim(),
-        description: newTodo.description.trim() || null,
-        scope: newTodo.scope,
+        description: null,
+        scope: 'common',
         category: newTodo.category,
-        assigned_to: newTodo.scope === 'individual' ? newTodo.assigned_to.trim() : null,
+        assigned_to: null,
         created_by: authUser.email,
       }
       const { data, error } = await supabase
@@ -316,11 +357,25 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
         .single()
       if (error) throw error
       setOpTodos(prev => [data as any, ...prev])
-      setShowNewTodoModal(false)
       setNewTodo({ title: '', description: '', scope: 'common', category: 'daily', assigned_to: '' })
     } catch (e) {
       console.error(e)
       alert('ToDo 생성 중 오류가 발생했습니다.')
+    }
+  }
+
+  const deleteTodo = async (id: string) => {
+    if (!confirm('정말로 이 항목을 삭제하시겠습니까?')) return
+    try {
+      const { error } = await supabase
+        .from('op_todos')
+        .delete()
+        .eq('id', id)
+      if (error) throw error
+      setOpTodos(prev => prev.filter(todo => todo.id !== id))
+    } catch (e) {
+      console.error(e)
+      alert('ToDo 삭제 중 오류가 발생했습니다.')
     }
   }
 
@@ -660,25 +715,91 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
         {/* New Todo Modal */}
         {showNewTodoModal && (
           <Modal onClose={() => setShowNewTodoModal(false)}>
-            <h3 className="text-lg font-semibold mb-3">새 ToDo</h3>
-            <div className="space-y-3">
-              <input value={newTodo.title} onChange={e => setNewTodo({ ...newTodo, title: e.target.value })} placeholder="제목" className="w-full px-3 py-2 border rounded-md"/>
-              <textarea value={newTodo.description} onChange={e => setNewTodo({ ...newTodo, description: e.target.value })} placeholder="설명 (선택)" rows={4} className="w-full px-3 py-2 border rounded-md"/>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <select value={newTodo.scope} onChange={e => setNewTodo({ ...newTodo, scope: e.target.value as any })} className="px-3 py-2 border rounded-md">
-                  <option value="common">공통</option>
-                  <option value="individual">개별</option>
-                </select>
-                <select value={newTodo.category} onChange={e => setNewTodo({ ...newTodo, category: e.target.value as any })} className="px-3 py-2 border rounded-md">
-                  <option value="daily">Daily</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="yearly">Yearly</option>
-                </select>
-                <input value={newTodo.assigned_to} onChange={e => setNewTodo({ ...newTodo, assigned_to: e.target.value })} placeholder="담당자 이메일 (개별일 때)" className="px-3 py-2 border rounded-md"/>
+            <h3 className="text-lg font-semibold mb-4">체크리스트 관리</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* 기존 항목 관리 */}
+              <div>
+                <h4 className="font-medium mb-3">기존 항목 관리</h4>
+                <div className="space-y-4">
+                  {['daily', 'monthly', 'yearly'].map(category => (
+                    <div key={category} className="border rounded-lg p-3">
+                      <h5 className="font-medium text-sm mb-2 capitalize">{category}</h5>
+                      <div className="space-y-2">
+                        {opTodos
+                          .filter(todo => todo.category === category)
+                          .map(todo => (
+                            <div key={todo.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                              <span className="text-sm">{todo.title}</span>
+                              <div className="flex items-center space-x-1">
+                                <button
+                                  onClick={() => toggleTodoCompleted(todo)}
+                                  className={`w-5 h-5 rounded border flex items-center justify-center ${todo.completed ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-gray-300 text-gray-400 hover:bg-gray-50'}`}
+                                >
+                                  {todo.completed && <CheckCircle2 className="w-3 h-3"/>}
+                                </button>
+                                <button
+                                  onClick={() => deleteTodo(todo.id)}
+                                  className="w-5 h-5 text-red-500 hover:bg-red-50 rounded flex items-center justify-center"
+                                >
+                                  <X className="w-3 h-3"/>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        {opTodos.filter(todo => todo.category === category).length === 0 && (
+                          <div className="text-sm text-gray-500 text-center py-2">항목 없음</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="flex justify-end space-x-2">
-                <button onClick={() => setShowNewTodoModal(false)} className="px-3 py-1.5 border rounded-md">취소</button>
-                <button onClick={createTodo} className="px-3 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">등록</button>
+
+              {/* 새 항목 추가 */}
+              <div>
+                <h4 className="font-medium mb-3">새 항목 추가</h4>
+                <div className="space-y-3">
+                  <input 
+                    value={newTodo.title} 
+                    onChange={e => setNewTodo({ ...newTodo, title: e.target.value })} 
+                    placeholder="체크리스트 항목을 입력하세요" 
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                  
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">기간</label>
+                    <div className="flex space-x-2">
+                      {['daily', 'monthly', 'yearly'].map(period => (
+                        <button
+                          key={period}
+                          onClick={() => setNewTodo({ ...newTodo, category: period as any })}
+                          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                            newTodo.category === period
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {period === 'daily' ? '일일' : period === 'monthly' ? '월간' : '연간'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end space-x-2 pt-4">
+                    <button 
+                      onClick={() => setShowNewTodoModal(false)} 
+                      className="px-4 py-2 border rounded-md hover:bg-gray-50"
+                    >
+                      취소
+                    </button>
+                    <button 
+                      onClick={createTodo} 
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    >
+                      추가
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </Modal>
@@ -773,10 +894,10 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-4 w-full max-w-2xl mx-4">
-        <div className="flex justify-end mb-2">
+      <div className="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-end mb-4">
           <button onClick={onClose} className="p-1 text-gray-500 hover:text-gray-700">
-            <X className="w-4 h-4"/>
+            <X className="w-5 h-5"/>
           </button>
         </div>
         {children}
