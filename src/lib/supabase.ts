@@ -18,7 +18,6 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_A
 
 // 싱글톤 패턴으로 클라이언트 인스턴스 생성
 let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null
-let clientSupabaseInstance: ReturnType<typeof createClientComponentClient<Database>> | null = null
 
 // 주의: 브라우저에서는 auth-helpers 클라이언트와 스토리지를 공유하지 않도록 비지속 모드 사용
 export const supabase = (() => {
@@ -31,9 +30,9 @@ export const supabase = (() => {
       isBrowser
         ? {
             auth: {
-              persistSession: false,
-              autoRefreshToken: false,
-              storage: undefined,
+              persistSession: true,
+              autoRefreshToken: true,
+              storage: typeof window !== 'undefined' ? window.localStorage : undefined,
             },
           }
         : undefined
@@ -42,12 +41,10 @@ export const supabase = (() => {
   return supabaseInstance
 })()
 
-// 클라이언트 컴포넌트용 Supabase 클라이언트 (싱글톤)
+// 클라이언트 컴포넌트용 Supabase 클라이언트 (같은 인스턴스 사용)
 export const createClientSupabase = () => {
-  if (!clientSupabaseInstance) {
-    clientSupabaseInstance = createClientComponentClient<Database>()
-  }
-  return clientSupabaseInstance
+  console.log('Using shared Supabase client instance')
+  return supabase
 }
 
 export type { Database }

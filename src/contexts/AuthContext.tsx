@@ -73,6 +73,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       setUserRole(role)
       setPermissions(userPermissions)
+      
+      // 세션 정보를 localStorage에 저장 (team 정보 포함)
+      if (user) {
+        const sessionData = {
+          user,
+          teamData,
+          userRole: role,
+          permissions: userPermissions
+        }
+        localStorage.setItem('auth_session', JSON.stringify(sessionData))
+      }
     } catch (error) {
       console.error('Error checking user role:', error)
       setUserRole('customer')
@@ -140,155 +151,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
         
-        // Supabase 세션이 없으면 localStorage에서 복원 시도
-        console.log('No active Supabase session, checking localStorage...')
-        const storedSession = localStorage.getItem('auth_session')
-        if (storedSession) {
-          try {
-            const sessionData = JSON.parse(storedSession)
-            console.log('Found stored session data:', { 
-              email: sessionData.user?.email, 
-              userRole: sessionData.userRole 
-            })
-            
-            if (sessionData.user) {
-              // Supabase 클라이언트에 세션 설정
-              if (sessionData.session) {
-                console.log('Attempting to restore session:', {
-                  hasAccessToken: !!sessionData.session.access_token,
-                  hasRefreshToken: !!sessionData.session.refresh_token,
-                  expiresAt: sessionData.session.expires_at,
-                  tokenType: sessionData.session.token_type
-                })
-                
-                // 세션이 만료되었는지 확인
-                if (sessionData.session.expires_at) {
-                  const now = Math.floor(Date.now() / 1000)
-                  const expiresAt = sessionData.session.expires_at
-                  const isExpired = now >= expiresAt
-                  
-                  console.log('Stored session expiry check:', {
-                    now,
-                    expiresAt,
-                    isExpired,
-                    timeUntilExpiry: expiresAt - now
-                  })
-                  
-                  if (isExpired) {
-                    console.log('Stored session is expired, attempting refresh...')
-                    // 만료된 세션은 새로 로그인하도록 안내
-                    localStorage.removeItem('auth_session')
-                    setUser(null)
-                    setAuthUser(null)
-                    setUserRole('customer')
-                    setPermissions(null)
-                    setLoading(false)
-                    return
-                  }
-                }
-                
-                const { data: restoredSession, error: setSessionError } = await supabase.auth.setSession(sessionData.session)
-                if (setSessionError) {
-                  console.error('Error setting session:', setSessionError)
-                  // 세션 설정 실패 시 localStorage에서 제거
-                  localStorage.removeItem('auth_session')
-                  setUser(null)
-                  setAuthUser(null)
-                  setUserRole('customer')
-                  setPermissions(null)
-                  setLoading(false)
-                  return
-                } else {
-                  console.log('Session restored successfully:', {
-                    hasSession: !!restoredSession.session,
-                    hasUser: !!restoredSession.user,
-                    email: restoredSession.user?.email
-                  })
-                  
-                  // 복원된 세션으로 사용자 정보 업데이트
-                  if (restoredSession.user) {
-                    setUser(restoredSession.user)
-                    
-                    const authUserData: AuthUser = {
-                      id: restoredSession.user.id,
-                      email: restoredSession.user.email || '',
-                      name: sessionData.teamData?.name_ko || 
-                            restoredSession.user.user_metadata?.name || 
-                            restoredSession.user.user_metadata?.full_name || 
-                            restoredSession.user.user_metadata?.display_name ||
-                            (restoredSession.user.email ? restoredSession.user.email.split('@')[0] : undefined),
-                      avatar_url: restoredSession.user.user_metadata?.avatar_url,
-                      created_at: restoredSession.user.created_at,
-                    }
-                    setAuthUser(authUserData)
-                    
-                    // 사용자 역할 확인
-                    if (restoredSession.user.email) {
-                      await checkUserRole(restoredSession.user.email)
-                    }
-                    
-                    setLoading(false)
-                    return
-                  }
-                }
-              } else {
-                // 세션이 없는 경우에도 사용자 정보는 설정
-                setUser(sessionData.user)
-                
-                // Supabase 클라이언트에 세션 설정 시도
-                if (sessionData.session) {
-                  console.log('Attempting to restore session from localStorage...')
-                  const { data: restoredSession, error: setSessionError } = await supabase.auth.setSession(sessionData.session)
-                  if (setSessionError) {
-                    console.error('Error setting session:', setSessionError)
-                  } else {
-                    console.log('Session restored successfully from localStorage')
-                  }
-                }
-                
-                const authUserData: AuthUser = {
-                  id: sessionData.user.id,
-                  email: sessionData.user.email || '',
-                  name: sessionData.teamData?.name_ko || 
-                        sessionData.user.user_metadata?.name || 
-                        sessionData.user.user_metadata?.full_name || 
-                        sessionData.user.user_metadata?.display_name ||
-                        (sessionData.user.email ? sessionData.user.email.split('@')[0] : undefined),
-                  avatar_url: sessionData.user.user_metadata?.avatar_url,
-                  created_at: sessionData.user.created_at,
-                }
-                setAuthUser(authUserData)
-                
-                if (sessionData.userRole) {
-                  setUserRole(sessionData.userRole)
-                  
-                  // 권한 설정
-                  const userPermissions = {
-                    canViewAdmin: hasPermission(sessionData.userRole, 'canViewAdmin'),
-                    canManageProducts: hasPermission(sessionData.userRole, 'canManageProducts'),
-                    canManageCustomers: hasPermission(sessionData.userRole, 'canManageCustomers'),
-                    canManageReservations: hasPermission(sessionData.userRole, 'canManageReservations'),
-                    canManageTours: hasPermission(sessionData.userRole, 'canManageTours'),
-                    canManageTeam: hasPermission(sessionData.userRole, 'canManageTeam'),
-                    canViewSchedule: hasPermission(sessionData.userRole, 'canViewSchedule'),
-                    canManageBookings: hasPermission(sessionData.userRole, 'canManageBookings'),
-                    canViewAuditLogs: hasPermission(sessionData.userRole, 'canViewAuditLogs'),
-                    canManageChannels: hasPermission(sessionData.userRole, 'canManageChannels'),
-                    canManageOptions: hasPermission(sessionData.userRole, 'canManageOptions'),
-                    canViewFinance: hasPermission(sessionData.userRole, 'canViewFinance'),
-                  }
-                  setPermissions(userPermissions)
-                }
-                
-                setLoading(false)
-                return
-              }
-            }
-          } catch (parseError) {
-            console.error('Error parsing stored session:', parseError)
-            localStorage.removeItem('auth_session')
-          }
-        }
+        // Supabase가 자동으로 세션을 관리하므로 별도 복원 로직 불필요
+        console.log('No active Supabase session, waiting for auth state change...')
         
         // 세션도 localStorage도 없는 경우
         console.log('No session found, setting as customer')
@@ -328,71 +192,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // 세션이 없고 SIGNED_OUT이 아닌 경우 (INITIAL_SESSION 등)
           if (!session && event !== 'SIGNED_OUT') {
-            console.log('No session but not SIGNED_OUT, checking localStorage...')
-            const storedSession = localStorage.getItem('auth_session')
-            if (storedSession) {
-              try {
-                const sessionData = JSON.parse(storedSession)
-                console.log('Found stored session on no-session event:', { 
-                  email: sessionData.user?.email, 
-                  userRole: sessionData.userRole 
-                })
-                
-                if (sessionData.user) {
-                  setUser(sessionData.user)
-                  
-                  // Supabase 클라이언트에 세션 설정
-                  if (sessionData.session) {
-                    console.log('onAuthStateChange: Attempting to restore session...')
-                    const { data: restoredSession, error: setSessionError } = await supabase.auth.setSession(sessionData.session)
-                    if (setSessionError) {
-                      console.error('onAuthStateChange: Error setting session:', setSessionError)
-                    } else {
-                      console.log('onAuthStateChange: Session restored successfully')
-                    }
-                  }
-                  
-                  const authUserData: AuthUser = {
-                    id: sessionData.user.id,
-                    email: sessionData.user.email || '',
-                    name: sessionData.teamData?.name_ko || 
-                          sessionData.user.user_metadata?.name || 
-                          sessionData.user.user_metadata?.full_name || 
-                          sessionData.user.user_metadata?.display_name ||
-                          (sessionData.user.email ? sessionData.user.email.split('@')[0] : undefined),
-                    avatar_url: sessionData.user.user_metadata?.avatar_url,
-                    created_at: sessionData.user.created_at,
-                  }
-                  setAuthUser(authUserData)
-                  
-                  if (sessionData.userRole) {
-                    setUserRole(sessionData.userRole)
-                    
-                    const userPermissions = {
-                      canViewAdmin: hasPermission(sessionData.userRole, 'canViewAdmin'),
-                      canManageProducts: hasPermission(sessionData.userRole, 'canManageProducts'),
-                      canManageCustomers: hasPermission(sessionData.userRole, 'canManageCustomers'),
-                      canManageReservations: hasPermission(sessionData.userRole, 'canManageReservations'),
-                      canManageTours: hasPermission(sessionData.userRole, 'canManageTours'),
-                      canManageTeam: hasPermission(sessionData.userRole, 'canManageTeam'),
-                      canViewSchedule: hasPermission(sessionData.userRole, 'canViewSchedule'),
-                      canManageBookings: hasPermission(sessionData.userRole, 'canManageBookings'),
-                      canViewAuditLogs: hasPermission(sessionData.userRole, 'canViewAuditLogs'),
-                      canManageChannels: hasPermission(sessionData.userRole, 'canManageChannels'),
-                      canManageOptions: hasPermission(sessionData.userRole, 'canManageOptions'),
-                      canViewFinance: hasPermission(sessionData.userRole, 'canViewFinance'),
-                    }
-                    setPermissions(userPermissions)
-                  }
-                  
-                  setLoading(false)
-                  return
-                }
-              } catch (parseError) {
-                console.error('Error parsing stored session:', parseError)
-                localStorage.removeItem('auth_session')
-              }
-            }
+            console.log('No session but not SIGNED_OUT, setting as customer')
+            setUser(null)
+            setAuthUser(null)
+            setUserRole('customer')
+            setPermissions(null)
+            setLoading(false)
           }
 
           // 새로운 세션이 있는 경우
@@ -415,20 +220,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // 사용자 역할 확인
             if (session.user.email) {
               await checkUserRole(session.user.email)
-            }
-            
-            // 세션을 localStorage에 저장 (새로운 세션인 경우)
-            try {
-              const sessionToStore = {
-                session: session,
-                user: session.user,
-                userRole: userRole,
-                teamData: null // 나중에 team 테이블에서 가져올 수 있음
-              }
-              localStorage.setItem('auth_session', JSON.stringify(sessionToStore))
-              console.log('Session saved to localStorage')
-            } catch (error) {
-              console.error('Error saving session to localStorage:', error)
             }
             
             setLoading(false)
@@ -460,7 +251,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       await supabase.auth.signOut()
-      localStorage.removeItem('auth_session')
       setUser(null)
       setAuthUser(null)
       setUserRole('customer')
@@ -491,6 +281,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return `/${locale}/auth/login`
     }
   }
+
+  // AuthContext에서는 리다이렉트 로직을 제거하고 상태만 관리
 
   const value: AuthContextType = {
     user,

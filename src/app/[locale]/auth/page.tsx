@@ -11,7 +11,7 @@ type AuthMode = 'login' | 'signup' | 'reset'
 
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
-  const { user, loading } = useAuth()
+  const { user, userRole, loading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const pathname = usePathname()
@@ -25,10 +25,21 @@ export default function AuthPage() {
   const redirectToParam = searchParams?.get('redirectTo') || `/${currentLocale}`
 
   useEffect(() => {
-    if (!loading && user) {
-      router.push(redirectToParam)
+    if (!loading && user && userRole) {
+      console.log('Auth page: User logged in, role:', userRole, 'redirecting to:', redirectToParam)
+      
+      // 관리자/팀원인 경우 관리자 페이지로, 그 외에는 redirectToParam으로
+      if (userRole !== 'customer') {
+        console.log('Auth page: Admin user, redirecting to admin page')
+        const pathSegments = (pathname || '/').split('/').filter(Boolean)
+        const locale = pathSegments[0] || 'ko'
+        router.replace(`/${locale}/admin`)
+      } else {
+        console.log('Auth page: Customer user, redirecting to home')
+        router.replace(redirectToParam)
+      }
     }
-  }, [user, loading, router, redirectToParam])
+  }, [user, userRole, loading, router, redirectToParam, pathname])
 
   if (loading) {
     return (

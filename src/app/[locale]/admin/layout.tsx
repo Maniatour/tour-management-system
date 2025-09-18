@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from 'next-intl'
 import { getMessages } from 'next-intl/server'
 import AdminSidebarAndHeader from '@/components/AdminSidebarAndHeader'
 import MobileFooter from '@/components/MobileFooter'
+import AdminAuthGuard from '@/components/auth/AdminAuthGuard'
 
 interface AdminLayoutProps {
   children: React.ReactNode
@@ -15,12 +16,14 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
 
   return (
     <NextIntlClientProvider messages={messages}>
-      <div className="min-h-screen bg-gray-50">
-        <AdminSidebarAndHeader locale={locale}>
-          {children}
-        </AdminSidebarAndHeader>
-        <MobileFooter locale={locale} />
-      </div>
+      <AdminAuthGuard locale={locale}>
+        <div className="min-h-screen bg-gray-50">
+          <AdminSidebarAndHeader locale={locale}>
+            {children}
+          </AdminSidebarAndHeader>
+          <MobileFooter locale={locale} />
+        </div>
+      </AdminAuthGuard>
     </NextIntlClientProvider>
   )
 }

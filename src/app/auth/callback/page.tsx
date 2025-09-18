@@ -31,54 +31,19 @@ export default function AuthCallbackPage() {
         }
 
         if (data.session) {
-          // 사용자 역할 확인
-          const email = data.session.user.email
-          if (email) {
-            try {
-              // 팀 테이블에서 사용자 정보 조회
-              const { data: teamData } = await supabase
-                .from('team')
-                .select('*')
-                .eq('email', email)
-                .eq('is_active', true)
-                .single()
-
-              const userRole = getUserRole(email, teamData)
-              
-              // 세션 정보를 localStorage에 저장 (임시 해결책)
-              const sessionData = {
-                user: data.session.user,
-                access_token: data.session.access_token,
-                refresh_token: data.session.refresh_token,
-                expires_at: data.session.expires_at,
-                userRole: userRole,
-                teamData: teamData
-              }
-              localStorage.setItem('auth_session', JSON.stringify(sessionData))
-              
-              console.log('Session data saved to localStorage:', { email, userRole })
-              
-              // 세션이 완전히 설정되도록 잠시 대기
-              await new Promise(resolve => setTimeout(resolve, 1000))
-              
-              // 역할에 따라 리다이렉트
-              if (userRole && userRole !== 'customer') {
-                console.log('Redirecting admin user to admin page:', userRole)
-                router.push('/ko/admin')
-              } else {
-                console.log('Redirecting customer to home page')
-                router.push('/ko')
-              }
-            } catch (roleError) {
-              console.error('Error checking user role:', roleError)
-              // 역할 확인 실패 시 기본적으로 홈으로
-              router.push('/ko')
-            }
-          } else {
-            router.push('/ko')
-          }
+          console.log('Auth callback successful, redirecting to admin page')
+          // URL에서 locale 추출
+          const currentPath = window.location.pathname
+          const pathSegments = currentPath.split('/').filter(Boolean)
+          const locale = pathSegments[0] || 'ko'
+          router.push(`/${locale}/admin`)
         } else {
-          router.push('/auth')
+          console.log('No session found, redirecting to auth page')
+          // URL에서 locale 추출
+          const currentPath = window.location.pathname
+          const pathSegments = currentPath.split('/').filter(Boolean)
+          const locale = pathSegments[0] || 'ko'
+          router.push(`/${locale}/auth`)
         }
       } catch (err) {
         console.error('Unexpected error:', err)
