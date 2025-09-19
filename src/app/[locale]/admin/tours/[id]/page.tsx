@@ -2271,8 +2271,8 @@ export default function TourDetailPage() {
                                   .map(([optionId, choices]) => (
                                     <span key={optionId} className={`text-xs px-2 py-1 rounded ${getOptionBadgeColor(optionId)}`}>
                                       {getOptionName(optionId, (reservation as any).product_id || '')}
-                                    </span>
-                                  ))}
+                                  </span>
+                                ))}
                               </div>
                             ) : (
                               <span className="text-xs text-gray-400">선택된 옵션 없음</span>

@@ -327,7 +327,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                   </button>
                   
                   {showLanguageDropdown && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                       {SUPPORTED_LANGUAGES.map((language) => (
                         <button
                           key={language.code}
@@ -340,12 +340,12 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                               localStorage.setItem('tour_chat_language', language.code)
                             }
                           }}
-                          className={`w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center ${
+                          className={`w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center space-x-2 ${
                             selectedLanguage === language.code ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
                           }`}
                         >
-                          <span className="mr-3">{language.flag}</span>
-                          <span className="text-sm">{language.name}</span>
+                          <span className="text-base">{language.flag}</span>
+                          <span className="text-sm truncate">{language.name}</span>
                         </button>
                       ))}
                     </div>
@@ -364,7 +364,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
         )}
 
         {/* 채팅방 */}
-        {customerName && (
+        {customerName && room && tourInfo && (
           <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden" style={{ height: '70vh' }}>
             <div className="flex-1 overflow-hidden">
               <TourChatRoom

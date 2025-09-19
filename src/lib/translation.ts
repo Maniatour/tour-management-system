@@ -79,12 +79,10 @@ export function detectLanguage(text: string): string {
 // Google Translate API를 사용한 번역 함수
 export async function translateText(
   text: string, 
-  targetLanguage: string, 
-  sourceLanguage?: string
+  sourceLanguage: string, 
+  targetLanguage: string
 ): Promise<TranslationResult> {
   try {
-    // 실제 구현에서는 Google Translate API를 사용
-    // 여기서는 간단한 모의 번역을 구현
     const detectedSource = sourceLanguage || detectLanguage(text)
     
     if (detectedSource === targetLanguage) {
@@ -96,15 +94,8 @@ export async function translateText(
       }
     }
     
-    // 모의 번역 (실제로는 Google Translate API 호출)
-    const mockTranslation = await mockTranslate(text, detectedSource, targetLanguage)
-    
-    return {
-      originalText: text,
-      translatedText: mockTranslation,
-      sourceLanguage: detectedSource,
-      targetLanguage
-    }
+    // Google Translate API 사용
+    return await translateWithGoogleAPI(text, detectedSource, targetLanguage)
   } catch (error) {
     console.error('Translation error:', error)
     return {
@@ -116,7 +107,7 @@ export async function translateText(
   }
 }
 
-// 모의 번역 함수 (실제 구현에서는 Google Translate API 사용)
+// 모의 번역 함수 (Google Translate API 키가 없을 때 사용)
 async function mockTranslate(text: string, from: string, to: string): Promise<string> {
   // 실제로는 Google Translate API를 호출해야 함
   // 여기서는 간단한 모의 번역을 제공
@@ -162,18 +153,25 @@ async function mockTranslate(text: string, from: string, to: string): Promise<st
 // 실제 Google Translate API 구현 (API 키가 있을 때 사용)
 export async function translateWithGoogleAPI(
   text: string,
-  targetLanguage: string,
-  sourceLanguage?: string
+  sourceLanguage: string,
+  targetLanguage: string
 ): Promise<TranslationResult> {
   // Google Translate API 키가 필요함
   const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_TRANSLATE_API_KEY
   
   if (!API_KEY) {
     console.warn('Google Translate API key not found, using mock translation')
-    return translateText(text, targetLanguage, sourceLanguage)
+    return await mockTranslate(text, sourceLanguage, targetLanguage).then(translatedText => ({
+      originalText: text,
+      translatedText,
+      sourceLanguage,
+      targetLanguage
+    }))
   }
   
   try {
+    console.log('Calling Google Translate API:', { text, sourceLanguage, targetLanguage })
+    
     const response = await fetch(
       `https://translation.googleapis.com/language/translate/v2?key=${API_KEY}`,
       {
@@ -191,10 +189,14 @@ export async function translateWithGoogleAPI(
     )
     
     if (!response.ok) {
-      throw new Error(`Translation API error: ${response.status}`)
+      const errorText = await response.text()
+      console.error('Google Translate API error:', response.status, errorText)
+      throw new Error(`Translation API error: ${response.status} - ${errorText}`)
     }
     
     const data = await response.json()
+    console.log('Google Translate API response:', data)
+    
     const translation = data.data.translations[0]
     
     return {
@@ -206,6 +208,12 @@ export async function translateWithGoogleAPI(
   } catch (error) {
     console.error('Google Translate API error:', error)
     // API 실패 시 모의 번역 사용
-    return translateText(text, targetLanguage, sourceLanguage)
+    console.log('Falling back to mock translation')
+    return await mockTranslate(text, sourceLanguage, targetLanguage).then(translatedText => ({
+      originalText: text,
+      translatedText,
+      sourceLanguage,
+      targetLanguage
+    }))
   }
 }

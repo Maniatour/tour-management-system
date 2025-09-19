@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Image as ImageIcon, File, Users, Copy, Share2, MessageCircle, Languages, Calendar, Gift, Megaphone } from 'lucide-react'
+import { Send, Image as ImageIcon, File, Users, Copy, Share2, MessageCircle, Languages, Calendar, Gift, Megaphone, ChevronDown, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
 import PickupScheduleModal from './PickupScheduleModal'
-import { translateText, detectLanguage, SupportedLanguage } from '@/lib/translation'
+import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 
 interface ChatMessage {
   id: string
@@ -66,6 +66,8 @@ export default function TourChatRoom({
   const [newMessage, setNewMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>(customerLanguage)
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
   const [participantCount, setParticipantCount] = useState(0)
   const [showShareModal, setShowShareModal] = useState(false)
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState(false)
@@ -75,6 +77,7 @@ export default function TourChatRoom({
     location: string
     people: number
   }>>([])
+  
   // Generate or read client_id for soft-ban
   const getClientId = () => {
     if (typeof window === 'undefined') return 'unknown'
@@ -113,8 +116,10 @@ export default function TourChatRoom({
       return false
     }
   }
+  
   const [translatedMessages, setTranslatedMessages] = useState<{ [key: string]: string }>({})
   const [translating, setTranslating] = useState<{ [key: string]: boolean }>({})
+  
   // 공지사항 (모달용)
   const [announcements, setAnnouncements] = useState<ChatAnnouncement[]>([])
   const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(false)
@@ -152,9 +157,14 @@ export default function TourChatRoom({
   }
 
   // 픽업 스케줄 로드
-  const loadPickupSchedule = useCallback(async () => {
+  const loadPickupSchedule = async () => {
     try {
-      if (!tourId) return
+      if (!tourId) {
+        console.log('No tourId provided for pickup schedule')
+        return
+      }
+
+      console.log('Loading pickup schedule for tourId:', tourId)
 
       // 투어 정보 가져오기
       const { data: tour, error: tourError } = await supabase
@@ -168,23 +178,38 @@ export default function TourChatRoom({
         return
       }
 
-      // 예약 정보 가져오기
+      console.log('Tour data for pickup schedule:', tour)
+
+      // 예약 정보 가져오기 (배정된 예약만)
       const { data: reservations, error: reservationsError } = await supabase
         .from('reservations')
         .select(`
           id,
           pickup_hotel,
           pickup_time,
-          total_people
+          total_people,
+          customer_id,
+          customers!inner(
+            name
+          )
         `)
         .eq('product_id', tour.product_id)
         .eq('tour_date', tour.tour_date)
         .eq('status', 'confirmed')
+        .not('pickup_hotel', 'is', null)
+        .not('pickup_time', 'is', null)
 
-      if (reservationsError || !reservations) return
+      if (reservationsError) {
+        console.error('Error loading reservations for pickup schedule:', reservationsError)
+        return
+      }
+
+      console.log('Reservations for pickup schedule:', reservations)
 
       // 픽업 호텔 정보 별도로 가져오기
       const pickupHotelIds = [...new Set(reservations.map(r => r.pickup_hotel).filter(Boolean))]
+      console.log('Pickup hotel IDs:', pickupHotelIds)
+      
       let pickupHotels: any[] = []
       
       if (pickupHotelIds.length > 0) {
@@ -193,35 +218,84 @@ export default function TourChatRoom({
           .select('id, hotel, pick_up_location')
           .in('id', pickupHotelIds)
         
-        if (!hotelsError && hotelsData) {
-          pickupHotels = hotelsData
+        if (hotelsError) {
+          console.error('Error loading pickup hotels:', hotelsError)
+        } else {
+          pickupHotels = hotelsData || []
+          console.log('Pickup hotels data:', pickupHotels)
         }
       }
 
-      // 픽업 스케줄 데이터 생성
-      const schedule = reservations
-        .filter(reservation => reservation.pickup_hotel && reservation.pickup_time)
-        .map(reservation => {
-          const hotel = pickupHotels.find(h => h.id === reservation.pickup_hotel)
-          return {
+      // 픽업 스케줄 데이터 생성 (호텔별로 그룹화)
+      const groupedByHotel = reservations.reduce((acc, reservation) => {
+        const hotel = pickupHotels.find(h => h.id === reservation.pickup_hotel)
+        if (!hotel) return acc
+        
+        const hotelKey = `${hotel.hotel}-${hotel.pick_up_location}`
+        if (!acc[hotelKey]) {
+          acc[hotelKey] = {
             time: reservation.pickup_time || '',
-            hotel: hotel?.hotel || '',
-            location: hotel?.pick_up_location || '',
-            people: reservation.total_people || 0
+            hotel: hotel.hotel || '',
+            location: hotel.pick_up_location || '',
+            people: 0,
+            customers: []
           }
+        }
+        acc[hotelKey].people += reservation.total_people || 0
+        acc[hotelKey].customers.push({
+          name: (reservation as any).customers?.name || 'Unknown Customer',
+          people: reservation.total_people || 0
         })
+        return acc
+      }, {} as Record<string, any>)
+
+      const schedule = Object.values(groupedByHotel)
         .sort((a, b) => a.time.localeCompare(b.time))
 
+      console.log('Generated pickup schedule:', schedule)
       setPickupSchedule(schedule)
     } catch (error) {
       console.error('Error loading pickup schedule:', error)
       // 오류가 발생해도 빈 배열로 설정하여 무한 로딩 방지
       setPickupSchedule([])
     }
-  }, [tourId])
+  }
 
-  const loadRoomByCode = useCallback(async (code: string) => {
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  const getLanguageDisplayName = (langCode: SupportedLanguage) => {
+    const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
+    return lang ? lang.name : langCode.toUpperCase()
+  }
+
+  const loadMessages = async (roomId: string) => {
     try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      setMessages(data || [])
+      scrollToBottom()
+    } catch (error) {
+      console.error('Error loading messages:', error)
+    }
+  }
+
+  const loadRoomByCode = async (code: string) => {
+    console.log('loadRoomByCode called with code:', code)
+    if (!code) {
+      console.log('No room code provided, setting loading to false')
+      setLoading(false)
+      return
+    }
+    
+    try {
+      setLoading(true)
       const { data: rooms, error } = await supabase
         .from('chat_rooms')
         .select('*')
@@ -229,28 +303,40 @@ export default function TourChatRoom({
         .eq('is_active', true)
         .limit(1)
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase error:', error)
+        throw error
+      }
       
+      console.log('Found rooms:', rooms)
       const room = rooms?.[0]
       setRoom(room)
       if (room) {
-        // soft-ban check on mount
-        const banned = await checkBanned(room.id)
-        if (banned) {
-          setRoom({ ...room, is_active: false })
+        console.log('Room found, loading messages...')
+        // soft-ban check on mount (오류가 발생해도 계속 진행)
+        try {
+          const banned = await checkBanned(room.id)
+          if (banned) {
+            console.log('User is banned')
+            setRoom({ ...room, is_active: false })
+          }
+        } catch (banError) {
+          console.warn('Ban check failed, continuing:', banError)
         }
         await loadMessages(room.id)
-        await loadAnnouncements(room.id)
-        await loadPickupSchedule()
+        console.log('Messages loaded successfully')
+      } else {
+        console.log('No room found for code:', code)
       }
     } catch (error) {
       console.error('Error loading room by code:', error)
     } finally {
+      console.log('Setting loading to false')
       setLoading(false)
     }
-  }, [tourId, loadPickupSchedule])
+  }
 
-  const loadRoom = useCallback(async () => {
+  const loadRoom = async () => {
     try {
       // 기존 채팅방 찾기 (데이터베이스 트리거에 의해 자동 생성됨)
       const { data: existingRooms, error: findError } = await supabase
@@ -268,28 +354,40 @@ export default function TourChatRoom({
         setRoom(existingRoom)
         await loadMessages(existingRoom.id)
         await loadAnnouncements(existingRoom.id)
-        await loadPickupSchedule()
+        // 픽업 스케줄은 별도로 로드 (await 제거)
+        loadPickupSchedule()
       } else {
         console.warn('Chat room not found. Please wait a moment after the tour is created.')
         setRoom(null)
         // room이 없어도 픽업 스케줄은 로드할 수 있음
-        await loadPickupSchedule()
+        loadPickupSchedule()
       }
     } catch (error) {
       console.error('Error loading room:', error)
     } finally {
       setLoading(false)
     }
-  }, [tourId, loadPickupSchedule])
+  }
 
-  // 채팅방 로드 또는 생성
+  // 채팅방 로드 또는 생성 - 한 번만 실행
   useEffect(() => {
-    if (isPublicView && roomCode) {
-      loadRoomByCode(roomCode)
-    } else {
-      loadRoom()
+    console.log('useEffect triggered - isPublicView:', isPublicView, 'roomCode:', roomCode)
+    
+    const initializeChat = async () => {
+      if (isPublicView && roomCode) {
+        console.log('Loading room by code for public view')
+        await loadRoomByCode(roomCode)
+      } else if (!isPublicView) {
+        console.log('Loading room for admin view')
+        await loadRoom()
+      } else if (isPublicView && !roomCode) {
+        console.log('Public view without room code, setting loading to false')
+        setLoading(false)
+      }
     }
-  }, [isPublicView, roomCode, loadRoomByCode, loadRoom])
+
+    initializeChat()
+  }, []) // 의존성 배열을 비워서 한 번만 실행
 
   // 실시간 메시지 구독
   useEffect(() => {
@@ -308,31 +406,15 @@ export default function TourChatRoom({
         (payload) => {
           const newMessage = payload.new as ChatMessage
           setMessages(prev => [...prev, newMessage])
-          scrollToBottom()
-        }
+      scrollToBottom()
+    }
       )
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
-    }
-  }, [room])
-
-  const loadMessages = async (roomId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .select('*')
-        .eq('room_id', roomId)
-        .order('created_at', { ascending: true })
-
-      if (error) throw error
-      setMessages(data || [])
-      scrollToBottom()
-    } catch (error) {
-      console.error('Error loading messages:', error)
-    }
   }
+  }, [room])
 
   // 공지사항 로드 (모달 전용)
   const loadAnnouncements = async (roomId: string) => {
@@ -362,9 +444,33 @@ export default function TourChatRoom({
     }
   }
 
+  // 메시지 삭제 함수
+  const deleteMessage = async (messageId: string) => {
+    if (!room) return
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .delete()
+        .eq('id', messageId)
+
+      if (error) throw error
+
+      // UI에서 메시지 제거
+      setMessages(prev => prev.filter(msg => msg.id !== messageId))
+    } catch (error) {
+      console.error('Error deleting message:', error)
+      alert('메시지 삭제에 실패했습니다.')
+    }
+  }
+
+  // 메시지 삭제 가능 여부 확인 (1분 이내)
+  const canDeleteMessage = (message: ChatMessage) => {
+    const messageTime = new Date(message.created_at).getTime()
+    const currentTime = Date.now()
+    const oneMinute = 60 * 1000 // 1분을 밀리초로
+    
+    return (currentTime - messageTime) < oneMinute
   }
 
   const sendMessage = async () => {
@@ -468,38 +574,77 @@ export default function TourChatRoom({
   }
 
   const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('ko-KR', {
+    const formattedTime = new Date(dateString).toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      hour12: false
     })
-  }
-
-  // 메시지 번역 함수
-  const translateMessage = async (messageId: string, messageText: string) => {
-    if (translating[messageId]) return // 이미 번역 중이면 스킵
-    
-    setTranslating(prev => ({ ...prev, [messageId]: true }))
-    
-    try {
-      const result = await translateText(messageText, customerLanguage)
-      setTranslatedMessages(prev => ({
-        ...prev,
-        [messageId]: result.translatedText
-      }))
-    } catch (error) {
-      console.error('Translation error:', error)
-    } finally {
-      setTranslating(prev => ({ ...prev, [messageId]: false }))
-    }
+    return `${formattedTime} (PST)`
   }
 
   // 메시지가 번역이 필요한지 확인
   const needsTranslation = (message: ChatMessage) => {
-    if (isPublicView && message.sender_type === 'guide') {
+    if (message.sender_type === 'guide') {
       const messageLanguage = detectLanguage(message.message)
-      return messageLanguage !== customerLanguage
+      return messageLanguage !== selectedLanguage
     }
     return false
+  }
+
+  // 언어 설정이 변경될 때 기존 메시지들 다시 번역
+  useEffect(() => {
+    if (!room) return
+
+    const translateExistingMessages = async () => {
+      console.log('Translating existing messages for language:', selectedLanguage)
+      const guideMessages = messages.filter(msg => 
+        msg.sender_type === 'guide' && 
+        !msg.message.startsWith('[EN] ') &&
+        needsTranslation(msg)
+      )
+      
+      console.log('Found guide messages to translate:', guideMessages.length)
+
+      for (const message of guideMessages) {
+        if (translating[message.id]) continue
+
+        console.log('Translating message:', message.message)
+        setTranslating(prev => ({ ...prev, [message.id]: true }))
+        try {
+          const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
+          console.log('Translation result:', result)
+      setTranslatedMessages(prev => ({
+        ...prev,
+            [message.id]: result.translatedText
+      }))
+    } catch (error) {
+          console.error('Translation error for existing message:', error)
+    } finally {
+          setTranslating(prev => ({ ...prev, [message.id]: false }))
+        }
+      }
+    }
+
+    translateExistingMessages()
+  }, [selectedLanguage, messages, room])
+
+  // 가이드 메시지 자동 번역 함수
+  const translateGuideMessage = async (message: ChatMessage) => {
+    if (message.sender_type !== 'guide') return null
+    
+    try {
+      const messageLanguage = detectLanguage(message.message)
+      if (messageLanguage === selectedLanguage) return null
+      
+      const result = await translateText(message.message, messageLanguage, selectedLanguage)
+      return result.translatedText
+    } catch (error) {
+      console.error('Auto translation error:', error)
+      return null
+    }
   }
 
   if (loading) {
@@ -520,15 +665,190 @@ export default function TourChatRoom({
 
   return (
     <div className="flex flex-col h-full max-h-screen overflow-hidden">
-      {/* 채팅방 헤더 (관리자 뷰에서만 표시) */}
-      {(
+      {/* 채팅방 헤더 */}
         <div className="p-4 border-b bg-gray-50">
           {!isPublicView && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <MessageCircle size={20} className="text-blue-600" />
               <h3 className="font-semibold text-gray-900 truncate">{room.room_name}</h3>
+              </div>
+              
+              {/* 관리자용 언어 선택 */}
+              <div className="flex items-center space-x-2">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                    className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <span className="text-lg">
+                      {selectedLanguage === 'ko' ? '🇰🇷' : '🇺🇸'}
+                    </span>
+                    <span className="text-sm font-medium">
+                      {selectedLanguage === 'ko' ? '한국어' : 'English'}
+                    </span>
+                    <ChevronDown size={16} className="text-gray-500" />
+                  </button>
+                </div>
+                
+                {/* 관리자용 번역 버튼 */}
+                <button
+                  onClick={async () => {
+                    const guideMessages = messages.filter(msg => 
+                      msg.sender_type === 'guide' && 
+                      !msg.message.startsWith('[EN] ') &&
+                      needsTranslation(msg)
+                    )
+                    
+                    console.log('Admin manual translation triggered for', guideMessages.length, 'messages')
+                    
+                    for (const message of guideMessages) {
+                      if (translating[message.id]) continue
+                      
+                      setTranslating(prev => ({ ...prev, [message.id]: true }))
+                      try {
+                        const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
+                        setTranslatedMessages(prev => ({
+                          ...prev,
+                          [message.id]: result.translatedText
+                        }))
+                      } catch (error) {
+                        console.error('Admin translation error:', error)
+                      } finally {
+                        setTranslating(prev => ({ ...prev, [message.id]: false }))
+                      }
+                    }
+                  }}
+                  className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 text-sm"
+                  title="가이드 메시지 번역"
+                >
+                  <Languages size={16} />
+                  <span>번역</span>
+                </button>
+              </div>
+              
+              {showLanguageDropdown && (
+                <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        setSelectedLanguage('ko')
+                        setShowLanguageDropdown(false)
+                      }}
+                      className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
+                        selectedLanguage === 'ko' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                      }`}
+                    >
+                      <span className="text-base">🇰🇷</span>
+                      <span className="truncate">한국어</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedLanguage('en')
+                        setShowLanguageDropdown(false)
+                      }}
+                      className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
+                        selectedLanguage === 'en' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                      }`}
+                    >
+                      <span className="text-base">🇺🇸</span>
+                      <span className="truncate">English</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
+        )}
+        
+        {/* 고객용 언어 선택 */}
+        {isPublicView && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 flex items-center">
+                <MessageCircle size={20} className="text-blue-600 mr-2" />
+                {room.room_name}
+              </h3>
+              <div className="flex items-center space-x-2">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                    className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <span className="text-lg">
+                      {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.flag || '🌐'}
+                    </span>
+                    <span className="text-sm font-medium">
+                      {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.name || 'Language'}
+                    </span>
+                    <ChevronDown size={16} className="text-gray-500" />
+                  </button>
+                </div>
+                
+                {/* 관리자용 번역 버튼 (고객용에서는 제거) */}
+                {!isPublicView && (
+                  <button
+                    onClick={async () => {
+                      const guideMessages = messages.filter(msg => 
+                        msg.sender_type === 'guide' && 
+                        !msg.message.startsWith('[EN] ') &&
+                        needsTranslation(msg)
+                      )
+                      
+                      console.log('Manual translation triggered for', guideMessages.length, 'messages')
+                      
+                      for (const message of guideMessages) {
+                        if (translating[message.id]) continue
+                        
+                        setTranslating(prev => ({ ...prev, [message.id]: true }))
+                        try {
+                          const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
+                          setTranslatedMessages(prev => ({
+                            ...prev,
+                            [message.id]: result.translatedText
+                          }))
+                        } catch (error) {
+                          console.error('Manual translation error:', error)
+                        } finally {
+                          setTranslating(prev => ({ ...prev, [message.id]: false }))
+                        }
+                      }
+                    }}
+                    className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 text-sm"
+                    title="모든 가이드 메시지 번역"
+                  >
+                    <Languages size={16} />
+                    <span>번역</span>
+                  </button>
+                )}
+              </div>
+              
+              {showLanguageDropdown && (
+                <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                  <div className="py-1">
+                    {SUPPORTED_LANGUAGES.map((language) => (
+                      <button
+                        key={language.code}
+                        onClick={() => {
+                          setSelectedLanguage(language.code)
+                          setShowLanguageDropdown(false)
+                        }}
+                        className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
+                          selectedLanguage === language.code ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                        }`}
+                      >
+                        <span className="text-base">{language.flag}</span>
+                        <span className="truncate">{language.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        
           <div className="mt-2 flex items-center gap-2 justify-between">
             <div className="flex items-center gap-2">
               {/* 방 활성/비활성 스위치 - 가장 왼쪽, 관리자 전용 */}
@@ -604,13 +924,6 @@ export default function TourChatRoom({
             </div>
           </div>
         </div>
-      )}
-
-      {/* 공지사항 영역 */}
-      {/* 공지사항 토글/박스 제거 */}
-
-      {/* 공지사항 토글 버튼 (공지사항이 숨겨진 경우) */}
-      {/* 공지사항 토글 제거 */}
 
       {/* 메시지 목록 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
@@ -637,35 +950,80 @@ export default function TourChatRoom({
                   </div>
                 )}
                 
+                {/* 메시지 내용 */}
+                <div className="text-sm">
+                  {message.message.startsWith('[EN] ') ? (
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">번역된 메시지:</div>
+                      <div>{message.message.replace('[EN] ', '')}</div>
+                    </div>
+                  ) : (
+                    <div>
                 {/* 원본 메시지 */}
-                <div className="text-sm">{message.message}</div>
-                
-                {/* 번역된 메시지 (가이드 메시지이고 번역이 필요한 경우) */}
-                {isPublicView && message.sender_type === 'guide' && needsTrans && (
-                  <div className="mt-2 pt-2 border-t border-white/20">
+                      <div>{message.message}</div>
+                      
+                      {/* 가이드 메시지 자동 번역 (고객용/관리자용) */}
+                      {message.sender_type === 'guide' && needsTrans && (
+                        <div className="mt-2 pt-2 border-t border-gray-200">
                     {isTranslating ? (
-                      <div className="text-xs opacity-70 flex items-center">
+                            <div className="text-xs text-gray-500 flex items-center">
                         <Languages size={12} className="mr-1 animate-spin" />
-                        Translating...
+                              번역 중...
                       </div>
                     ) : hasTranslation ? (
-                      <div className="text-xs opacity-90">
-                        {hasTranslation}
+                            <div className="text-xs text-white">
+                              <span className="font-medium">{getLanguageDisplayName(selectedLanguage)}:</span> {hasTranslation}
                       </div>
                     ) : (
                       <button
-                        onClick={() => translateMessage(message.id, message.message)}
-                        className="text-xs opacity-70 hover:opacity-100 flex items-center"
+                              onClick={async () => {
+                                if (translating[message.id]) return
+                                setTranslating(prev => ({ ...prev, [message.id]: true }))
+                                try {
+                                  const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
+                                  setTranslatedMessages(prev => ({
+                                    ...prev,
+                                    [message.id]: result.translatedText
+                                  }))
+                                } catch (error) {
+                                  console.error('Translation error:', error)
+                                } finally {
+                                  setTranslating(prev => ({ ...prev, [message.id]: false }))
+                                }
+                              }}
+                              className="text-xs text-blue-600 hover:text-blue-800 flex items-center"
                       >
                         <Languages size={12} className="mr-1" />
-                        Translate
+                              번역하기
                       </button>
                     )}
                   </div>
                 )}
+                    </div>
+                  )}
+                </div>
                 
-                <div className="text-xs mt-1 opacity-70">
+                <div className="flex items-center justify-between mt-1">
+                  <div className="text-xs opacity-70">
                   {formatTime(message.created_at)}
+                  </div>
+                  
+                  {/* 삭제 버튼 (자신이 보낸 메시지이고 1분 이내) */}
+                  {((isPublicView && message.sender_type === 'customer') || 
+                    (!isPublicView && message.sender_type === 'guide')) && 
+                   canDeleteMessage(message) && (
+                    <button
+                      onClick={() => {
+                        if (confirm('메시지를 삭제하시겠습니까?')) {
+                          deleteMessage(message.id)
+                        }
+                      }}
+                      className="ml-2 p-1 text-gray-400 hover:text-red-500 transition-colors"
+                      title="메시지 삭제"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -687,6 +1045,7 @@ export default function TourChatRoom({
               className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               disabled={sending}
             />
+            
             <button
               onClick={sendMessage}
               disabled={!newMessage.trim() || sending}

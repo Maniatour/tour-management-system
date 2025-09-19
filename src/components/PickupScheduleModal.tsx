@@ -9,6 +9,10 @@ interface PickupScheduleModalProps {
     hotel: string
     location: string
     people: number
+    customers?: Array<{
+      name: string
+      people: number
+    }>
   }>
 }
 
@@ -17,6 +21,8 @@ export default function PickupScheduleModal({
   onClose, 
   pickupSchedule 
 }: PickupScheduleModalProps) {
+  console.log('PickupScheduleModal props:', { isOpen, pickupSchedule })
+  
   if (!isOpen) return null
 
   return (
@@ -38,7 +44,7 @@ export default function PickupScheduleModal({
           {pickupSchedule.length > 0 ? (
             pickupSchedule.map((schedule, index) => (
               <div key={index} className="border border-gray-200 rounded-lg p-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-medium text-gray-900">
                     {schedule.time}
                   </div>
@@ -46,12 +52,22 @@ export default function PickupScheduleModal({
                     {schedule.people}명
                   </div>
                 </div>
-                <div className="mt-1 text-sm text-gray-700">
+                <div className="text-sm text-gray-700 font-medium">
                   {schedule.hotel}
                 </div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-gray-500 mt-1">
                   {schedule.location}
                 </div>
+                {schedule.customers && schedule.customers.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-gray-100">
+                    <div className="text-xs text-gray-600 mb-1">예약자:</div>
+                    {schedule.customers.map((customer, customerIndex) => (
+                      <div key={customerIndex} className="text-xs text-gray-500">
+                        {customer.name} ({customer.people}명)
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))
           ) : (
