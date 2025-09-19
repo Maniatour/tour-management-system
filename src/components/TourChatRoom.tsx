@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, Image as ImageIcon, File, Users, Copy, Share2, MessageCircle, Languages, Calendar, Gift, Megaphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
@@ -97,12 +97,19 @@ export default function TourChatRoom({
         .eq('room_id', roomId)
         .or(`client_id.eq.${clientId},customer_name.eq.${customerName || ''}`)
         .limit(1)
-      if (error) return false
+      
+      // 테이블이 존재하지 않거나 오류가 발생하면 차단하지 않음
+      if (error) {
+        console.warn('Chat bans table not available or error occurred:', error)
+        return false
+      }
+      
       if (!data || data.length === 0) return false
       const bannedUntil = data[0].banned_until ? new Date(data[0].banned_until) : null
       if (!bannedUntil) return true
       return bannedUntil.getTime() > Date.now()
-    } catch {
+    } catch (error) {
+      console.warn('Error checking ban status:', error)
       return false
     }
   }
@@ -144,120 +151,8 @@ export default function TourChatRoom({
     return chatColors[colorIndex]
   }
 
-  // 채팅방 로드 또는 생성
-  useEffect(() => {
-    if (isPublicView && roomCode) {
-      loadRoomByCode(roomCode)
-    } else {
-      loadRoom()
-    }
-  }, [tourId, isPublicView, roomCode])
-
-  // 실시간 메시지 구독
-  useEffect(() => {
-    if (!room) return
-
-    const channel = supabase
-      .channel(`chat_${room.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `room_id=eq.${room.id}`
-        },
-        (payload) => {
-          const newMessage = payload.new as ChatMessage
-          setMessages(prev => [...prev, newMessage])
-          scrollToBottom()
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [room])
-
-  const loadRoomByCode = async (code: string) => {
-    try {
-      const { data: rooms, error } = await supabase
-        .from('chat_rooms')
-        .select('*')
-        .eq('room_code', code)
-        .eq('is_active', true)
-        .limit(1)
-
-      if (error) throw error
-      
-      const room = rooms?.[0]
-      setRoom(room)
-      if (room) {
-        // soft-ban check on mount
-        const banned = await checkBanned(room.id)
-        if (banned) {
-          setRoom({ ...room, is_active: false })
-        }
-        await loadMessages(room.id)
-        await loadAnnouncements(room.id)
-        await loadPickupSchedule()
-      }
-    } catch (error) {
-      console.error('Error loading room by code:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadRoom = async () => {
-    try {
-      // 기존 채팅방 찾기 (데이터베이스 트리거에 의해 자동 생성됨)
-      const { data: existingRooms, error: findError } = await supabase
-        .from('chat_rooms')
-        .select('*')
-        .eq('tour_id', tourId)
-        .eq('is_active', true)
-        .limit(1)
-
-      if (findError) throw findError
-
-      const existingRoom = existingRooms?.[0]
-
-      if (existingRoom) {
-        setRoom(existingRoom)
-        await loadMessages(existingRoom.id)
-        await loadAnnouncements(existingRoom.id)
-        await loadPickupSchedule()
-      } else {
-        console.warn('Chat room not found. Please wait a moment after the tour is created.')
-        setRoom(null)
-      }
-    } catch (error) {
-      console.error('Error loading room:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadMessages = async (roomId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .select('*')
-        .eq('room_id', roomId)
-        .order('created_at', { ascending: true })
-
-      if (error) throw error
-      setMessages(data || [])
-      scrollToBottom()
-    } catch (error) {
-      console.error('Error loading messages:', error)
-    }
-  }
-
   // 픽업 스케줄 로드
-  const loadPickupSchedule = async () => {
+  const loadPickupSchedule = useCallback(async () => {
     try {
       if (!tourId) return
 
@@ -268,7 +163,10 @@ export default function TourChatRoom({
         .eq('id', tourId)
         .single()
 
-      if (tourError || !tour) return
+      if (tourError || !tour) {
+        console.error('Error loading tour for pickup schedule:', tourError)
+        return
+      }
 
       // 예약 정보 가져오기
       const { data: reservations, error: reservationsError } = await supabase
@@ -317,6 +215,122 @@ export default function TourChatRoom({
       setPickupSchedule(schedule)
     } catch (error) {
       console.error('Error loading pickup schedule:', error)
+      // 오류가 발생해도 빈 배열로 설정하여 무한 로딩 방지
+      setPickupSchedule([])
+    }
+  }, [tourId])
+
+  const loadRoomByCode = useCallback(async (code: string) => {
+    try {
+      const { data: rooms, error } = await supabase
+        .from('chat_rooms')
+        .select('*')
+        .eq('room_code', code)
+        .eq('is_active', true)
+        .limit(1)
+
+      if (error) throw error
+      
+      const room = rooms?.[0]
+      setRoom(room)
+      if (room) {
+        // soft-ban check on mount
+        const banned = await checkBanned(room.id)
+        if (banned) {
+          setRoom({ ...room, is_active: false })
+        }
+        await loadMessages(room.id)
+        await loadAnnouncements(room.id)
+        await loadPickupSchedule()
+      }
+    } catch (error) {
+      console.error('Error loading room by code:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [tourId, loadPickupSchedule])
+
+  const loadRoom = useCallback(async () => {
+    try {
+      // 기존 채팅방 찾기 (데이터베이스 트리거에 의해 자동 생성됨)
+      const { data: existingRooms, error: findError } = await supabase
+        .from('chat_rooms')
+        .select('*')
+        .eq('tour_id', tourId)
+        .eq('is_active', true)
+        .limit(1)
+
+      if (findError) throw findError
+
+      const existingRoom = existingRooms?.[0]
+
+      if (existingRoom) {
+        setRoom(existingRoom)
+        await loadMessages(existingRoom.id)
+        await loadAnnouncements(existingRoom.id)
+        await loadPickupSchedule()
+      } else {
+        console.warn('Chat room not found. Please wait a moment after the tour is created.')
+        setRoom(null)
+        // room이 없어도 픽업 스케줄은 로드할 수 있음
+        await loadPickupSchedule()
+      }
+    } catch (error) {
+      console.error('Error loading room:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [tourId, loadPickupSchedule])
+
+  // 채팅방 로드 또는 생성
+  useEffect(() => {
+    if (isPublicView && roomCode) {
+      loadRoomByCode(roomCode)
+    } else {
+      loadRoom()
+    }
+  }, [isPublicView, roomCode, loadRoomByCode, loadRoom])
+
+  // 실시간 메시지 구독
+  useEffect(() => {
+    if (!room) return
+
+    const channel = supabase
+      .channel(`chat_${room.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `room_id=eq.${room.id}`
+        },
+        (payload) => {
+          const newMessage = payload.new as ChatMessage
+          setMessages(prev => [...prev, newMessage])
+          scrollToBottom()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [room])
+
+  const loadMessages = async (roomId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      setMessages(data || [])
+      scrollToBottom()
+    } catch (error) {
+      console.error('Error loading messages:', error)
     }
   }
 
