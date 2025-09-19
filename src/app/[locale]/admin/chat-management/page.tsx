@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { MessageCircle, Calendar, Search, RefreshCw } from 'lucide-react'
+import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 
 interface ChatRoom {
   id: string
@@ -90,6 +91,77 @@ export default function ChatManagementPage() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  
+  // 번역 관련 상태
+  const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('ko')
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
+  const [translatedMessages, setTranslatedMessages] = useState<{ [key: string]: string }>({})
+  const [translating, setTranslating] = useState<{ [key: string]: boolean }>({})
+
+  // 번역 관련 함수들
+  const needsTranslation = useCallback((message: ChatMessage) => {
+    return message.sender_type === 'guide' && 
+           !message.message.startsWith('[EN] ') &&
+           selectedLanguage !== 'ko'
+  }, [selectedLanguage])
+
+  const getLanguageDisplayName = (langCode: SupportedLanguage) => {
+    const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
+    return lang ? lang.name : langCode.toUpperCase()
+  }
+
+  // 기존 메시지 번역
+  const translateExistingMessages = useCallback(async () => {
+    const guideMessages = messages.filter(msg => 
+      msg.sender_type === 'guide' && 
+      !msg.message.startsWith('[EN] ') &&
+      needsTranslation(msg)
+    )
+    
+    console.log('Translating existing messages for language:', selectedLanguage)
+    console.log('Found guide messages to translate:', guideMessages.length)
+    
+    for (const message of guideMessages) {
+      if (translating[message.id]) continue
+      
+      setTranslating(prev => ({ ...prev, [message.id]: true }))
+      try {
+        const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
+        setTranslatedMessages(prev => ({
+          ...prev,
+          [message.id]: result.translatedText
+        }))
+      } catch (error) {
+        console.error('Translation error:', error)
+      } finally {
+        setTranslating(prev => ({ ...prev, [message.id]: false }))
+      }
+    }
+  }, [messages, selectedLanguage, translating, needsTranslation])
+
+  // 언어 변경 시 기존 메시지 번역
+  useEffect(() => {
+    if (messages.length > 0) {
+      translateExistingMessages()
+    }
+  }, [selectedLanguage, messages, translateExistingMessages])
+
+  // 언어 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showLanguageDropdown) {
+        const target = event.target as Element
+        if (!target.closest('.language-dropdown')) {
+          setShowLanguageDropdown(false)
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showLanguageDropdown])
 
   // 새로고침 함수
   const handleRefresh = async () => {
@@ -246,7 +318,7 @@ export default function ChatManagementPage() {
 
       // 차량 정보 별도로 가져오기
       let vehicleData = null
-      if (tourData.tour_car_id) {
+      if ((tourData as any).tour_car_id) {
         const { data: vehicle, error: vehicleError } = await supabase
           .from('vehicles')
           .select(`
@@ -256,7 +328,7 @@ export default function ChatManagementPage() {
             driver_name,
             driver_phone
           `)
-          .eq('id', tourData.tour_car_id)
+          .eq('id', (tourData as any).tour_car_id)
           .single()
 
         if (!vehicleError) {
@@ -284,8 +356,8 @@ export default function ChatManagementPage() {
       }
 
       // 데이터 결합
-      const combinedData = {
-        ...tourData,
+      const combinedData: TourInfo = {
+        ...(tourData as any),
         vehicle: vehicleData,
         reservations: reservationsData || []
       }
@@ -551,40 +623,145 @@ export default function ChatManagementPage() {
                     {selectedRoom.tour?.tour_date ? formatDate(selectedRoom.tour.tour_date) : '날짜 미정'}
                   </p>
                 </div>
-                <div className="text-sm text-gray-500">
-                  방 코드: {selectedRoom.room_code}
+                <div className="flex items-center space-x-4">
+                  <div className="text-sm text-gray-500">
+                    방 코드: {selectedRoom.room_code}
+                  </div>
+                  
+                  {/* 언어 선택 */}
+                  <div className="flex items-center space-x-2">
+                    <div className="relative language-dropdown">
+                      <button
+                        onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                        className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <span className="text-lg">
+                          {selectedLanguage === 'ko' ? '🇰🇷' : '🇺🇸'}
+                        </span>
+                        <span className="text-sm font-medium">
+                          {selectedLanguage === 'ko' ? '한국어' : 'English'}
+                        </span>
+                        <ChevronDown size={16} className="text-gray-500" />
+                      </button>
+                      
+                      {showLanguageDropdown && (
+                        <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                          <div className="py-1">
+                            <button
+                              onClick={() => {
+                                setSelectedLanguage('ko')
+                                setShowLanguageDropdown(false)
+                              }}
+                              className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
+                                selectedLanguage === 'ko' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                              }`}
+                            >
+                              <span className="text-base">🇰🇷</span>
+                              <span className="truncate">한국어</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedLanguage('en')
+                                setShowLanguageDropdown(false)
+                              }}
+                              className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
+                                selectedLanguage === 'en' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                              }`}
+                            >
+                              <span className="text-base">🇺🇸</span>
+                              <span className="truncate">English</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* 번역 버튼 */}
+                    <button
+                      onClick={translateExistingMessages}
+                      className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 text-sm"
+                      title="모든 가이드 메시지 번역"
+                    >
+                      <Languages size={16} />
+                      <span>번역</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* 메시지 목록 */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.sender_type === 'admin' ? 'justify-end' : 'justify-start'}`}
-                >
+              {messages.map((message) => {
+                const hasTranslation = translatedMessages[message.id]
+                const isTranslating = translating[message.id]
+                const needsTrans = needsTranslation(message)
+                
+                return (
                   <div
-                    className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                      message.sender_type === 'admin'
-                        ? 'bg-blue-600 text-white'
-                        : message.sender_type === 'system'
-                        ? 'bg-gray-200 text-gray-700 text-center'
-                        : 'bg-gray-100 text-gray-900'
-                    }`}
+                    key={message.id}
+                    className={`flex ${message.sender_type === 'admin' ? 'justify-end' : 'justify-start'}`}
                   >
-                    {message.sender_type !== 'system' && (
-                      <div className="text-xs font-medium mb-1">
-                        {message.sender_name}
+                    <div
+                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                        message.sender_type === 'admin'
+                          ? 'bg-blue-600 text-white'
+                          : message.sender_type === 'system'
+                          ? 'bg-gray-200 text-gray-700 text-center'
+                          : 'bg-gray-100 text-gray-900'
+                      }`}
+                    >
+                      {message.sender_type !== 'system' && (
+                        <div className="text-xs font-medium mb-1">
+                          {message.sender_name}
+                        </div>
+                      )}
+                      
+                      {/* 원본 메시지 */}
+                      <div className="text-sm">{message.message}</div>
+                      
+                      {/* 번역된 메시지 */}
+                      {needsTrans && (
+                        <div className="mt-2">
+                          {isTranslating ? (
+                            <div className="text-xs text-gray-500 italic">
+                              번역 중...
+                            </div>
+                          ) : hasTranslation ? (
+                            <div className="text-xs text-white">
+                              <span className="font-medium">{getLanguageDisplayName(selectedLanguage)}:</span> {hasTranslation}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                setTranslating(prev => ({ ...prev, [message.id]: true }))
+                                try {
+                                  const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
+                                  setTranslatedMessages(prev => ({
+                                    ...prev,
+                                    [message.id]: result.translatedText
+                                  }))
+                                } catch (error) {
+                                  console.error('Translation error:', error)
+                                } finally {
+                                  setTranslating(prev => ({ ...prev, [message.id]: false }))
+                                }
+                              }}
+                              className="text-xs text-blue-300 hover:text-blue-200 underline"
+                            >
+                              번역하기
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="text-xs mt-1 opacity-70">
+                        {formatTime(message.created_at)}
                       </div>
-                    )}
-                    <div className="text-sm">{message.message}</div>
-                    <div className="text-xs mt-1 opacity-70">
-                      {formatTime(message.created_at)}
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* 메시지 입력 */}
