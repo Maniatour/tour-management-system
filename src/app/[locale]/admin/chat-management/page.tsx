@@ -453,16 +453,41 @@ export default function ChatManagementPage() {
   }
 
   // 필터링된 채팅방 목록
-  const filteredRooms = chatRooms.filter(room => {
-    const matchesSearch = room.room_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         room.tour?.product?.name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         room.tour?.product?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    if (filterStatus === 'all') return matchesSearch
-    // 투어 상태 필터링은 일단 제거 (status 컬럼이 없음)
-    
-    return matchesSearch
-  })
+  const filteredRooms = chatRooms
+    .filter(room => {
+      const matchesSearch = room.room_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           room.tour?.product?.name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           room.tour?.product?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+      
+      if (filterStatus === 'all') return matchesSearch
+      // 투어 상태 필터링은 일단 제거 (status 컬럼이 없음)
+      
+      return matchesSearch
+    })
+    .sort((a, b) => {
+      // 1. 읽지 않은 메시지가 있는 채팅방을 맨 위로
+      if (a.unread_count > 0 && b.unread_count === 0) return -1
+      if (a.unread_count === 0 && b.unread_count > 0) return 1
+      
+      // 2. 읽지 않은 메시지 수가 같다면, 읽지 않은 메시지 수가 많은 순으로
+      if (a.unread_count !== b.unread_count) {
+        return b.unread_count - a.unread_count
+      }
+      
+      // 3. 읽지 않은 메시지가 없다면, 투어 날짜 기준으로 정렬
+      const today = new Date()
+      today.setHours(0, 0, 0, 0) // 오늘 00:00:00으로 설정
+      
+      const dateA = a.tour?.tour_date ? new Date(a.tour.tour_date) : new Date('9999-12-31')
+      const dateB = b.tour?.tour_date ? new Date(b.tour.tour_date) : new Date('9999-12-31')
+      
+      // 오늘과의 차이 계산 (절댓값)
+      const diffA = Math.abs(dateA.getTime() - today.getTime())
+      const diffB = Math.abs(dateB.getTime() - today.getTime())
+      
+      // 오늘에 가까운 날짜순으로 정렬
+      return diffA - diffB
+    })
 
   // 실시간 메시지 구독
   useEffect(() => {
@@ -524,7 +549,12 @@ export default function ChatManagementPage() {
         {/* 헤더 */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-lg font-semibold text-gray-900">채팅 관리</h1>
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900">채팅 관리</h1>
+              <p className="text-xs text-gray-500 mt-1">
+                새 메시지 우선 • 오늘 기준 날짜순 정렬
+              </p>
+            </div>
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-500">
                 읽지않은 메시지 ({chatRooms.reduce((sum, room) => sum + room.unread_count, 0)})
@@ -571,15 +601,24 @@ export default function ChatManagementPage() {
             <div
               key={room.id}
               onClick={() => selectRoom(room)}
-              className={`p-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${
-                selectedRoom?.id === room.id ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''
+              className={`p-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
+                selectedRoom?.id === room.id 
+                  ? 'bg-blue-50 border-l-2 border-l-blue-500' 
+                  : room.unread_count > 0 
+                    ? 'bg-yellow-50 border-l-2 border-l-yellow-400' 
+                    : ''
               }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   {/* 상품 이름 */}
-                  <h3 className="font-medium text-gray-900 text-xs truncate mb-0.5">
+                  <h3 className={`text-xs truncate mb-0.5 ${
+                    room.unread_count > 0 
+                      ? 'font-bold text-gray-900' 
+                      : 'font-medium text-gray-900'
+                  }`}>
                     {room.tour?.product?.name_ko || room.tour?.product?.name || room.room_name}
+                    {room.unread_count > 0 && ' • 새 메시지'}
                   </h3>
                   
                   {/* 투어 날짜와 방 코드를 한 줄에 */}
@@ -587,7 +626,23 @@ export default function ChatManagementPage() {
                     <div className="flex items-center">
                       <Calendar size={10} className="mr-1" />
                       <span className="truncate">
-                        {room.tour?.tour_date ? new Date(room.tour.tour_date).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '날짜미정'}
+                        {room.tour?.tour_date ? (() => {
+                          const tourDate = new Date(room.tour.tour_date)
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
+                          tourDate.setHours(0, 0, 0, 0)
+                          
+                          const diffTime = tourDate.getTime() - today.getTime()
+                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                          
+                          if (diffDays === 0) return '오늘'
+                          if (diffDays === 1) return '내일'
+                          if (diffDays === -1) return '어제'
+                          if (diffDays > 0) return `${diffDays}일 후`
+                          if (diffDays < 0) return `${Math.abs(diffDays)}일 전`
+                          
+                          return tourDate.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+                        })() : '날짜미정'}
                       </span>
                     </div>
                     <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-xs">
