@@ -24,7 +24,8 @@ import {
   Home,
   ChevronDown,
   MessageCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Globe
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -215,6 +216,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: '상품 관리', href: `/${locale}/admin/products`, icon: BookOpen },
     { name: '옵션 관리', href: `/${locale}/admin/options`, icon: Settings },
     { name: '채널 관리', href: `/${locale}/admin/channels`, icon: Settings },
+    { name: '투어 코스 관리', href: `/${locale}/admin/tour-courses`, icon: Globe },
     { name: '픽업 호텔 관리', href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: '차량 관리', href: `/${locale}/admin/vehicles`, icon: Car },
     { name: '쿠폰 관리', href: `/${locale}/admin/coupons`, icon: Ticket },
@@ -466,13 +468,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             <X size={24} />
           </button>
         </div>
-        <nav className="mt-8 px-4">
+        <nav className="mt-4 px-4">
           {/* 모바일 네비게이션 메뉴 */}
-          <div className="mb-6">
+          <div className="mb-4">
           </div>
 
           {/* 메인 네비게이션 */}
-          <div className="mb-6">
+          <div className="mb-4">
             {navigation.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
@@ -480,7 +482,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`flex items-center px-3 py-0.5 text-sm font-medium rounded-lg mb-1 transition-colors ${
+                  className={`flex items-center px-3 py-1 text-sm font-medium rounded-lg mb-0.5 transition-colors ${
                     isActive
                       ? 'bg-blue-100 text-blue-700'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -500,7 +502,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               handleLogout()
               setSidebarOpen(false)
             }}
-            className="flex items-center w-full px-3 py-0.5 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
+            className="flex items-center w-full px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
           >
             <LogOut size={16} className="mr-3" />
             로그아웃
@@ -511,7 +513,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       {/* 데스크톱 사이드바 - 헤더 아래에 위치 */}
       <div className="hidden lg:fixed lg:top-16 lg:left-0 lg:bottom-0 lg:flex lg:w-64 lg:flex-col">
         <div className="flex flex-col flex-grow bg-white shadow-lg">
-          <nav className="flex-1 px-4 mt-8">
+          <nav className="flex-1 px-4 mt-4">
             {navigation.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
@@ -519,7 +521,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg mb-2 transition-colors ${
+                  className={`flex items-center px-4 py-2 text-sm font-medium rounded-lg mb-1 transition-colors ${
                     isActive
                       ? 'bg-blue-100 text-blue-700'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -533,10 +535,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           </nav>
           
           {/* 데스크톱 로그아웃 버튼 */}
-          <div className="px-4 pb-4">
+          <div className="px-4 pb-2">
             <button
               onClick={handleLogout}
-              className="flex items-center w-full px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
+              className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
             >
               <LogOut size={20} className="mr-3" />
               로그아웃

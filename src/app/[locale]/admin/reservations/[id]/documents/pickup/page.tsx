@@ -50,14 +50,23 @@ export default function PickupNotificationPage() {
           if (hotelRow) setPickupHotel(hotelRow)
         }
       }
-      const { data: tpl } = await supabase
-        .from('document_templates')
-        .select('subject, content')
-        .eq('template_key', 'pickup_notification')
-        .eq('language', (params as any)?.locale || 'ko')
-        .limit(1)
-        .maybeSingle()
-      if (tpl) setTemplate(tpl as any)
+      try {
+        const { data: tpl } = await supabase
+          .from('document_templates')
+          .select('subject, content')
+          .eq('template_key', 'pickup_notification')
+          .eq('language', (params as any)?.locale || 'ko')
+          .limit(1)
+          .maybeSingle()
+        if (tpl) setTemplate(tpl as any)
+      } catch (error) {
+        console.warn('document_templates 테이블이 존재하지 않습니다. 기본 템플릿을 사용합니다.')
+        // 기본 템플릿 사용
+        setTemplate({
+          subject: '[픽업 안내] {{reservation.id}}',
+          content: '<h1>픽업 안내</h1><p>픽업 호텔: {{pickup.display}} / 시간: {{reservation.pickup_time}}</p>'
+        })
+      }
       setLoading(false)
     }
     load()

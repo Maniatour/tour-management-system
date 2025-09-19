@@ -59,14 +59,23 @@ export default function ReservationConfirmationPage() {
           if (hotelRow) setPickupHotel(hotelRow)
         }
       }
-      const { data: tpl } = await supabase
-        .from('document_templates')
-        .select('subject, content')
-        .eq('template_key', 'reservation_confirmation')
-        .eq('language', (params as any)?.locale || 'ko')
-        .limit(1)
-        .maybeSingle()
-      if (tpl) setTemplate(tpl as any)
+      try {
+        const { data: tpl } = await supabase
+          .from('document_templates')
+          .select('subject, content')
+          .eq('template_key', 'reservation_confirmation')
+          .eq('language', (params as any)?.locale || 'ko')
+          .limit(1)
+          .maybeSingle()
+        if (tpl) setTemplate(tpl as any)
+      } catch (error) {
+        console.warn('document_templates 테이블이 존재하지 않습니다. 기본 템플릿을 사용합니다.')
+        // 기본 템플릿 사용
+        setTemplate({
+          subject: '[예약 확인서] {{reservation.id}}',
+          content: '<h1>예약 확인서</h1><p>{{customer.name}}님, 예약번호 {{reservation.id}}</p>'
+        })
+      }
       setLoading(false)
     }
     load()
