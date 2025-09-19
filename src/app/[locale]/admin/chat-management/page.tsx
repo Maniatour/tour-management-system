@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
+import { useOptimizedData } from '@/hooks/useOptimizedData'
 
 interface ChatRoom {
   id: string
@@ -30,6 +32,12 @@ interface ChatRoom {
       name?: string
       description?: string
     }
+    reservations?: Array<{
+      id: string
+      adults: number
+      child: number
+      infant: number
+    }>
   } | null
 }
 
@@ -55,21 +63,39 @@ interface TourInfo {
   tour_guide_id: string
   assistant_id?: string
   tour_car_id?: string
+  tour_status?: string
   product?: {
     name_ko?: string
     name_en?: string
     name?: string
     description?: string
   }
+  tour_guide?: {
+    email: string
+    name: string
+  }
+  assistant?: {
+    email: string
+    name: string
+  }
   reservations?: Array<{
     id: string
-    customer_name: string
-    customer_email: string
-    customer_phone?: string
-    adult_count: number
-    child_count: number
-    total_price: number
-    reservation_status: string
+    adults: number
+    child: number
+    infant: number
+    status: string
+    total_people: number
+    pickup_hotel?: string
+    pickup_time?: string
+    pickup_hotel_info?: {
+      hotel: string
+      pick_up_location: string
+    }
+    customer?: {
+      name: string
+      email: string
+      phone?: string
+    }
   }>
   vehicle?: {
     id: string
@@ -81,22 +107,163 @@ interface TourInfo {
 }
 
 export default function ChatManagementPage() {
-  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([])
+  const router = useRouter()
   const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
-  const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [activeTab, setActiveTab] = useState<'past' | 'upcoming'>('upcoming')
+
+  // 최적화된 채팅방 데이터 로딩
+  const { data: chatRoomsData, loading, refetch: refetchChatRooms } = useOptimizedData({
+    fetchFn: async () => {
+      // 먼저 기본 채팅방 정보만 가져오기
+      const { data: chatRoomsData, error: chatRoomsError } = await supabase
+        .from('chat_rooms')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+
+      if (chatRoomsError) throw chatRoomsError
+
+      if (!chatRoomsData || chatRoomsData.length === 0) {
+        return []
+      }
+
+      // 각 채팅방에 대해 투어 정보를 별도로 가져오기
+      const roomsWithTour = await Promise.all(
+        chatRoomsData.map(async (room: any) => {
+          try {
+            const { data: tourData, error: tourError } = await supabase
+              .from('tours')
+              .select(`
+                id,
+                product_id,
+                tour_date,
+                tour_guide_id,
+                assistant_id,
+                tour_car_id,
+                tour_status,
+                product:products(
+                  name_ko,
+                  name_en,
+                  description
+                )
+              `)
+              .eq('id', room.tour_id)
+              .single()
+
+            if (tourError) {
+              console.warn(`Error fetching tour for room ${room.id}:`, tourError)
+              return {
+                ...room,
+                tour: {
+                  id: room.tour_id,
+                  status: null,
+                  reservations: []
+                },
+                unread_count: 0
+              }
+            }
+
+            // 예약 정보 가져오기
+            const { data: reservationsData, error: reservationsError } = await supabase
+              .from('reservations')
+              .select('id, adults, child, infant')
+              .eq('tour_id', tourData.id)
+
+            if (reservationsError) {
+              console.warn(`Error fetching reservations for tour ${tourData.id}:`, reservationsError)
+            }
+
+            return {
+              ...room,
+              tour: {
+                ...tourData,
+                status: tourData.tour_status,
+                reservations: reservationsData || []
+              },
+              unread_count: 0
+            }
+          } catch (error) {
+            console.warn(`Error processing room ${room.id}:`, error)
+            return {
+              ...room,
+              tour: {
+                id: room.tour_id,
+                status: null,
+                reservations: []
+              },
+              unread_count: 0
+            }
+          }
+        })
+      )
+
+      // 이제 읽지 않은 메시지 수 계산
+      const roomsWithUnreadCount = await Promise.all(
+        roomsWithTour.map(async (room: any) => {
+          try {
+            const { count } = await supabase
+              .from('chat_messages')
+              .select('*', { count: 'exact', head: true })
+              .eq('room_id', room.id)
+              .eq('sender_type', 'customer')
+              .eq('is_read', false)
+            
+            return {
+              ...room,
+              unread_count: count || 0
+            }
+          } catch (error) {
+            console.error(`Error counting unread messages for room ${room.id}:`, error)
+            return {
+              ...room,
+              unread_count: 0
+            }
+          }
+        })
+      )
+
+      return roomsWithUnreadCount
+    },
+    cacheKey: 'chat-rooms',
+    cacheTime: 1 * 60 * 1000 // 1분 캐시 (채팅은 자주 변경되므로 짧은 캐시)
+  })
   
   // 번역 관련 상태
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('ko')
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
   const [translatedMessages, setTranslatedMessages] = useState<{ [key: string]: string }>({})
   const [translating, setTranslating] = useState<{ [key: string]: boolean }>({})
+
+  // 상태 초기화 함수 (로딩 상태 제외)
+  const resetState = useCallback(() => {
+    setSelectedRoom(null)
+    setMessages([])
+    setNewMessage('')
+    setSending(false)
+    setSearchTerm('')
+    setFilterStatus('all')
+    setTourInfo(null)
+    setRefreshing(false)
+    setActiveTab('upcoming')
+    setSelectedLanguage('ko')
+    setShowLanguageDropdown(false)
+    setTranslatedMessages({})
+    setTranslating({})
+  }, [])
+
+  // 컴포넌트 마운트 시 한 번만 실행
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.history.scrollRestoration = 'manual'
+    }
+  }, [])
 
   // 번역 관련 함수들
   const needsTranslation = useCallback((message: ChatMessage) => {
@@ -167,7 +334,7 @@ export default function ChatManagementPage() {
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      await fetchChatRooms()
+      await refetchChatRooms()
       if (selectedRoom) {
         await fetchMessages(selectedRoom.id)
       }
@@ -179,108 +346,6 @@ export default function ChatManagementPage() {
   }
 
   // 채팅방 목록 가져오기
-  const fetchChatRooms = useCallback(async () => {
-    try {
-      // 먼저 기본 채팅방 정보만 가져오기
-      const { data: chatRoomsData, error: chatRoomsError } = await supabase
-        .from('chat_rooms')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-
-      if (chatRoomsError) throw chatRoomsError
-
-      if (!chatRoomsData || chatRoomsData.length === 0) {
-        setChatRooms([])
-        return
-      }
-
-      // 각 채팅방에 대해 투어 정보를 별도로 가져오기
-      const roomsWithTour = await Promise.all(
-        chatRoomsData.map(async (room: any) => {
-          try {
-            const { data: tourData, error: tourError } = await supabase
-              .from('tours')
-              .select(`
-                id,
-                product_id,
-                tour_date,
-                tour_guide_id,
-                assistant_id,
-                tour_car_id,
-                product:products(
-                  name_ko,
-                  name_en,
-                  description
-                )
-              `)
-              .eq('id', room.tour_id)
-              .single()
-
-            if (tourError) {
-              console.warn(`Error fetching tour for room ${room.id}:`, tourError)
-              return {
-                ...room,
-                tour: null,
-                unread_count: 0
-              }
-            }
-
-            return {
-              ...room,
-              tour: tourData,
-              unread_count: 0
-            }
-          } catch (error) {
-            console.warn(`Error processing room ${room.id}:`, error)
-            return {
-              ...room,
-              tour: null,
-              unread_count: 0
-            }
-          }
-        })
-      )
-
-      // 이제 읽지 않은 메시지 수 계산
-      const roomsWithUnreadCount = await Promise.all(
-        roomsWithTour.map(async (room: any) => {
-          try {
-            const { count } = await supabase
-              .from('chat_messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('room_id', room.id)
-              .eq('sender_type', 'customer')
-              .eq('is_read', false)
-            
-            return {
-              ...room,
-              unread_count: count || 0
-            }
-          } catch (error) {
-            console.error(`Error counting unread messages for room ${room.id}:`, error)
-            return {
-              ...room,
-              unread_count: 0
-            }
-          }
-        })
-      )
-
-      setChatRooms(roomsWithUnreadCount)
-    } catch (error: any) {
-      console.error('Error fetching chat rooms:', error)
-      console.error('Error details:', {
-        message: error?.message,
-        details: error?.details,
-        hint: error?.hint,
-        code: error?.code
-      })
-      setChatRooms([]) // 오류 시 빈 배열로 설정
-    } finally {
-      setLoading(false)
-    }
-  }, [])
 
   // 선택된 채팅방의 메시지 가져오기
   const fetchMessages = useCallback(async (roomId: string) => {
@@ -298,37 +363,111 @@ export default function ChatManagementPage() {
     }
   }, [])
 
-  // 투어 정보 가져오기
+  // 투어 정보 가져오기 (투어 상세 페이지와 동일한 구조 사용)
   const fetchTourInfo = useCallback(async (tourId: string) => {
     try {
-      // 투어 기본 정보만 가져오기
+      // 1단계: 투어 기본 정보 가져오기
       const { data: tourData, error: tourError } = await supabase
         .from('tours')
-        .select(`
-          *,
-          product:products(
-            name,
-            description
-          )
-        `)
+        .select('*')
         .eq('id', tourId)
         .single()
 
       if (tourError) throw tourError
 
-      // 차량 정보 별도로 가져오기
+      // 2단계: 상품 정보 가져오기
+      let productData = null
+      if (tourData.product_id) {
+        const { data: product, error: productError } = await supabase
+          .from('products')
+          .select('*')
+          .eq('id', tourData.product_id)
+          .single()
+
+        if (!productError) {
+          productData = product
+        }
+      }
+
+      // 2.5단계: 가이드와 어시스턴트 정보 가져오기 (team 테이블에서 name_ko 조회)
+      let tourGuideData = null
+      let assistantData = null
+
+      if (tourData.tour_guide_id) {
+        const { data: guide, error: guideError } = await supabase
+          .from('team')
+          .select('email, name_ko')
+          .eq('email', tourData.tour_guide_id)
+          .single()
+
+        if (!guideError && guide) {
+          tourGuideData = {
+            email: guide.email,
+            name: guide.name_ko || guide.email
+          }
+        } else {
+          // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
+          tourGuideData = {
+            email: tourData.tour_guide_id,
+            name: tourData.tour_guide_id
+          }
+        }
+      }
+
+      if (tourData.assistant_id) {
+        const { data: assistant, error: assistantError } = await supabase
+          .from('team')
+          .select('email, name_ko')
+          .eq('email', tourData.assistant_id)
+          .single()
+
+        if (!assistantError && assistant) {
+          assistantData = {
+            email: assistant.email,
+            name: assistant.name_ko || assistant.email
+          }
+        } else {
+          // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
+          assistantData = {
+            email: tourData.assistant_id,
+            name: tourData.assistant_id
+          }
+        }
+      }
+
+      // 3단계: 예약 정보 가져오기 (tour_id로 직접 조회)
+      const { data: reservationsData, error: reservationsError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('tour_id', tourId)
+
+      if (reservationsError) {
+        console.warn('Error fetching reservations:', reservationsError)
+      }
+
+      // 4단계: 고객 정보 가져오기 (예약이 있는 경우에만)
+      let customersData = []
+      if (reservationsData && reservationsData.length > 0) {
+        const customerIds = reservationsData.map(r => r.customer_id).filter(Boolean) as string[]
+        if (customerIds.length > 0) {
+          const { data: customers, error: customersError } = await supabase
+            .from('customers')
+            .select('*')
+            .in('id', customerIds)
+
+          if (!customersError) {
+            customersData = customers || []
+          }
+        }
+      }
+
+      // 5단계: 차량 정보 가져오기
       let vehicleData = null
-      if ((tourData as any).tour_car_id) {
+      if (tourData.tour_car_id) {
         const { data: vehicle, error: vehicleError } = await supabase
           .from('vehicles')
-          .select(`
-            id,
-            vehicle_number,
-            vehicle_category,
-            driver_name,
-            driver_phone
-          `)
-          .eq('id', (tourData as any).tour_car_id)
+          .select('*')
+          .eq('id', tourData.tour_car_id)
           .single()
 
         if (!vehicleError) {
@@ -336,30 +475,58 @@ export default function ChatManagementPage() {
         }
       }
 
-      // 예약 정보 별도로 가져오기
-      const { data: reservationsData, error: reservationsError } = await supabase
-        .from('reservations')
-        .select(`
-          id,
-          customer_name,
-          customer_email,
-          customer_phone,
-          adult_count,
-          child_count,
-          total_price,
-          reservation_status
-        `)
-        .eq('tour_id', tourId)
+      // 5.5단계: 픽업 호텔 정보 가져오기
+      let pickupHotelsData = []
+      if (reservationsData && reservationsData.length > 0) {
+        const pickupHotelIds = reservationsData
+          .map(r => r.pickup_hotel)
+          .filter(Boolean)
+          .filter((value, index, self) => self.indexOf(value) === index) as string[]
+        
+        if (pickupHotelIds.length > 0) {
+          const { data: pickupHotels, error: pickupHotelsError } = await supabase
+            .from('pickup_hotels')
+            .select('*')
+            .in('id', pickupHotelIds)
 
-      if (reservationsError) {
-        console.warn('Error fetching reservations:', reservationsError)
+          if (!pickupHotelsError) {
+            pickupHotelsData = pickupHotels || []
+          }
+        }
       }
 
-      // 데이터 결합
+      // 6단계: 데이터 결합 (투어 상세 페이지와 동일한 구조)
+      const combinedReservations = (reservationsData || []).map(reservation => {
+        const customer = customersData.find(c => c.id === reservation.customer_id)
+        const pickupHotel = pickupHotelsData.find(h => h.id === reservation.pickup_hotel)
+        return {
+          id: reservation.id,
+          adults: reservation.adults || 0,
+          child: reservation.child || 0,
+          infant: reservation.infant || 0,
+          total_people: (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0),
+          status: reservation.status || 'pending',
+          pickup_hotel: reservation.pickup_hotel,
+          pickup_time: reservation.pickup_time,
+          pickup_hotel_info: pickupHotel ? {
+            hotel: pickupHotel.hotel,
+            pick_up_location: pickupHotel.pick_up_location
+          } : null,
+          customer: customer ? {
+            name: customer.name,
+            email: customer.email,
+            phone: customer.phone
+          } : null
+        }
+      })
+
       const combinedData: TourInfo = {
-        ...(tourData as any),
+        ...tourData,
+        product: productData,
+        tour_guide: tourGuideData,
+        assistant: assistantData,
         vehicle: vehicleData,
-        reservations: reservationsData || []
+        reservations: combinedReservations
       }
 
       setTourInfo(combinedData)
@@ -441,28 +608,44 @@ export default function ChatManagementPage() {
         .eq('sender_type', 'customer')
         .eq('is_read', false)
       
-      // 채팅방 목록 업데이트
-      setChatRooms(prev => 
-        prev.map(r => 
-          r.id === room.id ? { ...r, unread_count: 0 } : r
-        )
-      )
+      // 채팅방 목록 새로고침 (캐시된 데이터 업데이트)
+      await refetchChatRooms()
     } catch (error) {
       console.error('Error marking messages as read:', error)
     }
   }
 
-  // 필터링된 채팅방 목록
+  // 안전한 채팅방 데이터
+  const chatRooms = chatRoomsData || []
+
+  // 탭별 필터링된 채팅방 목록
   const filteredRooms = chatRooms
     .filter(room => {
       const matchesSearch = room.room_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            room.tour?.product?.name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            room.tour?.product?.name?.toLowerCase().includes(searchTerm.toLowerCase())
       
-      if (filterStatus === 'all') return matchesSearch
-      // 투어 상태 필터링은 일단 제거 (status 컬럼이 없음)
+      if (!matchesSearch) return false
       
-      return matchesSearch
+      // 탭별 필터링 (라스베가스 현지 시간 기준)
+      if (room.tour?.tour_date) {
+        // 투어 날짜는 YYYY-MM-DD 형식이므로 직접 비교
+        const tourDateStr = room.tour.tour_date
+        
+        // 현재 라스베가스 날짜를 YYYY-MM-DD 형식으로 가져오기
+        const now = new Date()
+        const lasVegasNow = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+        const todayStr = lasVegasNow.toISOString().split('T')[0] // YYYY-MM-DD 형식
+        
+        if (activeTab === 'past') {
+          return tourDateStr < todayStr
+        } else {
+          return tourDateStr >= todayStr
+        }
+      }
+      
+      // 투어 날짜가 없는 경우 upcoming 탭에만 표시
+      return activeTab === 'upcoming'
     })
     .sort((a, b) => {
       // 1. 읽지 않은 메시지가 있는 채팅방을 맨 위로
@@ -474,19 +657,17 @@ export default function ChatManagementPage() {
         return b.unread_count - a.unread_count
       }
       
-      // 3. 읽지 않은 메시지가 없다면, 투어 날짜 기준으로 정렬
-      const today = new Date()
-      today.setHours(0, 0, 0, 0) // 오늘 00:00:00으로 설정
-      
+      // 3. 투어 날짜 기준으로 정렬
       const dateA = a.tour?.tour_date ? new Date(a.tour.tour_date) : new Date('9999-12-31')
       const dateB = b.tour?.tour_date ? new Date(b.tour.tour_date) : new Date('9999-12-31')
       
-      // 오늘과의 차이 계산 (절댓값)
-      const diffA = Math.abs(dateA.getTime() - today.getTime())
-      const diffB = Math.abs(dateB.getTime() - today.getTime())
-      
-      // 오늘에 가까운 날짜순으로 정렬
-      return diffA - diffB
+      if (activeTab === 'past') {
+        // 지난 투어는 최근 날짜순
+        return dateB.getTime() - dateA.getTime()
+      } else {
+        // 진행 예정 투어는 가까운 날짜순
+        return dateA.getTime() - dateB.getTime()
+      }
     })
 
   // 실시간 메시지 구독
@@ -515,9 +696,14 @@ export default function ChatManagementPage() {
     }
   }, [selectedRoom])
 
+
+  // 컴포넌트 언마운트 시 정리
   useEffect(() => {
-    fetchChatRooms().finally(() => setLoading(false))
-  }, [fetchChatRooms])
+    return () => {
+      // 상태 초기화 (로딩 상태 제외)
+      resetState()
+    }
+  }, [resetState])
 
   const formatTime = (dateString: string) => {
     return new Date(dateString).toLocaleTimeString('ko-KR', {
@@ -527,11 +713,64 @@ export default function ChatManagementPage() {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ko-KR', {
+    // DATE 타입은 YYYY-MM-DD 형식이므로 직접 파싱
+    const [year, month, day] = dateString.split('-').map(Number)
+    
+    // 라스베가스 시간대로 날짜 생성 (시간은 00:00:00으로 설정)
+    const lasVegasDate = new Date(year, month - 1, day)
+    
+    return lasVegasDate.toLocaleDateString('ko-KR', {
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
+      timeZone: 'America/Los_Angeles'
     })
+  }
+
+  const formatTourDate = (dateString: string) => {
+    // DATE 타입은 YYYY-MM-DD 형식이므로 직접 파싱
+    const [year, month, day] = dateString.split('-').map(Number)
+    
+    // 라스베가스 시간대로 날짜 생성 (시간은 00:00:00으로 설정)
+    const lasVegasDate = new Date(year, month - 1, day)
+    
+    return lasVegasDate.toLocaleDateString('ko-KR', {
+      month: 'short',
+      day: 'numeric',
+      weekday: 'short',
+      timeZone: 'America/Los_Angeles'
+    })
+  }
+
+  const getTourStatus = (status: string) => {
+    // 상태값을 그대로 표시하고 색상만 설정
+    const getStatusColor = (status: string) => {
+      switch (status?.toLowerCase()) {
+        case 'confirmed':
+        case '확정':
+          return 'bg-green-100 text-green-800'
+        case 'pending':
+        case '대기':
+          return 'bg-yellow-100 text-yellow-800'
+        case 'cancelled':
+        case '취소':
+          return 'bg-red-100 text-red-800'
+        case 'completed':
+        case '완료':
+          return 'bg-blue-100 text-blue-800'
+        default:
+          return 'bg-gray-100 text-gray-800'
+      }
+    }
+    
+    return { 
+      text: status || '미정', 
+      color: getStatusColor(status) 
+    }
+  }
+
+  const getTotalParticipants = (reservations: Array<{ adults: number; child: number; infant: number }> = []) => {
+    return reservations.reduce((total, res) => total + res.adults + res.child + res.infant, 0)
   }
 
   if (loading) {
@@ -550,24 +789,59 @@ export default function ChatManagementPage() {
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-lg font-semibold text-gray-900">채팅 관리</h1>
-              <p className="text-xs text-gray-500 mt-1">
-                새 메시지 우선 • 오늘 기준 날짜순 정렬
-              </p>
+              <h1 className="text-lg font-semibold text-gray-900">투어 채팅</h1>
             </div>
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-500">
-                읽지않은 메시지 ({chatRooms.reduce((sum, room) => sum + room.unread_count, 0)})
+                읽지않은 메시지 ({filteredRooms.reduce((sum, room) => sum + room.unread_count, 0)})
               </div>
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title={refreshing ? '새로고침 중...' : '새로고침'}
               >
                 <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-                <span>{refreshing ? '새로고침 중...' : '새로고침'}</span>
               </button>
             </div>
+          </div>
+          
+          {/* 탭 메뉴 */}
+          <div className="flex space-x-1 mb-4">
+            <button
+              onClick={() => setActiveTab('upcoming')}
+              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'upcoming'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              예정 ({chatRooms.filter(room => {
+                if (!room.tour?.tour_date) return true
+                const tourDate = new Date(room.tour.tour_date)
+                const today = new Date()
+                today.setHours(0, 0, 0, 0)
+                tourDate.setHours(0, 0, 0, 0)
+                return tourDate >= today
+              }).length})
+            </button>
+            <button
+              onClick={() => setActiveTab('past')}
+              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'past'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              지난 ({chatRooms.filter(room => {
+                if (!room.tour?.tour_date) return false
+                const tourDate = new Date(room.tour.tour_date)
+                const today = new Date()
+                today.setHours(0, 0, 0, 0)
+                tourDate.setHours(0, 0, 0, 0)
+                return tourDate < today
+              }).length})
+            </button>
           </div>
           
           {/* 검색 및 필터 */}
@@ -597,7 +871,17 @@ export default function ChatManagementPage() {
 
         {/* 채팅방 목록 */}
         <div className="flex-1 overflow-y-auto">
-          {filteredRooms.map((room) => (
+          {filteredRooms.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center p-8">
+              <div className="text-center text-gray-500">
+                <MessageCircle size={48} className="mx-auto mb-4 text-gray-300" />
+                <p className="text-sm">
+                  {activeTab === 'past' ? '지난 투어가 없습니다' : '예정 투어가 없습니다'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            filteredRooms.map((room) => (
             <div
               key={room.id}
               onClick={() => selectRoom(room)}
@@ -611,39 +895,35 @@ export default function ChatManagementPage() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
-                  {/* 상품 이름 */}
-                  <h3 className={`text-xs truncate mb-0.5 ${
-                    room.unread_count > 0 
-                      ? 'font-bold text-gray-900' 
-                      : 'font-medium text-gray-900'
-                  }`}>
-                    {room.tour?.product?.name_ko || room.tour?.product?.name || room.room_name}
-                    {room.unread_count > 0 && ' • 새 메시지'}
-                  </h3>
+                  {/* 상품 이름과 상태 */}
+                  <div className="flex items-center justify-between mb-0.5">
+                    <h3 className={`text-xs truncate ${
+                      room.unread_count > 0 
+                        ? 'font-bold text-gray-900' 
+                        : 'font-medium text-gray-900'
+                    }`}>
+                      {room.tour?.product?.name_ko || room.tour?.product?.name || room.room_name}
+                      {room.unread_count > 0 && ' • 새 메시지'}
+                    </h3>
+                    {room.tour?.status && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getTourStatus(room.tour.status).color}`}>
+                        {room.tour.status}
+                      </span>
+                    )}
+                  </div>
                   
-                  {/* 투어 날짜와 방 코드를 한 줄에 */}
+                  {/* 투어 날짜, 인원 정보, 방 코드 */}
                   <div className="flex items-center justify-between text-xs text-gray-500">
                     <div className="flex items-center">
                       <Calendar size={10} className="mr-1" />
                       <span className="truncate">
-                        {room.tour?.tour_date ? (() => {
-                          const tourDate = new Date(room.tour.tour_date)
-                          const today = new Date()
-                          today.setHours(0, 0, 0, 0)
-                          tourDate.setHours(0, 0, 0, 0)
-                          
-                          const diffTime = tourDate.getTime() - today.getTime()
-                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-                          
-                          if (diffDays === 0) return '오늘'
-                          if (diffDays === 1) return '내일'
-                          if (diffDays === -1) return '어제'
-                          if (diffDays > 0) return `${diffDays}일 후`
-                          if (diffDays < 0) return `${Math.abs(diffDays)}일 전`
-                          
-                          return tourDate.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
-                        })() : '날짜미정'}
+                        {room.tour?.tour_date ? formatTourDate(room.tour.tour_date) : '날짜미정'}
                       </span>
+                      {room.tour?.reservations && room.tour.reservations.length > 0 && (
+                        <span className="ml-2 text-gray-400">
+                          {getTotalParticipants(room.tour.reservations)}명
+                        </span>
+                      )}
                     </div>
                     <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-xs">
                       {room.room_code}
@@ -659,7 +939,8 @@ export default function ChatManagementPage() {
                 )}
               </div>
             </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
@@ -851,100 +1132,173 @@ export default function ChatManagementPage() {
         )}
       </div>
 
-      {/* 오른쪽: 투어 정보 */}
-      <div className="w-80 bg-white border-l border-gray-200 overflow-y-auto">
+       {/* 오른쪽: 투어 정보 */}
+       <div className="w-[28rem] bg-white border-l border-gray-200 overflow-y-auto">
         {tourInfo ? (
-          <div className="p-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">투어 정보</h3>
-            
-            {/* 투어 기본 정보 */}
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700">상품</label>
-                <p className="text-sm text-gray-900">{tourInfo.product?.name_ko || tourInfo.product?.name}</p>
+          <div className="p-4 space-y-4">
+            {/* 헤더 */}
+            <div className="border-b border-gray-200 pb-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-semibold text-gray-900">투어 정보</h3>
+                <button
+                  onClick={() => router.push(`/ko/admin/tours/${tourInfo.id}`)}
+                  className="px-3 py-1 bg-blue-500 text-white text-xs rounded-md hover:bg-blue-600 transition-colors"
+                >
+                  상세보기
+                </button>
               </div>
-              
-              <div>
-                <label className="text-sm font-medium text-gray-700">날짜</label>
-                <p className="text-sm text-gray-900">
-                  {formatDate(tourInfo.tour_date)}
-                  <span className="text-gray-500 ml-1">* 시간 미정</span>
-                </p>
-              </div>
-              
-              <div>
-                <label className="text-sm font-medium text-gray-700">인원</label>
-                <p className="text-sm text-gray-900">
-                  성인 {tourInfo.reservations?.reduce((sum, r) => sum + r.adult_count, 0) || 0}명
-                </p>
-                <p className="text-sm text-gray-500">
-                  총 {tourInfo.reservations?.length || 0}명
-                </p>
-              </div>
-              
-              <div>
-                <label className="text-sm font-medium text-gray-700">픽업장소</label>
-                <p className="text-sm text-gray-900">Bellagio Hotel</p>
-                <button className="text-xs text-blue-600 hover:underline">지도보기</button>
+              <div className="flex items-center justify-between">
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTourStatus(tourInfo.tour_status || '').color}`}>
+                  {tourInfo.tour_status || '미정'}
+                </span>
+                <span className="text-sm text-gray-500">{formatTourDate(tourInfo.tour_date)}</span>
               </div>
             </div>
 
-            {/* 고객 정보 */}
-            <div className="mt-6">
-              <h4 className="font-medium text-gray-900 mb-3">고객정보</h4>
-              {tourInfo.reservations?.map((reservation) => (
-                <div key={reservation.id} className="mb-3 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm font-medium text-gray-900">{reservation.customer_name}</p>
-                  <p className="text-xs text-gray-500">{reservation.customer_email}</p>
-                  {reservation.customer_phone && (
-                    <p className="text-xs text-gray-500">{reservation.customer_phone}</p>
-                  )}
+            {/* 투어 기본정보 */}
+            <div className="bg-gray-50 rounded-lg p-3">
+              <h4 className="text-sm font-medium text-gray-900 mb-2">투어 기본정보</h4>
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">투어 ID</span>
+                  <span className="text-gray-900 font-mono text-xs">{tourInfo.id}</span>
                 </div>
-              ))}
-            </div>
-
-            {/* 비용 정보 */}
-            <div className="mt-6">
-              <h4 className="font-medium text-gray-900 mb-3">비용</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">결제방법</span>
-                  <span className="text-gray-900">전액 결제</span>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">상품</span>
+                  <span className="text-gray-900 font-medium">{tourInfo.product?.name_ko || tourInfo.product?.name}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">총 비용</span>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">인원</span>
                   <span className="text-gray-900">
-                    US $350.00 (486,013원)
+                    {tourInfo.reservations?.reduce((sum, r) => sum + r.adult_count + r.child_count, 0) || 0}명
                   </span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">수익</span>
-                  <span className="text-gray-900">
-                    US $289.10 (400,781원)
-                  </span>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">예약</span>
+                  <span className="text-gray-900">{tourInfo.reservations?.length || 0}건</span>
                 </div>
               </div>
             </div>
 
-            {/* 모객현황 */}
-            <div className="mt-6">
-              <h4 className="font-medium text-gray-900 mb-3">모객현황</h4>
-              <p className="text-sm text-gray-500">마지막 업데이트 없음</p>
-              
-              {/* 캘린더 */}
-              <div className="mt-4">
-                <div className="text-sm font-medium text-gray-700 mb-2">9월 2025</div>
-                <div className="grid grid-cols-7 gap-1 text-xs">
-                  {Array.from({ length: 30 }, (_, i) => i + 1).map(day => (
-                    <div
-                      key={day}
-                      className={`p-2 text-center rounded ${
-                        day === 1 ? 'bg-blue-100 text-blue-900 font-medium' : 'text-gray-600'
-                      }`}
-                    >
-                      {day}
+            {/* 픽업스케줄 */}
+            <div className="bg-blue-50 rounded-lg p-3">
+              <h4 className="text-sm font-medium text-gray-900 mb-2">픽업스케줄</h4>
+              <div className="space-y-1 text-xs">
+                {(() => {
+                  // 픽업 시간과 호텔의 유니크한 조합을 찾기
+                  const pickupSchedules = new Map()
+                  tourInfo.reservations?.forEach(reservation => {
+                    if (reservation.pickup_time && reservation.pickup_hotel_info) {
+                      const key = `${reservation.pickup_time}-${reservation.pickup_hotel}`
+                      if (!pickupSchedules.has(key)) {
+                        pickupSchedules.set(key, {
+                          time: reservation.pickup_time,
+                          hotel: reservation.pickup_hotel_info.hotel,
+                          location: reservation.pickup_hotel_info.pick_up_location
+                        })
+                      }
+                    }
+                  })
+                  
+                  const schedules = Array.from(pickupSchedules.values())
+                    .sort((a, b) => {
+                      // 시간을 비교하여 정렬 (HH:MM 형식)
+                      const timeA = a.time || '00:00'
+                      const timeB = b.time || '00:00'
+                      return timeA.localeCompare(timeB)
+                    })
+                  
+                  if (schedules.length === 0) {
+                    return <div className="text-gray-500 text-center py-2">픽업 정보 없음</div>
+                  }
+                  
+                  return schedules.map((schedule, index) => (
+                    <div key={index} className="border-b border-blue-200 pb-2 last:border-b-0">
+                      {/* 첫 번째 줄: 시간 | 호텔 */}
+                      <div className="flex items-center mb-1">
+                        <div className="text-gray-900 font-medium text-sm mr-2">
+                          {schedule.time ? schedule.time.split(':').slice(0, 2).join(':') : '미정'}
+                        </div>
+                        <div className="text-gray-400">|</div>
+                        <div className="text-gray-900 font-medium text-sm ml-2">
+                          {schedule.hotel}
+                        </div>
+                      </div>
+                      {/* 두 번째 줄: 픽업장소 */}
+                      <div className="text-gray-500 text-xs">
+                        {schedule.location}
+                      </div>
                     </div>
-                  ))}
+                  ))
+                })()}
+              </div>
+            </div>
+
+            {/* 배정 (예약 데이터) */}
+            <div className="bg-green-50 rounded-lg p-3">
+              <h4 className="text-sm font-medium text-gray-900 mb-2">배정</h4>
+              <div className="space-y-1 text-xs">
+                {tourInfo.reservations?.map((reservation, index) => (
+                  <div 
+                    key={reservation.id} 
+                    className="flex justify-between items-center py-1 cursor-pointer hover:bg-green-100 rounded px-2"
+                    onClick={() => router.push(`/ko/admin/reservations/${reservation.id}`)}
+                  >
+                    <div className="flex-1">
+                      <div className="text-gray-900 font-medium">{reservation.customer?.name || '고객 정보 없음'}</div>
+                      <div className="text-gray-500 text-xs">
+                        {reservation.pickup_hotel_info?.hotel || '호텔 정보 없음'}
+                      </div>
+                    </div>
+                    <span className="text-gray-500 font-medium">
+                      {reservation.total_people}명
+                    </span>
+                  </div>
+                ))}
+                {(!tourInfo.reservations || tourInfo.reservations.length === 0) && (
+                  <div className="text-gray-500 text-center py-2">예약 없음</div>
+                )}
+              </div>
+            </div>
+
+            {/* 팀구성 (가이드, 어시스턴트, 차량) */}
+            <div className="bg-purple-50 rounded-lg p-3">
+              <h4 className="text-sm font-medium text-gray-900 mb-2">팀구성</h4>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">가이드</span>
+                  <span className="text-gray-900">{tourInfo.tour_guide?.name || '미배정'}</span>
+                </div>
+                {tourInfo.assistant && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">어시스턴트</span>
+                    <span className="text-gray-900">{tourInfo.assistant.name}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-600">차량</span>
+                  <span className="text-gray-900">
+                    {tourInfo.vehicle?.vehicle_category} ({tourInfo.vehicle?.vehicle_number})
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 비용 요약 */}
+            <div className="bg-yellow-50 rounded-lg p-3">
+              <h4 className="text-sm font-medium text-gray-900 mb-2">비용 요약</h4>
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">예약 건수</span>
+                  <span className="text-gray-900 font-medium">
+                    {tourInfo.reservations?.length || 0}건
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">총 인원</span>
+                  <span className="text-gray-900 font-medium">
+                    {tourInfo.reservations?.reduce((sum, r) => sum + r.adults + r.child + r.infant, 0) || 0}명
+                  </span>
                 </div>
               </div>
             </div>

@@ -8,6 +8,7 @@ import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import TourCalendar from '@/components/TourCalendar'
 import ScheduleView from '@/components/ScheduleView'
+import { useOptimizedData } from '@/hooks/useOptimizedData'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 // type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
@@ -37,10 +38,56 @@ export default function AdminTours() {
   const [, setProducts] = useState<Product[]>([])
   const [tours, setTours] = useState<ExtendedTour[]>([])
   const [allReservations, setAllReservations] = useState<Database['public']['Tables']['reservations']['Row'][]>([])
-  const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'schedule'>('calendar')
   const [statusOptions, setStatusOptions] = useState<string[]>([])
   const [gridMonth, setGridMonth] = useState<Date>(new Date())
+
+  // 최적화된 데이터 로딩
+  const { data: toursData, loading: toursLoading } = useOptimizedData({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('tours')
+        .select('*')
+        .order('tour_date', { ascending: false })
+      
+      if (error) throw error
+      return data || []
+    },
+    cacheKey: 'tours',
+    cacheTime: 2 * 60 * 1000 // 2분 캐시
+  })
+
+  const { data: employeesData, loading: employeesLoading } = useOptimizedData({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('team')
+        .select('*')
+        .eq('is_active', true)
+        .order('name_ko')
+      
+      if (error) throw error
+      return data || []
+    },
+    cacheKey: 'employees',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시
+  })
+
+  const { data: productsData, loading: productsLoading } = useOptimizedData({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, name_ko, name_en, status')
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      return data || []
+    },
+    cacheKey: 'products',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시
+  })
+
+  // 통합 로딩 상태
+  const loading = toursLoading || employeesLoading || productsLoading
 
   // month key helper was unused; removed to satisfy linter
 
@@ -76,58 +123,22 @@ export default function AdminTours() {
     }
   }
 
-  const fetchEmployees = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('team')
-        .select('*')
-        .eq('is_active', true)
-        .order('name_ko')
-
-      if (error) {
-        console.error('Error fetching employees:', error)
-        return
-      }
-
-      setEmployees(data || [])
-    } catch (error) {
-      console.error('Error fetching employees:', error)
+  // 데이터 동기화
+  useEffect(() => {
+    if (employeesData) {
+      setEmployees(employeesData)
     }
-  }, [supabase])
+  }, [employeesData])
 
-  const fetchProducts = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('name_ko')
-
-      if (error) {
-        console.error('Error fetching products:', error)
-        return
-      }
-
-      setProducts(data || [])
-    } catch (error) {
-      console.error('Error fetching products:', error)
+  useEffect(() => {
+    if (productsData) {
+      setProducts(productsData)
     }
-  }, [supabase])
+  }, [productsData])
 
-  const fetchTours = useCallback(async () => {
+  // 투어 데이터 처리 및 확장
+  const processToursData = useCallback(async (toursData: Database['public']['Tables']['tours']['Row'][]) => {
     try {
-      setLoading(true)
-      
-      // 1. 투어 데이터 가져오기
-      const { data: toursData, error: toursError } = await supabase
-        .from('tours')
-        .select('*')
-        .order('tour_date', { ascending: false })
-
-      if (toursError) {
-        console.error('Error fetching tours:', toursError)
-        return
-      }
-
       // 2. 상품 정보 가져오기 (status 포함) 및 비활성 상품 제외
       const productIdsAll = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.product_id).filter(Boolean))]
       const { data: productsData } = await supabase
@@ -339,17 +350,16 @@ export default function AdminTours() {
       }
       setStatusOptions(Array.from(statusesSet))
     } catch (error) {
-      console.error('Error fetching tours:', error)
-    } finally {
-      setLoading(false)
+      console.error('Error processing tours:', error)
     }
   }, [supabase])
 
+  // 투어 데이터가 로드되면 처리
   useEffect(() => {
-    fetchEmployees()
-    fetchProducts()
-    fetchTours()
-  }, [fetchEmployees, fetchProducts, fetchTours])
+    if (toursData) {
+      processToursData(toursData)
+    }
+  }, [toursData, processToursData])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')

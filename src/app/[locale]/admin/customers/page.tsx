@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { useOptimizedData } from '@/hooks/useOptimizedData'
 
 type Customer = Database['public']['Tables']['customers']['Row']
 type CustomerInsert = Database['public']['Tables']['customers']['Insert']
@@ -35,10 +36,67 @@ type ReservationData = {
 }
 
 export default function AdminCustomers() {
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [channels, setChannels] = useState<Array<{id: string, name: string, type: string | null}>>([])
+  // 최적화된 고객 데이터 로딩
+  const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
+    fetchFn: async () => {
+      let allCustomers: Customer[] = []
+      let hasMore = true
+      let page = 0
+      const pageSize = 1000
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('customers')
+          .select(`
+            *,
+            channels:channel_id (
+              name
+            )
+          `)
+          .order('created_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1)
+
+        if (error) {
+          console.error('Error fetching customers:', error)
+          break
+        }
+
+        if (data && data.length > 0) {
+          allCustomers = [...allCustomers, ...data]
+          page++
+        } else {
+          hasMore = false
+        }
+      }
+
+      return allCustomers
+    },
+    cacheKey: 'customers',
+    cacheTime: 5 * 60 * 1000 // 5분 캐시
+  })
+
+  // 최적화된 채널 데이터 로딩
+  const { data: channels = [], loading: channelsLoading, refetch: refetchChannels } = useOptimizedData({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('channels')
+        .select('id, name, type')
+        .order('name', { ascending: true })
+
+      if (error) {
+        console.error('Error fetching channels:', error)
+        return []
+      }
+
+      return data || []
+    },
+    cacheKey: 'channels',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시 (채널은 자주 변경되지 않음)
+  })
+
+  const loading = customersLoading || channelsLoading
+
   const [reservationInfo, setReservationInfo] = useState<Record<string, ReservationInfo>>({})
-  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [sortField, setSortField] = useState<keyof Customer>('created_at')
@@ -62,65 +120,6 @@ export default function AdminCustomers() {
   }
 
   // 고객 목록 불러오기 (모든 고객을 가져오기 위해 페이지네이션 사용)
-  const fetchCustomers = async () => {
-    try {
-      setLoading(true)
-      let allCustomers: Customer[] = []
-      let hasMore = true
-      let page = 0
-      const pageSize = 1000
-
-      while (hasMore) {
-      const { data, error } = await supabase
-        .from('customers')
-          .select(`
-            *,
-            channels:channel_id (
-              name
-            )
-          `)
-        .order('created_at', { ascending: false })
-          .range(page * pageSize, (page + 1) * pageSize - 1)
-
-      if (error) {
-        console.error('Error fetching customers:', error)
-          break
-        }
-
-        if (data && data.length > 0) {
-          allCustomers = [...allCustomers, ...data]
-          page++
-        } else {
-          hasMore = false
-        }
-      }
-
-      setCustomers(allCustomers)
-    } catch (error) {
-      console.error('Error fetching customers:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // channels 테이블에서 채널 목록 불러오기
-  const fetchChannels = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('channels')
-        .select('id, name, type')
-        .order('name', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching channels:', error)
-        return
-      }
-
-      setChannels(data || [])
-    } catch (error) {
-      console.error('Error fetching channels:', error)
-    }
-  }
 
   // 고객별 예약 정보 가져오기
   const fetchReservationInfo = async () => {
@@ -216,7 +215,7 @@ export default function AdminCustomers() {
 
       alert('고객이 성공적으로 추가되었습니다!')
       closeForm()
-      fetchCustomers()
+      refetchCustomers()
     } catch (error) {
       console.error('Error adding customer:', error)
       alert('고객 추가 중 오류가 발생했습니다.')
@@ -240,7 +239,7 @@ export default function AdminCustomers() {
 
             alert('고객 정보가 성공적으로 수정되었습니다!')
       closeForm()
-      fetchCustomers()
+      refetchCustomers()
       } catch (error) {
         console.error('Error updating customer:', error)
       alert('고객 정보 수정 중 오류가 발생했습니다.')
@@ -262,7 +261,7 @@ export default function AdminCustomers() {
         }
 
       alert('고객이 성공적으로 삭제되었습니다!')
-      fetchCustomers()
+      refetchCustomers()
       
       // 모달 닫기
       setShowForm(false)
@@ -318,10 +317,8 @@ export default function AdminCustomers() {
     })
   }
 
-  // 컴포넌트 마운트 시 고객 목록과 채널 목록, 예약 정보 불러오기
+  // 컴포넌트 마운트 시 예약 정보 불러오기
   useEffect(() => {
-    fetchCustomers()
-    fetchChannels()
     fetchReservationInfo()
   }, [])
 

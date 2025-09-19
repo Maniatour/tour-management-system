@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { logSupabaseStatus } from '@/lib/supabaseHealthCheck'
 import { throttledSupabaseRequest } from '@/lib/requestThrottle'
 import { getCachedOrFetch, cacheKeys } from '@/lib/dataCache'
+import { useOptimizedData } from './useOptimizedData'
 import type { Database } from '@/lib/supabase'
 import type { 
   Customer, 
@@ -16,49 +17,15 @@ import type {
 } from '@/types/reservation'
 
 export function useReservationData() {
-  const [reservations, setReservations] = useState<Reservation[]>([])
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [channels, setChannels] = useState<Channel[]>([])
-  const [productOptions, setProductOptions] = useState<ProductOption[]>([])
-  const [optionChoices, setOptionChoices] = useState<ProductOptionChoice[]>([])
-  const [options, setOptions] = useState<Option[]>([])
-  const [pickupHotels, setPickupHotels] = useState<PickupHotel[]>([])
-  const [coupons, setCoupons] = useState<Database['public']['Tables']['coupons']['Row'][]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadingProgress, setLoadingProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
-
-  // 데이터 fetching 함수들
-  const fetchCustomers = async () => {
-    try {
-      console.log('고객 데이터 로딩 시작...')
-      
-      // Supabase 연결 테스트 (제한된 요청)
-      const { data: testData, error: testError } = await throttledSupabaseRequest(() =>
-        supabase
-          .from('customers')
-          .select('count', { count: 'exact', head: true })
-      )
-
-      if (testError) {
-        console.warn('Supabase connection failed, using fallback data:', testError)
-        // 폴백 데이터 설정
-        setCustomers([])
-        return
-      }
-
-      const totalCount = testData || 0
-      console.log(`총 고객 수: ${totalCount}개`)
-      
-      // 모든 고객 데이터를 페이지네이션으로 로드
+  // 최적화된 데이터 로딩
+  const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
+    fetchFn: async () => {
       let allCustomers: any[] = []
       let from = 0
       const pageSize = 1000
       let hasMore = true
 
       while (hasMore) {
-        console.log(`고객 데이터 로딩: ${from} ~ ${from + pageSize - 1}`)
-        
         const { data, error } = await supabase
           .from('customers')
           .select('*')
@@ -66,15 +33,12 @@ export function useReservationData() {
           .range(from, from + pageSize - 1)
 
         if (error) {
-          console.warn('Error fetching customers, using fallback data:', error)
-          setCustomers([])
-          return
+          console.warn('Error fetching customers:', error)
+          break
         }
 
         if (data && data.length > 0) {
           allCustomers = [...allCustomers, ...data]
-          console.log(`고객 데이터 로딩 완료: ${data.length}개 추가, 총 ${allCustomers.length}개`)
-          
           from += pageSize
           hasMore = data.length >= pageSize
         } else {
@@ -82,42 +46,20 @@ export function useReservationData() {
         }
       }
 
-      console.log(`전체 고객 데이터 로딩 완료: ${allCustomers.length}개`)
-      setCustomers(allCustomers)
-    } catch (error) {
-      console.warn('Error fetching customers, using fallback data:', error)
-      // 빈 배열로 설정하여 앱이 크래시되지 않도록 함
-      setCustomers([])
-    }
-  }
+      return allCustomers
+    },
+    cacheKey: 'reservation-customers',
+    cacheTime: 5 * 60 * 1000 // 5분 캐시
+  })
 
-  const fetchProducts = async () => {
-    try {
-      console.log('상품 데이터 로딩 시작...')
-      
-      // Supabase 연결 테스트
-      const { data: testData, error: testError } = await supabase
-        .from('products')
-        .select('count', { count: 'exact', head: true })
-
-      if (testError) {
-        console.warn('Supabase connection failed, using fallback data:', testError)
-        setProducts([])
-        return
-      }
-
-      const totalCount = testData || 0
-      console.log(`총 상품 수: ${totalCount}개`)
-      
-      // 모든 상품 데이터를 페이지네이션으로 로드
+  const { data: products = [], loading: productsLoading, refetch: refetchProducts } = useOptimizedData({
+    fetchFn: async () => {
       let allProducts: any[] = []
       let from = 0
       const pageSize = 1000
       let hasMore = true
 
       while (hasMore) {
-        console.log(`상품 데이터 로딩: ${from} ~ ${from + pageSize - 1}`)
-        
         const { data, error } = await supabase
           .from('products')
           .select('*')
@@ -125,15 +67,12 @@ export function useReservationData() {
           .range(from, from + pageSize - 1)
 
         if (error) {
-          console.warn('Error fetching products, using fallback data:', error)
-          setProducts([])
-          return
+          console.warn('Error fetching products:', error)
+          break
         }
 
         if (data && data.length > 0) {
           allProducts = [...allProducts, ...data]
-          console.log(`상품 데이터 로딩 완료: ${data.length}개 추가, 총 ${allProducts.length}개`)
-          
           from += pageSize
           hasMore = data.length >= pageSize
         } else {
@@ -141,59 +80,50 @@ export function useReservationData() {
         }
       }
 
-      console.log(`전체 상품 데이터 로딩 완료: ${allProducts.length}개`)
-      setProducts(allProducts)
-    } catch (error) {
-      console.warn('Error fetching products, using fallback data:', error)
-      setProducts([])
-    }
-  }
+      return allProducts
+    },
+    cacheKey: 'reservation-products',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시
+  })
 
-  const fetchChannels = async () => {
-    try {
-      console.log('채널 데이터 로딩 시작...')
-      
+  const { data: channels = [], loading: channelsLoading, refetch: refetchChannels } = useOptimizedData({
+    fetchFn: async () => {
       const { data, error } = await supabase
         .from('channels')
         .select('*')
         .order('name', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching channels, using fallback data:', error)
-        setChannels([])
-        return
+        console.warn('Error fetching channels:', error)
+        return []
       }
 
-      console.log(`채널 데이터 로딩 완료: ${data?.length || 0}개`)
-      setChannels(data || [])
-    } catch (error) {
-      console.warn('Error fetching channels, using fallback data:', error)
-      setChannels([])
-    }
-  }
+      return data || []
+    },
+    cacheKey: 'reservation-channels',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시
+  })
 
-  const fetchProductOptions = async () => {
-    try {
+  const { data: productOptions = [], loading: productOptionsLoading, refetch: refetchProductOptions } = useOptimizedData({
+    fetchFn: async () => {
       const { data, error } = await supabase
         .from('product_options')
         .select('*')
         .order('name', { ascending: true })
 
-        if (error) {
-          console.warn('Error fetching product options, using fallback data:', error)
-          setProductOptions([])
-          return
-        }
-      setProductOptions(data || [])
-    } catch (error) {
-      console.warn('Error fetching product options, using fallback data:', error)
-      setProductOptions([])
-    }
-  }
+      if (error) {
+        console.warn('Error fetching product options:', error)
+        return []
+      }
 
-  const fetchOptionChoices = async () => {
-    try {
-      // 병합된 테이블 구조에서는 product_options에서 선택지 정보를 가져옴
+      return data || []
+    },
+    cacheKey: 'reservation-product-options',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시
+  })
+
+  const { data: optionChoices = [], loading: optionChoicesLoading, refetch: refetchOptionChoices } = useOptimizedData({
+    fetchFn: async () => {
       const { data, error } = await supabase
         .from('product_options')
         .select(`
@@ -211,11 +141,10 @@ export function useReservationData() {
         .order('name', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching option choices, using fallback data:', error)
-        return
+        console.warn('Error fetching option choices:', error)
+        return []
       }
       
-      // 새로운 구조에 맞게 데이터 변환
       const transformedChoices = (data || []).map(item => ({
         id: item.id,
         name: item.choice_name || item.name,
@@ -224,56 +153,55 @@ export function useReservationData() {
         child_price_adjustment: item.child_price_adjustment,
         infant_price_adjustment: item.infant_price_adjustment,
         is_default: item.is_default,
-        product_option_id: item.id, // 자기 자신을 참조
+        product_option_id: item.id,
         created_at: item.created_at,
         updated_at: item.updated_at
       }))
       
-      setOptionChoices(transformedChoices)
-    } catch (error) {
-      console.warn('Error fetching option choices, using fallback data:', error)
-      setOptionChoices([])
-    }
-  }
+      return transformedChoices
+    },
+    cacheKey: 'reservation-option-choices',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시
+  })
 
-  const fetchOptions = async () => {
-    try {
+  const { data: options = [], loading: optionsLoading, refetch: refetchOptions } = useOptimizedData({
+    fetchFn: async () => {
       const { data, error } = await supabase
         .from('options')
         .select('*')
         .order('name', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching options, using fallback data:', error)
-        return
+        console.warn('Error fetching options:', error)
+        return []
       }
-      setOptions(data || [])
-    } catch (error) {
-      console.warn('Error fetching options, using fallback data:', error)
-      setOptions([])
-    }
-  }
 
-  const fetchPickupHotels = async () => {
-    try {
+      return data || []
+    },
+    cacheKey: 'reservation-options',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시
+  })
+
+  const { data: pickupHotels = [], loading: pickupHotelsLoading, refetch: refetchPickupHotels } = useOptimizedData({
+    fetchFn: async () => {
       const { data, error } = await supabase
         .from('pickup_hotels')
         .select('*')
         .order('hotel', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching pickup hotels, using fallback data:', error)
-        return
+        console.warn('Error fetching pickup hotels:', error)
+        return []
       }
-      setPickupHotels(data || [])
-    } catch (error) {
-      console.warn('Error fetching pickup hotels, using fallback data:', error)
-      setPickupHotels([])
-    }
-  }
 
-  const fetchCoupons = async () => {
-    try {
+      return data || []
+    },
+    cacheKey: 'reservation-pickup-hotels',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시
+  })
+
+  const { data: coupons = [], loading: couponsLoading, refetch: refetchCoupons } = useOptimizedData({
+    fetchFn: async () => {
       const { data, error } = await supabase
         .from('coupons')
         .select('*')
@@ -281,15 +209,22 @@ export function useReservationData() {
         .order('coupon_code', { ascending: true })
 
       if (error) {
-        console.warn('Error fetching coupons, using fallback data:', error)
-        return
+        console.warn('Error fetching coupons:', error)
+        return []
       }
-      setCoupons(data || [])
-    } catch (error) {
-      console.warn('Error fetching coupons, using fallback data:', error)
-      setCoupons([])
-    }
-  }
+
+      return data || []
+    },
+    cacheKey: 'reservation-coupons',
+    cacheTime: 5 * 60 * 1000 // 5분 캐시
+  })
+
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [loadingProgress, setLoadingProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
+
+  const loading = customersLoading || productsLoading || channelsLoading || productOptionsLoading || optionChoicesLoading || optionsLoading || pickupHotelsLoading || couponsLoading
+
+  // 예약 데이터 로딩 (복잡한 로직 유지)
 
   const fetchReservations = async () => {
     try {
@@ -431,34 +366,9 @@ export function useReservationData() {
     }
   }
 
-  // 모든 데이터 로드
-  const loadAllData = async () => {
-    setLoading(true)
-    
-    // Supabase 연결 상태 확인
-    await logSupabaseStatus()
-    
-    try {
-      await Promise.allSettled([
-        fetchCustomers(),
-        fetchProducts(),
-        fetchChannels(),
-        fetchProductOptions(),
-        fetchOptionChoices(),
-        fetchOptions(),
-        fetchPickupHotels(),
-        fetchCoupons(),
-        fetchReservations()
-      ])
-    } catch (error) {
-      console.warn('Error loading data, using fallback data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  // 예약 데이터만 별도로 로드
   useEffect(() => {
-    loadAllData()
+    fetchReservations()
   }, [])
 
   return {
@@ -477,14 +387,24 @@ export function useReservationData() {
     
     // 리프레시 함수들
     refreshReservations: fetchReservations,
-    refreshCustomers: fetchCustomers,
-    refreshProducts: fetchProducts,
-    refreshChannels: fetchChannels,
-    refreshProductOptions: fetchProductOptions,
-    refreshOptionChoices: fetchOptionChoices,
-    refreshOptions: fetchOptions,
-    refreshPickupHotels: fetchPickupHotels,
-    refreshCoupons: fetchCoupons,
-    refreshAll: loadAllData
+    refreshCustomers: refetchCustomers,
+    refreshProducts: refetchProducts,
+    refreshChannels: refetchChannels,
+    refreshProductOptions: refetchProductOptions,
+    refreshOptionChoices: refetchOptionChoices,
+    refreshOptions: refetchOptions,
+    refreshPickupHotels: refetchPickupHotels,
+    refreshCoupons: refetchCoupons,
+    refreshAll: () => {
+      refetchCustomers()
+      refetchProducts()
+      refetchChannels()
+      refetchProductOptions()
+      refetchOptionChoices()
+      refetchOptions()
+      refetchPickupHotels()
+      refetchCoupons()
+      fetchReservations()
+    }
   }
 }
