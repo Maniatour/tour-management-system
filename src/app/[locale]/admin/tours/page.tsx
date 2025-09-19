@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import TourCalendar from '@/components/TourCalendar'
@@ -29,6 +29,7 @@ type Product = Database['public']['Tables']['products']['Row']
 
 export default function AdminTours() {
   const t = useTranslations('tours')
+  const router = useRouter()
   const supabase = createClientSupabase()
   
   // 직원 데이터 (Supabase에서 가져옴)
@@ -387,8 +388,11 @@ export default function AdminTours() {
   const listMonthPrefix = `${gridMonth.getFullYear()}-${String(gridMonth.getMonth() + 1).padStart(2, '0')}-`
   const listViewTours = filteredTours.filter(t => (t.tour_date || '').startsWith(listMonthPrefix))
 
+  const [navigatingToTour, setNavigatingToTour] = useState<string | null>(null)
+
   const handleTourClick = (tour: ExtendedTour) => {
-    window.location.href = `/ko/admin/tours/${tour.id}`
+    setNavigatingToTour(tour.id)
+    router.push(`/ko/admin/tours/${tour.id}`)
   }
 
   // 삭제 기능은 카드뷰 간소화 요구에 따라 제거됨
@@ -446,7 +450,7 @@ export default function AdminTours() {
               <span className="hidden sm:inline">스케줄 뷰</span>
             </button>
             <button
-              onClick={() => window.location.href = '/ko/admin/tours/new'}
+              onClick={() => router.push('/ko/admin/tours/new')}
               className="bg-blue-600 text-white px-2 py-1 sm:px-4 sm:py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base"
             >
               <Plus className="w-4 h-4" />
@@ -521,7 +525,17 @@ export default function AdminTours() {
 
       {/* 달력 보기 */}
       {viewMode === 'calendar' && (
-        <TourCalendar tours={filteredTours} onTourClick={handleTourClick} allReservations={allReservations} />
+        <div className="relative">
+          {navigatingToTour && (
+            <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10 rounded-lg">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p className="text-sm text-gray-600">투어 상세 페이지로 이동 중...</p>
+              </div>
+            </div>
+          )}
+          <TourCalendar tours={filteredTours} onTourClick={handleTourClick} allReservations={allReservations} />
+        </div>
       )}
 
       {/* 스케줄 뷰 */}
@@ -545,17 +559,24 @@ export default function AdminTours() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {listViewTours.map((tour) => (
-            <Link
+            <div
               key={tour.id}
-              href={`/ko/admin/tours/${tour.id}`}
-              className="block bg-white rounded-lg shadow-md border p-3 hover:shadow-lg transition-shadow"
+              onClick={() => handleTourClick(tour)}
+              className={`block bg-white rounded-lg shadow-md border p-3 transition-all cursor-pointer ${
+                navigatingToTour === tour.id 
+                  ? 'opacity-50 pointer-events-none' 
+                  : 'hover:shadow-lg'
+              }`}
             >
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <div className="text-sm font-semibold text-gray-900 truncate">
                     {tour.tour_date} {tour.product_name || tour.product_id} {tour.assigned_people || 0}
                   </div>
-                  <div className="ml-auto">
+                  <div className="ml-auto flex items-center gap-2">
+                    {navigatingToTour === tour.id && (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    )}
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getStatusBadgeClasses(tour.status || tour.tour_status)}`}>
                       {(tour.status || tour.tour_status) || '-'}
                     </span>
@@ -573,7 +594,7 @@ export default function AdminTours() {
                   </span>
                 </div>
               </div>
-            </Link>
+            </div>
           ))}
           {listViewTours.length === 0 && (
             <div className="col-span-full text-center text-sm text-gray-500 py-6">해당 월에 표시할 투어가 없습니다.</div>

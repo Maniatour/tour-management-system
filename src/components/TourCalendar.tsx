@@ -195,17 +195,28 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     return []
   }, [])
 
-  // 투어별 배정 인원 계산: reservation_ids 기준 합산
+  // 투어별 배정 인원 계산: reservation_ids에 있는 예약들 중 confirmed/recruiting 상태만 total_people 합계
   const getAssignedPeople = useCallback((tour: ExtendedTour) => {
     const ids = normalizeReservationIds(tour.reservation_ids as unknown)
     if (ids.length === 0) return 0
+    
+    // 중복 제거
+    const uniqueIds = [...new Set(ids)]
     let total = 0
-    for (const id of ids) {
-      const key = String(id).trim()
-      total += reservationIdToPeople.get(key) || 0
+    
+    for (const id of uniqueIds) {
+      const reservation = allReservations.find(r => String(r.id).trim() === String(id).trim())
+      if (reservation) {
+        // confirmed 또는 recruiting 상태의 예약만 계산
+        const status = (reservation.status || '').toString().toLowerCase()
+        if (status === 'confirmed' || status === 'recruiting') {
+          total += reservation.total_people || 0
+        }
+      }
     }
+    
     return total
-  }, [reservationIdToPeople, normalizeReservationIds])
+  }, [allReservations, normalizeReservationIds])
 
   // 같은 상품/날짜의 전체 인원 계산 (Recruiting/Confirmed만)
   const getTotalPeopleSameProductDateFiltered = useCallback((tour: ExtendedTour) => {

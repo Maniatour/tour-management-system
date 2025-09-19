@@ -98,35 +98,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // 먼저 Supabase 세션 확인
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
-        console.log('AuthContext: Session check result:', { 
-          session: !!session, 
-          user: !!session?.user, 
-          email: session?.user?.email,
-          userMetadata: session?.user?.user_metadata,
-          error: sessionError,
-          accessToken: session?.access_token ? 'present' : 'missing',
-          refreshToken: session?.refresh_token ? 'present' : 'missing',
-          expiresAt: session?.expires_at,
-          tokenType: session?.token_type
-        })
+        if (process.env.NODE_ENV === 'development') {
+          console.log('AuthContext: Session check result:', { 
+            session: !!session, 
+            user: !!session?.user, 
+            email: session?.user?.email,
+            userMetadata: session?.user?.user_metadata,
+            error: sessionError,
+            accessToken: session?.access_token ? 'present' : 'missing',
+            refreshToken: session?.refresh_token ? 'present' : 'missing',
+            expiresAt: session?.expires_at,
+            tokenType: session?.token_type
+          })
+        }
         
         // 세션이 만료되었는지 확인
         if (session?.expires_at) {
           const now = Math.floor(Date.now() / 1000)
           const expiresAt = session.expires_at
-          console.log('Token expiry check:', {
-            now,
-            expiresAt,
-            isExpired: now >= expiresAt,
-            timeUntilExpiry: expiresAt - now
-          })
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Token expiry check:', {
+              now,
+              expiresAt,
+              isExpired: now >= expiresAt,
+              timeUntilExpiry: expiresAt - now
+            })
+          }
         }
         
         if (session?.user) {
-          console.log('Found active Supabase session:', { 
-            email: session.user.email, 
-            id: session.user.id 
-          })
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Found active Supabase session:', { 
+              email: session.user.email, 
+              id: session.user.id 
+            })
+          }
           
           setUser(session.user)
           
@@ -152,10 +158,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         // Supabase가 자동으로 세션을 관리하므로 별도 복원 로직 불필요
-        console.log('No active Supabase session, waiting for auth state change...')
+        if (process.env.NODE_ENV === 'development') {
+          console.log('No active Supabase session, waiting for auth state change...')
+        }
         
         // 세션도 localStorage도 없는 경우
-        console.log('No session found, setting as customer')
+        if (process.env.NODE_ENV === 'development') {
+          console.log('No session found, setting as customer')
+        }
         setUser(null)
         setAuthUser(null)
         setUserRole('customer')
@@ -176,12 +186,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 인증 상태 변경 리스너
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state change:', { event, session: !!session, user: !!session?.user })
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Auth state change:', { event, session: !!session, user: !!session?.user })
+        }
         
         try {
           // 로그아웃 이벤트인 경우 즉시 상태 초기화
           if (event === 'SIGNED_OUT') {
-            console.log('SIGNED_OUT event, clearing user data')
+            if (process.env.NODE_ENV === 'development') {
+              console.log('SIGNED_OUT event, clearing user data')
+            }
             setUser(null)
             setAuthUser(null)
             setUserRole('customer')
@@ -192,7 +206,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // 세션이 없고 SIGNED_OUT이 아닌 경우 (INITIAL_SESSION 등)
           if (!session && event !== 'SIGNED_OUT') {
-            console.log('No session but not SIGNED_OUT, setting as customer')
+            if (process.env.NODE_ENV === 'development') {
+              console.log('No session but not SIGNED_OUT, setting as customer')
+            }
             setUser(null)
             setAuthUser(null)
             setUserRole('customer')
@@ -202,7 +218,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // 새로운 세션이 있는 경우
           if (session?.user) {
-            console.log('New session found, updating user data')
+            if (process.env.NODE_ENV === 'development') {
+              console.log('New session found, updating user data')
+            }
             setUser(session.user)
             
             const authUserData: AuthUser = {

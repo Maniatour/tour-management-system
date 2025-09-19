@@ -7,6 +7,7 @@ export interface AuthUser {
   name?: string
   avatar_url?: string
   created_at: string
+  permissions?: string[]
 }
 
 export interface SignUpData {

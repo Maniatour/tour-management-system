@@ -31,6 +31,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 
 interface AdminSidebarAndHeaderProps {
   locale: string
@@ -57,72 +58,24 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const currentLocale = locale
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
-  const [currentSession, setCurrentSession] = useState<AttendanceRecord | null>(null)
-  const [isCheckingIn, setIsCheckingIn] = useState(false)
-  const [employeeNotFound, setEmployeeNotFound] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
-  const [elapsedTime, setElapsedTime] = useState('00:00:00')
+  const [teamBoardCount, setTeamBoardCount] = useState(0)
+  
+  // 출퇴근 동기화 훅 사용
+  const {
+    currentSession,
+    isCheckingIn,
+    employeeNotFound,
+    elapsedTime,
+    handleCheckIn,
+    handleCheckOut,
+    refreshAttendance
+  } = useAttendanceSync()
 
 
-  // 오늘의 출퇴근 기록 조회
-  const fetchTodayRecords = async () => {
-    if (!authUser?.email) return
-
-    try {
-      // 먼저 이메일로 직원 정보 조회
-      const { data: employeeData, error: employeeError } = await (supabase as any)
-        .from('team' as any)
-        .select('name_ko, email')
-        .eq('email', authUser.email)
-        .eq('is_active', true)
-        .single()
-
-      if (employeeError) {
-        console.error('직원 정보 조회 오류:', employeeError)
-        setEmployeeNotFound(true)
-        return
-      }
-
-      if (!employeeData) {
-        console.log('직원 정보를 찾을 수 없습니다.')
-        setEmployeeNotFound(true)
-        return
-      }
-
-      // 오늘의 모든 출퇴근 기록 조회
-      const { data, error } = await (supabase as any)
-        .from('attendance_records' as any)
-        .select('*')
-        .eq('employee_email', employeeData.email)
-        .eq('date', new Date().toISOString().split('T')[0])
-        .order('session_number', { ascending: true })
-
-      if (error && error.code !== 'PGRST116') {
-        console.log('출퇴근 기록 테이블이 아직 생성되지 않았습니다.')
-        setCurrentSession(null)
-        return
-      }
-
-      if (data && data.length > 0) {
-        const records = (data as any[]).map((record: any) => ({
-          ...record,
-          employee_name: (employeeData as any).name_ko,
-          employee_email: (employeeData as any).email
-        }))
-        
-        // 현재 진행 중인 세션 찾기 (퇴근하지 않은 세션)
-        const activeSession = records.find(record => 
-          record.check_in_time && !record.check_out_time
-        )
-        setCurrentSession(activeSession || null)
-      } else {
-        setCurrentSession(null)
-      }
-    } catch (error) {
-      console.error('오늘 기록 조회 중 오류:', error)
-    }
-  }
+  // 출퇴근 상태 새로고침 (커스텀 훅 사용)
+  const fetchTodayRecords = refreshAttendance
 
   // 출근 체크인 모달 열기
   const handleCheckInClick = () => {
@@ -136,145 +89,96 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     setShowAttendanceModal(true)
   }
 
-  // 출근 체크인 실행
-  const handleCheckIn = async () => {
-    if (!authUser?.email) return
-
-    setIsCheckingIn(true)
-    try {
-      // 먼저 이메일로 직원 정보 조회
-      const { data: employeeData, error: employeeError } = await (supabase as any)
-        .from('team' as any)
-        .select('name_ko, email')
-        .eq('email', authUser.email)
-        .eq('is_active', true)
-        .single()
-
-      if (employeeError) {
-        console.error('직원 정보 조회 오류:', employeeError)
-        alert('직원 정보를 찾을 수 없습니다.')
-        return
-      }
-
-      if (!employeeData) {
-        alert('직원 정보를 찾을 수 없습니다.')
-        return
-      }
-
-      // 오늘의 기존 기록 조회하여 다음 세션 번호 계산
-      const { data: existingRecords } = await (supabase as any)
-        .from('attendance_records' as any)
-        .select('session_number')
-        .eq('employee_email', (employeeData as any).email)
-        .eq('date', new Date().toISOString().split('T')[0])
-        .order('session_number', { ascending: false })
-        .limit(1)
-
-      const nextSessionNumber = existingRecords && (existingRecords as any[]).length > 0 
-        ? (existingRecords as any[])[0].session_number + 1 
-        : 1
-
-      const { error } = await (supabase as any)
-        .from('attendance_records' as any)
-        .insert({
-          employee_email: (employeeData as any).email,
-          date: new Date().toISOString().split('T')[0],
-          check_in_time: new Date().toISOString(),
-          status: 'present',
-          session_number: nextSessionNumber
-        })
-
-      if (error) {
-        console.error('출근 체크인 오류:', error)
-        alert('출퇴근 기록 테이블이 아직 생성되지 않았습니다. 관리자에게 문의하세요.')
-        return
-      }
-
-      fetchTodayRecords()
-      setShowAttendanceModal(false)
-    } catch (error) {
-      console.error('출근 체크인 중 오류:', error)
-      alert('출근 체크인 중 오류가 발생했습니다.')
-    } finally {
-      setIsCheckingIn(false)
-    }
+  // 출근/퇴근 실행 (커스텀 훅 사용)
+  const handleCheckInExecute = async () => {
+    await handleCheckIn()
+    setShowAttendanceModal(false)
   }
 
-  // 퇴근 체크아웃 실행
-  const handleCheckOut = async () => {
-    if (!currentSession) return
-
-    try {
-      const { error } = await (supabase as any)
-        .from('attendance_records' as any)
-        .update({
-          check_out_time: new Date().toISOString()
-        })
-        .eq('id', currentSession.id)
-
-      if (error) {
-        console.error('퇴근 체크아웃 오류:', error)
-        alert('퇴근 체크아웃에 실패했습니다.')
-        return
-      }
-
-      alert(`${currentSession.session_number}번째 퇴근 체크아웃이 완료되었습니다!`)
-      fetchTodayRecords()
-      setShowAttendanceModal(false)
-    } catch (error) {
-      console.error('퇴근 체크아웃 중 오류:', error)
-      alert('퇴근 체크아웃 중 오류가 발생했습니다.')
-    }
+  const handleCheckOutExecute = async () => {
+    await handleCheckOut()
+    setShowAttendanceModal(false)
   }
 
   // 모달에서 확인 버튼 클릭
   const handleConfirmAttendance = () => {
     if (attendanceAction === 'checkin') {
-      handleCheckIn()
+      handleCheckInExecute()
     } else if (attendanceAction === 'checkout') {
-      handleCheckOut()
+      handleCheckOutExecute()
     }
   }
 
-  // 경과 시간 계산 함수
-  const calculateElapsedTime = (startTime: string) => {
-    const start = new Date(startTime)
-    const now = new Date()
-    const diff = now.getTime() - start.getTime()
-    
-    const hours = Math.floor(diff / (1000 * 60 * 60))
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-    const seconds = Math.floor((diff % (1000 * 60)) / 1000)
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-  }
+  // 경과 시간과 타이머는 커스텀 훅에서 처리됨
 
-  // 타이머 업데이트
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null
-    
-    if (currentSession && currentSession.check_in_time && !currentSession.check_out_time) {
-      // 1초마다 경과 시간 업데이트
-      interval = setInterval(() => {
-        setElapsedTime(calculateElapsedTime(currentSession.check_in_time!))
-      }, 1000)
-    } else {
-      setElapsedTime('00:00:00')
-    }
-    
-    return () => {
-      if (interval) {
-        clearInterval(interval)
+  // 팀 보드 배지 카운트: 내가 받아야 할 공지(미확인) + 내게 할당된 진행중 업무 수
+  const fetchTeamBoardCount = async () => {
+    try {
+      if (!authUser?.email) {
+        setTeamBoardCount(0)
+        return
       }
-    }
-  }, [currentSession])
 
-  // 컴포넌트 마운트 시 오늘의 출퇴근 기록 조회
-  useEffect(() => {
-    if (authUser?.email) {
-      fetchTodayRecords()
+      const myEmail = authUser.email.toLowerCase()
+      // 내 포지션 조회 (공지 target_positions 매칭용)
+      const { data: me } = await (supabase as any)
+        .from('team' as any)
+        .select('position, is_active')
+        .eq('email', authUser.email)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      const myPosition = (me?.position as string) || null
+
+      // 내가 확인한 공지 목록
+      const { data: myAcks } = await (supabase as any)
+        .from('team_announcement_acknowledgments' as any)
+        .select('announcement_id')
+        .eq('ack_by', myEmail)
+
+      const ackedIds = (myAcks as any[] | null)?.map((r: any) => r.announcement_id) || []
+
+      // recipients 에 내 이메일이 포함된 공지
+      const { data: annsByEmail } = await (supabase as any)
+        .from('team_announcements' as any)
+        .select('id, recipients, target_positions, is_archived')
+        .contains('recipients', [myEmail])
+
+      // target_positions 에 내 포지션이 포함된 공지
+      let annsByPos: any[] = []
+      if (myPosition) {
+        const { data } = await (supabase as any)
+          .from('team_announcements' as any)
+          .select('id, recipients, target_positions, is_archived')
+          .contains('target_positions', [myPosition])
+        annsByPos = (data as any[]) || []
+      }
+
+      const targetedAnns = ([...(annsByEmail as any[] || []), ...annsByPos])
+        .filter((a: any) => a && a.is_archived !== true)
+      const targetedAnnIds = Array.from(new Set(targetedAnns.map((a: any) => a.id)))
+      const unackedAnnIds = targetedAnnIds.filter((id) => !ackedIds.includes(id))
+
+      // 내게 할당된 진행중 업무 수
+      const { data: myOpenTasks } = await (supabase as any)
+        .from('tasks' as any)
+        .select('id')
+        .eq('assigned_to', myEmail)
+        .in('status', ['pending', 'in_progress'] as any)
+
+      const taskCount = (myOpenTasks as any[] | null)?.length || 0
+      setTeamBoardCount(unackedAnnIds.length + taskCount)
+    } catch (err) {
+      console.warn('Failed to fetch team board count:', err)
+      setTeamBoardCount(0)
     }
-  }, [authUser])
+  }
+
+  useEffect(() => {
+    fetchTeamBoardCount()
+    const interval = setInterval(fetchTeamBoardCount, 60_000)
+    return () => clearInterval(interval)
+  }, [authUser?.email])
 
   const handleLogout = async () => {
     try {
@@ -419,6 +323,22 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       <span className="sm:hidden">퇴근</span>
                     </button>
                   )}
+
+                  {/* 팀 보드 바로가기 */}
+                  <div className="relative hidden sm:inline-block">
+                    <Link
+                      href={`/${locale}/admin/team-board`}
+                      className="inline-flex items-center justify-center w-9 h-9 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      title="팀 보드로 이동"
+                    >
+                      <MessageCircle className="w-5 h-5" />
+                    </Link>
+                    {teamBoardCount > 0 && (
+                      <span className="absolute -top-2 -right-2 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[18px] h-[18px] px-1">
+                        {teamBoardCount > 99 ? '99+' : teamBoardCount}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
               

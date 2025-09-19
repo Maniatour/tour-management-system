@@ -43,7 +43,6 @@ export const supabase = (() => {
 
 // 클라이언트 컴포넌트용 Supabase 클라이언트 (같은 인스턴스 사용)
 export const createClientSupabase = () => {
-  console.log('Using shared Supabase client instance')
   return supabase
 }
 

@@ -28,6 +28,15 @@ export default function AuthPage() {
     if (!loading && user && userRole) {
       console.log('Auth page: User logged in, role:', userRole, 'redirecting to:', redirectToParam)
       
+      // redirectToParam이 auth 페이지를 가리키는 경우 무한 루프 방지
+      if (redirectToParam.includes('/auth')) {
+        console.log('Auth page: RedirectTo points to auth page, redirecting to admin instead')
+        const pathSegments = (pathname || '/').split('/').filter(Boolean)
+        const locale = pathSegments[0] || 'ko'
+        router.replace(`/${locale}/admin`)
+        return
+      }
+      
       // 관리자/팀원인 경우 관리자 페이지로, 그 외에는 redirectToParam으로
       if (userRole !== 'customer') {
         console.log('Auth page: Admin user, redirecting to admin page')

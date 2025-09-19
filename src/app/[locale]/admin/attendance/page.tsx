@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 
 interface AttendanceRecord {
   id: string
@@ -16,7 +17,6 @@ interface AttendanceRecord {
   notes: string | null
   session_number: number
   employee_name: string
-  employee_email: string
 }
 
 interface MonthlyStats {
@@ -40,16 +40,25 @@ export default function AttendancePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
   const [todayRecords, setTodayRecords] = useState<AttendanceRecord[]>([])
-  const [isCheckingIn, setIsCheckingIn] = useState(false)
-  const [employeeNotFound, setEmployeeNotFound] = useState(false)
-  const [currentSession, setCurrentSession] = useState<AttendanceRecord | null>(null)
+  
+  // 출퇴근 동기화 훅 사용
+  const {
+    currentSession,
+    isCheckingIn,
+    employeeNotFound,
+    elapsedTime,
+    handleCheckIn,
+    handleCheckOut,
+    refreshAttendance
+  } = useAttendanceSync()
 
-  // 오늘의 출퇴근 기록 조회
+  // 오늘의 출퇴근 기록 조회 (커스텀 훅 사용)
   const fetchTodayRecords = async () => {
+    await refreshAttendance()
+    // 추가로 오늘의 모든 기록을 가져와서 todayRecords 업데이트
     if (!authUser?.email) return
 
     try {
-      // 먼저 이메일로 직원 정보 조회
       const { data: employeeData, error: employeeError } = await supabase
         .from('team')
         .select('name_ko, email')
@@ -57,32 +66,14 @@ export default function AttendancePage() {
         .eq('is_active', true)
         .single()
 
-      if (employeeError) {
-        console.error('직원 정보 조회 오류:', employeeError)
-        setEmployeeNotFound(true)
-        return
-      }
+      if (employeeError || !employeeData) return
 
-      if (!employeeData) {
-        console.log('직원 정보를 찾을 수 없습니다.')
-        setEmployeeNotFound(true)
-        return
-      }
-
-      // 오늘의 모든 출퇴근 기록 조회 (테이블이 없을 수도 있으므로 에러 무시)
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('employee_email', employeeData.email)
         .eq('date', currentDate.toISOString().split('T')[0])
         .order('session_number', { ascending: true })
-
-      if (error && error.code !== 'PGRST116') {
-        console.log('출퇴근 기록 테이블이 아직 생성되지 않았습니다.')
-        setTodayRecords([])
-        setCurrentSession(null)
-        return
-      }
 
       if (data && data.length > 0) {
         const records = data.map(record => ({
@@ -91,15 +82,8 @@ export default function AttendancePage() {
           employee_email: employeeData.email
         }))
         setTodayRecords(records)
-        
-        // 현재 진행 중인 세션 찾기 (퇴근하지 않은 세션)
-        const activeSession = records.find(record => 
-          record.check_in_time && !record.check_out_time
-        )
-        setCurrentSession(activeSession || null)
       } else {
         setTodayRecords([])
-        setCurrentSession(null)
       }
     } catch (error) {
       console.error('오늘 기록 조회 중 오류:', error)
@@ -132,12 +116,16 @@ export default function AttendancePage() {
       }
 
       // 출퇴근 기록 조회 (테이블이 없을 수도 있으므로 에러 무시)
+      const monthStart = selectedMonth + '-01'
+      const monthEnd = new Date(new Date(monthStart).getFullYear(), new Date(monthStart).getMonth() + 1, 0)
+        .toISOString().split('T')[0] // 해당 월의 마지막 날
+      
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('employee_email', employeeData.email)
-        .gte('date', selectedMonth + '-01')
-        .lte('date', selectedMonth + '-31')
+        .gte('date', monthStart)
+        .lte('date', monthEnd)
         .order('date', { ascending: false })
 
       if (error) {
@@ -205,87 +193,25 @@ export default function AttendancePage() {
     }
   }
 
-  // 출근 체크인
-  const handleCheckIn = async () => {
-    if (!authUser?.email) return
-
-    setIsCheckingIn(true)
-    try {
-      // 먼저 이메일로 직원 정보 조회
-      const { data: employeeData, error: employeeError } = await supabase
-        .from('team')
-        .select('name_ko, email')
-        .eq('email', authUser.email)
-        .eq('is_active', true)
-        .single()
-
-      if (employeeError) {
-        console.error('직원 정보 조회 오류:', employeeError)
-        alert('직원 정보를 찾을 수 없습니다.')
-        return
-      }
-
-      if (!employeeData) {
-        alert('직원 정보를 찾을 수 없습니다.')
-        return
-      }
-
-      // 다음 세션 번호 계산
-      const nextSessionNumber = todayRecords.length + 1
-
-      const { error } = await supabase
-        .from('attendance_records')
-        .insert({
-          employee_email: employeeData.email,
-          date: currentDate.toISOString().split('T')[0],
-          check_in_time: new Date().toISOString(),
-          status: 'present',
-          session_number: nextSessionNumber
-        })
-
-      if (error) {
-        console.error('출근 체크인 오류:', error)
-        alert('출퇴근 기록 테이블이 아직 생성되지 않았습니다. 관리자에게 문의하세요.')
-        return
-      }
-
-      alert(`${nextSessionNumber}번째 출근 체크인이 완료되었습니다!`)
-      fetchTodayRecords()
-      fetchAttendanceRecords()
-    } catch (error) {
-      console.error('출근 체크인 중 오류:', error)
-      alert('출근 체크인 중 오류가 발생했습니다.')
-    } finally {
-      setIsCheckingIn(false)
-    }
+  // 출근/퇴근 체크인/아웃 (커스텀 훅 사용)
+  const handleCheckInExecute = async () => {
+    await handleCheckIn()
+    // 모든 데이터 새로고침
+    await Promise.all([
+      fetchTodayRecords(),
+      fetchAttendanceRecords(),
+      fetchMonthlyStats()
+    ])
   }
 
-  // 퇴근 체크아웃
-  const handleCheckOut = async () => {
-    if (!currentSession) return
-
-    try {
-      const { error } = await supabase
-        .from('attendance_records')
-        .update({
-          check_out_time: new Date().toISOString()
-        })
-        .eq('id', currentSession.id)
-
-      if (error) {
-        console.error('퇴근 체크아웃 오류:', error)
-        alert('퇴근 체크아웃에 실패했습니다.')
-        return
-      }
-
-      alert(`${currentSession.session_number}번째 퇴근 체크아웃이 완료되었습니다!`)
-      fetchTodayRecords()
-      fetchAttendanceRecords()
+  const handleCheckOutExecute = async () => {
+    await handleCheckOut()
+    // 모든 데이터 새로고침
+    await Promise.all([
+      fetchTodayRecords(),
+      fetchAttendanceRecords(),
       fetchMonthlyStats()
-    } catch (error) {
-      console.error('퇴근 체크아웃 중 오류:', error)
-      alert('퇴근 체크아웃 중 오류가 발생했습니다.')
-    }
+    ])
   }
 
   // 데이터 새로고침
@@ -459,7 +385,7 @@ export default function AttendancePage() {
           {!currentSession ? (
             /* 출근 체크인 버튼 (현재 세션이 없을 때만 표시) */
             <button
-              onClick={handleCheckIn}
+              onClick={handleCheckInExecute}
               disabled={isCheckingIn}
               className="flex items-center px-6 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
@@ -469,7 +395,7 @@ export default function AttendancePage() {
           ) : (
             /* 퇴근 체크아웃 버튼 (현재 세션이 있을 때만 표시) */
             <button
-              onClick={handleCheckOut}
+              onClick={handleCheckOutExecute}
               className="flex items-center px-6 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors"
             >
               <XCircle className="w-5 h-5 mr-2" />

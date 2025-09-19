@@ -109,11 +109,10 @@ export const getSheetUsedRange = async (spreadsheetId: string, sheetName: string
 
     const response = await sheets.spreadsheets.get({
       spreadsheetId,
-      ranges: [`${sheetName}!A1:ZZ1000`], // 충분히 큰 범위로 요청
       includeGridData: false
     })
 
-    const sheet = response.data.sheets?.[0]
+    const sheet = response.data.sheets?.find(s => s.properties?.title === sheetName)
     const gridProperties = sheet?.properties?.gridProperties
     
     if (gridProperties) {
@@ -144,11 +143,18 @@ export const readSheetDataDynamic = async (spreadsheetId: string, sheetName: str
     const range = `${sheetName}!A:${columnRange}`
     console.log(`Reading range: ${range}`)
     
-    return await readGoogleSheet(spreadsheetId, range)
+    const data = await readGoogleSheet(spreadsheetId, range)
+    console.log(`Sheet ${sheetName} data length:`, data.length)
+    console.log(`Sheet ${sheetName} first row keys:`, data.length > 0 ? Object.keys(data[0]) : 'No data')
+    return data
   } catch (error) {
     console.error('Error reading sheet data dynamically:', error)
     // 폴백: 기본 범위로 읽기
-    return await readSheetData(spreadsheetId, sheetName)
+    console.log(`Falling back to readSheetData for ${sheetName}`)
+    const fallbackData = await readSheetData(spreadsheetId, sheetName)
+    console.log(`Fallback data length:`, fallbackData.length)
+    console.log(`Fallback first row keys:`, fallbackData.length > 0 ? Object.keys(fallbackData[0]) : 'No data')
+    return fallbackData
   }
 }
 

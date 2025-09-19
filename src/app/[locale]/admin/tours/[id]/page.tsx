@@ -4,12 +4,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Map, MapPin, Clock, User, Users } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { cache, cacheKeys } from '@/lib/cache'
 import { 
   calculateAssignedPeople, 
   calculateTotalPeopleForSameProductDate, 
@@ -75,7 +76,7 @@ export default function TourDetailPage() {
   const [showPrivateTourModal, setShowPrivateTourModal] = useState(false)
   const [pendingPrivateTourValue, setPendingPrivateTourValue] = useState<boolean>(false)
   const [connectionStatus, setConnectionStatus] = useState<{[key: string]: boolean}>({})
-  const [productOptions, setProductOptions] = useState<{[productId: string]: {[optionId: string]: {id: string, name: string, choice_name?: string}}}>({})
+  const [productOptions, setProductOptions] = useState<{[productId: string]: {[optionId: string]: {id: string, name: string}}}>({})
 
   // 연결 상태 라벨 컴포넌트
   const ConnectionStatusLabel = ({ status, section }: { status: boolean, section: string }) => (
@@ -91,14 +92,31 @@ export default function TourDetailPage() {
     </span>
   )
 
+  // 스켈레톤 UI 컴포넌트
+  const SkeletonCard = ({ className = "" }: { className?: string }) => (
+    <div className={`animate-pulse bg-gray-200 rounded-lg ${className}`} />
+  )
+
+  const SkeletonText = ({ lines = 1, className = "" }: { lines?: number, className?: string }) => (
+    <div className={className}>
+      {Array.from({ length: lines }).map((_, i) => (
+        <SkeletonCard key={i} className="h-4 mb-2" />
+      ))}
+    </div>
+  )
+
   // 상품 옵션 정보 로드 함수
   const loadProductOptions = useCallback(async (productId: string) => {
     if (!productId) return
     
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Loading product options for productId:', productId)
+    }
+    
     try {
       const { data, error } = await supabase
         .from('product_options')
-        .select('id, name, choice_name')
+        .select('id, name')
         .eq('product_id', productId)
         .eq('is_required', true)
       
@@ -107,14 +125,25 @@ export default function TourDetailPage() {
         return
       }
       
-      const optionsMap: {[optionId: string]: {id: string, name: string, choice_name?: string}} = {}
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Product options data loaded:', data)
+      }
+      
+      const optionsMap: {[optionId: string]: {id: string, name: string}} = {}
       data?.forEach((option: any) => {
         optionsMap[option.id] = {
           id: option.id,
-          name: option.name,
-          choice_name: option.choice_name
+          name: option.name
         }
       })
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Options map created:', optionsMap)
+      }
+      
+      // 캐시에 저장
+      const productOptionsCacheKey = cacheKeys.productOptions(productId)
+      cache.set(productOptionsCacheKey, optionsMap, 15 * 60 * 1000) // 15분 캐시
       
       setProductOptions(prev => ({
         ...prev,
@@ -127,13 +156,63 @@ export default function TourDetailPage() {
 
   // 옵션 이름 가져오기 함수
   const getOptionName = (optionId: string, productId: string) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('getOptionName called:', { optionId, productId, productOptionsKeys: Object.keys(productOptions) })
+    }
+    
     const productOptionsData = productOptions[productId]
     if (!productOptionsData || !productOptionsData[optionId]) {
+      // 옵션 데이터가 없으면 해당 상품의 옵션을 로드 시도
+      if (productId && !productOptionsData) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Loading product options for:', productId)
+        }
+        loadProductOptions(productId)
+      }
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Option not found, returning ID:', optionId, 'Available options:', productOptionsData ? Object.keys(productOptionsData) : 'No data')
+      }
       return optionId // 옵션 이름을 찾을 수 없으면 ID 반환
     }
     
     const option = productOptionsData[optionId]
-    return option.choice_name || option.name || optionId
+    const result = option.name || optionId
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Option found:', { optionId, result, option })
+    }
+    return result
+  }
+
+  // 옵션 배지 색상 배열
+  const optionBadgeColors = [
+    'bg-blue-100 text-blue-800',
+    'bg-green-100 text-green-800',
+    'bg-purple-100 text-purple-800',
+    'bg-pink-100 text-pink-800',
+    'bg-indigo-100 text-indigo-800',
+    'bg-yellow-100 text-yellow-800',
+    'bg-red-100 text-red-800',
+    'bg-orange-100 text-orange-800',
+    'bg-teal-100 text-teal-800',
+    'bg-cyan-100 text-cyan-800',
+    'bg-lime-100 text-lime-800',
+    'bg-amber-100 text-amber-800',
+    'bg-emerald-100 text-emerald-800',
+    'bg-violet-100 text-violet-800',
+    'bg-rose-100 text-rose-800'
+  ]
+
+  // 옵션 ID를 기반으로 색상 선택하는 함수
+  const getOptionBadgeColor = (optionId: string) => {
+    // 옵션 ID의 해시값을 계산하여 색상 인덱스 결정
+    let hash = 0
+    for (let i = 0; i < optionId.length; i++) {
+      const char = optionId.charCodeAt(i)
+      hash = ((hash << 5) - hash) + char
+      hash = hash & hash // 32비트 정수로 변환
+    }
+    const colorIndex = Math.abs(hash) % optionBadgeColors.length
+    return optionBadgeColors[colorIndex]
   }
 
   // 데이터베이스 연결 상태 확인 함수
@@ -166,7 +245,7 @@ export default function TourDetailPage() {
       // 팀 멤버 데이터 확인
       const { error: teamError } = await supabase
         .from('team')
-        .select('id')
+        .select('email')
         .limit(1)
       status.team = !teamError
     } catch {
@@ -253,15 +332,21 @@ export default function TourDetailPage() {
   const [pickupTimeValue, setPickupTimeValue] = useState<string>('')
   const [showTimeModal, setShowTimeModal] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<ReservationRow | null>(null)
-  type TeamMember = { email: string; name_ko: string }
+  type TeamMember = { email: string; name_ko: string; name_en?: string }
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [teamType, setTeamType] = useState<'1guide' | '2guide' | 'guide+driver'>('1guide')
   const [selectedGuide, setSelectedGuide] = useState<string>('')
   const [selectedAssistant, setSelectedAssistant] = useState<string>('')
   const [tourNote, setTourNote] = useState<string>('')
   const [loading, setLoading] = useState(true)
+  const [loadingStates, setLoadingStates] = useState({
+    tour: false,
+    reservations: false,
+    customers: false,
+    bookings: false,
+    modal: false
+  })
   const [editingReservation, setEditingReservation] = useState<ReservationRow | null>(null)
-  const [forceUpdate, setForceUpdate] = useState(0)
   const [showVehicleAssignment, setShowVehicleAssignment] = useState(false)
   const [assignedVehicle, setAssignedVehicle] = useState<Vehicle | null>(null)
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
@@ -376,9 +461,12 @@ export default function TourDetailPage() {
   const fetchTourData = useCallback(async (tourId: string) => {
     try {
       setLoading(true)
+      setLoadingStates(prev => ({ ...prev, tour: true }))
       
-      // 투어 데이터 가져오기
-      const { data: tourData, error: tourError } = await supabase
+      // 1단계: 핵심 투어 데이터만 먼저 로드 (캐시 확인)
+      let tourData = cache.get(cacheKeys.tour(tourId))
+      if (!tourData) {
+        const { data, error: tourError } = await supabase
         .from('tours')
         .select('*')
         .eq('id', tourId)
@@ -389,178 +477,313 @@ export default function TourDetailPage() {
         return
       }
 
+        tourData = data
       if (tourData) {
+          cache.set(cacheKeys.tour(tourId), tourData, 10 * 60 * 1000) // 10분 캐시
+        }
+      }
+
+      if (tourData) {
+        if (process.env.NODE_ENV === 'development') {
         console.log('Tour data:', tourData)
+        }
         const td = tourData as any
-        // Supabase의 TRUE/FALSE를 JavaScript의 true/false로 변환
         const processedTourData: TourRow = {
           ...(td as TourRow),
           is_private_tour: (td?.is_private_tour === 'TRUE' || td?.is_private_tour === true) as any
         }
-        // 기존 팀 구성 정보 설정 (email 기반)
+        
+        // 기본 투어 정보 즉시 설정
+        setTour(processedTourData)
+        setIsPrivateTour(!!processedTourData.is_private_tour)
+        setLoadingStates(prev => ({ ...prev, tour: false }))
+        
+        // 팀 구성 정보 설정
         if (td?.tour_guide_id) {
           setSelectedGuide(td.tour_guide_id as string)
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Setting selected guide:', td.tour_guide_id)
+          }
         }
         if (td?.assistant_id) {
           setSelectedAssistant(td.assistant_id as string)
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Setting selected assistant:', td.assistant_id)
+          }
         }
         if (td?.team_type) {
           setTeamType(td.team_type as '1guide' | '2guide' | 'guide+driver')
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Setting team type:', td.team_type)
+          }
         }
-        if (td?.tour_note) {
-          setTourNote(td.tour_note as string)
-        }
+        if (td?.tour_note) setTourNote(td.tour_note as string)
 
-        // 상품 정보 가져오기
-        let reservations: any[] = []
+        // 2단계: 병렬로 핵심 데이터 로드 (상품, 예약, 고객)
+        setLoadingStates(prev => ({ ...prev, reservations: true }))
+        const coreDataPromises = []
+        
+        // 상품 정보 (캐시 확인)
         if (td?.product_id) {
-          const { data: productData } = await (supabase as any)
+          const productCacheKey = cacheKeys.product(td.product_id)
+          let productData = cache.get(productCacheKey)
+          
+          if (productData) {
+            setProduct(productData as ProductRow)
+            coreDataPromises.push(Promise.resolve(productData))
+          } else {
+            coreDataPromises.push(
+              supabase
             .from('products')
             .select('*')
-            .eq('id', td.product_id as any)
+                .eq('id', td.product_id)
             .single()
+                .then(({ data: productData }) => {
+                  if (productData) {
+                    cache.set(productCacheKey, productData, 15 * 60 * 1000) // 15분 캐시
+                  }
           setProduct(productData)
-
-          // 같은 카테고리의 전체 상품 목록 로드 (모달용)
-          try {
-            const { data: productsAll } = await (supabase as any)
-              .from('products')
-              .select('*')
-              .order('name')
-            setAllProducts(productsAll || [])
-          } catch {}
-
-          // 채널 목록 로드 (모달용)
-          try {
-            const { data: channelsAll } = await (supabase as any)
-              .from('channels')
-              .select('*')
-              .order('name')
-            setChannels(channelsAll || [])
-          } catch {}
-
-          // 같은 상품 ID의 예약들을 가져오기
-          console.log('Fetching reservations for:', {
-            product_id: td.product_id,
-            tour_date: td.tour_date
-          })
+                  return productData
+                })
+            )
+          }
           
-          // 같은 상품/날짜의 모든 예약을 조회
-          const { data: allReservations, error: reservationError } = await supabase
+          // 예약 데이터 (캐시 확인)
+          const reservationsCacheKey = cacheKeys.reservations(td.product_id, td.tour_date)
+          let reservationsData = cache.get(reservationsCacheKey)
+          
+          if (reservationsData) {
+            const reservations = (reservationsData as ReservationRow[]) || []
+            setReservations(reservations)
+            setAllReservations(reservations)
+            
+            const inactive = reservations.filter((r: any) => {
+              const s = (r.status || '').toString().toLowerCase()
+              return s !== 'confirmed' && s !== 'recruiting'
+            })
+            setInactiveReservations(inactive)
+            
+            coreDataPromises.push(Promise.resolve(reservations))
+          } else {
+            coreDataPromises.push(
+              supabase
             .from('reservations')
             .select('*')
-            .eq('product_id', td.product_id as any)
-            .eq('tour_date', td.tour_date as any)
-
-          console.log('Reservations query result:', { allReservations, reservationError })
-          console.log('Sample reservation IDs:', (allReservations as any[])?.map((r: any) => ({ 
-            id: r?.id, 
-            type: typeof r?.id, 
-            tour_date: r?.tour_date,
-            product_id: r?.product_id
-          })))
-          console.log('Total reservations found:', allReservations?.length || 0)
-
+                .eq('product_id', td.product_id)
+                .eq('tour_date', td.tour_date)
+                .then(({ data: allReservations, error: reservationError }) => {
           if (reservationError) {
             console.error('Error fetching reservations:', reservationError)
+                    return []
           }
 
-          reservations = allReservations || []
+                  const reservations = allReservations || []
+                  cache.set(reservationsCacheKey, reservations, 5 * 60 * 1000) // 5분 캐시
+                  
           setReservations(reservations)
-          setAllReservations(allReservations || [])
-          // recruiting/confirmed가 아닌 예약들 (대소문자 무관)
-          const inactive = (allReservations || []).filter((r: any) => {
+                  setAllReservations(reservations)
+                  
+                  // 비활성 예약들
+                  const inactive = reservations.filter((r: any) => {
             const s = (r.status || '').toString().toLowerCase()
             return s !== 'confirmed' && s !== 'recruiting'
           })
           setInactiveReservations(inactive)
+                  
+                  return reservations
+                })
+            )
         }
         
-        // 모든 투어 데이터 가져오기 (다른 투어에 배정된 예약을 위해)
-        const { data: allToursData, error: toursError } = await (supabase as any)
+          // 같은 상품/날짜의 모든 투어
+          coreDataPromises.push(
+            supabase
           .from('tours')
           .select('*')
-          .eq('product_id', (td as any).product_id as any)
-          .eq('tour_date', (td as any).tour_date as any)
-
+              .eq('product_id', td.product_id)
+              .eq('tour_date', td.tour_date)
+              .then(({ data: allToursData, error: toursError }) => {
         if (toursError) {
           console.error('Error fetching all tours:', toursError)
-        } else {
+                  return []
+                }
           setAllTours(allToursData || [])
+                return allToursData || []
+              })
+          )
         }
-        
-        // tour와 allReservations를 함께 설정
-        setTour(processedTourData)
-        setIsPrivateTour(!!processedTourData.is_private_tour)
 
-        // 고객 정보 가져오기
+        // 핵심 데이터 병렬 로드 완료 대기
+        const coreResults = await Promise.all(coreDataPromises)
+        const reservations = (coreResults[1] as ReservationRow[]) || []
+        setLoadingStates(prev => ({ ...prev, reservations: false }))
+        
+        // 3단계: 고객 정보 로드 (예약이 있는 경우에만, 캐시 확인)
+        if (reservations.length > 0) {
+          setLoadingStates(prev => ({ ...prev, customers: true }))
         const customerIds = reservations.map(r => (r as any).customer_id).filter(Boolean) as string[]
         if (customerIds.length > 0) {
-          const { data: customerData } = await (supabase as any)
+            const customersCacheKey = cacheKeys.customers(customerIds)
+            let customerData = cache.get(customersCacheKey)
+            
+            if (customerData) {
+              setCustomers(customerData as CustomerRow[])
+            } else {
+              const { data } = await supabase
             .from('customers')
             .select('*')
             .in('id', customerIds)
           
-          if (customerData) {
-            setCustomers(customerData as CustomerRow[])
+              if (data) {
+                cache.set(customersCacheKey, data, 10 * 60 * 1000) // 10분 캐시
+                setCustomers(data as CustomerRow[])
+              }
+            }
           }
+          setLoadingStates(prev => ({ ...prev, customers: false }))
         }
 
-        // 픽업 호텔 정보 가져오기
-        const { data: pickupHotelsData } = await (supabase as any)
-          .from('pickup_hotels')
-          .select('*')
-        
-        if (pickupHotelsData) {
-          setPickupHotels(pickupHotelsData as PickupHotel[])
-        }
-
-        // 팀 멤버 정보 가져오기 (Tour Guide, is_active = true)
-        const { data: teamData } = await (supabase as any)
-          .from('team')
-          .select('*')
-          .eq('position', 'Tour Guide')
-          .eq('is_active', true)
-        
-        if (teamData) {
-          setTeamMembers(teamData as any)
-        }
-
-        // 이미 이 투어에 배정된 예약들 (Recruiting 또는 Confirmed 상태만)
+        // 4단계: 배정된 예약들 처리
+        if (reservations.length > 0) {
         const assignedReservations = reservations.filter(r => 
           (td?.reservation_ids as string[] | null)?.includes((r as any).id) &&
           ((r as any).status?.toLowerCase() === 'recruiting' || (r as any).status?.toLowerCase() === 'confirmed')
         ) as ReservationRow[]
-        console.log('Assigned reservations:', assignedReservations.length, assignedReservations.map(r => r.id))
-        console.log('Reservation statuses:', assignedReservations.map(r => ({ id: r.id, status: (r as any).status })))
+          
         setAssignedReservations(assignedReservations)
 
-        // 어느 투어에도 배정되지 않은 예약들 (tour_id가 null인 예약들)
-        const pendingReservations = getPendingReservations(td as any, (allReservations || []) as any)
-        console.log('Pending reservations:', pendingReservations.length, pendingReservations.map((r: any) => r.id))
+          const pendingReservations = getPendingReservations(td as any, reservations as any)
         setPendingReservations(pendingReservations as any)
       }
 
-        // 배정된 차량 정보 가져오기
-        if ((tourData as any)?.tour_car_id) {
+        // 5단계: 배정된 차량 정보 (있는 경우에만)
+        if (td?.tour_car_id) {
           const { data: vehicleData } = await supabase
             .from('vehicles')
             .select('*')
-            .eq('id', (tourData as any).tour_car_id)
+            .eq('id', td.tour_car_id)
             .single()
 
           if (vehicleData) {
             setAssignedVehicle(vehicleData)
-            setSelectedVehicleId((tourData as any).tour_car_id)
+            setSelectedVehicleId(td.tour_car_id)
+            if (process.env.NODE_ENV === 'development') {
+              console.log('Assigned vehicle loaded:', vehicleData)
+            }
           }
         }
 
-        // 차량 목록은 tour가 설정된 후 useEffect에서 가져옴
+        // 6단계: 팀 멤버 데이터 로드 (팀 구성 표시를 위해 필요)
+        const teamCacheKey = cacheKeys.team()
+        let teamData = cache.get(teamCacheKey)
         
-        // 부킹 데이터 가져오기
-        await fetchBookings(tourId)
+        if (teamData) {
+          setTeamMembers(teamData as TeamMember[])
+        } else {
+          try {
+            const { data } = await supabase
+              .from('team')
+              .select('email, name_ko, name_en')
+              .eq('position', 'Tour Guide')
+              .eq('is_active', true)
+            
+            if (data) {
+              const team = (data as TeamMember[]) || []
+              cache.set(teamCacheKey, team, 15 * 60 * 1000) // 15분 캐시
+              setTeamMembers(team)
+              if (process.env.NODE_ENV === 'development') {
+                console.log('Team members loaded:', team.length, 'members')
+              }
+            }
+          } catch (error) {
+            console.error('Error loading team members:', error)
+          }
+        }
+
+        // 7단계: 상품 옵션 데이터 로드 (배정 관리에서 옵션 이름 표시를 위해 필요)
+        if (td?.product_id) {
+          const productOptionsCacheKey = cacheKeys.productOptions(td.product_id)
+          let productOptionsData = cache.get(productOptionsCacheKey)
+          
+          if (productOptionsData) {
+            setProductOptions(prev => ({
+              ...prev,
+              [td.product_id]: productOptionsData
+            }))
+            if (process.env.NODE_ENV === 'development') {
+              console.log('Product options loaded from cache for:', td.product_id)
+            }
+          } else {
+            try {
+              const { data, error } = await supabase
+                .from('product_options')
+                .select('id, name')
+                .eq('product_id', td.product_id)
+                .eq('is_required', true)
+              
+              if (error) {
+                console.error('상품 옵션 로드 오류:', error)
+              } else if (data) {
+                const optionsMap: {[optionId: string]: {id: string, name: string}} = {}
+                data.forEach((option: any) => {
+                  optionsMap[option.id] = {
+                    id: option.id,
+                    name: option.name
+                  }
+                })
+                
+                cache.set(productOptionsCacheKey, optionsMap, 15 * 60 * 1000) // 15분 캐시
+                setProductOptions(prev => ({
+                  ...prev,
+                  [td.product_id]: optionsMap
+                }))
+                
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('Product options loaded from DB for:', td.product_id, 'Options:', optionsMap)
+                }
+              }
+            } catch (error) {
+              console.error('Error loading product options:', error)
+            }
+          }
+        }
+
+        // 8단계: 픽업 호텔 데이터 로드 (배정 관리에서 호텔 정보 표시를 위해 필요)
+        const hotelsCacheKey = cacheKeys.pickupHotels()
+        let hotelsData = cache.get(hotelsCacheKey) as PickupHotel[] | null
         
-        // 다른 투어에 배정된 예약들은 useEffect에서 처리
+        if (hotelsData) {
+          setPickupHotels(hotelsData)
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Pickup hotels loaded from cache:', hotelsData.length, 'hotels')
+          }
+        } else {
+          try {
+            const { data, error } = await supabase
+              .from('pickup_hotels')
+              .select('*')
+            
+            if (error) {
+              console.error('Error loading pickup hotels:', error)
+            } else if (data) {
+              const hotels = (data as PickupHotel[]) || []
+              cache.set(hotelsCacheKey, hotels, 30 * 60 * 1000) // 30분 캐시
+              setPickupHotels(hotels)
+              if (process.env.NODE_ENV === 'development') {
+                console.log('Pickup hotels loaded from DB:', hotels.length, 'hotels')
+              }
+            }
+          } catch (error) {
+            console.error('Error loading pickup hotels:', error)
+          }
+        }
+
+        // 9단계: 부킹 데이터 (백그라운드에서 로드)
+        setLoadingStates(prev => ({ ...prev, bookings: true }))
+        fetchBookings(tourId).finally(() => {
+          setLoadingStates(prev => ({ ...prev, bookings: false }))
+        }).catch(console.error)
+      }
     } catch (error) {
       console.error('Error fetching tour data:', error)
     } finally {
@@ -568,13 +791,9 @@ export default function TourDetailPage() {
     }
   }, [fetchBookings])
 
-  // tour, allReservations, allTours가 모두 설정된 후 강제 리렌더링
+  // tour, allReservations, allTours가 모두 설정된 후 다른 투어에 배정된 예약들 가져오기
   useEffect(() => {
     if (tour && allReservations && allReservations.length > 0 && allTours && allTours.length > 0) {
-      console.log('Tour, allReservations, and allTours loaded, forcing update')
-      setForceUpdate(prev => prev + 1)
-      
-      // 다른 투어에 배정된 예약들 가져오기
       fetchOtherToursAssignedReservations(tour)
     }
   }, [tour, allReservations, allTours, fetchOtherToursAssignedReservations])
@@ -585,14 +804,129 @@ export default function TourDetailPage() {
       fetchTourData(tourId)
     }
     checkConnectionStatus()
-  }, [params.id, fetchTourData])
+  }, [params.id])
 
-  // 투어가 로드되면 상품 옵션도 로드
+  // 투어가 로드되면 상품 옵션도 로드 (지연 로딩)
   useEffect(() => {
     if (tour?.product_id) {
+      // 상품 옵션은 필요할 때만 로드
       loadProductOptions(tour.product_id)
     }
   }, [tour?.product_id, loadProductOptions])
+
+  // 지연 로딩: 모달이 열릴 때만 전체 데이터 로드
+  const loadModalData = useCallback(async () => {
+    if (allProducts.length > 0 && channels.length > 0 && teamMembers.length > 0) {
+      return // 이미 로드됨
+    }
+
+    try {
+      setLoadingStates(prev => ({ ...prev, modal: true }))
+      const promises = []
+      
+      // 전체 상품 목록 (모달용, 캐시 확인)
+      if (allProducts.length === 0) {
+        const productsCacheKey = cacheKeys.products()
+        let productsData = cache.get(productsCacheKey)
+        
+        if (productsData) {
+          setAllProducts(productsData as ProductRow[])
+          promises.push(Promise.resolve(productsData))
+        } else {
+          promises.push(
+            supabase
+              .from('products')
+              .select('*')
+              .order('name')
+              .then(({ data }) => {
+                const products = data || []
+                cache.set(productsCacheKey, products, 30 * 60 * 1000) // 30분 캐시
+                setAllProducts(products)
+                return products
+              })
+          )
+        }
+      }
+
+      // 채널 목록 (모달용, 캐시 확인)
+      if (channels.length === 0) {
+        const channelsCacheKey = cacheKeys.channels()
+        let channelsData = cache.get(channelsCacheKey)
+        
+        if (channelsData) {
+          setChannels(channelsData as any[])
+          promises.push(Promise.resolve(channelsData))
+        } else {
+          promises.push(
+            supabase
+              .from('channels')
+              .select('*')
+              .order('name')
+              .then(({ data }) => {
+                const channels = (data as any[]) || []
+                cache.set(channelsCacheKey, channels, 30 * 60 * 1000) // 30분 캐시
+                setChannels(channels)
+                return channels
+              })
+          )
+        }
+      }
+
+      // 팀 멤버 정보 (모달용, 캐시 확인)
+      if (teamMembers.length === 0) {
+        const teamCacheKey = cacheKeys.team()
+        let teamData = cache.get(teamCacheKey)
+        
+        if (teamData) {
+          setTeamMembers(teamData as TeamMember[])
+          promises.push(Promise.resolve(teamData))
+        } else {
+          promises.push(
+            supabase
+              .from('team')
+              .select('email, name_ko, name_en')
+              .eq('position', 'Tour Guide')
+              .eq('is_active', true)
+              .then(({ data }) => {
+                const team = (data as TeamMember[]) || []
+                cache.set(teamCacheKey, team, 15 * 60 * 1000) // 15분 캐시
+                setTeamMembers(team)
+                return team
+              })
+          )
+        }
+      }
+
+      // 픽업 호텔 정보 (모달용, 캐시 확인)
+      if (pickupHotels.length === 0) {
+        const hotelsCacheKey = cacheKeys.pickupHotels()
+        let hotelsData = cache.get(hotelsCacheKey)
+        
+        if (hotelsData) {
+          setPickupHotels(hotelsData as PickupHotel[])
+          promises.push(Promise.resolve(hotelsData))
+        } else {
+          promises.push(
+            supabase
+              .from('pickup_hotels')
+              .select('*')
+              .then(({ data }) => {
+                const hotels = (data as PickupHotel[]) || []
+                cache.set(hotelsCacheKey, hotels, 30 * 60 * 1000) // 30분 캐시
+                setPickupHotels(hotels)
+                return hotels
+              })
+          )
+        }
+      }
+
+      await Promise.all(promises)
+    } catch (error) {
+      console.error('Error loading modal data:', error)
+    } finally {
+      setLoadingStates(prev => ({ ...prev, modal: false }))
+    }
+  }, [allProducts.length, channels.length, teamMembers.length, pickupHotels.length])
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -653,7 +987,6 @@ export default function TourDetailPage() {
       })
       
       setVehicles(availableVehicles)
-      console.log('차량 데이터 로드 완료:', availableVehicles.length, '대')
     } catch (error) {
       console.error('차량 목록을 불러오는 중 오류가 발생했습니다:', error)
       setVehiclesError(error instanceof Error ? error.message : '차량 데이터를 불러오는 중 오류가 발생했습니다.')
@@ -667,7 +1000,7 @@ export default function TourDetailPage() {
     if (tour) {
       fetchVehicles()
     }
-  }, [tour, fetchVehicles])
+  }, [tour])
 
   const handleVehicleAssignmentComplete = () => {
     // 차량 배정 완료 후 데이터 새로고침
@@ -778,9 +1111,21 @@ export default function TourDetailPage() {
   }
 
   const getPickupHotelName = (pickupHotelId: string) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('getPickupHotelName called:', { pickupHotelId, pickupHotelsCount: pickupHotels.length })
+    }
+    
     const hotel = pickupHotels.find(h => h.id === pickupHotelId)
     if (hotel) {
-      return `${hotel.hotel} - ${hotel.pick_up_location}`
+      const result = `${hotel.hotel} - ${hotel.pick_up_location}`
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Hotel found:', { hotel, result })
+      }
+      return result
+    }
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Hotel not found, returning ID:', pickupHotelId)
     }
     return pickupHotelId || '픽업 호텔 미지정'
   }
@@ -812,34 +1157,30 @@ export default function TourDetailPage() {
     return languageMap[language] || 'US'
   }
 
-  const getTotalAssignedPeople = () => {
+  const getTotalAssignedPeople = useMemo(() => {
     if (!tour || !allReservations || allReservations.length === 0) return 0
-    const assigned = calculateAssignedPeople(tour as any, allReservations as any)
-    console.log('getTotalAssignedPeople:', assigned, 'tour.reservation_ids:', (tour as any).reservation_ids)
-    return assigned
-  }
+    return calculateAssignedPeople(tour as any, allReservations as any)
+  }, [tour, allReservations])
 
   // 필터(confirmed/recruiting) 합계
-  const getTotalPeopleFiltered = () => {
+  const getTotalPeopleFiltered = useMemo(() => {
     if (!tour || !allReservations || allReservations.length === 0) return 0
-    const total = allReservations
+    return allReservations
       .filter((r: any) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
       .filter((r: any) => {
         const s = (r.status || '').toString().toLowerCase()
         return s === 'confirmed' || s === 'recruiting'
       })
       .reduce((sum: number, r: any) => sum + (r.total_people || 0), 0)
-    return total
-  }
+  }, [tour, allReservations])
 
   // 전체 합계 (상태 무관)
-  const getTotalPeopleAll = () => {
+  const getTotalPeopleAll = useMemo(() => {
     if (!tour || !allReservations || allReservations.length === 0) return 0
-    const total = allReservations
+    return allReservations
       .filter((r: any) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
       .reduce((sum: number, r: any) => sum + (r.total_people || 0), 0)
-    return total
-  }
+  }, [tour, allReservations])
 
   const handleAssignAllReservations = async () => {
     if (!tour || pendingReservations.length === 0) return
@@ -1089,7 +1430,7 @@ export default function TourDetailPage() {
 
   const getTeamMemberName = (email: string) => {
     const member = teamMembers.find(member => member.email === email)
-    return member ? member.name_ko : '직원 미선택'
+    return member ? (member.name_ko || member.name_en || email) : '직원 미선택'
   }
 
   const handleTourNoteChange = async (note: string) => {
@@ -1111,8 +1452,11 @@ export default function TourDetailPage() {
   }
 
   // 예약 편집 모달 열기
-  const handleEditReservationClick = (reservation: any) => {
+  const handleEditReservationClick = async (reservation: any) => {
     if (!isStaff) return
+    
+    // 모달 데이터 로드 (필요한 경우에만)
+    await loadModalData()
     setEditingReservation(reservation)
   }
 
@@ -1189,8 +1533,80 @@ export default function TourDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">로딩 중...</div>
+      <div className="min-h-screen bg-gray-50">
+        {/* 헤더 스켈레톤 */}
+        <div className="bg-white shadow-sm border-b">
+          <div className="px-2 sm:px-6 py-2 sm:py-4">
+            <div className="flex items-center space-x-4">
+              <SkeletonCard className="w-8 h-8" />
+              <div className="flex-1">
+                <SkeletonCard className="h-6 w-64 mb-2" />
+                <div className="flex gap-2">
+                  <SkeletonCard className="h-4 w-20" />
+                  <SkeletonCard className="h-4 w-24" />
+                  <SkeletonCard className="h-4 w-16" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 메인 콘텐츠 스켈레톤 */}
+        <div className="px-2 sm:px-6 py-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* 왼쪽 컬럼 */}
+            <div className="lg:col-span-2 space-y-4">
+              {/* 투어 정보 카드 */}
+              <div className="bg-white rounded-lg shadow p-4">
+                <SkeletonCard className="h-6 w-32 mb-4" />
+                <div className="space-y-3">
+                  <SkeletonText lines={3} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <SkeletonText lines={2} />
+                    <SkeletonText lines={2} />
+                  </div>
+                </div>
+              </div>
+
+              {/* 예약 정보 카드 */}
+              <div className="bg-white rounded-lg shadow p-4">
+                <SkeletonCard className="h-6 w-24 mb-4" />
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 border rounded">
+                      <div className="flex items-center space-x-3">
+                        <SkeletonCard className="w-8 h-8 rounded-full" />
+                        <div>
+                          <SkeletonCard className="h-4 w-32 mb-1" />
+                          <SkeletonCard className="h-3 w-24" />
+                        </div>
+                      </div>
+                      <SkeletonCard className="h-6 w-16" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 오른쪽 컬럼 */}
+            <div className="space-y-4">
+              {/* 팀 정보 카드 */}
+              <div className="bg-white rounded-lg shadow p-4">
+                <SkeletonCard className="h-6 w-20 mb-4" />
+                <div className="space-y-3">
+                  <SkeletonText lines={2} />
+                  <SkeletonCard className="h-10 w-full" />
+                </div>
+              </div>
+
+              {/* 차량 정보 카드 */}
+              <div className="bg-white rounded-lg shadow p-4">
+                <SkeletonCard className="h-6 w-16 mb-4" />
+                <SkeletonText lines={2} />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -1234,7 +1650,7 @@ export default function TourDetailPage() {
             {/* 모바일 요약/액션 (아이콘) */}
             <div className="flex sm:hidden items-center justify-between w-full mt-1">
               <div className="bg-blue-50 rounded px-2 py-1 border border-blue-200 text-blue-700 text-xs font-semibold">
-                {getTotalAssignedPeople()} / {getTotalPeopleFiltered()} ({Math.max(getTotalPeopleAll() - getTotalPeopleFiltered(), 0)})
+                {getTotalAssignedPeople} / {getTotalPeopleFiltered} ({Math.max(getTotalPeopleAll - getTotalPeopleFiltered, 0)})
               </div>
               <div className="flex items-center space-x-1">
                 <button className="p-1.5 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
@@ -1254,7 +1670,7 @@ export default function TourDetailPage() {
               {/* 총 배정 인원 표시 */}
               <div className="text-center bg-blue-50 rounded-lg px-4 py-3 border border-blue-200">
                 <div className="text-3xl font-bold text-blue-600">
-                  {getTotalAssignedPeople()}명 / {getTotalPeopleFiltered()}명 ({Math.max(getTotalPeopleAll() - getTotalPeopleFiltered(), 0)}명)
+                  {getTotalAssignedPeople}명 / {getTotalPeopleFiltered}명 ({Math.max(getTotalPeopleAll - getTotalPeopleFiltered, 0)}명)
                 </div>
                 <div className="text-xs text-blue-600 mt-1">
                   이 투어 배정 / 해당일 같은 상품의 Recruiting·Confirmed 합계 (상태무관 차이)
@@ -1509,7 +1925,7 @@ export default function TourDetailPage() {
                         <option value="">가이드 선택</option>
                         {teamMembers.map(member => (
                           <option key={member.email} value={member.email}>
-                            {member.name_ko}
+                            {member.name_ko || member.name_en || member.email}
                           </option>
                         ))}
                       </select>
@@ -1531,7 +1947,7 @@ export default function TourDetailPage() {
                             .filter(member => member.email !== selectedGuide)
                             .map(member => (
                               <option key={member.email} value={member.email}>
-                                {member.name_ko}
+                                {member.name_ko || member.name_en || member.email}
                               </option>
                             ))
                           }
@@ -1672,7 +2088,12 @@ export default function TourDetailPage() {
                 
                 {/* 1. 이 투어에 배정된 예약 */}
                 <div className="mb-4">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">1. 이 투어에 배정된 예약 ({assignedReservations.length})</h3>
+                  <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    1. 이 투어에 배정된 예약 ({assignedReservations.length})
+                    {loadingStates.reservations && (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    )}
+                  </h3>
                   <div className="space-y-2">
                     {assignedReservations.map((reservation) => (
                       <div 
@@ -1733,11 +2154,16 @@ export default function TourDetailPage() {
                             <div className="flex flex-wrap gap-1">
                               {Object.entries(reservation.selected_options)
                                 .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
-                                .map(([optionId, choices]) => (
-                                  <span key={optionId} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                .map(([optionId, choices]) => {
+                                  if (process.env.NODE_ENV === 'development') {
+                                    console.log('Rendering assigned reservation option:', { optionId, choices, productId: tour?.product_id })
+                                  }
+                                  return (
+                                    <span key={optionId} className={`text-xs px-2 py-1 rounded ${getOptionBadgeColor(optionId)}`}>
                                     {getOptionName(optionId, tour?.product_id || '')}
                                   </span>
-                                ))}
+                                  )
+                                })}
                             </div>
                           ) : (
                             <span className="text-xs text-gray-400">선택된 옵션 없음</span>
@@ -1840,11 +2266,13 @@ export default function TourDetailPage() {
                           <div className="mb-2">
                             {reservation.selected_options && Object.entries(reservation.selected_options).some(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0) ? (
                               <div className="flex flex-wrap gap-1">
-                                {Object.entries(reservation.selected_options).map(([optionId, choices]) => (
-                                  <span key={optionId} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                    {getOptionName(optionId, tour?.product_id || '')}
-                                  </span>
-                                ))}
+                                {Object.entries(reservation.selected_options)
+                                  .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
+                                  .map(([optionId, choices]) => (
+                                    <span key={optionId} className={`text-xs px-2 py-1 rounded ${getOptionBadgeColor(optionId)}`}>
+                                      {getOptionName(optionId, (reservation as any).product_id || '')}
+                                    </span>
+                                  ))}
                               </div>
                             ) : (
                               <span className="text-xs text-gray-400">선택된 옵션 없음</span>
@@ -1941,8 +2369,8 @@ export default function TourDetailPage() {
                               {Object.entries(reservation.selected_options)
                                 .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
                                 .map(([optionId, choices]) => (
-                                  <span key={optionId} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                    {getOptionName(optionId, tour?.product_id || '')}
+                                  <span key={optionId} className={`text-xs px-2 py-1 rounded ${getOptionBadgeColor(optionId)}`}>
+                                    {getOptionName(optionId, (reservation as any).product_id || '')}
                                   </span>
                                 ))}
                             </div>
@@ -2032,7 +2460,7 @@ export default function TourDetailPage() {
                                 .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
                                 .map(([optionId, choices]) => (
                                   <span key={optionId} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                    {getOptionName(optionId, tour?.product_id || '')}
+                                    {getOptionName(optionId, (reservation as any).product_id || '')}
                                   </span>
                                 ))}
                             </div>
@@ -2082,6 +2510,9 @@ export default function TourDetailPage() {
                   <h2 className="text-md font-semibold text-gray-900 flex items-center">
                     부킹 관리
                     <ConnectionStatusLabel status={connectionStatus.bookings && connectionStatus.hotelBookings} section="부킹" />
+                    {loadingStates.bookings && (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 ml-2"></div>
+                    )}
                   </h2>
                   <div className="flex space-x-2">
                     <button

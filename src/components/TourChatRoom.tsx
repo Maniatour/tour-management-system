@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Send, Image as ImageIcon, File, Users, Copy, Share2, MessageCircle, Languages, Calendar, Gift, Megaphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
+import PickupScheduleModal from './PickupScheduleModal'
 import { translateText, detectLanguage, SupportedLanguage } from '@/lib/translation'
 
 interface ChatMessage {
@@ -67,6 +68,13 @@ export default function TourChatRoom({
   const [sending, setSending] = useState(false)
   const [participantCount, setParticipantCount] = useState(0)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showPickupScheduleModal, setShowPickupScheduleModal] = useState(false)
+  const [pickupSchedule, setPickupSchedule] = useState<Array<{
+    time: string
+    hotel: string
+    location: string
+    people: number
+  }>>([])
   // Generate or read client_id for soft-ban
   const getClientId = () => {
     if (typeof window === 'undefined') return 'unknown'
@@ -193,6 +201,7 @@ export default function TourChatRoom({
         }
         await loadMessages(room.id)
         await loadAnnouncements(room.id)
+        await loadPickupSchedule()
       }
     } catch (error) {
       console.error('Error loading room by code:', error)
@@ -219,6 +228,7 @@ export default function TourChatRoom({
         setRoom(existingRoom)
         await loadMessages(existingRoom.id)
         await loadAnnouncements(existingRoom.id)
+        await loadPickupSchedule()
       } else {
         console.warn('Chat room not found. Please wait a moment after the tour is created.')
         setRoom(null)
@@ -243,6 +253,70 @@ export default function TourChatRoom({
       scrollToBottom()
     } catch (error) {
       console.error('Error loading messages:', error)
+    }
+  }
+
+  // 픽업 스케줄 로드
+  const loadPickupSchedule = async () => {
+    try {
+      if (!tourId) return
+
+      // 투어 정보 가져오기
+      const { data: tour, error: tourError } = await supabase
+        .from('tours')
+        .select('product_id, tour_date')
+        .eq('id', tourId)
+        .single()
+
+      if (tourError || !tour) return
+
+      // 예약 정보 가져오기
+      const { data: reservations, error: reservationsError } = await supabase
+        .from('reservations')
+        .select(`
+          id,
+          pickup_hotel,
+          pickup_time,
+          total_people
+        `)
+        .eq('product_id', tour.product_id)
+        .eq('tour_date', tour.tour_date)
+        .eq('status', 'confirmed')
+
+      if (reservationsError || !reservations) return
+
+      // 픽업 호텔 정보 별도로 가져오기
+      const pickupHotelIds = [...new Set(reservations.map(r => r.pickup_hotel).filter(Boolean))]
+      let pickupHotels: any[] = []
+      
+      if (pickupHotelIds.length > 0) {
+        const { data: hotelsData, error: hotelsError } = await supabase
+          .from('pickup_hotels')
+          .select('id, hotel, pick_up_location')
+          .in('id', pickupHotelIds)
+        
+        if (!hotelsError && hotelsData) {
+          pickupHotels = hotelsData
+        }
+      }
+
+      // 픽업 스케줄 데이터 생성
+      const schedule = reservations
+        .filter(reservation => reservation.pickup_hotel && reservation.pickup_time)
+        .map(reservation => {
+          const hotel = pickupHotels.find(h => h.id === reservation.pickup_hotel)
+          return {
+            time: reservation.pickup_time || '',
+            hotel: hotel?.hotel || '',
+            location: hotel?.pick_up_location || '',
+            people: reservation.total_people || 0
+          }
+        })
+        .sort((a, b) => a.time.localeCompare(b.time))
+
+      setPickupSchedule(schedule)
+    } catch (error) {
+      console.error('Error loading pickup schedule:', error)
     }
   }
 
@@ -469,14 +543,14 @@ export default function TourChatRoom({
             >
               <Megaphone size={14} />
             </button>
-            <a
-              href="#pickup-schedule"
+            <button
+              onClick={() => setShowPickupScheduleModal(true)}
               className="px-2.5 py-1.5 text-xs bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200 flex items-center justify-center"
               title="픽업 스케쥴"
               aria-label="픽업 스케쥴"
             >
               <Calendar size={14} />
-            </a>
+            </button>
             <a
               href="#options"
               className="px-2.5 py-1.5 text-xs bg-emerald-100 text-emerald-800 rounded border border-emerald-200 hover:bg-emerald-200 flex items-center justify-center"
@@ -650,6 +724,13 @@ export default function TourChatRoom({
           </div>
         </div>
       )}
+
+      {/* 픽업 스케줄 모달 */}
+      <PickupScheduleModal
+        isOpen={showPickupScheduleModal}
+        onClose={() => setShowPickupScheduleModal(false)}
+        pickupSchedule={pickupSchedule}
+      />
     </div>
   )
 }
