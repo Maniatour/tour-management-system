@@ -25,17 +25,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [permissions, setPermissions] = useState<UserPermissions | null>(null)
   const [loading, setLoading] = useState(true)
+  const [initialized, setInitialized] = useState(false)
+
+  // team 멤버십 확인
+  const checkTeamMembership = async (email: string) => {
+    if (!email) return
+
+    try {
+      console.log('AuthContext: Checking team membership for:', email)
+      
+      const { data: teamData, error } = await supabase
+        .from('team')
+        .select('*')
+        .eq('email', email)
+        .eq('is_active', true)
+        .single()
+
+      if (error || !teamData) {
+        console.log('AuthContext: Not a team member')
+        setUserRole('customer')
+        setPermissions(null)
+        setLoading(false) // team 확인 완료 후 로딩 해제
+        return
+      }
+
+      console.log('AuthContext: Team member found:', teamData.name_ko)
+      
+      // team 멤버인 경우 역할 확인
+      await checkUserRole(email)
+      setLoading(false) // team 확인 완료 후 로딩 해제
+    } catch (error) {
+      console.error('AuthContext: Team check failed:', error)
+      setUserRole('customer')
+      setPermissions(null)
+      setLoading(false) // 에러 발생 시에도 로딩 해제
+    }
+  }
 
   // 사용자 역할 및 권한 확인
   const checkUserRole = async (email: string) => {
     if (!email) {
       setUserRole('customer')
       setPermissions(null)
+      setLoading(false)
       return
     }
 
     try {
-      // 팀 테이블에서 사용자 정보 조회
       const { data: teamData, error } = await supabase
         .from('team')
         .select('*')
@@ -73,184 +109,164 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       setUserRole(role)
       setPermissions(userPermissions)
+      setLoading(false)
       
-      // 세션 정보를 localStorage에 저장 (team 정보 포함)
-      if (user) {
-        const sessionData = {
-          user,
-          teamData,
-          userRole: role,
-          permissions: userPermissions
-        }
-        localStorage.setItem('auth_session', JSON.stringify(sessionData))
-      }
+      console.log('AuthContext: User role set:', role)
     } catch (error) {
       console.error('Error checking user role:', error)
       setUserRole('customer')
       setPermissions(null)
+      setLoading(false)
     }
   }
 
   useEffect(() => {
-    // 초기 사용자 상태 가져오기
-    const getInitialUser = async () => {
-      try {
-        // 먼저 Supabase 세션 확인
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        
-        if (process.env.NODE_ENV === 'development') {
-          console.log('AuthContext: Session check result:', { 
-            session: !!session, 
-            user: !!session?.user, 
-            email: session?.user?.email,
-            userMetadata: session?.user?.user_metadata,
-            error: sessionError,
-            accessToken: session?.access_token ? 'present' : 'missing',
-            refreshToken: session?.refresh_token ? 'present' : 'missing',
-            expiresAt: session?.expires_at,
-            tokenType: session?.token_type
-          })
-        }
-        
-        // 세션이 만료되었는지 확인
-        if (session?.expires_at) {
-          const now = Math.floor(Date.now() / 1000)
-          const expiresAt = session.expires_at
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Token expiry check:', {
-              now,
-              expiresAt,
-              isExpired: now >= expiresAt,
-              timeUntilExpiry: expiresAt - now
-            })
+    if (initialized) {
+      console.log('AuthContext: Already initialized, skipping...')
+      return
+    }
+    
+    console.log('AuthContext: Initializing...')
+    setInitialized(true)
+    
+    // 즉시 로딩 완료로 설정
+    setLoading(false)
+    
+    // localStorage에서 토큰 확인 (콜백 페이지에서 저장된 토큰)
+    const checkStoredTokens = async () => {
+      if (typeof window !== 'undefined') {
+        try {
+          const storedTokens = localStorage.getItem('auth_tokens')
+          console.log('AuthContext: Checking stored tokens:', !!storedTokens)
+          
+          if (storedTokens) {
+            const tokens = JSON.parse(storedTokens)
+            const { access_token, refresh_token, timestamp } = tokens
+            
+            // 토큰이 1시간 이내인지 확인
+            if (access_token && (Date.now() - timestamp) < 3600000) {
+              console.log('AuthContext: Found valid stored tokens, parsing JWT directly')
+              try {
+                // JWT 토큰에서 직접 사용자 정보 추출
+                const tokenParts = access_token.split('.')
+                if (tokenParts.length === 3) {
+                  const payload = JSON.parse(atob(tokenParts[1]))
+                  console.log('AuthContext: JWT payload:', payload)
+                  
+                  if (payload.email) {
+                    console.log('AuthContext: Creating user from JWT payload:', payload.email)
+                    
+                    // JWT에서 사용자 정보 생성
+                    const user = {
+                      id: payload.sub,
+                      email: payload.email,
+                      user_metadata: {
+                        name: payload.name || payload.full_name,
+                        avatar_url: payload.avatar_url || payload.picture,
+                        provider: 'google'
+                      },
+                      created_at: new Date(payload.iat * 1000).toISOString(),
+                      aud: payload.aud,
+                      role: payload.role
+                    }
+                    
+                    console.log('AuthContext: User created from JWT:', user.email)
+                    setUser(user)
+                    
+                    const authUserData: AuthUser = {
+                      id: user.id,
+                      email: user.email,
+                      name: user.user_metadata?.name || user.email.split('@')[0],
+                      avatar_url: user.user_metadata?.avatar_url,
+                      created_at: user.created_at,
+                    }
+                    setAuthUser(authUserData)
+                    
+                    // 성공 시 저장된 토큰 삭제
+                    localStorage.removeItem('auth_tokens')
+                    
+                    // team 확인
+                    checkTeamMembership(user.email)
+                    
+                    // 백그라운드에서 세션 설정 시도
+                    setTimeout(async () => {
+                      try {
+                        console.log('AuthContext: Attempting background session setup')
+                        const { data, error } = await supabase.auth.setSession({
+                          access_token: access_token,
+                          refresh_token: refresh_token || ''
+                        })
+                        if (error) {
+                          console.log('AuthContext: Background session setup failed:', error.message)
+                        } else {
+                          console.log('AuthContext: Background session setup successful')
+                        }
+                      } catch (error) {
+                        console.log('AuthContext: Background session setup error:', error)
+                      }
+                    }, 1000)
+                  } else {
+                    console.log('AuthContext: No email in JWT payload')
+                    localStorage.removeItem('auth_tokens')
+                  }
+                } else {
+                  console.log('AuthContext: Invalid JWT token format')
+                  localStorage.removeItem('auth_tokens')
+                }
+              } catch (error) {
+                console.error('AuthContext: JWT parsing error:', error)
+                localStorage.removeItem('auth_tokens')
+              }
+            } else {
+              console.log('AuthContext: Stored tokens expired or invalid, removing')
+              localStorage.removeItem('auth_tokens')
+            }
           }
+        } catch (error) {
+          console.error('AuthContext: Error checking stored tokens:', error)
+          localStorage.removeItem('auth_tokens')
         }
+      }
+    }
+    
+    // 저장된 토큰 확인
+    checkStoredTokens()
+
+    // 인증 상태 변경 리스너
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state change:', { event, session: !!session, user: !!session?.user })
         
-        if (session?.user) {
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Found active Supabase session:', { 
-              email: session.user.email, 
-              id: session.user.id 
-            })
-          }
+        if (event === 'SIGNED_OUT') {
+          console.log('AuthContext: User signed out')
+          setUser(null)
+          setAuthUser(null)
+          setUserRole('customer')
+          setPermissions(null)
+          setLoading(false)
+          return
+        }
+
+        if (session?.user?.email) {
+          console.log('AuthContext: User authenticated, setting user data')
           
           setUser(session.user)
           
           const authUserData: AuthUser = {
             id: session.user.id,
-            email: session.user.email || '',
+            email: session.user.email,
             name: session.user.user_metadata?.name || 
                   session.user.user_metadata?.full_name || 
-                  session.user.user_metadata?.display_name ||
-                  (session.user.email ? session.user.email.split('@')[0] : undefined),
+                  session.user.email.split('@')[0],
             avatar_url: session.user.user_metadata?.avatar_url,
             created_at: session.user.created_at,
           }
           setAuthUser(authUserData)
           
-          // 사용자 역할 확인
-          if (session.user.email) {
-            await checkUserRole(session.user.email)
-          }
-          
-          setLoading(false)
-          return
-        }
-        
-        // Supabase가 자동으로 세션을 관리하므로 별도 복원 로직 불필요
-        if (process.env.NODE_ENV === 'development') {
-          console.log('No active Supabase session, waiting for auth state change...')
-        }
-        
-        // 세션도 localStorage도 없는 경우
-        if (process.env.NODE_ENV === 'development') {
-          console.log('No session found, setting as customer')
-        }
-        setUser(null)
-        setAuthUser(null)
-        setUserRole('customer')
-        setPermissions(null)
-        setLoading(false)
-      } catch (error) {
-        console.error('Error in getInitialUser:', error)
-        setUser(null)
-        setAuthUser(null)
-        setUserRole('customer')
-        setPermissions(null)
-        setLoading(false)
-      }
-    }
-
-    getInitialUser()
-
-    // 인증 상태 변경 리스너
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Auth state change:', { event, session: !!session, user: !!session?.user })
-        }
-        
-        try {
-          // 로그아웃 이벤트인 경우 즉시 상태 초기화
-          if (event === 'SIGNED_OUT') {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('SIGNED_OUT event, clearing user data')
-            }
-            setUser(null)
-            setAuthUser(null)
-            setUserRole('customer')
-            setPermissions(null)
-            setLoading(false)
-            return
-          }
-
-          // 세션이 없고 SIGNED_OUT이 아닌 경우 (INITIAL_SESSION 등)
-          if (!session && event !== 'SIGNED_OUT') {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('No session but not SIGNED_OUT, setting as customer')
-            }
-            setUser(null)
-            setAuthUser(null)
-            setUserRole('customer')
-            setPermissions(null)
-            setLoading(false)
-          }
-
-          // 새로운 세션이 있는 경우
-          if (session?.user) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('New session found, updating user data')
-            }
-            setUser(session.user)
-            
-            const authUserData: AuthUser = {
-              id: session.user.id,
-              email: session.user.email || '',
-              name: session.user.user_metadata?.name || 
-                    session.user.user_metadata?.full_name || 
-                    session.user.user_metadata?.display_name ||
-                    (session.user.email ? session.user.email.split('@')[0] : undefined),
-              avatar_url: session.user.user_metadata?.avatar_url,
-              created_at: session.user.created_at,
-            }
-            setAuthUser(authUserData)
-            
-            // 사용자 역할 확인
-            if (session.user.email) {
-              await checkUserRole(session.user.email)
-            }
-            
-            setLoading(false)
-          } else {
-            // 세션이 없는 경우
-            setUser(null)
-            setAuthUser(null)
-            setUserRole('customer')
-            setPermissions(null)
-            setLoading(false)
-          }
-        } catch (error) {
-          console.error('Error in auth state change handler:', error)
+          // team 확인을 백그라운드에서 수행
+          checkTeamMembership(session.user.email)
+        } else {
+          console.log('AuthContext: No session')
           setUser(null)
           setAuthUser(null)
           setUserRole('customer')
@@ -263,7 +279,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [initialized])
 
   // 로그아웃 함수
   const signOut = async () => {
@@ -286,7 +302,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 리다이렉트 경로 가져오기
   const getRedirectPath = (locale: string): string => {
-    if (!userRole) return `/${locale}/auth/login`
+    if (!userRole) return `/${locale}/auth`
     
     switch (userRole) {
       case 'admin':
@@ -296,11 +312,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return `/${locale}/admin`
       case 'customer':
       default:
-        return `/${locale}/auth/login`
+        return `/${locale}/auth`
     }
   }
-
-  // AuthContext에서는 리다이렉트 로직을 제거하고 상태만 관리
 
   const value: AuthContextType = {
     user,

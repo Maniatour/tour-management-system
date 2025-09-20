@@ -61,7 +61,10 @@ const Navigation = () => {
             
             {/* 인증 상태에 따른 메뉴 */}
             {loading ? (
-              <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse" />
+              <div className="flex items-center text-gray-600">
+                <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-2" />
+                로딩 중...
+              </div>
             ) : user ? (
               <div className="flex items-center space-x-4">
                 {/* 팀원/관리자인 경우 admin 페이지로 리다이렉트 */}
@@ -131,7 +134,10 @@ const Navigation = () => {
               
               {/* 인증 상태에 따른 메뉴 */}
               {loading ? (
-                <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse mx-2" />
+                <div className="flex items-center text-gray-600 px-2 py-2">
+                  <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-2" />
+                  로딩 중...
+                </div>
               ) : user ? (
                 <div className="px-2 py-2">
                   {/* 팀원/관리자인 경우 admin 페이지로 리다이렉트 */}

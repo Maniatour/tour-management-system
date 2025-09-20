@@ -28,31 +28,57 @@ export default function ReservationTemplatesPage() {
   const [activeKey, setActiveKey] = useState<'reservation_confirmation' | 'pickup_notification' | 'reservation_receipt'>('reservation_confirmation')
   const [selectedChannel, setSelectedChannel] = useState<string>('all')
   const [selectedProduct, setSelectedProduct] = useState<string>('all')
+  const [selectedChannelType, setSelectedChannelType] = useState<string>('all')
+  const [selectedProductCategory, setSelectedProductCategory] = useState<string>('all')
+  const [selectedProductSubCategory, setSelectedProductSubCategory] = useState<string>('all')
   const [showVarModal, setShowVarModal] = useState<{ open: boolean; tplId?: string; relation?: string }>({ open: false })
   const [showCopyModal, setShowCopyModal] = useState<{ open: boolean; sourceTemplate?: DocTemplate }>({ open: false })
   
   const filteredTemplates = useMemo(() => {
     return templates.filter(t => {
       const matchesKey = t.template_key === activeKey
-      const matchesChannel = selectedChannel === 'all' || t.channel_id === selectedChannel
-      const matchesProduct = selectedProduct === 'all' || t.product_id === selectedProduct
+      
+      // 채널 필터링
+      let matchesChannel = true
+      if (selectedChannel !== 'all') {
+        matchesChannel = t.channel_id === selectedChannel
+      } else if (selectedChannelType !== 'all') {
+        const channel = channels.find(c => c.id === t.channel_id)
+        matchesChannel = channel?.type?.toLowerCase() === selectedChannelType
+      }
+      
+      // 상품 필터링
+      let matchesProduct = true
+      if (selectedProduct !== 'all') {
+        matchesProduct = t.product_id === selectedProduct
+      } else if (selectedProductCategory !== 'all' || selectedProductSubCategory !== 'all') {
+        const product = products.find(p => p.id === t.product_id)
+        if (selectedProductCategory !== 'all' && selectedProductSubCategory !== 'all') {
+          matchesProduct = product?.category?.toLowerCase() === selectedProductCategory && product?.sub_category?.toLowerCase() === selectedProductSubCategory
+        } else if (selectedProductCategory !== 'all') {
+          matchesProduct = product?.category?.toLowerCase() === selectedProductCategory
+        } else if (selectedProductSubCategory !== 'all') {
+          matchesProduct = product?.sub_category?.toLowerCase() === selectedProductSubCategory
+        }
+      }
+      
       return matchesKey && matchesChannel && matchesProduct
     })
-  }, [templates, activeKey, selectedChannel, selectedProduct])
+  }, [templates, activeKey, selectedChannel, selectedProduct, selectedChannelType, selectedProductCategory, selectedProductSubCategory, channels, products])
 
   const loadChannelsAndProducts = async () => {
     try {
-      // 채널 데이터 로딩
+      // 채널 데이터 로딩 (type과 category 포함)
       const { data: channelsData } = await supabase
         .from('channels')
-        .select('id, name')
+        .select('id, name, type, category')
         .order('name', { ascending: true })
       setChannels(channelsData || [])
 
-      // 상품 데이터 로딩
+      // 상품 데이터 로딩 (category와 sub_category 포함)
       const { data: productsData } = await supabase
         .from('products')
-        .select('id, name_ko, name_en')
+        .select('id, name_ko, name_en, category, sub_category')
         .order('name_ko', { ascending: true })
       setProducts(productsData || [])
     } catch (error) {
@@ -245,33 +271,365 @@ export default function ReservationTemplatesPage() {
       </div>
       
       {/* 필터 */}
-      <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">채널:</label>
-          <select
-            value={selectedChannel}
-            onChange={(e) => setSelectedChannel(e.target.value)}
-            className="px-3 py-1 border rounded text-sm"
-          >
-            <option value="all">전체</option>
-            {channels.map(channel => (
-              <option key={channel.id} value={channel.id}>{channel.name}</option>
-            ))}
-          </select>
+      <div className="space-y-6 p-4 bg-gray-50 rounded-lg">
+        {/* 채널 필터 */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium">채널 필터:</label>
+            <button
+              onClick={() => {
+                setSelectedChannelType('all')
+                setSelectedChannel('all')
+              }}
+              className={`px-3 py-1 text-xs rounded-full border ${
+                selectedChannelType === 'all' && selectedChannel === 'all'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              전체
+            </button>
+          </div>
+          
+          {/* 채널 타입 버튼들 */}
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              // 대소문자 구분 없이 채널 타입 그룹화
+              const channelTypeMap = new Map<string, { displayName: string; count: number }>()
+              
+              channels.forEach(channel => {
+                if (channel.type) {
+                  const normalizedType = channel.type.toLowerCase()
+                  const existing = channelTypeMap.get(normalizedType)
+                  if (existing) {
+                    existing.count++
+                  } else {
+                    channelTypeMap.set(normalizedType, {
+                      displayName: channel.type, // 원본 표시명 유지
+                      count: 1
+                    })
+                  }
+                }
+              })
+              
+              return Array.from(channelTypeMap.entries()).map(([normalizedType, { displayName, count }]) => {
+                // 해당 채널 타입에 대한 템플릿 개수 계산
+                const templateCount = filteredTemplates.filter(t => {
+                  // 현재 선택된 상품 필터 조건 확인
+                  let matchesProduct = true
+                  if (selectedProduct !== 'all') {
+                    matchesProduct = t.product_id === selectedProduct
+                  } else if (selectedProductCategory !== 'all' || selectedProductSubCategory !== 'all') {
+                    const product = products.find(p => p.id === t.product_id)
+                    if (selectedProductCategory !== 'all' && selectedProductSubCategory !== 'all') {
+                      matchesProduct = product?.category?.toLowerCase() === selectedProductCategory && product?.sub_category?.toLowerCase() === selectedProductSubCategory
+                    } else if (selectedProductCategory !== 'all') {
+                      matchesProduct = product?.category?.toLowerCase() === selectedProductCategory
+                    } else if (selectedProductSubCategory !== 'all') {
+                      matchesProduct = product?.sub_category?.toLowerCase() === selectedProductSubCategory
+                    }
+                  }
+                  
+                  // 해당 채널 타입과 매칭되는지 확인
+                  const channel = channels.find(c => c.id === t.channel_id)
+                  const matchesChannelType = channel?.type?.toLowerCase() === normalizedType
+                  
+                  return matchesProduct && matchesChannelType
+                }).length
+                
+                return (
+                  <button
+                    key={normalizedType}
+                    onClick={() => {
+                      setSelectedChannelType(normalizedType)
+                      setSelectedChannel('all')
+                    }}
+                    className={`px-3 py-1 text-xs rounded-full border ${
+                      selectedChannelType === normalizedType && selectedChannel === 'all'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {displayName} ({count}) {templateCount > 0 && `[${templateCount}]`}
+                  </button>
+                )
+              })
+            })()}
+          </div>
+          
+          {/* 특정 채널 선택 */}
+          {selectedChannelType !== 'all' && (
+            <div className="ml-4 space-y-2">
+              <div className="text-xs text-gray-600">특정 채널 선택:</div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setSelectedChannel('all')}
+                  className={`px-2 py-1 text-xs rounded border ${
+                    selectedChannel === 'all'
+                      ? 'bg-gray-600 text-white border-gray-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  전체
+                </button>
+                {channels
+                  .filter(c => c.type?.toLowerCase() === selectedChannelType)
+                  .map(channel => {
+                    // 해당 채널에 대한 템플릿 개수 계산
+                    const templateCount = filteredTemplates.filter(t => {
+                      // 현재 선택된 상품 필터 조건 확인
+                      let matchesProduct = true
+                      if (selectedProduct !== 'all') {
+                        matchesProduct = t.product_id === selectedProduct
+                      } else if (selectedProductCategory !== 'all' || selectedProductSubCategory !== 'all') {
+                        const product = products.find(p => p.id === t.product_id)
+                        if (selectedProductCategory !== 'all' && selectedProductSubCategory !== 'all') {
+                          matchesProduct = product?.category?.toLowerCase() === selectedProductCategory && product?.sub_category?.toLowerCase() === selectedProductSubCategory
+                        } else if (selectedProductCategory !== 'all') {
+                          matchesProduct = product?.category?.toLowerCase() === selectedProductCategory
+                        } else if (selectedProductSubCategory !== 'all') {
+                          matchesProduct = product?.sub_category?.toLowerCase() === selectedProductSubCategory
+                        }
+                      }
+                      
+                      // 해당 채널과 매칭되는지 확인
+                      const matchesChannel = t.channel_id === channel.id
+                      
+                      return matchesProduct && matchesChannel
+                    }).length
+                    
+                    return (
+                      <button
+                        key={channel.id}
+                        onClick={() => setSelectedChannel(channel.id)}
+                        className={`px-2 py-1 text-xs rounded border ${
+                          selectedChannel === channel.id
+                            ? 'bg-gray-600 text-white border-gray-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {channel.name} {channel.category ? `(${channel.category})` : ''} {templateCount > 0 && `[${templateCount}]`}
+                      </button>
+                    )
+                  })}
+              </div>
+            </div>
+          )}
         </div>
-        
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">상품:</label>
-          <select
-            value={selectedProduct}
-            onChange={(e) => setSelectedProduct(e.target.value)}
-            className="px-3 py-1 border rounded text-sm"
-          >
-            <option value="all">전체</option>
-            {products.map(product => (
-              <option key={product.id} value={product.id}>{product.name_ko}</option>
-            ))}
-          </select>
+
+        {/* 상품 필터 */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium">상품 필터:</label>
+            <button
+              onClick={() => {
+                setSelectedProductCategory('all')
+                setSelectedProductSubCategory('all')
+                setSelectedProduct('all')
+              }}
+              className={`px-3 py-1 text-xs rounded-full border ${
+                selectedProductCategory === 'all' && selectedProductSubCategory === 'all' && selectedProduct === 'all'
+                  ? 'bg-green-600 text-white border-green-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              전체
+            </button>
+          </div>
+          
+          {/* 상품 카테고리 버튼들 */}
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              // 대소문자 구분 없이 상품 카테고리 그룹화
+              const categoryMap = new Map<string, { displayName: string; count: number }>()
+              
+              products.forEach(product => {
+                if (product.category) {
+                  const normalizedCategory = product.category.toLowerCase()
+                  const existing = categoryMap.get(normalizedCategory)
+                  if (existing) {
+                    existing.count++
+                  } else {
+                    categoryMap.set(normalizedCategory, {
+                      displayName: product.category, // 원본 표시명 유지
+                      count: 1
+                    })
+                  }
+                }
+              })
+              
+              return Array.from(categoryMap.entries()).map(([normalizedCategory, { displayName, count }]) => {
+                // 해당 카테고리에 대한 템플릿 개수 계산
+                const templateCount = filteredTemplates.filter(t => {
+                  // 현재 선택된 채널 필터 조건 확인
+                  let matchesChannel = true
+                  if (selectedChannel !== 'all') {
+                    matchesChannel = t.channel_id === selectedChannel
+                  } else if (selectedChannelType !== 'all') {
+                    const channel = channels.find(c => c.id === t.channel_id)
+                    matchesChannel = channel?.type?.toLowerCase() === selectedChannelType
+                  }
+                  
+                  // 해당 카테고리와 매칭되는지 확인
+                  const product = products.find(p => p.id === t.product_id)
+                  const matchesCategory = product?.category?.toLowerCase() === normalizedCategory
+                  
+                  return matchesChannel && matchesCategory
+                }).length
+                
+                return (
+                  <button
+                    key={normalizedCategory}
+                    onClick={() => {
+                      setSelectedProductCategory(normalizedCategory)
+                      setSelectedProductSubCategory('all')
+                      setSelectedProduct('all')
+                    }}
+                    className={`px-3 py-1 text-xs rounded-full border ${
+                      selectedProductCategory === normalizedCategory && selectedProductSubCategory === 'all' && selectedProduct === 'all'
+                        ? 'bg-green-600 text-white border-green-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {displayName} ({count}) {templateCount > 0 && `[${templateCount}]`}
+                  </button>
+                )
+              })
+            })()}
+          </div>
+          
+          {/* 서브카테고리 선택 */}
+          {selectedProductCategory !== 'all' && (
+            <div className="ml-4 space-y-2">
+              <div className="text-xs text-gray-600">서브카테고리 선택:</div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedProductSubCategory('all')
+                    setSelectedProduct('all')
+                  }}
+                  className={`px-2 py-1 text-xs rounded border ${
+                    selectedProductSubCategory === 'all' && selectedProduct === 'all'
+                      ? 'bg-gray-600 text-white border-gray-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  전체
+                </button>
+                {(() => {
+                  // 대소문자 구분 없이 서브카테고리 그룹화
+                  const subCategoryMap = new Map<string, { displayName: string; count: number }>()
+                  
+                  products
+                    .filter(p => p.category?.toLowerCase() === selectedProductCategory)
+                    .forEach(product => {
+                      if (product.sub_category) {
+                        const normalizedSubCategory = product.sub_category.toLowerCase()
+                        const existing = subCategoryMap.get(normalizedSubCategory)
+                        if (existing) {
+                          existing.count++
+                        } else {
+                          subCategoryMap.set(normalizedSubCategory, {
+                            displayName: product.sub_category, // 원본 표시명 유지
+                            count: 1
+                          })
+                        }
+                      }
+                    })
+                  
+                  return Array.from(subCategoryMap.entries()).map(([normalizedSubCategory, { displayName, count }]) => {
+                    // 해당 서브카테고리에 대한 템플릿 개수 계산
+                    const templateCount = filteredTemplates.filter(t => {
+                      // 현재 선택된 채널 필터 조건 확인
+                      let matchesChannel = true
+                      if (selectedChannel !== 'all') {
+                        matchesChannel = t.channel_id === selectedChannel
+                      } else if (selectedChannelType !== 'all') {
+                        const channel = channels.find(c => c.id === t.channel_id)
+                        matchesChannel = channel?.type?.toLowerCase() === selectedChannelType
+                      }
+                      
+                      // 해당 서브카테고리와 매칭되는지 확인
+                      const product = products.find(p => p.id === t.product_id)
+                      const matchesSubCategory = product?.sub_category?.toLowerCase() === normalizedSubCategory
+                      
+                      return matchesChannel && matchesSubCategory
+                    }).length
+                    
+                    return (
+                      <button
+                        key={normalizedSubCategory}
+                        onClick={() => {
+                          setSelectedProductSubCategory(normalizedSubCategory)
+                          setSelectedProduct('all')
+                        }}
+                        className={`px-2 py-1 text-xs rounded border ${
+                          selectedProductSubCategory === normalizedSubCategory && selectedProduct === 'all'
+                            ? 'bg-gray-600 text-white border-gray-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {displayName} ({count}) {templateCount > 0 && `[${templateCount}]`}
+                      </button>
+                    )
+                  })
+                })()}
+              </div>
+            </div>
+          )}
+          
+          {/* 특정 상품 선택 */}
+          {selectedProductCategory !== 'all' && selectedProductSubCategory !== 'all' && (
+            <div className="ml-8 space-y-2">
+              <div className="text-xs text-gray-600">특정 상품 선택:</div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setSelectedProduct('all')}
+                  className={`px-2 py-1 text-xs rounded border ${
+                    selectedProduct === 'all'
+                      ? 'bg-gray-600 text-white border-gray-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  전체
+                </button>
+                {products
+                  .filter(p => p.category?.toLowerCase() === selectedProductCategory && p.sub_category?.toLowerCase() === selectedProductSubCategory)
+                  .map(product => {
+                    // 해당 상품에 대한 템플릿 개수 계산
+                    const templateCount = filteredTemplates.filter(t => {
+                      // 현재 선택된 채널 필터 조건 확인
+                      let matchesChannel = true
+                      if (selectedChannel !== 'all') {
+                        matchesChannel = t.channel_id === selectedChannel
+                      } else if (selectedChannelType !== 'all') {
+                        const channel = channels.find(c => c.id === t.channel_id)
+                        matchesChannel = channel?.type?.toLowerCase() === selectedChannelType
+                      }
+                      
+                      // 해당 상품과 매칭되는지 확인
+                      const matchesProduct = t.product_id === product.id
+                      
+                      return matchesChannel && matchesProduct
+                    }).length
+                    
+                    return (
+                      <button
+                        key={product.id}
+                        onClick={() => setSelectedProduct(product.id)}
+                        className={`px-2 py-1 text-xs rounded border ${
+                          selectedProduct === product.id
+                            ? 'bg-gray-600 text-white border-gray-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {product.name_ko} {templateCount > 0 && `(${templateCount})`}
+                      </button>
+                    )
+                  })}
+              </div>
+            </div>
+          )}
         </div>
         
         <button
@@ -625,9 +983,27 @@ function CopyTemplateModal({
               className="w-full px-3 py-2 border rounded"
             >
               <option value="">원본과 동일</option>
-              {channels.map(channel => (
-                <option key={channel.id} value={channel.id}>{channel.name}</option>
-              ))}
+              {(() => {
+                // 채널을 type별로 그룹화
+                const groupedChannels = channels.reduce((acc, channel) => {
+                  const type = channel.type || '기타'
+                  if (!acc[type]) {
+                    acc[type] = []
+                  }
+                  acc[type].push(channel)
+                  return acc
+                }, {} as Record<string, typeof channels>)
+                
+                return Object.entries(groupedChannels).map(([type, channelList]) => (
+                  <optgroup key={type} label={`${type} (${channelList.length})`}>
+                    {channelList.map(channel => (
+                      <option key={channel.id} value={channel.id}>
+                        {channel.name} {channel.category ? `(${channel.category})` : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))
+              })()}
             </select>
           </div>
           
@@ -639,9 +1015,34 @@ function CopyTemplateModal({
               className="w-full px-3 py-2 border rounded"
             >
               <option value="">원본과 동일</option>
-              {products.map(product => (
-                <option key={product.id} value={product.id}>{product.name_ko}</option>
-              ))}
+              {(() => {
+                // 상품을 category-sub_category별로 그룹화
+                const groupedProducts = products.reduce((acc, product) => {
+                  const category = product.category || '기타'
+                  const subCategory = product.sub_category || '기본'
+                  
+                  if (!acc[category]) {
+                    acc[category] = {}
+                  }
+                  if (!acc[category][subCategory]) {
+                    acc[category][subCategory] = []
+                  }
+                  acc[category][subCategory].push(product)
+                  return acc
+                }, {} as Record<string, Record<string, typeof products>>)
+                
+                return Object.entries(groupedProducts).map(([category, subCategories]) => (
+                  <optgroup key={category} label={`${category} (${Object.values(subCategories).flat().length})`}>
+                    {Object.entries(subCategories).map(([subCategory, productList]) => 
+                      productList.map(product => (
+                        <option key={product.id} value={product.id}>
+                          {subCategory} - {product.name_ko}
+                        </option>
+                      ))
+                    )}
+                  </optgroup>
+                ))
+              })()}
             </select>
           </div>
         </div>

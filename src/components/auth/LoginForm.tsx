@@ -5,7 +5,6 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { signInWithEmail, signInWithGoogle } from '@/lib/auth'
-import { useAuth } from '@/contexts/AuthContext'
 import { Eye, EyeOff, Mail, Lock, AlertCircle } from 'lucide-react'
 
 const loginSchema = z.object({
@@ -24,7 +23,6 @@ export default function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProp
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { signOut } = useAuth()
 
   const {
     register,

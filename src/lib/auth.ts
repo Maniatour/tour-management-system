@@ -78,7 +78,8 @@ export async function signInWithGoogle() {
       redirectTo: `${window.location.origin}/auth/callback`,
       queryParams: {
         access_type: 'offline',
-        prompt: 'consent',
+        prompt: 'select_account',
+        include_granted_scopes: 'true',
       },
     },
   })
@@ -91,6 +92,30 @@ export async function signInWithGoogle() {
   }
 
   return { data, error: null }
+}
+
+// 자동 로그인 체크
+export async function checkAutoLogin() {
+  const supabase = createClientSupabase()
+  
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession()
+    
+    if (error) {
+      console.error('Auto login check error:', error)
+      return { data: null, error: { message: error.message, status: error.status } }
+    }
+
+    if (session?.user) {
+      console.log('Auto login successful:', { email: session.user.email })
+      return { data: session, error: null }
+    }
+
+    return { data: null, error: null }
+  } catch (error) {
+    console.error('Unexpected error in auto login check:', error)
+    return { data: null, error: { message: 'Unexpected error', status: 500 } }
+  }
 }
 
 // 로그아웃

@@ -15,8 +15,8 @@ export default function AuthPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const pathname = usePathname()
-
-  // 현재 로케일 추출 (/ko, /en, /ja, /ko-KR 등 첫 세그먼트)
+  
+  // 현재 로케일 추출
   const currentLocale = (() => {
     const segments = (pathname || '/').split('/').filter(Boolean)
     return segments[0] || 'ko'
@@ -31,24 +31,20 @@ export default function AuthPage() {
       // redirectToParam이 auth 페이지를 가리키는 경우 무한 루프 방지
       if (redirectToParam.includes('/auth')) {
         console.log('Auth page: RedirectTo points to auth page, redirecting to admin instead')
-        const pathSegments = (pathname || '/').split('/').filter(Boolean)
-        const locale = pathSegments[0] || 'ko'
-        router.replace(`/${locale}/admin`)
+        router.replace(`/${currentLocale}/admin`)
         return
       }
       
       // 관리자/팀원인 경우 관리자 페이지로, 그 외에는 redirectToParam으로
       if (userRole !== 'customer') {
         console.log('Auth page: Admin user, redirecting to admin page')
-        const pathSegments = (pathname || '/').split('/').filter(Boolean)
-        const locale = pathSegments[0] || 'ko'
-        router.replace(`/${locale}/admin`)
+        router.replace(`/${currentLocale}/admin`)
       } else {
         console.log('Auth page: Customer user, redirecting to home')
         router.replace(redirectToParam)
       }
     }
-  }, [user, userRole, loading, router, redirectToParam, pathname])
+  }, [user, userRole, loading, router, redirectToParam, currentLocale])
 
   if (loading) {
     return (

@@ -2,56 +2,54 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClientSupabase } from '@/lib/supabase'
-import { getUserRole } from '@/lib/roles'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
 
   useEffect(() => {
-    const handleAuthCallback = async () => {
-      const supabase = createClientSupabase()
-      
-      console.log('Auth callback page loaded')
-      
-      try {
-        const { data, error } = await supabase.auth.getSession()
-        
-        console.log('Auth callback session check:', { 
-          hasSession: !!data.session, 
-          hasUser: !!data.session?.user,
-          userEmail: data.session?.user?.email,
-          error 
-        })
-        
-        if (error) {
-          console.error('Auth callback error:', error)
-          router.push('/auth?error=callback_error')
-          return
-        }
-
-        if (data.session) {
-          console.log('Auth callback successful, redirecting to admin page')
-          // URL에서 locale 추출
-          const currentPath = window.location.pathname
-          const pathSegments = currentPath.split('/').filter(Boolean)
-          const locale = pathSegments[0] || 'ko'
-          router.push(`/${locale}/admin`)
-        } else {
-          console.log('No session found, redirecting to auth page')
-          // URL에서 locale 추출
-          const currentPath = window.location.pathname
-          const pathSegments = currentPath.split('/').filter(Boolean)
-          const locale = pathSegments[0] || 'ko'
-          router.push(`/${locale}/auth`)
-        }
-      } catch (err) {
-        console.error('Unexpected error:', err)
-        router.push('/auth?error=unexpected_error')
-      }
+    console.log('Auth callback: Simple redirect to admin')
+    console.log('Auth callback: Current pathname:', window.location.pathname)
+    
+    // URL에서 locale 추출
+    const currentPath = window.location.pathname
+    let locale = 'ko' // 기본값
+    if (currentPath.startsWith('/ko/')) {
+      locale = 'ko'
+    } else if (currentPath.startsWith('/en/')) {
+      locale = 'en'
+    } else if (currentPath.startsWith('/ja/')) {
+      locale = 'ja'
     }
-
-    handleAuthCallback()
+    
+    console.log('Auth callback: Detected locale:', locale)
+    
+    // URL 해시 확인
+    const hash = window.location.hash
+    console.log('Auth callback: URL hash present:', !!hash)
+    
+    if (hash && hash.includes('access_token')) {
+      console.log('Auth callback: Found tokens, storing in localStorage and redirecting to admin')
+      
+      // 토큰을 localStorage에 저장
+      const params = new URLSearchParams(hash.substring(1))
+      const accessToken = params.get('access_token')
+      const refreshToken = params.get('refresh_token')
+      
+      if (accessToken) {
+        localStorage.setItem('auth_tokens', JSON.stringify({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          timestamp: Date.now()
+        }))
+        console.log('Auth callback: Tokens stored in localStorage')
+      }
+      
+      // 관리자 페이지로 리다이렉트
+      router.replace(`/${locale}/admin`)
+    } else {
+      console.log('Auth callback: No tokens found, redirecting to auth')
+      router.replace(`/${locale}/auth?error=no_tokens`)
+    }
   }, [router])
 
   return (

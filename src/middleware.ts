@@ -1,115 +1,19 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-// 사용자 역할 확인 함수 (미들웨어용)
-async function checkUserRole(supabase: any, email: string) {
-  try {
-    const { data: teamData, error } = await supabase
-      .from('team')
-      .select('position, is_active')
-      .eq('email', email)
-      .eq('is_active', true)
-      .single()
-
-    if (error || !teamData) {
-      return 'customer'
-    }
-
-    const position = teamData.position?.toLowerCase() || ''
-    
-    // position 기반으로 역할 결정
-    if (position === 'super') {
-      return 'admin'
-    }
-    if (position === 'office manager') {
-      return 'manager'
-    }
-    if (position === 'tour guide' || position === 'op' || position === 'driver') {
-      return 'team_member'
-    }
-    
-    // position이 있지만 특정 키워드가 없는 경우 팀원으로 처리
-    if (position) {
-      return 'team_member'
-    }
-    
-    return 'customer'
-  } catch (error) {
-    console.error('Error checking user role in middleware:', error)
-    return 'customer'
-  }
-}
-
 export async function middleware(req: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: req.headers,
-    },
-  })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return req.cookies.get(name)?.value
-        },
-        set(name: string, value: string, options: any) {
-          response = NextResponse.next({
-            request: {
-              headers: req.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-        },
-        remove(name: string, options: any) {
-          response = NextResponse.next({
-            request: {
-              headers: req.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-        },
-      },
-    }
-  )
-
-  const {
-    data: { session },
-    error: sessionError
-  } = await supabase.auth.getSession()
-
-  if (sessionError) {
-    console.log('Middleware: Session error:', sessionError)
+  // 정적 파일들은 미들웨어를 건너뛰도록 처리
+  if (
+    req.nextUrl.pathname.startsWith('/_next/') ||
+    req.nextUrl.pathname.startsWith('/api/') ||
+    req.nextUrl.pathname.includes('.') ||
+    req.nextUrl.pathname === '/favicon.ico'
+  ) {
+    return NextResponse.next()
   }
 
-  // 세션이 없으면 getUser로 다시 시도
-  let user = session?.user
-  if (!user) {
-    const { data: { user: userData }, error: userError } = await supabase.auth.getUser()
-    if (userError) {
-      console.log('Middleware: User error:', userError)
-    } else {
-      user = userData
-    }
-  }
-
-  console.log('Middleware: Path:', req.nextUrl.pathname, 'Session exists:', !!session, 'User exists:', !!user, 'User email:', user?.email)
-
-  // 보호된 라우트들
-  const adminRoutes = ['/admin']
-  const teamRoutes = ['/reservations', '/customers', '/tours', '/schedule']
-  const authRoutes = ['/auth']
+  // 간단한 응답 생성
+  const response = NextResponse.next()
 
   // 로케일 접두어 제거
   const stripLocale = (pathname: string) => {
@@ -125,35 +29,28 @@ export async function middleware(req: NextRequest) {
 
   const path = stripLocale(req.nextUrl.pathname)
   
-  // URL에서 locale 추출 (최상단에 한 번 정의)
+  // URL에서 locale 추출
   const pathSegments = req.nextUrl.pathname.split('/').filter(Boolean)
   const locale = pathSegments[0] || 'ko'
   
+  // 보호된 라우트들
+  const adminRoutes = ['/admin']
+  const authRoutes = ['/auth']
+  
   const isAdminRoute = adminRoutes.some(route => path.startsWith(route))
-  const isTeamRoute = teamRoutes.some(route => path.startsWith(route))
   const isAuthRoute = authRoutes.some(route => path.startsWith(route))
 
-  console.log('Middleware: Stripped path:', path, 'isAdminRoute:', isAdminRoute, 'isTeamRoute:', isTeamRoute, 'isAuthRoute:', isAuthRoute)
-
-  // 임시로 middleware 인증 체크 비활성화 - 클라이언트 사이드에서 처리
-  // TODO: Supabase SSR 쿠키 처리 문제 해결 후 다시 활성화
-  
-  // 로그인한 상태에서 인증 페이지에 접근하는 경우만 처리
-  if (session && user) {
-    console.log('Middleware: Session and user found, checking auth route')
-    if (isAuthRoute) {
-      const redirectTo = req.nextUrl.searchParams.get('redirectTo') || `/${locale}/admin`
-      const redirectUrl = new URL(redirectTo, req.url)
-      return NextResponse.redirect(redirectUrl)
-    }
+  // 개발 환경에서만 최소한의 로그 출력
+  if (process.env.NODE_ENV === 'development' && isAdminRoute) {
+    console.log('Middleware: Admin route accessed:', path)
   }
 
-  // 나머지는 통과 (클라이언트에서 권한 체크 및 리다이렉트)
+  // 모든 요청을 통과시킴 (클라이언트에서 인증 처리)
   return response
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.).*)',
   ],
 }
