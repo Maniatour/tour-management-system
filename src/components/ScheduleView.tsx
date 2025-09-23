@@ -67,7 +67,7 @@ export default function ScheduleView() {
   const [showMessageModal, setShowMessageModal] = useState(false)
   const [messageModalContent, setMessageModalContent] = useState({ title: '', message: '', type: 'success' as 'success' | 'error' })
   const [showConfirmModal, setShowConfirmModal] = useState(false)
-  const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {} })
+  const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {}, buttonText: '확인', buttonColor: 'bg-red-500 hover:bg-red-600' })
   const [showGuideModal, setShowGuideModal] = useState(false)
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
 
@@ -84,8 +84,8 @@ export default function ScheduleView() {
   }
 
   // 확인 모달 표시 함수
-  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
-    setConfirmModalContent({ title, message, onConfirm })
+  const showConfirm = (title: string, message: string, onConfirm: () => void, buttonText: string = '확인', buttonColor: string = 'bg-red-500 hover:bg-red-600') => {
+    setConfirmModalContent({ title, message, onConfirm, buttonText, buttonColor })
     setShowConfirmModal(true)
   }
 
@@ -1678,7 +1678,9 @@ export default function ScheduleView() {
                                               showConfirm(
                                                 '오프 스케줄 승인',
                                                 '오프 스케줄을 승인하시겠습니까?',
-                                                () => handleOffScheduleApprove(offSchedule!)
+                                                () => handleOffScheduleApprove(offSchedule!),
+                                                '승인',
+                                                'bg-green-500 hover:bg-green-600'
                                               )
                                             }
                                           }}
@@ -1687,7 +1689,9 @@ export default function ScheduleView() {
                                               showConfirm(
                                                 '오프 스케줄 삭제',
                                                 '오프 스케줄을 삭제하시겠습니까?',
-                                                () => handleOffScheduleDelete(offSchedule)
+                                                () => handleOffScheduleDelete(offSchedule),
+                                                '삭제',
+                                                'bg-red-500 hover:bg-red-600'
                                               )
                                             }
                                           }}
@@ -1906,7 +1910,9 @@ export default function ScheduleView() {
                                                 showConfirm(
                                                   '오프 스케줄 승인',
                                                   '오프 스케줄을 승인하시겠습니까?',
-                                                  () => handleOffScheduleApprove(offSchedule!)
+                                                  () => handleOffScheduleApprove(offSchedule!),
+                                                  '승인',
+                                                  'bg-green-500 hover:bg-green-600'
                                                 )
                                               }
                                             }}
@@ -1915,7 +1921,9 @@ export default function ScheduleView() {
                                                 showConfirm(
                                                   '오프 스케줄 삭제',
                                                   '오프 스케줄을 삭제하시겠습니까?',
-                                                  () => handleOffScheduleDelete(offSchedule)
+                                                  () => handleOffScheduleDelete(offSchedule),
+                                                  '삭제',
+                                                  'bg-red-500 hover:bg-red-600'
                                                 )
                                               }
                                             }}
@@ -2457,9 +2465,9 @@ export default function ScheduleView() {
                   confirmModalContent.onConfirm()
                   setShowConfirmModal(false)
                 }}
-                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                className={`px-4 py-2 text-white rounded-lg transition-colors ${confirmModalContent.buttonColor}`}
               >
-                삭제
+                {confirmModalContent.buttonText}
               </button>
             </div>
           </div>
