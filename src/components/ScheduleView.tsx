@@ -61,7 +61,7 @@ export default function ScheduleView() {
   const [unassignedTours, setUnassignedTours] = useState<Tour[]>([])
   const [ticketBookings, setTicketBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; ea: number | null }>>([])
   const [highlightedDate, setHighlightedDate] = useState<string | null>(null)
-  const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string }>>([])
+  const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string; status: string }>>([])
   const [draggedUnassignedTour, setDraggedUnassignedTour] = useState<Tour | null>(null)
   const [draggedRole, setDraggedRole] = useState<'guide' | 'assistant' | null>(null)
   const [showMessageModal, setShowMessageModal] = useState(false)
@@ -361,13 +361,13 @@ export default function ScheduleView() {
         .gte('check_in_date', startDate)
         .lte('check_in_date', endDate)
 
-      // Off 스케줄 데이터 가져오기 (현재 월) - 승인된 것만
+      // Off 스케줄 데이터 가져오기 (현재 월) - pending과 approved 모두
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: offSchedulesData } = await (supabase as any)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('off_schedules' as any)
-        .select('team_email, off_date, reason')
-        .eq('status', 'approved')
+        .select('team_email, off_date, reason, status')
+        .in('status', ['pending', 'approved'])
         .gte('off_date', firstDayOfMonth.format('YYYY-MM-DD'))
         .lte('off_date', lastDayOfMonth.format('YYYY-MM-DD'))
 
@@ -803,6 +803,34 @@ export default function ScheduleView() {
     }
   }
 
+  // 오프 스케줄 승인
+  const handleOffScheduleApprove = async (offSchedule: { team_email: string; off_date: string; reason: string; status: string }) => {
+    try {
+      // 오프 스케줄 상태를 approved로 업데이트
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('off_schedules' as any)
+        .update({ status: 'approved' })
+        .eq('team_email', offSchedule.team_email)
+        .eq('off_date', offSchedule.off_date)
+
+      if (error) {
+        console.error('Error approving off schedule:', error)
+        showMessage('승인 실패', '오프 스케줄 승인에 실패했습니다.', 'error')
+        return
+      }
+
+      // 성공 시 데이터 새로고침
+      await fetchData()
+      showMessage('승인 완료', '오프 스케줄이 승인되었습니다.', 'success')
+      
+    } catch (error) {
+      console.error('Error approving off schedule:', error)
+      showMessage('오류 발생', '오프 스케줄 승인 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
   // 오프 스케줄 생성
   const handleCreateOffSchedule = async (teamMemberId: string, dateString: string) => {
     try {
@@ -814,7 +842,7 @@ export default function ScheduleView() {
           team_email: teamMemberId,
           off_date: dateString,
           reason: '더블클릭으로 생성',
-          status: 'approved'
+          status: 'pending'
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any)
 
@@ -1628,29 +1656,47 @@ export default function ScheduleView() {
                                 >
                                   {/* Off 날짜 표시 */}
                                   {isOffDate(teamMemberId, dateString) ? (
-                                    <div 
-                                      className="bg-black text-white rounded px-1 py-0.5 text-xs font-bold flex items-center justify-center h-full cursor-pointer hover:bg-gray-800 transition-colors select-none"
-                                      onDoubleClick={() => {
-                                        const teamMember = teamMembers.find(member => member.email === teamMemberId)
-                                        if (!teamMember) {
-                                          console.log('팀 멤버를 찾을 수 없습니다:', teamMemberId)
-                                          return
-                                        }
-                                        const offSchedule = offSchedules.find(off => 
-                                          off.team_email === teamMember.email && off.off_date === dateString
-                                        )
-                                        if (offSchedule) {
-                                          showConfirm(
-                                            '오프 스케줄 삭제',
-                                            '오프 스케줄을 삭제하시겠습니까?',
-                                            () => handleOffScheduleDelete(offSchedule)
-                                          )
-                                        }
-                                      }}
-                                      title="오프 스케줄 - 더블클릭하여 삭제"
-                                    >
-                                      OFF
-                                    </div>
+                                    (() => {
+                                      const teamMember = teamMembers.find(member => member.email === teamMemberId)
+                                      const offSchedule = teamMember ? offSchedules.find(off => 
+                                        off.team_email === teamMember.email && off.off_date === dateString
+                                      ) : null
+                                      const isPending = offSchedule?.status === 'pending'
+                                      const isApproved = offSchedule?.status === 'approved'
+                                      
+                                      return (
+                                        <div 
+                                          className={`${
+                                            isPending 
+                                              ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
+                                              : isApproved 
+                                                ? 'bg-black text-white hover:bg-gray-800'
+                                                : 'bg-gray-500 text-white hover:bg-gray-600'
+                                          } rounded px-1 py-0.5 text-xs font-bold flex items-center justify-center h-full cursor-pointer transition-colors select-none`}
+                                          onClick={() => {
+                                            if (isPending) {
+                                              showConfirm(
+                                                '오프 스케줄 승인',
+                                                '오프 스케줄을 승인하시겠습니까?',
+                                                () => handleOffScheduleApprove(offSchedule!)
+                                              )
+                                            }
+                                          }}
+                                          onDoubleClick={() => {
+                                            if (offSchedule) {
+                                              showConfirm(
+                                                '오프 스케줄 삭제',
+                                                '오프 스케줄을 삭제하시겠습니까?',
+                                                () => handleOffScheduleDelete(offSchedule)
+                                              )
+                                            }
+                                          }}
+                                          title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - ${isPending ? '클릭하여 승인' : ''} 더블클릭하여 삭제`}
+                                        >
+                                          {isPending ? 'PENDING' : 'OFF'}
+                                        </div>
+                                      )
+                                    })()
                                   ) : (
                                     /* 이어지는 날짜는 오버레이에서 하나의 박스로 렌더링 */
                                     <div></div>
@@ -1838,29 +1884,47 @@ export default function ScheduleView() {
                                   <div className="text-gray-300 text-center py-1 text-xs">
                                     {/* Off 날짜 표시 */}
                                     {isOffDate(teamMemberId, dateString) ? (
-                                      <div 
-                                        className="bg-black text-white rounded px-1 py-0.5 text-xs font-bold cursor-pointer hover:bg-gray-800 transition-colors select-none"
-                                        onDoubleClick={() => {
-                                          const teamMember = teamMembers.find(member => member.email === teamMemberId)
-                                          if (!teamMember) {
-                                            console.log('팀 멤버를 찾을 수 없습니다:', teamMemberId)
-                                            return
-                                          }
-                                          const offSchedule = offSchedules.find(off => 
-                                            off.team_email === teamMember.email && off.off_date === dateString
-                                          )
-                                          if (offSchedule) {
-                                            showConfirm(
-                                              '오프 스케줄 삭제',
-                                              '오프 스케줄을 삭제하시겠습니까?',
-                                              () => handleOffScheduleDelete(offSchedule)
-                                            )
-                                          }
-                                        }}
-                                        title="오프 스케줄 - 더블클릭하여 삭제"
-                                      >
-                                        OFF
-                                      </div>
+                                      (() => {
+                                        const teamMember = teamMembers.find(member => member.email === teamMemberId)
+                                        const offSchedule = teamMember ? offSchedules.find(off => 
+                                          off.team_email === teamMember.email && off.off_date === dateString
+                                        ) : null
+                                        const isPending = offSchedule?.status === 'pending'
+                                        const isApproved = offSchedule?.status === 'approved'
+                                        
+                                        return (
+                                          <div 
+                                            className={`${
+                                              isPending 
+                                                ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
+                                                : isApproved 
+                                                  ? 'bg-black text-white hover:bg-gray-800'
+                                                  : 'bg-gray-500 text-white hover:bg-gray-600'
+                                            } rounded px-1 py-0.5 text-xs font-bold cursor-pointer transition-colors select-none`}
+                                            onClick={() => {
+                                              if (isPending) {
+                                                showConfirm(
+                                                  '오프 스케줄 승인',
+                                                  '오프 스케줄을 승인하시겠습니까?',
+                                                  () => handleOffScheduleApprove(offSchedule!)
+                                                )
+                                              }
+                                            }}
+                                            onDoubleClick={() => {
+                                              if (offSchedule) {
+                                                showConfirm(
+                                                  '오프 스케줄 삭제',
+                                                  '오프 스케줄을 삭제하시겠습니까?',
+                                                  () => handleOffScheduleDelete(offSchedule)
+                                                )
+                                              }
+                                            }}
+                                            title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - ${isPending ? '클릭하여 승인' : ''} 더블클릭하여 삭제`}
+                                          >
+                                            {isPending ? 'PENDING' : 'OFF'}
+                                          </div>
+                                        )
+                                      })()
                                     ) : (
                                       /* 드롭 영역 - 더블클릭으로 오프 스케줄 생성 */
                                       <div 
