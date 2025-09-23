@@ -69,7 +69,7 @@ export default function ScheduleView() {
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {} })
   const [showGuideModal, setShowGuideModal] = useState(false)
-  const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '' })
+  const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
 
   // 배치 저장용 변경 대기 상태
   const [pendingChanges, setPendingChanges] = useState<{ [tourId: string]: Partial<Tour> }>({})
@@ -90,8 +90,8 @@ export default function ScheduleView() {
   }
 
   // 가이드 모달 표시 함수
-  const showGuideModalContent = (title: string, content: string) => {
-    setGuideModalContent({ title, content })
+  const showGuideModalContent = (title: string, content: string, tourId: string = '') => {
+    setGuideModalContent({ title, content, tourId })
     setShowGuideModal(true)
   }
 
@@ -1763,7 +1763,7 @@ export default function ScheduleView() {
                                           }}
                                           onClick={() => {
                                             if (guideTours.length > 0) {
-                                              showGuideModalContent('투어 상세 정보', getTourSummary(guideTours[0]))
+                                              showGuideModalContent('투어 상세 정보', getTourSummary(guideTours[0]), guideTours[0].id)
                                             }
                                           }}
                                         >
@@ -1818,7 +1818,7 @@ export default function ScheduleView() {
                                           }}
                                           onClick={() => {
                                             if (assistantTours.length > 0) {
-                                              showGuideModalContent('투어 상세 정보', getTourSummary(assistantTours[0]))
+                                              showGuideModalContent('투어 상세 정보', getTourSummary(assistantTours[0]), assistantTours[0].id)
                                             }
                                           }}
                                         >
@@ -2420,12 +2420,28 @@ export default function ScheduleView() {
             <div className="text-sm text-gray-700 whitespace-pre-line">
               {guideModalContent.content}
             </div>
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex justify-between">
+              <button
+                onClick={() => {
+                  if (guideModalContent.tourId) {
+                    const pathLocale = locale || (typeof window !== 'undefined' ? window.location.pathname.split('/')[1] : '')
+                    const href = `/${pathLocale}/admin/tours/${guideModalContent.tourId}`
+                    window.open(href, '_blank')
+                  }
+                }}
+                disabled={!guideModalContent.tourId}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                투어 상세 수정
+              </button>
               <button
                 onClick={() => setShowGuideModal(false)}
                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
               >
-                확인
+                닫기
               </button>
             </div>
           </div>

@@ -1,10 +1,16 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { User } from '@supabase/supabase-js'
-import { supabase, createClientSupabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
+
+interface TeamData {
+  name_ko?: string
+  email: string
+  is_active: boolean
+}
 
 interface AuthContextType {
   user: User | null
@@ -25,10 +31,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [permissions, setPermissions] = useState<UserPermissions | null>(null)
   const [loading, setLoading] = useState(true)
-  const [initialized, setInitialized] = useState(false)
 
   // team 멤버십 확인
-  const checkTeamMembership = async (email: string) => {
+  const checkTeamMembership = useCallback(async (email: string) => {
     if (!email) return
 
     try {
@@ -49,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      console.log('AuthContext: Team member found:', teamData.name_ko)
+      console.log('AuthContext: Team member found:', (teamData as TeamData).name_ko)
       
       // team 멤버인 경우 역할 확인
       await checkUserRole(email)
@@ -60,7 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setPermissions(null)
       setLoading(false) // 에러 발생 시에도 로딩 해제
     }
-  }
+  }, [])
 
   // 사용자 역할 및 권한 확인
   const checkUserRole = async (email: string) => {
@@ -100,10 +105,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       // team 테이블에서 사용자 이름 업데이트
-      if (teamData && teamData.name_ko) {
+      if (teamData && (teamData as TeamData).name_ko) {
         setAuthUser(prev => prev ? {
           ...prev,
-          name: teamData.name_ko
+          name: (teamData as TeamData).name_ko
         } : null)
       }
       
@@ -121,16 +126,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    if (initialized) {
-      console.log('AuthContext: Already initialized, skipping...')
-      return
-    }
-    
     console.log('AuthContext: Initializing...')
-    setInitialized(true)
-    
-    // 즉시 로딩 완료로 설정
-    setLoading(false)
+    setLoading(true)
     
     // localStorage에서 토큰 확인 (콜백 페이지에서 저장된 토큰)
     const checkStoredTokens = async () => {
@@ -157,7 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     console.log('AuthContext: Creating user from JWT payload:', payload.email)
                     
                     // JWT에서 사용자 정보 생성
-                    const user = {
+                    const user: User = {
                       id: payload.sub,
                       email: payload.email,
                       user_metadata: {
@@ -165,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         avatar_url: payload.avatar_url || payload.picture,
                         provider: 'google'
                       },
+                      app_metadata: {},
                       created_at: new Date(payload.iat * 1000).toISOString(),
                       aud: payload.aud,
                       role: payload.role
@@ -175,9 +173,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     
                     const authUserData: AuthUser = {
                       id: user.id,
-                      email: user.email,
-                      name: user.user_metadata?.name || user.email.split('@')[0],
-                      avatar_url: user.user_metadata?.avatar_url,
+                      email: user.email ?? '',
+                      name: user.user_metadata?.name ?? user.email?.split('@')[0] ?? 'User',
+                      avatar_url: user.user_metadata?.avatar_url || undefined,
                       created_at: user.created_at,
                     }
                     setAuthUser(authUserData)
@@ -186,13 +184,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     localStorage.removeItem('auth_tokens')
                     
                     // team 확인
-                    checkTeamMembership(user.email)
+                    if (user.email) {
+                      checkTeamMembership(user.email)
+                    }
                     
                     // 백그라운드에서 세션 설정 시도
                     setTimeout(async () => {
                       try {
                         console.log('AuthContext: Attempting background session setup')
-                        const { data, error } = await supabase.auth.setSession({
+                        const { error } = await supabase.auth.setSession({
                           access_token: access_token,
                           refresh_token: refresh_token || ''
                         })
@@ -232,6 +232,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 저장된 토큰 확인
     checkStoredTokens()
 
+    // 현재 세션 확인
+    const checkCurrentSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error) {
+          console.error('AuthContext: Error getting session:', error)
+          setLoading(false)
+          return
+        }
+
+        if (session?.user?.email) {
+          console.log('AuthContext: Found existing session for:', session.user.email)
+          setUser(session.user)
+          
+          const authUserData: AuthUser = {
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.user_metadata?.name || 
+                  session.user.user_metadata?.full_name || 
+                  session.user.email.split('@')[0],
+            avatar_url: session.user.user_metadata?.avatar_url,
+            created_at: session.user.created_at,
+          }
+          setAuthUser(authUserData)
+          
+          // team 확인
+          checkTeamMembership(session.user.email)
+        } else {
+          console.log('AuthContext: No existing session')
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error('AuthContext: Error checking session:', error)
+        setLoading(false)
+      }
+    }
+
+    // 현재 세션 확인
+    checkCurrentSession()
+
     // 인증 상태 변경 리스너
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -247,8 +287,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        if (session?.user?.email) {
-          console.log('AuthContext: User authenticated, setting user data')
+        if (event === 'SIGNED_IN' && session?.user?.email) {
+          console.log('AuthContext: User signed in, setting user data')
           
           setUser(session.user)
           
@@ -263,15 +303,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           setAuthUser(authUserData)
           
-          // team 확인을 백그라운드에서 수행
+          // team 확인
           checkTeamMembership(session.user.email)
-        } else {
-          console.log('AuthContext: No session')
-          setUser(null)
-          setAuthUser(null)
-          setUserRole('customer')
-          setPermissions(null)
-          setLoading(false)
+        } else if (event === 'TOKEN_REFRESHED' && session?.user?.email) {
+          console.log('AuthContext: Token refreshed')
+          setUser(session.user)
+          
+          const authUserData: AuthUser = {
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.user_metadata?.name || 
+                  session.user.user_metadata?.full_name || 
+                  session.user.email.split('@')[0],
+            avatar_url: session.user.user_metadata?.avatar_url,
+            created_at: session.user.created_at,
+          }
+          setAuthUser(authUserData)
         }
       }
     )
@@ -279,7 +326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [initialized])
+  }, [checkTeamMembership])
 
   // 로그아웃 함수
   const signOut = async () => {

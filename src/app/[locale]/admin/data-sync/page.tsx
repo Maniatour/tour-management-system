@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight } from 'lucide-react'
+import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 
 interface SheetInfo {
@@ -41,7 +41,7 @@ interface ColumnMapping {
 }
 
 export default function DataSyncPage() {
-  const [spreadsheetId, setSpreadsheetId] = useState('')
+  const [spreadsheetId] = useState('15pu3wMPDwOHlVM0LhRsOYW5WZDZ3SUPVU4h0G4hyLc0')
   const [selectedSheet, setSelectedSheet] = useState('')
   const [selectedTable, setSelectedTable] = useState('')
   const [sheetInfo, setSheetInfo] = useState<SheetInfo[]>([])
@@ -52,8 +52,8 @@ export default function DataSyncPage() {
   const [loading, setLoading] = useState(false)
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
-  // 증분 동기화는 제거됨 (항상 전체 동기화)
-  const [truncateReservations, setTruncateReservations] = useState(false)
+  // 선택된 테이블의 데이터를 동기화 전에 삭제할지 여부
+  const [truncateTable, setTruncateTable] = useState(false)
   const [showMappingModal, setShowMappingModal] = useState(false)
   const [progress, setProgress] = useState(0)
   const [etaMs, setEtaMs] = useState<number | null>(null)
@@ -143,7 +143,6 @@ export default function DataSyncPage() {
         'pickup_hotel': ['픽업호텔', '호텔', 'Hotel'],
         'pickup_time': ['픽업시간', '픽업', 'Pickup'],
         'channel_id': ['채널', 'Channel'],
-        'status': ['상태', 'Status'],
         'tour_status': ['상태', 'Status'],
         'notes': ['비고', '메모', 'Notes'],
         'tour_note': ['비고', '메모', 'Notes'],
@@ -185,37 +184,13 @@ export default function DataSyncPage() {
         'additional_payment': ['추가납입금', 'Additional Payment', '추가 납입금'],
         'payment_due_date': ['납입일', 'Payment Due Date', '납입 날짜'],
         'installment_start_date': ['할부시작일', 'Installment Start Date', '할부 시작일'],
-        // 새로 추가된 필드
-        'reservation_pricing': [
-          { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
-          { name: 'reservation_id', type: 'text', nullable: false, default: null },
-          { name: 'adult_product_price', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'child_product_price', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'infant_product_price', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'product_price_total', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'required_options', type: 'jsonb', nullable: true, default: '{}' },
-          { name: 'required_option_total', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'subtotal', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'coupon_code', type: 'text', nullable: true, default: null },
-          { name: 'coupon_discount', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'additional_discount', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'additional_cost', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'card_fee', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'tax', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'prepayment_cost', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'prepayment_tip', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'selected_options', type: 'jsonb', nullable: true, default: '{}' },
-          { name: 'option_total', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'is_private_tour', type: 'boolean', nullable: true, default: 'false' },
-          { name: 'private_tour_additional_cost', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'total_price', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'deposit_amount', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'balance_amount', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'commission_percent', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'commission_amount', type: 'numeric', nullable: true, default: '0.00' },
-          { name: 'created_at', type: 'timestamp', nullable: true, default: 'now()' },
-          { name: 'updated_at', type: 'timestamp', nullable: true, default: 'now()' }
-        ]
+        // Off Schedules 테이블 매핑
+        'team_email': ['팀이메일', 'Team Email', '이메일', 'Email'],
+        'off_date': ['휴가날짜', 'Off Date', '휴가 날짜', '날짜', 'Date'],
+        'reason': ['사유', 'Reason', '휴가사유', '휴가 사유'],
+        'status': ['상태', 'Status'],
+        'approved_by': ['승인자', 'Approved By', '승인한 사람'],
+        'approved_at': ['승인일시', 'Approved At', '승인 날짜', '승인 시간']
       }
       
       if (koreanMappings[dbColumn]) {
@@ -516,10 +491,61 @@ export default function DataSyncPage() {
         { name: 'medical_acquired', type: 'date', nullable: true, default: null },
         { name: 'medical_expired', type: 'date', nullable: true, default: null },
         { name: 'address', type: 'text', nullable: true, default: null }
+      ],
+      reservation_pricing: [
+        { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+        { name: 'reservation_id', type: 'text', nullable: false, default: null },
+        { name: 'adult_product_price', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'child_product_price', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'infant_product_price', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'product_price_total', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'required_options', type: 'jsonb', nullable: true, default: '{}' },
+        { name: 'required_option_total', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'subtotal', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'coupon_code', type: 'text', nullable: true, default: null },
+        { name: 'coupon_discount', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'additional_discount', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'additional_cost', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'card_fee', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'tax', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'prepayment_cost', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'prepayment_tip', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'selected_options', type: 'jsonb', nullable: true, default: '{}' },
+        { name: 'option_total', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'is_private_tour', type: 'boolean', nullable: true, default: 'false' },
+        { name: 'private_tour_additional_cost', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'total_price', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'deposit_amount', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'balance_amount', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'commission_percent', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'commission_amount', type: 'numeric', nullable: true, default: '0.00' },
+        { name: 'created_at', type: 'timestamp', nullable: true, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp', nullable: true, default: 'now()' }
+      ],
+      off_schedules: [
+        { name: 'id', type: 'uuid', nullable: false, default: 'gen_random_uuid()' },
+        { name: 'team_email', type: 'character varying(255)', nullable: false, default: null },
+        { name: 'off_date', type: 'date', nullable: false, default: null },
+        { name: 'reason', type: 'text', nullable: false, default: null },
+        { name: 'status', type: 'text', nullable: false, default: "'pending'" },
+        { name: 'approved_by', type: 'character varying(255)', nullable: true, default: null },
+        { name: 'approved_at', type: 'timestamp with time zone', nullable: true, default: null },
+        { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
       ]
     }
     
     return fallbackColumns[tableName] || []
+  }
+
+  // 구글 시트 URL 생성
+  const getGoogleSheetsUrl = () => {
+    return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
+  }
+
+  // 구글 시트 열기
+  const openGoogleSheets = () => {
+    window.open(getGoogleSheetsUrl(), '_blank')
   }
 
   // 구글 시트 정보 가져오기
@@ -543,9 +569,6 @@ export default function DataSyncPage() {
       
       if (result.success) {
         setSheetInfo(result.data.sheets)
-        
-        // 스프레드시트 ID를 localStorage에 저장
-        localStorage.setItem('tour-management-spreadsheet-id', spreadsheetId)
         
         // 첫 번째 시트를 기본 선택
         if (result.data.sheets.length > 0) {
@@ -620,6 +643,7 @@ export default function DataSyncPage() {
     console.log('Table selected:', tableName)
     setSelectedTable(tableName)
     setTableColumns([]) // 이전 컬럼 정보 초기화
+    setTruncateTable(false) // 테이블 삭제 옵션 초기화
     
     if (tableName) {
       // 테이블 스키마 가져오기
@@ -709,7 +733,7 @@ export default function DataSyncPage() {
           targetTable: selectedTable,
           columnMapping,
           enableIncrementalSync: false,
-          truncateReservations,
+          truncateTable,
         }),
       })
 
@@ -815,15 +839,9 @@ export default function DataSyncPage() {
     }
   }
 
-  // 컴포넌트 마운트 시 사용 가능한 테이블 가져오기 및 저장된 스프레드시트 ID 로드
+  // 컴포넌트 마운트 시 사용 가능한 테이블만 가져오기
   useEffect(() => {
     getAvailableTables()
-    
-    // 저장된 스프레드시트 ID 로드
-    const savedSpreadsheetId = localStorage.getItem('tour-management-spreadsheet-id')
-    if (savedSpreadsheetId) {
-      setSpreadsheetId(savedSpreadsheetId)
-    }
   }, [])
 
   // 주기적 동기화 (사용하지 않음)
@@ -888,78 +906,49 @@ export default function DataSyncPage() {
           </p>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              스프레드시트 ID
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={spreadsheetId}
-                onChange={(e) => setSpreadsheetId(e.target.value)}
-                placeholder="구글 시트의 ID를 입력하세요"
-                className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              {spreadsheetId && (
-                <button
-                  onClick={() => {
-                    setSpreadsheetId('')
-                    localStorage.removeItem('tour-management-spreadsheet-id')
-                    setSheetInfo([])
-                    setSelectedSheet('')
-                    setSelectedTable('')
-                    setTableColumns([])
-                    setColumnMapping({})
-                  }}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  title="ID 지우기"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              URL에서 /d/ 다음의 긴 문자열입니다. 입력한 ID는 자동으로 저장됩니다.
+        {sheetInfo.length === 0 && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800">
+              <strong>💡 안내:</strong> 시트 정보를 가져오려면 아래 버튼을 클릭하세요.
             </p>
           </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              시트 선택
-            </label>
-            <select
-              value={selectedSheet}
-              onChange={(e) => handleSheetSelect(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={sheetInfo.length === 0}
-            >
-              <option value="">시트를 선택하세요</option>
-              {sheetInfo.map((sheet) => (
-                <option 
-                  key={sheet.name} 
-                  value={sheet.name}
-                  disabled={sheet.rowCount === 0}
-                  style={{ 
-                    color: sheet.rowCount === 0 ? '#999' : 'inherit',
-                    fontStyle: sheet.rowCount === 0 ? 'italic' : 'normal'
-                  }}
-                >
-                  {sheet.name} ({sheet.rowCount}행) {sheet.rowCount === 0 ? '- 비어있음' : ''}
-                </option>
-              ))}
-            </select>
+        )}
+        
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            스프레드시트 ID
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              value={spreadsheetId}
+              readOnly
+              className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+            />
+            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-green-600">
+              ✓
+            </div>
           </div>
+          <p className="text-xs text-gray-500 mt-1">
+            고정된 구글 시트 ID입니다. 변경할 수 없습니다.
+          </p>
         </div>
 
         <div className="flex space-x-3">
           <button
             onClick={getSheetInfo}
-            disabled={loading || !spreadsheetId.trim()}
+            disabled={loading}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             <FileSpreadsheet className="h-4 w-4 mr-2" />
-            시트 정보 확인
+            {sheetInfo.length === 0 ? '시트 정보 가져오기' : '시트 정보 새로고침'}
+          </button>
+          <button
+            onClick={openGoogleSheets}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+          >
+            <ExternalLink className="h-4 w-4 mr-2" />
+            구글 시트 열기
           </button>
         </div>
       </div>
@@ -978,14 +967,24 @@ export default function DataSyncPage() {
               <label className="flex items-center space-x-3">
                 <input
                   type="checkbox"
-                  checked={truncateReservations}
-                  onChange={(e) => setTruncateReservations(e.target.checked)}
+                  checked={truncateTable}
+                  onChange={(e) => setTruncateTable(e.target.checked)}
                   className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500"
+                  disabled={!selectedTable}
                 />
-                <span className="text-sm font-medium text-gray-700">동기화 전에 reservations 전체 삭제</span>
+                <span className="text-sm font-medium text-gray-700">
+                  동기화 전에 {selectedTable || '선택된 테이블'} 전체 삭제
+                </span>
               </label>
               <div className="text-xs text-gray-500">
-                필요한 경우에만 사용하세요. 복구 불가이므로 사전 백업 권장.
+                {selectedTable ? (
+                  <>
+                    <strong>⚠️ 주의:</strong> {selectedTable} 테이블의 모든 데이터가 삭제됩니다. 
+                    복구 불가이므로 사전 백업을 권장합니다.
+                  </>
+                ) : (
+                  '테이블을 선택하면 해당 테이블의 데이터를 삭제할 수 있습니다.'
+                )}
               </div>
             </div>
             {lastSyncTime && (
@@ -995,7 +994,7 @@ export default function DataSyncPage() {
             )}
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* 테이블 선택 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1015,6 +1014,34 @@ export default function DataSyncPage() {
               </select>
             </div>
 
+            {/* 시트 선택 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                시트 선택
+              </label>
+              <select
+                value={selectedSheet}
+                onChange={(e) => handleSheetSelect(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={sheetInfo.length === 0}
+              >
+                <option value="">시트를 선택하세요</option>
+                {sheetInfo.map((sheet) => (
+                  <option 
+                    key={sheet.name} 
+                    value={sheet.name}
+                    disabled={sheet.rowCount === 0}
+                    style={{ 
+                      color: sheet.rowCount === 0 ? '#999' : 'inherit',
+                      fontStyle: sheet.rowCount === 0 ? 'italic' : 'normal'
+                    }}
+                  >
+                    {sheet.name} ({sheet.rowCount}행) {sheet.rowCount === 0 ? '- 비어있음' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* 컬럼 매핑 버튼 */}
             <div className="flex items-end">
               <button
@@ -1025,7 +1052,7 @@ export default function DataSyncPage() {
                   setShowMappingModal(true)
                 }}
                 disabled={!selectedTable || !selectedSheet}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 <Settings className="h-4 w-4 mr-2" />
                 컬럼 매핑 설정
@@ -1056,6 +1083,31 @@ export default function DataSyncPage() {
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">동기화 실행</h3>
           
+          {/* 동기화 설정 요약 */}
+          <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+            <h4 className="text-sm font-medium text-blue-800 mb-2">동기화 설정 요약</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+              <div>
+                <span className="text-blue-700 font-medium">대상 테이블:</span>
+                <span className="ml-2 text-blue-600">{selectedTable}</span>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">시트:</span>
+                <span className="ml-2 text-blue-600">{selectedSheet}</span>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">매핑된 컬럼:</span>
+                <span className="ml-2 text-blue-600">{Object.keys(columnMapping).length}개</span>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">데이터 삭제:</span>
+                <span className={`ml-2 ${truncateTable ? 'text-red-600 font-medium' : 'text-green-600'}`}>
+                  {truncateTable ? '예 (전체 삭제 후 동기화)' : '아니오 (기존 데이터 유지)'}
+                </span>
+              </div>
+            </div>
+          </div>
+          
           <div className="flex space-x-3 mb-4">
             <button
               onClick={handleFlexibleSync}
@@ -1063,7 +1115,7 @@ export default function DataSyncPage() {
               className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               <Upload className="h-4 w-4 mr-2" />
-              동기화 실행
+              {truncateTable ? '데이터 삭제 후 동기화 실행' : '동기화 실행'}
             </button>
           </div>
 

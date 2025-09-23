@@ -398,6 +398,17 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'commission_amount', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
+    ],
+    off_schedules: [
+      { name: 'id', type: 'uuid', nullable: false, default: 'gen_random_uuid()' },
+      { name: 'team_email', type: 'character varying(255)', nullable: false, default: null },
+      { name: 'off_date', type: 'date', nullable: false, default: null },
+      { name: 'reason', type: 'text', nullable: false, default: null },
+      { name: 'status', type: 'text', nullable: false, default: "'pending'" },
+      { name: 'approved_by', type: 'character varying(255)', nullable: true, default: null },
+      { name: 'approved_at', type: 'timestamp with time zone', nullable: true, default: null },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ]
   }
   

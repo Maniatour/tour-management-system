@@ -354,7 +354,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">예상 수익</p>
-              <p className="text-2xl font-bold text-gray-900">{statisticsData.totalRevenue.toLocaleString()}원</p>
+              <p className="text-2xl font-bold text-gray-900">${statisticsData.totalRevenue.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -482,7 +482,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                   </td>
                   {selectedChart !== 'trend' && (
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.revenue.toLocaleString()}원
+                      ${item.revenue.toLocaleString()}
                     </td>
                   )}
                 </tr>

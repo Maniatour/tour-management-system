@@ -1411,7 +1411,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 <div className="pt-2 border-t border-gray-100">
                   <div className="flex items-center justify-between">
                     <div className="text-lg font-bold text-blue-600">
-                      {calculateTotalPrice(reservation, products, optionChoices).toLocaleString()}원
+                      ${calculateTotalPrice(reservation, products, optionChoices).toLocaleString()}
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
@@ -1620,7 +1620,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   <div className="pt-2 border-t border-gray-100">
                     <div className="flex items-center justify-between">
                       <div className="text-lg font-bold text-blue-600">
-                        {calculateTotalPrice(reservation, products, optionChoices).toLocaleString()}원
+                        ${calculateTotalPrice(reservation, products, optionChoices).toLocaleString()}
                       </div>
                       <button
                         onClick={(e) => {

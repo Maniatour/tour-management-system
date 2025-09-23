@@ -10,34 +10,9 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    
-    // RPC 함수를 사용하여 테이블 목록 조회
-    const { data: tables, error } = await supabase
-      .rpc('get_all_tables')
-
-    if (error) {
-      console.error('Error fetching tables from database:', error)
-      // 데이터베이스 조회 실패 시 하드코딩된 목록 사용
-      return getHardcodedTables()
-    }
-
-    // RPC 결과에 pickup_hotels가 누락된 경우 보강
-    const names = new Set<string>(tables.map((t: any) => t.table_name))
-    if (!names.has('pickup_hotels')) {
-      (tables as any[]).push({ table_name: 'pickup_hotels' })
-    }
-
-    // 테이블 목록을 표시명과 함께 반환
-    const tableList = tables.map((table: any) => ({
-      name: table.table_name,
-      displayName: getTableDisplayName(table.table_name)
-    }))
-
-    return NextResponse.json({
-      success: true,
-      data: { tables: tableList }
-    })
+    // Supabase에서 직접 테이블 목록을 조회하는 것은 RLS 정책 때문에 복잡할 수 있음
+    // 안전하게 하드코딩된 목록을 사용하되, 실제 존재하는 테이블만 필터링
+    return getHardcodedTables()
 
   } catch (error) {
     console.error('Get all tables error:', error)
@@ -75,7 +50,8 @@ function getHardcodedTables() {
     'vehicles',
     'ticket_bookings',
     'tour_hotel_bookings',
-    'tour_expenses'
+    'tour_expenses',
+    'off_schedules'
   ]
 
   // 테이블 목록을 표시명과 함께 반환
@@ -119,7 +95,8 @@ function getTableDisplayName(tableName: string): string {
     vehicles: '차량',
     ticket_bookings: '티켓 예약',
     tour_hotel_bookings: '투어 호텔 예약',
-    tour_expenses: '투어 지출'
+    tour_expenses: '투어 지출',
+    off_schedules: '휴가 일정'
   }
   return displayNames[tableName] || tableName
 }

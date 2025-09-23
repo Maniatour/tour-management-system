@@ -223,6 +223,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: '예약 통계', href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
     { name: '문서 템플릿', href: `/${locale}/admin/reservations/templates`, icon: FileText },
     { name: '팀 관리', href: `/${locale}/admin/team`, icon: Users },
+    { name: '팀 채팅', href: `/${locale}/admin/team-chat`, icon: MessageCircle },
     { name: '출퇴근 관리', href: `/${locale}/admin/attendance`, icon: Clock },
     { name: '공급업체 관리', href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: '공급업체 정산', href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
