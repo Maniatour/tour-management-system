@@ -478,116 +478,122 @@ export default function TourExpenseManager({
             <h3 className="text-lg font-semibold text-gray-900 mb-4">지출 추가</h3>
             
             <form onSubmit={handleAddExpense} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  결제처
-                </label>
-                <div className="space-y-2">
-                  <select
-                    value={formData.paid_to}
-                    onChange={(e) => {
-                      setFormData(prev => ({ ...prev, paid_to: e.target.value }))
-                      setShowCustomPaidTo(false)
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">선택하세요</option>
-                    {vendors.map((vendor) => (
-                      <option key={vendor.id} value={vendor.name}>
-                        {vendor.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomPaidTo(!showCustomPaidTo)}
-                    className="text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    {showCustomPaidTo ? '기존 목록에서 선택' : '직접 입력'}
-                  </button>
-                  {showCustomPaidTo && (
-                    <input
-                      type="text"
-                      value={formData.custom_paid_to}
-                      onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_to: e.target.value }))}
-                      placeholder="새로운 결제처 입력"
+              {/* 결제처와 결제내용을 같은 줄에 배치 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    결제처
+                  </label>
+                  <div className="space-y-2">
+                    <select
+                      value={formData.paid_to}
+                      onChange={(e) => {
+                        setFormData(prev => ({ ...prev, paid_to: e.target.value }))
+                        setShowCustomPaidTo(false)
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  )}
+                    >
+                      <option value="">선택하세요</option>
+                      {vendors.map((vendor) => (
+                        <option key={vendor.id} value={vendor.name}>
+                          {vendor.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomPaidTo(!showCustomPaidTo)}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      {showCustomPaidTo ? '기존 목록에서 선택' : '직접 입력'}
+                    </button>
+                    {showCustomPaidTo && (
+                      <input
+                        type="text"
+                        value={formData.custom_paid_to}
+                        onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_to: e.target.value }))}
+                        placeholder="새로운 결제처 입력"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    결제내용 <span className="text-red-500">*</span>
+                  </label>
+                  <div className="space-y-2">
+                    <select
+                      value={formData.paid_for}
+                      onChange={(e) => {
+                        setFormData(prev => ({ ...prev, paid_for: e.target.value }))
+                        setShowCustomPaidFor(false)
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">선택하세요</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.name}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomPaidFor(!showCustomPaidFor)}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      {showCustomPaidFor ? '기존 목록에서 선택' : '직접 입력'}
+                    </button>
+                    {showCustomPaidFor && (
+                      <input
+                        type="text"
+                        value={formData.custom_paid_for}
+                        onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_for: e.target.value }))}
+                        placeholder="새로운 결제내용 입력"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  결제내용 <span className="text-red-500">*</span>
-                </label>
-                <div className="space-y-2">
-                  <select
-                    value={formData.paid_for}
-                    onChange={(e) => {
-                      setFormData(prev => ({ ...prev, paid_for: e.target.value }))
-                      setShowCustomPaidFor(false)
-                    }}
+              {/* 금액과 결제방법을 같은 줄에 배치 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    금액 (USD) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.amount}
+                    onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                    placeholder="0.00"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    결제 방법
+                  </label>
+                  <select
+                    value={formData.payment_method}
+                    onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">선택하세요</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.name}>
-                        {category.name}
-                      </option>
-                    ))}
+                    <option value="cash">현금</option>
+                    <option value="credit_card">신용카드</option>
+                    <option value="debit_card">체크카드</option>
+                    <option value="mobile_payment">모바일 결제</option>
+                    <option value="other">기타</option>
                   </select>
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomPaidFor(!showCustomPaidFor)}
-                    className="text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    {showCustomPaidFor ? '기존 목록에서 선택' : '직접 입력'}
-                  </button>
-                  {showCustomPaidFor && (
-                    <input
-                      type="text"
-                      value={formData.custom_paid_for}
-                      onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_for: e.target.value }))}
-                      placeholder="새로운 결제내용 입력"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  )}
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  금액 (USD) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
-                  placeholder="0.00"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  결제 방법
-                </label>
-                <select
-                  value={formData.payment_method}
-                  onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">선택하세요</option>
-                  <option value="cash">현금</option>
-                  <option value="credit_card">신용카드</option>
-                  <option value="debit_card">체크카드</option>
-                  <option value="mobile_payment">모바일 결제</option>
-                  <option value="other">기타</option>
-                </select>
               </div>
 
               <div>
@@ -633,7 +639,7 @@ export default function TourExpenseManager({
                       <p className="text-sm text-gray-600">
                         영수증을 드래그하여 놓거나 클릭하여 선택하세요
                       </p>
-                      <p className="text-xs text-gray-500">JPG, PNG, WebP 형식, 최대 5MB</p>
+                      <p className="text-xs text-gray-500">📷 모바일에서 카메라 촬영 가능 | JPG, PNG, WebP 형식, 최대 5MB</p>
                     </div>
                   )}
                   <input
@@ -648,7 +654,7 @@ export default function TourExpenseManager({
                     onClick={() => fileInputRef.current?.click()}
                     className="mt-2 px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
                   >
-                    파일 선택
+                    📷 촬영 또는 파일 선택
                   </button>
                 </div>
               </div>

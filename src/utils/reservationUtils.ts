@@ -11,24 +11,24 @@ import type {
 } from '@/types/reservation'
 
 // 픽업 호텔 ID로 호텔 정보를 찾는 헬퍼 함수
-export const getPickupHotelDisplay = (hotelId: string, pickupHotels: PickupHotel[]) => {
-  const hotel = pickupHotels.find(h => h.id === hotelId)
+export const getPickupHotelDisplay = (hotelId: string, pickupHotels: PickupHotel[] | null) => {
+  const hotel = pickupHotels?.find(h => h.id === hotelId)
   return hotel ? `${hotel.hotel} - ${hotel.pick_up_location}` : hotelId
 }
 
 // 고객 이름 가져오기
-export const getCustomerName = (customerId: string, customers: Customer[]) => {
-  return customers.find(c => c.id === customerId)?.name || 'Unknown'
+export const getCustomerName = (customerId: string, customers: Customer[] | null) => {
+  return customers?.find(c => c.id === customerId)?.name || 'Unknown'
 }
 
 // 상품 이름 가져오기
-export const getProductName = (productId: string, products: Product[]) => {
-  return products.find(p => p.id === productId)?.name || 'Unknown'
+export const getProductName = (productId: string, products: Product[] | null) => {
+  return products?.find(p => p.id === productId)?.name || 'Unknown'
 }
 
 // 채널 이름 가져오기
-export const getChannelName = (channelId: string, channels: Channel[]) => {
-  return channels.find(c => c.id === channelId)?.name || 'Unknown'
+export const getChannelName = (channelId: string, channels: Channel[] | null) => {
+  return channels?.find(c => c.id === channelId)?.name || 'Unknown'
 }
 
 // 상태 라벨 가져오기

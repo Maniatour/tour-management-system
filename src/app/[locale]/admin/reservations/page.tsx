@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play } from 'lucide-react'
+import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play, DollarSign } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -12,6 +12,7 @@ import ReservationForm from '@/components/reservation/ReservationForm'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import ReservationCalendar from '@/components/ReservationCalendar'
+import PaymentRecordsList from '@/components/PaymentRecordsList'
 import { useReservationData } from '@/hooks/useReservationData'
 import { 
   getPickupHotelDisplay, 
@@ -96,6 +97,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   // 주간 통계 아코디언 상태
   const [isWeeklyStatsCollapsed, setIsWeeklyStatsCollapsed] = useState(false)
+
+  // 입금 내역 관련 상태
+  const [showPaymentRecords, setShowPaymentRecords] = useState(false)
+  const [selectedReservationForPayment, setSelectedReservationForPayment] = useState<Reservation | null>(null)
 
   // 검색어에 따른 그룹화 상태 조정
   useEffect(() => {
@@ -1470,6 +1475,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         }
                         return null;
                       })()}
+
+                      {/* 입금 내역 버튼 */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedReservationForPayment(reservation);
+                          setShowPaymentRecords(true);
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+                        title="입금 내역 관리"
+                      >
+                        <DollarSign className="w-3 h-3" />
+                        <span>입금</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1654,6 +1673,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       >
                         상세
                       </button>
+
+                      {/* 입금 내역 버튼 */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedReservationForPayment(reservation);
+                          setShowPaymentRecords(true);
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+                        title="입금 내역 관리"
+                      >
+                        <DollarSign className="w-3 h-3" />
+                        <span>입금</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1819,6 +1852,36 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         isOpen={showPricingModal}
         onClose={handleClosePricingModal}
       />
+
+      {/* 입금 내역 모달 */}
+      {showPaymentRecords && selectedReservationForPayment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">
+                입금 내역 관리 - {getCustomerName(selectedReservationForPayment.customerId, customers)}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowPaymentRecords(false)
+                  setSelectedReservationForPayment(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
+              <PaymentRecordsList
+                reservationId={selectedReservationForPayment.id}
+                customerName={getCustomerName(selectedReservationForPayment.customerId, customers)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

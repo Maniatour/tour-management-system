@@ -33,8 +33,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   // team 멤버십 확인
-  const checkTeamMembership = useCallback(async (email: string) => {
-    if (!email) return
+  const checkTeamMembership = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
+    if (!email) {
+      setUserRole('customer')
+      setPermissions(null)
+      setLoading(false)
+      if (timeoutId) clearTimeout(timeoutId)
+      return
+    }
 
     try {
       console.log('AuthContext: Checking team membership for:', email)
@@ -51,28 +57,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserRole('customer')
         setPermissions(null)
         setLoading(false) // team 확인 완료 후 로딩 해제
+        if (timeoutId) clearTimeout(timeoutId)
         return
       }
 
       console.log('AuthContext: Team member found:', (teamData as TeamData).name_ko)
       
       // team 멤버인 경우 역할 확인
-      await checkUserRole(email)
-      setLoading(false) // team 확인 완료 후 로딩 해제
+      await checkUserRole(email, timeoutId)
+      // checkUserRole에서 이미 setLoading(false)를 호출하므로 여기서는 호출하지 않음
     } catch (error) {
       console.error('AuthContext: Team check failed:', error)
       setUserRole('customer')
       setPermissions(null)
       setLoading(false) // 에러 발생 시에도 로딩 해제
+      if (timeoutId) clearTimeout(timeoutId)
     }
   }, [])
 
   // 사용자 역할 및 권한 확인
-  const checkUserRole = async (email: string) => {
+  const checkUserRole = async (email: string, timeoutId?: NodeJS.Timeout) => {
     if (!email) {
       setUserRole('customer')
       setPermissions(null)
       setLoading(false)
+      if (timeoutId) clearTimeout(timeoutId)
       return
     }
 
@@ -115,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUserRole(role)
       setPermissions(userPermissions)
       setLoading(false)
+      if (timeoutId) clearTimeout(timeoutId)
       
       console.log('AuthContext: User role set:', role)
     } catch (error) {
@@ -122,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUserRole('customer')
       setPermissions(null)
       setLoading(false)
+      if (timeoutId) clearTimeout(timeoutId)
     }
   }
 
@@ -129,115 +140,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('AuthContext: Initializing...')
     setLoading(true)
     
-    // localStorage에서 토큰 확인 (콜백 페이지에서 저장된 토큰)
-    const checkStoredTokens = async () => {
-      if (typeof window !== 'undefined') {
-        try {
-          const storedTokens = localStorage.getItem('auth_tokens')
-          console.log('AuthContext: Checking stored tokens:', !!storedTokens)
-          
-          if (storedTokens) {
-            const tokens = JSON.parse(storedTokens)
-            const { access_token, refresh_token, timestamp } = tokens
-            
-            // 토큰이 1시간 이내인지 확인
-            if (access_token && (Date.now() - timestamp) < 3600000) {
-              console.log('AuthContext: Found valid stored tokens, parsing JWT directly')
-              try {
-                // JWT 토큰에서 직접 사용자 정보 추출
-                const tokenParts = access_token.split('.')
-                if (tokenParts.length === 3) {
-                  const payload = JSON.parse(atob(tokenParts[1]))
-                  console.log('AuthContext: JWT payload:', payload)
-                  
-                  if (payload.email) {
-                    console.log('AuthContext: Creating user from JWT payload:', payload.email)
-                    
-                    // JWT에서 사용자 정보 생성
-                    const user: User = {
-                      id: payload.sub,
-                      email: payload.email,
-                      user_metadata: {
-                        name: payload.name || payload.full_name,
-                        avatar_url: payload.avatar_url || payload.picture,
-                        provider: 'google'
-                      },
-                      app_metadata: {},
-                      created_at: new Date(payload.iat * 1000).toISOString(),
-                      aud: payload.aud,
-                      role: payload.role
-                    }
-                    
-                    console.log('AuthContext: User created from JWT:', user.email)
-                    setUser(user)
-                    
-                    const authUserData: AuthUser = {
-                      id: user.id,
-                      email: user.email ?? '',
-                      name: user.user_metadata?.name ?? user.email?.split('@')[0] ?? 'User',
-                      avatar_url: user.user_metadata?.avatar_url || undefined,
-                      created_at: user.created_at,
-                    }
-                    setAuthUser(authUserData)
-                    
-                    // 성공 시 저장된 토큰 삭제
-                    localStorage.removeItem('auth_tokens')
-                    
-                    // team 확인
-                    if (user.email) {
-                      checkTeamMembership(user.email)
-                    }
-                    
-                    // 백그라운드에서 세션 설정 시도
-                    setTimeout(async () => {
-                      try {
-                        console.log('AuthContext: Attempting background session setup')
-                        const { error } = await supabase.auth.setSession({
-                          access_token: access_token,
-                          refresh_token: refresh_token || ''
-                        })
-                        if (error) {
-                          console.log('AuthContext: Background session setup failed:', error.message)
-                        } else {
-                          console.log('AuthContext: Background session setup successful')
-                        }
-                      } catch (error) {
-                        console.log('AuthContext: Background session setup error:', error)
-                      }
-                    }, 1000)
-                  } else {
-                    console.log('AuthContext: No email in JWT payload')
-                    localStorage.removeItem('auth_tokens')
-                  }
-                } else {
-                  console.log('AuthContext: Invalid JWT token format')
-                  localStorage.removeItem('auth_tokens')
-                }
-              } catch (error) {
-                console.error('AuthContext: JWT parsing error:', error)
-                localStorage.removeItem('auth_tokens')
-              }
-            } else {
-              console.log('AuthContext: Stored tokens expired or invalid, removing')
-              localStorage.removeItem('auth_tokens')
-            }
-          }
-        } catch (error) {
-          console.error('AuthContext: Error checking stored tokens:', error)
-          localStorage.removeItem('auth_tokens')
-        }
-      }
-    }
+    // 타임아웃 설정 (10초 후 강제로 로딩 해제)
+    const timeoutId = setTimeout(() => {
+      console.warn('AuthContext: Initialization timeout, forcing loading to false')
+      setLoading(false)
+    }, 10000)
     
-    // 저장된 토큰 확인
-    checkStoredTokens()
-
     // 현재 세션 확인
     const checkCurrentSession = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
         if (error) {
           console.error('AuthContext: Error getting session:', error)
+          clearTimeout(timeoutId)
           setLoading(false)
           return
         }
@@ -258,13 +173,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAuthUser(authUserData)
           
           // team 확인
-          checkTeamMembership(session.user.email)
+          checkTeamMembership(session.user.email, timeoutId)
         } else {
           console.log('AuthContext: No existing session')
+          clearTimeout(timeoutId)
           setLoading(false)
         }
       } catch (error) {
         console.error('AuthContext: Error checking session:', error)
+        clearTimeout(timeoutId)
         setLoading(false)
       }
     }

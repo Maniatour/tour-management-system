@@ -14,6 +14,7 @@ import ParticipantsSection from '@/components/reservation/ParticipantsSection'
 import PricingSection from '@/components/reservation/PricingSection'
 import ProductSelectionSection from '@/components/reservation/ProductSelectionSection'
 import ChannelSection from '@/components/reservation/ChannelSection'
+import PaymentRecordsList from '@/components/PaymentRecordsList'
 import { getRequiredOptionsForProduct, getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import type { 
   Customer, 
@@ -1138,6 +1139,16 @@ export default function ReservationForm({
                 t={t}
                 autoSelectCoupon={autoSelectCoupon}
               />
+
+              {/* 입금 내역 섹션 - 예약이 있을 때만 표시 */}
+              {reservation && (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                  <PaymentRecordsList
+                    reservationId={reservation.id}
+                    customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
+                  />
+                </div>
+              )}
             </div>
 
             {/* 2열: 상품 선택 - 모바일에서는 전체 너비, 데스크톱에서는 25% */}

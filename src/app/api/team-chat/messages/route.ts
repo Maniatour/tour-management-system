@@ -246,3 +246,68 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
   }
 }
+
+// 안읽은 메시지 수 조회
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { action, room_id, message_id, reader_email } = body
+
+    if (action === 'mark_read') {
+      // 메시지를 읽음 처리
+      if (!room_id || !message_id || !reader_email) {
+        return NextResponse.json({ error: '필수 필드가 누락되었습니다' }, { status: 400 })
+      }
+
+      // Authorization 헤더에서 토큰 확인
+      const authHeader = request.headers.get('authorization')
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+      }
+
+      const token = authHeader.split(' ')[1]
+      
+      // 토큰으로 사용자 확인
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      if (authError || !user) {
+        return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+      }
+
+      // 이미 읽음 처리되었는지 확인
+      const { data: existingRead, error: readError } = await supabase
+        .from('team_chat_read_status')
+        .select('id')
+        .eq('message_id', message_id)
+        .eq('reader_email', reader_email)
+        .single()
+
+      if (readError && readError.code !== 'PGRST116') { // PGRST116은 "not found" 에러
+        console.error('읽음 상태 확인 오류:', readError)
+        return NextResponse.json({ error: '읽음 상태를 확인할 수 없습니다' }, { status: 500 })
+      }
+
+      // 이미 읽음 처리되지 않은 경우에만 추가
+      if (!existingRead) {
+        const { error: insertError } = await supabase
+          .from('team_chat_read_status')
+          .insert({
+            message_id,
+            reader_email,
+            read_at: new Date().toISOString()
+          })
+
+        if (insertError) {
+          console.error('읽음 처리 오류:', insertError)
+          return NextResponse.json({ error: '읽음 처리에 실패했습니다' }, { status: 500 })
+        }
+      }
+
+      return NextResponse.json({ success: true })
+    }
+
+    return NextResponse.json({ error: '지원하지 않는 액션입니다' }, { status: 400 })
+  } catch (error) {
+    console.error('읽음 처리 오류:', error)
+    return NextResponse.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+  }
+}

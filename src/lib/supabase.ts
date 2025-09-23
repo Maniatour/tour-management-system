@@ -2,19 +2,19 @@ import { createClient } from '@supabase/supabase-js'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import type { Database } from './database.types'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://tyilwbytyuqrhxekjxcd.supabase.co'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5aWx3Ynl0eXVxcmh4ZWtqeGNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU3MzQwMDAsImV4cCI6MjA1MTMxMDAwMH0.Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8Ej8'
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+// 환경 변수 검증
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables. Please check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.')
+}
 
 console.log('Supabase config:', {
   url: supabaseUrl,
   hasKey: !!supabaseAnonKey,
   keyLength: supabaseAnonKey?.length
 })
-
-// 환경 변수가 없을 때 경고
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-  console.warn('Supabase environment variables not found. Using default local development values.')
-}
 
 // 싱글톤 패턴으로 클라이언트 인스턴스 생성
 let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null

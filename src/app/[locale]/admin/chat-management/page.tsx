@@ -136,7 +136,7 @@ export default function ChatManagementPage() {
 
       // 각 채팅방에 대해 투어 정보를 별도로 가져오기
       const roomsWithTour = await Promise.all(
-        chatRoomsData.map(async (room: any) => {
+        chatRoomsData.map(async (room: ChatRoom) => {
           try {
             const { data: tourData, error: tourError } = await supabase
               .from('tours')
@@ -174,17 +174,17 @@ export default function ChatManagementPage() {
             const { data: reservationsData, error: reservationsError } = await supabase
               .from('reservations')
               .select('id, adults, child, infant')
-              .eq('tour_id', tourData.id)
+              .eq('tour_id', (tourData as { id: string }).id)
 
             if (reservationsError) {
-              console.warn(`Error fetching reservations for tour ${tourData.id}:`, reservationsError)
+              console.warn(`Error fetching reservations for tour ${(tourData as { id: string }).id}:`, reservationsError)
             }
 
             return {
               ...room,
               tour: {
-                ...tourData,
-                status: tourData.tour_status,
+                ...(tourData as Record<string, unknown>),
+                status: (tourData as { tour_status: string }).tour_status,
                 reservations: reservationsData || []
               },
               unread_count: 0
@@ -206,7 +206,7 @@ export default function ChatManagementPage() {
 
       // 이제 읽지 않은 메시지 수 계산
       const roomsWithUnreadCount = await Promise.all(
-        roomsWithTour.map(async (room: any) => {
+        roomsWithTour.map(async (room) => {
           try {
             const { count } = await supabase
               .from('chat_messages')
@@ -377,11 +377,11 @@ export default function ChatManagementPage() {
 
       // 2단계: 상품 정보 가져오기
       let productData = null
-      if (tourData.product_id) {
+      if ((tourData as { product_id?: string }).product_id) {
         const { data: product, error: productError } = await supabase
           .from('products')
           .select('*')
-          .eq('id', tourData.product_id)
+          .eq('id', (tourData as { product_id: string }).product_id)
           .single()
 
         if (!productError) {
@@ -393,44 +393,44 @@ export default function ChatManagementPage() {
       let tourGuideData = null
       let assistantData = null
 
-      if (tourData.tour_guide_id) {
+      if ((tourData as { tour_guide_id?: string }).tour_guide_id) {
         const { data: guide, error: guideError } = await supabase
           .from('team')
           .select('email, name_ko')
-          .eq('email', tourData.tour_guide_id)
+          .eq('email', (tourData as { tour_guide_id: string }).tour_guide_id)
           .single()
 
         if (!guideError && guide) {
           tourGuideData = {
-            email: guide.email,
-            name: guide.name_ko || guide.email
+            email: (guide as { email: string }).email,
+            name: (guide as { name_ko?: string; email: string }).name_ko || (guide as { email: string }).email
           }
         } else {
           // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
           tourGuideData = {
-            email: tourData.tour_guide_id,
-            name: tourData.tour_guide_id
+            email: (tourData as { tour_guide_id: string }).tour_guide_id,
+            name: (tourData as { tour_guide_id: string }).tour_guide_id
           }
         }
       }
 
-      if (tourData.assistant_id) {
+      if ((tourData as { assistant_id?: string }).assistant_id) {
         const { data: assistant, error: assistantError } = await supabase
           .from('team')
           .select('email, name_ko')
-          .eq('email', tourData.assistant_id)
+          .eq('email', (tourData as { assistant_id: string }).assistant_id)
           .single()
 
         if (!assistantError && assistant) {
           assistantData = {
-            email: assistant.email,
-            name: assistant.name_ko || assistant.email
+            email: (assistant as { email: string }).email,
+            name: (assistant as { name_ko?: string; email: string }).name_ko || (assistant as { email: string }).email
           }
         } else {
           // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
           assistantData = {
-            email: tourData.assistant_id,
-            name: tourData.assistant_id
+            email: (tourData as { assistant_id: string }).assistant_id,
+            name: (tourData as { assistant_id: string }).assistant_id
           }
         }
       }
@@ -446,9 +446,9 @@ export default function ChatManagementPage() {
       }
 
       // 4단계: 고객 정보 가져오기 (예약이 있는 경우에만)
-      let customersData = []
+      let customersData: Array<{ id: string; name: string; email: string; phone?: string }> = []
       if (reservationsData && reservationsData.length > 0) {
-        const customerIds = reservationsData.map(r => r.customer_id).filter(Boolean) as string[]
+        const customerIds = reservationsData.map((r: Record<string, unknown>) => r.customer_id as string).filter(Boolean) as string[]
         if (customerIds.length > 0) {
           const { data: customers, error: customersError } = await supabase
             .from('customers')
@@ -463,11 +463,11 @@ export default function ChatManagementPage() {
 
       // 5단계: 차량 정보 가져오기
       let vehicleData = null
-      if (tourData.tour_car_id) {
+      if ((tourData as { tour_car_id?: string }).tour_car_id) {
         const { data: vehicle, error: vehicleError } = await supabase
           .from('vehicles')
           .select('*')
-          .eq('id', tourData.tour_car_id)
+          .eq('id', (tourData as { tour_car_id: string }).tour_car_id)
           .single()
 
         if (!vehicleError) {
@@ -476,10 +476,10 @@ export default function ChatManagementPage() {
       }
 
       // 5.5단계: 픽업 호텔 정보 가져오기
-      let pickupHotelsData = []
+      let pickupHotelsData: Array<{ id: string; hotel: string; pick_up_location: string }> = []
       if (reservationsData && reservationsData.length > 0) {
         const pickupHotelIds = reservationsData
-          .map(r => r.pickup_hotel)
+          .map((r: Record<string, unknown>) => r.pickup_hotel as string)
           .filter(Boolean)
           .filter((value, index, self) => self.indexOf(value) === index) as string[]
         
@@ -496,38 +496,38 @@ export default function ChatManagementPage() {
       }
 
       // 6단계: 데이터 결합 (투어 상세 페이지와 동일한 구조)
-      const combinedReservations = (reservationsData || []).map(reservation => {
-        const customer = customersData.find(c => c.id === reservation.customer_id)
-        const pickupHotel = pickupHotelsData.find(h => h.id === reservation.pickup_hotel)
+      const combinedReservations = (reservationsData || []).map((reservation: Record<string, unknown>) => {
+        const customer = customersData.find((c) => c.id === reservation.customer_id as string)
+        const pickupHotel = pickupHotelsData.find((h) => h.id === reservation.pickup_hotel as string)
         return {
-          id: reservation.id,
-          adults: reservation.adults || 0,
-          child: reservation.child || 0,
-          infant: reservation.infant || 0,
-          total_people: (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0),
-          status: reservation.status || 'pending',
-          pickup_hotel: reservation.pickup_hotel,
-          pickup_time: reservation.pickup_time,
+          id: reservation.id as string,
+          adults: (reservation.adults as number) || 0,
+          child: (reservation.child as number) || 0,
+          infant: (reservation.infant as number) || 0,
+          total_people: ((reservation.adults as number) || 0) + ((reservation.child as number) || 0) + ((reservation.infant as number) || 0),
+          status: (reservation.status as string) || 'pending',
+          pickup_hotel: reservation.pickup_hotel as string,
+          pickup_time: reservation.pickup_time as string,
           pickup_hotel_info: pickupHotel ? {
             hotel: pickupHotel.hotel,
             pick_up_location: pickupHotel.pick_up_location
-          } : null,
+          } : undefined,
           customer: customer ? {
             name: customer.name,
             email: customer.email,
             phone: customer.phone
-          } : null
+          } : undefined
         }
       })
 
       const combinedData: TourInfo = {
-        ...tourData,
-        product: productData,
-        tour_guide: tourGuideData,
-        assistant: assistantData,
-        vehicle: vehicleData,
+        ...(tourData as Record<string, unknown>),
+        product: productData || undefined,
+        tour_guide: tourGuideData || undefined,
+        assistant: assistantData || undefined,
+        vehicle: vehicleData || undefined,
         reservations: combinedReservations
-      }
+      } as TourInfo
 
       setTourInfo(combinedData)
     } catch (error) {
@@ -622,15 +622,15 @@ export default function ChatManagementPage() {
   const filteredRooms = chatRooms
     .filter(room => {
       const matchesSearch = room.room_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           room.tour?.product?.name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           room.tour?.product?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+                           (((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name_ko as string)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           (((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name as string)?.toLowerCase().includes(searchTerm.toLowerCase())
       
       if (!matchesSearch) return false
       
       // 탭별 필터링 (라스베가스 현지 시간 기준)
-      if (room.tour?.tour_date) {
+      if ((room.tour as Record<string, unknown>)?.tour_date) {
         // 투어 날짜는 YYYY-MM-DD 형식이므로 직접 비교
-        const tourDateStr = room.tour.tour_date
+        const tourDateStr = (room.tour as Record<string, unknown>).tour_date as string
         
         // 현재 라스베가스 날짜를 YYYY-MM-DD 형식으로 가져오기
         const now = new Date()
@@ -658,8 +658,8 @@ export default function ChatManagementPage() {
       }
       
       // 3. 투어 날짜 기준으로 정렬
-      const dateA = a.tour?.tour_date ? new Date(a.tour.tour_date) : new Date('9999-12-31')
-      const dateB = b.tour?.tour_date ? new Date(b.tour.tour_date) : new Date('9999-12-31')
+      const dateA = (a.tour as Record<string, unknown>)?.tour_date ? new Date((a.tour as Record<string, unknown>).tour_date as string) : new Date('9999-12-31')
+      const dateB = (b.tour as Record<string, unknown>)?.tour_date ? new Date((b.tour as Record<string, unknown>).tour_date as string) : new Date('9999-12-31')
       
       if (activeTab === 'past') {
         // 지난 투어는 최근 날짜순
@@ -782,9 +782,9 @@ export default function ChatManagementPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* 왼쪽: 채팅방 목록 */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+    <div className="flex h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      {/* 왼쪽: 채팅방 목록 - 모바일에서는 숨김/표시 토글 */}
+      <div className={`${selectedRoom ? 'hidden lg:flex' : 'flex'} lg:w-80 w-full bg-white/80 backdrop-blur-sm border-r border-gray-200 flex-col shadow-lg`}>
         {/* 헤더 */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
@@ -817,8 +817,8 @@ export default function ChatManagementPage() {
               }`}
             >
               예정 ({chatRooms.filter(room => {
-                if (!room.tour?.tour_date) return true
-                const tourDate = new Date(room.tour.tour_date)
+                if (!(room.tour as Record<string, unknown>)?.tour_date) return true
+                const tourDate = new Date((room.tour as Record<string, unknown>).tour_date as string)
                 const today = new Date()
                 today.setHours(0, 0, 0, 0)
                 tourDate.setHours(0, 0, 0, 0)
@@ -834,8 +834,8 @@ export default function ChatManagementPage() {
               }`}
             >
               지난 ({chatRooms.filter(room => {
-                if (!room.tour?.tour_date) return false
-                const tourDate = new Date(room.tour.tour_date)
+                if (!(room.tour as Record<string, unknown>)?.tour_date) return false
+                const tourDate = new Date((room.tour as Record<string, unknown>).tour_date as string)
                 const today = new Date()
                 today.setHours(0, 0, 0, 0)
                 tourDate.setHours(0, 0, 0, 0)
@@ -881,10 +881,10 @@ export default function ChatManagementPage() {
               </div>
             </div>
           ) : (
-            filteredRooms.map((room) => (
+            filteredRooms.map((room: any) => (
             <div
               key={room.id}
-              onClick={() => selectRoom(room)}
+              onClick={() => selectRoom(room as ChatRoom)}
               className={`p-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
                 selectedRoom?.id === room.id 
                   ? 'bg-blue-50 border-l-2 border-l-blue-500' 
@@ -902,12 +902,12 @@ export default function ChatManagementPage() {
                         ? 'font-bold text-gray-900' 
                         : 'font-medium text-gray-900'
                     }`}>
-                      {room.tour?.product?.name_ko || room.tour?.product?.name || room.room_name}
+                      {(((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name_ko as string) || (((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name as string) || room.room_name}
                       {room.unread_count > 0 && ' • 새 메시지'}
                     </h3>
-                    {room.tour?.status && (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getTourStatus(room.tour.status).color}`}>
-                        {room.tour.status}
+                    {(room.tour as Record<string, unknown>)?.status && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getTourStatus((room.tour as Record<string, unknown>).status as string).color}`}>
+                        {(room.tour as Record<string, unknown>).status as string}
                       </span>
                     )}
                   </div>
@@ -917,11 +917,11 @@ export default function ChatManagementPage() {
                     <div className="flex items-center">
                       <Calendar size={10} className="mr-1" />
                       <span className="truncate">
-                        {room.tour?.tour_date ? formatTourDate(room.tour.tour_date) : '날짜미정'}
+                        {(room.tour as Record<string, unknown>)?.tour_date ? formatTourDate((room.tour as Record<string, unknown>).tour_date as string) : '날짜미정'}
                       </span>
-                      {room.tour?.reservations && room.tour.reservations.length > 0 && (
+                      {(room.tour as Record<string, unknown>)?.reservations && (room.tour as Record<string, unknown>).reservations && Array.isArray((room.tour as Record<string, unknown>).reservations) && (room.tour as Record<string, unknown>).reservations.length > 0 && (
                         <span className="ml-2 text-gray-400">
-                          {getTotalParticipants(room.tour.reservations)}명
+                          {getTotalParticipants((room.tour as Record<string, unknown>).reservations as Array<{ adults: number; child: number; infant: number }>)}명
                         </span>
                       )}
                     </div>
@@ -944,37 +944,47 @@ export default function ChatManagementPage() {
         </div>
       </div>
 
-      {/* 가운데: 채팅창 */}
-      <div className="flex-1 flex flex-col">
+      {/* 가운데: 채팅창 - 모바일에서는 전체 화면 */}
+      <div className={`${selectedRoom ? 'flex' : 'hidden lg:flex'} flex-1 flex-col`}>
         {selectedRoom ? (
           <>
             {/* 채팅 헤더 */}
-            <div className="bg-white border-b border-gray-200 p-4">
+            <div className="bg-white/90 backdrop-blur-sm border-b border-gray-200 p-4 shadow-sm">
               <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    {selectedRoom.tour?.product?.name_ko || selectedRoom.tour?.product?.name || selectedRoom.room_name}
+                <div className="flex-1 min-w-0">
+                  {/* 모바일에서 뒤로가기 버튼 추가 */}
+                  <div className="flex items-center space-x-2 mb-2 lg:hidden">
+                    <button
+                      onClick={() => setSelectedRoom(null)}
+                      className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+                      title="채팅방 목록으로 돌아가기"
+                    >
+                      ←
+                    </button>
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-900 truncate">
+                    {(((selectedRoom.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name_ko as string) || (((selectedRoom.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name as string) || selectedRoom.room_name}
                   </h2>
-                  <p className="text-sm text-gray-500">
-                    {selectedRoom.tour?.tour_date ? formatDate(selectedRoom.tour.tour_date) : '날짜 미정'}
+                  <p className="text-sm text-gray-500 truncate">
+                    {(selectedRoom.tour as Record<string, unknown>)?.tour_date ? formatDate((selectedRoom.tour as Record<string, unknown>).tour_date as string) : '날짜 미정'}
                   </p>
                 </div>
-                <div className="flex items-center space-x-4">
-                  <div className="text-sm text-gray-500">
+                <div className="flex items-center space-x-2 lg:space-x-4">
+                  <div className="text-sm text-gray-500 hidden lg:block">
                     방 코드: {selectedRoom.room_code}
                   </div>
                   
                   {/* 언어 선택 */}
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-1 lg:space-x-2">
                     <div className="relative language-dropdown">
                       <button
                         onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                        className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex items-center space-x-1 lg:space-x-2 px-2 lg:px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <span className="text-lg">
                           {selectedLanguage === 'ko' ? '🇰🇷' : '🇺🇸'}
                         </span>
-                        <span className="text-sm font-medium">
+                        <span className="text-sm font-medium hidden lg:inline">
                           {selectedLanguage === 'ko' ? '한국어' : 'English'}
                         </span>
                         <ChevronDown size={16} className="text-gray-500" />
@@ -1015,11 +1025,11 @@ export default function ChatManagementPage() {
                     {/* 번역 버튼 */}
                     <button
                       onClick={translateExistingMessages}
-                      className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 text-sm"
+                      className="px-2 lg:px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 text-sm"
                       title="모든 가이드 메시지 번역"
                     >
                       <Languages size={16} />
-                      <span>번역</span>
+                      <span className="hidden lg:inline">번역</span>
                     </button>
                   </div>
                 </div>
@@ -1027,7 +1037,7 @@ export default function ChatManagementPage() {
             </div>
 
             {/* 메시지 목록 */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-3 lg:space-y-4 bg-gradient-to-b from-transparent to-blue-50/30">
               {messages.map((message) => {
                 const hasTranslation = translatedMessages[message.id]
                 const isTranslating = translating[message.id]
@@ -1039,12 +1049,12 @@ export default function ChatManagementPage() {
                     className={`flex ${message.sender_type === 'admin' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                      className={`max-w-xs lg:max-w-md px-3 lg:px-4 py-2 rounded-lg shadow-sm ${
                         message.sender_type === 'admin'
-                          ? 'bg-blue-600 text-white'
+                          ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
                           : message.sender_type === 'system'
-                          ? 'bg-gray-200 text-gray-700 text-center'
-                          : 'bg-gray-100 text-gray-900'
+                          ? 'bg-gray-200/80 backdrop-blur-sm text-gray-700 text-center'
+                          : 'bg-white/90 backdrop-blur-sm text-gray-900 border border-gray-200/50'
                       }`}
                     >
                       {message.sender_type !== 'system' && (
@@ -1101,7 +1111,7 @@ export default function ChatManagementPage() {
             </div>
 
             {/* 메시지 입력 */}
-            <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0">
+            <div className="bg-white/90 backdrop-blur-sm border-t border-gray-200 p-2 lg:p-4 flex-shrink-0 shadow-lg">
               <div className="flex items-center space-x-2 w-full">
                 <input
                   type="text"
@@ -1109,15 +1119,16 @@ export default function ChatManagementPage() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                   placeholder="메시지를 입력하세요..."
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm lg:text-base"
                   disabled={sending}
                 />
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim() || sending}
-                  className="flex-shrink-0 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-shrink-0 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
                 >
-                  {sending ? '전송 중...' : '전송'}
+                  <span className="hidden lg:inline">{sending ? '전송 중...' : '전송'}</span>
+                  <span className="lg:hidden">{sending ? '...' : '전송'}</span>
                 </button>
               </div>
             </div>
@@ -1132,8 +1143,8 @@ export default function ChatManagementPage() {
         )}
       </div>
 
-       {/* 오른쪽: 투어 정보 */}
-       <div className="w-[28rem] bg-white border-l border-gray-200 overflow-y-auto">
+       {/* 오른쪽: 투어 정보 - 모바일에서는 숨김 */}
+       <div className="hidden lg:block lg:w-[28rem] bg-white/80 backdrop-blur-sm border-l border-gray-200 overflow-y-auto shadow-lg">
         {tourInfo ? (
           <div className="p-4 space-y-4">
             {/* 헤더 */}
@@ -1170,7 +1181,7 @@ export default function ChatManagementPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-600">인원</span>
                   <span className="text-gray-900">
-                    {tourInfo.reservations?.reduce((sum, r) => sum + r.adult_count + r.child_count, 0) || 0}명
+                    {tourInfo.reservations?.reduce((sum, r) => sum + r.adults + r.child + r.infant, 0) || 0}명
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -1212,8 +1223,8 @@ export default function ChatManagementPage() {
                     return <div className="text-gray-500 text-center py-2">픽업 정보 없음</div>
                   }
                   
-                  return schedules.map((schedule, index) => (
-                    <div key={index} className="border-b border-blue-200 pb-2 last:border-b-0">
+                  return schedules.map((schedule, scheduleIndex) => (
+                    <div key={scheduleIndex} className="border-b border-blue-200 pb-2 last:border-b-0">
                       {/* 첫 번째 줄: 시간 | 호텔 */}
                       <div className="flex items-center mb-1">
                         <div className="text-gray-900 font-medium text-sm mr-2">
@@ -1238,7 +1249,7 @@ export default function ChatManagementPage() {
             <div className="bg-green-50 rounded-lg p-3">
               <h4 className="text-sm font-medium text-gray-900 mb-2">배정</h4>
               <div className="space-y-1 text-xs">
-                {tourInfo.reservations?.map((reservation, index) => (
+                {tourInfo.reservations?.map((reservation) => (
                   <div 
                     key={reservation.id} 
                     className="flex justify-between items-center py-1 cursor-pointer hover:bg-green-100 rounded px-2"

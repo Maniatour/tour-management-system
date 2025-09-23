@@ -188,10 +188,7 @@ export default function TourChatRoom({
           pickup_hotel,
           pickup_time,
           total_people,
-          customer_id,
-          customers!inner(
-            name
-          )
+          customer_id
         `)
         .eq('product_id', tour.product_id)
         .eq('tour_date', tour.tour_date)
@@ -204,10 +201,34 @@ export default function TourChatRoom({
         return
       }
 
-      console.log('Reservations for pickup schedule:', reservations)
+      // 고객 정보 별도로 가져오기
+      let customersData: any[] = []
+      if (reservations && reservations.length > 0) {
+        const customerIds = reservations.map(r => r.customer_id).filter(Boolean)
+        if (customerIds.length > 0) {
+          const { data: customers, error: customersError } = await supabase
+            .from('customers')
+            .select('id, name')
+            .in('id', customerIds)
+          
+          if (customersError) {
+            console.error('Error loading customers:', customersError)
+          } else {
+            customersData = customers || []
+          }
+        }
+      }
+
+      // 예약 데이터에 고객 정보 병합
+      const reservationsWithCustomers = reservations?.map(reservation => ({
+        ...reservation,
+        customers: customersData.find(customer => customer.id === reservation.customer_id)
+      })) || []
+
+      console.log('Reservations for pickup schedule:', reservationsWithCustomers)
 
       // 픽업 호텔 정보 별도로 가져오기
-      const pickupHotelIds = [...new Set(reservations.map(r => r.pickup_hotel).filter(Boolean))]
+      const pickupHotelIds = [...new Set(reservationsWithCustomers.map(r => r.pickup_hotel).filter(Boolean))]
       console.log('Pickup hotel IDs:', pickupHotelIds)
       
       let pickupHotels: any[] = []
@@ -227,7 +248,7 @@ export default function TourChatRoom({
       }
 
       // 픽업 스케줄 데이터 생성 (호텔별로 그룹화)
-      const groupedByHotel = reservations.reduce((acc, reservation) => {
+      const groupedByHotel = reservationsWithCustomers.reduce((acc, reservation) => {
         const hotel = pickupHotels.find(h => h.id === reservation.pickup_hotel)
         if (!hotel) return acc
         
@@ -243,7 +264,7 @@ export default function TourChatRoom({
         }
         acc[hotelKey].people += reservation.total_people || 0
         acc[hotelKey].customers.push({
-          name: (reservation as any).customers?.name || 'Unknown Customer',
+          name: reservation.customers?.name || 'Unknown Customer',
           people: reservation.total_people || 0
         })
         return acc
@@ -664,28 +685,28 @@ export default function TourChatRoom({
   }
 
   return (
-    <div className="flex flex-col h-full max-h-screen overflow-hidden">
+    <div className="flex flex-col h-full max-h-screen overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* 채팅방 헤더 */}
-        <div className="p-4 border-b bg-gray-50">
+        <div className="p-2 lg:p-4 border-b bg-white/90 backdrop-blur-sm shadow-sm">
           {!isPublicView && (
           <div className="mb-3">
             <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <MessageCircle size={20} className="text-blue-600" />
-              <h3 className="font-semibold text-gray-900 truncate">{room.room_name}</h3>
+            <div className="flex items-center space-x-2 lg:space-x-3 flex-1 min-w-0">
+              <MessageCircle size={18} className="text-blue-600 lg:w-5 lg:h-5" />
+              <h3 className="font-semibold text-gray-900 truncate text-sm lg:text-base">{room.room_name}</h3>
               </div>
               
               {/* 관리자용 언어 선택 */}
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1 lg:space-x-2">
                 <div className="relative">
                   <button
                     onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                    className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex items-center space-x-1 lg:space-x-2 px-2 lg:px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <span className="text-lg">
                       {selectedLanguage === 'ko' ? '🇰🇷' : '🇺🇸'}
                     </span>
-                    <span className="text-sm font-medium">
+                    <span className="text-sm font-medium hidden lg:inline">
                       {selectedLanguage === 'ko' ? '한국어' : 'English'}
                     </span>
                     <ChevronDown size={16} className="text-gray-500" />
@@ -720,11 +741,11 @@ export default function TourChatRoom({
                       }
                     }
                   }}
-                  className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 text-sm"
+                  className="px-2 lg:px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 text-sm"
                   title="가이드 메시지 번역"
                 >
                   <Languages size={16} />
-                  <span>번역</span>
+                  <span className="hidden lg:inline">번역</span>
                 </button>
               </div>
               
@@ -849,8 +870,8 @@ export default function TourChatRoom({
           </div>
         )}
         
-          <div className="mt-2 flex items-center gap-2 justify-between">
-            <div className="flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-1 lg:gap-2 justify-between">
+            <div className="flex items-center gap-1 lg:gap-2 flex-wrap">
               {/* 방 활성/비활성 스위치 - 가장 왼쪽, 관리자 전용 */}
               {!isPublicView && (
                 <button
@@ -871,62 +892,62 @@ export default function TourChatRoom({
               )}
               <button
               onClick={() => setIsAnnouncementsOpen(true)}
-              className="px-2.5 py-1.5 text-xs bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200 flex items-center justify-center"
+              className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200 flex items-center justify-center"
               title="공지사항"
               aria-label="공지사항"
             >
-              <Megaphone size={14} />
+              <Megaphone size={12} className="lg:w-3.5 lg:h-3.5" />
             </button>
             <button
               onClick={() => setShowPickupScheduleModal(true)}
-              className="px-2.5 py-1.5 text-xs bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200 flex items-center justify-center"
+              className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200 flex items-center justify-center"
               title="픽업 스케쥴"
               aria-label="픽업 스케쥴"
             >
-              <Calendar size={14} />
+              <Calendar size={12} className="lg:w-3.5 lg:h-3.5" />
             </button>
             <a
               href="#options"
-              className="px-2.5 py-1.5 text-xs bg-emerald-100 text-emerald-800 rounded border border-emerald-200 hover:bg-emerald-200 flex items-center justify-center"
+              className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-emerald-100 text-emerald-800 rounded border border-emerald-200 hover:bg-emerald-200 flex items-center justify-center"
               title="옵션 상품"
               aria-label="옵션 상품"
             >
-              <Gift size={14} />
+              <Gift size={12} className="lg:w-3.5 lg:h-3.5" />
             </a>
             {isPublicView && (
               <a
                 href="#tour-photos"
-                className="px-2.5 py-1.5 text-xs bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200 flex items-center justify-center"
+                className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200 flex items-center justify-center"
                 title="투어 사진"
                 aria-label="투어 사진"
               >
-                <ImageIcon size={14} />
+                <ImageIcon size={12} className="lg:w-3.5 lg:h-3.5" />
               </a>
             )}
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1 lg:space-x-2">
               <button
                 onClick={copyRoomLink}
-                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+                className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
                 title="링크 복사"
                 aria-label="링크 복사"
               >
-                <Copy size={16} />
+                <Copy size={14} className="lg:w-4 lg:h-4" />
               </button>
               <button
                 onClick={shareRoomLink}
-                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+                className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
                 title="공유"
                 aria-label="공유"
               >
-                <Share2 size={16} />
+                <Share2 size={14} className="lg:w-4 lg:h-4" />
               </button>
             </div>
           </div>
         </div>
 
       {/* 메시지 목록 */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+      <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50/20">
         {messages.map((message) => {
           const needsTrans = needsTranslation(message)
           const hasTranslation = translatedMessages[message.id]
@@ -938,10 +959,12 @@ export default function TourChatRoom({
               className={`flex ${message.sender_type === 'guide' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg border ${
+                className={`max-w-xs lg:max-w-md px-3 lg:px-4 py-2 rounded-lg border shadow-sm ${
                   message.sender_type === 'system'
-                    ? 'bg-gray-200 text-gray-700 text-center'
-                    : getUserColor(message.sender_name)
+                    ? 'bg-gray-200/80 backdrop-blur-sm text-gray-700 text-center'
+                    : message.sender_type === 'guide'
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
+                    : 'bg-white/90 backdrop-blur-sm text-gray-900 border-gray-200/50'
                 }`}
               >
                 {message.sender_type !== 'system' && (
@@ -1034,7 +1057,7 @@ export default function TourChatRoom({
 
       {/* 메시지 입력 */}
       {room.is_active && (
-        <div className={`${isPublicView ? 'p-4' : 'p-4 border-t bg-gray-50'} flex-shrink-0`}>
+        <div className={`${isPublicView ? 'p-2 lg:p-4' : 'p-2 lg:p-4 border-t bg-white/90 backdrop-blur-sm shadow-lg'} flex-shrink-0`}>
           <div className="flex items-center space-x-2 w-full">
             <input
               type="text"
@@ -1042,17 +1065,18 @@ export default function TourChatRoom({
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Type your message..."
-              className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm lg:text-base"
               disabled={sending}
             />
             
             <button
               onClick={sendMessage}
               disabled={!newMessage.trim() || sending}
-              className="flex-shrink-0 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="flex-shrink-0 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 lg:space-x-2 text-sm lg:text-base"
             >
-              <Send size={16} />
-              <span className="hidden sm:inline">{sending ? 'Sending...' : 'Send'}</span>
+              <Send size={14} className="lg:w-4 lg:h-4" />
+              <span className="hidden lg:inline">{sending ? 'Sending...' : 'Send'}</span>
+              <span className="lg:hidden">{sending ? '...' : 'Send'}</span>
             </button>
           </div>
         </div>

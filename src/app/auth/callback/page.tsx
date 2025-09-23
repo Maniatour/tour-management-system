@@ -2,54 +2,52 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
 
   useEffect(() => {
-    console.log('Auth callback: Simple redirect to admin')
-    console.log('Auth callback: Current pathname:', window.location.pathname)
-    
-    // URL에서 locale 추출
-    const currentPath = window.location.pathname
-    let locale = 'ko' // 기본값
-    if (currentPath.startsWith('/ko/')) {
-      locale = 'ko'
-    } else if (currentPath.startsWith('/en/')) {
-      locale = 'en'
-    } else if (currentPath.startsWith('/ja/')) {
-      locale = 'ja'
-    }
-    
-    console.log('Auth callback: Detected locale:', locale)
-    
-    // URL 해시 확인
-    const hash = window.location.hash
-    console.log('Auth callback: URL hash present:', !!hash)
-    
-    if (hash && hash.includes('access_token')) {
-      console.log('Auth callback: Found tokens, storing in localStorage and redirecting to admin')
-      
-      // 토큰을 localStorage에 저장
-      const params = new URLSearchParams(hash.substring(1))
-      const accessToken = params.get('access_token')
-      const refreshToken = params.get('refresh_token')
-      
-      if (accessToken) {
-        localStorage.setItem('auth_tokens', JSON.stringify({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-          timestamp: Date.now()
-        }))
-        console.log('Auth callback: Tokens stored in localStorage')
+    const handleAuthCallback = async () => {
+      try {
+        console.log('Auth callback: Handling OAuth callback')
+        
+        // URL에서 locale 추출
+        const currentPath = window.location.pathname
+        let locale = 'ko' // 기본값
+        if (currentPath.startsWith('/ko/')) {
+          locale = 'ko'
+        } else if (currentPath.startsWith('/en/')) {
+          locale = 'en'
+        } else if (currentPath.startsWith('/ja/')) {
+          locale = 'ja'
+        }
+        
+        console.log('Auth callback: Detected locale:', locale)
+        
+        // Supabase가 자동으로 URL의 토큰을 처리하도록 함
+        const { data, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('Auth callback: Error getting session:', error)
+          router.replace(`/${locale}/auth?error=session_error`)
+          return
+        }
+        
+        if (data.session?.user) {
+          console.log('Auth callback: User authenticated:', data.session.user.email)
+          router.replace(`/${locale}/admin`)
+        } else {
+          console.log('Auth callback: No session found')
+          router.replace(`/${locale}/auth?error=no_session`)
+        }
+      } catch (error) {
+        console.error('Auth callback: Unexpected error:', error)
+        router.replace(`/ko/auth?error=unexpected_error`)
       }
-      
-      // 관리자 페이지로 리다이렉트
-      router.replace(`/${locale}/admin`)
-    } else {
-      console.log('Auth callback: No tokens found, redirecting to auth')
-      router.replace(`/${locale}/auth?error=no_tokens`)
     }
+
+    handleAuthCallback()
   }, [router])
 
   return (

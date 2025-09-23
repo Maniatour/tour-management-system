@@ -323,7 +323,7 @@ export default function AdminCustomers() {
   }, [])
 
   // 검색된 고객 목록
-  const filteredCustomers = customers.filter(customer => {
+  const filteredCustomers = (customers || []).filter(customer => {
     // 상태 필터 적용
     if (statusFilter === 'active' && customer.status !== 'active') return false
     if (statusFilter === 'inactive' && customer.status === 'active') return false

@@ -14,6 +14,7 @@ interface ExtendedTour extends Tour {
   unassigned_people?: number;
   guide_name?: string | null;
   assistant_name?: string | null;
+  vehicle_number?: string | null;
 }
 
 interface TourCalendarProps {
@@ -25,6 +26,8 @@ interface TourCalendarProps {
 const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [] }: TourCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [productMetaById, setProductMetaById] = useState<{[id: string]: { name: string; sub_category: string }}>({})
+  const [hoveredTour, setHoveredTour] = useState<ExtendedTour | null>(null)
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
 
   // 현재 월의 첫 번째 날 계산 (메모이제이션)
   const firstDayOfMonth = useMemo(() => {
@@ -111,17 +114,6 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     return colors[Math.abs(hash) % colors.length]
   }, [])
 
-  // 예약 상태에 따른 색상 반환 (메모이제이션)
-  const getTourStatusColor = useCallback((status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-yellow-500'
-      case 'confirmed': return 'bg-green-500'
-      case 'completed': return 'bg-blue-500'
-      case 'cancelled': return 'bg-red-500'
-      case 'recruiting': return 'bg-purple-500'
-      default: return 'bg-gray-500'
-    }
-  }, [])
 
   const monthNames = [
     '1월', '2월', '3월', '4월', '5월', '6월',
@@ -130,17 +122,24 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
 
   const dayNames = ['일', '월', '화', '수', '목', '금', '토']
 
+  // 마우스 이벤트 핸들러
+  const handleMouseEnter = useCallback((tour: ExtendedTour, event: React.MouseEvent) => {
+    setHoveredTour(tour)
+    const rect = event.currentTarget.getBoundingClientRect()
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop
+    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft
+    
+    setTooltipPosition({
+      x: rect.left + scrollLeft + rect.width / 2,
+      y: rect.top + scrollTop - 10
+    })
+  }, [])
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredTour(null)
+  }, [])
+
   // 성능 최적화를 위한 메모이제이션된 사전 계산 (예약 4500+건 고려)
-  // 1) 예약 ID -> 인원 수 매핑
-  const reservationIdToPeople = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const res of allReservations) {
-      if (!res || !res.id) continue
-      const idStr = String(res.id).trim()
-      map.set(idStr, res.total_people || 0)
-    }
-    return map
-  }, [allReservations])
 
   // 2) (product_id, tour_date) -> 해당일 같은 투어의 총 인원 합계 (상태 무관)
   const productDateKeyToTotalPeopleAll = useMemo(() => {
@@ -366,12 +365,13 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                     <div
                       key={uniqueKey}
                       onClick={() => onTourClick(tour)}
+                      onMouseEnter={(e) => handleMouseEnter(tour, e)}
+                      onMouseLeave={handleMouseLeave}
                       className={`text-[10px] sm:text-xs px-0.5 sm:px-1 py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
                         getProductColor(tour.product_id)
                       } ${
                         isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
                       }`}
-                      title={`${tour.product_name || tour.product_id} | 배정: ${assignedPeople}명 / 총: ${totalPeopleFiltered}명 (${othersPeople}명)${isPrivateTour ? '\n단독투어' : ''}`}
                     >
                       <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
                         <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
@@ -419,6 +419,64 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
           </div>
         </div>
       </div>
+
+      {/* 호버 툴팁 */}
+      {hoveredTour && (
+        <div
+          className="absolute z-50 bg-white border border-gray-300 rounded-lg shadow-xl p-3 max-w-xs pointer-events-none"
+          style={{
+            left: `${tooltipPosition.x}px`,
+            top: `${tooltipPosition.y}px`,
+            transform: 'translateX(-50%) translateY(-100%)'
+          }}
+        >
+          <div className="text-sm">
+            <div className="font-semibold text-gray-900 mb-2 border-b border-gray-200 pb-1">
+              {hoveredTour.product_name || hoveredTour.product_id}
+            </div>
+            
+            {/* 인원 정보 */}
+            <div className="mb-2 text-xs text-gray-600">
+              배정: {hoveredTour.assigned_people || 0}명 / 총: {hoveredTour.total_people || 0}명
+              {hoveredTour.is_private_tour && <span className="ml-1 text-purple-600">(단독투어)</span>}
+            </div>
+            
+            <div className="space-y-1.5">
+              {hoveredTour.guide_name && (
+                <div className="flex items-center">
+                  <span className="text-gray-600 w-20 text-xs">가이드:</span>
+                  <span className="text-gray-900 font-medium text-sm">{hoveredTour.guide_name}</span>
+                </div>
+              )}
+              
+              {hoveredTour.assistant_name && (
+                <div className="flex items-center">
+                  <span className="text-gray-600 w-20 text-xs">어시스턴트:</span>
+                  <span className="text-gray-900 font-medium text-sm">{hoveredTour.assistant_name}</span>
+                </div>
+              )}
+              
+              {hoveredTour.vehicle_number && (
+                <div className="flex items-center">
+                  <span className="text-gray-600 w-20 text-xs">차량:</span>
+                  <span className="text-gray-900 font-medium text-sm">{hoveredTour.vehicle_number}</span>
+                </div>
+              )}
+              
+              {!hoveredTour.guide_name && !hoveredTour.assistant_name && !hoveredTour.vehicle_number && (
+                <div className="text-gray-500 text-xs italic">
+                  배정된 가이드, 어시스턴트, 차량 정보가 없습니다.
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* 툴팁 화살표 */}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2">
+            <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-300"></div>
+          </div>
+        </div>
+      )}
     </div>
   )
 })

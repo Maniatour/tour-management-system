@@ -5,7 +5,7 @@ import { MessageCircle, Plus, Settings, Pin, Search, X, Paperclip, Image, File, 
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
-import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
+import { translateText, detectLanguage } from '@/lib/translation'
 
 interface TeamChatRoom {
   id: string
@@ -94,6 +94,30 @@ export default function TeamChatPage() {
     participant_emails: [] as string[]
   })
   const [selectedPositionTab, setSelectedPositionTab] = useState<string>('all')
+  const [totalUnreadCount, setTotalUnreadCount] = useState(0)
+
+  // 안읽은 메시지 수 조회 함수
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        return
+      }
+
+      const response = await fetch('/api/team-chat/unread-count', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        setTotalUnreadCount(result.unreadCount || 0)
+      }
+    } catch (error) {
+      console.error('안읽은 메시지 수 조회 오류:', error)
+    }
+  }, [])
 
   // 팀 채팅방 데이터 로딩
   const { data: chatRoomsData, loading, refetch: refetchChatRooms } = useOptimizedData<TeamChatRoom[]>({
@@ -180,6 +204,76 @@ export default function TeamChatPage() {
     dependencies: [user?.email]
   })
 
+  // 메시지 로딩
+  const loadMessages = useCallback(async (roomId: string) => {
+    if (!roomId) return
+
+    try {
+      // Supabase 세션에서 토큰 가져오기
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        console.error('세션이 없습니다')
+        return
+      }
+
+      const response = await fetch(`/api/team-chat/messages?room_id=${roomId}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+      
+      const result = await response.json()
+      console.log('메시지 조회 응답:', result)
+
+      if (result.error) {
+        console.error('메시지 로딩 오류:', result.error)
+        return
+      }
+
+      setMessages(result.messages || [])
+    } catch (error) {
+      console.error('메시지 로딩 중 예외 발생:', error)
+    }
+  }, [])
+
+  // 채팅방 데이터 로딩 후 안읽은 메시지 수 조회
+  useEffect(() => {
+    if (chatRoomsData && user?.email) {
+      fetchUnreadCount()
+    }
+  }, [chatRoomsData, user?.email, fetchUnreadCount])
+
+  // 실시간 메시지 수신을 위한 Supabase 구독
+  useEffect(() => {
+    if (!user?.email) return
+
+    const channel = supabase
+      .channel('team-chat-messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'team_chat_messages'
+        },
+        (payload) => {
+          console.log('새 메시지 수신:', payload)
+          // 안읽은 메시지 수 업데이트
+          fetchUnreadCount()
+          
+          // 현재 선택된 채팅방의 메시지 목록도 업데이트
+          if (selectedRoom && payload.new.room_id === selectedRoom.id) {
+            loadMessages(selectedRoom.id)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [user?.email, selectedRoom, fetchUnreadCount, loadMessages])
+
   const chatRooms = chatRoomsData || []
 
   // 팀원 목록 로딩
@@ -230,38 +324,6 @@ export default function TeamChatPage() {
   const filteredTeamMembers = selectedPositionTab === 'all' 
     ? teamMembers || []
     : groupedTeamMembers[selectedPositionTab] || []
-
-  // 메시지 로딩
-  const loadMessages = useCallback(async (roomId: string) => {
-    if (!roomId) return
-
-    try {
-      // Supabase 세션에서 토큰 가져오기
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        console.error('세션이 없습니다')
-        return
-      }
-
-      const response = await fetch(`/api/team-chat/messages?room_id=${roomId}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
-      
-      const result = await response.json()
-      console.log('메시지 조회 응답:', result)
-
-      if (result.error) {
-        console.error('메시지 로딩 오류:', result.error)
-        return
-      }
-
-      setMessages(result.messages || [])
-    } catch (error) {
-      console.error('메시지 로딩 중 예외 발생:', error)
-    }
-  }, [])
 
   // 메시지 새로고침
   const refreshMessages = useCallback(async () => {
@@ -327,6 +389,9 @@ export default function TeamChatPage() {
       setReplyingTo(null)
       // 메시지 목록만 새로고침 (전체 페이지 새로고침 방지)
       await loadMessages(selectedRoom.id)
+      
+      // 안읽은 메시지 수 업데이트
+      await fetchUnreadCount()
     } catch (error) {
       console.error('메시지 전송 오류:', error)
     } finally {
@@ -334,30 +399,87 @@ export default function TeamChatPage() {
     }
   }
 
+  // 메시지 읽음 처리 함수
+  const markMessagesAsRead = useCallback(async (roomId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token || !user?.email) {
+        return
+      }
+
+      // 해당 채팅방의 모든 메시지 조회 (자신이 보낸 메시지 제외)
+      const { data: allMessages, error: messagesError } = await supabase
+        .from('team_chat_messages')
+        .select('id')
+        .eq('room_id', roomId)
+        .neq('sender_email', user.email)
+
+      if (messagesError) {
+        console.error('메시지 조회 오류:', messagesError)
+        return
+      }
+
+      if (!allMessages || allMessages.length === 0) {
+        return
+      }
+
+      // 각 메시지에 대해 읽음 상태 확인
+      const messageIds = allMessages.map(msg => msg.id)
+      
+      const { data: readStatuses, error: readError } = await supabase
+        .from('team_chat_read_status')
+        .select('message_id')
+        .in('message_id', messageIds)
+        .eq('reader_email', user.email)
+
+      if (readError) {
+        console.error('읽음 상태 조회 오류:', readError)
+        return
+      }
+
+      // 읽은 메시지 ID 목록
+      const readMessageIds = new Set(readStatuses?.map(status => status.message_id) || [])
+      
+      // 읽지 않은 메시지들만 읽음 처리
+      const unreadMessages = allMessages.filter(msg => !readMessageIds.has(msg.id))
+
+      if (unreadMessages.length > 0) {
+        // 각 읽지 않은 메시지를 읽음 처리
+        for (const message of unreadMessages) {
+          try {
+            await fetch('/api/team-chat/messages', {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+              },
+              body: JSON.stringify({
+                action: 'mark_read',
+                room_id: roomId,
+                message_id: message.id,
+                reader_email: user.email
+              })
+            })
+          } catch (error) {
+            console.error('메시지 읽음 처리 오류:', error)
+          }
+        }
+
+        // 안읽은 메시지 수 다시 조회
+        await fetchUnreadCount()
+      }
+    } catch (error) {
+      console.error('메시지 읽음 처리 중 오류:', error)
+    }
+  }, [user?.email, fetchUnreadCount])
+
   // 채팅방 선택
   const selectRoom = async (room: TeamChatRoom) => {
     setSelectedRoom(room)
     await loadMessages(room.id)
     
-    // 읽음 상태 업데이트
-    if (messages.length > 0) {
-      const unreadMessages = messages.filter(msg => 
-        msg.sender_email !== user?.email && 
-        !msg.read_by.some(read => read.reader_email === user?.email)
-      )
-
-      if (unreadMessages.length > 0) {
-        const readStatusData = unreadMessages.map(msg => ({
-          message_id: msg.id,
-          reader_email: user?.email || ''
-        }))
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any)
-          .from('team_chat_read_status')
-          .insert(readStatusData)
-      }
-    }
+    // 메시지 읽음 처리
+    await markMessagesAsRead(room.id)
   }
 
   // 참여자 로드
@@ -742,22 +864,6 @@ export default function TeamChatPage() {
     })
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffTime = now.getTime() - date.getTime()
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
-
-    if (diffDays === 0) {
-      return '오늘'
-    } else if (diffDays === 1) {
-      return '어제'
-    } else if (diffDays < 7) {
-      return `${diffDays}일 전`
-    } else {
-      return date.toLocaleDateString('ko-KR')
-    }
-  }
 
   // 채팅방 생성
   const createRoom = async () => {
@@ -812,9 +918,9 @@ export default function TeamChatPage() {
   }
 
   return (
-    <div className="flex h-[90vh] bg-gray-50">
-      {/* 왼쪽: 채팅방 목록 */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+    <div className="flex h-[90vh] bg-gradient-to-br from-green-50 via-white to-blue-50">
+      {/* 왼쪽: 채팅방 목록 - 모바일에서는 숨김/표시 토글 */}
+      <div className={`${selectedRoom ? 'hidden lg:flex' : 'flex'} lg:w-80 w-full bg-white/80 backdrop-blur-sm border-r border-gray-200 flex-col shadow-lg`}>
         {/* 헤더 */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
@@ -945,18 +1051,28 @@ export default function TeamChatPage() {
         </div>
       </div>
 
-      {/* 오른쪽: 채팅 영역 */}
-      <div className="flex-1 flex flex-col">
+      {/* 오른쪽: 채팅 영역 - 모바일에서는 전체 화면 */}
+      <div className={`${selectedRoom ? 'flex' : 'hidden lg:flex'} flex-1 flex-col`}>
         {selectedRoom ? (
           <>
             {/* 채팅방 헤더 */}
-            <div className="bg-white border-b border-gray-200 p-4">
+            <div className="bg-white/90 backdrop-blur-sm border-b border-gray-200 p-4 shadow-sm">
               <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">
+                <div className="flex-1 min-w-0">
+                  {/* 모바일에서 뒤로가기 버튼 추가 */}
+                  <div className="flex items-center space-x-2 mb-2 lg:hidden">
+                    <button
+                      onClick={() => setSelectedRoom(null)}
+                      className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+                      title="채팅방 목록으로 돌아가기"
+                    >
+                      ←
+                    </button>
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-900 truncate">
                     {selectedRoom.room_name}
                   </h2>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-500 truncate">
                     {selectedRoom.description || `${selectedRoom.participants_count}명 참여`}
                   </p>
                 </div>
@@ -986,7 +1102,7 @@ export default function TeamChatPage() {
             </div>
 
             {/* 메시지 목록 */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-3 lg:space-y-4 bg-gradient-to-b from-transparent to-green-50/30">
               {messages.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <MessageCircle size={48} className="mx-auto mb-2 text-gray-300" />
@@ -1000,12 +1116,12 @@ export default function TeamChatPage() {
                     className={`flex ${message.sender_email === user?.email ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`group max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                      className={`group max-w-xs lg:max-w-md px-3 lg:px-4 py-2 rounded-lg shadow-sm ${
                         message.sender_email === user?.email
-                          ? 'bg-blue-600 text-white'
+                          ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
                           : message.message_type === 'system'
-                          ? 'bg-gray-200 text-gray-700 text-center'
-                          : 'bg-gray-100 text-gray-900'
+                          ? 'bg-gray-200/80 backdrop-blur-sm text-gray-700 text-center'
+                          : 'bg-white/90 backdrop-blur-sm text-gray-900 border border-gray-200/50'
                       }`}
                     >
                       {message.reply_to_message && (
@@ -1058,7 +1174,7 @@ export default function TeamChatPage() {
                                 <div className="mt-2">
                                   <img
                                     src={message.file_url}
-                                    alt={message.file_name}
+                                    alt={message.file_name || 'Uploaded image'}
                                     className="max-w-full h-auto max-h-64 rounded"
                                   />
                                 </div>
@@ -1136,7 +1252,7 @@ export default function TeamChatPage() {
             )}
 
             {/* 메시지 입력 */}
-            <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0">
+            <div className="bg-white/90 backdrop-blur-sm border-t border-gray-200 p-2 lg:p-4 flex-shrink-0 shadow-lg">
               <div className="flex items-center space-x-2 w-full">
                 <input
                   type="text"
@@ -1144,23 +1260,24 @@ export default function TeamChatPage() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                   placeholder="메시지를 입력하세요..."
-                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm lg:text-base"
                   disabled={sending || uploading}
                 />
                 <button
                   onClick={() => setShowFileUpload(true)}
                   disabled={sending || uploading}
-                  className="px-3 py-2 text-gray-600 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-2 lg:px-3 py-2 text-gray-600 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="파일 첨부"
                 >
-                  <Paperclip size={20} />
+                  <Paperclip size={18} className="lg:w-5 lg:h-5" />
                 </button>
                 <button
                   onClick={sendMessage}
                   disabled={!newMessage.trim() || sending || uploading}
-                  className="flex-shrink-0 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-shrink-0 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
                 >
-                  {sending ? '전송 중...' : uploading ? '업로드 중...' : '전송'}
+                  <span className="hidden lg:inline">{sending ? '전송 중...' : uploading ? '업로드 중...' : '전송'}</span>
+                  <span className="lg:hidden">{sending ? '...' : uploading ? '...' : '전송'}</span>
                 </button>
               </div>
             </div>
