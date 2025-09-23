@@ -1025,7 +1025,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   return (
     <div className="space-y-6">
       {/* 인증 체크 완전 제거 - 항상 페이지 표시 */}
-        <>
       {/* 페이지 헤더 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -1278,6 +1277,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             </div>
           </div>
         </div>
+      )}
     </div>
   )
 }
