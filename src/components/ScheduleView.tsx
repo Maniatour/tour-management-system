@@ -73,7 +73,8 @@ export default function ScheduleView() {
 
   // 배치 저장용 변경 대기 상태
   const [pendingChanges, setPendingChanges] = useState<{ [tourId: string]: Partial<Tour> }>({})
-  const pendingCount = useMemo(() => Object.keys(pendingChanges).length, [pendingChanges])
+  const [pendingOffScheduleChanges, setPendingOffScheduleChanges] = useState<{ [key: string]: { team_email: string; off_date: string; reason: string; status: string; action: 'approve' | 'delete' } }>({})
+  const pendingCount = useMemo(() => Object.keys(pendingChanges).length + Object.keys(pendingOffScheduleChanges).length, [pendingChanges, pendingOffScheduleChanges])
 
   // 통합 스크롤 컨테이너는 하나의 스크롤로 동기화됨
 
@@ -202,16 +203,26 @@ export default function ScheduleView() {
     return dateString === todayString
   }
 
-  // Off 날짜 확인 함수
+  // Off 날짜 확인 함수 (pending 변경사항 포함)
   const isOffDate = useCallback((teamMemberId: string, dateString: string) => {
     // teamMemberId를 team_email로 변환
     const teamMember = teamMembers.find(member => member.email === teamMemberId)
     if (!teamMember) return false
     
-    return offSchedules.some(off => 
+    // 기존 오프 스케줄 확인
+    const existingOffSchedule = offSchedules.some(off => 
       off.team_email === teamMember.email && off.off_date === dateString
     )
-  }, [teamMembers, offSchedules])
+    
+    // pending 변경사항 확인 (삭제 예정인 경우 제외)
+    const key = `${teamMember.email}_${dateString}`
+    const pendingChange = pendingOffScheduleChanges[key]
+    const isPendingDelete = pendingChange?.action === 'delete'
+    const isPendingApprove = pendingChange?.action === 'approve'
+    
+    // 기존 오프 스케줄이 있고 삭제 예정이 아니거나, 승인 예정인 경우
+    return (existingOffSchedule && !isPendingDelete) || isPendingApprove
+  }, [teamMembers, offSchedules, pendingOffScheduleChanges])
 
   // 상품 ID에 따른 멀티데이 투어 일수 계산
   const getMultiDayTourDays = (productId: string): number => {
@@ -406,6 +417,23 @@ export default function ScheduleView() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // 페이지 이탈 시 저장되지 않은 변경사항이 있으면 경고
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (pendingCount > 0) {
+        e.preventDefault()
+        e.returnValue = '저장되지 않은 변경사항이 있습니다. 페이지를 벗어나시겠습니까?'
+        return '저장되지 않은 변경사항이 있습니다. 페이지를 벗어나시겠습니까?'
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [pendingCount])
 
   // 상품별 색상 초기화 (products가 변경될 때만)
   useEffect(() => {
@@ -776,59 +804,30 @@ export default function ScheduleView() {
 
 
   // 오프 스케줄 삭제 (더블클릭)
-  const handleOffScheduleDelete = async (offSchedule: { team_email: string; off_date: string; reason: string }) => {
-    try {
-      // 오프 스케줄 삭제
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('off_schedules' as any)
-        .delete()
-        .eq('team_email', offSchedule.team_email)
-        .eq('off_date', offSchedule.off_date)
-
-      if (error) {
-        console.error('Error deleting off schedule:', error)
-        showMessage('삭제 실패', '오프 스케줄 삭제에 실패했습니다.', 'error')
-        return
+  // 오프 스케줄 삭제 (배치 저장용)
+  const handleOffScheduleDelete = (offSchedule: { team_email: string; off_date: string; reason: string; status: string }) => {
+    const key = `${offSchedule.team_email}_${offSchedule.off_date}`
+    setPendingOffScheduleChanges(prev => ({
+      ...prev,
+      [key]: {
+        ...offSchedule,
+        action: 'delete'
       }
-
-      // 성공 시 데이터 새로고침
-      await fetchData()
-      showMessage('삭제 완료', '오프 스케줄이 삭제되었습니다.', 'success')
-      
-    } catch (error) {
-      console.error('Error deleting off schedule:', error)
-      showMessage('오류 발생', '오프 스케줄 삭제 중 오류가 발생했습니다.', 'error')
-    }
+    }))
+    showMessage('삭제 대기', '오프 스케줄 삭제가 대기 목록에 추가되었습니다. 저장 버튼을 눌러 변경사항을 저장하세요.', 'success')
   }
 
-  // 오프 스케줄 승인
-  const handleOffScheduleApprove = async (offSchedule: { team_email: string; off_date: string; reason: string; status: string }) => {
-    try {
-      // 오프 스케줄 상태를 approved로 업데이트
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .from('off_schedules' as any)
-        .update({ status: 'approved' })
-        .eq('team_email', offSchedule.team_email)
-        .eq('off_date', offSchedule.off_date)
-
-      if (error) {
-        console.error('Error approving off schedule:', error)
-        showMessage('승인 실패', '오프 스케줄 승인에 실패했습니다.', 'error')
-        return
+  // 오프 스케줄 승인 (배치 저장용)
+  const handleOffScheduleApprove = (offSchedule: { team_email: string; off_date: string; reason: string; status: string }) => {
+    const key = `${offSchedule.team_email}_${offSchedule.off_date}`
+    setPendingOffScheduleChanges(prev => ({
+      ...prev,
+      [key]: {
+        ...offSchedule,
+        action: 'approve'
       }
-
-      // 성공 시 데이터 새로고침
-      await fetchData()
-      showMessage('승인 완료', '오프 스케줄이 승인되었습니다.', 'success')
-      
-    } catch (error) {
-      console.error('Error approving off schedule:', error)
-      showMessage('오류 발생', '오프 스케줄 승인 중 오류가 발생했습니다.', 'error')
-    }
+    }))
+    showMessage('승인 대기', '오프 스케줄 승인이 대기 목록에 추가되었습니다. 저장 버튼을 눌러 변경사항을 저장하세요.', 'success')
   }
 
   // 오프 스케줄 생성
@@ -1231,10 +1230,11 @@ export default function ScheduleView() {
             )}
             <button
               onClick={async () => {
-                // 일괄 저장: pendingChanges를 순회하며 업데이트
+                // 일괄 저장: pendingChanges와 pendingOffScheduleChanges를 순회하며 업데이트
                 try {
-                  const entries = Object.entries(pendingChanges)
-                  for (const [tourId, updateData] of entries) {
+                  // 투어 변경사항 저장
+                  const tourEntries = Object.entries(pendingChanges)
+                  for (const [tourId, updateData] of tourEntries) {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const { error } = await (supabase as any)
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1248,7 +1248,44 @@ export default function ScheduleView() {
                       return
                     }
                   }
+
+                  // 오프 스케줄 변경사항 저장
+                  const offScheduleEntries = Object.entries(pendingOffScheduleChanges)
+                  for (const [, change] of offScheduleEntries) {
+                    if (change.action === 'approve') {
+                      // 오프 스케줄 승인
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const { error } = await (supabase as any)
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        .from('off_schedules' as any)
+                        .update({ status: 'approved' })
+                        .eq('team_email', change.team_email)
+                        .eq('off_date', change.off_date)
+                      if (error) {
+                        console.error('Off schedule approve error:', error)
+                        showMessage('저장 실패', '오프 스케줄 승인에 실패했습니다.', 'error')
+                        return
+                      }
+                    } else if (change.action === 'delete') {
+                      // 오프 스케줄 삭제
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const { error } = await (supabase as any)
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        .from('off_schedules' as any)
+                        .delete()
+                        .eq('team_email', change.team_email)
+                        .eq('off_date', change.off_date)
+                      if (error) {
+                        console.error('Off schedule delete error:', error)
+                        showMessage('저장 실패', '오프 스케줄 삭제에 실패했습니다.', 'error')
+                        return
+                      }
+                    }
+                  }
+
+                  // 모든 변경사항 초기화
                   setPendingChanges({})
+                  setPendingOffScheduleChanges({})
                   await fetchData()
                   await fetchUnassignedTours()
                   showMessage('저장 완료', '변경사항이 저장되었습니다.', 'success')
@@ -1265,6 +1302,7 @@ export default function ScheduleView() {
             <button
               onClick={async () => {
                 setPendingChanges({})
+                setPendingOffScheduleChanges({})
                 await fetchData()
                 await fetchUnassignedTours()
               }}
@@ -1655,14 +1693,24 @@ export default function ScheduleView() {
                                 }}
                                 >
                                   {/* Off 날짜 표시 */}
-                                  {isOffDate(teamMemberId, dateString) ? (
+                                  {isOffDate(teamMemberId, dateString) && !(() => {
+                                    const teamMember = teamMembers.find(member => member.email === teamMemberId)
+                                    const key = `${teamMember?.email}_${dateString}`
+                                    const pendingChange = pendingOffScheduleChanges[key]
+                                    return pendingChange?.action === 'delete'
+                                  })() ? (
                                     (() => {
                                       const teamMember = teamMembers.find(member => member.email === teamMemberId)
                                       const offSchedule = teamMember ? offSchedules.find(off => 
                                         off.team_email === teamMember.email && off.off_date === dateString
                                       ) : null
-                                      const isPending = offSchedule?.status === 'pending'
-                                      const isApproved = offSchedule?.status === 'approved'
+                                      
+                                      // pending 변경사항 확인
+                                      const key = `${teamMember?.email}_${dateString}`
+                                      const pendingChange = pendingOffScheduleChanges[key]
+                                      
+                                      const isPending = offSchedule?.status === 'pending' || pendingChange?.action === 'approve'
+                                      const isApproved = offSchedule?.status === 'approved' && !pendingChange?.action
                                       
                                       return (
                                         <div 
@@ -1887,14 +1935,24 @@ export default function ScheduleView() {
                                 ) : (
                                   <div className="text-gray-300 text-center py-1 text-xs">
                                     {/* Off 날짜 표시 */}
-                                    {isOffDate(teamMemberId, dateString) ? (
+                                    {isOffDate(teamMemberId, dateString) && !(() => {
+                                      const teamMember = teamMembers.find(member => member.email === teamMemberId)
+                                      const key = `${teamMember?.email}_${dateString}`
+                                      const pendingChange = pendingOffScheduleChanges[key]
+                                      return pendingChange?.action === 'delete'
+                                    })() ? (
                                       (() => {
                                         const teamMember = teamMembers.find(member => member.email === teamMemberId)
                                         const offSchedule = teamMember ? offSchedules.find(off => 
                                           off.team_email === teamMember.email && off.off_date === dateString
                                         ) : null
-                                        const isPending = offSchedule?.status === 'pending'
-                                        const isApproved = offSchedule?.status === 'approved'
+                                        
+                                        // pending 변경사항 확인
+                                        const key = `${teamMember?.email}_${dateString}`
+                                        const pendingChange = pendingOffScheduleChanges[key]
+                                        
+                                        const isPending = offSchedule?.status === 'pending' || pendingChange?.action === 'approve'
+                                        const isApproved = offSchedule?.status === 'approved' && !pendingChange?.action
                                         
                                         return (
                                           <div 
