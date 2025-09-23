@@ -1668,7 +1668,7 @@ export default function ScheduleView() {
                                         <div 
                                           className={`${
                                             isPending 
-                                              ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
+                                              ? 'bg-gray-500 text-white hover:bg-gray-600' 
                                               : isApproved 
                                                 ? 'bg-black text-white hover:bg-gray-800'
                                                 : 'bg-gray-500 text-white hover:bg-gray-600'
@@ -1692,9 +1692,9 @@ export default function ScheduleView() {
                                             }
                                           }}
                                           title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - ${isPending ? '클릭하여 승인' : ''} 더블클릭하여 삭제`}
-                                        >
-                                          {isPending ? 'PENDING' : 'OFF'}
-                                        </div>
+                                          >
+                                            OFF
+                                          </div>
                                       )
                                     })()
                                   ) : (
@@ -1896,7 +1896,7 @@ export default function ScheduleView() {
                                           <div 
                                             className={`${
                                               isPending 
-                                                ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
+                                                ? 'bg-gray-500 text-white hover:bg-gray-600' 
                                                 : isApproved 
                                                   ? 'bg-black text-white hover:bg-gray-800'
                                                   : 'bg-gray-500 text-white hover:bg-gray-600'
@@ -1921,7 +1921,7 @@ export default function ScheduleView() {
                                             }}
                                             title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - ${isPending ? '클릭하여 승인' : ''} 더블클릭하여 삭제`}
                                           >
-                                            {isPending ? 'PENDING' : 'OFF'}
+                                            OFF
                                           </div>
                                         )
                                       })()
