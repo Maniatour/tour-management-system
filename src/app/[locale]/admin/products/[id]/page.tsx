@@ -55,6 +55,24 @@ type ProductDetailsFields = {
 type ProductDetailsFormData = {
   useCommonDetails: boolean
   productDetails: ProductDetailsFields
+  // 각 필드별 공통 정보 사용 여부
+  useCommonForField: {
+    slogan1: boolean
+    slogan2: boolean
+    slogan3: boolean
+    description: boolean
+    included: boolean
+    not_included: boolean
+    pickup_drop_info: boolean
+    luggage_info: boolean
+    tour_operation_info: boolean
+    preparation_info: boolean
+    small_group_info: boolean
+    companion_info: boolean
+    exclusive_booking_info: boolean
+    cancellation_policy: boolean
+    chat_announcement: boolean
+  }
 }
 
 type DetailsRow = Partial<ProductDetailsFields>
@@ -258,6 +276,24 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       exclusive_booking_info: '',
       cancellation_policy: '',
       chat_announcement: ''
+    },
+    // 각 필드별 공통 정보 사용 여부 초기값
+    useCommonForField: {
+      slogan1: false,
+      slogan2: false,
+      slogan3: false,
+      description: false,
+      included: false,
+      not_included: false,
+      pickup_drop_info: false,
+      luggage_info: false,
+      tour_operation_info: false,
+      preparation_info: false,
+      small_group_info: false,
+      companion_info: false,
+      exclusive_booking_info: false,
+      cancellation_policy: false,
+      chat_announcement: false
     }
   })
 
@@ -489,6 +525,24 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
               exclusive_booking_info: '',
               cancellation_policy: '',
               chat_announcement: ''
+            },
+            // 각 필드별 공통 정보 사용 여부 초기값
+            useCommonForField: {
+              slogan1: false,
+              slogan2: false,
+              slogan3: false,
+              description: false,
+              included: false,
+              not_included: false,
+              pickup_drop_info: false,
+              luggage_info: false,
+              tour_operation_info: false,
+              preparation_info: false,
+              small_group_info: false,
+              companion_info: false,
+              exclusive_booking_info: false,
+              cancellation_policy: false,
+              chat_announcement: false
             },
                          productOptions: (() => {
                // 새로운 통합 구조에 맞게 그룹화

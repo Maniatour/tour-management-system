@@ -409,6 +409,22 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'approved_at', type: 'timestamp with time zone', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
+    ],
+    payment_records: [
+      { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()' },
+      { name: 'reservation_id', type: 'text', nullable: false, default: null },
+      { name: 'payment_status', type: 'character varying(50)', nullable: false, default: "'pending'" },
+      { name: 'amount', type: 'numeric(10, 2)', nullable: false, default: null },
+      { name: 'payment_method', type: 'character varying(50)', nullable: false, default: null },
+      { name: 'note', type: 'text', nullable: true, default: null },
+      { name: 'image_file_url', type: 'text', nullable: true, default: null },
+      { name: 'submit_on', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'submit_by', type: 'character varying(255)', nullable: true, default: null },
+      { name: 'confirmed_on', type: 'timestamp with time zone', nullable: true, default: null },
+      { name: 'confirmed_by', type: 'character varying(255)', nullable: true, default: null },
+      { name: 'amount_krw', type: 'numeric(10, 2)', nullable: true, default: null },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ]
   }
   

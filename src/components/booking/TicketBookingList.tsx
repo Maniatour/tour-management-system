@@ -1012,7 +1012,7 @@ export default function TicketBookingList() {
       {/* 부킹 상세 모달 */}
       {showBookingModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-semibold">예약 상세 정보</h3>
@@ -1026,111 +1026,121 @@ export default function TicketBookingList() {
                 </button>
               </div>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {selectedBookings.map((booking) => (
-                  <div key={booking.id} className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <h4 className="text-lg font-semibold text-gray-900 mb-1">
-                          {booking.category}
-                        </h4>
-                        <p className="text-sm text-gray-600">{booking.company}</p>
-                        <p className="text-xs text-gray-500 mt-1">{booking.reservation_name}</p>
-                      </div>
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
-                        {getStatusText(booking.status)}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">제출일</span>
-                        <span className="font-medium">{booking.submit_on}</span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">시간</span>
-                        <span className="font-medium">{booking.time.replace(/:\d{2}$/, '')}</span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">수량</span>
-                        <span className="font-medium">{booking.ea}개</span>
-                      </div>
-                      
-                      <div className="border-t pt-2">
-                        <div className="flex items-center justify-between text-sm mb-1">
-                          <span className="text-gray-500">단가</span>
-                          <span className="font-medium">${booking.unit_price}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">총액</span>
-                          <span className="font-medium text-blue-600">${booking.total_price}</span>
-                        </div>
-                      </div>
-
-                      <div className="border-t pt-2">
-                        <div className="text-sm">
-                          <span className="text-gray-500">결제 방법</span>
-                          <div className="mt-1 font-medium">{getPaymentMethodText(booking.payment_method) || '-'}</div>
-                        </div>
-                        <div className="mt-2">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
-                            {getCCStatusText(booking.cc)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {booking.tours && (
-                        <div className="border-t pt-2">
-                          <div className="text-sm">
-                            <span className="text-gray-500">투어</span>
-                            <div className="mt-1">
-                              <div className="font-medium">{booking.tours.tour_date}</div>
-                              <div className="text-xs text-gray-500">
-                                {booking.tours.products?.name || '상품명 없음'}
-                              </div>
+              {/* 선택된 예약들을 시간순으로 정렬하여 표시 */}
+              <div className="space-y-1">
+                {selectedBookings
+                  .sort((a, b) => a.time.localeCompare(b.time)) // 시간순 정렬
+                  .map((booking) => (
+                    <div key={booking.id} className={`rounded border p-2 hover:opacity-90 transition-opacity ${
+                      booking.status === 'pending' ? 'bg-yellow-50 border-yellow-200' :
+                      booking.status === 'confirmed' ? 'bg-green-50 border-green-200' :
+                      booking.status === 'cancelled' ? 'bg-red-50 border-red-200' :
+                      booking.status === 'completed' ? 'bg-blue-50 border-blue-200' :
+                      'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        {/* 왼쪽: 기본 정보 */}
+                        <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-sm">
+                          <div>
+                            <div className="text-gray-500 text-xs">제출일</div>
+                            <div className="font-medium text-xs">
+                              {(() => {
+                                const date = new Date(booking.submit_on);
+                                const month = String(date.getMonth() + 1).padStart(2, '0');
+                                const day = String(date.getDate()).padStart(2, '0');
+                                const year = date.getFullYear();
+                                const hours = String(date.getHours()).padStart(2, '0');
+                                const minutes = String(date.getMinutes()).padStart(2, '0');
+                                return `${month}/${day}/${year} ${hours}:${minutes}`;
+                              })()}
                             </div>
                           </div>
+                          <div>
+                            <div className="text-gray-500 text-xs">카테고리</div>
+                            <div className="font-medium truncate text-sm">{booking.category}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 text-xs">공급업체</div>
+                            <div className="font-medium truncate text-sm">{booking.company}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 text-xs">예약자</div>
+                            <div className="font-medium truncate text-sm">{booking.reservation_name}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 text-xs">시간</div>
+                            <div className="font-medium text-sm">{booking.time.replace(/:\d{2}$/, '')}</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 text-xs">수량/가격</div>
+                            <div className="font-medium text-sm">{booking.ea}개 / ${booking.total_price}</div>
+                          </div>
                         </div>
-                      )}
-                    </div>
 
-                    <div className="mt-4 pt-3 border-t">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => {
-                            setEditingBooking(booking);
-                            setShowForm(true);
-                            setShowBookingModal(false);
-                          }}
-                          className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
-                        >
-                          편집
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedBookingId(booking.id);
-                            setShowHistory(true);
-                            setShowBookingModal(false);
-                          }}
-                          className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
-                        >
-                          히스토리
-                        </button>
-                        <button
-                          onClick={() => {
-                            handleDelete(booking.id);
-                            setShowBookingModal(false);
-                          }}
-                          className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
-                        >
-                          삭제
-                        </button>
+                        {/* 오른쪽: 상태 및 액션 */}
+                        <div className="flex items-center space-x-2 ml-2">
+                          <div className="flex flex-col items-end space-y-1">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
+                              {getStatusText(booking.status)}
+                            </span>
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
+                              {getCCStatusText(booking.cc)}
+                            </span>
+                          </div>
+                          
+                          {/* 투어 연결 정보 */}
+                          <div className="text-right min-w-[80px]">
+                            {booking.tours ? (
+                              <div>
+                                <div className="text-xs text-green-600 font-medium">투어 연결</div>
+                                <div className="text-xs text-gray-500 truncate">
+                                  {booking.tours.products?.name || '상품명 없음'}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-red-500">미연결</div>
+                            )}
+                          </div>
+
+                          {/* 액션 버튼들 */}
+                          <div className="flex space-x-1">
+                            <button
+                              onClick={() => {
+                                setEditingBooking(booking);
+                                setShowForm(true);
+                                setShowBookingModal(false);
+                              }}
+                              className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
+                              title="편집"
+                            >
+                              편집
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedBookingId(booking.id);
+                                setShowHistory(true);
+                                setShowBookingModal(false);
+                              }}
+                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+                              title="히스토리"
+                            >
+                              히스토리
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleDelete(booking.id);
+                                setShowBookingModal(false);
+                              }}
+                              className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
+                              title="삭제"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             </div>
           </div>

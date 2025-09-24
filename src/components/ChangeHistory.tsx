@@ -57,27 +57,51 @@ export default function ChangeHistory({
         return
       }
 
-      // audit_logs 테이블에서 직접 조회
+      // audit_logs 테이블에서 직접 조회 (최적화된 쿼리)
       let query = supabase
         .from('audit_logs')
         .select('id, table_name, record_id, action, old_values, new_values, changed_fields, user_email, created_at')
         .eq('table_name', tableName)
         .order('created_at', { ascending: false })
+        .limit(maxItems) // 최대 항목 수로 제한하여 성능 향상
 
       if (recordId) {
         query = query.eq('record_id', recordId)
       }
 
-      const { data, error } = await query
+      // Promise.race를 사용하여 타임아웃 처리
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('TIMEOUT')), 8000) // 8초 타임아웃
+      })
 
-      if (error) {
-        console.error('감사 로그 조회 오류:', error)
-        // 오류가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
-        setChanges([])
-        return
+      try {
+        const { data, error } = await Promise.race([
+          query,
+          timeoutPromise
+        ]) as any
+
+        if (error) {
+          console.error('감사 로그 조회 오류:', error)
+          // 타임아웃 오류인 경우 특별 처리
+          if (error.code === '57014' || error.message === 'TIMEOUT') {
+            console.warn('감사 로그 조회 시간 초과. 최근 데이터만 표시합니다.')
+            // 빈 배열로 설정하여 UI가 깨지지 않도록 함
+            setChanges([])
+            return
+          }
+          setChanges([])
+          return
+        }
+
+        setChanges(data || [])
+      } catch (timeoutError) {
+        if (timeoutError.message === 'TIMEOUT') {
+          console.warn('감사 로그 조회 시간 초과. 최근 데이터만 표시합니다.')
+          setChanges([])
+        } else {
+          throw timeoutError
+        }
       }
-
-      setChanges(data || [])
     } catch (error) {
       console.error('변경 내역 조회 중 예상치 못한 오류:', error)
       // 예외가 발생해도 빈 배열로 설정

@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useParams } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { 
   Plus, 
@@ -16,26 +17,79 @@ import {
   AlertTriangle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import type { Database } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 
-type Customer = Database['public']['Tables']['customers']['Row']
-type CustomerInsert = Database['public']['Tables']['customers']['Insert']
-type CustomerUpdate = Database['public']['Tables']['customers']['Update']
+// 실제 데이터베이스 스키마에 맞는 Customer 타입 정의
+type Customer = {
+  id: string
+  name: string
+  email: string
+  phone: string | null
+  emergency_contact: string | null
+  address: string | null
+  language: string | null
+  special_requests: string | null
+  booking_count: number | null
+  channel_id: string | null
+  status: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+type CustomerInsert = {
+  id?: string
+  name: string
+  email: string
+  phone?: string | null
+  emergency_contact?: string | null
+  address?: string | null
+  language?: string | null
+  special_requests?: string | null
+  booking_count?: number | null
+  channel_id?: string | null
+  status?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+type CustomerUpdate = {
+  id?: string
+  name?: string
+  email?: string
+  phone?: string | null
+  emergency_contact?: string | null
+  address?: string | null
+  language?: string | null
+  special_requests?: string | null
+  booking_count?: number | null
+  channel_id?: string | null
+  status?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
 
 // 예약 정보 타입 정의
 type ReservationInfo = {
   bookingCount: number
   totalParticipants: number
+  reservations: ReservationData[]
 }
 
 // 예약 데이터 타입 정의
 type ReservationData = {
+  id: string
   customer_id: string
   total_people: number
+  status: string
+  created_at: string
+  tour_date: string
+  product_id: string
 }
 
 export default function AdminCustomers() {
+  const params = useParams() as { locale?: string }
+  const locale = params?.locale || 'ko'
+  
   // 최적화된 고객 데이터 로딩
   const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
     fetchFn: async () => {
@@ -76,7 +130,7 @@ export default function AdminCustomers() {
   })
 
   // 최적화된 채널 데이터 로딩
-  const { data: channels = [], loading: channelsLoading, refetch: refetchChannels } = useOptimizedData({
+  const { data: channels = [], loading: channelsLoading } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('channels')
@@ -94,7 +148,26 @@ export default function AdminCustomers() {
     cacheTime: 10 * 60 * 1000 // 10분 캐시 (채널은 자주 변경되지 않음)
   })
 
-  const loading = customersLoading || channelsLoading
+  // 최적화된 상품 데이터 로딩
+  const { data: products = [], loading: productsLoading } = useOptimizedData({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name_ko, name_en')
+        .order('name_ko', { ascending: true })
+
+      if (error) {
+        console.error('Error fetching products:', error)
+        return []
+      }
+
+      return data || []
+    },
+    cacheKey: 'products',
+    cacheTime: 10 * 60 * 1000 // 10분 캐시
+  })
+
+  const loading = customersLoading || channelsLoading || productsLoading
 
   const [reservationInfo, setReservationInfo] = useState<Record<string, ReservationInfo>>({})
   const [searchTerm, setSearchTerm] = useState('')
@@ -127,7 +200,7 @@ export default function AdminCustomers() {
       console.log('Fetching reservation info...')
       
       // 모든 예약 데이터를 가져오기 (페이지네이션 사용)
-      let allReservations: any[] = []
+      let allReservations: ReservationData[] = []
       let hasMore = true
       let page = 0
       const pageSize = 1000
@@ -135,7 +208,7 @@ export default function AdminCustomers() {
       while (hasMore) {
         const { data, error } = await supabase
           .from('reservations')
-          .select('id, customer_id, total_people, status, created_at')
+          .select('id, customer_id, total_people, status, created_at, tour_date, product_id')
           .range(page * pageSize, (page + 1) * pageSize - 1)
 
         if (error) {
@@ -164,7 +237,7 @@ export default function AdminCustomers() {
       
       console.log('Starting to process', allReservations.length, 'reservations')
       
-      allReservations.forEach((reservation: any, index: number) => {
+      allReservations.forEach((reservation: ReservationData) => {
         const customerId = reservation.customer_id
         if (!customerId) {
           return // customer_id가 없는 경우 스킵
@@ -173,12 +246,14 @@ export default function AdminCustomers() {
         if (!infoMap[customerId]) {
           infoMap[customerId] = {
             bookingCount: 0,
-            totalParticipants: 0
+            totalParticipants: 0,
+            reservations: []
           }
         }
         
         infoMap[customerId].bookingCount += 1
         infoMap[customerId].totalParticipants += reservation.total_people || 0
+        infoMap[customerId].reservations.push(reservation)
       })
 
       console.log('Final processed reservation info:', JSON.stringify(infoMap, null, 2))
@@ -520,7 +595,7 @@ export default function AdminCustomers() {
               : {filteredCustomers.length}명 (날짜 {currentPage}/{totalPages})
             </div>
             <div>
-              전체: {customers.length}명
+              전체: {customers?.length || 0}명
             </div>
           </div>
           
@@ -563,7 +638,7 @@ export default function AdminCustomers() {
                           }}
                           className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 p-3 border border-gray-200 cursor-pointer"
                         >
-                        {/* 고객 이름과 언어, 예약 정보 */}
+                        {/* 첫 번째 줄: 고객 이름, 언어, 연락처 아이콘, 채널 */}
                         <div className="mb-2">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center flex-1 min-w-0">
@@ -588,8 +663,63 @@ export default function AdminCustomers() {
                                   
                                   // 배열인 경우
                                   if (Array.isArray(lang)) {
+                                    const languageToCountry: { [key: string]: string } = {
+                                      'KR': 'KR', 'ko': 'KR', '한국어': 'KR',
+                                      'EN': 'US', 'en': 'US', '영어': 'US',
+                                      'JA': 'JP', 'jp': 'JP', '일본어': 'JP',
+                                      'ZH': 'CN', 'zh': 'CN', '중국어': 'CN',
+                                      'ES': 'ES', 'es': 'ES', '스페인어': 'ES',
+                                      'FR': 'FR', 'fr': 'FR', '프랑스어': 'FR',
+                                      'DE': 'DE', 'de': 'DE', '독일어': 'DE',
+                                      'IT': 'IT', 'it': 'IT', '이탈리아어': 'IT',
+                                      'PT': 'PT', 'pt': 'PT', '포르투갈어': 'PT',
+                                      'RU': 'RU', 'ru': 'RU', '러시아어': 'RU',
+                                      'AR': 'SA', 'ar': 'SA', '아랍어': 'SA',
+                                      'TH': 'TH', 'th': 'TH', '태국어': 'TH',
+                                      'VI': 'VN', 'vi': 'VN', '베트남어': 'VN',
+                                      'ID': 'ID', 'id': 'ID', '인도네시아어': 'ID',
+                                      'MS': 'MY', 'ms': 'MY', '말레이어': 'MY',
+                                      'TL': 'PH', 'tl': 'PH', '필리핀어': 'PH',
+                                      'HI': 'IN', 'hi': 'IN', '힌디어': 'IN',
+                                      'BN': 'BD', 'bn': 'BD', '벵골어': 'BD',
+                                      'UR': 'PK', 'ur': 'PK', '우르두어': 'PK',
+                                      'FA': 'IR', 'fa': 'IR', '페르시아어': 'IR',
+                                      'TR': 'TR', 'tr': 'TR', '터키어': 'TR',
+                                      'PL': 'PL', 'pl': 'PL', '폴란드어': 'PL',
+                                      'NL': 'NL', 'nl': 'NL', '네덜란드어': 'NL',
+                                      'SV': 'SE', 'sv': 'SE', '스웨덴어': 'SE',
+                                      'NO': 'NO', 'no': 'NO', '노르웨이어': 'NO',
+                                      'DA': 'DK', 'da': 'DK', '덴마크어': 'DK',
+                                      'FI': 'FI', 'fi': 'FI', '핀란드어': 'FI',
+                                      'CS': 'CZ', 'cs': 'CZ', '체코어': 'CZ',
+                                      'HU': 'HU', 'hu': 'HU', '헝가리어': 'HU',
+                                      'RO': 'RO', 'ro': 'RO', '루마니아어': 'RO',
+                                      'BG': 'BG', 'bg': 'BG', '불가리아어': 'BG',
+                                      'HR': 'HR', 'hr': 'HR', '크로아티아어': 'HR',
+                                      'SK': 'SK', 'sk': 'SK', '슬로바키아어': 'SK',
+                                      'SL': 'SI', 'sl': 'SI', '슬로베니아어': 'SI',
+                                      'ET': 'EE', 'et': 'EE', '에스토니아어': 'EE',
+                                      'LV': 'LV', 'lv': 'LV', '라트비아어': 'LV',
+                                      'LT': 'LT', 'lt': 'LT', '리투아니아어': 'LT',
+                                      'EL': 'GR', 'el': 'GR', '그리스어': 'GR',
+                                      'HE': 'IL', 'he': 'IL', '히브리어': 'IL',
+                                      'KO': 'KP', '조선어': 'KP',
+                                      'MN': 'MN', 'mn': 'MN', '몽골어': 'MN',
+                                      'KA': 'GE', 'ka': 'GE', '조지아어': 'GE',
+                                      'AM': 'ET', 'am': 'ET', '암하라어': 'ET',
+                                      'SW': 'KE', 'sw': 'KE', '스와힐리어': 'KE',
+                                      'ZU': 'ZA', 'zu': 'ZA', '줄루어': 'ZA',
+                                      'AF': 'ZA', 'af': 'ZA', '아프리칸스어': 'ZA',
+                                      'XH': 'ZA', 'xh': 'ZA', '코사어': 'ZA'
+                                    }
+                                    
                                     for (const l of lang) {
                                       if (l && typeof l === 'string') {
+                                        const countryCode = languageToCountry[l]
+                                        if (countryCode) {
+                                          return <ReactCountryFlag countryCode={countryCode} svg style={{ width: '20px', height: '15px' }} />
+                                        }
+                                        // 기존 로직 유지 (하위 호환성)
                                         if (l.includes('KR') || l.includes('ko')) return <ReactCountryFlag countryCode="KR" svg style={{ width: '20px', height: '15px' }} />
                                         if (l.includes('EN') || l.includes('en')) return <ReactCountryFlag countryCode="US" svg style={{ width: '20px', height: '15px' }} />
                                       }
@@ -608,8 +738,64 @@ export default function AdminCustomers() {
                                     )
                                   }
                                   
-                                  // 문자열인 경우
+                                  // 문자열인 경우 - 언어 코드와 국가 코드 매핑
                                   if (typeof lang === 'string') {
+                                    const languageToCountry: { [key: string]: string } = {
+                                      'KR': 'KR', 'ko': 'KR', '한국어': 'KR',
+                                      'EN': 'US', 'en': 'US', '영어': 'US',
+                                      'JA': 'JP', 'jp': 'JP', '일본어': 'JP',
+                                      'ZH': 'CN', 'zh': 'CN', '중국어': 'CN',
+                                      'ES': 'ES', 'es': 'ES', '스페인어': 'ES',
+                                      'FR': 'FR', 'fr': 'FR', '프랑스어': 'FR',
+                                      'DE': 'DE', 'de': 'DE', '독일어': 'DE',
+                                      'IT': 'IT', 'it': 'IT', '이탈리아어': 'IT',
+                                      'PT': 'PT', 'pt': 'PT', '포르투갈어': 'PT',
+                                      'RU': 'RU', 'ru': 'RU', '러시아어': 'RU',
+                                      'AR': 'SA', 'ar': 'SA', '아랍어': 'SA',
+                                      'TH': 'TH', 'th': 'TH', '태국어': 'TH',
+                                      'VI': 'VN', 'vi': 'VN', '베트남어': 'VN',
+                                      'ID': 'ID', 'id': 'ID', '인도네시아어': 'ID',
+                                      'MS': 'MY', 'ms': 'MY', '말레이어': 'MY',
+                                      'TL': 'PH', 'tl': 'PH', '필리핀어': 'PH',
+                                      'HI': 'IN', 'hi': 'IN', '힌디어': 'IN',
+                                      'BN': 'BD', 'bn': 'BD', '벵골어': 'BD',
+                                      'UR': 'PK', 'ur': 'PK', '우르두어': 'PK',
+                                      'FA': 'IR', 'fa': 'IR', '페르시아어': 'IR',
+                                      'TR': 'TR', 'tr': 'TR', '터키어': 'TR',
+                                      'PL': 'PL', 'pl': 'PL', '폴란드어': 'PL',
+                                      'NL': 'NL', 'nl': 'NL', '네덜란드어': 'NL',
+                                      'SV': 'SE', 'sv': 'SE', '스웨덴어': 'SE',
+                                      'NO': 'NO', 'no': 'NO', '노르웨이어': 'NO',
+                                      'DA': 'DK', 'da': 'DK', '덴마크어': 'DK',
+                                      'FI': 'FI', 'fi': 'FI', '핀란드어': 'FI',
+                                      'CS': 'CZ', 'cs': 'CZ', '체코어': 'CZ',
+                                      'HU': 'HU', 'hu': 'HU', '헝가리어': 'HU',
+                                      'RO': 'RO', 'ro': 'RO', '루마니아어': 'RO',
+                                      'BG': 'BG', 'bg': 'BG', '불가리아어': 'BG',
+                                      'HR': 'HR', 'hr': 'HR', '크로아티아어': 'HR',
+                                      'SK': 'SK', 'sk': 'SK', '슬로바키아어': 'SK',
+                                      'SL': 'SI', 'sl': 'SI', '슬로베니아어': 'SI',
+                                      'ET': 'EE', 'et': 'EE', '에스토니아어': 'EE',
+                                      'LV': 'LV', 'lv': 'LV', '라트비아어': 'LV',
+                                      'LT': 'LT', 'lt': 'LT', '리투아니아어': 'LT',
+                                      'EL': 'GR', 'el': 'GR', '그리스어': 'GR',
+                                      'HE': 'IL', 'he': 'IL', '히브리어': 'IL',
+                                      'KO': 'KP', '조선어': 'KP',
+                                      'MN': 'MN', 'mn': 'MN', '몽골어': 'MN',
+                                      'KA': 'GE', 'ka': 'GE', '조지아어': 'GE',
+                                      'AM': 'ET', 'am': 'ET', '암하라어': 'ET',
+                                      'SW': 'KE', 'sw': 'KE', '스와힐리어': 'KE',
+                                      'ZU': 'ZA', 'zu': 'ZA', '줄루어': 'ZA',
+                                      'AF': 'ZA', 'af': 'ZA', '아프리칸스어': 'ZA',
+                                      'XH': 'ZA', 'xh': 'ZA', '코사어': 'ZA'
+                                    }
+                                    
+                                    const countryCode = languageToCountry[lang]
+                                    if (countryCode) {
+                                      return <ReactCountryFlag countryCode={countryCode} svg style={{ width: '20px', height: '15px' }} />
+                                    }
+                                    
+                                    // 기존 로직 유지 (하위 호환성)
                                     if ((lang as string).includes('KR') || (lang as string).includes('ko')) return <ReactCountryFlag countryCode="KR" svg style={{ width: '20px', height: '15px' }} />
                                     if ((lang as string).includes('EN') || (lang as string).includes('en')) return <ReactCountryFlag countryCode="US" svg style={{ width: '20px', height: '15px' }} />
                                     // 유효하지 않은 언어 문자열인 경우 경고 아이콘
@@ -643,67 +829,146 @@ export default function AdminCustomers() {
                               <h3 className="text-base font-medium text-gray-900 truncate">
                                 {customer.name}
                               </h3>
+                              
+                              {/* 연락처 아이콘들 - 이름 바로 옆에 */}
+                              <div className="flex items-center space-x-1 ml-2">
+                                {customer.phone && (
+                                  <Phone className="h-3 w-3 text-gray-400" />
+                                )}
+                                {customer.email && (
+                                  <Mail className="h-3 w-3 text-gray-400" />
+                                )}
+                                {customer.special_requests && (
+                                  <div className="relative group">
+                                    <FileText className="h-3 w-3 text-gray-400 cursor-help" />
+                                    {/* 호버 툴팁 */}
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10 max-w-xs">
+                                      <div className="whitespace-pre-wrap break-words">
+                                        {customer.special_requests}
+                                      </div>
+                                      {/* 화살표 */}
+                                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             
-                            {/* 예약 정보 - 오른쪽 정렬 */}
-                            <div className="flex items-center space-x-2 text-xs text-gray-600 flex-shrink-0 ml-2">
-                              {(() => {
-                                const info = reservationInfo[customer.id]
-                                
-                                if (!info || (info.bookingCount === 0 && info.totalParticipants === 0)) {
-                                  return (
-                                    <span className="text-gray-400">예약 없음</span>
-                                  )
-                                }
-                                return (
-                                  <>
-                                    <div className="flex items-center space-x-1">
-                                      <Calendar className="h-3 w-3" />
-                                      <span>{info.bookingCount}건</span>
-                                    </div>
-                                    <div className="flex items-center space-x-1">
-                                      <User className="h-3 w-3" />
-                                      <span>{info.totalParticipants}명</span>
-                                    </div>
-                                  </>
-                                )
-                              })()}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 연락처, 특별 요청사항, 채널 */}
-                        <div className="mb-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              {customer.phone && (
-                                <Phone className="h-3 w-3 text-gray-400" />
-                              )}
-                              {customer.email && (
-                                <Mail className="h-3 w-3 text-gray-400" />
-                              )}
-                              {customer.special_requests && (
-                                <div className="relative group">
-                                  <FileText className="h-3 w-3 text-gray-400 cursor-help" />
-                                  {/* 호버 툴팁 */}
-                                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10 max-w-xs">
-                                    <div className="whitespace-pre-wrap break-words">
-                                      {customer.special_requests}
-                                    </div>
-                                    {/* 화살표 */}
-                                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                    <div className="flex items-center">
+                            {/* 채널 정보 - 오른쪽 정렬 */}
+                            <div className="flex items-center text-xs text-gray-600 flex-shrink-0 ml-2">
                               <Globe className="h-3 w-3 text-gray-400 mr-1" />
                               <span className="text-xs text-gray-900 truncate">
-                                {(customer as Customer & { channels?: { name: string } }).channels?.name || '채널 없음'}
+                                {(() => {
+                                  const customerWithChannels = customer as Customer & { channels?: { name: string } }
+                                  // channels 관계가 있고 name이 있으면 조인된 채널 이름 사용
+                                  if (customerWithChannels.channels?.name) {
+                                    return customerWithChannels.channels.name
+                                  }
+                                  // 그렇지 않으면 channel_id를 직접 사용 (Homepage 등의 직접 값)
+                                  if (customer.channel_id) {
+                                    return customer.channel_id
+                                  }
+                                  return '채널 없음'
+                                })()}
                               </span>
                             </div>
                           </div>
                         </div>
+
+                        {/* 두 번째 줄: 예약 정보 */}
+                        <div className="mb-2">
+                          {(() => {
+                            const info = reservationInfo[customer.id]
+                            
+                            if (!info || (info.bookingCount === 0 && info.totalParticipants === 0)) {
+                              return (
+                                <div className="text-center py-2">
+                                  <span className="text-gray-400 text-xs">예약 없음</span>
+                                </div>
+                              )
+                            }
+                            
+                            return (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation() // 카드 클릭 이벤트 방지
+                                  // 예약 관리 페이지로 이동 (고객 ID로 필터링)
+                                  window.open(`/${locale}/admin/reservations?customer=${customer.id}`, '_blank')
+                                }}
+                                className="w-full hover:bg-blue-50 p-2 rounded-lg transition-colors group border border-blue-200 bg-blue-50/30"
+                                title="예약 내역 보기"
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <div className="flex items-center space-x-2 text-xs text-blue-700">
+                                    <Calendar className="h-3 w-3 group-hover:text-blue-800" />
+                                    <span className="group-hover:text-blue-800 font-semibold">{info.bookingCount}건</span>
+                                    <User className="h-3 w-3 group-hover:text-blue-800" />
+                                    <span className="group-hover:text-blue-800 font-semibold">{info.totalParticipants}명</span>
+                                  </div>
+                                  <span className="text-blue-600 text-xs group-hover:text-blue-800 font-semibold">→</span>
+                                </div>
+                                
+                                {/* 예약 상세 정보 */}
+                                <div className="space-y-1">
+                                  {info.reservations.slice(0, 2).map((reservation) => {
+                                    const product = (products as Array<{id: string, name_ko?: string, name_en?: string}>)?.find((p) => p.id === reservation.product_id)
+                                    const productName = product?.name_ko || product?.name_en || '상품명 없음'
+                                    const statusColor = reservation.status === 'confirmed' ? 'text-green-600' : 
+                                                      reservation.status === 'pending' ? 'text-yellow-600' : 
+                                                      reservation.status === 'cancelled' ? 'text-red-600' : 'text-gray-600'
+                                    
+                                    return (
+                                      <div 
+                                        key={reservation.id} 
+                                        className="text-xs text-gray-600 flex items-center justify-between cursor-pointer hover:bg-green-50 p-2 rounded-md transition-colors border border-green-200 bg-green-50/20"
+                                        onClick={(e) => {
+                                          e.stopPropagation() // 카드 클릭 이벤트 방지
+                                          // 개별 예약 상세 페이지로 이동
+                                          window.open(`/${locale}/admin/reservations/${reservation.id}`, '_blank')
+                                        }}
+                                        title="예약 상세 보기"
+                                      >
+                                        <div className="flex items-center space-x-2 flex-1 min-w-0">
+                                          <span className="text-green-600 font-mono font-semibold">
+                                            {new Date(reservation.tour_date).toLocaleDateString('en-US', { 
+                                              month: '2-digit', 
+                                              day: '2-digit', 
+                                              year: 'numeric' 
+                                            })}
+                                          </span>
+                                          <span className="truncate font-semibold text-green-800">{productName}</span>
+                                        </div>
+                                        <div className="flex items-center space-x-2 flex-shrink-0">
+                                          <span className="text-green-600 font-medium">{reservation.total_people}명</span>
+                                          <span className={`font-semibold ${statusColor}`}>
+                                            {reservation.status === 'confirmed' ? '확정' :
+                                             reservation.status === 'pending' ? '대기' :
+                                             reservation.status === 'cancelled' ? '취소' : reservation.status}
+                                          </span>
+                                          <span className="text-green-600 text-xs font-semibold">→</span>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                  {info.reservations.length > 2 && (
+                                    <div 
+                                      className="text-xs text-purple-600 text-center cursor-pointer hover:bg-purple-50 p-2 rounded-md transition-colors border border-purple-200 bg-purple-50/20 font-semibold"
+                                      onClick={(e) => {
+                                        e.stopPropagation() // 카드 클릭 이벤트 방지
+                                        // 예약 목록 페이지로 이동 (고객 ID로 필터링)
+                                        window.open(`/${locale}/admin/reservations?customer=${customer.id}`, '_blank')
+                                      }}
+                                      title="모든 예약 보기"
+                                    >
+                                      +{info.reservations.length - 2}건 더 보기
+                                    </div>
+                                  )}
+                                </div>
+                              </button>
+                            )
+                          })()}
+                        </div>
+
                       </div>
                     ))}
                       </div>
@@ -782,7 +1047,8 @@ export default function AdminCustomers() {
         <CustomerForm
           key={editingCustomer?.id || 'new'} // customer ID가 변경될 때마다 컴포넌트 새로 마운트
           customer={editingCustomer}
-          channels={channels}
+          customers={customers || []}
+          channels={channels || []}
           onSubmit={editingCustomer ? 
             (data) => handleEditCustomer(editingCustomer.id, data) : 
             handleAddCustomer
@@ -815,12 +1081,14 @@ export default function AdminCustomers() {
 // 고객 폼 컴포넌트
 function CustomerForm({ 
   customer, 
+  customers,
   channels,
   onSubmit, 
   onCancel,
   onDelete
 }: { 
   customer: Customer | null
+  customers: Customer[]
   channels: Array<{id: string, name: string, type: string | null}>
   onSubmit: (data: CustomerInsert) => void
   onCancel: () => void
@@ -845,6 +1113,7 @@ function CustomerForm({
       
       if (typeof customer.language === 'string') {
         console.log('customer.language가 문자열입니다:', customer.language)
+        // 기존 언어 코드 매핑 (하위 호환성 유지)
         if (customer.language === 'EN' || customer.language === 'en' || customer.language === '영어') {
           languageValue = 'EN'
           console.log('영어로 인식됨')
@@ -852,8 +1121,9 @@ function CustomerForm({
           languageValue = 'KR'
           console.log('한국어로 인식됨')
         } else {
-          console.log('알 수 없는 언어: 빈 문자열로 기본값 설정')
-          languageValue = '' // 알 수 없는 언어는 빈 문자열로
+          // 새로운 언어 코드들도 그대로 사용
+          languageValue = customer.language
+          console.log('새로운 언어 코드로 인식됨:', customer.language)
         }
       } else {
         console.log('언어 필드 없음 또는 null: 빈 문자열로 기본값 설정')
@@ -903,13 +1173,104 @@ function CustomerForm({
   // useState로 formData 상태 관리
   const [formData, setFormData] = useState<CustomerInsert>(defaultFormData)
   const [selectedChannelType, setSelectedChannelType] = useState<'ota' | 'self' | 'partner'>('ota')
+  
+  // 고객 자동완성을 위한 상태
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const [isExistingCustomer, setIsExistingCustomer] = useState(false)
+  const customerSearchRef = useRef<HTMLDivElement | null>(null)
 
-  // defaultFormData가 변경될 때 formData 업데이트
+  // 채널 타입을 자동으로 결정하는 함수
+  const determineChannelType = useCallback((channelId: string | null | undefined): 'ota' | 'self' | 'partner' => {
+    if (!channelId) return 'ota' // 기본값
+    
+    // 직접적인 채널 이름인 경우 (Homepage, Direct 등)
+    const directChannelNames = ['Homepage', 'Direct', '직접', '홈페이지']
+    if (directChannelNames.some(name => channelId.toLowerCase().includes(name.toLowerCase()))) {
+      return 'self'
+    }
+    
+    // channels 테이블에서 해당 채널의 타입 찾기
+    const channel = channels.find(c => c.id === channelId)
+    if (channel?.type) {
+      return channel.type as 'ota' | 'self' | 'partner'
+    }
+    
+    return 'ota' // 기본값
+  }, [channels])
+
+  // 고객 검색 필터링 함수
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch.trim()) return []
+    
+    return customers.filter(customer => 
+      customer.name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      customer.email?.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      customer.phone?.toLowerCase().includes(customerSearch.toLowerCase())
+    ).slice(0, 10) // 최대 10개만 표시
+  }, [customers, customerSearch])
+
+  // 고객 선택 시 폼 데이터 업데이트
+  const handleCustomerSelect = useCallback((selectedCustomer: Customer) => {
+    setFormData({
+      ...formData,
+      id: selectedCustomer.id,
+      name: selectedCustomer.name,
+      phone: selectedCustomer.phone || '',
+      email: selectedCustomer.email || '',
+      emergency_contact: selectedCustomer.emergency_contact || '',
+      address: selectedCustomer.address || '',
+      language: selectedCustomer.language || 'KR',
+      special_requests: selectedCustomer.special_requests || '',
+      booking_count: selectedCustomer.booking_count || 0,
+      channel_id: selectedCustomer.channel_id || '',
+      status: selectedCustomer.status || 'active'
+    })
+    setCustomerSearch(selectedCustomer.name)
+    setShowCustomerDropdown(false)
+    setIsExistingCustomer(true)
+    
+    // 채널 타입도 자동으로 설정
+    const channelType = determineChannelType(selectedCustomer.channel_id)
+    setSelectedChannelType(channelType)
+  }, [formData, determineChannelType])
+
+  // 고객 검색 입력 변경 시
+  const handleCustomerSearchChange = useCallback((value: string) => {
+    setCustomerSearch(value)
+    setShowCustomerDropdown(value.length > 0)
+    setIsExistingCustomer(false)
+    
+    // 검색어가 변경되면 폼 데이터의 이름도 업데이트
+    setFormData(prev => ({ ...prev, name: value }))
+  }, [])
+
+  // 외부 클릭 시 고객 검색 드롭다운 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (customerSearchRef.current && !customerSearchRef.current.contains(event.target as Node)) {
+        setShowCustomerDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  // defaultFormData가 변경될 때 formData 업데이트 및 채널 타입 설정
   useEffect(() => {
     console.log('=== useEffect로 formData 업데이트 ===')
     console.log('새로운 defaultFormData:', defaultFormData)
     setFormData(defaultFormData)
-  }, [defaultFormData])
+    setCustomerSearch(defaultFormData.name)
+    
+    // 채널 타입 자동 설정
+    const channelType = determineChannelType(defaultFormData.channel_id)
+    console.log('자동 결정된 채널 타입:', channelType, 'for channel_id:', defaultFormData.channel_id)
+    setSelectedChannelType(channelType)
+  }, [defaultFormData, channels, determineChannelType])
 
 
 
@@ -928,6 +1289,30 @@ function CustomerForm({
       if (!emailRegex.test(formData.email)) {
         alert('올바른 이메일 형식을 입력해주세요.')
         return
+      }
+    }
+
+    // 중복 고객 검증 (새 고객 추가 시에만)
+    if (!customer && !isExistingCustomer) {
+      const duplicateCustomer = customers.find(c => 
+        c.name.toLowerCase() === formData.name.toLowerCase() ||
+        (formData.email && c.email && c.email.toLowerCase() === formData.email.toLowerCase()) ||
+        (formData.phone && c.phone && c.phone === formData.phone)
+      )
+      
+      if (duplicateCustomer) {
+        const confirmMessage = `이미 등록된 고객과 유사한 정보가 있습니다.\n\n` +
+          `기존 고객: ${duplicateCustomer.name}` +
+          (duplicateCustomer.email ? ` (${duplicateCustomer.email})` : '') +
+          (duplicateCustomer.phone ? ` (${duplicateCustomer.phone})` : '') +
+          `\n\n기존 고객을 선택하시겠습니까?`
+        
+        if (confirm(confirmMessage)) {
+          handleCustomerSelect(duplicateCustomer)
+          return
+        } else {
+          return
+        }
       }
     }
 
@@ -983,14 +1368,52 @@ function CustomerForm({
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   이름 *
                 </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="고객 이름"
-                  required
-                />
+                <div className="relative" ref={customerSearchRef}>
+                  <input
+                    type="text"
+                    value={customerSearch}
+                    onChange={(e) => handleCustomerSearchChange(e.target.value)}
+                    onFocus={() => setShowCustomerDropdown(customerSearch.length > 0)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="고객 이름, 이메일, 전화번호로 검색..."
+                    required
+                  />
+                  
+                  {/* 고객 검색 드롭다운 */}
+                  {showCustomerDropdown && customerSearch && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {filteredCustomers.map(customer => (
+                        <div
+                          key={customer.id}
+                          onClick={() => handleCustomerSelect(customer)}
+                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        >
+                          <div className="font-medium text-gray-900">{customer.name}</div>
+                          {customer.email && (
+                            <div className="text-sm text-gray-500">{customer.email}</div>
+                          )}
+                          {customer.phone && (
+                            <div className="text-sm text-gray-500">{customer.phone}</div>
+                          )}
+                        </div>
+                      ))}
+                      {filteredCustomers.length === 0 && (
+                        <div className="px-3 py-2 text-gray-500 text-center">
+                          검색 결과가 없습니다
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* 기존 고객 선택됨 표시 */}
+                  {isExistingCustomer && (
+                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                      <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                        기존 고객
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
               
               <div>
@@ -1019,22 +1442,26 @@ function CustomerForm({
                     if (Array.isArray(formData.language)) {
                       // 배열인 경우 첫 번째 값만 사용하고 문자열로 변환
                       const firstLang = formData.language[0]
+                      // 기존 언어 코드 매핑 (하위 호환성 유지)
                       if (firstLang === 'KR' || firstLang === 'ko' || firstLang === '한국어') {
                         return 'KR'
                       }
                       if (firstLang === 'EN' || firstLang === 'en' || firstLang === '영어') {
                         return 'EN'
                       }
-                      return ''
+                      // 새로운 언어 코드들은 그대로 사용
+                      return firstLang || ''
                     }
                     if (typeof formData.language === 'string') {
+                      // 기존 언어 코드 매핑 (하위 호환성 유지)
                       if (formData.language === 'KR' || formData.language === 'ko' || formData.language === '한국어') {
                         return 'KR'
                       }
                       if (formData.language === 'EN' || formData.language === 'en' || formData.language === '영어') {
                         return 'EN'
                       }
-                      return ''
+                      // 새로운 언어 코드들은 그대로 사용
+                      return formData.language
                     }
                     return ''
                   })()}
@@ -1044,6 +1471,52 @@ function CustomerForm({
                   <option value="">🌐 언어 선택</option>
                   <option value="KR">🇰🇷 한국어</option>
                   <option value="EN">🇺🇸 English</option>
+                  <option value="JA">🇯🇵 日本語</option>
+                  <option value="ZH">🇨🇳 中文</option>
+                  <option value="ES">🇪🇸 Español</option>
+                  <option value="FR">🇫🇷 Français</option>
+                  <option value="DE">🇩🇪 Deutsch</option>
+                  <option value="IT">🇮🇹 Italiano</option>
+                  <option value="PT">🇵🇹 Português</option>
+                  <option value="RU">🇷🇺 Русский</option>
+                  <option value="AR">🇸🇦 العربية</option>
+                  <option value="TH">🇹🇭 ไทย</option>
+                  <option value="VI">🇻🇳 Tiếng Việt</option>
+                  <option value="ID">🇮🇩 Bahasa Indonesia</option>
+                  <option value="MS">🇲🇾 Bahasa Melayu</option>
+                  <option value="TL">🇵🇭 Filipino</option>
+                  <option value="HI">🇮🇳 हिन्दी</option>
+                  <option value="BN">🇧🇩 বাংলা</option>
+                  <option value="UR">🇵🇰 اردو</option>
+                  <option value="FA">🇮🇷 فارسی</option>
+                  <option value="TR">🇹🇷 Türkçe</option>
+                  <option value="PL">🇵🇱 Polski</option>
+                  <option value="NL">🇳🇱 Nederlands</option>
+                  <option value="SV">🇸🇪 Svenska</option>
+                  <option value="NO">🇳🇴 Norsk</option>
+                  <option value="DA">🇩🇰 Dansk</option>
+                  <option value="FI">🇫🇮 Suomi</option>
+                  <option value="CS">🇨🇿 Čeština</option>
+                  <option value="HU">🇭🇺 Magyar</option>
+                  <option value="RO">🇷🇴 Română</option>
+                  <option value="BG">🇧🇬 Български</option>
+                  <option value="HR">🇭🇷 Hrvatski</option>
+                  <option value="SK">🇸🇰 Slovenčina</option>
+                  <option value="SL">🇸🇮 Slovenščina</option>
+                  <option value="ET">🇪🇪 Eesti</option>
+                  <option value="LV">🇱🇻 Latviešu</option>
+                  <option value="LT">🇱🇹 Lietuvių</option>
+                  <option value="EL">🇬🇷 Ελληνικά</option>
+                  <option value="HE">🇮🇱 עברית</option>
+                  <option value="KO">🇰🇵 조선어</option>
+                  <option value="MN">🇲🇳 Монгол</option>
+                  <option value="KA">🇬🇪 ქართული</option>
+                  <option value="AM">🇪🇹 አማርኛ</option>
+                  <option value="SW">🇰🇪 Kiswahili</option>
+                  <option value="ZU">🇿🇦 IsiZulu</option>
+                  <option value="AF">🇿🇦 Afrikaans</option>
+                  <option value="XH">🇿🇦 IsiXhosa</option>
+                  <option value="OTHER">🌍 기타</option>
                 </select>
               </div>
               

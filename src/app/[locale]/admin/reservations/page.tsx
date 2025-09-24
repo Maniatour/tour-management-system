@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play, DollarSign } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
@@ -37,6 +37,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const router = useRouter()
   const routeParams = useParams() as { locale?: string }
   const locale = routeParams?.locale || 'ko'
+  const searchParams = useSearchParams()
+  
+  // URL에서 고객 ID 파라미터 가져오기
+  const customerIdFromUrl = searchParams.get('customer')
   
   // 커스텀 훅으로 데이터 관리
   const {
@@ -116,6 +120,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // 필터링 및 정렬 로직
   const filteredAndSortedReservations = useCallback(() => {
     const filtered = reservations.filter(reservation => {
+      // 고객 ID 필터 (URL 파라미터에서)
+      const matchesCustomer = !customerIdFromUrl || reservation.customerId === customerIdFromUrl
+      
       // 검색 조건 - 검색어가 있을 때만 검색 수행
       const matchesSearch = !searchTerm || 
       reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -146,7 +153,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
       }
       
-      return matchesSearch && matchesStatus && matchesChannel && matchesDateRange
+      return matchesCustomer && matchesSearch && matchesStatus && matchesChannel && matchesDateRange
     })
     
     // 정렬
@@ -183,7 +190,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     })
     
     return filtered
-  }, [reservations, customers, products, channels, searchTerm, selectedStatus, selectedChannel, dateRange, sortBy, sortOrder])
+  }, [reservations, customers, products, channels, searchTerm, selectedStatus, selectedChannel, dateRange, sortBy, sortOrder, customerIdFromUrl])
   
   const filteredReservations = filteredAndSortedReservations()
   
@@ -737,7 +744,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         {/* 첫 번째 줄: 타이틀과 액션 버튼들 */}
         <div className="flex items-center justify-between space-x-2">
           <div className="flex items-center space-x-3">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 flex-shrink-0">{t('title')}</h1>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 flex-shrink-0">
+              {customerIdFromUrl ? (
+                <div className="flex items-center space-x-2">
+                  <span>{t('title')}</span>
+                  <span className="text-lg text-gray-500">-</span>
+                  <span className="text-lg text-blue-600">
+                    {getCustomerName(customerIdFromUrl, customers as Customer[])}
+                  </span>
+                </div>
+              ) : (
+                t('title')
+              )}
+            </h1>
             
             {/* 뷰 전환 버튼 - 제목 바로 오른쪽에 배치 */}
             <div className="flex items-center space-x-1">

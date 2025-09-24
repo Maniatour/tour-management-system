@@ -51,7 +51,8 @@ function getHardcodedTables() {
     'ticket_bookings',
     'tour_hotel_bookings',
     'tour_expenses',
-    'off_schedules'
+    'off_schedules',
+    'payment_records'
   ]
 
   // 테이블 목록을 표시명과 함께 반환
@@ -96,7 +97,8 @@ function getTableDisplayName(tableName: string): string {
     ticket_bookings: '티켓 예약',
     tour_hotel_bookings: '투어 호텔 예약',
     tour_expenses: '투어 지출',
-    off_schedules: '휴가 일정'
+    off_schedules: '휴가 일정',
+    payment_records: '결제 기록'
   }
   return displayNames[tableName] || tableName
 }

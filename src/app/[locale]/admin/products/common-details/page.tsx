@@ -26,6 +26,24 @@ interface CommonDetailsRow {
   exclusive_booking_info: string
   cancellation_policy: string
   chat_announcement: string
+  // 각 필드별 공통 정보 사용 여부
+  use_common: {
+    slogan1: boolean
+    slogan2: boolean
+    slogan3: boolean
+    description: boolean
+    included: boolean
+    not_included: boolean
+    pickup_drop_info: boolean
+    luggage_info: boolean
+    tour_operation_info: boolean
+    preparation_info: boolean
+    small_group_info: boolean
+    companion_info: boolean
+    exclusive_booking_info: boolean
+    cancellation_policy: boolean
+    chat_announcement: boolean
+  }
 }
 
 interface PageProps {
@@ -43,11 +61,30 @@ export default function CommonDetailsAdminPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string>('')
+  const [availableSubCategories, setAvailableSubCategories] = useState<string[]>([])
   useEffect(() => {
     if (!authLoading && !user) {
       router.push(`/${locale}/auth?redirectTo=/${locale}/admin/products/common-details`)
     }
   }, [authLoading, user, router, locale])
+
+  const fetchSubCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('sub_category')
+        .not('sub_category', 'is', null)
+        .order('sub_category', { ascending: true })
+
+      if (error) throw error
+      
+      // 중복 제거하고 정렬
+      const uniqueSubCategories = [...new Set((data || []).map(p => p.sub_category).filter(Boolean))]
+      setAvailableSubCategories(uniqueSubCategories)
+    } catch (e: unknown) {
+      console.error('sub_category 목록 조회 실패:', e)
+    }
+  }
 
   const fetchRows = async () => {
     try {
@@ -78,6 +115,23 @@ export default function CommonDetailsAdminPage({ params }: PageProps) {
           exclusive_booking_info: r.exclusive_booking_info || '',
           cancellation_policy: r.cancellation_policy || '',
           chat_announcement: r.chat_announcement || '',
+          use_common: {
+            slogan1: false,
+            slogan2: false,
+            slogan3: false,
+            description: false,
+            included: false,
+            not_included: false,
+            pickup_drop_info: false,
+            luggage_info: false,
+            tour_operation_info: false,
+            preparation_info: false,
+            small_group_info: false,
+            companion_info: false,
+            exclusive_booking_info: false,
+            cancellation_policy: false,
+            chat_announcement: false,
+          }
         }))
       )
     } catch (e: unknown) {
@@ -89,6 +143,7 @@ export default function CommonDetailsAdminPage({ params }: PageProps) {
   }
 
   useEffect(() => {
+    fetchSubCategories()
     fetchRows()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -112,13 +167,44 @@ export default function CommonDetailsAdminPage({ params }: PageProps) {
         companion_info: '',
         exclusive_booking_info: '',
         cancellation_policy: '',
-        chat_announcement: ''
+        chat_announcement: '',
+        use_common: {
+          slogan1: false,
+          slogan2: false,
+          slogan3: false,
+          description: false,
+          included: false,
+          not_included: false,
+          pickup_drop_info: false,
+          luggage_info: false,
+          tour_operation_info: false,
+          preparation_info: false,
+          small_group_info: false,
+          companion_info: false,
+          exclusive_booking_info: false,
+          cancellation_policy: false,
+          chat_announcement: false,
+        }
       }
     ])
   }
 
-  const updateField = (index: number, field: keyof CommonDetailsRow, value: string) => {
+  const updateField = (index: number, field: keyof CommonDetailsRow, value: string | boolean) => {
     setRows(prev => prev.map((r, i) => i === index ? { ...r, [field]: value } : r))
+  }
+
+  const updateUseCommon = (index: number, field: keyof CommonDetailsRow['use_common'], value: boolean) => {
+    setRows(prev => prev.map((r, i) => 
+      i === index 
+        ? { 
+            ...r, 
+            use_common: { 
+              ...r.use_common, 
+              [field]: value 
+            } 
+          } 
+        : r
+    ))
   }
 
   const removeRow = async (index: number) => {
@@ -240,13 +326,18 @@ export default function CommonDetailsAdminPage({ params }: PageProps) {
               <div className="flex items-center justify-between">
                 <div className="flex-1 mr-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">sub_category</label>
-                  <input
-                    type="text"
+                  <select
                     value={row.sub_category}
                     onChange={(e) => updateField(idx, 'sub_category', e.target.value)}
-                    className="w-full px-3 py-2 border rounded"
-                    placeholder="예: daytour, admission, private"
-                  />
+                    className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">선택하세요</option>
+                    {availableSubCategories.map((subCategory) => (
+                      <option key={subCategory} value={subCategory}>
+                        {subCategory}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <button onClick={() => removeRow(idx)} className="text-red-600 px-2 py-2">
                   <Trash2 className="h-5 w-5" />
@@ -255,82 +346,352 @@ export default function CommonDetailsAdminPage({ params }: PageProps) {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">슬로건 1</label>
-                  <input type="text" value={row.slogan1} onChange={(e) => updateField(idx, 'slogan1', e.target.value)} className="w-full px-3 py-2 border rounded" />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">슬로건 1</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.slogan1}
+                        onChange={(e) => updateUseCommon(idx, 'slogan1', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <input 
+                    type="text" 
+                    value={row.slogan1} 
+                    onChange={(e) => updateField(idx, 'slogan1', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.slogan1 ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.slogan1}
+                    placeholder={row.use_common.slogan1 ? '공통 정보 사용' : '슬로건 1을 입력하세요'}
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">슬로건 2</label>
-                  <input type="text" value={row.slogan2} onChange={(e) => updateField(idx, 'slogan2', e.target.value)} className="w-full px-3 py-2 border rounded" />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">슬로건 2</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.slogan2}
+                        onChange={(e) => updateUseCommon(idx, 'slogan2', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <input 
+                    type="text" 
+                    value={row.slogan2} 
+                    onChange={(e) => updateField(idx, 'slogan2', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.slogan2 ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.slogan2}
+                    placeholder={row.use_common.slogan2 ? '공통 정보 사용' : '슬로건 2를 입력하세요'}
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">슬로건 3</label>
-                  <input type="text" value={row.slogan3} onChange={(e) => updateField(idx, 'slogan3', e.target.value)} className="w-full px-3 py-2 border rounded" />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">슬로건 3</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.slogan3}
+                        onChange={(e) => updateUseCommon(idx, 'slogan3', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <input 
+                    type="text" 
+                    value={row.slogan3} 
+                    onChange={(e) => updateField(idx, 'slogan3', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.slogan3 ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.slogan3}
+                    placeholder={row.use_common.slogan3 ? '공통 정보 사용' : '슬로건 3을 입력하세요'}
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">상품 설명</label>
-                <textarea value={row.description} onChange={(e) => updateField(idx, 'description', e.target.value)} className="w-full px-3 py-2 border rounded" rows={3} />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm font-medium text-gray-700">상품 설명</label>
+                  <label className="flex items-center text-xs text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={row.use_common.description}
+                      onChange={(e) => updateUseCommon(idx, 'description', e.target.checked)}
+                      className="mr-1"
+                    />
+                    공통 사용
+                  </label>
+                </div>
+                <textarea 
+                  value={row.description} 
+                  onChange={(e) => updateField(idx, 'description', e.target.value)} 
+                  className={`w-full px-3 py-2 border rounded ${row.use_common.description ? 'bg-gray-100' : ''}`}
+                  disabled={row.use_common.description}
+                  placeholder={row.use_common.description ? '공통 정보 사용' : '상품 설명을 입력하세요'}
+                  rows={3} 
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">포함 사항</label>
-                  <textarea value={row.included} onChange={(e) => updateField(idx, 'included', e.target.value)} className="w-full px-3 py-2 border rounded" rows={3} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">포함 사항</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.included}
+                        onChange={(e) => updateUseCommon(idx, 'included', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.included} 
+                    onChange={(e) => updateField(idx, 'included', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.included ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.included}
+                    placeholder={row.use_common.included ? '공통 정보 사용' : '포함 사항을 입력하세요'}
+                    rows={3} 
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">불포함 사항</label>
-                  <textarea value={row.not_included} onChange={(e) => updateField(idx, 'not_included', e.target.value)} className="w-full px-3 py-2 border rounded" rows={3} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">불포함 사항</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.not_included}
+                        onChange={(e) => updateUseCommon(idx, 'not_included', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.not_included} 
+                    onChange={(e) => updateField(idx, 'not_included', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.not_included ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.not_included}
+                    placeholder={row.use_common.not_included ? '공통 정보 사용' : '불포함 사항을 입력하세요'}
+                    rows={3} 
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">픽업/드롭 정보</label>
-                  <textarea value={row.pickup_drop_info} onChange={(e) => updateField(idx, 'pickup_drop_info', e.target.value)} className="w-full px-3 py-2 border rounded" rows={2} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">픽업/드롭 정보</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.pickup_drop_info}
+                        onChange={(e) => updateUseCommon(idx, 'pickup_drop_info', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.pickup_drop_info} 
+                    onChange={(e) => updateField(idx, 'pickup_drop_info', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.pickup_drop_info ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.pickup_drop_info}
+                    placeholder={row.use_common.pickup_drop_info ? '공통 정보 사용' : '픽업/드롭 정보를 입력하세요'}
+                    rows={2} 
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">수하물 정보</label>
-                  <textarea value={row.luggage_info} onChange={(e) => updateField(idx, 'luggage_info', e.target.value)} className="w-full px-3 py-2 border rounded" rows={2} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">수하물 정보</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.luggage_info}
+                        onChange={(e) => updateUseCommon(idx, 'luggage_info', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.luggage_info} 
+                    onChange={(e) => updateField(idx, 'luggage_info', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.luggage_info ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.luggage_info}
+                    placeholder={row.use_common.luggage_info ? '공통 정보 사용' : '수하물 정보를 입력하세요'}
+                    rows={2} 
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">투어 운영 정보</label>
-                  <textarea value={row.tour_operation_info} onChange={(e) => updateField(idx, 'tour_operation_info', e.target.value)} className="w-full px-3 py-2 border rounded" rows={2} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">투어 운영 정보</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.tour_operation_info}
+                        onChange={(e) => updateUseCommon(idx, 'tour_operation_info', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.tour_operation_info} 
+                    onChange={(e) => updateField(idx, 'tour_operation_info', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.tour_operation_info ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.tour_operation_info}
+                    placeholder={row.use_common.tour_operation_info ? '공통 정보 사용' : '투어 운영 정보를 입력하세요'}
+                    rows={2} 
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">준비 사항</label>
-                  <textarea value={row.preparation_info} onChange={(e) => updateField(idx, 'preparation_info', e.target.value)} className="w-full px-3 py-2 border rounded" rows={2} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">준비 사항</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.preparation_info}
+                        onChange={(e) => updateUseCommon(idx, 'preparation_info', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.preparation_info} 
+                    onChange={(e) => updateField(idx, 'preparation_info', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.preparation_info ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.preparation_info}
+                    placeholder={row.use_common.preparation_info ? '공통 정보 사용' : '준비 사항을 입력하세요'}
+                    rows={2} 
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">소그룹 정보</label>
-                  <textarea value={row.small_group_info} onChange={(e) => updateField(idx, 'small_group_info', e.target.value)} className="w-full px-3 py-2 border rounded" rows={2} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">소그룹 정보</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.small_group_info}
+                        onChange={(e) => updateUseCommon(idx, 'small_group_info', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.small_group_info} 
+                    onChange={(e) => updateField(idx, 'small_group_info', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.small_group_info ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.small_group_info}
+                    placeholder={row.use_common.small_group_info ? '공통 정보 사용' : '소그룹 정보를 입력하세요'}
+                    rows={2} 
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">동반자 정보</label>
-                  <textarea value={row.companion_info} onChange={(e) => updateField(idx, 'companion_info', e.target.value)} className="w-full px-3 py-2 border rounded" rows={2} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">동반자 정보</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.companion_info}
+                        onChange={(e) => updateUseCommon(idx, 'companion_info', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.companion_info} 
+                    onChange={(e) => updateField(idx, 'companion_info', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.companion_info ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.companion_info}
+                    placeholder={row.use_common.companion_info ? '공통 정보 사용' : '동반자 정보를 입력하세요'}
+                    rows={2} 
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">독점 예약 정보</label>
-                  <textarea value={row.exclusive_booking_info} onChange={(e) => updateField(idx, 'exclusive_booking_info', e.target.value)} className="w-full px-3 py-2 border rounded" rows={2} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">독점 예약 정보</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.exclusive_booking_info}
+                        onChange={(e) => updateUseCommon(idx, 'exclusive_booking_info', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.exclusive_booking_info} 
+                    onChange={(e) => updateField(idx, 'exclusive_booking_info', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.exclusive_booking_info ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.exclusive_booking_info}
+                    placeholder={row.use_common.exclusive_booking_info ? '공통 정보 사용' : '독점 예약 정보를 입력하세요'}
+                    rows={2} 
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">취소 정책</label>
-                  <textarea value={row.cancellation_policy} onChange={(e) => updateField(idx, 'cancellation_policy', e.target.value)} className="w-full px-3 py-2 border rounded" rows={2} />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">취소 정책</label>
+                    <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={row.use_common.cancellation_policy}
+                        onChange={(e) => updateUseCommon(idx, 'cancellation_policy', e.target.checked)}
+                        className="mr-1"
+                      />
+                      공통 사용
+                    </label>
+                  </div>
+                  <textarea 
+                    value={row.cancellation_policy} 
+                    onChange={(e) => updateField(idx, 'cancellation_policy', e.target.value)} 
+                    className={`w-full px-3 py-2 border rounded ${row.use_common.cancellation_policy ? 'bg-gray-100' : ''}`}
+                    disabled={row.use_common.cancellation_policy}
+                    placeholder={row.use_common.cancellation_policy ? '공통 정보 사용' : '취소 정책을 입력하세요'}
+                    rows={2} 
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">채팅 공지사항</label>
-                <textarea value={row.chat_announcement} onChange={(e) => updateField(idx, 'chat_announcement', e.target.value)} className="w-full px-3 py-2 border rounded" rows={2} />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm font-medium text-gray-700">채팅 공지사항</label>
+                  <label className="flex items-center text-xs text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={row.use_common.chat_announcement}
+                      onChange={(e) => updateUseCommon(idx, 'chat_announcement', e.target.checked)}
+                      className="mr-1"
+                    />
+                    공통 사용
+                  </label>
+                </div>
+                <textarea 
+                  value={row.chat_announcement} 
+                  onChange={(e) => updateField(idx, 'chat_announcement', e.target.value)} 
+                  className={`w-full px-3 py-2 border rounded ${row.use_common.chat_announcement ? 'bg-gray-100' : ''}`}
+                  disabled={row.use_common.chat_announcement}
+                  placeholder={row.use_common.chat_announcement ? '공통 정보 사용' : '채팅 공지사항을 입력하세요'}
+                  rows={2} 
+                />
               </div>
             </div>
           ))}

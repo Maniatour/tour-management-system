@@ -190,7 +190,19 @@ export default function DataSyncPage() {
         'reason': ['사유', 'Reason', '휴가사유', '휴가 사유'],
         'status': ['상태', 'Status'],
         'approved_by': ['승인자', 'Approved By', '승인한 사람'],
-        'approved_at': ['승인일시', 'Approved At', '승인 날짜', '승인 시간']
+        'approved_at': ['승인일시', 'Approved At', '승인 날짜', '승인 시간'],
+        // Payment Records 테이블 매핑
+        'reservation_id': ['예약번호', 'Reservation ID', '예약 ID', '예약아이디'],
+        'payment_status': ['결제상태', 'Payment Status', '결제 상태', '상태'],
+        'amount': ['금액', 'Amount', '결제금액', '결제 금액'],
+        'payment_method': ['결제방법', 'Payment Method', '결제 방법', '방법'],
+        'note': ['메모', 'Note', '비고', 'Notes'],
+        'image_file_url': ['이미지파일', 'Image File', '이미지 파일', '파일'],
+        'submit_on': ['제출일시', 'Submit On', '제출 날짜', '제출 시간'],
+        'submit_by': ['제출자', 'Submit By', '제출한 사람'],
+        'confirmed_on': ['확인일시', 'Confirmed On', '확인 날짜', '확인 시간'],
+        'confirmed_by': ['확인자', 'Confirmed By', '확인한 사람'],
+        'amount_krw': ['원화금액', 'Amount KRW', '원화 금액', 'KRW']
       }
       
       if (koreanMappings[dbColumn]) {
@@ -530,6 +542,22 @@ export default function DataSyncPage() {
         { name: 'status', type: 'text', nullable: false, default: "'pending'" },
         { name: 'approved_by', type: 'character varying(255)', nullable: true, default: null },
         { name: 'approved_at', type: 'timestamp with time zone', nullable: true, default: null },
+        { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
+      ],
+      payment_records: [
+        { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()' },
+        { name: 'reservation_id', type: 'text', nullable: false, default: null },
+        { name: 'payment_status', type: 'character varying(50)', nullable: false, default: "'pending'" },
+        { name: 'amount', type: 'numeric(10, 2)', nullable: false, default: null },
+        { name: 'payment_method', type: 'character varying(50)', nullable: false, default: null },
+        { name: 'note', type: 'text', nullable: true, default: null },
+        { name: 'image_file_url', type: 'text', nullable: true, default: null },
+        { name: 'submit_on', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+        { name: 'submit_by', type: 'character varying(255)', nullable: true, default: null },
+        { name: 'confirmed_on', type: 'timestamp with time zone', nullable: true, default: null },
+        { name: 'confirmed_by', type: 'character varying(255)', nullable: true, default: null },
+        { name: 'amount_krw', type: 'numeric(10, 2)', nullable: true, default: null },
         { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
         { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
       ]

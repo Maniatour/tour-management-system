@@ -682,8 +682,22 @@ export default function DynamicPricingManager({
       // 3. pricingConfig를 기반으로 pricingRules 생성
       const generatedPricingRules: CreatePricingRuleDto[] = []
       
-      // 모든 채널에 대해 가격 규칙 생성
-      const activeChannels = channels
+      // 선택된 채널만 저장
+      if (!selectedChannel) {
+        setSaveMessage('채널을 선택해주세요.')
+        setSaving(false)
+        return
+      }
+      
+      const selectedChannelData = channels.find(c => c.id === selectedChannel)
+      if (!selectedChannelData) {
+        setSaveMessage('선택된 채널을 찾을 수 없습니다.')
+        setSaving(false)
+        return
+      }
+      
+      // 선택된 채널에 대해서만 가격 규칙 생성
+      const activeChannels = [selectedChannelData]
       
       for (const channel of activeChannels) {
         // 선택된 요일들에 대해 각각 가격 규칙 생성
@@ -722,11 +736,12 @@ export default function DynamicPricingManager({
       
       console.log('생성된 가격 규칙들:', generatedPricingRules)
 
-      // 4. 기존 동적 가격 규칙들 삭제
+      // 4. 기존 동적 가격 규칙들 삭제 (선택된 채널만)
       const { error: deleteError } = await supabase
         .from('dynamic_pricing')
         .delete()
         .eq('product_id', productId)
+        .eq('channel_id', selectedChannel)
 
       if (deleteError) throw deleteError
 

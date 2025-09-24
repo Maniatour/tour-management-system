@@ -26,6 +26,24 @@ interface ProductDetailsFields {
 interface ProductDetailsFormData {
   useCommonDetails: boolean
   productDetails: ProductDetailsFields
+  // 각 필드별 공통 정보 사용 여부
+  useCommonForField: {
+    slogan1: boolean
+    slogan2: boolean
+    slogan3: boolean
+    description: boolean
+    included: boolean
+    not_included: boolean
+    pickup_drop_info: boolean
+    luggage_info: boolean
+    tour_operation_info: boolean
+    preparation_info: boolean
+    small_group_info: boolean
+    companion_info: boolean
+    exclusive_booking_info: boolean
+    cancellation_policy: boolean
+    chat_announcement: boolean
+  }
 }
 
 interface ProductDetailsTabProps {
@@ -110,7 +128,8 @@ export default function ProductDetailsTab({
   }, [formData.useCommonDetails, subCategory, supabase])
 
   const getValue = (field: keyof ProductDetailsFields) => {
-    if (formData.useCommonDetails) {
+    // 각 필드별로 공통 정보 사용 여부 확인
+    if (formData.useCommonForField?.[field]) {
       return (commonPreview?.[field] ?? '') as string
     }
     return formData.productDetails[field]
@@ -124,6 +143,43 @@ export default function ProductDetailsTab({
         [field]: value
       }
     }))
+  }
+
+  const handleUseCommonChange = (field: keyof ProductDetailsFields, useCommon: boolean) => {
+    setFormData((prev) => {
+      const currentUseCommonForField = prev.useCommonForField || {
+        slogan1: false,
+        slogan2: false,
+        slogan3: false,
+        description: false,
+        included: false,
+        not_included: false,
+        pickup_drop_info: false,
+        luggage_info: false,
+        tour_operation_info: false,
+        preparation_info: false,
+        small_group_info: false,
+        companion_info: false,
+        exclusive_booking_info: false,
+        cancellation_policy: false,
+        chat_announcement: false
+      }
+      
+      const newUseCommonForField = {
+        ...currentUseCommonForField,
+        [field]: useCommon
+      }
+      
+      // 모든 필드가 공통 사용인지 확인
+      const allFieldsUseCommon = Object.values(newUseCommonForField).every(value => value === true)
+      
+      return {
+        ...prev,
+        useCommonForField: newUseCommonForField,
+        // 모든 필드가 공통 사용이면 전체 공통 사용으로 설정
+        useCommonDetails: allFieldsUseCommon
+      }
+    })
   }
 
   const handleSave = async () => {
@@ -276,7 +332,44 @@ export default function ProductDetailsTab({
             <input
               type="checkbox"
               checked={!!formData.useCommonDetails}
-              onChange={(e) => setFormData((prev: ProductDetailsFormData) => ({ ...prev, useCommonDetails: e.target.checked }))}
+              onChange={(e) => setFormData((prev: ProductDetailsFormData) => ({ 
+                ...prev, 
+                useCommonDetails: e.target.checked,
+                // 전체 공통 사용 시 모든 필드를 공통 사용으로 설정
+                useCommonForField: e.target.checked ? {
+                  slogan1: true,
+                  slogan2: true,
+                  slogan3: true,
+                  description: true,
+                  included: true,
+                  not_included: true,
+                  pickup_drop_info: true,
+                  luggage_info: true,
+                  tour_operation_info: true,
+                  preparation_info: true,
+                  small_group_info: true,
+                  companion_info: true,
+                  exclusive_booking_info: true,
+                  cancellation_policy: true,
+                  chat_announcement: true
+                } : {
+                  slogan1: false,
+                  slogan2: false,
+                  slogan3: false,
+                  description: false,
+                  included: false,
+                  not_included: false,
+                  pickup_drop_info: false,
+                  luggage_info: false,
+                  tour_operation_info: false,
+                  preparation_info: false,
+                  small_group_info: false,
+                  companion_info: false,
+                  exclusive_booking_info: false,
+                  cancellation_policy: false,
+                  chat_announcement: false
+                }
+              }))}
               className="h-4 w-4"
             />
             <span className="text-sm text-gray-800">sub_category 공통 세부정보 사용</span>
@@ -302,43 +395,91 @@ export default function ProductDetailsTab({
         <h4 className="text-md font-medium text-gray-900 mb-4">슬로건</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              슬로건 1
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">
+                슬로건 1
+              </label>
+              <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.slogan1 || false}
+                        onChange={(e) => handleUseCommonChange('slogan1', e.target.checked)}
+                        className="mr-1"
+                      />
+                공통 사용
+              </label>
+            </div>
             <input
               type="text"
               value={getValue('slogan1')}
               onChange={(e) => handleInputChange('slogan1', e.target.value)}
-              disabled={!!formData.useCommonDetails}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              placeholder="예: 최고의 투어 경험"
+              disabled={formData.useCommonForField?.slogan1 || false}
+              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.slogan1 ? 'bg-gray-50' : ''}`}
+              placeholder={formData.useCommonForField?.slogan1 ? '공통 정보 사용' : '예: 최고의 투어 경험'}
             />
+            {formData.useCommonForField?.slogan1 && commonPreview?.slogan1 && (
+              <div className="mt-1 text-xs text-gray-500">
+                공통 정보: {commonPreview.slogan1}
+              </div>
+            )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              슬로건 2
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">
+                슬로건 2
+              </label>
+              <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.slogan2 || false}
+                        onChange={(e) => handleUseCommonChange('slogan2', e.target.checked)}
+                        className="mr-1"
+                      />
+                공통 사용
+              </label>
+            </div>
             <input
               type="text"
               value={getValue('slogan2')}
               onChange={(e) => handleInputChange('slogan2', e.target.value)}
-              disabled={!!formData.useCommonDetails}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              placeholder="예: 전문 가이드와 함께"
+              disabled={formData.useCommonForField?.slogan2 || false}
+              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.slogan2 ? 'bg-gray-50' : ''}`}
+              placeholder={formData.useCommonForField?.slogan2 ? '공통 정보 사용' : '예: 전문 가이드와 함께'}
             />
+            {formData.useCommonForField?.slogan2 && commonPreview?.slogan2 && (
+              <div className="mt-1 text-xs text-gray-500">
+                공통 정보: {commonPreview.slogan2}
+              </div>
+            )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              슬로건 3
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">
+                슬로건 3
+              </label>
+              <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.slogan3 || false}
+                        onChange={(e) => handleUseCommonChange('slogan3', e.target.checked)}
+                        className="mr-1"
+                      />
+                공통 사용
+              </label>
+            </div>
             <input
               type="text"
               value={getValue('slogan3')}
               onChange={(e) => handleInputChange('slogan3', e.target.value)}
-              disabled={!!formData.useCommonDetails}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              placeholder="예: 잊지 못할 추억"
+              disabled={formData.useCommonForField?.slogan3 || false}
+              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.slogan3 ? 'bg-gray-50' : ''}`}
+              placeholder={formData.useCommonForField?.slogan3 ? '공통 정보 사용' : '예: 잊지 못할 추억'}
             />
+            {formData.useCommonForField?.slogan3 && commonPreview?.slogan3 && (
+              <div className="mt-1 text-xs text-gray-500">
+                공통 정보: {commonPreview.slogan3}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -347,17 +488,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">상품 설명</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            상세 설명
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              상세 설명
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.description || false}
+                        onChange={(e) => handleUseCommonChange('description', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('description')}
             onChange={(e) => handleInputChange('description', e.target.value)}
             rows={4}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="상품에 대한 자세한 설명을 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.description ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.description ? '공통 정보 사용' : '상품에 대한 자세한 설명을 입력해주세요'}
+            disabled={formData.useCommonForField?.description || false}
           />
+          {formData.useCommonForField?.description && commonPreview?.description && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.description}
+            </div>
+          )}
         </div>
       </div>
 
@@ -366,30 +523,62 @@ export default function ProductDetailsTab({
         <h4 className="text-md font-medium text-gray-900 mb-4">포함/불포함 정보</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              포함 사항
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">
+                포함 사항
+              </label>
+              <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.included || false}
+                        onChange={(e) => handleUseCommonChange('included', e.target.checked)}
+                        className="mr-1"
+                      />
+                공통 사용
+              </label>
+            </div>
             <textarea
               value={getValue('included')}
               onChange={(e) => handleInputChange('included', e.target.value)}
               rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="포함되는 사항들을 입력해주세요"
-              disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.included ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.included ? '공통 정보 사용' : '포함되는 사항들을 입력해주세요'}
+            disabled={formData.useCommonForField?.included || false}
             />
+            {formData.useCommonForField?.included && commonPreview?.included && (
+              <div className="mt-1 text-xs text-gray-500">
+                공통 정보: {commonPreview.included}
+              </div>
+            )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              불포함 사항
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">
+                불포함 사항
+              </label>
+              <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.not_included || false}
+                        onChange={(e) => handleUseCommonChange('not_included', e.target.checked)}
+                        className="mr-1"
+                      />
+                공통 사용
+              </label>
+            </div>
             <textarea
               value={getValue('not_included')}
               onChange={(e) => handleInputChange('not_included', e.target.value)}
               rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="불포함되는 사항들을 입력해주세요"
-              disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.not_included ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.not_included ? '공통 정보 사용' : '불포함되는 사항들을 입력해주세요'}
+            disabled={formData.useCommonForField?.not_included || false}
             />
+            {formData.useCommonForField?.not_included && commonPreview?.not_included && (
+              <div className="mt-1 text-xs text-gray-500">
+                공통 정보: {commonPreview.not_included}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -398,17 +587,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">픽업/드롭 정보</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            픽업 및 드롭 정보
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              픽업 및 드롭 정보
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.pickup_drop_info || false}
+                        onChange={(e) => handleUseCommonChange('pickup_drop_info', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('pickup_drop_info')}
             onChange={(e) => handleInputChange('pickup_drop_info', e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="픽업 및 드롭에 대한 정보를 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.pickup_drop_info ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.pickup_drop_info ? '공통 정보 사용' : '픽업 및 드롭에 대한 정보를 입력해주세요'}
+            disabled={formData.useCommonForField?.pickup_drop_info || false}
           />
+          {formData.useCommonForField?.pickup_drop_info && commonPreview?.pickup_drop_info && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.pickup_drop_info}
+            </div>
+          )}
         </div>
       </div>
 
@@ -416,17 +621,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">수하물 정보</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            수하물 관련 정보
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              수하물 관련 정보
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.luggage_info || false}
+                        onChange={(e) => handleUseCommonChange('luggage_info', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('luggage_info')}
             onChange={(e) => handleInputChange('luggage_info', e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="수하물 관련 규정 및 정보를 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.luggage_info ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.luggage_info ? '공통 정보 사용' : '수하물 관련 규정 및 정보를 입력해주세요'}
+            disabled={formData.useCommonForField?.luggage_info || false}
           />
+          {formData.useCommonForField?.luggage_info && commonPreview?.luggage_info && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.luggage_info}
+            </div>
+          )}
         </div>
       </div>
 
@@ -434,17 +655,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">투어 운영 정보</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            투어 운영 관련 정보
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              투어 운영 관련 정보
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.tour_operation_info || false}
+                        onChange={(e) => handleUseCommonChange('tour_operation_info', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('tour_operation_info')}
             onChange={(e) => handleInputChange('tour_operation_info', e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="투어 운영 방식 및 특별 사항을 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.tour_operation_info ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.tour_operation_info ? '공통 정보 사용' : '투어 운영 방식 및 특별 사항을 입력해주세요'}
+            disabled={formData.useCommonForField?.tour_operation_info || false}
           />
+          {formData.useCommonForField?.tour_operation_info && commonPreview?.tour_operation_info && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.tour_operation_info}
+            </div>
+          )}
         </div>
       </div>
 
@@ -452,17 +689,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">준비 사항</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            준비해야 할 사항들
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              준비해야 할 사항들
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.preparation_info || false}
+                        onChange={(e) => handleUseCommonChange('preparation_info', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('preparation_info')}
             onChange={(e) => handleInputChange('preparation_info', e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="투어 전 준비해야 할 사항들을 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.preparation_info ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.preparation_info ? '공통 정보 사용' : '투어 전 준비해야 할 사항들을 입력해주세요'}
+            disabled={formData.useCommonForField?.preparation_info || false}
           />
+          {formData.useCommonForField?.preparation_info && commonPreview?.preparation_info && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.preparation_info}
+            </div>
+          )}
         </div>
       </div>
 
@@ -470,17 +723,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">소그룹 정보</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            소그룹 투어 관련 정보
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              소그룹 투어 관련 정보
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.small_group_info || false}
+                        onChange={(e) => handleUseCommonChange('small_group_info', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('small_group_info')}
             onChange={(e) => handleInputChange('small_group_info', e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="소그룹 투어의 특징 및 장점을 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.small_group_info ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.small_group_info ? '공통 정보 사용' : '소그룹 투어의 특징 및 장점을 입력해주세요'}
+            disabled={formData.useCommonForField?.small_group_info || false}
           />
+          {formData.useCommonForField?.small_group_info && commonPreview?.small_group_info && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.small_group_info}
+            </div>
+          )}
         </div>
       </div>
 
@@ -488,17 +757,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">동반자 정보</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            동반자 관련 정보
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              동반자 관련 정보
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.companion_info || false}
+                        onChange={(e) => handleUseCommonChange('companion_info', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('companion_info')}
             onChange={(e) => handleInputChange('companion_info', e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="동반자 관련 규정 및 정보를 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.companion_info ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.companion_info ? '공통 정보 사용' : '동반자 관련 규정 및 정보를 입력해주세요'}
+            disabled={formData.useCommonForField?.companion_info || false}
           />
+          {formData.useCommonForField?.companion_info && commonPreview?.companion_info && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.companion_info}
+            </div>
+          )}
         </div>
       </div>
 
@@ -506,17 +791,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">독점 예약 정보</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            독점 예약 관련 정보
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              독점 예약 관련 정보
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.exclusive_booking_info || false}
+                        onChange={(e) => handleUseCommonChange('exclusive_booking_info', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('exclusive_booking_info')}
             onChange={(e) => handleInputChange('exclusive_booking_info', e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="독점 예약 관련 특별 사항을 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.exclusive_booking_info ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.exclusive_booking_info ? '공통 정보 사용' : '독점 예약 관련 특별 사항을 입력해주세요'}
+            disabled={formData.useCommonForField?.exclusive_booking_info || false}
           />
+          {formData.useCommonForField?.exclusive_booking_info && commonPreview?.exclusive_booking_info && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.exclusive_booking_info}
+            </div>
+          )}
         </div>
       </div>
 
@@ -524,17 +825,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">취소 정책</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            취소 및 환불 정책
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              취소 및 환불 정책
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.cancellation_policy || false}
+                        onChange={(e) => handleUseCommonChange('cancellation_policy', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('cancellation_policy')}
             onChange={(e) => handleInputChange('cancellation_policy', e.target.value)}
             rows={4}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="취소 및 환불 정책을 자세히 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.cancellation_policy ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.cancellation_policy ? '공통 정보 사용' : '취소 및 환불 정책을 자세히 입력해주세요'}
+            disabled={formData.useCommonForField?.cancellation_policy || false}
           />
+          {formData.useCommonForField?.cancellation_policy && commonPreview?.cancellation_policy && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.cancellation_policy}
+            </div>
+          )}
         </div>
       </div>
 
@@ -542,17 +859,33 @@ export default function ProductDetailsTab({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">채팅 공지</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            채팅방 공지사항
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              채팅방 공지사항
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonForField?.chat_announcement || false}
+                        onChange={(e) => handleUseCommonChange('chat_announcement', e.target.checked)}
+                        className="mr-1"
+                      />
+              공통 사용
+            </label>
+          </div>
           <textarea
             value={getValue('chat_announcement')}
             onChange={(e) => handleInputChange('chat_announcement', e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="채팅방에 표시될 공지사항을 입력해주세요"
-            disabled={!!formData.useCommonDetails}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${formData.useCommonForField?.chat_announcement ? 'bg-gray-50' : ''}`}
+            placeholder={formData.useCommonForField?.chat_announcement ? '공통 정보 사용' : '채팅방에 표시될 공지사항을 입력해주세요'}
+            disabled={formData.useCommonForField?.chat_announcement || false}
           />
+          {formData.useCommonForField?.chat_announcement && commonPreview?.chat_announcement && (
+            <div className="mt-1 text-xs text-gray-500">
+              공통 정보: {commonPreview.chat_announcement}
+            </div>
+          )}
         </div>
       </div>
     </div>
