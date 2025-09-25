@@ -21,6 +21,8 @@ interface AuthContextType {
   signOut: () => Promise<void>
   hasPermission: (permission: keyof UserPermissions) => boolean
   getRedirectPath: (locale: string) => string
+  teamChatUnreadCount: number
+  refreshTeamChatUnreadCount: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -31,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [permissions, setPermissions] = useState<UserPermissions | null>(null)
   const [loading, setLoading] = useState(true)
+  const [teamChatUnreadCount, setTeamChatUnreadCount] = useState(0)
 
   // team 멤버십 확인
   const checkTeamMembership = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
@@ -280,6 +283,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // 팀 채팅 안읽은 메시지 수 가져오기
+  const refreshTeamChatUnreadCount = useCallback(async () => {
+    if (!user?.email) {
+      setTeamChatUnreadCount(0)
+      return
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        return
+      }
+
+      const response = await fetch('/api/team-chat/unread-count', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        setTeamChatUnreadCount(result.unreadCount || 0)
+      }
+    } catch (error) {
+      console.error('팀 채팅 안읽은 메시지 수 조회 오류:', error)
+    }
+  }, [user?.email])
+
+  // 사용자가 로그인되어 있을 때만 안읽은 메시지 수 조회
+  useEffect(() => {
+    if (user?.email && userRole && userRole !== 'customer') {
+      refreshTeamChatUnreadCount()
+      
+      // 30초마다 안읽은 메시지 수 새로고침
+      const interval = setInterval(refreshTeamChatUnreadCount, 30000)
+      return () => clearInterval(interval)
+    } else {
+      setTeamChatUnreadCount(0)
+    }
+  }, [user?.email, userRole, refreshTeamChatUnreadCount])
+
   const value: AuthContextType = {
     user,
     authUser,
@@ -289,6 +333,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut,
     hasPermission: hasPermissionCheck,
     getRedirectPath,
+    teamChatUnreadCount,
+    refreshTeamChatUnreadCount,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -233,9 +233,14 @@ export default function DataSyncPage() {
     return mapping
   }
 
-  // 사용 가능한 테이블 가져오기 (모든 Supabase 테이블)
-  const getAvailableTables = async () => {
+  // 사용 가능한 테이블 가져오기 (모든 Supabase 테이블) - 캐싱 적용
+  const getAvailableTables = useCallback(async () => {
     try {
+      // 이미 로드된 경우 중복 호출 방지
+      if (availableTables.length > 0) {
+        return
+      }
+
       const response = await fetch('/api/sync/all-tables')
       const result = await response.json()
       
@@ -246,7 +251,7 @@ export default function DataSyncPage() {
     } catch (error) {
       console.error('Error getting available tables:', error)
     }
-  }
+  }, [availableTables.length])
 
   // 테이블 스키마 가져오기 (재시도 + 장시간 타임아웃)
   const getTableSchema = async (tableName: string) => {
@@ -870,7 +875,7 @@ export default function DataSyncPage() {
   // 컴포넌트 마운트 시 사용 가능한 테이블만 가져오기
   useEffect(() => {
     getAvailableTables()
-  }, [])
+  }, [getAvailableTables])
 
   // 주기적 동기화 (사용하지 않음)
   // const handlePeriodicSync = async () => {

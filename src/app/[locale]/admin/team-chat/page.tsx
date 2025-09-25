@@ -94,30 +94,8 @@ export default function TeamChatPage() {
     participant_emails: [] as string[]
   })
   const [selectedPositionTab, setSelectedPositionTab] = useState<string>('all')
-  const [totalUnreadCount, setTotalUnreadCount] = useState(0)
-
-  // 안읽은 메시지 수 조회 함수
-  const fetchUnreadCount = useCallback(async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        return
-      }
-
-      const response = await fetch('/api/team-chat/unread-count', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        setTotalUnreadCount(result.unreadCount || 0)
-      }
-    } catch (error) {
-      console.error('안읽은 메시지 수 조회 오류:', error)
-    }
-  }, [])
+  // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
+  const { teamChatUnreadCount } = useAuth()
 
   // 팀 채팅방 데이터 로딩
   const { data: chatRoomsData, loading, refetch: refetchChatRooms } = useOptimizedData<TeamChatRoom[]>({

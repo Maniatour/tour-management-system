@@ -64,30 +64,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
   const [teamBoardCount, setTeamBoardCount] = useState(0)
-  const [teamChatUnreadCount, setTeamChatUnreadCount] = useState(0)
-  
-  // 안읽은 메시지 수 조회 함수
-  const fetchTeamChatUnreadCount = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        return
-      }
-
-      const response = await fetch('/api/team-chat/unread-count', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        setTeamChatUnreadCount(result.unreadCount || 0)
-      }
-    } catch (error) {
-      console.error('팀 채팅 안읽은 메시지 수 조회 오류:', error)
-    }
-  }
+  // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
+  const { teamChatUnreadCount } = useAuth()
   
   // 출퇴근 동기화 훅 사용
   const {
@@ -207,16 +185,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     return () => clearInterval(interval)
   }, [authUser?.email])
 
-  // 안읽은 메시지 수 조회
-  useEffect(() => {
-    if (authUser?.email) {
-      fetchTeamChatUnreadCount()
-      
-      // 30초마다 안읽은 메시지 수 새로고침
-      const interval = setInterval(fetchTeamChatUnreadCount, 30000)
-      return () => clearInterval(interval)
-    }
-  }, [authUser?.email])
+  // AuthContext에서 자동으로 관리되므로 별도 useEffect 불필요
 
   const handleLogout = async () => {
     try {
