@@ -256,20 +256,20 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('options'), href: `/${locale}/admin/options`, icon: Settings },
     { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },
     { name: t('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
-    { name: '픽업 호텔 관리', href: `/${locale}/admin/pickup-hotels`, icon: Building },
-    { name: '차량 관리', href: `/${locale}/admin/vehicles`, icon: Car },
-    { name: '쿠폰 관리', href: `/${locale}/admin/coupons`, icon: Ticket },
-    { name: '예약 통계', href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
-    { name: '문서 템플릿', href: `/${locale}/admin/reservations/templates`, icon: FileText },
+    { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
+    { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
+    { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
+    { name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
+    { name: t('documentTemplates'), href: `/${locale}/admin/reservations/templates`, icon: FileText },
     { name: t('team'), href: `/${locale}/admin/team`, icon: Users },
-    { name: '팀 채팅', href: `/${locale}/admin/team-chat`, icon: MessageCircle },
-    { name: '출퇴근 관리', href: `/${locale}/admin/attendance`, icon: Clock },
-    { name: '공급업체 관리', href: `/${locale}/admin/suppliers`, icon: Truck },
-    { name: '공급업체 정산', href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
-    { name: '팀 보드', href: `/${locale}/admin/team-board`, icon: MessageCircle },
-    { name: '데이터 동기화', href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
-    { name: '데이터 검수', href: `/${locale}/admin/data-review`, icon: FileCheck },
-    { name: '감사 추적', href: `/${locale}/admin/audit-logs`, icon: History },
+    { name: t('teamChat'), href: `/${locale}/admin/team-chat`, icon: MessageCircle },
+    { name: t('attendance'), href: `/${locale}/admin/attendance`, icon: Clock },
+    { name: t('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
+    { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
+    { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: MessageCircle },
+    { name: t('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
+    { name: t('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
+    { name: t('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
   ]
 
   return (
@@ -352,8 +352,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       className="flex items-center px-2 py-1 sm:px-3 sm:py-2 bg-green-600 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                      <span className="hidden sm:inline">{isCheckingIn ? '체크인 중...' : '출근'}</span>
-                      <span className="sm:hidden">출근</span>
+                      <span className="hidden sm:inline">{isCheckingIn ? t('checkingIn') : t('checkIn')}</span>
+                      <span className="sm:hidden">{t('checkIn')}</span>
                     </button>
                   ) : (
                     <button
@@ -392,18 +392,18 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 >
                   <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                     <span className="text-white text-sm font-medium">
-                      {(authUser?.name || authUser?.email?.split('@')[0] || '사용자').charAt(0).toUpperCase()}
+                      {(authUser?.name || authUser?.email?.split('@')[0] || t('user')).charAt(0).toUpperCase()}
                     </span>
                   </div>
                   <div className="hidden sm:block text-left">
                     <div className="text-sm font-medium text-gray-900">
-                      {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}님
+                      {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {userRole === 'admin' ? '관리자' : 
-                       userRole === 'manager' ? '매니저' : 
-                       userRole === 'team_member' ? '팀원' : 
-                       authUser?.email ? '구글 사용자' : '고객'}
+                      {userRole === 'admin' ? t('admin') : 
+                       userRole === 'manager' ? t('manager') : 
+                       userRole === 'team_member' ? t('teamMember') : 
+                       authUser?.email ? t('googleUser') : t('customer')}
                     </div>
                   </div>
                   <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -422,14 +422,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       <div className="py-1">
                         <div className="px-4 py-2 border-b border-gray-100">
                           <p className="text-sm font-medium text-gray-900">
-                            {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}
+                            {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
                           </p>
-                          <p className="text-xs text-gray-500">{authUser?.email || '이메일 정보 없음'}</p>
+                          <p className="text-xs text-gray-500">{authUser?.email || t('noEmailInfo')}</p>
                           {userRole && (
                             <p className="text-xs text-blue-600 font-medium mt-1">
-                              {userRole === 'admin' ? '관리자' : 
-                               userRole === 'manager' ? '매니저' : 
-                               userRole === 'team_member' ? '팀원' : '고객'}
+                              {userRole === 'admin' ? t('admin') : 
+                               userRole === 'manager' ? t('manager') : 
+                               userRole === 'team_member' ? t('teamMember') : t('customer')}
                             </p>
                           )}
                         </div>
@@ -462,7 +462,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               <button
                 onClick={handleLanguageToggle}
                 className="flex items-center p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                title={`Switch to ${currentLocale === 'ko' ? 'English' : '한국어'}`}
+                title={currentLocale === 'ko' ? t('switchToEnglish') : t('switchToKorean')}
               >
                 <ReactCountryFlag
                   countryCode={getLanguageFlag()}
