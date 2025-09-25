@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { FileText, Save, AlertCircle } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { FileText, Save, AlertCircle, Settings } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import CommonDetailsModal from './CommonDetailsModal'
 
 interface ProductDetailsFields {
   slogan1: string
@@ -17,10 +18,11 @@ interface ProductDetailsFields {
   tour_operation_info: string
   preparation_info: string
   small_group_info: string
-  companion_info: string
-  exclusive_booking_info: string
+  notice_info: string
+  private_tour_info: string
   cancellation_policy: string
   chat_announcement: string
+  tags: string[]
 }
 
 interface MultilingualProductDetails {
@@ -42,10 +44,11 @@ interface ProductDetailsMultilingualRow {
   tour_operation_info: string | null
   preparation_info: string | null
   small_group_info: string | null
-  companion_info: string | null
-  exclusive_booking_info: string | null
+  notice_info: string | null
+  private_tour_info: string | null
   cancellation_policy: string | null
   chat_announcement: string | null
+  tags: string[] | null
   created_at: string | null
   updated_at: string | null
 }
@@ -68,10 +71,11 @@ interface ProductDetailsFormData {
       tour_operation_info: boolean
       preparation_info: boolean
       small_group_info: boolean
-      companion_info: boolean
-      exclusive_booking_info: boolean
+      notice_info: boolean
+      private_tour_info: boolean
       cancellation_policy: boolean
       chat_announcement: boolean
+      tags: boolean
     }
   }
 }
@@ -79,7 +83,6 @@ interface ProductDetailsFormData {
 interface ProductDetailsTabProps {
   productId: string
   isNewProduct: boolean
-  locale: string
   subCategory: string
   formData: ProductDetailsFormData
   setFormData: React.Dispatch<React.SetStateAction<ProductDetailsFormData>>
@@ -88,7 +91,6 @@ interface ProductDetailsTabProps {
 export default function ProductDetailsTab({
   productId,
   isNewProduct,
-  locale,
   subCategory,
   formData,
   setFormData
@@ -100,6 +102,7 @@ export default function ProductDetailsTab({
   const [loading, setLoading] = useState(true)
   const [commonPreview, setCommonPreview] = useState<MultilingualProductDetails | null>(null)
   const [availableLanguages] = useState(['ko', 'en', 'ja', 'zh'])
+  const [isCommonModalOpen, setIsCommonModalOpen] = useState(false)
   // const [loadingCommon, setLoadingCommon] = useState(false)
 
   const supabase = createClientSupabase()
@@ -113,7 +116,7 @@ export default function ProductDetailsTab({
   // 현재 언어의 상세 정보 가져오기
   const getCurrentLanguageDetails = (): ProductDetailsFields => {
     const currentLang = formData.currentLanguage || 'ko'
-    return formData.productDetails?.[currentLang] || {
+    const details = formData.productDetails?.[currentLang] || {
       slogan1: '',
       slogan2: '',
       slogan3: '',
@@ -125,11 +128,20 @@ export default function ProductDetailsTab({
       tour_operation_info: '',
       preparation_info: '',
       small_group_info: '',
-      companion_info: '',
-      exclusive_booking_info: '',
+      notice_info: '',
+      private_tour_info: '',
       cancellation_policy: '',
-      chat_announcement: ''
+      chat_announcement: '',
+      tags: []
     }
+    
+    // 디버깅: 현재 언어의 상세 정보 확인
+    console.log('=== ProductDetailsTab Debug ===')
+    console.log('currentLang:', currentLang)
+    console.log('formData.productDetails:', formData.productDetails)
+    console.log('current details:', details)
+    
+    return details
   }
 
   // 현재 언어의 공통 정보 사용 여부 가져오기
@@ -145,10 +157,11 @@ export default function ProductDetailsTab({
     tour_operation_info: boolean
     preparation_info: boolean
     small_group_info: boolean
-    companion_info: boolean
-    exclusive_booking_info: boolean
+    notice_info: boolean
+    private_tour_info: boolean
     cancellation_policy: boolean
     chat_announcement: boolean
+    tags: boolean
   } => {
     const currentLang = formData.currentLanguage || 'ko'
     return formData.useCommonForField?.[currentLang] || {
@@ -163,10 +176,11 @@ export default function ProductDetailsTab({
       tour_operation_info: false,
       preparation_info: false,
       small_group_info: false,
-      companion_info: false,
-      exclusive_booking_info: false,
+      notice_info: false,
+      private_tour_info: false,
       cancellation_policy: false,
-      chat_announcement: false
+      chat_announcement: false,
+      tags: false
     }
   }
 
@@ -178,58 +192,60 @@ export default function ProductDetailsTab({
     }))
   }
 
+  // 공통 세부정보 프리뷰 로드 함수
+  const loadCommon = useCallback(async () => {
+    if (!formData.useCommonDetails || !subCategory) {
+      setCommonPreview(null)
+      return
+    }
+    // setLoadingCommon(true)
+    try {
+      const { data, error } = await supabase
+        .from('product_details_common_multilingual')
+        .select('*')
+        .eq('sub_category', subCategory)
+        .in('language_code', availableLanguages) as { data: ProductDetailsMultilingualRow[] | null, error: unknown }
+
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        const mapped: MultilingualProductDetails = {}
+        data.forEach(item => {
+          mapped[item.language_code] = {
+            slogan1: item.slogan1 || '',
+            slogan2: item.slogan2 || '',
+            slogan3: item.slogan3 || '',
+            description: item.description || '',
+            included: item.included || '',
+            not_included: item.not_included || '',
+            pickup_drop_info: item.pickup_drop_info || '',
+            luggage_info: item.luggage_info || '',
+            tour_operation_info: item.tour_operation_info || '',
+            preparation_info: item.preparation_info || '',
+            small_group_info: item.small_group_info || '',
+            notice_info: item.notice_info || '',
+            private_tour_info: item.private_tour_info || '',
+            cancellation_policy: item.cancellation_policy || '',
+            chat_announcement: item.chat_announcement || '',
+            tags: item.tags || []
+          }
+        })
+        setCommonPreview(mapped)
+      } else {
+        setCommonPreview(null)
+      }
+    } catch (error) {
+      console.error('Error loading common details:', error)
+      setCommonPreview(null)
+    } finally {
+      // setLoadingCommon(false)
+    }
+  }, [formData.useCommonDetails, subCategory, availableLanguages, supabase])
+
   // 공통 세부정보 프리뷰 로드
   useEffect(() => {
-    const loadCommon = async () => {
-      if (!formData.useCommonDetails || !subCategory) {
-        setCommonPreview(null)
-        return
-      }
-      // setLoadingCommon(true)
-      try {
-        const { data, error } = await supabase
-          .from('product_details_common_multilingual')
-          .select('*')
-          .eq('sub_category', subCategory)
-          .in('language_code', availableLanguages) as { data: ProductDetailsMultilingualRow[] | null, error: unknown }
-
-        if (error) throw error
-
-        if (data && data.length > 0) {
-          const mapped: MultilingualProductDetails = {}
-          data.forEach(item => {
-            mapped[item.language_code] = {
-              slogan1: item.slogan1 || '',
-              slogan2: item.slogan2 || '',
-              slogan3: item.slogan3 || '',
-              description: item.description || '',
-              included: item.included || '',
-              not_included: item.not_included || '',
-              pickup_drop_info: item.pickup_drop_info || '',
-              luggage_info: item.luggage_info || '',
-              tour_operation_info: item.tour_operation_info || '',
-              preparation_info: item.preparation_info || '',
-              small_group_info: item.small_group_info || '',
-              companion_info: item.companion_info || '',
-              exclusive_booking_info: item.exclusive_booking_info || '',
-              cancellation_policy: item.cancellation_policy || '',
-              chat_announcement: item.chat_announcement || ''
-            }
-          })
-          setCommonPreview(mapped)
-        } else {
-          setCommonPreview(null)
-        }
-      } catch (error) {
-        console.error('Error loading common details:', error)
-        setCommonPreview(null)
-      } finally {
-        // setLoadingCommon(false)
-      }
-    }
-
     loadCommon()
-  }, [formData.useCommonDetails, subCategory, availableLanguages, supabase])
+  }, [loadCommon])
 
   const getValue = (field: keyof ProductDetailsFields) => {
     const currentLang = formData.currentLanguage || 'ko'
@@ -275,7 +291,8 @@ export default function ProductDetailsTab({
         companion_info: false,
         exclusive_booking_info: false,
         cancellation_policy: false,
-        chat_announcement: false
+        chat_announcement: false,
+        tags: false
       }
       
       const newUseCommonForField = {
@@ -296,6 +313,40 @@ export default function ProductDetailsTab({
         useCommonDetails: allFieldsUseCommon
       }
     })
+  }
+
+  // 태그 관련 핸들러 함수들
+  const [newTag, setNewTag] = useState('')
+
+  const addTag = () => {
+    if (newTag.trim() && !getCurrentLanguageDetails().tags.includes(newTag.trim())) {
+      const currentLang = formData.currentLanguage || 'ko'
+      setFormData((prev) => ({
+        ...prev,
+        productDetails: {
+          ...prev.productDetails,
+          [currentLang]: {
+            ...prev.productDetails?.[currentLang],
+            tags: [...(prev.productDetails?.[currentLang]?.tags || []), newTag.trim()]
+          }
+        }
+      }))
+      setNewTag('')
+    }
+  }
+
+  const removeTag = (tagToRemove: string) => {
+    const currentLang = formData.currentLanguage || 'ko'
+    setFormData((prev) => ({
+      ...prev,
+      productDetails: {
+        ...prev.productDetails,
+        [currentLang]: {
+          ...prev.productDetails?.[currentLang],
+          tags: (prev.productDetails?.[currentLang]?.tags || []).filter(tag => tag !== tagToRemove)
+        }
+      }
+    }))
   }
 
   const handleSave = async (e?: React.MouseEvent) => {
@@ -367,10 +418,11 @@ export default function ProductDetailsTab({
         tour_operation_info: currentDetails.tour_operation_info,
         preparation_info: currentDetails.preparation_info,
         small_group_info: currentDetails.small_group_info,
-        companion_info: currentDetails.companion_info,
-        exclusive_booking_info: currentDetails.exclusive_booking_info,
+        notice_info: currentDetails.notice_info,
+        private_tour_info: currentDetails.private_tour_info,
         cancellation_policy: currentDetails.cancellation_policy,
-        chat_announcement: currentDetails.chat_announcement
+        chat_announcement: currentDetails.chat_announcement,
+        tags: currentDetails.tags
       }
 
       if (existingDetails) {
@@ -505,10 +557,11 @@ export default function ProductDetailsTab({
                       tour_operation_info: true,
                       preparation_info: true,
                       small_group_info: true,
-                      companion_info: true,
-                      exclusive_booking_info: true,
+                      notice_info: true,
+                      private_tour_info: true,
                       cancellation_policy: true,
-                      chat_announcement: true
+                      chat_announcement: true,
+                      tags: true
                     }
                     return acc
                   }, {} as ProductDetailsFormData['useCommonForField']) : 
@@ -525,10 +578,11 @@ export default function ProductDetailsTab({
                       tour_operation_info: false,
                       preparation_info: false,
                       small_group_info: false,
-                      companion_info: false,
-                      exclusive_booking_info: false,
+                      notice_info: false,
+                      private_tour_info: false,
                       cancellation_policy: false,
-                      chat_announcement: false
+                      chat_announcement: false,
+                      tags: false
                     }
                     return acc
                   }, {} as ProductDetailsFormData['useCommonForField'])
@@ -537,14 +591,13 @@ export default function ProductDetailsTab({
             />
             <span className="text-sm text-gray-800">sub_category 공통 세부정보 사용</span>
           </label>
-          <a
-            href={`/${locale}/admin/products/common-details`}
-            className="text-sm text-blue-600 hover:underline"
-            target="_blank"
-            rel="noreferrer"
+          <button
+            onClick={() => setIsCommonModalOpen(true)}
+            className="flex items-center space-x-1 text-sm text-blue-600 hover:underline"
           >
-            공통 세부정보 관리 열기
-          </a>
+            <Settings className="h-4 w-4" />
+            <span>공통 세부정보 관리</span>
+          </button>
         </div>
         {formData.useCommonDetails && (
           <p className="mt-2 text-sm text-gray-600">
@@ -916,69 +969,69 @@ export default function ProductDetailsTab({
         </div>
       </div>
 
-      {/* 동반자 정보 */}
+      {/* 안내사항 */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">동반자 정보</h4>
+        <h4 className="text-md font-medium text-gray-900 mb-4">안내사항</h4>
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-gray-700">
-              동반자 관련 정보
+              투어 안내사항
             </label>
             <label className="flex items-center text-xs text-gray-600">
                       <input
                         type="checkbox"
-                        checked={getCurrentLanguageUseCommon().companion_info || false}
-                        onChange={(e) => handleUseCommonChange('companion_info', e.target.checked)}
+                        checked={getCurrentLanguageUseCommon().notice_info || false}
+                        onChange={(e) => handleUseCommonChange('notice_info', e.target.checked)}
                         className="mr-1"
                       />
               공통 사용
             </label>
           </div>
           <textarea
-            value={getValue('companion_info')}
-            onChange={(e) => handleInputChange('companion_info', e.target.value)}
+            value={getValue('notice_info')}
+            onChange={(e) => handleInputChange('notice_info', e.target.value)}
             rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().companion_info ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().companion_info ? '공통 정보 사용' : '동반자 관련 규정 및 정보를 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().companion_info || false}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().notice_info ? 'bg-gray-50' : ''}`}
+            placeholder={getCurrentLanguageUseCommon().notice_info ? '공통 정보 사용' : '투어 관련 안내사항을 입력해주세요'}
+            disabled={getCurrentLanguageUseCommon().notice_info || false}
           />
-          {getCurrentLanguageUseCommon().companion_info && commonPreview?.[formData.currentLanguage || 'ko']?.companion_info && (
+          {getCurrentLanguageUseCommon().notice_info && commonPreview?.[formData.currentLanguage || 'ko']?.notice_info && (
             <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].companion_info}
+              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].notice_info}
             </div>
           )}
         </div>
       </div>
 
-      {/* 독점 예약 정보 */}
+      {/* 단독투어 정보 */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">독점 예약 정보</h4>
+        <h4 className="text-md font-medium text-gray-900 mb-4">단독투어 정보</h4>
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-gray-700">
-              독점 예약 관련 정보
+              단독투어 관련 정보
             </label>
             <label className="flex items-center text-xs text-gray-600">
                       <input
                         type="checkbox"
-                        checked={getCurrentLanguageUseCommon().exclusive_booking_info || false}
-                        onChange={(e) => handleUseCommonChange('exclusive_booking_info', e.target.checked)}
+                        checked={getCurrentLanguageUseCommon().private_tour_info || false}
+                        onChange={(e) => handleUseCommonChange('private_tour_info', e.target.checked)}
                         className="mr-1"
                       />
               공통 사용
             </label>
           </div>
           <textarea
-            value={getValue('exclusive_booking_info')}
-            onChange={(e) => handleInputChange('exclusive_booking_info', e.target.value)}
+            value={getValue('private_tour_info')}
+            onChange={(e) => handleInputChange('private_tour_info', e.target.value)}
             rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().exclusive_booking_info ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().exclusive_booking_info ? '공통 정보 사용' : '독점 예약 관련 특별 사항을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().exclusive_booking_info || false}
+            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().private_tour_info ? 'bg-gray-50' : ''}`}
+            placeholder={getCurrentLanguageUseCommon().private_tour_info ? '공통 정보 사용' : '단독투어 관련 특별 사항을 입력해주세요'}
+            disabled={getCurrentLanguageUseCommon().private_tour_info || false}
           />
-          {getCurrentLanguageUseCommon().exclusive_booking_info && commonPreview?.[formData.currentLanguage || 'ko']?.exclusive_booking_info && (
+          {getCurrentLanguageUseCommon().private_tour_info && commonPreview?.[formData.currentLanguage || 'ko']?.private_tour_info && (
             <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].exclusive_booking_info}
+              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].private_tour_info}
             </div>
           )}
         </div>
@@ -1051,6 +1104,95 @@ export default function ProductDetailsTab({
           )}
         </div>
       </div>
+
+      {/* 태그 */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h4 className="text-md font-medium text-gray-900 mb-4">태그</h4>
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              상품 태그
+            </label>
+            <label className="flex items-center text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={getCurrentLanguageUseCommon().tags || false}
+                onChange={(e) => handleUseCommonChange('tags', e.target.checked)}
+                className="mr-1"
+              />
+              공통 사용
+            </label>
+          </div>
+          
+          {!getCurrentLanguageUseCommon().tags ? (
+            <div>
+              <div className="flex space-x-2 mb-2">
+                <input
+                  type="text"
+                  value={newTag}
+                  onChange={(e) => setNewTag(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                  placeholder="태그 입력 후 Enter"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <button
+                  type="button"
+                  onClick={addTag}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  추가
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {getCurrentLanguageDetails().tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(tag)}
+                      className="ml-1 text-blue-600 hover:text-blue-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-gray-500 text-sm">
+              공통 정보 사용 중
+              {commonPreview?.[formData.currentLanguage || 'ko']?.tags && commonPreview[formData.currentLanguage || 'ko'].tags.length > 0 && (
+                <div className="mt-2">
+                  <div className="flex flex-wrap gap-2">
+                    {commonPreview[formData.currentLanguage || 'ko'].tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 공통 세부정보 관리 모달 */}
+      <CommonDetailsModal
+        isOpen={isCommonModalOpen}
+        onClose={() => setIsCommonModalOpen(false)}
+        subCategory={subCategory}
+        onSave={() => {
+          // 공통 세부정보가 저장되면 프리뷰를 다시 로드
+          loadCommon()
+        }}
+      />
     </div>
   )
 }

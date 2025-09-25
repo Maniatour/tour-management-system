@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Info, Calendar, MessageCircle, Image, Tag, Clock, Save } from 'lucide-react'
+import { Info, Calendar, MessageCircle, Image, Clock, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
   interface BasicInfoTabProps {
@@ -13,7 +13,6 @@ import { supabase } from '@/lib/supabase'
       description: string
       duration: number
       maxParticipants: number
-      tags: string[]
       departureCity: string
       arrivalCity: string
       departureCountry: string
@@ -27,10 +26,6 @@ import { supabase } from '@/lib/supabase'
       status: 'active' | 'inactive' | 'draft'
     }
   setFormData: React.Dispatch<React.SetStateAction<any>>
-  newTag: string
-  setNewTag: (tag: string) => void
-  addTag: () => void
-  removeTag: (tag: string) => void
   productId: string
   isNewProduct: boolean
 }
@@ -38,10 +33,6 @@ import { supabase } from '@/lib/supabase'
 export default function BasicInfoTab({
   formData,
   setFormData,
-  newTag,
-  setNewTag,
-  addTag,
-  removeTag,
   productId,
   isNewProduct
 }: BasicInfoTabProps) {
@@ -145,7 +136,6 @@ export default function BasicInfoTab({
           description: formData.description,
           duration: formData.duration.toString(),
           max_participants: formData.maxParticipants,
-          tags: formData.tags,
           departure_city: formData.departureCity,
           arrival_city: formData.arrivalCity,
                      departure_country: formData.departureCountry,
@@ -505,20 +495,20 @@ export default function BasicInfoTab({
           <input
             type="number"
             min="0.5"
-            max="24"
+            max="168"
             step="0.5"
             value={formData.duration}
             onChange={(e) => {
               const value = parseFloat(e.target.value);
-              if (value >= 0.5 && value <= 24) {
+              if (value >= 0.5 && value <= 168) {
                 setFormData({ ...formData, duration: value });
               }
             }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 3.5"
+            placeholder="예: 3.5 (숙박 투어의 경우 25, 48 등)"
             required
           />
-          <p className="text-xs text-gray-500 mt-1">시간 단위로 입력 (0.5시간 = 30분, 최대 24시간)</p>
+          <p className="text-xs text-gray-500 mt-1">시간 단위로 입력 (0.5시간 = 30분, 최대 168시간 = 7일)</p>
         </div>
 
         <div>
@@ -534,43 +524,6 @@ export default function BasicInfoTab({
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">태그</label>
-        <div className="flex space-x-2 mb-2">
-          <input
-            type="text"
-            value={newTag}
-            onChange={(e) => setNewTag(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
-            placeholder="태그 입력 후 Enter"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <button
-            type="button"
-            onClick={addTag}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            추가
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {formData.tags.map((tag) => (
-            <span
-              key={tag}
-              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-            >
-              {tag}
-              <button
-                type="button"
-                onClick={() => removeTag(tag)}
-                className="ml-1 text-blue-600 hover:text-blue-800"
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      </div>
 
       {/* 기본 정보 저장 버튼 */}
       <div className="border-t pt-6 mt-6">

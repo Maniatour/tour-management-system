@@ -35,6 +35,20 @@ interface TicketBooking {
   };
 }
 
+interface TourEvent {
+  id: string;
+  tour_date: string;
+  reservation_ids: string[];
+  total_reservations: number;
+  total_people: number;
+  adults: number;
+  child: number;
+  infant: number;
+  products?: {
+    name: string;
+  };
+}
+
 export default function TicketBookingList() {
   const router = useRouter();
   const [bookings, setBookings] = useState<TicketBooking[]>([]);
@@ -51,7 +65,7 @@ export default function TicketBookingList() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
-  const [tourEvents, setTourEvents] = useState<any[]>([]);
+  const [tourEvents, setTourEvents] = useState<TourEvent[]>([]);
 
   const fetchBookings = async () => {
     try {
@@ -73,7 +87,7 @@ export default function TicketBookingList() {
       }
 
       // tour_id가 있는 부킹들만 필터링
-      const bookingsWithTourId = (bookingsData || []).filter((booking: any) => booking.tour_id);
+      const bookingsWithTourId = (bookingsData || []).filter((booking: TicketBooking) => booking.tour_id);
       
       console.log('투어 ID가 있는 입장권 부킹들:', bookingsWithTourId);
       
@@ -83,7 +97,7 @@ export default function TicketBookingList() {
       }
 
       // 모든 tour_id를 한 번에 조회
-      const tourIds = [...new Set(bookingsWithTourId.map((booking: any) => booking.tour_id))];
+      const tourIds = [...new Set(bookingsWithTourId.map((booking: TicketBooking) => booking.tour_id))];
       
       console.log('조회할 투어 ID들:', tourIds);
       
@@ -108,15 +122,15 @@ export default function TicketBookingList() {
       }
 
       // tours 데이터를 Map으로 변환하여 빠른 조회 가능하게 함
-      const toursMap = new Map();
-      (toursData || []).forEach((tour: any) => {
+      const toursMap = new Map<string, TourEvent>();
+      (toursData || []).forEach((tour: TourEvent) => {
         toursMap.set(tour.id, tour);
       });
 
       console.log('투어 맵:', toursMap);
 
       // 부킹 데이터에 투어 정보 추가 및 check_in_date 설정
-      const bookingsWithTours = (bookingsData || []).map((booking: any) => {
+      const bookingsWithTours = (bookingsData || []).map((booking: TicketBooking) => {
         const baseBooking = {
           ...booking,
           check_in_date: booking.check_in_date || booking.submit_on
@@ -128,8 +142,8 @@ export default function TicketBookingList() {
           return {
             ...baseBooking,
             tours: {
-              tour_date: tour.tour_date,
-              products: tour.products
+              tour_date: tour?.tour_date || '',
+              products: tour?.products
             }
           };
         }
@@ -185,7 +199,7 @@ export default function TicketBookingList() {
 
       // 각 투어별로 예약 데이터 조회 (reservation_ids 사용)
       const tourEventsWithReservations = await Promise.all(
-        toursData.map(async (tour: any) => {
+        toursData.map(async (tour: TourEvent) => {
           try {
             console.log(`투어 ${tour.id} 처리 시작:`, {
               tour_id: tour.id,
@@ -241,7 +255,7 @@ export default function TicketBookingList() {
               }
               
               console.log(`투어 ${tour.id} fallback 조회 성공:`, fallbackReservations);
-              const fallbackTotalPeople = fallbackReservations?.reduce((sum: number, reservation: any) => {
+              const fallbackTotalPeople = fallbackReservations?.reduce((sum: number, reservation: { total_people?: number }) => {
                 return sum + (reservation.total_people || 0);
               }, 0) || 0;
               
@@ -260,21 +274,21 @@ export default function TicketBookingList() {
             console.log(`투어 ${tour.id} 예약 데이터 상세:`, reservationsData);
             
             // reservation_ids에 있는 예약들의 total_people 합산
-            const totalPeople = reservationsData?.reduce((sum: number, reservation: any) => {
+            const totalPeople = reservationsData?.reduce((sum: number, reservation: { id: string; total_people?: number }) => {
               console.log(`예약 ${reservation.id} total_people:`, reservation.total_people);
               return sum + (reservation.total_people || 0);
             }, 0) || 0;
             
             // adults, child, infant도 계산 (상세 정보용)
-            const totalAdults = reservationsData?.reduce((sum: number, reservation: any) => {
+            const totalAdults = reservationsData?.reduce((sum: number, reservation: { adults?: number }) => {
               return sum + (reservation.adults || 0);
             }, 0) || 0;
             
-            const totalChild = reservationsData?.reduce((sum: number, reservation: any) => {
+            const totalChild = reservationsData?.reduce((sum: number, reservation: { child?: number }) => {
               return sum + (reservation.child || 0);
             }, 0) || 0;
             
-            const totalInfant = reservationsData?.reduce((sum: number, reservation: any) => {
+            const totalInfant = reservationsData?.reduce((sum: number, reservation: { infant?: number }) => {
               return sum + (reservation.infant || 0);
             }, 0) || 0;
 
@@ -988,7 +1002,9 @@ export default function TicketBookingList() {
       {/* 폼 모달 */}
       {showForm && (
         <TicketBookingForm
-          booking={editingBooking as any || undefined}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          booking={editingBooking as any}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           onSave={handleSave as any}
           onCancel={() => {
             setShowForm(false);

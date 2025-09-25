@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   DollarSign, 
   Save,
@@ -42,13 +42,64 @@ export default function DynamicPricingManager({
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [showDetailedPrices, setShowDetailedPrices] = useState(false);
+  const [priceHistory, setPriceHistory] = useState<{
+    byChannel: Record<string, {
+      channelId: string;
+      channelName: string;
+      channelType: string;
+      latestPricing: {
+        adult_price: number;
+        child_price: number;
+        infant_price: number;
+        commission_percent: number;
+        markup_amount: number;
+        coupon_percent: number;
+        is_sale_available: boolean;
+        options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
+      };
+      allPricing: Array<{
+        adult_price: number;
+        child_price: number;
+        infant_price: number;
+        commission_percent: number;
+        markup_amount: number;
+        coupon_percent: number;
+        is_sale_available: boolean;
+        options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
+      }>;
+      fallbackFrom?: string;
+    }>;
+    byType: Record<string, {
+      channelType: string;
+      latestPricing: {
+        adult_price: number;
+        child_price: number;
+        infant_price: number;
+        commission_percent: number;
+        markup_amount: number;
+        coupon_percent: number;
+        is_sale_available: boolean;
+        options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
+      };
+      allPricing: Array<{
+        adult_price: number;
+        child_price: number;
+        infant_price: number;
+        commission_percent: number;
+        markup_amount: number;
+        coupon_percent: number;
+        is_sale_available: boolean;
+        options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
+      }>;
+    }>;
+  } | null>(null);
   
 
   // 가격 설정 상태
   const [pricingConfig, setPricingConfig] = useState({
     start_date: new Date().toISOString().split('T')[0], // 오늘 날짜
     end_date: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0], // 올해 말일 (12월 31일)
-    selected_weekdays: [] as number[],
+    selected_weekdays: [0, 1, 2, 3, 4, 5, 6] as number[], // 모든 요일 기본 선택
     is_sale_available: true,
     commission_percent: 25, // 기본 커미션 25%
     markup_amount: 0,
@@ -121,7 +172,12 @@ export default function DynamicPricingManager({
     name: string;
     category: string;
     base_price: number;
+    adult_price: number;
+    child_price: number;
+    infant_price: number;
   }>>([]);
+  
+  const [allOptions, setAllOptions] = useState<Array<{ id: string; name: string }>>([]);
 
   // 선택된 필수 옵션 (전체적으로 하나만)
   const [selectedRequiredOption, setSelectedRequiredOption] = useState<string>('');
@@ -157,11 +213,102 @@ export default function DynamicPricingManager({
     }
   }, []);
 
+  // 가격 히스토리 불러오기
+  const loadPriceHistory = useCallback(async (channelId?: string) => {
+    try {
+      const params = new URLSearchParams({
+        productId: productId
+      });
+      
+      if (channelId) {
+        params.append('channelId', channelId);
+      }
+
+      const response = await fetch(`/api/pricing/history?${params}`);
+      const result = await response.json();
+
+      if (result.success) {
+        setPriceHistory(result.data);
+        return result.data;
+      } else {
+        console.error('Failed to load price history:', result.error);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error loading price history:', error);
+      return null;
+    }
+  }, [productId]);
+
+  // 채널 선택 시 최근 가격 불러오기
+  const handleChannelSelect = useCallback(async (channelId: string) => {
+    setSelectedChannel(channelId);
+    
+    // 가격 히스토리 불러오기
+    const history = await loadPriceHistory(channelId);
+    
+    if (history?.byChannel?.[channelId]?.latestPricing) {
+      const latestPricing = history.byChannel[channelId].latestPricing;
+      
+      // 최근 가격으로 설정 업데이트
+      setPricingConfig(prev => ({
+        ...prev,
+        adult_price: latestPricing.adult_price || 0,
+        child_price: latestPricing.child_price || 0,
+        infant_price: latestPricing.infant_price || 0,
+        commission_percent: latestPricing.commission_percent || 25,
+        markup_amount: latestPricing.markup_amount || 0,
+        coupon_percentage_discount: latestPricing.coupon_percent || 0,
+        is_sale_available: latestPricing.is_sale_available ?? true,
+        selected_weekdays: [0, 1, 2, 3, 4, 5, 6] // 모든 요일 기본 선택
+      }));
+
+    }
+  }, [loadPriceHistory]);
+
+  // 옵션 가격 적용 함수
+  const applyOptionsPricing = useCallback((optionsList: Array<{
+    id: string;
+    name: string;
+    category: string;
+    base_price: number;
+    adult_price: number;
+    child_price: number;
+    infant_price: number;
+  }>, optionsPricing: Record<string, { adult: number; child: number; infant: number }>) => {
+    if (!optionsPricing || optionsList.length === 0) return;
+    
+    setPricingConfig(prev => {
+      const updatedRequiredOptions = prev.required_options.map((option: {
+        option_id: string;
+        adult_price: number;
+        child_price: number;
+        infant_price: number;
+      }) => {
+        const optionKey = `option_${option.option_id}`;
+        if (optionsPricing[optionKey]) {
+          return {
+            ...option,
+            adult_price: optionsPricing[optionKey].adult || option.adult_price,
+            child_price: optionsPricing[optionKey].child || option.child_price,
+            infant_price: optionsPricing[optionKey].infant || option.infant_price
+          };
+        }
+        return option;
+      });
+      
+      return {
+        ...prev,
+        required_options: updatedRequiredOptions
+      };
+    });
+  }, []);
+
   // Supabase에서 상품 옵션 데이터 로드
   const loadProductOptions = useCallback(async () => {
     try {
       
-      // 병합된 product_options 테이블에서 필수 옵션만 가져옴
+      // 병합된 product_options 테이블에서 모든 옵션 가져옴 (필수 옵션 필터링은 나중에)
       const { data: optionsData, error } = await supabase
         .from('product_options')
         .select(`
@@ -171,29 +318,70 @@ export default function DynamicPricingManager({
           choice_name,
           adult_price_adjustment,
           child_price_adjustment,
-          infant_price_adjustment
+          infant_price_adjustment,
+          is_required
         `)
-        .eq('product_id', productId)
-        .eq('is_required', true);
+        .eq('product_id', productId);
+
+      // options 테이블에서도 옵션 정보 가져오기 (ID 매핑용)
+      const { data: optionsTableData, error: optionsTableError } = await supabase
+        .from('options')
+        .select('id, name');
 
       if (error) {
         console.error('Product options 로드 실패:', error);
         return;
       }
 
+      if (optionsTableError) {
+        console.error('Options 테이블 로드 실패:', optionsTableError);
+      } else {
+        // options 테이블 데이터를 allOptions에 저장
+        setAllOptions((optionsTableData as Array<{ id: string; name: string }>) || []);
+      }
+
+      console.log('Product options 쿼리 결과:', {
+        productId,
+        optionsData,
+        optionsTableData,
+        error,
+        optionsDataLength: optionsData?.length,
+        firstOption: optionsData?.[0]
+      });
+
       // 옵션 데이터를 가격 캘린더용으로 변환 (병합된 테이블 구조)
-      const transformedOptions = (optionsData as Array<{
+      console.log('로드된 옵션 데이터:', optionsData);
+      
+      // 필수 옵션만 필터링
+      const requiredOptions = (optionsData as Array<{
         id: string;
         name: string;
         choice_name?: string;
         adult_price_adjustment?: number;
         child_price_adjustment?: number;
         infant_price_adjustment?: number;
-      }>)?.map((option) => {
+        is_required?: boolean;
+      }>)?.filter(option => option.is_required === true) || [];
+      
+      console.log('필수 옵션 필터링 결과:', requiredOptions);
+      
+      const transformedOptions = requiredOptions.map((option) => {
         // 병합된 테이블에서는 각 행이 이미 하나의 선택지를 나타냄
         const adultPrice = option.adult_price_adjustment || 0;
         const childPrice = option.child_price_adjustment || 0;
         const infantPrice = option.infant_price_adjustment || 0;
+        
+        console.log(`옵션 변환: ${option.name}`, {
+          id: option.id,
+          choice_name: option.choice_name,
+          adult_price_adjustment: option.adult_price_adjustment,
+          child_price_adjustment: option.child_price_adjustment,
+          infant_price_adjustment: option.infant_price_adjustment,
+          adult_price_adjustment_type: typeof option.adult_price_adjustment,
+          child_price_adjustment_type: typeof option.child_price_adjustment,
+          infant_price_adjustment_type: typeof option.infant_price_adjustment,
+          변환된_가격: { adultPrice, childPrice, infantPrice }
+        });
         
         return {
           id: option.id,
@@ -219,14 +407,27 @@ export default function DynamicPricingManager({
           ...prev,
           required_options: transformedOptions.map(option => ({
             option_id: option.id,
-            adult_price: option.adult_price,
-            child_price: option.child_price,
-            infant_price: option.infant_price
+            adult_price: option.adult_price || 0,
+            child_price: option.child_price || 0,
+            infant_price: option.infant_price || 0
           }))
         }));
+        
+        
+        console.log('옵션 가격 설정 완료:', transformedOptions.map(opt => ({
+          id: opt.id,
+          name: opt.name,
+          adult_price: opt.adult_price,
+          child_price: opt.child_price,
+          infant_price: opt.infant_price
+        })));
       } else {
         // 옵션이 없으면 선택 상태 초기화
         setSelectedRequiredOption('');
+        setPricingConfig(prev => ({
+          ...prev,
+          required_options: []
+        }));
       }
     } catch (error) {
       console.error('Product options 로드 중 오류:', error);
@@ -248,7 +449,24 @@ export default function DynamicPricingManager({
         return;
       }
 
-      setDynamicPricingData(pricingData || []);
+      // options_pricing JSON 문자열을 파싱
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const processedData = (pricingData || []).map((item: any) => {
+        if (item.options_pricing && typeof item.options_pricing === 'string') {
+          try {
+            return {
+              ...item,
+              options_pricing: JSON.parse(item.options_pricing)
+            };
+          } catch (error) {
+            console.error('options_pricing 파싱 실패:', error, item.options_pricing);
+            return item;
+          }
+        }
+        return item;
+      });
+
+      setDynamicPricingData(processedData);
     } catch (error) {
       console.error('Dynamic pricing 데이터 로드 중 오류:', error);
     }
@@ -259,7 +477,76 @@ export default function DynamicPricingManager({
     loadChannels();
     loadProductOptions();
     loadDynamicPricingData();
-  }, [loadChannels, loadProductOptions, loadDynamicPricingData]);
+    loadPriceHistory(); // 가격 히스토리도 함께 로드
+  }, [loadChannels, loadProductOptions, loadDynamicPricingData, loadPriceHistory]);
+
+  // 옵션 가격 적용 (채널 선택 시)
+  useEffect(() => {
+    if (selectedChannel && priceHistory?.byChannel?.[selectedChannel]?.latestPricing?.options_pricing && options.length > 0) {
+      applyOptionsPricing(options, priceHistory.byChannel[selectedChannel].latestPricing.options_pricing);
+    }
+  }, [selectedChannel, priceHistory, options, applyOptionsPricing]);
+
+  // dynamic_pricing 데이터가 로드된 후 옵션 가격 업데이트 (한 번만 실행)
+  const hasUpdatedOptionsFromDynamicPricing = useRef(false);
+  
+  useEffect(() => {
+    console.log('dynamic_pricing useEffect 실행:', {
+      dynamicPricingDataLength: dynamicPricingData.length,
+      optionsLength: options.length,
+      hasUpdated: hasUpdatedOptionsFromDynamicPricing.current,
+      allOptionsLength: allOptions.length
+    });
+    
+    if (dynamicPricingData.length > 0 && options.length > 0 && allOptions.length > 0 && !hasUpdatedOptionsFromDynamicPricing.current) {
+      const latestPricing = dynamicPricingData[0];
+      if (latestPricing.options_pricing && Array.isArray(latestPricing.options_pricing)) {
+        console.log('dynamic_pricing에서 옵션 가격 업데이트:', latestPricing.options_pricing);
+        console.log('현재 options:', options);
+        console.log('allOptions:', allOptions);
+        
+        // options 배열을 직접 업데이트
+        const updatedOptions = options.map(option => {
+          // 저장된 데이터에서 해당 옵션 찾기 (이름으로 매칭)
+          const savedOption = (latestPricing.options_pricing as Array<{ option_id: string; adult_price?: number; child_price?: number; infant_price?: number }>).find((saved) => {
+            // allOptions에서 저장된 옵션의 이름 찾기
+            const savedOptionName = allOptions.find(opt => opt.id === saved.option_id)?.name;
+            const currentOptionName = option.name;
+            console.log(`매칭 시도: ${savedOptionName} === ${currentOptionName} (${saved.option_id} vs ${option.id})`);
+            return savedOptionName === currentOptionName;
+          });
+          
+          if (savedOption) {
+            console.log(`저장된 가격으로 업데이트: ${option.name} -> ${savedOption.adult_price}`);
+            return {
+              ...option,
+              adult_price: savedOption.adult_price || option.adult_price,
+              child_price: savedOption.child_price || option.child_price,
+              infant_price: savedOption.infant_price || option.infant_price
+            };
+          }
+          
+          return option;
+        });
+        
+        console.log('업데이트된 options:', updatedOptions);
+        setOptions(updatedOptions);
+        
+        // pricingConfig도 업데이트
+        setPricingConfig(prev => ({
+          ...prev,
+          required_options: updatedOptions.map(option => ({
+            option_id: option.id,
+            adult_price: option.adult_price,
+            child_price: option.child_price,
+            infant_price: option.infant_price
+          }))
+        }));
+        
+        hasUpdatedOptionsFromDynamicPricing.current = true;
+      }
+    }
+  }, [dynamicPricingData, options, allOptions]);
 
   // 리스트뷰용 월별 데이터 가져오기
   const getListViewData = () => {
@@ -455,35 +742,9 @@ export default function DynamicPricingManager({
     return Math.max(0, result); // 최종적으로 음수 방지
   };
 
-  // 가격 계산 (미리보기용)
-  const calculatePreviewPrices = () => {
-    const { adult_price, child_price, infant_price, markup_amount, coupon_fixed_discount, coupon_percentage_discount, discount_priority, commission_percent } = pricingConfig;
-    
-    // 최대 판매가 계산
-    const maxAdultPrice = adult_price + markup_amount;
-    const maxChildPrice = child_price + markup_amount;
-    const maxInfantPrice = infant_price + markup_amount;
-
-    // 쿠폰 할인 적용 (할인 우선순위 고려)
-    const discountedAdultPrice = calculateCouponDiscount(maxAdultPrice, coupon_fixed_discount, coupon_percentage_discount, discount_priority);
-    const discountedChildPrice = calculateCouponDiscount(maxChildPrice, coupon_fixed_discount, coupon_percentage_discount, discount_priority);
-    const discountedInfantPrice = calculateCouponDiscount(maxInfantPrice, coupon_fixed_discount, coupon_percentage_discount, discount_priority);
-
-    // 커미션 적용 (Net Price)
-    const commissionMultiplier = (100 - commission_percent) / 100;
-    const netAdultPrice = discountedAdultPrice * commissionMultiplier;
-    const netChildPrice = discountedChildPrice * commissionMultiplier;
-    const netInfantPrice = discountedInfantPrice * commissionMultiplier;
-
-    return {
-      max: { adult: maxAdultPrice, child: maxChildPrice, infant: maxInfantPrice },
-      discounted: { adult: discountedAdultPrice, child: discountedChildPrice, infant: discountedInfantPrice },
-      net: { adult: netAdultPrice, child: netChildPrice, infant: netInfantPrice }
-    };
-  };
 
   // 특정 날짜의 가격 계산 (캘린더용)
-  const calculateDatePrices = (date: string, channelId: string) => {
+  const calculateDatePrices = (date: string, channelId: string, allOptionsData: Array<{ id: string; name: string }> = allOptions) => {
     // 해당 날짜와 채널의 동적 가격 데이터 찾기
     const pricingData = dynamicPricingData.find(
       data => data.date === date && data.channel_id === channelId
@@ -496,34 +757,108 @@ export default function DynamicPricingManager({
     // 기본 가격 (adult_price)
     const baseAdultPrice = pricingData.adult_price;
 
-    // 선택된 옵션의 가격 추가 (options_pricing 배열에서 선택된 옵션 ID로 검색)
+    // 선택된 옵션의 가격 추가
     let optionAdultPrice = 0;
-    if (selectedRequiredOption && pricingData.options_pricing) {
-      console.log(`옵션 가격 데이터 확인 - 날짜: ${date}, 선택된 옵션: ${selectedRequiredOption}`, {
-        options_pricing: pricingData.options_pricing,
-        options_pricing_type: Array.isArray(pricingData.options_pricing) ? 'array' : 'object'
-      });
-      
-      // options_pricing이 배열인 경우
-      if (Array.isArray(pricingData.options_pricing)) {
-        const optionPricing = pricingData.options_pricing.find(
+    if (selectedRequiredOption) {
+      // 1. 먼저 저장된 데이터에서 options_pricing 확인 (이미 파싱된 상태)
+      if (pricingData.options_pricing && Array.isArray(pricingData.options_pricing)) {
+        // 저장된 데이터에서 선택된 옵션 찾기 (ID로 먼저 시도)
+        let savedOption = pricingData.options_pricing.find(
           (option: { option_id: string; adult_price?: number }) => option.option_id === selectedRequiredOption
         );
-        if (optionPricing) {
-          optionAdultPrice = optionPricing.adult_price || 0;
-          console.log(`배열에서 찾은 옵션 가격:`, optionPricing);
+        
+        // ID로 찾지 못했으면 옵션 이름으로 찾기
+        if (!savedOption) {
+          const selectedOptionFromConfig = pricingConfig.required_options.find(
+            option => option.option_id === selectedRequiredOption
+          );
+          
+          if (selectedOptionFromConfig) {
+            // 현재 선택된 옵션의 이름 가져오기
+            const currentOptionName = options.find(opt => opt.id === selectedRequiredOption)?.name;
+            console.log(`현재 선택된 옵션 이름: ${currentOptionName}, ID: ${selectedRequiredOption}`);
+            console.log(`저장된 options_pricing:`, pricingData.options_pricing);
+            console.log(`현재 options 배열:`, options);
+            console.log(`allOptions 배열:`, allOptions);
+            
+            // 먼저 ID로 매칭 시도
+            savedOption = pricingData.options_pricing.find(
+              (option: { option_id: string; adult_price?: number; option_name?: string }) => option.option_id === selectedRequiredOption
+            );
+            
+            // ID로 찾지 못했으면 인덱스로 매칭 시도
+            if (!savedOption && pricingData.options_pricing.length === options.length) {
+              const currentOptionIndex = options.findIndex(opt => opt.id === selectedRequiredOption);
+              if (currentOptionIndex >= 0 && currentOptionIndex < pricingData.options_pricing.length) {
+                savedOption = pricingData.options_pricing[currentOptionIndex];
+                console.log(`인덱스로 매칭: ${currentOptionIndex}번째 옵션 -> ${savedOption.adult_price}`);
+              }
+            }
+            
+            // 여전히 찾지 못했으면 이름으로 매칭 시도
+            if (!savedOption) {
+              savedOption = pricingData.options_pricing.find(
+                (option: { option_id: string; adult_price?: number; option_name?: string }) => {
+                  // 저장된 옵션의 이름을 가져와서 비교
+                  const savedOptionName = options.find(opt => opt.id === option.option_id)?.name;
+                  console.log(`저장된 옵션 이름: ${savedOptionName}, ID: ${option.option_id}`);
+                  
+                  // options 테이블에서 직접 찾기
+                  if (!savedOptionName && allOptionsData.length > 0) {
+                    const optionFromTable = allOptionsData.find(opt => opt.id === option.option_id);
+                    if (optionFromTable) {
+                      console.log(`options 테이블에서 찾은 이름: ${optionFromTable.name}`);
+                      const nameMatch = optionFromTable.name === currentOptionName;
+                      console.log(`테이블 매칭 결과: ${nameMatch} (${optionFromTable.name} === ${currentOptionName})`);
+                      return nameMatch;
+                    }
+                  }
+                  
+                  // 이름이 정확히 일치하는지 확인
+                  const nameMatch = savedOptionName === currentOptionName;
+                  console.log(`이름 매칭 결과: ${nameMatch} (${savedOptionName} === ${currentOptionName})`);
+                  
+                  return nameMatch;
+                }
+              );
+            }
+            
+            if (savedOption) {
+              console.log(`이름으로 매칭된 옵션:`, savedOption);
+            }
+          }
+        }
+        
+        if (savedOption) {
+          optionAdultPrice = savedOption.adult_price || 0;
+          console.log(`저장된 데이터에서 옵션 가격 사용 - 날짜: ${date}, 선택된 옵션: ${selectedRequiredOption}, 가격: ${optionAdultPrice}`);
+        } else {
+          // 2. 저장된 데이터에 없으면 현재 설정된 가격 사용
+          const selectedOption = pricingConfig.required_options.find(
+            option => option.option_id === selectedRequiredOption
+          );
+          
+          if (selectedOption) {
+            optionAdultPrice = selectedOption.adult_price || 0;
+            console.log(`현재 설정된 옵션 가격 사용 - 날짜: ${date}, 선택된 옵션: ${selectedRequiredOption}, 가격: ${optionAdultPrice}`);
+          } else {
+            console.log(`선택된 옵션을 찾을 수 없음: ${selectedRequiredOption}`);
+          }
         }
       } else {
-        // options_pricing이 객체인 경우 (기존 방식)
-        const optionPricing = pricingData.options_pricing[selectedRequiredOption];
-        if (optionPricing) {
-          optionAdultPrice = optionPricing.adult || optionPricing.adult_price || 0;
-          console.log(`객체에서 찾은 옵션 가격:`, optionPricing);
+        // options_pricing이 없으면 현재 설정된 가격 사용
+        const selectedOption = pricingConfig.required_options.find(
+          option => option.option_id === selectedRequiredOption
+        );
+        
+        if (selectedOption) {
+          optionAdultPrice = selectedOption.adult_price || 0;
+          console.log(`현재 설정된 옵션 가격 사용 (저장된 데이터 없음) - 날짜: ${date}, 선택된 옵션: ${selectedRequiredOption}, 가격: ${optionAdultPrice}`);
         }
       }
     }
 
-    // 파란색: 최대 가격 = adult_price + options_pricing[선택된옵션ID].adult
+    // 파란색: 최대 가격 = adult_price + 선택된 옵션의 adult_price
     const maxAdultPrice = baseAdultPrice + optionAdultPrice;
 
     // 주황색: 할인 가격 = 최대 가격에서 coupon_percent 적용
@@ -542,7 +877,8 @@ export default function DynamicPricingManager({
       couponPercent: pricingData.coupon_percent,
       discountedAdultPrice,
       commissionPercent: pricingData.commission_percent,
-      netAdultPrice
+      netAdultPrice,
+      optionsPricing: pricingData.options_pricing
     });
 
     return {
@@ -618,7 +954,7 @@ export default function DynamicPricingManager({
     if (!selectedChannel) return null;
     
     const dateString = date.toISOString().split('T')[0];
-    const prices = calculateDatePrices(dateString, selectedChannel);
+    const prices = calculateDatePrices(dateString, selectedChannel, allOptions);
     
     if (!prices) return null;
 
@@ -636,7 +972,7 @@ export default function DynamicPricingManager({
     // 이 useEffect는 의존성 배열에 currentMonth와 selectedRequiredOption을 포함하여
     // 이 값들이 변경될 때마다 캘린더를 새로고침합니다.
     console.log('옵션 또는 월이 변경됨:', selectedRequiredOption);
-  }, [currentMonth, selectedRequiredOption, dynamicPricingData, selectedChannel]);
+  }, [currentMonth, selectedRequiredOption, dynamicPricingData, selectedChannel, pricingConfig.required_options]);
 
   // selectedRequiredOption 상태 변화 모니터링
   useEffect(() => {
@@ -817,7 +1153,6 @@ export default function DynamicPricingManager({
   };
 
   const daysInMonth = getDaysInMonth(currentMonth);
-  const previewPrices = calculatePreviewPrices();
 
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-gray-50">
@@ -827,7 +1162,7 @@ export default function DynamicPricingManager({
         <div className="lg:hidden mb-4">
           <select
             value={selectedChannel}
-            onChange={(e) => setSelectedChannel(e.target.value)}
+            onChange={(e) => handleChannelSelect(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="">채널을 선택하세요</option>
@@ -904,7 +1239,7 @@ export default function DynamicPricingManager({
                      ? 'border-blue-500 bg-blue-50'
                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                  }`}
-                 onClick={() => setSelectedChannel(channel.id)}
+                 onClick={() => handleChannelSelect(channel.id)}
                >
                  {/* 채널 이름 */}
                  <div className={`text-sm font-medium ${
@@ -930,6 +1265,42 @@ export default function DynamicPricingManager({
            </div>
          )}
         
+        {/* 가격 히스토리 정보 */}
+        {selectedChannel && priceHistory?.byChannel?.[selectedChannel] && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-900">최근 가격 정보</h4>
+              {priceHistory.byChannel[selectedChannel].fallbackFrom && (
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                  참조값
+                </span>
+              )}
+            </div>
+            <div className="space-y-2 text-xs text-gray-600">
+              <div className="flex justify-between">
+                <span>성인:</span>
+                <span className="font-medium">${priceHistory.byChannel[selectedChannel].latestPricing.adult_price}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>아동:</span>
+                <span className="font-medium">${priceHistory.byChannel[selectedChannel].latestPricing.child_price}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>유아:</span>
+                <span className="font-medium">${priceHistory.byChannel[selectedChannel].latestPricing.infant_price}</span>
+              </div>
+              {priceHistory.byChannel[selectedChannel].fallbackFrom && (
+                <div className="text-blue-600 text-xs mt-2 p-2 bg-blue-50 rounded">
+                  <div className="font-medium">같은 타입 채널에서 가져온 기본값</div>
+                  <div className="text-gray-500">
+                    {priceHistory.byChannel[priceHistory.byChannel[selectedChannel].fallbackFrom]?.channelName || 'Unknown'}에서 참조
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* 채널 및 옵션 새로고침 버튼 - 모바일에서는 숨김 */}
         <div className="mt-4 pt-4 border-t border-gray-200 space-y-2 hidden lg:block">
           <button
@@ -1079,7 +1450,7 @@ export default function DynamicPricingManager({
          <div className="grid grid-cols-7 gap-1">
                {daysInMonth.map((day, index) => {
                  const dateString = day.date.toISOString().split('T')[0];
-                 const prices = selectedChannel ? calculateDatePrices(dateString, selectedChannel) : null;
+                 const prices = selectedChannel ? calculateDatePrices(dateString, selectedChannel, allOptions) : null;
                  
                  return (
              <div
@@ -1168,7 +1539,7 @@ export default function DynamicPricingManager({
              <div className="space-y-2 h-[400px] lg:h-[800px] overflow-y-auto">
                {getListViewData().length > 0 ? (
                  getListViewData().map((data, index) => {
-                   const prices = calculateDatePrices(data.date, data.channel_id);
+                   const prices = calculateDatePrices(data.date, data.channel_id, allOptions);
                    const displayDate = new Date(data.date).toLocaleDateString('ko-KR', { 
                      month: 'short', 
                      day: 'numeric',
@@ -1578,7 +1949,23 @@ export default function DynamicPricingManager({
                                   opt => opt.option_id === option.id
                                 );
                                 
-                                                                 return (
+                                // 현재 설정된 가격 또는 옵션의 기본 가격 사용
+                                const currentAdultPrice = existingOption?.adult_price ?? option.adult_price ?? 0;
+                                const currentChildPrice = existingOption?.child_price ?? option.child_price ?? 0;
+                                const currentInfantPrice = existingOption?.infant_price ?? option.infant_price ?? 0;
+                                
+                                console.log(`옵션 가격 표시: ${option.name}`, {
+                                  option_id: option.id,
+                                  option_adult_price: option.adult_price,
+                                  option_child_price: option.child_price,
+                                  option_infant_price: option.infant_price,
+                                  existing_option: existingOption,
+                                  current_adult_price: currentAdultPrice,
+                                  current_child_price: currentChildPrice,
+                                  current_infant_price: currentInfantPrice
+                                });
+                                
+                                return (
                                    <div key={option.id} className="pl-4">
                                      <div className="mb-2">
                                        <span className="text-sm text-gray-900">
@@ -1594,7 +1981,7 @@ export default function DynamicPricingManager({
                                              type="number"
                                              min="0"
                                              step="0.01"
-                                             value={existingOption?.adult_price || 0}
+                                             value={currentAdultPrice}
                                              onChange={(e) => handleRequiredOptionPriceChange(option.id, 'adult_price', parseFloat(e.target.value) || 0)}
                                              className="w-full pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
                                              placeholder="0"
@@ -1609,7 +1996,7 @@ export default function DynamicPricingManager({
                                              type="number"
                                              min="0"
                                              step="0.01"
-                                             value={existingOption?.child_price || 0}
+                                             value={currentChildPrice}
                                              onChange={(e) => handleRequiredOptionPriceChange(option.id, 'child_price', parseFloat(e.target.value) || 0)}
                                              className="w-full pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
                                              placeholder="0"
@@ -1624,7 +2011,7 @@ export default function DynamicPricingManager({
                                              type="number"
                                              min="0"
                                              step="0.01"
-                                             value={existingOption?.infant_price || 0}
+                                             value={currentInfantPrice}
                                              onChange={(e) => handleRequiredOptionPriceChange(option.id, 'infant_price', parseFloat(e.target.value) || 0)}
                                              className="w-full pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
                                              placeholder="0"

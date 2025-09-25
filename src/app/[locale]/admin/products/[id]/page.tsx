@@ -186,7 +186,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     coupons: Coupon[]
     maxParticipants: number
     status: 'active' | 'inactive' | 'draft'
-    tags: string[]
     productOptions: ProductOption[]
     // 새로운 필드들
     departureCity: string
@@ -215,10 +214,11 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         tour_operation_info: string
         preparation_info: string
         small_group_info: string
-        companion_info: string
-        exclusive_booking_info: string
+        notice_info: string
+        private_tour_info: string
         cancellation_policy: string
         chat_announcement: string
+        tags: string[]
       }
     }
     // 현재 선택된 언어
@@ -237,10 +237,11 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         tour_operation_info: boolean
         preparation_info: boolean
         small_group_info: boolean
-        companion_info: boolean
-        exclusive_booking_info: boolean
+        notice_info: boolean
+        private_tour_info: boolean
         cancellation_policy: boolean
         chat_announcement: boolean
+        tags: boolean
       }
     }
   }>({
@@ -273,7 +274,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     ],
     maxParticipants: 10,
     status: 'active' as const,
-    tags: [],
     productOptions: [],
     // 새로운 필드들의 초기값
     departureCity: '',
@@ -302,10 +302,11 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         tour_operation_info: '',
         preparation_info: '',
         small_group_info: '',
-        companion_info: '',
-        exclusive_booking_info: '',
+        notice_info: '',
+        private_tour_info: '',
         cancellation_policy: '',
-        chat_announcement: ''
+        chat_announcement: '',
+        tags: []
       }
     },
     // 현재 선택된 언어 초기값
@@ -324,15 +325,15 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         tour_operation_info: false,
         preparation_info: false,
         small_group_info: false,
-        companion_info: false,
-        exclusive_booking_info: false,
+        notice_info: false,
+        private_tour_info: false,
         cancellation_policy: false,
-        chat_announcement: false
+        chat_announcement: false,
+        tags: false
       }
     }
   })
 
-  const [newTag, setNewTag] = useState('')
   const [globalOptions, setGlobalOptions] = useState<GlobalOption[]>([])
   const [loadingOptions, setLoadingOptions] = useState(false)
 
@@ -446,11 +447,11 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       if (!isNewProduct && id !== 'new') {
         try {
           // 1. 상품 기본 정보 로드
-          const { data: productData, error: productError } = await supabase
-            .from('products')
-            .select('*')
-            .eq('id', id)
-            .single()
+        const { data: productData, error: productError } = await supabase
+          .from('products')
+          .select('*')
+          .eq('id', id)
+          .single() as any
 
           if (productError) throw productError
 
@@ -464,7 +465,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           console.log('arrival_city:', productData.arrival_city)
 
           // 2. 상품 옵션 정보 로드
-          const { data: optionsData, error: optionsError } = await supabase
+          const { data: optionsData, error: optionsError } = await (supabase as any)
             .from('product_options')
             .select('*')
             .eq('product_id', id)
@@ -473,22 +474,22 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           if (optionsError) throw optionsError
 
           // 3. 상품 세부정보 로드 (공통 여부 반영)
-          let detailsData: DetailsRow | null = null
+          let detailsData: any = null
           let detailsError: { code?: string } | null = null
           if (productData?.use_common_details) {
             const { data: commonData, error: commonError } = await supabase
-              .from('product_details_common')
+              .from('product_details_common_multilingual')
               .select('*')
               .eq('sub_category', productData.sub_category)
               .maybeSingle()
             detailsData = commonData
             detailsError = commonError
           } else {
+            // 다국어 데이터를 모두 가져와서 언어별로 매핑
             const { data: ownData, error: ownError } = await supabase
-              .from('product_details')
+              .from('product_details_multilingual')
               .select('*')
-              .eq('product_id', id)
-              .maybeSingle()
+              .eq('product_id', id) as any
             detailsData = ownData
             detailsError = ownError
           }
@@ -497,10 +498,21 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             throw detailsError
           }
 
+          // 디버깅: 세부정보 데이터 확인
+          console.log('=== Product Details Data Debug ===')
+          console.log('detailsData:', detailsData)
+          console.log('detailsData type:', Array.isArray(detailsData) ? 'array' : typeof detailsData)
+          if (Array.isArray(detailsData)) {
+            console.log('detailsData length:', detailsData.length)
+            detailsData.forEach((item, index) => {
+              console.log(`detailsData[${index}]:`, item)
+            })
+          }
+
 
 
           // 4. 폼 데이터 설정
-          setFormData(prevData => ({
+          setFormData((prevData: any) => ({
             ...prevData,
             name: productData.name || '',
             productCode: productData.product_code || '',
@@ -515,7 +527,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             },
             maxParticipants: productData.max_participants || 10,
             status: (productData.status as 'active' | 'inactive' | 'draft') || 'active',
-            tags: productData.tags || [],
             departureCity: productData.departure_city || '',
             arrivalCity: productData.arrival_city || '',
             departureCountry: productData.departure_country || '',
@@ -527,58 +538,126 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             childAgeMax: productData.child_age_max || 12,
             infantAge: productData.infant_age || 2,
             useCommonDetails: !!productData.use_common_details,
-            // product_details 데이터 설정
-            productDetails: detailsData ? {
-              slogan1: detailsData.slogan1 || '',
-              slogan2: detailsData.slogan2 || '',
-              slogan3: detailsData.slogan3 || '',
-              description: detailsData.description || '',
-              included: detailsData.included || '',
-              not_included: detailsData.not_included || '',
-              pickup_drop_info: detailsData.pickup_drop_info || '',
-              luggage_info: detailsData.luggage_info || '',
-              tour_operation_info: detailsData.tour_operation_info || '',
-              preparation_info: detailsData.preparation_info || '',
-              small_group_info: detailsData.small_group_info || '',
-              companion_info: detailsData.companion_info || '',
-              exclusive_booking_info: detailsData.exclusive_booking_info || '',
-              cancellation_policy: detailsData.cancellation_policy || '',
-              chat_announcement: detailsData.chat_announcement || ''
-            } : {
-              slogan1: '',
-              slogan2: '',
-              slogan3: '',
-              description: '',
-              included: '',
-              not_included: '',
-              pickup_drop_info: '',
-              luggage_info: '',
-              tour_operation_info: '',
-              preparation_info: '',
-              small_group_info: '',
-              companion_info: '',
-              exclusive_booking_info: '',
-              cancellation_policy: '',
-              chat_announcement: ''
+            // product_details 데이터 설정 (다국어 지원)
+            productDetails: detailsData ? (() => {
+              // 다국어 데이터를 언어별로 매핑
+              const multilingualDetails: any = {}
+              if (Array.isArray(detailsData)) {
+                // 여러 언어 데이터가 있는 경우
+                detailsData.forEach((item: any) => {
+                  multilingualDetails[item.language_code || 'ko'] = {
+                    slogan1: item.slogan1 || '',
+                    slogan2: item.slogan2 || '',
+                    slogan3: item.slogan3 || '',
+                    description: item.description || '',
+                    included: item.included || '',
+                    not_included: item.not_included || '',
+                    pickup_drop_info: item.pickup_drop_info || '',
+                    luggage_info: item.luggage_info || '',
+                    tour_operation_info: item.tour_operation_info || '',
+                    preparation_info: item.preparation_info || '',
+                    small_group_info: item.small_group_info || '',
+                    notice_info: item.notice_info || '',
+                    private_tour_info: item.private_tour_info || '',
+                    cancellation_policy: item.cancellation_policy || '',
+                    chat_announcement: item.chat_announcement || '',
+                    tags: item.tags || []
+                  }
+                })
+              } else if (detailsData) {
+                // 단일 언어 데이터가 있는 경우
+                multilingualDetails[detailsData.language_code || 'ko'] = {
+                  slogan1: detailsData.slogan1 || '',
+                  slogan2: detailsData.slogan2 || '',
+                  slogan3: detailsData.slogan3 || '',
+                  description: detailsData.description || '',
+                  included: detailsData.included || '',
+                  not_included: detailsData.not_included || '',
+                  pickup_drop_info: detailsData.pickup_drop_info || '',
+                  luggage_info: detailsData.luggage_info || '',
+                  tour_operation_info: detailsData.tour_operation_info || '',
+                  preparation_info: detailsData.preparation_info || '',
+                  small_group_info: detailsData.small_group_info || '',
+                  notice_info: detailsData.notice_info || '',
+                  private_tour_info: detailsData.private_tour_info || '',
+                  cancellation_policy: detailsData.cancellation_policy || '',
+                  chat_announcement: detailsData.chat_announcement || '',
+                  tags: detailsData.tags || []
+                }
+              }
+              
+              // 기본 한국어 데이터가 없으면 빈 데이터 추가
+              if (!multilingualDetails.ko) {
+                multilingualDetails.ko = {
+                  slogan1: '',
+                  slogan2: '',
+                  slogan3: '',
+                  description: '',
+                  included: '',
+                  not_included: '',
+                  pickup_drop_info: '',
+                  luggage_info: '',
+                  tour_operation_info: '',
+                  preparation_info: '',
+                  small_group_info: '',
+                  notice_info: '',
+                  private_tour_info: '',
+                  cancellation_policy: '',
+                  chat_announcement: '',
+                  tags: []
+                }
+              }
+              
+              return multilingualDetails
+            })() : {
+              ko: {
+                slogan1: '',
+                slogan2: '',
+                slogan3: '',
+                description: '',
+                included: '',
+                not_included: '',
+                pickup_drop_info: '',
+                luggage_info: '',
+                tour_operation_info: '',
+                preparation_info: '',
+                small_group_info: '',
+                notice_info: '',
+                private_tour_info: '',
+                cancellation_policy: '',
+                chat_announcement: '',
+                tags: []
+              }
             },
             // 각 필드별 공통 정보 사용 여부 초기값
-            useCommonForField: {
-              slogan1: false,
-              slogan2: false,
-              slogan3: false,
-              description: false,
-              included: false,
-              not_included: false,
-              pickup_drop_info: false,
-              luggage_info: false,
-              tour_operation_info: false,
-              preparation_info: false,
-              small_group_info: false,
-              companion_info: false,
-              exclusive_booking_info: false,
-              cancellation_policy: false,
-              chat_announcement: false
-            },
+            useCommonForField: (() => {
+              const useCommonForField: any = {}
+              const availableLanguages = ['ko', 'en', 'ja', 'zh']
+              
+              // 모든 언어에 대해 초기값 설정
+              availableLanguages.forEach(lang => {
+                useCommonForField[lang] = {
+                  slogan1: false,
+                  slogan2: false,
+                  slogan3: false,
+                  description: false,
+                  included: false,
+                  not_included: false,
+                  pickup_drop_info: false,
+                  luggage_info: false,
+                  tour_operation_info: false,
+                  preparation_info: false,
+                  small_group_info: false,
+                  notice_info: false,
+                  private_tour_info: false,
+                  cancellation_policy: false,
+                  chat_announcement: false,
+                  tags: false
+                }
+              })
+              
+              return useCommonForField
+            })(),
                          productOptions: (() => {
                // 새로운 통합 구조에 맞게 그룹화
                const optionsMap = new Map<string, {
@@ -693,7 +772,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       let productId = id
       if (isNewProduct) {
         // 새 상품 생성
-        const { data: productData, error: productError } = await supabase
+        const { data: productData, error: productError } = await (supabase as any)
           .from('products')
           .insert({
             name: formData.name.trim(),
@@ -705,7 +784,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             base_price: formData.basePrice.adult,
             max_participants: formData.maxParticipants,
             status: formData.status,
-            tags: formData.tags,
             departure_city: formData.departureCity.trim(),
             arrival_city: formData.arrivalCity.trim(),
             departure_country: formData.departureCountry,
@@ -730,7 +808,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         console.log('새 상품 생성됨:', productId)
       } else {
         // 기존 상품 업데이트
-        const { error: productError } = await supabase
+        const { error: productError } = await (supabase as any)
           .from('products')
           .update({
             name: formData.name.trim(),
@@ -742,7 +820,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             base_price: formData.basePrice.adult,
             max_participants: formData.maxParticipants,
             status: formData.status,
-            tags: formData.tags,
             departure_city: formData.departureCity.trim(),
             arrival_city: formData.arrivalCity.trim(),
             departure_country: formData.departureCountry,
@@ -770,7 +847,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       // 2. 기존 product_options 삭제 (업데이트 시)
       if (!isNewProduct && formData.productOptions.length > 0) {
         console.log('기존 옵션 삭제 시작')
-        const { error: deleteError } = await supabase
+        const { error: deleteError } = await (supabase as any)
           .from('product_options')
           .delete()
           .eq('product_id', productId)
@@ -790,7 +867,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           // 새로운 통합 구조: choices가 있는 경우, 각 choice를 별도의 product_options 행으로 저장
           if (option.choices && option.choices.length > 0) {
             for (const choice of option.choices) {
-              const { data: optionData, error: optionError } = await supabase
+              const { data: optionData, error: optionError } = await (supabase as any)
                 .from('product_options')
                 .insert({
                   product_id: productId,
@@ -818,7 +895,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             }
           } else {
             // choices가 없는 경우, 기본 옵션만 저장
-            const { data: optionData, error: optionError } = await supabase
+            const { data: optionData, error: optionError } = await (supabase as any)
               .from('product_options')
               .insert({
                 product_id: productId,
@@ -851,44 +928,68 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       console.log('product_details 저장 시작')
       if (!formData.useCommonDetails) {
         const { data: existingDetails, error: selectDetailsError } = await supabase
-          .from('product_details')
+          .from('product_details_multilingual')
           .select('id')
           .eq('product_id', productId)
-          .maybeSingle()
+          .maybeSingle() as any
 
         if (selectDetailsError) {
           console.error('product_details 존재 여부 확인 오류:', selectDetailsError)
           throw new Error(`상품 세부정보 조회 실패: ${selectDetailsError.message}`)
         }
 
+        // 다국어 지원을 위한 데이터 변환
+        const currentLang = formData.currentLanguage || 'ko'
+        const currentDetails = formData.productDetails[currentLang] || {
+          slogan1: '',
+          slogan2: '',
+          slogan3: '',
+          description: '',
+          included: '',
+          not_included: '',
+          pickup_drop_info: '',
+          luggage_info: '',
+          tour_operation_info: '',
+          preparation_info: '',
+          small_group_info: '',
+          notice_info: '',
+          private_tour_info: '',
+          cancellation_policy: '',
+          chat_announcement: '',
+          tags: []
+        }
+
         const detailsData = {
           product_id: productId,
-          slogan1: formData.productDetails.slogan1,
-          slogan2: formData.productDetails.slogan2,
-          slogan3: formData.productDetails.slogan3,
-          description: formData.productDetails.description,
-          included: formData.productDetails.included,
-          not_included: formData.productDetails.not_included,
-          pickup_drop_info: formData.productDetails.pickup_drop_info,
-          luggage_info: formData.productDetails.luggage_info,
-          tour_operation_info: formData.productDetails.tour_operation_info,
-          preparation_info: formData.productDetails.preparation_info,
-          small_group_info: formData.productDetails.small_group_info,
-          companion_info: formData.productDetails.companion_info,
-          exclusive_booking_info: formData.productDetails.exclusive_booking_info,
-          cancellation_policy: formData.productDetails.cancellation_policy,
-          chat_announcement: formData.productDetails.chat_announcement
-        }
+          language_code: currentLang,
+          slogan1: currentDetails.slogan1,
+          slogan2: currentDetails.slogan2,
+          slogan3: currentDetails.slogan3,
+          description: currentDetails.description,
+          included: currentDetails.included,
+          not_included: currentDetails.not_included,
+          pickup_drop_info: currentDetails.pickup_drop_info,
+          luggage_info: currentDetails.luggage_info,
+          tour_operation_info: currentDetails.tour_operation_info,
+          preparation_info: currentDetails.preparation_info,
+          small_group_info: currentDetails.small_group_info,
+          notice_info: currentDetails.notice_info,
+          private_tour_info: currentDetails.private_tour_info,
+          cancellation_policy: currentDetails.cancellation_policy,
+          chat_announcement: currentDetails.chat_announcement,
+          tags: currentDetails.tags
+        } as any
 
         if (existingDetails) {
           // 업데이트
-          const { error: detailsError } = await supabase
-            .from('product_details')
+          const { error: detailsError } = await (supabase as any)
+            .from('product_details_multilingual')
             .update({
               ...detailsData,
               updated_at: new Date().toISOString()
             })
             .eq('product_id', productId)
+            .eq('language_code', currentLang)
 
           if (detailsError) {
             console.error('product_details 업데이트 오류:', detailsError)
@@ -897,8 +998,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           console.log('product_details 업데이트 완료')
         } else {
           // 새로 생성
-          const { error: detailsError } = await supabase
-            .from('product_details')
+          const { error: detailsError } = await (supabase as any)
+            .from('product_details_multilingual')
             .insert([detailsData])
 
           if (detailsError) {
@@ -928,7 +1029,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       setDeleting(true)
       
       // 1. 상품 옵션 삭제
-      const { error: optionsError } = await supabase
+      const { error: optionsError } = await (supabase as any)
         .from('product_options')
         .delete()
         .eq('product_id', id)
@@ -939,7 +1040,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       }
 
       // 2. 상품 삭제
-      const { error: productError } = await supabase
+      const { error: productError } = await (supabase as any)
         .from('products')
         .delete()
         .eq('id', id)
@@ -963,19 +1064,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     }
   }
 
-  const addTag = () => {
-    setFormData(prevData => {
-      if (newTag.trim() && !prevData.tags.includes(newTag.trim())) {
-      setNewTag('')
-        return { ...prevData, tags: [...prevData.tags, newTag.trim()] }
-    }
-      return prevData
-    })
-  }
-
-  const removeTag = (tagToRemove: string) => {
-    setFormData(prevData => ({ ...prevData, tags: prevData.tags.filter(tag => tag !== tagToRemove) }))
-  }
 
   const addProductOptionFromGlobal = (globalOption: GlobalOption) => {
     try {
@@ -1175,12 +1263,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           <BasicInfoTab
             formData={formData}
             setFormData={setFormData}
-            newTag={newTag}
-            setNewTag={setNewTag}
-            addTag={addTag}
-            removeTag={removeTag}
-              productId={id}
-              isNewProduct={isNewProduct}
+            productId={id}
+            isNewProduct={isNewProduct}
           />
         )}
 
@@ -1225,23 +1309,23 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           <ProductDetailsTab
             productId={id}
             isNewProduct={isNewProduct}
-            locale={locale}
+            subCategory={formData.subCategory}
             formData={{
               useCommonDetails: formData.useCommonDetails,
               productDetails: formData.productDetails,
               currentLanguage: formData.currentLanguage,
               useCommonForField: formData.useCommonForField
             }}
-            setFormData={(updater) => {
-              setFormData(prev => {
-                const current: ProductDetailsFormData = {
+            setFormData={(updater: any) => {
+              setFormData((prev: any) => {
+                const current: any = {
                   useCommonDetails: prev.useCommonDetails,
                   productDetails: prev.productDetails,
                   currentLanguage: prev.currentLanguage,
                   useCommonForField: prev.useCommonForField
                 }
                 const next = typeof updater === 'function'
-                  ? (updater as (p: ProductDetailsFormData) => ProductDetailsFormData)(current)
+                  ? updater(current)
                   : updater
                 return {
                   ...prev,
