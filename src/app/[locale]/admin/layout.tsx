@@ -12,10 +12,10 @@ interface AdminLayoutProps {
 
 export default async function AdminLayout({ children, params }: AdminLayoutProps) {
   const { locale } = await params
-  const messages = await getMessages()
+  const messages = await getMessages({ locale })
 
   return (
-    <NextIntlClientProvider messages={messages}>
+    <NextIntlClientProvider messages={messages} locale={locale}>
       <AdminAuthGuard locale={locale}>
         <div className="min-h-screen bg-gray-50">
           <AdminSidebarAndHeader locale={locale}>
