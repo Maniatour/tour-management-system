@@ -4,6 +4,10 @@ import { JWT } from 'google-auth-library'
 // 구글 시트 API 설정
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
+// 시트 정보 캐시 (메모리 캐시)
+const sheetInfoCache = new Map<string, { data: any, timestamp: number }>()
+const CACHE_DURATION = 5 * 60 * 1000 // 5분
+
 // 서비스 계정 인증을 위한 설정
 const getAuthClient = () => {
   const credentials = {
@@ -74,9 +78,18 @@ export const readSheetRange = async (spreadsheetId: string, sheetName: string, s
   return await readGoogleSheet(spreadsheetId, range)
 }
 
-// 구글 시트의 시트 목록 가져오기 (첫 글자가 'S'인 시트만 필터링)
+// 구글 시트의 시트 목록과 메타데이터 가져오기 (첫 글자가 'S'인 시트만 필터링)
 export const getSheetNames = async (spreadsheetId: string) => {
   try {
+    // 캐시 확인
+    const cacheKey = `sheetNames_${spreadsheetId}`
+    const cached = sheetInfoCache.get(cacheKey)
+    
+    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+      console.log('Using cached sheet names')
+      return cached.data
+    }
+
     const auth = getAuthClient()
     const sheets = google.sheets({ version: 'v4', auth })
 
@@ -84,17 +97,30 @@ export const getSheetNames = async (spreadsheetId: string) => {
       spreadsheetId,
     })
 
-    const allSheetNames = response.data.sheets?.map(sheet => sheet.properties?.title) || []
+    const allSheets = response.data.sheets || []
     
-    // 첫 글자가 'S'인 시트만 필터링 (대소문자 구분 없음)
-    const filteredSheetNames = allSheetNames.filter(sheetName => 
-      sheetName && sheetName.charAt(0).toUpperCase() === 'S'
-    )
+    // 첫 글자가 'S'인 시트만 필터링하고 메타데이터 포함
+    const filteredSheets = allSheets
+      .filter(sheet => {
+        const title = sheet.properties?.title
+        return title && title.charAt(0).toUpperCase() === 'S'
+      })
+      .map(sheet => ({
+        name: sheet.properties?.title || '',
+        rowCount: sheet.properties?.gridProperties?.rowCount || 0,
+        columnCount: sheet.properties?.gridProperties?.columnCount || 0
+      }))
     
-    console.log(`Total sheets: ${allSheetNames.length}, Filtered sheets (starting with 'S'): ${filteredSheetNames.length}`)
-    console.log('Filtered sheet names:', filteredSheetNames)
+    console.log(`Total sheets: ${allSheets.length}, Filtered sheets (starting with 'S'): ${filteredSheets.length}`)
+    console.log('Filtered sheet names:', filteredSheets.map(s => s.name))
     
-    return filteredSheetNames
+    // 캐시에 저장
+    sheetInfoCache.set(cacheKey, {
+      data: filteredSheets,
+      timestamp: Date.now()
+    })
+    
+    return filteredSheets
   } catch (error) {
     console.error('Error getting sheet names:', error)
     throw error
@@ -166,5 +192,64 @@ const getColumnRange = (columnCount: number): string => {
     const firstChar = String.fromCharCode(64 + Math.floor((columnCount - 1) / 26))
     const secondChar = String.fromCharCode(64 + ((columnCount - 1) % 26) + 1)
     return firstChar + secondChar
+  }
+}
+
+// 시트의 샘플 데이터 가져오기 (첫 5행만)
+export const getSheetSampleData = async (spreadsheetId: string, sheetName: string, maxRows: number = 5) => {
+  try {
+    // 캐시 확인
+    const cacheKey = `sampleData_${spreadsheetId}_${sheetName}`
+    const cached = sheetInfoCache.get(cacheKey)
+    
+    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+      console.log(`Using cached sample data for ${sheetName}`)
+      return cached.data
+    }
+
+    const range = `${sheetName}!A1:Z${maxRows}` // 첫 5행, A-Z 컬럼만
+    const data = await readGoogleSheet(spreadsheetId, range)
+    
+    if (data.length === 0) {
+      const result = { columns: [], sampleData: [] }
+      // 빈 결과도 캐시에 저장
+      sheetInfoCache.set(cacheKey, {
+        data: result,
+        timestamp: Date.now()
+      })
+      return result
+    }
+    
+    // 첫 번째 행을 헤더로 사용
+    const columns = Object.keys(data[0])
+    const sampleData = data.slice(0, maxRows)
+    const result = { columns, sampleData }
+    
+    // 캐시에 저장
+    sheetInfoCache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    })
+    
+    return result
+  } catch (error) {
+    console.error(`Error getting sample data for sheet ${sheetName}:`, error)
+    return { columns: [], sampleData: [] }
+  }
+}
+
+// 캐시 초기화 함수
+export const clearSheetCache = (spreadsheetId?: string) => {
+  if (spreadsheetId) {
+    // 특정 스프레드시트의 캐시만 삭제
+    const keysToDelete = Array.from(sheetInfoCache.keys()).filter(key => 
+      key.includes(spreadsheetId)
+    )
+    keysToDelete.forEach(key => sheetInfoCache.delete(key))
+    console.log(`Cleared cache for spreadsheet: ${spreadsheetId}`)
+  } else {
+    // 전체 캐시 삭제
+    sheetInfoCache.clear()
+    console.log('Cleared all sheet cache')
   }
 }

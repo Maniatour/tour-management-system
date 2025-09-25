@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSheetNames, readSheetData, readSheetDataDynamic } from '@/lib/googleSheets'
+import { getSheetNames, getSheetSampleData } from '@/lib/googleSheets'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,46 +15,42 @@ export async function POST(request: NextRequest) {
 
     console.log(`Getting sheet information for: ${spreadsheetId}`)
     
-    // 시트 목록 가져오기
-    const sheetNames = await getSheetNames(spreadsheetId)
+    // 시트 목록과 메타데이터 가져오기 (빠른 방식)
+    const sheets = await getSheetNames(spreadsheetId)
     
-    // 각 시트의 샘플 데이터 가져오기 (첫 5행)
-    const sheetInfo = await Promise.all(
-      sheetNames.map(async (sheetName) => {
-        try {
-          // 동적 범위로 데이터 읽기 시도
-          const sampleData = await readSheetDataDynamic(spreadsheetId, sheetName)
-          console.log(`Sheet ${sheetName} columns:`, sampleData.length > 0 ? Object.keys(sampleData[0]).length : 0)
-          return {
-            name: sheetName,
-            rowCount: sampleData.length,
-            sampleData: sampleData.slice(0, 5), // 첫 5행만
-            columns: sampleData.length > 0 ? Object.keys(sampleData[0]) : []
-          }
-        } catch (error) {
-          console.error(`Error reading sheet ${sheetName}:`, error)
-          // 폴백: 기본 범위로 읽기 시도
+    // 각 시트의 샘플 데이터를 병렬로 가져오기 (최대 5개씩)
+    const BATCH_SIZE = 5
+    const sheetInfo = []
+    
+    for (let i = 0; i < sheets.length; i += BATCH_SIZE) {
+      const batch = sheets.slice(i, i + BATCH_SIZE)
+      
+      const batchResults = await Promise.all(
+        batch.map(async (sheet) => {
           try {
-            const fallbackData = await readSheetData(spreadsheetId, sheetName)
+            const { columns, sampleData } = await getSheetSampleData(spreadsheetId, sheet.name)
+            console.log(`Sheet ${sheet.name} columns:`, columns.length)
             return {
-              name: sheetName,
-              rowCount: fallbackData.length,
-              sampleData: fallbackData.slice(0, 5),
-              columns: fallbackData.length > 0 ? Object.keys(fallbackData[0]) : []
+              name: sheet.name,
+              rowCount: sheet.rowCount,
+              sampleData: sampleData,
+              columns: columns
             }
-          } catch (fallbackError) {
-            console.error(`Fallback also failed for sheet ${sheetName}:`, fallbackError)
+          } catch (error) {
+            console.error(`Error reading sheet ${sheet.name}:`, error)
             return {
-              name: sheetName,
-              rowCount: 0,
+              name: sheet.name,
+              rowCount: sheet.rowCount,
               sampleData: [],
               columns: [],
               error: error.message
             }
           }
-        }
-      })
-    )
+        })
+      )
+      
+      sheetInfo.push(...batchResults)
+    }
 
     return NextResponse.json({
       success: true,
