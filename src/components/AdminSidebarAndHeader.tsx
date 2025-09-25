@@ -313,7 +313,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   href={`/${locale}/admin/booking`}
                   className="px-3 py-1.5 text-sm border rounded-md text-indigo-600 border-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors"
                 >
-                  부킹 관리
+                  {t('booking')}
                 </Link>
                 <Link
                   href={`/${locale}/admin/tours`}
@@ -325,7 +325,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   href={`/${locale}/admin/chat-management`}
                   className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors"
                 >
-                  채팅 관리
+                  {t('chatManagement')}
                 </Link>
               </div>
               

@@ -52,7 +52,22 @@
     "teamBoard": "팀 보드",
     "dataSync": "데이터 동기화",
     "dataReview": "데이터 검수",
-    "auditLogs": "감사 추적"
+    "auditLogs": "감사 추적",
+    "booking": "부킹 관리",
+    "chatManagement": "채팅 관리",
+    "basicInfo": "기본정보",
+    "dynamicPricing": "동적 가격",
+    "optionsManagement": "옵션관리",
+    "details": "세부정보",
+    "schedule": "일정",
+    "faq": "FAQ",
+    "media": "미디어",
+    "changeHistory": "변경 내역",
+    "deleting": "삭제 중...",
+    "delete": "삭제",
+    "saving": "저장 중...",
+    "save": "저장",
+    "all": "전체"
   },
   "home": {
     "title": "투어 관리 시스템에 오신 것을 환영합니다",

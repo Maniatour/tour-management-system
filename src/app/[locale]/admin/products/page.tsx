@@ -80,7 +80,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
         
         // 카테고리 목록 생성 (전체 + 실제 존재하는 카테고리들)
         const categoryList = [
-          { value: 'all', label: '전체', count: data.length }
+          { value: 'all', label: tCommon('all'), count: data.length }
         ]
         
         // 실제 존재하는 카테고리들을 상품 수 순으로 정렬하여 추가
@@ -92,7 +92,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
         
         // 서브카테고리 목록 생성 (전체 + 실제 존재하는 서브카테고리들)
         const subCategoryList = [
-          { value: 'all', label: '전체', count: data.length }
+          { value: 'all', label: tCommon('all'), count: data.length }
         ]
         
         // 실제 존재하는 서브카테고리들을 상품 수 순으로 정렬하여 추가
@@ -141,7 +141,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
       
       // 전체 옵션 추가
       const categorySubCategories = [
-        { value: 'all', label: '전체', count: products.filter(p => p.category === categoryValue).length },
+        { value: 'all', label: tCommon('all'), count: products.filter(p => p.category === categoryValue).length },
         ...filteredSubCategories.sort((a: { value: string; label: string; count: number }, b: { value: string; label: string; count: number }) => b.count - a.count)
       ]
       

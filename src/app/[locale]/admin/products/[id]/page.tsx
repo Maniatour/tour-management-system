@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, use, useCallback } from 'react'
-// import { useTranslations } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import { 
   DollarSign, 
   Calendar,
@@ -160,7 +160,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   console.log('AdminProductEdit: Component initializing...')
   
   const { locale, id } = use(params)
-  // 번역은 필요에 따라 사용
+  const t = useTranslations('common')
   const router = useRouter()
   const isNewProduct = id === 'new'
   const supabase = createClientSupabase()
@@ -1098,14 +1098,14 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   // }
 
   const tabs = [
-    { id: 'basic', label: '기본정보', icon: Info },
-    { id: 'dynamic-pricing', label: '동적 가격', icon: TrendingUp },
-    { id: 'options', label: '옵션관리', icon: Settings },
-    { id: 'details', label: '세부정보', icon: Tag },
-    { id: 'schedule', label: '일정', icon: Calendar },
-    { id: 'faq', label: 'FAQ', icon: MessageCircle },
-    { id: 'media', label: '미디어', icon: Image },
-    { id: 'history', label: '변경 내역', icon: Clock }
+    { id: 'basic', label: t('basicInfo'), icon: Info },
+    { id: 'dynamic-pricing', label: t('dynamicPricing'), icon: TrendingUp },
+    { id: 'options', label: t('optionsManagement'), icon: Settings },
+    { id: 'details', label: t('details'), icon: Tag },
+    { id: 'schedule', label: t('schedule'), icon: Calendar },
+    { id: 'faq', label: t('faq'), icon: MessageCircle },
+    { id: 'media', label: t('media'), icon: Image },
+    { id: 'history', label: t('changeHistory'), icon: Clock }
   ]
 
   // 임시로 인증 체크를 비활성화하여 페이지가 로드되는지 확인
@@ -1367,7 +1367,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
                 disabled={deleting}
               >
-                {deleting ? '삭제 중...' : '삭제'}
+                {deleting ? t('deleting') : t('delete')}
               </button>
             </div>
           </div>

@@ -52,7 +52,22 @@
     "teamBoard": "Team Board",
     "dataSync": "Data Sync",
     "dataReview": "Data Review",
-    "auditLogs": "Audit Logs"
+    "auditLogs": "Audit Logs",
+    "booking": "Booking Management",
+    "chatManagement": "Chat Management",
+    "basicInfo": "Basic Info",
+    "dynamicPricing": "Dynamic Pricing",
+    "optionsManagement": "Options Management",
+    "details": "Details",
+    "schedule": "Schedule",
+    "faq": "FAQ",
+    "media": "Media",
+    "changeHistory": "Change History",
+    "deleting": "Deleting...",
+    "delete": "Delete",
+    "saving": "Saving...",
+    "save": "Save",
+    "all": "All"
   },
   "home": {
     "title": "Welcome to Tour Management System",
