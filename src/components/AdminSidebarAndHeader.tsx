@@ -33,6 +33,7 @@ import ReactCountryFlag from 'react-country-flag'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
+import { useTranslations } from 'next-intl'
 
 interface AdminSidebarAndHeaderProps {
   locale: string
@@ -57,6 +58,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const router = useRouter()
   const { signOut, authUser, userRole } = useAuth()
   const currentLocale = locale
+  const t = useTranslations('common')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
@@ -238,7 +240,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     console.log('New path:', newPath)
     console.log('Current locale:', currentLocale)
     console.log('New locale:', newLocale)
-    window.location.href = newPath
+    
+    // Next.js router를 사용하여 클라이언트 사이드 네비게이션
+    router.push(newPath)
   }
 
   // 언어 플래그 함수
@@ -248,16 +252,16 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
   const navigation = [
     // removed from sidebar: 대시보드, 고객 관리, 예약 관리, 부킹 관리, 투어 관리, 채팅 관리
-    { name: '상품 관리', href: `/${locale}/admin/products`, icon: BookOpen },
-    { name: '옵션 관리', href: `/${locale}/admin/options`, icon: Settings },
-    { name: '채널 관리', href: `/${locale}/admin/channels`, icon: Settings },
-    { name: '투어 코스 관리', href: `/${locale}/admin/tour-courses`, icon: Globe },
+    { name: t('products'), href: `/${locale}/admin/products`, icon: BookOpen },
+    { name: t('options'), href: `/${locale}/admin/options`, icon: Settings },
+    { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },
+    { name: t('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
     { name: '픽업 호텔 관리', href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: '차량 관리', href: `/${locale}/admin/vehicles`, icon: Car },
     { name: '쿠폰 관리', href: `/${locale}/admin/coupons`, icon: Ticket },
     { name: '예약 통계', href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
     { name: '문서 템플릿', href: `/${locale}/admin/reservations/templates`, icon: FileText },
-    { name: '팀 관리', href: `/${locale}/admin/team`, icon: Users },
+    { name: t('team'), href: `/${locale}/admin/team`, icon: Users },
     { name: '팀 채팅', href: `/${locale}/admin/team-chat`, icon: MessageCircle },
     { name: '출퇴근 관리', href: `/${locale}/admin/attendance`, icon: Clock },
     { name: '공급업체 관리', href: `/${locale}/admin/suppliers`, icon: Truck },
@@ -288,7 +292,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 className="text-sm sm:text-lg md:text-xl font-bold text-gray-800 truncate hover:text-blue-600"
                 title="대시보드로 이동"
               >
-                MANIA TOUR
+                {t('systemTitle')}
               </button>
               
               {/* 데스크톱 전용 빠른 이동 */}
@@ -297,13 +301,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   href={`/${locale}/admin/customers`}
                   className="px-3 py-1.5 text-sm border rounded-md text-teal-600 border-teal-600 hover:bg-teal-600 hover:text-white transition-colors"
                 >
-                  고객 관리
+                  {t('customers')}
                 </Link>
                 <Link
                   href={`/${locale}/admin/reservations`}
                   className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors"
                 >
-                  예약 관리
+                  {t('reservations')}
                 </Link>
                 <Link
                   href={`/${locale}/admin/booking`}
@@ -315,7 +319,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   href={`/${locale}/admin/tours`}
                   className="px-3 py-1.5 text-sm border rounded-md text-green-600 border-green-600 hover:bg-green-600 hover:text-white transition-colors"
                 >
-                  투어 관리
+                  {t('tours')}
                 </Link>
                 <Link
                   href={`/${locale}/admin/chat-management`}
@@ -495,7 +499,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             className="text-left text-xl font-bold text-gray-900 hover:text-blue-600"
             title="대시보드로 이동"
           >
-            MANIA TOUR
+            {t('systemTitle')}
           </button>
           <button
             onClick={() => setSidebarOpen(false)}
