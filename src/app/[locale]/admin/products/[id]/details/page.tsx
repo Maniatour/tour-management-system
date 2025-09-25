@@ -97,10 +97,12 @@ export default function ProductDetailsPage() {
         setProduct(productData)
 
         // 상품 세부정보 로드
+        // 한국어 데이터를 기본으로 로드
         const { data: detailsData, error: detailsError } = await supabase
-          .from('product_details')
+          .from('product_details_multilingual')
           .select('*')
           .eq('product_id', productId)
+          .eq('language_code', 'ko')
           .maybeSingle()
 
         if (detailsError && detailsError.code !== 'PGRST116') { // PGRST116은 "not found" 오류
@@ -150,20 +152,27 @@ export default function ProductDetailsPage() {
       setError(null)
 
       if (productDetails) {
-        // 기존 세부정보 업데이트
+        // 기존 세부정보 업데이트 (한국어)
         const { error } = await supabase
-          .from('product_details')
-          .update(formData)
-          .eq('id', productDetails.id)
+          .from('product_details_multilingual')
+          .update({
+            ...formData,
+            language_code: 'ko'
+          })
+          .eq('product_id', productId)
+          .eq('language_code', 'ko')
 
         if (error) {
           throw error
         }
       } else {
-        // 새로운 세부정보 생성
+        // 새로운 세부정보 생성 (한국어)
         const { error } = await supabase
-          .from('product_details')
-          .insert(formData)
+          .from('product_details_multilingual')
+          .insert({
+            ...formData,
+            language_code: 'ko'
+          })
 
         if (error) {
           throw error

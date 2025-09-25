@@ -54,24 +54,29 @@ type ProductDetailsFields = {
 
 type ProductDetailsFormData = {
   useCommonDetails: boolean
-  productDetails: ProductDetailsFields
-  // 각 필드별 공통 정보 사용 여부
+  productDetails: {
+    [languageCode: string]: ProductDetailsFields
+  }
+  currentLanguage: string
+  // 각 언어별 공통 정보 사용 여부
   useCommonForField: {
-    slogan1: boolean
-    slogan2: boolean
-    slogan3: boolean
-    description: boolean
-    included: boolean
-    not_included: boolean
-    pickup_drop_info: boolean
-    luggage_info: boolean
-    tour_operation_info: boolean
-    preparation_info: boolean
-    small_group_info: boolean
-    companion_info: boolean
-    exclusive_booking_info: boolean
-    cancellation_policy: boolean
-    chat_announcement: boolean
+    [languageCode: string]: {
+      slogan1: boolean
+      slogan2: boolean
+      slogan3: boolean
+      description: boolean
+      included: boolean
+      not_included: boolean
+      pickup_drop_info: boolean
+      luggage_info: boolean
+      tour_operation_info: boolean
+      preparation_info: boolean
+      small_group_info: boolean
+      companion_info: boolean
+      exclusive_booking_info: boolean
+      cancellation_policy: boolean
+      chat_announcement: boolean
+    }
   }
 }
 
@@ -196,23 +201,47 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     infantAge: number
     // 공통 세부정보 사용 여부
     useCommonDetails: boolean
-    // product_details 필드들
+    // product_details 필드들 (다국어 지원)
     productDetails: {
-      slogan1: string
-      slogan2: string
-      slogan3: string
-      description: string
-      included: string
-      not_included: string
-      pickup_drop_info: string
-      luggage_info: string
-      tour_operation_info: string
-      preparation_info: string
-      small_group_info: string
-      companion_info: string
-      exclusive_booking_info: string
-      cancellation_policy: string
-      chat_announcement: string
+      [languageCode: string]: {
+        slogan1: string
+        slogan2: string
+        slogan3: string
+        description: string
+        included: string
+        not_included: string
+        pickup_drop_info: string
+        luggage_info: string
+        tour_operation_info: string
+        preparation_info: string
+        small_group_info: string
+        companion_info: string
+        exclusive_booking_info: string
+        cancellation_policy: string
+        chat_announcement: string
+      }
+    }
+    // 현재 선택된 언어
+    currentLanguage: string
+    // 각 언어별 공통 정보 사용 여부
+    useCommonForField: {
+      [languageCode: string]: {
+        slogan1: boolean
+        slogan2: boolean
+        slogan3: boolean
+        description: boolean
+        included: boolean
+        not_included: boolean
+        pickup_drop_info: boolean
+        luggage_info: boolean
+        tour_operation_info: boolean
+        preparation_info: boolean
+        small_group_info: boolean
+        companion_info: boolean
+        exclusive_booking_info: boolean
+        cancellation_policy: boolean
+        chat_announcement: boolean
+      }
     }
   }>({
     name: '',
@@ -259,41 +288,47 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     infantAge: 2,
     // 공통 세부정보 사용 여부 초기값
     useCommonDetails: false,
-    // product_details 초기값
+    // product_details 초기값 (다국어 지원)
     productDetails: {
-      slogan1: '',
-      slogan2: '',
-      slogan3: '',
-      description: '',
-      included: '',
-      not_included: '',
-      pickup_drop_info: '',
-      luggage_info: '',
-      tour_operation_info: '',
-      preparation_info: '',
-      small_group_info: '',
-      companion_info: '',
-      exclusive_booking_info: '',
-      cancellation_policy: '',
-      chat_announcement: ''
+      ko: {
+        slogan1: '',
+        slogan2: '',
+        slogan3: '',
+        description: '',
+        included: '',
+        not_included: '',
+        pickup_drop_info: '',
+        luggage_info: '',
+        tour_operation_info: '',
+        preparation_info: '',
+        small_group_info: '',
+        companion_info: '',
+        exclusive_booking_info: '',
+        cancellation_policy: '',
+        chat_announcement: ''
+      }
     },
-    // 각 필드별 공통 정보 사용 여부 초기값
+    // 현재 선택된 언어 초기값
+    currentLanguage: 'ko',
+    // 각 언어별 공통 정보 사용 여부 초기값
     useCommonForField: {
-      slogan1: false,
-      slogan2: false,
-      slogan3: false,
-      description: false,
-      included: false,
-      not_included: false,
-      pickup_drop_info: false,
-      luggage_info: false,
-      tour_operation_info: false,
-      preparation_info: false,
-      small_group_info: false,
-      companion_info: false,
-      exclusive_booking_info: false,
-      cancellation_policy: false,
-      chat_announcement: false
+      ko: {
+        slogan1: false,
+        slogan2: false,
+        slogan3: false,
+        description: false,
+        included: false,
+        not_included: false,
+        pickup_drop_info: false,
+        luggage_info: false,
+        tour_operation_info: false,
+        preparation_info: false,
+        small_group_info: false,
+        companion_info: false,
+        exclusive_booking_info: false,
+        cancellation_policy: false,
+        chat_announcement: false
+      }
     }
   })
 
@@ -1193,13 +1228,17 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             locale={locale}
             formData={{
               useCommonDetails: formData.useCommonDetails,
-              productDetails: formData.productDetails
+              productDetails: formData.productDetails,
+              currentLanguage: formData.currentLanguage,
+              useCommonForField: formData.useCommonForField
             }}
             setFormData={(updater) => {
               setFormData(prev => {
                 const current: ProductDetailsFormData = {
                   useCommonDetails: prev.useCommonDetails,
-                  productDetails: prev.productDetails
+                  productDetails: prev.productDetails,
+                  currentLanguage: prev.currentLanguage,
+                  useCommonForField: prev.useCommonForField
                 }
                 const next = typeof updater === 'function'
                   ? (updater as (p: ProductDetailsFormData) => ProductDetailsFormData)(current)
@@ -1207,7 +1246,9 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 return {
                   ...prev,
                   useCommonDetails: next.useCommonDetails,
-                  productDetails: next.productDetails
+                  productDetails: next.productDetails,
+                  currentLanguage: next.currentLanguage,
+                  useCommonForField: next.useCommonForField
                 }
               })
             }}

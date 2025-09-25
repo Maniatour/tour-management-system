@@ -40,7 +40,9 @@ export default function ProductMediaTab({
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
 
   // 기존 미디어 데이터 로드
   useEffect(() => {
@@ -116,9 +118,16 @@ export default function ProductMediaTab({
         is_active: true
       }
 
-      setEditingMedia(newMedia)
-      setShowAddModal(true)
-      setPreviewUrl(publicUrl)
+      // 바로 데이터베이스에 저장
+      const { data: savedMedia, error: saveError } = await (supabase as any)
+        .from('product_media')
+        .insert([newMedia])
+        .select()
+        .single()
+
+      if (saveError) throw saveError
+
+      setMediaItems(prev => [...prev, savedMedia])
 
     } catch (error) {
       console.error('파일 업로드 오류:', error)
@@ -131,6 +140,88 @@ export default function ProductMediaTab({
 
   const handleAddMedia = () => {
     fileInputRef.current?.click()
+  }
+
+  // 드래그 앤 드롭 핸들러
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      handleMultipleFiles(files)
+    }
+  }
+
+  // 복사 붙여넣기 핸들러
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items
+    const files: File[] = []
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.kind === 'file') {
+        const file = item.getAsFile()
+        if (file) {
+          files.push(file)
+        }
+      }
+    }
+
+    if (files.length > 0) {
+      e.preventDefault()
+      handleMultipleFiles(files)
+    }
+  }
+
+  // 여러 파일 처리
+  const handleMultipleFiles = async (files: File[]) => {
+    if (files.length === 0) return
+
+    setUploading(true)
+    setSaveMessage('')
+
+    try {
+      let successCount = 0
+      let errorCount = 0
+
+      for (const file of files) {
+        try {
+          await handleFileUpload(file)
+          successCount++
+        } catch (error) {
+          console.error(`파일 업로드 실패: ${file.name}`, error)
+          errorCount++
+        }
+      }
+
+      if (successCount > 0) {
+        setSaveMessage(`${successCount}개 파일이 업로드되었습니다.${errorCount > 0 ? ` (${errorCount}개 실패)` : ''}`)
+        setTimeout(() => setSaveMessage(''), 5000)
+      } else {
+        setSaveMessage('모든 파일 업로드에 실패했습니다.')
+        setTimeout(() => setSaveMessage(''), 3000)
+      }
+    } catch (error) {
+      console.error('다중 파일 업로드 오류:', error)
+      setSaveMessage('파일 업로드 중 오류가 발생했습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } finally {
+      setUploading(false)
+    }
   }
 
   const handleEditMedia = (media: MediaItem) => {
@@ -308,12 +399,60 @@ export default function ProductMediaTab({
         ref={fileInputRef}
         type="file"
         accept="image/*,video/*,.pdf,.doc,.docx"
+        multiple
         onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) handleFileUpload(file)
+          const files = Array.from(e.target.files || [])
+          if (files.length > 0) {
+            handleMultipleFiles(files)
+          }
         }}
         className="hidden"
       />
+
+      {/* 드래그 앤 드롭 영역 */}
+      {!isNewProduct && (
+        <div
+          ref={dropZoneRef}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onPaste={handlePaste}
+          tabIndex={0}
+          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+            isDragOver
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-300 hover:border-gray-400'
+          }`}
+        >
+          <div className="space-y-4">
+            <div className="flex justify-center">
+              <Upload className={`h-12 w-12 ${isDragOver ? 'text-blue-500' : 'text-gray-400'}`} />
+            </div>
+            <div>
+              <h4 className="text-lg font-medium text-gray-900 mb-2">
+                미디어 파일 업로드
+              </h4>
+              <p className="text-gray-600 mb-4">
+                파일을 여기에 드래그하거나 클릭하여 선택하세요
+              </p>
+              <div className="text-sm text-gray-500 space-y-1">
+                <p>• 이미지: JPG, PNG, GIF, WebP</p>
+                <p>• 비디오: MP4, MOV, AVI</p>
+                <p>• 문서: PDF, DOC, DOCX</p>
+                <p>• 복사 붙여넣기: Ctrl+V (이미지)</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleAddMedia}
+              disabled={uploading}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploading ? '업로드 중...' : '파일 선택'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 미디어 목록 */}
       {mediaItems.length === 0 ? (

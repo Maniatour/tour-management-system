@@ -156,6 +156,12 @@ export default function AdminDashboard({ params }: AdminDashboardProps) {
       href: `/${locale}/admin/pickup-hotels`,
       icon: Map,
       color: 'bg-amber-500'
+    },
+    {
+      name: '투어 리포트',
+      href: `/${locale}/admin/tour-reports`,
+      icon: FileText,
+      color: 'bg-rose-500'
     }
   ]
 

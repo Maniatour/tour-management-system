@@ -446,6 +446,80 @@ export interface Database {
           updated_at?: string | null
         }
       }
+      tour_reports: {
+        Row: {
+          id: string
+          tour_id: string
+          end_mileage: number | null
+          cash_balance: number | null
+          customer_count: number | null
+          weather: string | null
+          main_stops_visited: string[] | null
+          activities_completed: string[] | null
+          overall_mood: string | null
+          guest_comments: string | null
+          incidents_delays_health: string[] | null
+          lost_items_damage: string[] | null
+          suggestions_followup: string | null
+          communication: string | null
+          teamwork: string | null
+          comments: string | null
+          submitted_on: string
+          user_email: string
+          sign: string | null
+          office_note: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          tour_id: string
+          end_mileage?: number | null
+          cash_balance?: number | null
+          customer_count?: number | null
+          weather?: string | null
+          main_stops_visited?: string[] | null
+          activities_completed?: string[] | null
+          overall_mood?: string | null
+          guest_comments?: string | null
+          incidents_delays_health?: string[] | null
+          lost_items_damage?: string[] | null
+          suggestions_followup?: string | null
+          communication?: string | null
+          teamwork?: string | null
+          comments?: string | null
+          submitted_on?: string
+          user_email: string
+          sign?: string | null
+          office_note?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          tour_id?: string
+          end_mileage?: number | null
+          cash_balance?: number | null
+          customer_count?: number | null
+          weather?: string | null
+          main_stops_visited?: string[] | null
+          activities_completed?: string[] | null
+          overall_mood?: string | null
+          guest_comments?: string | null
+          incidents_delays_health?: string[] | null
+          lost_items_damage?: string[] | null
+          suggestions_followup?: string | null
+          communication?: string | null
+          teamwork?: string | null
+          comments?: string | null
+          submitted_on?: string
+          user_email?: string
+          sign?: string | null
+          office_note?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
       ticket_bookings: {
         Row: {
           id: string

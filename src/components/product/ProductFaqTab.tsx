@@ -253,11 +253,11 @@ export default function ProductFaqTab({
         <div className="space-y-4">
           {faqs.map((faq, index) => (
             <div key={faq.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => toggleFaqExpansion(faq.id!)}
-                className="w-full px-6 py-4 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between"
-              >
-                <div className="flex items-center space-x-3">
+              <div className="w-full px-6 py-4 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between">
+                <div 
+                  className="flex items-center space-x-3 flex-1 cursor-pointer"
+                  onClick={() => toggleFaqExpansion(faq.id!)}
+                >
                   <span className="text-sm font-medium text-gray-500">Q{index + 1}</span>
                   <h4 className="text-left font-medium text-gray-900">
                     {faq.question}
@@ -310,13 +310,18 @@ export default function ProductFaqTab({
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                  {expandedFaqs.has(faq.id!) ? (
-                    <ChevronUp className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5 text-gray-400" />
-                  )}
+                  <div 
+                    className="cursor-pointer"
+                    onClick={() => toggleFaqExpansion(faq.id!)}
+                  >
+                    {expandedFaqs.has(faq.id!) ? (
+                      <ChevronUp className="h-5 w-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-gray-400" />
+                    )}
+                  </div>
                 </div>
-              </button>
+              </div>
               
               {expandedFaqs.has(faq.id!) && (
                 <div className="px-6 py-4 bg-white border-t border-gray-200">

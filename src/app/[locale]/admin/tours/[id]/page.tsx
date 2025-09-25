@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Map, MapPin, Clock, User, Users } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Map, MapPin, Clock, User, Users, Eye } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -24,6 +24,8 @@ import TourHotelBookingForm from '@/components/booking/TourHotelBookingForm'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
 import TourChatRoom from '@/components/TourChatRoom'
 import TourExpenseManager from '@/components/TourExpenseManager'
+import TourReportSection from '@/components/TourReportSection'
+import { Button } from '@/components/ui/button'
 import { useAuth } from '@/contexts/AuthContext'
 
 // 타입 정의 (DB 스키마 기반)
@@ -2732,6 +2734,63 @@ export default function TourDetailPage() {
                      console.log('Expenses updated')
                    }}
                  />
+               </div>
+             </div>
+
+             {/* 투어 리포트 섹션 */}
+             <div className="bg-white rounded-lg shadow-sm border">
+               <div className="p-4">
+                 <div className="flex items-center justify-between mb-3">
+                   <h2 className="text-md font-semibold text-gray-900 flex items-center">
+                     투어 리포트
+                     <ConnectionStatusLabel status={connectionStatus.bookings} section="리포트" />
+                   </h2>
+                   <div className="flex gap-2">
+                     <Button
+                       size="sm"
+                       variant="outline"
+                       onClick={() => {
+                         // 투어 리포트 작성 모드로 전환
+                         const reportSection = document.querySelector('[data-tour-report-section]')
+                         if (reportSection) {
+                           const createButton = reportSection.querySelector('[data-create-report]') as HTMLButtonElement
+                           if (createButton) createButton.click()
+                         }
+                       }}
+                       className="flex items-center gap-1"
+                     >
+                       <Plus className="w-4 h-4" />
+                       <span className="hidden sm:inline">작성</span>
+                     </Button>
+                     <Button
+                       size="sm"
+                       variant="outline"
+                       onClick={() => {
+                         // 투어 리포트 목록 모드로 전환
+                         const reportSection = document.querySelector('[data-tour-report-section]')
+                         if (reportSection) {
+                           const viewButton = reportSection.querySelector('[data-view-reports]') as HTMLButtonElement
+                           if (viewButton) viewButton.click()
+                         }
+                       }}
+                       className="flex items-center gap-1"
+                     >
+                       <Eye className="w-4 h-4" />
+                       <span className="hidden sm:inline">목록</span>
+                     </Button>
+                   </div>
+                 </div>
+                 <div data-tour-report-section>
+                   <TourReportSection
+                     tourId={tour.id}
+                     tourName={product?.name_ko}
+                     tourDate={tour.tour_date}
+                     canCreateReport={isStaff}
+                     canEditReport={isStaff}
+                     canDeleteReport={userRole === 'admin'}
+                     showHeader={false}
+                   />
+                 </div>
                </div>
              </div>
           </div>
