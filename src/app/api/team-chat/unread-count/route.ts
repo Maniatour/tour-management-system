@@ -37,53 +37,48 @@ export async function GET(request: NextRequest) {
 
     const roomIds = userRooms.map(room => room.room_id)
 
-    // 각 채팅방에서 안읽은 메시지 수 계산
-    const unreadCounts = await Promise.all(
-      roomIds.map(async (roomId) => {
-        try {
-          // 해당 채팅방의 모든 메시지 조회 (자신이 보낸 메시지 제외)
-          const { data: allMessages, error: messagesError } = await supabase
-            .from('team_chat_messages')
-            .select('id, sender_email')
-            .eq('room_id', roomId)
-            .neq('sender_email', userEmail) // 자신이 보낸 메시지는 제외
+    // 한 번의 쿼리로 모든 채팅방의 안읽은 메시지 수 계산 (성능 최적화)
+    const { data: unreadData, error: unreadError } = await supabase
+      .from('team_chat_messages')
+      .select(`
+        room_id,
+        id,
+        sender_email
+      `)
+      .in('room_id', roomIds)
+      .neq('sender_email', userEmail) // 자신이 보낸 메시지는 제외
 
-          if (messagesError) {
-            console.error(`채팅방 ${roomId} 메시지 조회 오류:`, messagesError)
-            return { roomId, count: 0 }
-          }
+    if (unreadError) {
+      console.error('안읽은 메시지 조회 오류:', unreadError)
+      return NextResponse.json({ unreadCount: 0, roomCounts: {} })
+    }
 
-          if (!allMessages || allMessages.length === 0) {
-            return { roomId, count: 0 }
-          }
+    if (!unreadData || unreadData.length === 0) {
+      return NextResponse.json({ unreadCount: 0, roomCounts: {} })
+    }
 
-          // 각 메시지에 대해 읽음 상태 확인
-          const messageIds = allMessages.map(msg => msg.id)
-          
-          const { data: readStatuses, error: readError } = await supabase
-            .from('team_chat_read_status')
-            .select('message_id')
-            .in('message_id', messageIds)
-            .eq('reader_email', userEmail)
+    // 읽음 상태를 한 번에 조회
+    const messageIds = unreadData.map(msg => msg.id)
+    const { data: readStatuses, error: readError } = await supabase
+      .from('team_chat_read_status')
+      .select('message_id')
+      .in('message_id', messageIds)
+      .eq('reader_email', userEmail)
 
-          if (readError) {
-            console.error(`채팅방 ${roomId} 읽음 상태 조회 오류:`, readError)
-            return { roomId, count: 0 }
-          }
+    if (readError) {
+      console.error('읽음 상태 조회 오류:', readError)
+      return NextResponse.json({ unreadCount: 0, roomCounts: {} })
+    }
 
-          // 읽은 메시지 ID 목록
-          const readMessageIds = new Set(readStatuses?.map(status => status.message_id) || [])
-          
-          // 읽지 않은 메시지 수 계산
-          const unreadCount = allMessages.filter(msg => !readMessageIds.has(msg.id)).length
-
-          return { roomId, count: unreadCount }
-        } catch (error) {
-          console.error(`채팅방 ${roomId} 안읽은 메시지 계산 오류:`, error)
-          return { roomId, count: 0 }
-        }
-      })
-    )
+    // 읽은 메시지 ID 목록
+    const readMessageIds = new Set(readStatuses?.map(status => status.message_id) || [])
+    
+    // 채팅방별로 안읽은 메시지 수 계산
+    const unreadCounts = roomIds.map(roomId => {
+      const roomMessages = unreadData.filter(msg => msg.room_id === roomId)
+      const unreadCount = roomMessages.filter(msg => !readMessageIds.has(msg.id)).length
+      return { roomId, count: unreadCount }
+    })
 
     // 전체 안읽은 메시지 수와 채팅방별 안읽은 메시지 수 계산
     const totalUnreadCount = unreadCounts.reduce((sum, room) => sum + room.count, 0)

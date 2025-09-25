@@ -207,7 +207,7 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
       return cached.data
     }
 
-    const range = `${sheetName}!A1:Z${maxRows}` // 첫 5행, A-Z 컬럼만
+    const range = `${sheetName}!A1:M${maxRows}` // 첫 3행, A-M 컬럼만 (더 적은 데이터)
     const data = await readGoogleSheet(spreadsheetId, range)
     
     if (data.length === 0) {

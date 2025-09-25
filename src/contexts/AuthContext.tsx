@@ -322,7 +322,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       setTeamChatUnreadCount(0)
     }
-  }, [user?.email, userRole, refreshTeamChatUnreadCount])
+  }, [user?.email, userRole]) // refreshTeamChatUnreadCount 제거하여 무한 루프 방지
 
   const value: AuthContextType = {
     user,

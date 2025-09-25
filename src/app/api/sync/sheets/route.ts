@@ -18,8 +18,8 @@ export async function POST(request: NextRequest) {
     // 시트 목록과 메타데이터 가져오기 (빠른 방식)
     const sheets = await getSheetNames(spreadsheetId)
     
-    // 각 시트의 샘플 데이터를 병렬로 가져오기 (최대 5개씩)
-    const BATCH_SIZE = 5
+    // 각 시트의 샘플 데이터를 병렬로 가져오기 (최대 3개씩으로 줄임)
+    const BATCH_SIZE = 3
     const sheetInfo = []
     
     for (let i = 0; i < sheets.length; i += BATCH_SIZE) {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       const batchResults = await Promise.all(
         batch.map(async (sheet) => {
           try {
-            const { columns, sampleData } = await getSheetSampleData(spreadsheetId, sheet.name)
+            const { columns, sampleData } = await getSheetSampleData(spreadsheetId, sheet.name, 3) // 샘플 데이터를 3행으로 줄임
             console.log(`Sheet ${sheet.name} columns:`, columns.length)
             return {
               name: sheet.name,
