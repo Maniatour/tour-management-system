@@ -927,10 +927,14 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       // 4. product_details 저장 (공통 미사용 시에만)
       console.log('product_details 저장 시작')
       if (!formData.useCommonDetails) {
+        // 다국어 지원을 위한 데이터 변환
+        const currentLang = formData.currentLanguage || 'ko'
+        
         const { data: existingDetails, error: selectDetailsError } = await supabase
           .from('product_details_multilingual')
           .select('id')
           .eq('product_id', productId)
+          .eq('language_code', currentLang)
           .maybeSingle() as any
 
         if (selectDetailsError) {
@@ -938,8 +942,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           throw new Error(`상품 세부정보 조회 실패: ${selectDetailsError.message}`)
         }
 
-        // 다국어 지원을 위한 데이터 변환
-        const currentLang = formData.currentLanguage || 'ko'
         const currentDetails = formData.productDetails[currentLang] || {
           slogan1: '',
           slogan2: '',
@@ -1336,7 +1338,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 }
               })
             }}
-            subCategory={formData.subCategory}
           />
         )}
 
