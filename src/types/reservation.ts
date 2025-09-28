@@ -71,4 +71,32 @@ export interface Reservation {
   isPrivateTour?: boolean
   pricingInfo?: PricingInfo
   hasExistingTour?: boolean // 투어 존재 여부
+  
+  // 가격 관련 속성들 (formData에서 사용)
+  adultProductPrice?: number
+  childProductPrice?: number
+  infantProductPrice?: number
+  productPriceTotal?: number
+  requiredOptions?: { [key: string]: unknown }
+  requiredOptionTotal?: number
+  selectedChoices?: { [key: string]: { selected: string; timestamp: string } }
+  choiceTotal?: number
+  subtotal?: number
+  couponCode?: string
+  couponDiscount?: number
+  additionalDiscount?: number
+  additionalCost?: number
+  cardFee?: number
+  tax?: number
+  prepaymentCost?: number
+  prepaymentTip?: number
+  selectedOptionalOptions?: { [key: string]: unknown }
+  optionTotal?: number
+  totalPrice?: number
+  depositAmount?: number
+  balanceAmount?: number
+  privateTourAdditionalCost?: number
+  commission_percent?: number
+  onlinePaymentAmount?: number
+  onSiteBalanceAmount?: number
 }

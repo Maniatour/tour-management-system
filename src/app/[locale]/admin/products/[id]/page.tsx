@@ -24,6 +24,7 @@ import DynamicPricingManager from '@/components/DynamicPricingManager'
 import ChangeHistory from '@/components/ChangeHistory'
 import BasicInfoTab from '@/components/product/BasicInfoTab'
 import OptionsTab from '@/components/product/OptionsTab'
+import ChoicesTab from '@/components/product/ChoicesTab'
 import ProductDetailsTab from '@/components/product/ProductDetailsTab'
 import ProductScheduleTab from '@/components/product/ProductScheduleTab'
 import ProductFaqTab from '@/components/product/ProductFaqTab'
@@ -173,6 +174,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   const [showAddOptionModal, setShowAddOptionModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [productInfo, setProductInfo] = useState<{
+    name: string
+    productCode: string
+    category: string
+    subCategory: string
+  } | null>(null)
   const [formData, setFormData] = useState<{
     name: string
     productCode: string
@@ -392,6 +399,13 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   // 새 상품 생성 시 기본값 설정
   useEffect(() => {
     if (isNewProduct) {
+      setProductInfo({
+        name: '',
+        productCode: '',
+        category: 'nature',
+        subCategory: '',
+      })
+      
       setFormData(prevData => ({
         ...prevData,
         name: '',
@@ -440,6 +454,18 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   useEffect(() => {
     fetchGlobalOptions()
   }, [fetchGlobalOptions])
+
+  // formData 변경 시 productInfo 업데이트
+  useEffect(() => {
+    if (formData.name || formData.productCode || formData.category || formData.subCategory) {
+      setProductInfo({
+        name: formData.name,
+        productCode: formData.productCode,
+        category: formData.category,
+        subCategory: formData.subCategory,
+      })
+    }
+  }, [formData.name, formData.productCode, formData.category, formData.subCategory])
 
   // 기존 상품 데이터 로드 (편집 시)
   useEffect(() => {
@@ -511,7 +537,15 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
 
 
 
-          // 4. 폼 데이터 설정
+          // 4. 상품 정보 상태 설정
+          setProductInfo({
+            name: productData.name || '',
+            productCode: productData.product_code || '',
+            category: productData.category || 'nature',
+            subCategory: productData.sub_category || '',
+          })
+
+          // 5. 폼 데이터 설정
           setFormData((prevData: any) => ({
             ...prevData,
             name: productData.name || '',
@@ -736,6 +770,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     fetchProductData()
   }, [id, isNewProduct, supabase])
 
+  // handleSubmit 함수 제거됨 - 각 탭별로 개별 저장
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -1190,6 +1225,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   const tabs = [
     { id: 'basic', label: t('basicInfo'), icon: Info },
     { id: 'dynamic-pricing', label: t('dynamicPricing'), icon: TrendingUp },
+    { id: 'choices', label: '초이스 관리', icon: Settings },
     { id: 'options', label: t('optionsManagement'), icon: Settings },
     { id: 'details', label: t('details'), icon: Tag },
     { id: 'schedule', label: t('schedule'), icon: Calendar },
@@ -1216,9 +1252,24 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
               {isNewProduct ? '새 상품 추가' : '상품 편집'}
+              {productInfo && !isNewProduct && (
+                <span className="ml-3 text-xl font-normal text-gray-600">
+                  - {productInfo.name}
+                  {productInfo.productCode && (
+                    <span className="ml-2 text-sm text-gray-500">
+                      ({productInfo.productCode})
+                    </span>
+                  )}
+                </span>
+              )}
             </h1>
             <p className="mt-2 text-gray-600">
               {isNewProduct ? '새로운 투어 상품을 등록합니다' : '상품 정보를 수정합니다'}
+              {productInfo && !isNewProduct && (
+                <span className="ml-2 text-sm text-gray-500">
+                  • {productInfo.category} • {productInfo.subCategory}
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -1258,8 +1309,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         </nav>
       </div>
 
-      {/* 폼 */}
-      <form onSubmit={handleSubmit} className="space-y-6">
+      {/* 탭 컨텐츠 */}
+      <div className="space-y-6">
         {/* 기본정보 탭 */}
         {activeTab === 'basic' && (
           <BasicInfoTab
@@ -1292,6 +1343,14 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
               }}
             />
           </div>
+        )}
+
+        {/* 초이스 관리 탭 */}
+        {activeTab === 'choices' && (
+          <ChoicesTab
+            productId={id}
+            isNewProduct={isNewProduct}
+          />
         )}
 
         {/* 옵션관리 탭 */}
@@ -1391,21 +1450,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         )}
 
         {/* 저장 버튼 */}
-        <div className="flex space-x-3 pt-6 border-t border-gray-200">
-          <button
-            type="submit"
-            className="bg-blue-600 text-white py-2 px-6 rounded-lg hover:bg-blue-700"
-          >
-            {isNewProduct ? '상품 추가' : '변경사항 저장'}
-          </button>
-                     <Link
-             href={`/${locale}/admin/products`}
-             className="bg-gray-300 text-gray-700 py-2 px-6 rounded-lg hover:bg-gray-400"
-           >
-            취소
-          </Link>
-        </div>
-      </form>
+      </div>
 
             {/* 옵션 관리 메뉴얼 모달 */}
       <OptionsManualModal

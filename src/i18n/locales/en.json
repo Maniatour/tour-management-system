@@ -4,6 +4,7 @@
     "schedule": "Guide Schedule",
     "customers": "Customer Management",
     "reservations": "Reservation Management",
+    "reservation": "Reservation",
     "tours": "Tour Management",
     "channels": "Channel Management",
     "products": "Product Management",
@@ -64,8 +65,10 @@
     "changeHistory": "Change History",
     "deleting": "Deleting...",
     "saving": "Saving...",
-    "save": "Save",
-    "all": "All"
+    "all": "All",
+    "choices": "Choices",
+    "requiredChoices": "Required Choices",
+    "optionalChoices": "Optional Choices"
   },
   "home": {
     "title": "Welcome to Tour Management System",

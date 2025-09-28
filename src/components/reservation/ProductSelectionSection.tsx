@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+
 interface Product {
   id: string
   name?: string | null
@@ -9,17 +11,6 @@ interface Product {
   sub_category?: string | null
 }
 
-interface ProductOption {
-  id: string
-  name: string
-  linked_option_id?: string
-  choice_name?: string
-  choice_description?: string
-  adult_price_adjustment?: number
-  child_price_adjustment?: number
-  infant_price_adjustment?: number
-  is_default?: boolean
-}
 
 interface ProductSelectionSectionProps {
   formData: {
@@ -32,12 +23,24 @@ interface ProductSelectionSectionProps {
     selectedOptionPrices: Record<string, number>
     tourDate: string
     channelId: string
+    // Choice 관련 필드 추가
+    productChoices: Array<{
+      id: string
+      name: string
+      name_ko?: string
+      description?: string
+      adult_price: number
+      child_price: number
+      infant_price: number
+      is_default?: boolean
+    }>
+    selectedChoices: Record<string, { selected: string; timestamp: string }>
+    choiceTotal: number
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
   products: Product[]
-  getRequiredOptionsForProduct: (productId: string) => Record<string, ProductOption[]>
-  loadRequiredOptionsForProduct: (productId: string) => Promise<void>
+  loadProductChoices: (productId: string) => Promise<void>
   getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
   t: (key: string) => string
 }
@@ -46,14 +49,18 @@ export default function ProductSelectionSection({
   formData,
   setFormData,
   products,
-  getRequiredOptionsForProduct,
-  loadRequiredOptionsForProduct,
+  loadProductChoices,
   getDynamicPricingForOption,
   t
 }: ProductSelectionSectionProps) {
   
-  // 디버깅을 위한 로그
-  console.log('ProductSelectionSection - formData.selectedOptions:', formData.selectedOptions)
+  // 상품이 변경될 때 choice 데이터 로드
+  useEffect(() => {
+    if (formData.productId) {
+      loadProductChoices(formData.productId)
+    }
+  }, [formData.productId, loadProductChoices])
+  
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.product')}</label>
@@ -149,9 +156,9 @@ export default function ProductSelectionSection({
                     selectedOptions: {} // 상품 변경 시 선택된 옵션 초기화
                   }))
                   
-                  // 상품 선택 시 필수 옵션 자동 로드
+                  // 상품 선택 시 초이스 자동 로드
                   if (newProductId) {
-                    await loadRequiredOptionsForProduct(newProductId)
+                    await loadProductChoices(newProductId)
                   } else {
                     setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
                       ...prev, 
@@ -186,103 +193,87 @@ export default function ProductSelectionSection({
         </div>
       )}
       
-      {/* 선택된 상품의 필수 옵션 표시 */}
-      {formData.productId && (
+      {/* 선택된 상품의 초이스 표시 */}
+      {formData.productId && formData.productChoices && formData.productChoices.length > 0 && (
         <div className="mt-4">
           <div className="space-y-4">
-            {Object.entries(getRequiredOptionsForProduct(formData.productId)).map(([category, options]) => (
-              <div key={category} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                <h4 className="text-sm font-semibold text-gray-800 mb-3 border-b pb-2">
-                  {category} 카테고리 (택일)
-                </h4>
-                <div className="space-y-3">
-                  {options.map((option) => {
-                    // 병합된 테이블에서는 각 옵션이 이미 하나의 선택지를 나타냄
-                    const choice = {
-                      id: option.id,
-                      name: option.choice_name || option.name,
-                      adult_price_adjustment: option.adult_price_adjustment,
-                      child_price_adjustment: option.child_price_adjustment,
-                      infant_price_adjustment: option.infant_price_adjustment
-                    }
-                    return (
-                      <div 
-                        key={choice.id} 
-                        className={`border rounded-lg p-3 cursor-pointer transition-all duration-200 ${
-                          formData.selectedOptions[option.id]?.includes(choice.id)
-                            ? 'border-blue-500 bg-blue-50 shadow-md'
-                            : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300'
-                        }`}
-                        onClick={async () => {
-                          // 같은 카테고리의 다른 옵션들은 선택 해제
-                          const updatedSelectedOptions = { ...formData.selectedOptions }
-                          options.forEach(opt => {
-                            if (opt.id !== option.id) {
-                              updatedSelectedOptions[opt.id] = []
-                            }
-                          })
-
-                          // 가격 정보의 필수 옵션도 함께 업데이트
-                          const updatedRequiredOptions = { ...formData.requiredOptions }
-                          options.forEach(opt => {
-                            if (opt.id !== option.id) {
-                              delete updatedRequiredOptions[opt.id]
-                            }
-                          })
-
-                          // 선택된 choice의 가격 정보를 가격 정보 섹션에 반영
-                          // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
-                          const dynamicPricing = await getDynamicPricingForOption(option.linked_option_id || option.id)
-                          updatedRequiredOptions[option.id] = {
-                            choiceId: choice.id,
-                            adult: dynamicPricing?.adult ?? choice.adult_price_adjustment ?? 0,
-                            child: dynamicPricing?.child ?? choice.child_price_adjustment ?? 0,
-                            infant: dynamicPricing?.infant ?? choice.infant_price_adjustment ?? 0
-                          }
-                          
-                          setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                            ...prev,
-                            selectedOptions: {
-                              ...updatedSelectedOptions,
-                              [option.id]: [choice.id]
-                            },
-                            requiredOptions: updatedRequiredOptions
-                          }))
-                        }}
-                      >
-                        <div className="flex items-center space-x-3 mb-2">
-                          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                            formData.selectedOptions[option.id]?.includes(choice.id)
-                              ? 'border-blue-500 bg-blue-500'
-                              : 'border-gray-300'
-                          }`}>
-                            {formData.selectedOptions[option.id]?.includes(choice.id) && (
-                              <div className="w-2 h-2 bg-white rounded-full"></div>
-                            )}
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-gray-900">
-                              {choice.name}
-                            </div>
-                          </div>
-                        </div>
+            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+              <h4 className="text-sm font-semibold text-gray-800 mb-3 border-b pb-2">
+                {t('form.requiredChoices')}
+              </h4>
+              <div className="space-y-3">
+                {formData.productChoices.map((choice) => {
+                  const isSelected = formData.selectedChoices[choice.id]?.selected === choice.id
+                  
+                  return (
+                    <div 
+                      key={choice.id} 
+                      className={`border rounded-lg p-3 cursor-pointer transition-all duration-200 ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50 shadow-md'
+                          : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300'
+                      }`}
+                      onClick={async () => {
+                        // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
+                        const dynamicPricing = await getDynamicPricingForOption(choice.id)
                         
-                                                 {/* 가격 정보는 가격 정보 섹션에서 관리 */}
-                         <div className="text-xs text-gray-500 mt-2">
-                           가격은 가격 정보 섹션에서 설정됩니다
-                         </div>
+                        const selectedChoice = {
+                          selected: choice.id,
+                          timestamp: new Date().toISOString()
+                        }
+                        
+                        setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+                          ...prev,
+                          selectedChoices: {
+                            ...prev.selectedChoices,
+                            [choice.id]: selectedChoice
+                          },
+                          // choiceTotal 계산
+                          choiceTotal: (dynamicPricing?.adult ?? choice.adult_price) * prev.adults + 
+                                     (dynamicPricing?.child ?? choice.child_price) * prev.child + 
+                                     (dynamicPricing?.infant ?? choice.infant_price) * prev.infant
+                        }))
+                      }}
+                    >
+                      <div className="flex items-center space-x-3 mb-2">
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-500'
+                            : 'border-gray-300'
+                        }`}>
+                          {isSelected && (
+                            <div className="w-2 h-2 bg-white rounded-full"></div>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-gray-900">
+                            {choice.name_ko || choice.name}
+                          </div>
+                          {choice.description && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {choice.description}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )
-                  })}
-                </div>
+                      
+                      <div className="text-xs text-gray-500 mt-2">
+                        성인: ${choice.adult_price} | 아동: ${choice.child_price} | 유아: ${choice.infant_price}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-            
-            {Object.keys(getRequiredOptionsForProduct(formData.productId)).length === 0 && (
-              <div className="text-sm text-gray-500 text-center py-4 border border-gray-200 rounded-lg">
-                {t('form.noRequiredOptions')}
-              </div>
-            )}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* 초이스가 없는 경우 */}
+      {formData.productId && (!formData.productChoices || formData.productChoices.length === 0) && (
+        <div className="mt-4">
+          <div className="text-center py-4 text-gray-500 text-sm">
+            {t('form.noRequiredChoices')}
           </div>
         </div>
       )}

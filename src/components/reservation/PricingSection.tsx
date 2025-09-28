@@ -38,9 +38,9 @@ interface PricingSectionProps {
     child: number
     infant: number
     productPriceTotal: number
-    productRequiredOptions: ProductOption[]
-    requiredOptions: Record<string, { choiceId: string; adult: number; child: number; infant: number }>
-    requiredOptionTotal: number
+    productChoices: any[]
+    selectedChoices: Record<string, { selected: string; timestamp: string }>
+    choiceTotal: number
     subtotal: number
     couponCode: string
     couponDiscount: number
@@ -63,7 +63,7 @@ interface PricingSectionProps {
   setFormData: (data: any) => void
   savePricingInfo: (reservationId: string) => Promise<void>
   calculateProductPriceTotal: () => number
-  calculateRequiredOptionTotal: () => number
+  calculateChoiceTotal: () => number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   calculateCouponDiscount: (coupon: any, subtotal: number) => number
   coupons: Array<{
@@ -85,7 +85,7 @@ export default function PricingSection({
   setFormData,
   savePricingInfo,
   calculateProductPriceTotal,
-  calculateRequiredOptionTotal,
+  calculateChoiceTotal,
   calculateCouponDiscount,
   coupons,
   getOptionalOptionsForProduct,
@@ -149,7 +149,7 @@ export default function PricingSection({
               />
             </div>
           )}
-          {/* 상품가에 필수옵션 포함 처리: 필수옵션 가격 입력칸을 0으로 입력하면 이중계산 없이 반영됩니다 */}
+          {/* 상품가에 초이스 포함 처리: 초이스 가격 입력칸을 0으로 입력하면 이중계산 없이 반영됩니다 */}
           <button
             type="button"
             onClick={async () => {
@@ -175,7 +175,7 @@ export default function PricingSection({
                 adultProductPrice: 0,
                 childProductPrice: 0,
                 infantProductPrice: 0,
-                requiredOptions: {},
+                selectedChoices: {},
                 couponCode: '',
                 couponDiscount: 0,
                 additionalDiscount: 0,
@@ -189,7 +189,7 @@ export default function PricingSection({
                 isPrivateTour: false,
                 privateTourAdditionalCost: 0,
                 commission_percent: 0,
-                productRequiredOptions: []
+                productChoices: []
               }))
             }}
             className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
@@ -200,7 +200,7 @@ export default function PricingSection({
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        {/* 1열: 상품 가격 + 필수 옵션 */}
+        {/* 1열: 상품 가격 + 초이스 */}
         <div className="space-y-3">
           {/* 상품 가격 */}
           <div className="bg-white p-3 rounded border border-gray-200">
@@ -268,156 +268,70 @@ export default function PricingSection({
             </div>
           </div>
 
-          {/* 필수 옵션 */}
+          {/* 초이스 */}
           <div className="bg-white p-3 rounded border border-gray-200">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-medium text-gray-900">필수옵션</h4>
-              {formData.productRequiredOptions.length > 0 && Object.values(formData.requiredOptions).some(option => option.adult > 0 || option.child > 0 || option.infant > 0) && (
+              <h4 className="text-sm font-medium text-gray-900">초이스</h4>
+              {formData.productChoices?.length > 0 && Object.keys(formData.selectedChoices || {}).length > 0 && (
                 <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
                   자동입력됨
                 </span>
               )}
             </div>
             <div className="space-y-2">
-              {formData.productRequiredOptions.map((productOption) => {
-                const currentOption = formData.requiredOptions[productOption.id]
-                if (!currentOption) return null
+              {formData.productChoices?.map((choice) => {
+                const selectedChoiceId = formData.selectedChoices[choice.id]?.selected
+                if (!selectedChoiceId) return null
                 
-                // 택일 옵션의 경우 selectedOptions에서 선택된 옵션만 표시
-                // selectedOptions에서 해당 옵션이 선택되었는지 확인
-                const isSelected = formData.selectedOptions && 
-                  formData.selectedOptions[productOption.id] && 
-                  formData.selectedOptions[productOption.id].length > 0
-                
-                if (!isSelected) return null
+                const selectedOption = choice.options?.find(opt => opt.id === selectedChoiceId)
+                if (!selectedOption) return null
                 
                 return (
-                  <div key={productOption.id} className="border border-gray-200 rounded p-2">
-                    <div className="text-xs font-medium text-gray-700 mb-1">
-                      {productOption.name}
+                  <div key={choice.id} className="border border-gray-200 rounded p-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-gray-700">{choice.name}</span>
+                      <span className="text-xs text-gray-500">{selectedOption.name}</span>
                     </div>
                     
-                    {/* 옵션 선택지 */}
-                    {productOption.product_option_choices && productOption.product_option_choices.length > 1 && (
-                      <div className="mb-2">
-                        <select
-                          value={currentOption.choiceId}
-                          onChange={async (e) => {
-                            const selectedChoice = productOption.product_option_choices?.find(
-                              (choice) => choice.id === e.target.value
-                            )
-                            if (selectedChoice) {
-                              // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
-                              const dynamicPricing = await getDynamicPricingForOption(productOption.linked_option_id || productOption.id)
-                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                              setFormData((prev: any) => ({
-                                ...prev,
-                                requiredOptions: {
-                                  ...prev.requiredOptions,
-                                  [productOption.id]: {
-                                    choiceId: selectedChoice.id,
-                                    adult: dynamicPricing?.adult ?? selectedChoice.adult_price_adjustment ?? 0,
-                                    child: dynamicPricing?.child ?? selectedChoice.child_price_adjustment ?? 0,
-                                    infant: dynamicPricing?.infant ?? selectedChoice.infant_price_adjustment ?? 0
-                                  }
-                                }
-                              }))
-                            }
-                          }}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                        >
-                          {productOption.product_option_choices.map((choice) => (
-                            <option key={choice.id} value={choice.id}>
-                              {choice.name} (${choice.adult_price_adjustment})
-                            </option>
-                          ))}
-                        </select>
+                    {/* 가격 표시 */}
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <label className="block text-gray-600 mb-1">성인</label>
+                        <input
+                          type="number"
+                          value={selectedOption.adult_price || 0}
+                          readOnly
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-50"
+                          step="0.01"
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          총: ${((selectedOption.adult_price || 0) * formData.adults).toFixed(2)}
+                        </div>
                       </div>
-                    )}
-                    
-                    {/* 가격 입력 */}
-                    <div className="text-xs space-y-2">
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="block text-gray-600 mb-1">성인</label>
-                          <div className="relative">
-                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                            <input
-                              type="number"
-                              value={currentOption.adult}
-                              onChange={(e) => {
-                                const value = parseFloat(e.target.value) || 0
-                                setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                                  ...prev,
-                                  requiredOptions: {
-                                    ...prev.requiredOptions,
-                                    [productOption.id]: {
-                                      ...prev.requiredOptions[productOption.id],
-                                      adult: value
-                                    }
-                                  }
-                                }))
-                              }}
-                              className="w-full pl-4 pr-1 py-1 text-right border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                            />
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            총: ${(currentOption.adult * formData.adults).toFixed(2)}
-                          </div>
+                      <div>
+                        <label className="block text-gray-600 mb-1">아동</label>
+                        <input
+                          type="number"
+                          value={selectedOption.child_price || 0}
+                          readOnly
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-50"
+                          step="0.01"
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          총: ${((selectedOption.child_price || 0) * formData.child).toFixed(2)}
                         </div>
-                        <div>
-                          <label className="block text-gray-600 mb-1">아동</label>
-                          <div className="relative">
-                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                            <input
-                              type="number"
-                              value={currentOption.child}
-                              onChange={(e) => {
-                                const value = parseFloat(e.target.value) || 0
-                                setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                                  ...prev,
-                                  requiredOptions: {
-                                    ...prev.requiredOptions,
-                                    [productOption.id]: {
-                                      ...prev.requiredOptions[productOption.id],
-                                      child: value
-                                    }
-                                  }
-                                }))
-                              }}
-                              className="w-full pl-4 pr-1 py-1 text-right border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                            />
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            총: ${(currentOption.child * formData.child).toFixed(2)}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-gray-600 mb-1">유아</label>
-                          <div className="relative">
-                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                            <input
-                              type="number"
-                              value={currentOption.infant}
-                              onChange={(e) => {
-                                const value = parseFloat(e.target.value) || 0
-                                setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                                  ...prev,
-                                  requiredOptions: {
-                                    ...prev.requiredOptions,
-                                    [productOption.id]: {
-                                      ...prev.requiredOptions[productOption.id],
-                                      infant: value
-                                    }
-                                  }
-                                }))
-                              }}
-                              className="w-full pl-4 pr-1 py-1 text-right border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                            />
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            총: ${(currentOption.infant * formData.infant).toFixed(2)}
-                          </div>
+                      </div>
+                      <div>
+                        <label className="block text-gray-600 mb-1">유아</label>
+                        <input
+                          type="number"
+                          value={selectedOption.infant_price || 0}
+                          readOnly
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-50"
+                          step="0.01"
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          총: ${((selectedOption.infant_price || 0) * formData.infant).toFixed(2)}
                         </div>
                       </div>
                     </div>
@@ -425,7 +339,7 @@ export default function PricingSection({
                 )
               })}
               
-              {formData.productRequiredOptions.length === 0 && (
+              {(!formData.productChoices || formData.productChoices.length === 0) && (
                 <div className="text-center py-2 text-gray-500 text-xs">
                   상품 선택 시 표시
                 </div>
@@ -433,13 +347,13 @@ export default function PricingSection({
               
               <div className="border-t pt-1 flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-900">총합</span>
-                <span className="text-sm font-bold text-green-600">+${formData.requiredOptionTotal.toFixed(2)}</span>
+                <span className="text-sm font-bold text-green-600">+${(formData.choiceTotal || 0).toFixed(2)}</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* 2열: 할인/추가 비용 + 선택 옵션 */}
+        {/* 2열: 할인/추가 비용 + 옵션 */}
         <div className="space-y-3">
           {/* 할인 및 추가 비용 입력 */}
           <div className="bg-white p-3 rounded border border-gray-200">
@@ -471,7 +385,7 @@ export default function PricingSection({
                     const selectedCouponCode = e.target.value
                     const selectedCoupon = coupons.find(coupon => coupon.coupon_code === selectedCouponCode)
                     
-                    const subtotal = calculateProductPriceTotal() + calculateRequiredOptionTotal()
+                    const subtotal = calculateProductPriceTotal() + calculateChoiceTotal()
                     const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
                     
                     setFormData({ 
@@ -595,15 +509,15 @@ export default function PricingSection({
             </div>
           </div>
 
-          {/* 선택 옵션 */}
+          {/* 옵션 */}
           <div className="bg-white p-3 rounded border border-gray-200">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">선택옵션</h4>
+            <h4 className="text-sm font-medium text-gray-900 mb-2">옵션</h4>
             <div className="space-y-2">
               {Object.entries(formData.selectedOptionalOptions).map(([optionId, option]) => {
                 return (
                   <div key={optionId} className="border border-gray-200 rounded p-2">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-gray-700">선택 옵션</span>
+                      <span className="text-xs font-medium text-gray-700">옵션</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -686,7 +600,7 @@ export default function PricingSection({
                   
                   const optionalOptions = getOptionalOptionsForProduct(formData.productId)
                   if (optionalOptions.length === 0) {
-                    alert('이 상품에는 선택 옵션이 없습니다.')
+                    alert('이 상품에는 옵션이 없습니다.')
                     return
                   }
                   
@@ -702,7 +616,7 @@ export default function PricingSection({
                 }}
                 className="w-full px-2 py-1 border border-dashed border-gray-300 rounded text-xs text-gray-600 hover:border-blue-400 hover:text-blue-600"
               >
-                + 선택 옵션 추가
+                + 옵션 추가
               </button>
             </div>
           </div>
@@ -892,7 +806,7 @@ export default function PricingSection({
             <div className="p-4 overflow-y-auto text-sm text-gray-800 space-y-3">
               <div>
                 <div className="font-semibold text-gray-900 mb-1">1) 판매가 구성</div>
-                <p>상품가(성인/아동/유아 단가×인원) + 필수옵션 합계 = 소계(Subtotal)</p>
+                <p>상품가(성인/아동/유아 단가×인원) + 초이스 합계 = 소계(Subtotal)</p>
               </div>
               <div>
                 <div className="font-semibold text-gray-900 mb-1">2) 할인 적용</div>
@@ -900,7 +814,7 @@ export default function PricingSection({
               </div>
               <div>
                 <div className="font-semibold text-gray-900 mb-1">3) 추가 비용</div>
-                <p>추가비용, 세금, 카드수수료, 단독투어 추가비, 선결제 비용/팁, 선택옵션 합계 가산</p>
+                <p>추가비용, 세금, 카드수수료, 단독투어 추가비, 선결제 비용/팁, 옵션 합계 가산</p>
               </div>
               <div>
                 <div className="font-semibold text-gray-900 mb-1">4) 총 판매가</div>
@@ -919,7 +833,7 @@ export default function PricingSection({
               <div>
                 <div className="font-semibold text-gray-900 mb-1">6) 용어 간단 설명</div>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>소계: 상품가와 필수옵션만 더한 중간합</li>
+                  <li>소계: 상품가와 초이스만 더한 중간합</li>
                   <li>총 판매가: 모든 할인과 추가비용을 반영한 고객 기준 최종금액</li>
                   <li>커미션: OTA 수수료(퍼센트 기준)</li>
                   <li>Net: 커미션 차감 후 우리 측에 귀속되는 금액</li>

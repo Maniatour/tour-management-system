@@ -42,6 +42,54 @@ export default function BasicInfoTab({
   const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
 
+  // 기본 정보 저장 함수
+  const handleSave = async () => {
+    if (isNewProduct) {
+      setSaveMessage('새 상품은 전체 저장을 사용해주세요.')
+      return
+    }
+
+    setSaving(true)
+    setSaveMessage('')
+
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({
+          name: formData.name.trim(),
+          product_code: formData.productCode.trim(),
+          category: formData.category,
+          sub_category: formData.subCategory.trim(),
+          description: formData.description.trim(),
+          duration: formData.duration.toString(),
+          base_price: 0, // 기본 가격은 동적 가격에서 설정
+          max_participants: formData.maxParticipants,
+          status: formData.status,
+          departure_city: formData.departureCity.trim(),
+          arrival_city: formData.arrivalCity.trim(),
+          departure_country: formData.departureCountry,
+          arrival_country: formData.arrivalCountry,
+          languages: formData.languages,
+          group_size: formData.groupSize.toString(),
+          adult_age: formData.adultAge,
+          child_age_min: formData.childAgeMin,
+          child_age_max: formData.childAgeMax,
+          infant_age: formData.infantAge
+        })
+        .eq('id', productId)
+
+      if (error) throw error
+
+      setSaveMessage('기본 정보가 성공적으로 저장되었습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } catch (error) {
+      console.error('기본 정보 저장 오류:', error)
+      setSaveMessage('기본 정보 저장 중 오류가 발생했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // 카테고리와 서브카테고리 데이터 가져오기
   useEffect(() => {
     fetchCategoriesAndSubCategories()
@@ -560,6 +608,18 @@ export default function BasicInfoTab({
             새 상품은 전체 저장을 사용해주세요.
           </p>
         )}
+      </div>
+
+      {/* 저장 버튼 */}
+      <div className="flex justify-end pt-6 border-t border-gray-200">
+        <button
+          onClick={handleSave}
+          disabled={saving || isNewProduct}
+          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+        >
+          <Save className="w-4 h-4 mr-2" />
+          {saving ? '저장 중...' : '기본 정보 저장'}
+        </button>
       </div>
     </>
   )

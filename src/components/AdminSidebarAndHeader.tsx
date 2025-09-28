@@ -235,7 +235,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('attendance'), href: `/${locale}/admin/attendance`, icon: Clock },
     { name: t('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
-    { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: MessageCircle },
+    { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: BookOpen },
     { name: t('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
     { name: t('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: t('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
@@ -342,11 +342,27 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       className="inline-flex items-center justify-center w-9 h-9 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                       title="팀 보드로 이동"
                     >
-                      <MessageCircle className="w-5 h-5" />
+                      <BookOpen className="w-5 h-5" />
                     </Link>
                     {teamBoardCount > 0 && (
                       <span className="absolute -top-2 -right-2 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[18px] h-[18px] px-1">
                         {teamBoardCount > 99 ? '99+' : teamBoardCount}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 팀 채팅 바로가기 */}
+                  <div className="relative hidden sm:inline-block">
+                    <Link
+                      href={`/${locale}/admin/team-chat`}
+                      className="inline-flex items-center justify-center w-9 h-9 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                      title="팀 채팅으로 이동"
+                    >
+                      <MessageCircle className="w-5 h-5" />
+                    </Link>
+                    {teamChatUnreadCount > 0 && (
+                      <span className="absolute -top-2 -right-2 inline-flex items-center justify-center text-[10px] font-bold text-white bg-red-600 rounded-full min-w-[18px] h-[18px] px-1">
+                        {teamChatUnreadCount > 99 ? '99+' : teamChatUnreadCount}
                       </span>
                     )}
                   </div>

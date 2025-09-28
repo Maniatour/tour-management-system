@@ -125,6 +125,10 @@ export default function ReservationForm({
     status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
     selectedOptions: { [optionId: string]: string[] }
     selectedOptionPrices: { [key: string]: number }
+    // 초이스 정보
+    productChoices: any[]
+    selectedChoices: Record<string, { selected: string; timestamp: string }>
+    choiceTotal: number
     // 가격 정보
     adultProductPrice: number
     childProductPrice: number
@@ -192,6 +196,10 @@ export default function ReservationForm({
     status: (reservation?.status as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
     selectedOptions: reservation?.selectedOptions || rez.selected_options || {},
     selectedOptionPrices: reservation?.selectedOptionPrices || rez.selected_option_prices || {},
+    // 초이스 정보 초기값
+    productChoices: [],
+    selectedChoices: {},
+    choiceTotal: 0,
     // 가격 정보 초기값 (loadPricingInfo 함수에서 동적으로 로드)
     adultProductPrice: 0,
     childProductPrice: 0,
@@ -267,201 +275,59 @@ export default function ReservationForm({
     getCurrentUser()
   }, [reservation])
 
-  // 상품 선택 시 필수 옵션 로드 함수 (dynamic_pricing의 options_pricing 참조)
-  const loadRequiredOptionsForProduct = useCallback(async (productId: string, tourDate?: string, channelId?: string) => {
+  // 상품 선택 시 choice 데이터 로드 함수
+  const loadProductChoices = useCallback(async (productId: string) => {
     if (!productId) {
-      setFormData(prev => ({ ...prev, requiredOptions: {} }))
+      setFormData(prev => ({ ...prev, productChoices: [] }))
       return
     }
 
     try {
-      // 상품의 필수 옵션들을 가져오기 (병합된 테이블 구조)
-      const { data: productOptions, error } = await (supabase as any)
-        .from('product_options')
-        .select(`
-          id,
-          name,
-          description,
-          is_required,
-          linked_option_id,
-          choice_name,
-          choice_description,
-          adult_price_adjustment,
-          child_price_adjustment,
-          infant_price_adjustment,
-          is_default
-        `)
-        .eq('product_id', productId)
-        .eq('is_required', true)
+      const { data: product, error } = await (supabase as any)
+        .from('products')
+        .select('choices')
+        .eq('id', productId)
+        .single()
 
-      if (error) {
-        console.error('필수 옵션 로드 오류:', error)
-        return
-      }
+      if (error) throw error
 
-      // 필수 옵션을 formData에 설정 (병합된 테이블 구조)
-      const requiredOptions: { [optionId: string]: { choiceId: string; adult: number; child: number; infant: number } } = {}
-      
-      productOptions?.forEach((productOption: { id: string; adult_price_adjustment?: number | null; child_price_adjustment?: number | null; infant_price_adjustment?: number | null }) => {
-        // 병합된 테이블에서는 각 행이 이미 하나의 선택지를 나타냄
-        requiredOptions[productOption.id] = {
-          choiceId: productOption.id, // 옵션 ID를 선택지 ID로 사용
-          adult: productOption.adult_price_adjustment || 0,
-          child: productOption.child_price_adjustment || 0,
-          infant: productOption.infant_price_adjustment || 0
-        }
-      })
+      if (product?.choices?.required) {
+        // choices.required 안의 각 choice의 options를 추출하여 평면화
+        const flattenedChoices: Array<{
+          id: string
+          name: string
+          name_ko?: string
+          description?: string
+          adult_price: number
+          child_price: number
+          infant_price: number
+          is_default?: boolean
+        }> = []
 
-      // dynamic_pricing에서 options_pricing 가격 정보가 있으면 업데이트
-      if (tourDate && channelId) {
-        try {
-          const { data: pricingData, error: pricingError } = await (supabase as any)
-            .from('dynamic_pricing')
-            .select('options_pricing')
-            .eq('product_id', productId)
-            .eq('date', tourDate)
-            .eq('channel_id', channelId)
-            .limit(1)
-
-          if (!pricingError && pricingData && pricingData.length > 0) {
-            const pricing = pricingData[0]
-            console.log('Dynamic pricing options_pricing 조회:', (pricing as any).options_pricing)
-            
-            // requiredOptionsList 변수 정의 (productOptions에서 직접 가져오기)
-            const requiredOptionsList: Array<{ id: string; name?: string; linked_option_id?: string | null }> = productOptions || []
-            
-            console.log('ProductOptions 정보:', requiredOptionsList.map(opt => ({
-              id: opt.id,
-              name: opt.name,
-              linked_option_id: opt.linked_option_id
-            })))
-            
-            if ((pricing as any).options_pricing && typeof (pricing as any).options_pricing === 'object') {
-              // options_pricing이 배열인 경우 처리
-              if (Array.isArray((pricing as any).options_pricing)) {
-                (pricing as any).options_pricing.forEach((optionPricing: { option_id: string; adult_price?: number | null; child_price?: number | null; infant_price?: number | null }) => {
-                  console.log(`Dynamic pricing 옵션 처리:`, {
-                    option_id: optionPricing.option_id,
-                    adult_price: optionPricing.adult_price,
-                    child_price: optionPricing.child_price,
-                    infant_price: optionPricing.infant_price
-                  })
-                  
-                  // option_id를 linked_option_id로 매핑하는 로직
-                  let targetOptionId = optionPricing.option_id
-                  
-                  // 기존 option_id가 product_options의 id와 일치하는 경우, linked_option_id로 변환
-                  const productOptionById = requiredOptionsList.find((opt) => opt.id === optionPricing.option_id)
-                  if (productOptionById && productOptionById.linked_option_id) {
-                    targetOptionId = productOptionById.linked_option_id
-                    console.log(`옵션 ID 매핑: ${optionPricing.option_id} -> ${targetOptionId}`)
-                  }
-                  
-                  // linked_option_id와 매칭되는 product_option 찾기
-                  const matchingProductOption = requiredOptionsList.find((opt) => 
-                    opt.linked_option_id === targetOptionId || 
-                    opt.id === targetOptionId
-                  )
-                  
-                  // 매칭이 안 되는 경우 더 자세한 디버깅
-                  if (!matchingProductOption) {
-                    console.log(`매칭 실패 - 상세 분석:`, {
-                      찾고있는_option_id: optionPricing.option_id,
-                      available_product_options: requiredOptionsList.map(opt => ({
-                        id: opt.id,
-                        name: opt.name,
-                        linked_option_id: opt.linked_option_id,
-                        linked_option_id_type: typeof opt.linked_option_id,
-                        linked_option_id_null: opt.linked_option_id === null,
-                        linked_option_id_undefined: opt.linked_option_id === undefined
-                      }))
-                    })
-                  }
-                  
-                  console.log(`매칭되는 product_option 찾기:`, {
-                    option_id: optionPricing.option_id,
-                    requiredOptionsList: requiredOptionsList.map(opt => ({ id: opt.id, linked_option_id: opt.linked_option_id })),
-                    matchingProductOption: matchingProductOption ? { id: (matchingProductOption as any).id, linked_option_id: (matchingProductOption as any).linked_option_id } : null
-                  })
-                  
-                  if (matchingProductOption && requiredOptions[matchingProductOption.id as string]) {
-                    const key = matchingProductOption.id as string
-                    const beforePrice = requiredOptions[key]
-                    requiredOptions[key] = {
-                      ...requiredOptions[key],
-                      adult: optionPricing.adult_price || 0,
-                      child: optionPricing.child_price || 0,
-                      infant: optionPricing.infant_price || 0
-                    }
-                    console.log(`옵션 ${key} (linked_option_id: ${optionPricing.option_id}) 가격 업데이트 (배열 형식):`, {
-                      before: beforePrice,
-                      after: requiredOptions[key],
-                      dynamic_pricing: {
-                        adult: optionPricing.adult_price,
-                        child: optionPricing.child_price,
-                        infant: optionPricing.infant_price
-                      }
-                    })
-                  } else {
-                    console.log(`매칭되는 product_option을 찾을 수 없음:`, {
-                      option_id: optionPricing.option_id,
-                      requiredOptions_keys: Object.keys(requiredOptions),
-                      matchingProductOption: matchingProductOption,
-                      requiredOptions_content: requiredOptions
-                    })
-                  }
-                })
-              } else {
-                // options_pricing이 객체인 경우 처리
-                Object.entries((pricing as any).options_pricing).forEach(([optionId, optionPricing]) => {
-                  const pricingData = optionPricing as { adult?: number; adult_price?: number; child?: number; child_price?: number; infant?: number; infant_price?: number }
-                  
-                  // option_id를 linked_option_id로 매핑하는 로직
-                  let targetOptionId = optionId
-                  
-                  // 기존 option_id가 product_options의 id와 일치하는 경우, linked_option_id로 변환
-                  const productOptionById = requiredOptionsList.find((opt) => opt.id === optionId)
-                  if (productOptionById && productOptionById.linked_option_id) {
-                    targetOptionId = productOptionById.linked_option_id
-                    console.log(`옵션 ID 매핑 (객체): ${optionId} -> ${targetOptionId}`)
-                  }
-                  
-                  // linked_option_id와 매칭되는 product_option 찾기
-                  const matchingProductOption = requiredOptionsList.find((opt) => 
-                    opt.linked_option_id === targetOptionId || 
-                    opt.id === targetOptionId
-                  )
-                  if (matchingProductOption && requiredOptions[matchingProductOption.id] && pricingData) {
-                    requiredOptions[matchingProductOption.id] = {
-                      ...requiredOptions[matchingProductOption.id],
-                      adult: pricingData.adult || pricingData.adult_price || 0,
-                      child: pricingData.child || pricingData.child_price || 0,
-                      infant: pricingData.infant || pricingData.infant_price || 0
-                    }
-                    console.log(`옵션 ${matchingProductOption.id} (linked_option_id: ${optionId}) 가격 업데이트 (객체 형식):`, {
-                      adult: pricingData.adult || pricingData.adult_price,
-                      child: pricingData.child || pricingData.child_price,
-                      infant: pricingData.infant || pricingData.infant_price
-                    })
-                  }
-                })
-              }
-            }
+        product.choices.required.forEach((choice: any) => {
+          if (choice.options && Array.isArray(choice.options)) {
+            choice.options.forEach((option: any) => {
+              flattenedChoices.push({
+                id: option.id,
+                name: option.name,
+                name_ko: option.name_ko,
+                description: choice.description,
+                adult_price: option.adult_price || 0,
+                child_price: option.child_price || 0,
+                infant_price: option.infant_price || 0,
+                is_default: option.is_default || false
+              })
+            })
           }
-        } catch (pricingError) {
-          console.log('Dynamic pricing 조회 중 오류 (기본 가격 사용):', pricingError)
-        }
+        })
+
+        setFormData(prev => ({ ...prev, productChoices: flattenedChoices }))
+      } else {
+        setFormData(prev => ({ ...prev, productChoices: [] }))
       }
-
-      setFormData(prev => ({ 
-        ...prev, 
-        requiredOptions,
-        productRequiredOptions: productOptions || []
-      }))
-
-      console.log('필수 옵션 로드 완료:', requiredOptions)
     } catch (error) {
-      console.error('필수 옵션 로드 중 오류:', error)
+      console.error('Choice 로드 오류:', error)
+      setFormData(prev => ({ ...prev, productChoices: [] }))
     }
   }, [setFormData])
 
@@ -575,8 +441,8 @@ export default function ReservationForm({
           : prev.onlinePaymentAmount || 0
       }))
 
-      // 필수 옵션을 먼저 로드한 후 dynamic_pricing의 options_pricing으로 가격 업데이트
-      await loadRequiredOptionsForProduct(productId, tourDate, channelId)
+      // choice 데이터를 먼저 로드
+      await loadProductChoices(productId)
 
       console.log('가격 정보가 자동으로 입력되었습니다')
       
@@ -586,7 +452,7 @@ export default function ReservationForm({
     } catch (error) {
       console.error('Dynamic pricing 조회 중 오류:', error)
     }
-  }, [loadRequiredOptionsForProduct])
+  }, [loadProductChoices])
 
   // 가격 계산 함수들
   const calculateProductPriceTotal = useCallback(() => {
@@ -757,6 +623,13 @@ export default function ReservationForm({
     }
   }, [formData.productId, formData.tourDate, formData.channelId, coupons, calculateProductPriceTotal, calculateRequiredOptionTotal, calculateCouponDiscount])
 
+  // 상품이 변경될 때 choice 데이터 로드
+  useEffect(() => {
+    if (formData.productId) {
+      loadProductChoices(formData.productId)
+    }
+  }, [formData.productId, loadProductChoices])
+
   // 상품, 날짜, 채널이 변경될 때 dynamic pricing에서 가격 자동 조회
   useEffect(() => {
     if (formData.productId && formData.tourDate && formData.channelId) {
@@ -800,17 +673,17 @@ export default function ReservationForm({
     calculateProductPriceTotal, calculateRequiredOptionTotal, calculateSubtotal, calculateTotalPrice, calculateBalance
   ])
 
-  // dynamic_pricing에서 특정 옵션의 가격 정보를 가져오는 함수
-  const getDynamicPricingForOption = useCallback(async (optionId: string) => {
+  // dynamic_pricing에서 특정 choice의 가격 정보를 가져오는 함수
+  const getDynamicPricingForOption = useCallback(async (choiceId: string) => {
     if (!formData.productId || !formData.tourDate || !formData.channelId) {
       return null
     }
 
     try {
-      // dynamic_pricing 테이블에서 직접 가격 정보 조회
+      // dynamic_pricing 테이블에서 choices_pricing 조회
       const { data: pricingData, error } = await (supabase as any)
         .from('dynamic_pricing')
-        .select('options_pricing')
+        .select('choices_pricing')
         .eq('product_id', formData.productId)
         .eq('date', formData.tourDate)
         .eq('channel_id', formData.channelId)
@@ -820,35 +693,22 @@ export default function ReservationForm({
         return null
       }
 
-      const pricing = pricingData[0] as { options_pricing?: OptionsPricing }
-      if (pricing.options_pricing && typeof pricing.options_pricing === 'object') {
-        if (Array.isArray(pricing.options_pricing)) {
-          const optionPricing = (pricing.options_pricing as OptionsPricingArray).find(
-            (option) => option.option_id === optionId
-          )
-          if (optionPricing) {
-            return {
-              adult: optionPricing.adult_price || 0,
-              child: optionPricing.child_price || 0,
-              infant: optionPricing.infant_price || 0
-            }
-          }
-        } else {
-          const optionPricing = (pricing.options_pricing as Record<string, { adult?: number; adult_price?: number; child?: number; child_price?: number; infant?: number; infant_price?: number }>)[optionId]
-          if (optionPricing) {
-            const pricingData = optionPricing as { adult?: number; adult_price?: number; child?: number; child_price?: number; infant?: number; infant_price?: number }
-            return {
-              adult: pricingData.adult || pricingData.adult_price || 0,
-              child: pricingData.child || pricingData.child_price || 0,
-              infant: pricingData.infant || pricingData.infant_price || 0
-            }
+      const pricing = pricingData[0] as { choices_pricing?: any }
+      if (pricing.choices_pricing && typeof pricing.choices_pricing === 'object') {
+        // choices_pricing에서 해당 choice ID의 가격 정보 찾기
+        const choicePricing = pricing.choices_pricing[choiceId]
+        if (choicePricing) {
+          return {
+            adult: choicePricing.adult || choicePricing.adult_price || 0,
+            child: choicePricing.child || choicePricing.child_price || 0,
+            infant: choicePricing.infant || choicePricing.infant_price || 0
           }
         }
       }
 
       return null
     } catch (error) {
-      console.error('Dynamic pricing 조회 중 오류:', error)
+      console.error('Dynamic pricing choice 조회 중 오류:', error)
       return null
     }
   }, [formData.productId, formData.tourDate, formData.channelId])
@@ -1125,20 +985,20 @@ export default function ReservationForm({
                 t={t}
               />
 
-              <PricingSection
-                formData={formData}
-                setFormData={setFormData}
-                savePricingInfo={savePricingInfo}
-                calculateProductPriceTotal={calculateProductPriceTotal}
-                calculateRequiredOptionTotal={calculateRequiredOptionTotal}
-                calculateCouponDiscount={calculateCouponDiscount}
-                coupons={coupons}
-                getOptionalOptionsForProduct={(productId) => getOptionalOptionsForProduct(productId, productOptions)}
-                getDynamicPricingForOption={getDynamicPricingForOption}
-                options={options}
-                t={t}
-                autoSelectCoupon={autoSelectCoupon}
-              />
+               <PricingSection
+                 formData={formData}
+                 setFormData={setFormData}
+                 savePricingInfo={savePricingInfo}
+                 calculateProductPriceTotal={calculateProductPriceTotal}
+                 calculateChoiceTotal={calculateRequiredOptionTotal}
+                 calculateCouponDiscount={calculateCouponDiscount}
+                 coupons={coupons}
+                 getOptionalOptionsForProduct={(productId) => getOptionalOptionsForProduct(productId, productOptions)}
+                 getDynamicPricingForOption={getDynamicPricingForOption}
+                 options={options}
+                 t={t}
+                 autoSelectCoupon={autoSelectCoupon}
+               />
 
               {/* 입금 내역 섹션 - 예약이 있을 때만 표시 */}
               {reservation && (
@@ -1157,8 +1017,7 @@ export default function ReservationForm({
                 formData={formData}
                 setFormData={setFormData}
                 products={products}
-                getRequiredOptionsForProduct={(productId) => getRequiredOptionsForProduct(productId, productOptions, options)}
-                loadRequiredOptionsForProduct={(productId) => loadRequiredOptionsForProduct(productId, formData.tourDate, formData.channelId)}
+                loadProductChoices={(productId) => loadProductChoices(productId)}
                 getDynamicPricingForOption={getDynamicPricingForOption}
                 t={t}
               />

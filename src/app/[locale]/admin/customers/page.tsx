@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { 
   Plus, 
@@ -14,10 +14,21 @@ import {
   FileText,
   Calendar,
   Filter,
-  AlertTriangle
+  AlertTriangle,
+  BookOpen
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
+import ReservationForm from '@/components/reservation/ReservationForm'
+import type { 
+  Customer as ReservationCustomer, 
+  Product, 
+  Channel, 
+  ProductOption, 
+  Option, 
+  PickupHotel, 
+  Reservation 
+} from '@/types/reservation'
 
 // 실제 데이터베이스 스키마에 맞는 Customer 타입 정의
 type Customer = {
@@ -88,6 +99,7 @@ type ReservationData = {
 
 export default function AdminCustomers() {
   const params = useParams() as { locale?: string }
+  const router = useRouter()
   const locale = params?.locale || 'ko'
   
   // 최적화된 고객 데이터 로딩
@@ -167,7 +179,81 @@ export default function AdminCustomers() {
     cacheTime: 10 * 60 * 1000 // 10분 캐시
   })
 
-  const loading = customersLoading || channelsLoading || productsLoading
+  // 예약 폼에 필요한 추가 데이터들
+  const { data: productOptions = [], loading: productOptionsLoading } = useOptimizedData({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('product_options')
+        .select('*')
+        .order('name', { ascending: true })
+
+      if (error) {
+        console.error('Error fetching product options:', error)
+        return []
+      }
+
+      return data || []
+    },
+    cacheKey: 'product_options',
+    cacheTime: 10 * 60 * 1000
+  })
+
+  const { data: options = [], loading: optionsLoading } = useOptimizedData({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('options')
+        .select('*')
+        .order('name', { ascending: true })
+
+      if (error) {
+        console.error('Error fetching options:', error)
+        return []
+      }
+
+      return data || []
+    },
+    cacheKey: 'options',
+    cacheTime: 10 * 60 * 1000
+  })
+
+  const { data: pickupHotels = [], loading: pickupHotelsLoading } = useOptimizedData({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('pickup_hotels')
+        .select('*')
+        .order('hotel', { ascending: true })
+
+      if (error) {
+        console.error('Error fetching pickup hotels:', error)
+        return []
+      }
+
+      return data || []
+    },
+    cacheKey: 'pickup_hotels',
+    cacheTime: 10 * 60 * 1000
+  })
+
+  const { data: coupons = [], loading: couponsLoading } = useOptimizedData({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching coupons:', error)
+        return []
+      }
+
+      return data || []
+    },
+    cacheKey: 'coupons',
+    cacheTime: 5 * 60 * 1000
+  })
+
+  const loading = customersLoading || channelsLoading || productsLoading || productOptionsLoading || optionsLoading || pickupHotelsLoading || couponsLoading
 
   const [reservationInfo, setReservationInfo] = useState<Record<string, ReservationInfo>>({})
   const [searchTerm, setSearchTerm] = useState('')
@@ -180,10 +266,65 @@ export default function AdminCustomers() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [showReservationForm, setShowReservationForm] = useState(false)
+  const [selectedCustomerForReservation, setSelectedCustomerForReservation] = useState<Customer | null>(null)
 
   // 폼 열기 함수
   const openForm = () => {
     setShowForm(true)
+  }
+
+  // 예약 추가 함수
+  const handleAddReservation = (customer: Customer) => {
+    setSelectedCustomerForReservation(customer)
+    setShowReservationForm(true)
+  }
+
+  // 예약 저장 함수
+  const handleSaveReservation = async (reservationData: Omit<Reservation, 'id'>) => {
+    try {
+      const { error } = await (supabase as unknown as any)
+        .from('reservations')
+        .insert([reservationData])
+
+      if (error) {
+        console.error('Error saving reservation:', error)
+        alert('예약 저장 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+
+      // 성공 시 예약 정보 새로고침
+      await fetchReservationInfo()
+      setShowReservationForm(false)
+      setSelectedCustomerForReservation(null)
+      alert('예약이 성공적으로 추가되었습니다!')
+    } catch (error) {
+      console.error('Error saving reservation:', error)
+      alert('예약 저장 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 예약 삭제 함수
+  const handleDeleteReservation = async (reservationId: string) => {
+    try {
+      const { error } = await supabase
+        .from('reservations')
+        .delete()
+        .eq('id', reservationId)
+
+      if (error) {
+        console.error('Error deleting reservation:', error)
+        alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+
+      // 성공 시 예약 정보 새로고침
+      await fetchReservationInfo()
+      alert('예약이 성공적으로 삭제되었습니다!')
+    } catch (error) {
+      console.error('Error deleting reservation:', error)
+      alert('예약 삭제 중 오류가 발생했습니다.')
+    }
   }
 
   // 폼 닫기 함수
@@ -893,7 +1034,7 @@ export default function AdminCustomers() {
                                 onClick={(e) => {
                                   e.stopPropagation() // 카드 클릭 이벤트 방지
                                   // 예약 관리 페이지로 이동 (고객 ID로 필터링)
-                                  window.open(`/${locale}/admin/reservations?customer=${customer.id}`, '_blank')
+                                  router.push(`/${locale}/admin/reservations?customer=${customer.id}`)
                                 }}
                                 className="w-full hover:bg-blue-50 p-2 rounded-lg transition-colors group border border-blue-200 bg-blue-50/30"
                                 title="예약 내역 보기"
@@ -924,7 +1065,7 @@ export default function AdminCustomers() {
                                         onClick={(e) => {
                                           e.stopPropagation() // 카드 클릭 이벤트 방지
                                           // 개별 예약 상세 페이지로 이동
-                                          window.open(`/${locale}/admin/reservations/${reservation.id}`, '_blank')
+                                          router.push(`/${locale}/admin/reservations/${reservation.id}`)
                                         }}
                                         title="예약 상세 보기"
                                       >
@@ -956,7 +1097,7 @@ export default function AdminCustomers() {
                                       onClick={(e) => {
                                         e.stopPropagation() // 카드 클릭 이벤트 방지
                                         // 예약 목록 페이지로 이동 (고객 ID로 필터링)
-                                        window.open(`/${locale}/admin/reservations?customer=${customer.id}`, '_blank')
+                                        router.push(`/${locale}/admin/reservations?customer=${customer.id}`)
                                       }}
                                       title="모든 예약 보기"
                                     >
@@ -967,6 +1108,21 @@ export default function AdminCustomers() {
                               </button>
                             )
                           })()}
+                        </div>
+
+                        {/* 예약 추가 버튼 */}
+                        <div className="mt-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation() // 카드 클릭 이벤트 방지
+                              handleAddReservation(customer)
+                            }}
+                            className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors duration-200"
+                            title="새 예약 추가"
+                          >
+                            <BookOpen className="h-3 w-3" />
+                            <span>예약 추가</span>
+                          </button>
                         </div>
 
                       </div>
@@ -1072,6 +1228,40 @@ export default function AdminCustomers() {
             setShowDetailModal(false)
             setSelectedCustomer(null)
           }}
+        />
+      )}
+
+      {/* 예약 추가 모달 */}
+      {showReservationForm && selectedCustomerForReservation && (
+        <ReservationModal
+          customer={selectedCustomerForReservation}
+          onClose={() => {
+            setShowReservationForm(false)
+            setSelectedCustomerForReservation(null)
+          }}
+          onSave={handleSaveReservation}
+          onDelete={handleDeleteReservation}
+          customers={(customers || []).map(c => ({
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            phone: c.phone,
+            emergency_contact: c.emergency_contact,
+            address: c.address,
+            language: c.language,
+            special_requests: c.special_requests,
+            booking_count: c.booking_count,
+            channel_id: c.channel_id,
+            status: c.status,
+            created_at: c.created_at,
+            updated_at: c.updated_at
+          }))}
+          products={products || []}
+          channels={channels || []}
+          productOptions={productOptions || []}
+          options={options || []}
+          pickupHotels={pickupHotels || []}
+          coupons={coupons || []}
         />
       )}
     </div>
@@ -1814,5 +2004,104 @@ function CustomerDetailModal({
         </div>
       </div>
     </div>
+  )
+}
+
+// 예약 추가 모달
+function ReservationModal({ 
+  customer, 
+  onClose, 
+  onSave,
+  onDelete,
+  customers,
+  products,
+  channels,
+  productOptions,
+  options,
+  pickupHotels,
+  coupons
+}: { 
+  customer: Customer
+  onClose: () => void
+  onSave: (reservationData: Omit<Reservation, 'id'>) => void
+  onDelete: (reservationId: string) => void
+  customers: ReservationCustomer[]
+  products: Product[]
+  channels: Channel[]
+  productOptions: ProductOption[]
+  options: Option[]
+  pickupHotels: PickupHotel[]
+  coupons: Array<{
+    id: string
+    coupon_code: string
+    discount_type: 'percentage' | 'fixed'
+    percentage_value?: number | null
+    fixed_value?: number | null
+    status?: string | null
+    channel_id?: string | null
+    product_id?: string | null
+    start_date?: string | null
+    end_date?: string | null
+  }>
+}) {
+  // 고객 정보를 미리 채운 예약 데이터 생성
+  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD 형식
+  const preFilledReservation: Partial<Reservation> = {
+    customerId: customer.id,
+    channelId: customer.channel_id || '',
+    addedBy: customer.name,
+    tourDate: today, // 오늘 날짜를 기본값으로 설정
+    tourTime: '09:00', // 기본 투어 시간
+    adults: 1, // 기본 성인 수
+    child: 0,
+    infant: 0,
+    totalPeople: 1,
+    status: 'pending' as const,
+    // 상품 선택을 위한 안내 메시지
+    productId: '', // 상품을 선택해야 가격 정보가 로드됩니다
+    // 가격 관련 초기값들
+    adultProductPrice: 0,
+    childProductPrice: 0,
+    infantProductPrice: 0,
+    productPriceTotal: 0,
+    requiredOptions: {},
+    requiredOptionTotal: 0,
+    subtotal: 0,
+    couponCode: '',
+    couponDiscount: 0,
+    additionalDiscount: 0,
+    additionalCost: 0,
+    cardFee: 0,
+    tax: 0,
+    prepaymentCost: 0,
+    prepaymentTip: 0,
+    selectedOptionalOptions: {},
+    optionTotal: 0,
+    totalPrice: 0,
+    depositAmount: 0,
+    balanceAmount: 0,
+    isPrivateTour: false,
+    privateTourAdditionalCost: 0,
+    commission_percent: 0,
+    onlinePaymentAmount: 0,
+    onSiteBalanceAmount: 0
+  }
+
+  return (
+    <ReservationForm
+      reservation={preFilledReservation as Reservation | null}
+      customers={customers}
+      products={products}
+      channels={channels}
+      productOptions={productOptions}
+      options={options}
+      pickupHotels={pickupHotels}
+      coupons={coupons}
+      onSubmit={onSave}
+      onCancel={onClose}
+      onRefreshCustomers={async () => {}}
+      onDelete={onDelete}
+      layout="modal"
+    />
   )
 }

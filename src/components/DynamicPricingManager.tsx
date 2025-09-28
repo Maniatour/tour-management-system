@@ -41,6 +41,10 @@ export default function DynamicPricingManager({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  
+  // 다중 채널 선택 모드
+  const [isMultiChannelMode, setIsMultiChannelMode] = useState(false);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [showDetailedPrices, setShowDetailedPrices] = useState(false);
   const [priceHistory, setPriceHistory] = useState<{
     byChannel: Record<string, {
@@ -56,6 +60,15 @@ export default function DynamicPricingManager({
         coupon_percent: number;
         is_sale_available: boolean;
         options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
+        choices_pricing?: Record<string, {
+          name: string;
+          options: Record<string, {
+            name: string;
+            adult_price: number;
+            child_price: number;
+            infant_price: number;
+          }>;
+        }>;
       };
       allPricing: Array<{
         adult_price: number;
@@ -66,6 +79,15 @@ export default function DynamicPricingManager({
         coupon_percent: number;
         is_sale_available: boolean;
         options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
+        choices_pricing?: Record<string, {
+          name: string;
+          options: Record<string, {
+            name: string;
+            adult_price: number;
+            child_price: number;
+            infant_price: number;
+          }>;
+        }>;
       }>;
       fallbackFrom?: string;
     }>;
@@ -80,6 +102,15 @@ export default function DynamicPricingManager({
         coupon_percent: number;
         is_sale_available: boolean;
         options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
+        choices_pricing?: Record<string, {
+          name: string;
+          options: Record<string, {
+            name: string;
+            adult_price: number;
+            child_price: number;
+            infant_price: number;
+          }>;
+        }>;
       };
       allPricing: Array<{
         adult_price: number;
@@ -90,6 +121,15 @@ export default function DynamicPricingManager({
         coupon_percent: number;
         is_sale_available: boolean;
         options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
+        choices_pricing?: Record<string, {
+          name: string;
+          options: Record<string, {
+            name: string;
+            adult_price: number;
+            child_price: number;
+            infant_price: number;
+          }>;
+        }>;
       }>;
     }>;
   } | null>(null);
@@ -101,7 +141,7 @@ export default function DynamicPricingManager({
     end_date: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0], // 올해 말일 (12월 31일)
     selected_weekdays: [0, 1, 2, 3, 4, 5, 6] as number[], // 모든 요일 기본 선택
     is_sale_available: true,
-    commission_percent: 25, // 기본 커미션 25%
+    commission_percent: 0, // 기본 커미션 0% (저장된 값으로 덮어씌워짐)
     markup_amount: 0,
     coupon_fixed_discount: 0, // 고정 할인 금액 ($)
     coupon_percentage_discount: 0, // 퍼센트 할인 (%)
@@ -149,6 +189,15 @@ export default function DynamicPricingManager({
       infant?: number;
       infant_price?: number;
     }>;
+    choices_pricing?: Record<string, {
+      name: string;
+      options: Record<string, {
+        name: string;
+        adult_price: number;
+        child_price: number;
+        infant_price: number;
+      }>;
+    }>;
     commission_percent: number;
     markup_amount: number;
     coupon_percent: number;
@@ -179,8 +228,23 @@ export default function DynamicPricingManager({
   
   const [allOptions, setAllOptions] = useState<Array<{ id: string; name: string }>>([]);
 
+  // 초이스 목록 (상품의 choices에서 가져옴)
+  const [choices, setChoices] = useState<Array<{
+    id: string;
+    name: string;
+    name_ko?: string;
+    description?: string;
+    adult_price: number;
+    child_price: number;
+    infant_price: number;
+    is_default?: boolean;
+  }>>([]);
+
   // 선택된 필수 옵션 (전체적으로 하나만)
   const [selectedRequiredOption, setSelectedRequiredOption] = useState<string>('');
+  
+  // 선택된 초이스 (초이스가 있는 경우)
+  const [selectedChoice, setSelectedChoice] = useState<string>('');
 
   // Supabase에서 channels 데이터 로드
   const loadChannels = useCallback(async () => {
@@ -434,6 +498,69 @@ export default function DynamicPricingManager({
     }
   }, [productId]);
 
+  // Supabase에서 상품 choices 데이터 로드
+  const loadProductChoices = useCallback(async () => {
+    try {
+      const { data: product, error } = await supabase
+        .from('products')
+        .select('choices')
+        .eq('id', productId)
+        .single()
+
+      if (error) {
+        console.error('상품 choices 조회 오류:', error)
+        return
+      }
+
+      const productData = product as { choices?: { required?: Array<{ options?: Array<{ id: string; name: string; name_ko?: string; adult_price?: number; child_price?: number; infant_price?: number; is_default?: boolean }>; description?: string }> } };
+      if (productData?.choices?.required) {
+        // choices.required 안의 각 choice의 options를 추출하여 평면화
+        const flattenedChoices: Array<{
+          id: string;
+          name: string;
+          name_ko?: string;
+          description?: string;
+          adult_price: number;
+          child_price: number;
+          infant_price: number;
+          is_default?: boolean;
+        }> = []
+
+        productData.choices.required.forEach((choice) => {
+          if (choice.options && Array.isArray(choice.options)) {
+            choice.options.forEach((option) => {
+              flattenedChoices.push({
+                id: option.id,
+                name: option.name,
+                name_ko: option.name_ko,
+                description: choice.description,
+                adult_price: option.adult_price || 0,
+                child_price: option.child_price || 0,
+                infant_price: option.infant_price || 0,
+                is_default: option.is_default || false
+              })
+            })
+          }
+        })
+
+        console.log('로드된 choices:', flattenedChoices)
+        setChoices(flattenedChoices)
+        
+        // 기본 초이스 선택 (is_default이 true인 것)
+        const defaultChoice = flattenedChoices.find(choice => choice.is_default);
+        if (defaultChoice) {
+          setSelectedChoice(defaultChoice.id);
+        } else if (flattenedChoices.length > 0) {
+          setSelectedChoice(flattenedChoices[0].id);
+        }
+      } else {
+        setChoices([])
+      }
+    } catch (error) {
+      console.error('상품 choices 로드 중 오류:', error)
+    }
+  }, [productId]);
+
   // Supabase에서 동적 가격 데이터 로드
   const loadDynamicPricingData = useCallback(async () => {
     try {
@@ -449,21 +576,30 @@ export default function DynamicPricingManager({
         return;
       }
 
-      // options_pricing JSON 문자열을 파싱
+      // options_pricing과 choices_pricing JSON 문자열을 파싱
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const processedData = (pricingData || []).map((item: any) => {
+        const processedItem = { ...item };
+        
+        // options_pricing 파싱
         if (item.options_pricing && typeof item.options_pricing === 'string') {
           try {
-            return {
-              ...item,
-              options_pricing: JSON.parse(item.options_pricing)
-            };
+            processedItem.options_pricing = JSON.parse(item.options_pricing);
           } catch (error) {
             console.error('options_pricing 파싱 실패:', error, item.options_pricing);
-            return item;
           }
         }
-        return item;
+        
+        // choices_pricing 파싱
+        if (item.choices_pricing && typeof item.choices_pricing === 'string') {
+          try {
+            processedItem.choices_pricing = JSON.parse(item.choices_pricing);
+          } catch (error) {
+            console.error('choices_pricing 파싱 실패:', error, item.choices_pricing);
+          }
+        }
+        
+        return processedItem;
       });
 
       setDynamicPricingData(processedData);
@@ -476,9 +612,10 @@ export default function DynamicPricingManager({
   useEffect(() => {
     loadChannels();
     loadProductOptions();
+    loadProductChoices();
     loadDynamicPricingData();
     loadPriceHistory(); // 가격 히스토리도 함께 로드
-  }, [loadChannels, loadProductOptions, loadDynamicPricingData, loadPriceHistory]);
+  }, [loadChannels, loadProductOptions, loadProductChoices, loadDynamicPricingData, loadPriceHistory]);
 
   // 옵션 가격 적용 (채널 선택 시)
   useEffect(() => {
@@ -489,6 +626,9 @@ export default function DynamicPricingManager({
 
   // dynamic_pricing 데이터가 로드된 후 옵션 가격 업데이트 (한 번만 실행)
   const hasUpdatedOptionsFromDynamicPricing = useRef(false);
+  const hasUpdatedChoicesFromDynamicPricing = useRef(false);
+  const hasLoadedChoicesForChannel = useRef<string | null>(null);
+  const hasLoadedPricingConfigForChannel = useRef<string | null>(null);
   
   useEffect(() => {
     console.log('dynamic_pricing useEffect 실행:', {
@@ -547,6 +687,117 @@ export default function DynamicPricingManager({
       }
     }
   }, [dynamicPricingData, options, allOptions]);
+
+  // 채널별 choices 가격 로드 함수
+  const loadChoicesPricingForChannel = useCallback((channelId: string) => {
+    if (!dynamicPricingData.length || !choices.length) return;
+
+    // 1. 선택된 채널의 최근 choices_pricing 찾기
+    let channelPricing = dynamicPricingData.find(pricing => 
+      pricing.channel_id === channelId && 
+      pricing.choices_pricing && 
+      pricing.choices_pricing.canyon_choice
+    );
+
+    // 2. 선택된 채널에 데이터가 없으면 같은 타입의 채널에서 찾기
+    if (!channelPricing) {
+      const selectedChannelData = channels.find(ch => ch.id === channelId);
+      if (selectedChannelData?.type) {
+        const sameTypeChannels = channels.filter(ch => ch.type === selectedChannelData.type);
+        
+        for (const sameTypeChannel of sameTypeChannels) {
+          channelPricing = dynamicPricingData.find(pricing => 
+            pricing.channel_id === sameTypeChannel.id && 
+            pricing.choices_pricing && 
+            pricing.choices_pricing.canyon_choice
+          );
+          if (channelPricing) break;
+        }
+      }
+    }
+
+    if (channelPricing && channelPricing.choices_pricing?.canyon_choice) {
+      console.log(`채널 ${channelId}의 choices 가격 로드:`, channelPricing.choices_pricing);
+      
+      const updatedChoices = choices.map(choice => {
+        const savedChoice = channelPricing.choices_pricing?.canyon_choice.options[choice.id];
+        if (savedChoice) {
+          console.log(`저장된 choices 가격으로 업데이트: ${choice.name} -> ${savedChoice.adult_price}`);
+          return {
+            ...choice,
+            adult_price: savedChoice.adult_price || choice.adult_price,
+            child_price: savedChoice.child_price || choice.child_price,
+            infant_price: savedChoice.infant_price || choice.infant_price
+          };
+        }
+        return choice;
+      });
+      
+      setChoices(updatedChoices);
+    }
+  }, [dynamicPricingData, channels]);
+
+  // 채널 선택 시 choices 가격 로드 (한 번만 실행)
+  useEffect(() => {
+    if (selectedChannel && choices.length > 0 && dynamicPricingData.length > 0 && 
+        hasLoadedChoicesForChannel.current !== selectedChannel) {
+      loadChoicesPricingForChannel(selectedChannel);
+      hasLoadedChoicesForChannel.current = selectedChannel;
+    }
+  }, [selectedChannel, loadChoicesPricingForChannel, choices.length, dynamicPricingData.length]);
+
+  // 채널 선택 시 가격 설정 로드 (한 번만 실행)
+  useEffect(() => {
+    if (selectedChannel && dynamicPricingData.length > 0 && 
+        hasLoadedPricingConfigForChannel.current !== selectedChannel) {
+      // 선택된 채널의 최근 가격 설정 찾기
+      const channelPricing = dynamicPricingData.find(pricing => 
+        pricing.channel_id === selectedChannel
+      );
+
+      if (channelPricing) {
+        console.log(`채널 ${selectedChannel}의 가격 설정 로드:`, channelPricing);
+        
+        setPricingConfig(prev => ({
+          ...prev,
+          commission_percent: channelPricing.commission_percent || 25,
+          markup_amount: channelPricing.markup_amount || 0,
+          coupon_percentage_discount: channelPricing.coupon_percent || 0,
+          is_sale_available: channelPricing.is_sale_available !== false,
+          not_included_price: channelPricing.not_included_price || 0
+        }));
+        
+        hasLoadedPricingConfigForChannel.current = selectedChannel;
+      }
+    }
+  }, [selectedChannel, dynamicPricingData]);
+
+  // choices_pricing 데이터가 로드된 후 choices 가격 업데이트 (기존 로직 제거)
+  // useEffect(() => {
+  //   if (dynamicPricingData.length > 0 && choices.length > 0 && !hasUpdatedChoicesFromDynamicPricing.current) {
+  //     const latestPricing = dynamicPricingData[0];
+  //     if (latestPricing.choices_pricing && latestPricing.choices_pricing.canyon_choice) {
+  //       console.log('dynamic_pricing에서 choices 가격 업데이트:', latestPricing.choices_pricing);
+        
+  //       const updatedChoices = choices.map(choice => {
+  //         const savedChoice = latestPricing.choices_pricing.canyon_choice.options[choice.id];
+  //         if (savedChoice) {
+  //           console.log(`저장된 choices 가격으로 업데이트: ${choice.name} -> ${savedChoice.adult_price}`);
+  //           return {
+  //             ...choice,
+  //             adult_price: savedChoice.adult_price || choice.adult_price,
+  //             child_price: savedChoice.child_price || choice.child_price,
+  //             infant_price: savedChoice.infant_price || choice.infant_price
+  //           };
+  //         }
+  //         return choice;
+  //       });
+        
+  //       setChoices(updatedChoices);
+  //       hasUpdatedChoicesFromDynamicPricing.current = true;
+  //     }
+  //   }
+  // }, [dynamicPricingData, choices]);
 
   // 리스트뷰용 월별 데이터 가져오기
   const getListViewData = () => {
@@ -693,35 +944,66 @@ export default function DynamicPricingManager({
   };
 
 
-  // 필수 옵션 가격 변경 (새로운 함수)
-  const handleRequiredOptionPriceChange = (optionId: string, field: 'adult_price' | 'child_price' | 'infant_price', value: number) => {
-    setPricingConfig(prev => {
-      const existingOptionIndex = prev.required_options.findIndex(opt => opt.option_id === optionId);
-      
-      if (existingOptionIndex >= 0) {
-        // 기존 옵션이 있으면 업데이트
-        return {
-          ...prev,
-          required_options: prev.required_options.map((option, i) =>
-            i === existingOptionIndex ? { ...option, [field]: value } : option
-          )
-        };
-      } else {
-        // 새 옵션 추가
-        const newOption = {
-          option_id: optionId,
-          adult_price: field === 'adult_price' ? value : 0,
-          child_price: field === 'child_price' ? value : 0,
-          infant_price: field === 'infant_price' ? value : 0
-        };
-        
-        return {
-          ...prev,
-          required_options: [...prev.required_options, newOption]
-        };
-      }
-    });
+
+  // 초이스 가격 변경 함수
+  const handleChoicePriceChange = (choiceId: string, field: 'adult_price' | 'child_price' | 'infant_price', value: number) => {
+    setChoices(prev => prev.map(choice => 
+      choice.id === choiceId ? { ...choice, [field]: value } : choice
+    ));
   };
+
+  // 초이스별 가격 계산 함수 (업차지 포함)
+  const calculateChoicePricing = useCallback((choiceId: string) => {
+    const choice = choices.find(c => c.id === choiceId);
+    if (!choice) return null;
+
+    const baseAdultPrice = choice.adult_price || 0;
+    const baseChildPrice = choice.child_price || 0;
+    const baseInfantPrice = choice.infant_price || 0;
+
+    // 업차지 계산
+    const markupAmount = pricingConfig.markup_amount || 0;
+    
+    // 최대 판매가 = 초이스 가격 + 업차지
+    const maxAdultPrice = baseAdultPrice + markupAmount;
+    const maxChildPrice = baseChildPrice + markupAmount;
+    const maxInfantPrice = baseInfantPrice + markupAmount;
+
+    // 쿠폰 할인 계산
+    const couponPercent = pricingConfig.coupon_percentage_discount || 0;
+    const discountedAdultPrice = maxAdultPrice * (1 - couponPercent / 100);
+    const discountedChildPrice = maxChildPrice * (1 - couponPercent / 100);
+    const discountedInfantPrice = maxInfantPrice * (1 - couponPercent / 100);
+
+    // 커미션 계산
+    const commissionPercent = pricingConfig.commission_percent || 0;
+    const netAdultPrice = discountedAdultPrice * (1 - commissionPercent / 100);
+    const netChildPrice = discountedChildPrice * (1 - commissionPercent / 100);
+    const netInfantPrice = discountedInfantPrice * (1 - commissionPercent / 100);
+
+    return {
+      base: {
+        adult: baseAdultPrice,
+        child: baseChildPrice,
+        infant: baseInfantPrice
+      },
+      max: {
+        adult: maxAdultPrice,
+        child: maxChildPrice,
+        infant: maxInfantPrice
+      },
+      discounted: {
+        adult: discountedAdultPrice,
+        child: discountedChildPrice,
+        infant: discountedInfantPrice
+      },
+      net: {
+        adult: netAdultPrice,
+        child: netChildPrice,
+        infant: netInfantPrice
+      }
+    };
+  }, [choices, pricingConfig]);
 
   // 쿠폰 할인 계산 함수
   const calculateCouponDiscount = (basePrice: number, fixedDiscount: number, percentageDiscount: number, priority: 'fixed_first' | 'percentage_first' = 'fixed_first') => {
@@ -985,10 +1267,18 @@ export default function DynamicPricingManager({
     }
   }, [selectedRequiredOption, options]);
 
-    // 통합 저장 함수 - 모든 가격 관련 데이터를 한 번에 저장
+    // 통합 저장 함수 - 선택된 채널(들)에 가격 관련 데이터 저장
   const handleUnifiedSave = async () => {
     if (isNewProduct) {
       setSaveMessage('새 상품은 전체 저장을 사용해주세요.')
+      return
+    }
+
+    // 다중 선택 모드일 때는 선택된 채널들, 단일 모드일 때는 선택된 채널
+    const channelsToSave = isMultiChannelMode ? selectedChannels : (selectedChannel ? [selectedChannel] : []);
+    
+    if (channelsToSave.length === 0) {
+      setSaveMessage('채널을 선택해주세요.')
       return
     }
 
@@ -996,8 +1286,8 @@ export default function DynamicPricingManager({
     setSaveMessage('')
 
     try {
-      // 1. 모든 채널에 대해 가격 규칙 생성
-      console.log('저장할 채널들:', channels);
+      // 1. 선택된 채널(들)에 대해 가격 규칙 생성
+      console.log('저장할 채널들:', channelsToSave);
       
       // 2. 가격 설정 저장
       const pricingData = {
@@ -1018,22 +1308,14 @@ export default function DynamicPricingManager({
       // 3. pricingConfig를 기반으로 pricingRules 생성
       const generatedPricingRules: CreatePricingRuleDto[] = []
       
-      // 선택된 채널만 저장
-      if (!selectedChannel) {
-        setSaveMessage('채널을 선택해주세요.')
-        setSaving(false)
-        return
-      }
-      
-      const selectedChannelData = channels.find(c => c.id === selectedChannel)
-      if (!selectedChannelData) {
-        setSaveMessage('선택된 채널을 찾을 수 없습니다.')
-        setSaving(false)
-        return
-      }
-      
-      // 선택된 채널에 대해서만 가격 규칙 생성
-      const activeChannels = [selectedChannelData]
+      // 선택된 채널들에 대해 가격 규칙 생성
+      const activeChannels = channelsToSave.map(channelId => {
+        const channelData = channels.find(c => c.id === channelId);
+        if (!channelData) {
+          throw new Error(`채널 ID ${channelId}를 찾을 수 없습니다.`);
+        }
+        return channelData;
+      });
       
       for (const channel of activeChannels) {
         // 선택된 요일들에 대해 각각 가격 규칙 생성
@@ -1072,12 +1354,12 @@ export default function DynamicPricingManager({
       
       console.log('생성된 가격 규칙들:', generatedPricingRules)
 
-      // 4. 기존 동적 가격 규칙들 삭제 (선택된 채널만)
+      // 4. 기존 동적 가격 규칙들 삭제 (선택된 채널들)
       const { error: deleteError } = await supabase
         .from('dynamic_pricing')
         .delete()
         .eq('product_id', productId)
-        .eq('channel_id', selectedChannel)
+        .in('channel_id', channelsToSave)
 
       if (deleteError) throw deleteError
 
@@ -1088,6 +1370,38 @@ export default function DynamicPricingManager({
         const childPrice = weekdayPricing?.child_price || 0
         const infantPrice = weekdayPricing?.infant_price || 0
 
+        // choices_pricing 데이터 생성
+        let choicesPricing: Record<string, {
+          name: string;
+          name_ko?: string;
+          options: Record<string, {
+            name: string;
+            name_ko?: string;
+            adult_price: number;
+            child_price: number;
+            infant_price: number;
+          }>;
+        }> | null = null;
+        if (choices.length > 0) {
+          choicesPricing = {
+            canyon_choice: {
+              name: "Canyon Choice",
+              name_ko: "캐년 선택",
+              options: {}
+            }
+          };
+          
+          choices.forEach(choice => {
+            choicesPricing!.canyon_choice.options[choice.id] = {
+              name: choice.name,
+              name_ko: choice.name_ko,
+              adult_price: choice.adult_price || 0,
+              child_price: choice.child_price || 0,
+              infant_price: choice.infant_price || 0
+            };
+          });
+        }
+
         const insertData = {
             product_id: productId,
             channel_id: rule.channel_id,
@@ -1096,6 +1410,7 @@ export default function DynamicPricingManager({
           child_price: childPrice || adultPrice, // 아동은 성인과 같은 가격
           infant_price: infantPrice || adultPrice, // 유아는 성인과 같은 가격
           options_pricing: rule.required_option_pricing || [],
+          choices_pricing: choicesPricing,
             commission_percent: pricingConfig.commission_percent,
             markup_amount: pricingConfig.markup_amount,
           coupon_percent: pricingConfig.coupon_percentage_discount || 0,
@@ -1110,6 +1425,7 @@ export default function DynamicPricingManager({
           infant_price: infantPrice
         })
         console.log('저장되는 options_pricing:', insertData.options_pricing)
+        console.log('저장되는 choices_pricing:', insertData.choices_pricing)
 
         const { error: ruleError } = await supabase
           .from('dynamic_pricing')
@@ -1124,7 +1440,8 @@ export default function DynamicPricingManager({
       }
 
       // 5. 성공 메시지
-      setSaveMessage('모든 가격 정보가 성공적으로 저장되었습니다!')
+      const channelNames = activeChannels.map(c => c.name).join(', ');
+      setSaveMessage(`${channelNames} 채널의 가격 정보가 성공적으로 저장되었습니다!`)
       setTimeout(() => setSaveMessage(''), 3000)
 
       // 6. onSave 콜백 호출 (부모 컴포넌트에 알림)
@@ -1173,7 +1490,25 @@ export default function DynamicPricingManager({
             ))}
           </select>
         </div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 hidden lg:block">채널 관리</h3>
+        <div className="flex items-center justify-between mb-4 hidden lg:block">
+          <h3 className="text-lg font-semibold text-gray-900">채널 관리</h3>
+          <button
+            type="button"
+            onClick={() => {
+              setIsMultiChannelMode(!isMultiChannelMode);
+              if (isMultiChannelMode) {
+                setSelectedChannels([]);
+              }
+            }}
+            className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+              isMultiChannelMode 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            {isMultiChannelMode ? '단일 선택' : '다중 선택'}
+          </button>
+        </div>
         
         {/* 채널 타입 탭 - 모바일에서는 숨김 */}
         <div className="hidden lg:flex space-x-1 mb-4 bg-gray-100 p-1 rounded-lg">
@@ -1235,15 +1570,41 @@ export default function DynamicPricingManager({
                <div
                  key={channel.id}
                  className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
-                   selectedChannel === channel.id
-                     ? 'border-blue-500 bg-blue-50'
-                     : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                   isMultiChannelMode 
+                     ? selectedChannels.includes(channel.id)
+                       ? 'border-blue-500 bg-blue-50'
+                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                     : selectedChannel === channel.id
+                       ? 'border-blue-500 bg-blue-50'
+                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                  }`}
-                 onClick={() => handleChannelSelect(channel.id)}
+                 onClick={() => {
+                   if (isMultiChannelMode) {
+                     setSelectedChannels(prev => 
+                       prev.includes(channel.id) 
+                         ? prev.filter(id => id !== channel.id)
+                         : [...prev, channel.id]
+                     );
+                   } else {
+                     handleChannelSelect(channel.id);
+                   }
+                 }}
                >
+                 {/* 체크박스 (다중 선택 모드일 때만) */}
+                 {isMultiChannelMode && (
+                   <input
+                     type="checkbox"
+                     checked={selectedChannels.includes(channel.id)}
+                     onChange={() => {}} // onClick에서 처리
+                     className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                   />
+                 )}
+                 
                  {/* 채널 이름 */}
                  <div className={`text-sm font-medium ${
-                   selectedChannel === channel.id ? 'text-blue-700' : 'text-gray-900'
+                   isMultiChannelMode
+                     ? selectedChannels.includes(channel.id) ? 'text-blue-700' : 'text-gray-900'
+                     : selectedChannel === channel.id ? 'text-blue-700' : 'text-gray-900'
                  }`}>
                    {channel.name}
                  </div>
@@ -1264,6 +1625,29 @@ export default function DynamicPricingManager({
              )}
            </div>
          )}
+        
+        {/* 다중 선택된 채널 정보 */}
+        {isMultiChannelMode && selectedChannels.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-900">선택된 채널</h4>
+              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                {selectedChannels.length}개
+              </span>
+            </div>
+            <div className="space-y-1">
+              {selectedChannels.map(channelId => {
+                const channel = channels.find(c => c.id === channelId);
+                return channel ? (
+                  <div key={channelId} className="text-xs text-gray-600 flex items-center">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                    {channel.name}
+                  </div>
+                ) : null;
+              })}
+            </div>
+          </div>
+        )}
         
         {/* 가격 히스토리 정보 */}
         {selectedChannel && priceHistory?.byChannel?.[selectedChannel] && (
@@ -1867,9 +2251,10 @@ export default function DynamicPricingManager({
                   </div>
                </div>
 
-                             {/* 기본 판매가 */}
-               <div>
-                 <h4 className="text-sm font-medium text-gray-900 mb-2">기본 판매가</h4>
+                             {/* 기본 판매가 (초이스가 없는 경우에만) */}
+               {choices.length === 0 && (
+                 <div>
+                   <h4 className="text-sm font-medium text-gray-900 mb-2">기본 판매가</h4>
                  <div className="grid grid-cols-3 gap-2">
                    <div>
                      <label className="block text-xs font-medium text-gray-700 mb-1">성인 ($)</label>
@@ -1919,114 +2304,77 @@ export default function DynamicPricingManager({
                      </div>
                    </div>
                  </div>
-               </div>
+                 </div>
+               )}
 
-                               {/* 필수 선택 옵션 가격 설정 */}
-                {options.length > 0 && (
+                               {/* 초이스 가격 설정 */}
+                {choices.length > 0 && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">필수 선택 옵션 가격 설정</h4>
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">초이스 가격 설정</h4>
                     <div className="space-y-3">
-                      {(() => {
-                        const groupedOptions = options.reduce((acc, option) => {
-                          const category = option.category || '기타';
-                          if (!acc[category]) {
-                            acc[category] = [];
-                          }
-                          acc[category].push(option);
-                          return acc;
-                        }, {} as Record<string, typeof options>);
-
-                        return Object.entries(groupedOptions).map(([category, categoryOptions]) => (
-                          <div key={category} className="border border-gray-200 rounded-lg p-3">
-                            <div className="mb-2">
-                              <h5 className="text-sm font-medium text-gray-700">
-                                ○ {category}
-                              </h5>
+                      {choices.map(choice => (
+                        <div key={choice.id} className="border border-gray-200 rounded-lg p-4">
+                          <div className="mb-3">
+                            <h5 className="text-sm font-medium text-gray-900">
+                              {choice.name}
+                              {choice.name_ko && (
+                                <span className="text-gray-500 ml-2">({choice.name_ko})</span>
+                              )}
+                            </h5>
+                            {choice.description && (
+                              <p className="text-xs text-gray-600 mt-1">{choice.description}</p>
+                            )}
+                          </div>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="flex flex-col space-y-1">
+                              <span className="text-xs text-gray-600">성인 가격</span>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={choice.adult_price}
+                                  onChange={(e) => handleChoicePriceChange(choice.id, 'adult_price', parseFloat(e.target.value) || 0)}
+                                  className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                  placeholder="0"
+                                />
+                                <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                              </div>
                             </div>
-                            <div className="space-y-2">
-                              {categoryOptions.map(option => {
-                                const existingOption = pricingConfig.required_options.find(
-                                  opt => opt.option_id === option.id
-                                );
-                                
-                                // 현재 설정된 가격 또는 옵션의 기본 가격 사용
-                                const currentAdultPrice = existingOption?.adult_price ?? option.adult_price ?? 0;
-                                const currentChildPrice = existingOption?.child_price ?? option.child_price ?? 0;
-                                const currentInfantPrice = existingOption?.infant_price ?? option.infant_price ?? 0;
-                                
-                                console.log(`옵션 가격 표시: ${option.name}`, {
-                                  option_id: option.id,
-                                  option_adult_price: option.adult_price,
-                                  option_child_price: option.child_price,
-                                  option_infant_price: option.infant_price,
-                                  existing_option: existingOption,
-                                  current_adult_price: currentAdultPrice,
-                                  current_child_price: currentChildPrice,
-                                  current_infant_price: currentInfantPrice
-                                });
-                                
-                                return (
-                                   <div key={option.id} className="pl-4">
-                                     <div className="mb-2">
-                                       <span className="text-sm text-gray-900">
-                                         - {option.name}
-                                       </span>
-                                     </div>
-                                     
-                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                       <div className="flex flex-col space-y-1">
-                                         <span className="text-xs text-gray-600">성인</span>
-                                         <div className="relative">
-                                           <input
-                                             type="number"
-                                             min="0"
-                                             step="0.01"
-                                             value={currentAdultPrice}
-                                             onChange={(e) => handleRequiredOptionPriceChange(option.id, 'adult_price', parseFloat(e.target.value) || 0)}
-                                             className="w-full pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                                             placeholder="0"
-                                           />
-                                           <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
-                                         </div>
-                                       </div>
-                                       <div className="flex flex-col space-y-1">
-                                         <span className="text-xs text-gray-600">아동</span>
-                                         <div className="relative">
-                                           <input
-                                             type="number"
-                                             min="0"
-                                             step="0.01"
-                                             value={currentChildPrice}
-                                             onChange={(e) => handleRequiredOptionPriceChange(option.id, 'child_price', parseFloat(e.target.value) || 0)}
-                                             className="w-full pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                                             placeholder="0"
-                                           />
-                                           <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
-                                         </div>
-                                       </div>
-                                       <div className="flex flex-col space-y-1">
-                                         <span className="text-xs text-gray-600">유아</span>
-                                         <div className="relative">
-                                           <input
-                                             type="number"
-                                             min="0"
-                                             step="0.01"
-                                             value={currentInfantPrice}
-                                             onChange={(e) => handleRequiredOptionPriceChange(option.id, 'infant_price', parseFloat(e.target.value) || 0)}
-                                             className="w-full pl-6 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                                             placeholder="0"
-                                           />
-                                           <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
-                                         </div>
-                                       </div>
-                                     </div>
-                                   </div>
-                                 );
-                              })}
+                            <div className="flex flex-col space-y-1">
+                              <span className="text-xs text-gray-600">아동 가격</span>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={choice.child_price}
+                                  onChange={(e) => handleChoicePriceChange(choice.id, 'child_price', parseFloat(e.target.value) || 0)}
+                                  className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                  placeholder="0"
+                                />
+                                <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                              </div>
+                            </div>
+                            <div className="flex flex-col space-y-1">
+                              <span className="text-xs text-gray-600">유아 가격</span>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={choice.infant_price}
+                                  onChange={(e) => handleChoicePriceChange(choice.id, 'infant_price', parseFloat(e.target.value) || 0)}
+                                  className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                  placeholder="0"
+                                />
+                                <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                              </div>
                             </div>
                           </div>
-                        ));
-                      })()}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -2052,7 +2400,14 @@ export default function DynamicPricingManager({
                     }`}
                   >
                     <Save className="h-4 w-4" />
-                    <span>{saving ? '저장 중...' : '가격 정보 저장'}</span>
+                    <span>
+                      {saving 
+                        ? '저장 중...' 
+                        : isMultiChannelMode 
+                          ? `가격 정보 저장 (${selectedChannels.length}개 채널)`
+                          : '가격 정보 저장'
+                      }
+                    </span>
                   </button>
                 </div>
                 <div>
@@ -2134,9 +2489,126 @@ export default function DynamicPricingManager({
           </div>
         ) : (
           <div className="space-y-4">
-            {/* 기본 가격 요약 */}
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h4 className="font-medium text-blue-900 mb-3">기본 가격 (기본 판매가 + 옵션 선택가)</h4>
+            {/* 초이스별 가격 미리보기 */}
+            {choices.length > 0 && (
+              <div className="space-y-4">
+                {/* 최대 판매가 */}
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-green-900 mb-3">최대 판매가 (초이스 가격 + 업차지)</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">초이스</th>
+                          <th className="text-center py-2">성인</th>
+                          <th className="text-center py-2">아동</th>
+                          <th className="text-center py-2">유아</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {choices.map(choice => {
+                          const pricing = calculateChoicePricing(choice.id);
+                          if (!pricing) return null;
+                          
+                          return (
+                            <tr key={choice.id} className="border-b">
+                              <td className="py-2 font-medium">
+                                {choice.name}
+                                {choice.name_ko && (
+                                  <span className="text-gray-500 ml-1">({choice.name_ko})</span>
+                                )}
+                              </td>
+                              <td className="text-center py-2">${pricing.max.adult.toFixed(2)}</td>
+                              <td className="text-center py-2">${pricing.max.child.toFixed(2)}</td>
+                              <td className="text-center py-2">${pricing.max.infant.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 할인 가격 */}
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-yellow-900 mb-3">할인 가격 (최대 판매가 × 쿠폰%)</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">초이스</th>
+                          <th className="text-center py-2">성인</th>
+                          <th className="text-center py-2">아동</th>
+                          <th className="text-center py-2">유아</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {choices.map(choice => {
+                          const pricing = calculateChoicePricing(choice.id);
+                          if (!pricing) return null;
+                          
+                          return (
+                            <tr key={choice.id} className="border-b">
+                              <td className="py-2 font-medium">
+                                {choice.name}
+                                {choice.name_ko && (
+                                  <span className="text-gray-500 ml-1">({choice.name_ko})</span>
+                                )}
+                              </td>
+                              <td className="text-center py-2">${pricing.discounted.adult.toFixed(2)}</td>
+                              <td className="text-center py-2">${pricing.discounted.child.toFixed(2)}</td>
+                              <td className="text-center py-2">${pricing.discounted.infant.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Net Price */}
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-blue-900 mb-3">Net Price (할인가격 × 커미션)</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">초이스</th>
+                          <th className="text-center py-2">성인</th>
+                          <th className="text-center py-2">아동</th>
+                          <th className="text-center py-2">유아</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {choices.map(choice => {
+                          const pricing = calculateChoicePricing(choice.id);
+                          if (!pricing) return null;
+                          
+                          return (
+                            <tr key={choice.id} className="border-b">
+                              <td className="py-2 font-medium">
+                                {choice.name}
+                                {choice.name_ko && (
+                                  <span className="text-gray-500 ml-1">({choice.name_ko})</span>
+                                )}
+                              </td>
+                              <td className="text-center py-2">${pricing.net.adult.toFixed(2)}</td>
+                              <td className="text-center py-2">${pricing.net.child.toFixed(2)}</td>
+                              <td className="text-center py-2">${pricing.net.infant.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 기본 가격 요약 (초이스가 없는 경우에만) */}
+            {choices.length === 0 && (
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-3">기본 가격 (기본 판매가 + 옵션 선택가)</h4>
               
               {/* 옵션별 기본 가격 */}
               {(() => {
@@ -2188,300 +2660,10 @@ export default function DynamicPricingManager({
                 );
               })()}
             </div>
+            )}
 
-            {/* 최대 판매가 */}
-            <div className="bg-green-50 p-4 rounded-lg">
-              <h4 className="font-medium text-green-900 mb-3">최대 판매가 (기본 가격 + 업차지)</h4>
-              
-              {/* 옵션별 최대 판매가 */}
-              {(() => {
-                const optionsWithPrices = options.filter(option => {
-                  const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                  return existingOption && (existingOption.adult_price > 0 || existingOption.child_price > 0 || existingOption.infant_price > 0);
-                });
 
-                if (optionsWithPrices.length === 0) return null;
 
-                return (
-                  <div className="mt-4 pt-3 border-t border-green-200">
-                    <div className="space-y-3">
-                      {optionsWithPrices.map(option => {
-                        const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                        if (!existingOption) return null;
-
-                        const adultBasePrice = pricingConfig.adult_price + existingOption.adult_price;
-                        const childBasePrice = pricingConfig.child_price + existingOption.child_price;
-                        const infantBasePrice = pricingConfig.infant_price + existingOption.infant_price;
-
-                        const adultMaxPrice = adultBasePrice + pricingConfig.markup_amount;
-                        const childMaxPrice = childBasePrice + pricingConfig.markup_amount;
-                        const infantMaxPrice = infantBasePrice + pricingConfig.markup_amount;
-
-                        return (
-                          <div key={option.id} className="bg-white p-3 rounded border border-green-200">
-                            <h6 className="font-medium text-sm text-green-800 mb-2 flex justify-between">
-                              <span>{option.name}</span>
-                              <span className="text-green-600">${adultMaxPrice.toFixed(2)}</span>
-                            </h6>
-                            {showDetailedPrices && (
-                              <div className="text-xs space-y-1">
-                                <div className="flex justify-between">
-                                  <span>성인:</span>
-                                  <span>${adultBasePrice} + ${pricingConfig.markup_amount} = <span className="font-medium">${adultMaxPrice.toFixed(2)}</span></span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>아동:</span>
-                                  <span>${childBasePrice} + ${pricingConfig.markup_amount} = <span className="font-medium">${childMaxPrice.toFixed(2)}</span></span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>유아:</span>
-                                  <span>${infantBasePrice} + ${pricingConfig.markup_amount} = <span className="font-medium">${infantMaxPrice.toFixed(2)}</span></span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* 최대 할인가 */}
-            <div className="bg-yellow-50 p-4 rounded-lg">
-              <h4 className="font-medium text-yellow-900 mb-3">할인 가격 (기본 가격 * 쿠폰할인)</h4>
-              
-              {/* 옵션별 할인 가격 */}
-              {(() => {
-                const optionsWithPrices = options.filter(option => {
-                  const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                  return existingOption && (existingOption.adult_price > 0 || existingOption.child_price > 0 || existingOption.infant_price > 0);
-                });
-
-                if (optionsWithPrices.length === 0) return null;
-
-                return (
-                  <div className="mt-4 pt-3 border-t border-yellow-200">
-                    <div className="space-y-3">
-                      {optionsWithPrices.map(option => {
-                        const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                        if (!existingOption) return null;
-
-                        const adultBasePrice = pricingConfig.adult_price + existingOption.adult_price;
-                        const childBasePrice = pricingConfig.child_price + existingOption.child_price;
-                        const infantBasePrice = pricingConfig.infant_price + existingOption.infant_price;
-
-                        const adultMaxPrice = adultBasePrice + pricingConfig.markup_amount;
-                        const childMaxPrice = childBasePrice + pricingConfig.markup_amount;
-                        const infantMaxPrice = infantBasePrice + pricingConfig.markup_amount;
-
-                        const adultDiscountedPrice = calculateCouponDiscount(adultMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
-                        const childDiscountedPrice = calculateCouponDiscount(childMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
-                        const infantDiscountedPrice = calculateCouponDiscount(infantMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
-
-                        const discountPercent = pricingConfig.coupon_percentage_discount;
-                        const discountText = discountPercent > 0 ? `${discountPercent}%` : `$${pricingConfig.coupon_fixed_discount}`;
-
-                        return (
-                          <div key={option.id} className="bg-white p-3 rounded border border-yellow-200">
-                            <h6 className="font-medium text-sm text-yellow-800 mb-2 flex justify-between">
-                              <span>{option.name}</span>
-                              <span className="text-yellow-600">${adultDiscountedPrice.toFixed(2)}</span>
-                            </h6>
-                            {showDetailedPrices && (
-                              <div className="text-xs space-y-1">
-                                <div className="flex justify-between">
-                                  <span>성인:</span>
-                                  <span>${adultMaxPrice.toFixed(2)} * {discountText} = <span className="font-medium">${adultDiscountedPrice.toFixed(2)}</span></span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>아동:</span>
-                                  <span>${childMaxPrice.toFixed(2)} * {discountText} = <span className="font-medium">${childDiscountedPrice.toFixed(2)}</span></span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>유아:</span>
-                                  <span>${infantMaxPrice.toFixed(2)} * {discountText} = <span className="font-medium">${infantDiscountedPrice.toFixed(2)}</span></span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Net Price */}
-            <div className="bg-purple-50 p-4 rounded-lg">
-              <h4 className="font-medium text-purple-900 mb-3">Net Price (할인 가격 * 커미션)</h4>
-              
-              {/* 옵션별 Net Price */}
-              {(() => {
-                const optionsWithPrices = options.filter(option => {
-                  const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                  return existingOption && (existingOption.adult_price > 0 || existingOption.child_price > 0 || existingOption.infant_price > 0);
-                });
-
-                if (optionsWithPrices.length === 0) return null;
-
-                return (
-                  <div className="mt-4 pt-3 border-t border-purple-200">
-                    <div className="space-y-3">
-                      {optionsWithPrices.map(option => {
-                        const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                        if (!existingOption) return null;
-
-                        const adultBasePrice = pricingConfig.adult_price + existingOption.adult_price;
-                        const childBasePrice = pricingConfig.child_price + existingOption.child_price;
-                        const infantBasePrice = pricingConfig.infant_price + existingOption.infant_price;
-
-                        const adultMaxPrice = adultBasePrice + pricingConfig.markup_amount;
-                        const childMaxPrice = childBasePrice + pricingConfig.markup_amount;
-                        const infantMaxPrice = infantBasePrice + pricingConfig.markup_amount;
-
-                        const adultDiscountedPrice = calculateCouponDiscount(adultMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
-                        const childDiscountedPrice = calculateCouponDiscount(childMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
-                        const infantDiscountedPrice = calculateCouponDiscount(infantMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
-
-                        const adultNetPrice = adultDiscountedPrice * ((100 - pricingConfig.commission_percent) / 100);
-                        const childNetPrice = childDiscountedPrice * ((100 - pricingConfig.commission_percent) / 100);
-                        const infantNetPrice = infantDiscountedPrice * ((100 - pricingConfig.commission_percent) / 100);
-
-                        return (
-                          <div key={option.id} className="bg-white p-3 rounded border border-purple-200">
-                            <h6 className="font-medium text-sm text-purple-800 mb-2 flex justify-between">
-                              <span>{option.name}</span>
-                              <span className="text-purple-600">${adultNetPrice.toFixed(2)}</span>
-                            </h6>
-                            {showDetailedPrices && (
-                              <div className="text-xs space-y-1">
-                                <div className="flex justify-between">
-                                  <span>성인:</span>
-                                  <span>${adultDiscountedPrice.toFixed(2)} * {pricingConfig.commission_percent}% = <span className="font-medium">${adultNetPrice.toFixed(2)}</span></span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>아동:</span>
-                                  <span>${childDiscountedPrice.toFixed(2)} * {pricingConfig.commission_percent}% = <span className="font-medium">${childNetPrice.toFixed(2)}</span></span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>유아:</span>
-                                  <span>${infantDiscountedPrice.toFixed(2)} * {pricingConfig.commission_percent}% = <span className="font-medium">${infantNetPrice.toFixed(2)}</span></span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-                                      {/* 옵션별 가격 미리보기 */}
-              {(() => {
-                const optionsWithPrices = options.filter(option => {
-                  const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                  return existingOption && (existingOption.adult_price > 0 || existingOption.child_price > 0 || existingOption.infant_price > 0);
-                });
-
-                if (optionsWithPrices.length === 0) return null;
-
-                // 카테고리별로 그룹화
-                const groupedOptions = optionsWithPrices.reduce((acc, option) => {
-                  const category = option.category || '기타';
-                  if (!acc[category]) {
-                    acc[category] = [];
-                  }
-                  acc[category].push(option);
-                  return acc;
-                }, {} as Record<string, typeof optionsWithPrices>);
-
-                return (
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-medium text-gray-900 mb-3">옵션별 가격 미리보기</h4>
-                    <div className="space-y-4">
-                      {Object.entries(groupedOptions).map(([category, categoryOptions]) => (
-                        <div key={category} className="border border-gray-200 rounded-lg p-3">
-                          <h5 className="font-medium text-sm text-gray-700 mb-3 text-center bg-gray-100 px-3 py-1 rounded-full">
-                            ○ {category}
-                          </h5>
-                          <div className="space-y-3">
-                            {categoryOptions.map(option => {
-                              const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                              if (!existingOption) return null;
-
-                              // 기본 가격 + 옵션 가격
-                              const adultBasePrice = pricingConfig.adult_price;
-                              const childBasePrice = pricingConfig.child_price;
-                              const infantBasePrice = pricingConfig.infant_price;
-
-                              const adultTotalPrice = adultBasePrice + existingOption.adult_price;
-                              const childTotalPrice = childBasePrice + existingOption.child_price;
-                              const infantTotalPrice = infantBasePrice + existingOption.infant_price;
-
-                              // 업차지 적용
-                              const adultMaxPrice = adultTotalPrice + pricingConfig.markup_amount;
-                              const childMaxPrice = childTotalPrice + pricingConfig.markup_amount;
-                              const infantMaxPrice = infantTotalPrice + pricingConfig.markup_amount;
-
-                              // 할인 적용
-                              const adultDiscountedPrice = calculateCouponDiscount(adultMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
-                              const childDiscountedPrice = calculateCouponDiscount(childMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
-                              const infantDiscountedPrice = calculateCouponDiscount(infantMaxPrice, pricingConfig.coupon_fixed_discount, pricingConfig.coupon_percentage_discount, pricingConfig.discount_priority);
-
-                              // 커미션 적용 (Net Price)
-                              const adultNetPrice = adultDiscountedPrice * ((100 - pricingConfig.commission_percent) / 100);
-                              const childNetPrice = childDiscountedPrice * ((100 - pricingConfig.commission_percent) / 100);
-                              const infantNetPrice = infantDiscountedPrice * ((100 - pricingConfig.commission_percent) / 100);
-
-                              return (
-                                <div key={option.id} className="border-l-4 border-blue-400 pl-3">
-                                  <h6 className="font-medium text-sm text-gray-900 mb-2">- {option.name}</h6>
-                                  <div className="text-xs space-y-2 text-gray-600">
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
-                                      <div>
-                                        <div className="font-medium text-gray-700">성인</div>
-                                        <div className="text-xs text-gray-500">기본: ${adultBasePrice}</div>
-                                        <div className="text-xs text-gray-500">옵션: ${existingOption.adult_price}</div>
-                                        <div className="text-xs text-gray-500">총합: ${adultTotalPrice}</div>
-                                        <div className="font-medium text-blue-600">최대: ${adultMaxPrice.toFixed(2)}</div>
-                                        <div className="font-medium text-yellow-600">할인: ${adultDiscountedPrice.toFixed(2)}</div>
-                                        <div className="font-medium text-green-600">Net: ${adultNetPrice.toFixed(2)}</div>
-                                      </div>
-                                      <div>
-                                        <div className="font-medium text-gray-700">아동</div>
-                                        <div className="text-xs text-gray-500">기본: ${childBasePrice}</div>
-                                        <div className="text-xs text-gray-500">옵션: ${existingOption.child_price}</div>
-                                        <div className="text-xs text-gray-500">총합: ${childTotalPrice}</div>
-                                        <div className="font-medium text-blue-600">최대: ${childMaxPrice.toFixed(2)}</div>
-                                        <div className="font-medium text-yellow-600">할인: ${childDiscountedPrice.toFixed(2)}</div>
-                                        <div className="font-medium text-green-600">Net: ${childNetPrice.toFixed(2)}</div>
-                                      </div>
-                                      <div>
-                                        <div className="font-medium text-gray-700">유아</div>
-                                        <div className="text-xs text-gray-500">기본: ${infantBasePrice}</div>
-                                        <div className="text-xs text-gray-500">옵션: ${existingOption.infant_price}</div>
-                                        <div className="text-xs text-gray-500">총합: ${infantTotalPrice}</div>
-                                        <div className="font-medium text-blue-600">최대: ${infantMaxPrice.toFixed(2)}</div>
-                                        <div className="font-medium text-yellow-600">할인: ${infantDiscountedPrice.toFixed(2)}</div>
-                                        <div className="font-medium text-green-600">Net: ${infantNetPrice.toFixed(2)}</div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
           </div>
         )}
              </div>
