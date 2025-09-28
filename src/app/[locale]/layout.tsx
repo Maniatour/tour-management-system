@@ -57,9 +57,15 @@ export default async function LocaleLayout({
   const pathname = headersList.get('x-pathname') || '';
   const isAdminPage = pathname.includes('/admin');
   const isEmbedPage = pathname.includes('/embed');
+  const isGuidePage = pathname.includes('/guide');
+  const isCustomerPage = pathname.includes('/dashboard') || 
+                         pathname.includes('/products') || 
+                         pathname.includes('/off-schedule') ||
+                         pathname === `/${locale}` ||
+                         pathname === `/${locale}/`;
 
-  // Admin 또는 Embed 페이지인 경우 기본 레이아웃만 제공
-  if (isAdminPage || isEmbedPage) {
+  // Admin, Embed, Guide, Customer 페이지인 경우 기본 레이아웃만 제공
+  if (isAdminPage || isEmbedPage || isGuidePage || isCustomerPage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <AuthProvider>

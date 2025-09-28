@@ -27,7 +27,7 @@ export default function ProtectedRoute({
 
     // 로그인하지 않은 경우
     if (!user) {
-      router.push('/auth')
+      router.push('/ko/auth')
       return
     }
 

@@ -1,7 +1,7 @@
 'use client'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { 
   Users, 
   Settings, 
@@ -40,23 +40,11 @@ interface AdminSidebarAndHeaderProps {
   children: React.ReactNode
 }
 
-interface AttendanceRecord {
-  id: string
-  employee_email: string
-  date: string
-  check_in_time: string | null
-  check_out_time: string | null
-  work_hours: number
-  status: string
-  notes: string | null
-  session_number: number
-  employee_name: string
-}
 
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { signOut, authUser, userRole } = useAuth()
+  const { signOut, authUser, userRole, isSimulating } = useAuth()
   const currentLocale = locale
   const t = useTranslations('common')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -74,13 +62,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     employeeNotFound,
     elapsedTime,
     handleCheckIn,
-    handleCheckOut,
-    refreshAttendance
+    handleCheckOut
   } = useAttendanceSync()
 
 
-  // 출퇴근 상태 새로고침 (커스텀 훅 사용)
-  const fetchTodayRecords = refreshAttendance
 
   // 출근 체크인 모달 열기
   const handleCheckInClick = () => {
@@ -117,7 +102,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   // 경과 시간과 타이머는 커스텀 훅에서 처리됨
 
   // 팀 보드 배지 카운트: 내가 받아야 할 공지(미확인) + 내게 할당된 진행중 업무 수
-  const fetchTeamBoardCount = async () => {
+  const fetchTeamBoardCount = useCallback(async () => {
     try {
       if (!authUser?.email) {
         setTeamBoardCount(0)
@@ -177,13 +162,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       console.warn('Failed to fetch team board count:', err)
       setTeamBoardCount(0)
     }
-  }
+  }, [authUser?.email])
 
   useEffect(() => {
     fetchTeamBoardCount()
     const interval = setInterval(fetchTeamBoardCount, 60_000)
     return () => clearInterval(interval)
-  }, [authUser?.email])
+  }, [fetchTeamBoardCount])
 
   // AuthContext에서 자동으로 관리되므로 별도 useEffect 불필요
 
@@ -239,6 +224,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
     { name: t('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: t('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
+    // 개발자 도구 (관리자만 보이도록, 시뮬레이션 중일 때도 표시)
+    ...((userRole === 'admin' || (userRole === 'team_member' && isSimulating)) ? [{ name: '개발자 도구', href: `/${locale}/admin/dev-tools`, icon: Settings }] : []),
   ]
 
   return (
@@ -296,6 +283,15 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 >
                   {t('chatManagement')}
                 </Link>
+                {/* 개발자 도구 (관리자만 표시) */}
+                {(userRole === 'admin' || (userRole === 'team_member' && isSimulating)) && (
+                  <Link
+                    href={`/${locale}/admin/dev-tools`}
+                    className="px-3 py-1.5 text-sm border rounded-md text-orange-600 border-orange-600 hover:bg-orange-600 hover:text-white transition-colors"
+                  >
+                    개발자 도구
+                  </Link>
+                )}
               </div>
               
             </div>
@@ -385,10 +381,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {userRole === 'admin' ? t('admin') : 
-                       userRole === 'manager' ? t('manager') : 
-                       userRole === 'team_member' ? t('teamMember') : 
-                       authUser?.email ? t('googleUser') : t('customer')}
+                      {isSimulating ? (
+                        <span className="text-orange-600 font-medium">시뮬레이션 중</span>
+                      ) : (
+                        userRole === 'admin' ? t('admin') : 
+                        userRole === 'manager' ? t('manager') : 
+                        userRole === 'team_member' ? t('teamMember') : 
+                        authUser?.email ? t('googleUser') : t('customer')
+                      )}
                     </div>
                   </div>
                   <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -412,9 +412,15 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                           <p className="text-xs text-gray-500">{authUser?.email || t('noEmailInfo')}</p>
                           {userRole && (
                             <p className="text-xs text-blue-600 font-medium mt-1">
-                              {userRole === 'admin' ? t('admin') : 
-                               userRole === 'manager' ? t('manager') : 
-                               userRole === 'team_member' ? t('teamMember') : t('customer')}
+                              {isSimulating ? (
+                                <span className="text-orange-600">시뮬레이션 중 ({userRole === 'admin' ? t('admin') : 
+                                 userRole === 'manager' ? t('manager') : 
+                                 userRole === 'team_member' ? t('teamMember') : t('customer')})</span>
+                              ) : (
+                                userRole === 'admin' ? t('admin') : 
+                                userRole === 'manager' ? t('manager') : 
+                                userRole === 'team_member' ? t('teamMember') : t('customer')
+                              )}
                             </p>
                           )}
                         </div>
@@ -427,6 +433,18 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                           <Home className="w-4 h-4 mr-2" />
                           고객 페이지
                         </Link>
+                        
+                        {/* 개발자 도구 (관리자만 표시) */}
+                        {(userRole === 'admin' || (userRole === 'team_member' && isSimulating)) && (
+                          <Link
+                            href={`/${locale}/admin/dev-tools`}
+                            onClick={handleUserMenuClick}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                          >
+                            <Settings className="w-4 h-4 mr-2" />
+                            개발자 도구
+                          </Link>
+                        )}
                         
                         <div className="border-t border-gray-100 my-1"></div>
                         

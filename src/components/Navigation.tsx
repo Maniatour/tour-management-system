@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Calendar, UserCheck, LogIn, Home, Menu, X } from 'lucide-react'
+import { Calendar, LogIn, Home, Menu, X, User, Settings, LogOut, ChevronDown } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
 import UserProfile from './auth/UserProfile'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,12 +13,27 @@ const Navigation = () => {
   const t = useTranslations('common')
   const pathname = usePathname()
   const locale = useLocale()
-  const { user, userRole, loading } = useAuth()
+  const router = useRouter()
+  const { user, userRole, loading, signOut, authUser } = useAuth()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   
   // Admin 페이지에서는 네비게이션을 숨김
   if (pathname.startsWith(`/${locale}/admin`)) {
     return null
+  }
+
+  const handleLogout = async () => {
+    try {
+      await signOut()
+      router.push(`/${locale}/auth`)
+    } catch (error) {
+      console.error('로그아웃 중 오류가 발생했습니다:', error)
+    }
+  }
+
+  const handleUserMenuClick = () => {
+    setIsUserMenuOpen(false)
   }
 
   return (
@@ -50,13 +65,6 @@ const Navigation = () => {
               <Calendar className="w-4 h-4 mr-2" />
               상품
             </Link>
-            <Link 
-              href={`/${locale}/off-schedule`}
-              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <UserCheck className="w-4 h-4 mr-2" />
-              Off 스케줄
-            </Link>
             <LanguageSwitcher />
             
             {/* 인증 상태에 따른 메뉴 */}
@@ -67,18 +75,93 @@ const Navigation = () => {
               </div>
             ) : user ? (
               <div className="flex items-center space-x-4">
-                {/* 팀원/관리자인 경우 admin 페이지로 리다이렉트 */}
-                {userRole && userRole !== 'customer' ? (
-                  <Link
-                    href={`/${locale}/admin`}
-                    className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+                {/* 사용자 드롭다운 메뉴 */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                    className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
                   >
-                    <UserCheck className="w-4 h-4 mr-2" />
-                    관리자 페이지
-                  </Link>
-                ) : (
-                  <UserProfile />
-                )}
+                    <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                      <span className="text-white text-sm font-medium">
+                        {(authUser?.name || authUser?.email?.split('@')[0] || 'U').charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="hidden sm:block text-left">
+                      <div className="text-sm font-medium text-gray-900">
+                        {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {userRole === 'admin' ? '관리자' : 
+                         userRole === 'manager' ? '매니저' : 
+                         userRole === 'team_member' ? '팀원' : '고객'}
+                      </div>
+                    </div>
+                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                  </button>
+
+                  {isUserMenuOpen && (
+                    <>
+                      {/* Backdrop */}
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setIsUserMenuOpen(false)}
+                      />
+                      
+                      {/* Dropdown */}
+                      <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
+                        <div className="py-1">
+                          <div className="px-4 py-2 border-b border-gray-100">
+                            <p className="text-sm font-medium text-gray-900">
+                              {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}
+                            </p>
+                            <p className="text-xs text-gray-500">{authUser?.email || '이메일 없음'}</p>
+                            {userRole && (
+                              <p className="text-xs text-blue-600 font-medium mt-1">
+                                {userRole === 'admin' ? '관리자' : 
+                                 userRole === 'manager' ? '매니저' : 
+                                 userRole === 'team_member' ? '팀원' : '고객'}
+                              </p>
+                            )}
+                          </div>
+                          
+                          {/* 관리자 페이지 링크 (관리자/매니저/팀원만) */}
+                          {userRole && userRole !== 'customer' && (
+                            <Link
+                              href={`/${locale}/admin`}
+                              onClick={handleUserMenuClick}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                            >
+                              <Settings className="w-4 h-4 mr-2" />
+                              관리자 페이지
+                            </Link>
+                          )}
+                          
+                          {/* 가이드 페이지 링크 (팀원만) */}
+                          {userRole === 'team_member' && (
+                            <Link
+                              href={`/${locale}/guide`}
+                              onClick={handleUserMenuClick}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                            >
+                              <UserCheck className="w-4 h-4 mr-2" />
+                              가이드 페이지
+                            </Link>
+                          )}
+                          
+                          <div className="border-t border-gray-100 my-1"></div>
+                          
+                          <button
+                            onClick={handleLogout}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                          >
+                            <LogOut className="w-4 h-4 mr-2" />
+                            로그아웃
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             ) : (
               <Link
@@ -123,14 +206,6 @@ const Navigation = () => {
                 <Calendar className="w-4 h-4 mr-3" />
                 상품
               </Link>
-              <Link 
-                href={`/${locale}/off-schedule`}
-                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                <UserCheck className="w-4 h-4 mr-3" />
-                Off 스케줄
-              </Link>
               
               {/* 인증 상태에 따른 메뉴 */}
               {loading ? (
@@ -139,20 +214,61 @@ const Navigation = () => {
                   로딩 중...
                 </div>
               ) : user ? (
-                <div className="px-2 py-2">
-                  {/* 팀원/관리자인 경우 admin 페이지로 리다이렉트 */}
-                  {userRole && userRole !== 'customer' ? (
+                <div className="px-2 py-2 space-y-2">
+                  {/* 사용자 정보 표시 */}
+                  <div className="flex items-center space-x-3 p-2 bg-gray-50 rounded-lg">
+                    <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                      <span className="text-white text-sm font-medium">
+                        {(authUser?.name || authUser?.email?.split('@')[0] || 'U').charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {userRole === 'admin' ? '관리자' : 
+                         userRole === 'manager' ? '매니저' : 
+                         userRole === 'team_member' ? '팀원' : '고객'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* 관리자 페이지 링크 (관리자/매니저/팀원만) */}
+                  {userRole && userRole !== 'customer' && (
                     <Link
                       href={`/${locale}/admin`}
-                      className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+                      className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <Settings className="w-4 h-4 mr-3" />
+                      관리자 페이지
+                    </Link>
+                  )}
+                  
+                  {/* 가이드 페이지 링크 (팀원만) */}
+                  {userRole === 'team_member' && (
+                    <Link
+                      href={`/${locale}/guide`}
+                      className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
                       onClick={() => setIsMobileMenuOpen(false)}
                     >
                       <UserCheck className="w-4 h-4 mr-3" />
-                      관리자 페이지
+                      가이드 페이지
                     </Link>
-                  ) : (
-                    <UserProfile />
                   )}
+                  
+                  {/* 로그아웃 버튼 */}
+                  <button
+                    onClick={() => {
+                      handleLogout()
+                      setIsMobileMenuOpen(false)
+                    }}
+                    className="flex items-center w-full text-gray-600 hover:text-red-600 transition-colors px-2 py-2"
+                  >
+                    <LogOut className="w-4 h-4 mr-3" />
+                    로그아웃
+                  </button>
                 </div>
               ) : (
                 <Link

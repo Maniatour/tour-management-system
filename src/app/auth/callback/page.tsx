@@ -36,7 +36,10 @@ export default function AuthCallbackPage() {
         
         if (data.session?.user) {
           console.log('Auth callback: User authenticated:', data.session.user.email)
-          router.replace(`/${locale}/admin`)
+          // 잠시 후 AuthContext가 로드되도록 대기
+          setTimeout(() => {
+            router.replace(`/${locale}/admin`)
+          }, 100)
         } else {
           console.log('Auth callback: No session found')
           router.replace(`/${locale}/auth?error=no_session`)

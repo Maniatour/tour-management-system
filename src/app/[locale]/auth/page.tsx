@@ -11,7 +11,7 @@ type AuthMode = 'login' | 'signup' | 'reset'
 
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
-  const { user, userRole, loading } = useAuth()
+  const { user, userRole, loading, getRedirectPath } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const pathname = usePathname()
@@ -35,16 +35,12 @@ export default function AuthPage() {
         return
       }
       
-      // 관리자/팀원인 경우 관리자 페이지로, 그 외에는 redirectToParam으로
-      if (userRole !== 'customer') {
-        console.log('Auth page: Admin user, redirecting to admin page')
-        router.replace(`/${currentLocale}/admin`)
-      } else {
-        console.log('Auth page: Customer user, redirecting to home')
-        router.replace(redirectToParam)
-      }
+      // AuthContext의 getRedirectPath 함수를 사용하여 올바른 경로로 리다이렉트
+      const redirectPath = getRedirectPath(currentLocale)
+      console.log('Auth page: Redirecting to:', redirectPath)
+      router.replace(redirectPath)
     }
-  }, [user, userRole, loading, router, redirectToParam, currentLocale])
+  }, [user, userRole, loading, router, redirectToParam, currentLocale, getRedirectPath])
 
   if (loading) {
     return (

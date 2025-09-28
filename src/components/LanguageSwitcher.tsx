@@ -2,7 +2,8 @@
 
 import { useLocale } from 'next-intl'
 import { usePathname } from 'next/navigation'
-import { Globe } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
+import ReactCountryFlag from 'react-country-flag'
 
 const LanguageSwitcher = () => {
   const locale = useLocale()
@@ -14,30 +15,19 @@ const LanguageSwitcher = () => {
     window.location.href = newPath
   }
 
-  const getLanguageDisplay = () => {
-    return locale === 'ko' ? '한국어' : 'English'
-  }
-
-  const getLanguageFlag = () => {
-    return locale === 'ko' ? '🇰🇷' : '🇺🇸'
-  }
-
   return (
-    <div className="flex items-center space-x-3">
-      <Globe size={16} className="text-gray-600" />
-      <span className="text-sm font-medium text-gray-700">
-        {getLanguageDisplay()}
-      </span>
-      <button
-        onClick={handleLanguageToggle}
-        className="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        title={`Switch to ${locale === 'ko' ? 'English' : '한국어'}`}
-      >
-        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-          locale === 'ko' ? 'translate-x-1' : 'translate-x-6'
-        }`} />
-      </button>
-    </div>
+    <button
+      onClick={handleLanguageToggle}
+      className="flex items-center space-x-1 text-gray-600 hover:text-gray-900 transition-colors p-1 rounded-md hover:bg-gray-100"
+      title={`Switch to ${locale === 'ko' ? 'English' : '한국어'}`}
+    >
+      <ReactCountryFlag 
+        countryCode={locale === 'ko' ? 'KR' : 'US'} 
+        svg 
+        style={{ width: '20px', height: '15px' }}
+      />
+      <ChevronDown className="w-4 h-4" />
+    </button>
   )
 }
 

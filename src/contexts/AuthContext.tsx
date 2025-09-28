@@ -23,6 +23,19 @@ interface AuthContextType {
   getRedirectPath: (locale: string) => string
   teamChatUnreadCount: number
   refreshTeamChatUnreadCount: () => Promise<void>
+  preventAutoRedirect?: boolean
+  // 시뮬레이션 관련
+  simulatedUser: SimulatedUser | null
+  startSimulation: (user: SimulatedUser) => void
+  stopSimulation: () => void
+  isSimulating: boolean
+}
+
+interface SimulatedUser {
+  email: string
+  name_ko: string
+  position: string
+  role: UserRole
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -34,6 +47,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [permissions, setPermissions] = useState<UserPermissions | null>(null)
   const [loading, setLoading] = useState(true)
   const [teamChatUnreadCount, setTeamChatUnreadCount] = useState(0)
+  
+  // 시뮬레이션 상태
+  const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(null)
+  const [isSimulating, setIsSimulating] = useState(false)
 
   // team 멤버십 확인
   const checkTeamMembership = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
@@ -129,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
       if (timeoutId) clearTimeout(timeoutId)
       
-      console.log('AuthContext: User role set:', role)
+      console.log('AuthContext: User role set:', role, 'for user:', email)
     } catch (error) {
       console.error('Error checking user role:', error)
       setUserRole('customer')
@@ -138,6 +155,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (timeoutId) clearTimeout(timeoutId)
     }
   }
+
+  // 시뮬레이션 정보 복원 (한 번만 실행)
+  useEffect(() => {
+    const savedSimulation = localStorage.getItem('positionSimulation')
+    if (savedSimulation) {
+      try {
+        const simulationData = JSON.parse(savedSimulation)
+        setSimulatedUser(simulationData)
+        setIsSimulating(true)
+        console.log('AuthContext: Simulation restored from localStorage:', simulationData)
+      } catch (error) {
+        console.error('AuthContext: Error parsing saved simulation:', error)
+        localStorage.removeItem('positionSimulation')
+      }
+    }
+  }, []) // 빈 의존성 배열로 한 번만 실행
 
   useEffect(() => {
     console.log('AuthContext: Initializing...')
@@ -267,16 +300,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return permissions[permission] || false
   }
 
+  // 시뮬레이션 함수들
+  const startSimulation = (simulatedUserData: SimulatedUser) => {
+    setSimulatedUser(simulatedUserData)
+    setIsSimulating(true)
+    
+    // localStorage에 시뮬레이션 정보 저장
+    localStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
+    
+    console.log('Simulation started:', simulatedUserData)
+  }
+
+  const stopSimulation = () => {
+    setSimulatedUser(null)
+    setIsSimulating(false)
+    localStorage.removeItem('positionSimulation')
+    
+    console.log('Simulation stopped')
+  }
+
+  // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
+  const effectiveUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
+  const effectivePermissions = isSimulating && simulatedUser ? {
+    canViewAdmin: hasPermission(simulatedUser.role, 'canViewAdmin'),
+    canManageProducts: hasPermission(simulatedUser.role, 'canManageProducts'),
+    canManageCustomers: hasPermission(simulatedUser.role, 'canManageCustomers'),
+    canManageReservations: hasPermission(simulatedUser.role, 'canManageReservations'),
+    canManageTours: hasPermission(simulatedUser.role, 'canManageTours'),
+    canManageTeam: hasPermission(simulatedUser.role, 'canManageTeam'),
+    canViewSchedule: hasPermission(simulatedUser.role, 'canViewSchedule'),
+    canManageBookings: hasPermission(simulatedUser.role, 'canManageBookings'),
+    canViewAuditLogs: hasPermission(simulatedUser.role, 'canViewAuditLogs'),
+    canManageChannels: hasPermission(simulatedUser.role, 'canManageChannels'),
+    canManageOptions: hasPermission(simulatedUser.role, 'canManageOptions'),
+    canViewFinance: hasPermission(simulatedUser.role, 'canViewFinance'),
+  } : permissions
+
   // 리다이렉트 경로 가져오기
   const getRedirectPath = (locale: string): string => {
-    if (!userRole) return `/${locale}/auth`
+    const currentRole = effectiveUserRole
+    if (!currentRole) return `/${locale}/auth`
     
-    switch (userRole) {
+    switch (currentRole) {
       case 'admin':
       case 'manager':
         return `/${locale}/admin`
       case 'team_member':
-        return `/${locale}/admin`
+        // 투어 가이드는 guide 페이지로 리다이렉트
+        return `/${locale}/guide`
       case 'customer':
       default:
         return `/${locale}/auth`
@@ -322,19 +393,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       setTeamChatUnreadCount(0)
     }
-  }, [user?.email, userRole]) // refreshTeamChatUnreadCount 제거하여 무한 루프 방지
+  }, [user?.email, userRole, refreshTeamChatUnreadCount])
 
   const value: AuthContextType = {
     user,
     authUser,
-    userRole,
-    permissions,
+    userRole: effectiveUserRole,
+    permissions: effectivePermissions,
     loading,
     signOut,
     hasPermission: hasPermissionCheck,
     getRedirectPath,
     teamChatUnreadCount,
     refreshTeamChatUnreadCount,
+    // 시뮬레이션 관련
+    simulatedUser,
+    startSimulation,
+    stopSimulation,
+    isSimulating,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

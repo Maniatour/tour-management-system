@@ -39,7 +39,7 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/auth')
+      router.push('/ko/auth')
     }
   }, [user, loading, router])
 

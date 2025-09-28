@@ -17,13 +17,26 @@ interface ExtendedTour extends Tour {
   vehicle_number?: string | null;
 }
 
+interface OffSchedule {
+  id: string
+  team_email: string
+  off_date: string
+  reason: string
+  status: string
+  approved_by?: string | null
+  approved_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
 interface TourCalendarProps {
   tours: ExtendedTour[]
   onTourClick: (tour: ExtendedTour) => void
   allReservations?: Database['public']['Tables']['reservations']['Row'][]
+  offSchedules?: OffSchedule[]
 }
 
-const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [] }: TourCalendarProps) {
+const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [], offSchedules = [] }: TourCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [productMetaById, setProductMetaById] = useState<{[id: string]: { name: string; sub_category: string }}>({})
   const [hoveredTour, setHoveredTour] = useState<ExtendedTour | null>(null)
@@ -65,6 +78,12 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     
     return tours.filter(tour => tour.tour_date === dateString)
   }, [tours])
+
+  // 특정 날짜의 오프 스케줄 가져오기 (메모이제이션)
+  const getOffSchedulesForDate = useCallback((date: Date) => {
+    const dateString = date.toISOString().split('T')[0] // YYYY-MM-DD 형식
+    return offSchedules.filter(schedule => schedule.off_date === dateString)
+  }, [offSchedules])
 
   // 이전/다음 월로 이동 (메모이제이션)
   const goToPreviousMonth = useCallback(() => {
@@ -327,6 +346,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
       <div className="grid grid-cols-7 gap-1">
         {calendarDays.map((date, index) => {
           const dayTours = getToursForDate(date)
+          const dayOffSchedules = getOffSchedulesForDate(date)
           const isCurrentMonthDay = isCurrentMonth(date)
           const isTodayDate = isToday(date)
 
@@ -382,6 +402,29 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                     </div>
                   )
                 })}
+                
+                {/* 오프 스케줄 라벨들 */}
+                {dayOffSchedules.map((schedule, scheduleIndex) => {
+                  const statusColor = schedule.status === 'approved' ? 'bg-green-500' : 
+                                    schedule.status === 'pending' ? 'bg-yellow-500' : 
+                                    schedule.status === 'rejected' ? 'bg-red-500' : 'bg-gray-500'
+                  
+                  const statusText = schedule.status === 'approved' ? '승인' : 
+                                   schedule.status === 'pending' ? '대기' : 
+                                   schedule.status === 'rejected' ? '거부' : schedule.status
+                  
+                  return (
+                    <div
+                      key={`off-${schedule.id}-${scheduleIndex}`}
+                      className={`text-[10px] sm:text-xs px-0.5 sm:px-1 py-0.5 rounded cursor-default text-white ${statusColor}`}
+                      title={`오프 스케줄: ${schedule.reason} (${statusText})`}
+                    >
+                      <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
+                        <span className="font-medium">🏖️ {statusText}</span>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
@@ -415,6 +458,25 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
             <div className="flex items-center space-x-2">
               <div className="w-3 h-3 rounded-full bg-gray-400" />
               <span className="text-sm text-gray-600">일반투어</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* 오프 스케줄 범례 */}
+        <div className="mt-3">
+          <h3 className="text-sm font-medium text-gray-700 mb-2">오프 스케줄</h3>
+          <div className="flex flex-wrap gap-3">
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 rounded-full bg-green-500" />
+              <span className="text-sm text-gray-600">승인됨</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 rounded-full bg-yellow-500" />
+              <span className="text-sm text-gray-600">대기중</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 rounded-full bg-red-500" />
+              <span className="text-sm text-gray-600">거부됨</span>
             </div>
           </div>
         </div>
