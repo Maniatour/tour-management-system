@@ -341,7 +341,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
         {dayNames.map((day, index) => (
           <div
             key={day}
-            className={`p-1 text-center text-sm font-medium ${
+            className={`p-1 text-center text-xs font-medium ${
               index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-gray-700'
             }`}
           >
@@ -366,7 +366,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
               } ${isTodayDate ? 'ring-2 ring-blue-500' : ''}`}
             >
               {/* 날짜 */}
-              <div className={`text-sm font-medium mb-0.5 ${
+              <div className={`text-xs font-medium mb-0.5 ${
                 isCurrentMonthDay ? 'text-gray-900' : 'text-gray-400'
               } ${isTodayDate ? 'text-blue-600 font-bold' : ''}`}>
                 {date.getDate()}
@@ -395,7 +395,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                       onClick={() => onTourClick(tour)}
                       onMouseEnter={(e) => handleMouseEnter(tour, e)}
                       onMouseLeave={handleMouseLeave}
-                      className={`text-[10px] sm:text-xs px-0.5 sm:px-1 py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
+                      className={`text-[8px] sm:text-[10px] px-0.5 sm:px-1 py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
                         getProductColor(tour.product_id, tour.product_name)
                       } ${
                         isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
@@ -424,7 +424,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                   return (
                     <div
                       key={`off-${schedule.id}-${scheduleIndex}`}
-                      className={`text-[10px] sm:text-xs px-0.5 sm:px-1 py-0.5 rounded cursor-default text-white ${statusColor}`}
+                      className={`text-[8px] sm:text-[10px] px-0.5 sm:px-1 py-0.5 rounded cursor-default text-white ${statusColor}`}
                       title={`오프 스케줄: ${schedule.reason} (${statusText})`}
                     >
                       <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
