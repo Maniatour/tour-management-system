@@ -106,23 +106,31 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
   }, [currentDate])
 
   // 상품별 색상 생성 (일관된 색상, 메모이제이션)
-  const getProductColor = useCallback((productId: string | null) => {
+  const getProductColor = useCallback((productId: string | null, productName?: string | null) => {
+    // 도깨비 투어는 보라색으로 고정
+    const productNameStr = (productName || '').toLowerCase()
+    if (productNameStr.includes('도깨비') || productNameStr.includes('goblin')) {
+      return 'bg-purple-600'  // 도깨비 투어 전용 보라색
+    }
+    
+    // 오프 스케줄 색상과 구분되는 상품 전용 색상 팔레트
     const colors = [
-      'bg-blue-500',
-      'bg-green-500', 
-      'bg-purple-500',
-      'bg-orange-500',
-      'bg-pink-500',
-      'bg-indigo-500',
-      'bg-yellow-500',
-      'bg-red-500',
-      'bg-teal-500',
-      'bg-cyan-500'
+      'bg-blue-600',      // 진한 파란색
+      'bg-orange-600',    // 진한 주황색
+      'bg-pink-600',      // 진한 분홍색
+      'bg-indigo-600',    // 진한 남색
+      'bg-teal-600',      // 진한 청록색
+      'bg-cyan-600',      // 진한 하늘색
+      'bg-emerald-600',   // 진한 에메랄드색
+      'bg-violet-600',    // 진한 바이올렛색
+      'bg-rose-600',      // 진한 로즈색
+      'bg-sky-600',       // 진한 스카이색
+      'bg-lime-600'       // 진한 라임색
     ]
     
     // productId가 null이거나 빈 문자열인 경우 기본 색상 반환
     if (!productId) {
-      return 'bg-gray-500'
+      return 'bg-slate-600'  // 오프 스케줄과 구분되는 회색
     }
     
     // productId의 해시값을 사용하여 일관된 색상 선택
@@ -295,7 +303,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
       const meta = productMetaById[pid]
       if (!meta) continue
       if (!allowed.has(meta.sub_category)) continue
-      items.push({ id: pid, label: meta.name, colorClass: getProductColor(pid) })
+      items.push({ id: pid, label: meta.name, colorClass: getProductColor(pid, meta.name) })
       added.add(pid)
     }
     return items
@@ -388,7 +396,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                       onMouseEnter={(e) => handleMouseEnter(tour, e)}
                       onMouseLeave={handleMouseLeave}
                       className={`text-[10px] sm:text-xs px-0.5 sm:px-1 py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
-                        getProductColor(tour.product_id)
+                        getProductColor(tour.product_id, tour.product_name)
                       } ${
                         isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
                       }`}
