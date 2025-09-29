@@ -3,13 +3,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
-import { ArrowLeft, Car, Hotel, Map, MapPin, Clock, User, Users, Camera, MessageSquare, FileText, Calculator, ChevronDown, ChevronUp, Calendar, Phone, Mail, ExternalLink } from 'lucide-react'
-import ReactCountryFlag from 'react-country-flag'
+import { ArrowLeft, Hotel, MapPin, Clock, Users, Camera, MessageSquare, FileText, Calculator, ChevronDown, ChevronUp, Calendar, Phone, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import TourHotelBookingForm from '@/components/TourHotelBookingForm'
-import TicketBookingForm from '@/components/TicketBookingForm'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
 import TourChatRoom from '@/components/TourChatRoom'
 import TourExpenseManager from '@/components/TourExpenseManager'
@@ -28,6 +25,7 @@ type TeamMember = {
   email: string
   name_ko: string | null
   name_en: string | null
+  phone?: string | null
 }
 
 export default function GuideTourDetailPage() {
@@ -37,7 +35,6 @@ export default function GuideTourDetailPage() {
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   
   const [tour, setTour] = useState<TourRow | null>(null)
@@ -87,13 +84,13 @@ export default function GuideTourDetailPage() {
         .eq('id', tourId)
         .single()
 
-      if (tourError) {
+      if (tourError || !tourData) {
         setError('투어 정보를 불러올 수 없습니다.')
         return
       }
 
       // 권한 확인 (관리자/매니저는 모든 투어 접근 가능, 투어 가이드는 배정된 투어만)
-      if (userRole === 'team_member' && tourData.tour_guide_id !== currentUserEmail && tourData.assistant_id !== currentUserEmail) {
+      if (userRole === 'team_member' && (tourData as any)?.tour_guide_id !== currentUserEmail && (tourData as any)?.assistant_id !== currentUserEmail) {
         setError('이 투어에 대한 접근 권한이 없습니다.')
         return
       }
@@ -101,42 +98,42 @@ export default function GuideTourDetailPage() {
       setTour(tourData)
 
       // 상품 정보 가져오기
-      if (tourData.product_id) {
+      if ((tourData as any).product_id) {
         const { data: productData } = await supabase
           .from('products')
           .select('*')
-          .eq('id', tourData.product_id)
+          .eq('id', (tourData as any).product_id)
           .single()
         setProduct(productData)
       }
 
       // 차량 정보 가져오기
-      if (tourData.tour_car_id) {
+      if ((tourData as any).tour_car_id) {
         const { data: vehicleData } = await supabase
           .from('vehicles')
           .select('*')
-          .eq('id', tourData.tour_car_id)
+          .eq('id', (tourData as any).tour_car_id)
           .single()
         setVehicle(vehicleData)
       }
 
       // 예약 정보 가져오기 (투어에 배정된 예약만)
-      if (tourData.reservation_ids) {
-        const reservationIds = Array.isArray(tourData.reservation_ids) 
-          ? tourData.reservation_ids 
-          : String(tourData.reservation_ids).split(',').map(id => id.trim()).filter(id => id)
+      if ((tourData as any).reservation_ids) {
+        const reservationIds = Array.isArray((tourData as any).reservation_ids) 
+          ? (tourData as any).reservation_ids 
+          : String((tourData as any).reservation_ids).split(',').map(id => id.trim()).filter(id => id)
 
         if (reservationIds.length > 0) {
           const { data: reservationsData } = await supabase
             .from('reservations')
-            .select('*')
+            .select('*, choices')
             .in('id', reservationIds)
 
           const reservationsList = reservationsData || []
           setReservations(reservationsList)
 
           // 고객 정보 가져오기
-          const customerIds = [...new Set(reservationsList.map(r => r.customer_id).filter(Boolean))]
+          const customerIds = [...new Set(reservationsList.map(r => (r as any).customer_id).filter(Boolean))]
           if (customerIds.length > 0) {
             const { data: customersData } = await supabase
               .from('customers')
@@ -150,7 +147,7 @@ export default function GuideTourDetailPage() {
         // 예약에서 pickup_hotel ID들 수집
         const pickupHotelIds = [...new Set(
               reservationsList
-            .map(r => r.pickup_hotel)
+            .map(r => (r as any).pickup_hotel)
             .filter(Boolean)
         )]
         
@@ -166,26 +163,26 @@ export default function GuideTourDetailPage() {
       }
 
 
-      // 투어 호텔 부킹 정보 가져오기 (canceled가 아닌 것만)
+      // 투어 호텔 부킹 정보 가져오기 (cancelled가 아닌 것만)
       const { data: hotelBookingsData } = await supabase
         .from('tour_hotel_bookings')
         .select('*')
         .eq('tour_id', tourId)
-        .not('status', 'ilike', 'canceled')
+        .not('status', 'ilike', 'cancelled')
       setTourHotelBookings(hotelBookingsData || [])
 
-      // 티켓 부킹 정보 가져오기 (canceled가 아닌 것만)
+      // 티켓 부킹 정보 가져오기 (cancelled가 아닌 것만)
       const { data: ticketBookingsData } = await supabase
         .from('ticket_bookings')
         .select('*')
         .eq('tour_id', tourId)
-        .not('status', 'ilike', 'canceled')
+        .not('status', 'ilike', 'cancelled')
       setTicketBookings(ticketBookingsData || [])
 
       // 팀 멤버 정보 가져오기 (가이드와 어시스턴트 이름 표시용)
       const { data: teamData } = await supabase
         .from('team')
-        .select('email, name_ko, name_en')
+        .select('email, name_ko, name_en, phone')
       setTeamMembers(teamData || [])
 
     } catch (err) {
@@ -194,7 +191,7 @@ export default function GuideTourDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [params.id, currentUserEmail])
+  }, [params.id, currentUserEmail, userRole])
 
   useEffect(() => {
     loadTourData()
@@ -221,7 +218,7 @@ export default function GuideTourDetailPage() {
   
   // 가이드 구성 타입 판단 함수
   const getGuideConfiguration = () => {
-    if (!tour.tour_guide_id) return { type: 'none', label: '가이드 미배정', color: 'text-gray-500' }
+    if (!tour?.tour_guide_id) return { type: 'none', label: '가이드 미배정', color: 'text-gray-500' }
     
     if (tour.assistant_id) {
       // 두 명의 가이드가 있는 경우
@@ -256,7 +253,7 @@ export default function GuideTourDetailPage() {
   }
 
   // 예약 choice에서 선택된 옵션 이름 가져오기 함수
-  const getChoiceName = (choiceData: any) => {
+  const getChoiceName = (choiceData: unknown) => {
     if (!choiceData) return null
     
     try {
@@ -270,7 +267,7 @@ export default function GuideTourDetailPage() {
         for (const item of choice.required) {
           if (item.options && Array.isArray(item.options)) {
             // is_default가 true인 옵션 찾기
-            const selectedOption = item.options.find((option: any) => option.is_default)
+            const selectedOption = item.options.find((option: { is_default?: boolean; name?: string; name_ko?: string }) => option.is_default)
             if (selectedOption) {
               console.log('Selected option (method 1):', selectedOption) // 디버깅용 로그
               // 로케일에 따라 name 또는 name_ko 반환
@@ -281,16 +278,17 @@ export default function GuideTourDetailPage() {
       }
       
       // 방법 2: 직접 선택된 옵션 찾기 (다른 구조일 경우)
-      if (choice.selected_option) {
-        console.log('Selected option (method 2):', choice.selected_option) // 디버깅용 로그
-        return locale === 'ko' ? choice.selected_option.name_ko : choice.selected_option.name
+      if ((choice as { selected_option?: { name?: string; name_ko?: string } }).selected_option) {
+        const selectedOption = (choice as { selected_option: { name?: string; name_ko?: string } }).selected_option
+        console.log('Selected option (method 2):', selectedOption) // 디버깅용 로그
+        return locale === 'ko' ? selectedOption.name_ko : selectedOption.name
       }
       
       // 방법 3: 첫 번째 옵션 사용 (fallback)
       if (choice.required && Array.isArray(choice.required) && choice.required.length > 0) {
         const firstItem = choice.required[0]
         if (firstItem.options && Array.isArray(firstItem.options) && firstItem.options.length > 0) {
-          const firstOption = firstItem.options[0]
+          const firstOption = firstItem.options[0] as { name?: string; name_ko?: string }
           console.log('Using first option (method 3):', firstOption) // 디버깅용 로그
           return locale === 'ko' ? firstOption.name_ko : firstOption.name
         }
@@ -306,7 +304,7 @@ export default function GuideTourDetailPage() {
   
   // 투어명 가져오기 함수
   const getProductName = () => {
-    if (!product) return tour.product_id || (locale === 'ko' ? '상품 정보 없음' : 'No Product Info')
+    if (!product) return tour?.product_id || (locale === 'ko' ? '상품 정보 없음' : 'No Product Info')
     
     // 한국어 페이지에서는 name_ko, 영어 페이지에서는 name_en 표시
     if (locale === 'ko') {
@@ -318,7 +316,7 @@ export default function GuideTourDetailPage() {
   
   // 가이드 구성 라벨 가져오기 함수
   const getGuideConfigurationLabel = () => {
-    if (!tour.tour_guide_id) {
+    if (!tour?.tour_guide_id) {
       return locale === 'ko' ? '가이드 미배정' : 'No Guide Assigned'
     }
     
@@ -365,13 +363,11 @@ export default function GuideTourDetailPage() {
     title, 
     icon: Icon, 
     children, 
-    defaultExpanded = false 
   }: { 
     id: string
     title: string
-    icon: any
+    icon: React.ComponentType<{ className?: string }>
     children: React.ReactNode
-    defaultExpanded?: boolean
   }) => {
     const isExpanded = expandedSections.has(id)
     
@@ -602,10 +598,10 @@ export default function GuideTourDetailPage() {
             {/* 가이드 정보 - 뱃지 스타일 */}
             <div className="flex flex-wrap gap-2">
               {getTeamMemberPhone(tour.tour_guide_id) ? (
-                <a 
-                  href={`tel:${getTeamMemberPhone(tour.tour_guide_id)}`}
-                  className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-orange-100 text-orange-800 hover:bg-orange-200 transition-colors cursor-pointer"
-                >
+                  <a 
+                    href={`tel:${getTeamMemberPhone(tour.tour_guide_id) || ''}`}
+                    className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-orange-100 text-orange-800 hover:bg-orange-200 transition-colors cursor-pointer"
+                  >
                   👨‍💼 {getTeamMemberName(tour.tour_guide_id)}
                 </a>
               ) : (
@@ -616,7 +612,7 @@ export default function GuideTourDetailPage() {
               {tour.assistant_id && (
                 getTeamMemberPhone(tour.assistant_id) ? (
                   <a 
-                    href={`tel:${getTeamMemberPhone(tour.assistant_id)}`}
+                    href={`tel:${getTeamMemberPhone(tour.assistant_id) || ''}`}
                     className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-teal-100 text-teal-800 hover:bg-teal-200 transition-colors cursor-pointer"
                   >
                     👨‍💼 {getTeamMemberName(tour.assistant_id)}
@@ -700,7 +696,7 @@ export default function GuideTourDetailPage() {
                           {customer?.name || '정보 없음'}
                       </h3>
                         <p className="text-xs text-gray-500">
-                          {getChoiceName(reservation.choices) || `예약 #${reservation.id}`}
+                          {getChoiceName((reservation as { choices?: unknown }).choices) || `예약 #${reservation.id}`}
                         </p>
                       </div>
                       <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
@@ -759,10 +755,10 @@ export default function GuideTourDetailPage() {
                           <div className="text-xs text-gray-500">{hotel.pick_up_location}</div>
                         )}
                       </div>
-                    </div>
+                        </div>
                     {(hotel?.link || hotel?.pin) && (
                       <a 
-                        href={hotel?.link || `https://www.google.com/maps?q=${hotel?.pin}`}
+                        href={hotel?.link || `https://www.google.com/maps?q=${(hotel as any)?.pin}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-700 transition-colors"
@@ -814,7 +810,7 @@ export default function GuideTourDetailPage() {
                    </div>
                       {(hotel?.link || hotel?.pin) && (
                         <a 
-                          href={hotel?.link || `https://www.google.com/maps?q=${hotel?.pin}`}
+                          href={hotel?.link || `https://www.google.com/maps?q=${(hotel as any)?.pin}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-700 transition-colors"
@@ -876,10 +872,10 @@ export default function GuideTourDetailPage() {
 
 
         {/* 투어 메모 - 개요 탭에만 표시 */}
-          {tour.tour_info && (
+          {(tour as { tour_info?: string }).tour_info && (
           <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
             <AccordionSection id="tour-memo" title="투어 메모" icon={FileText}>
-              <p className="text-gray-700 whitespace-pre-wrap">{tour.tour_info}</p>
+              <p className="text-gray-700 whitespace-pre-wrap">{(tour as unknown as { tour_info: string }).tour_info}</p>
             </AccordionSection>
             </div>
           )}
@@ -911,8 +907,8 @@ export default function GuideTourDetailPage() {
                     <div className="text-sm text-gray-600 space-y-1">
                       <p>체크인: {booking.check_in_date}</p>
                       <p>체크아웃: {booking.check_out_date}</p>
-                      <p>객실 수: {booking.room_count}</p>
-                      {booking.notes && <p className="mt-2">메모: {booking.notes}</p>}
+                      <p>객실 수: {(booking as { room_count?: number }).room_count || '정보 없음'}</p>
+                      {(booking as { notes?: string }).notes && <p className="mt-2">메모: {(booking as unknown as { notes: string }).notes}</p>}
                     </div>
                   </div>
                 ))}
@@ -951,9 +947,9 @@ export default function GuideTourDetailPage() {
                       <div className="text-sm text-gray-600 space-y-1">
                         <p>RN 번호: {booking.rn_number || '정보 없음'}</p>
                         <p>EA: {booking.ea || '정보 없음'}</p>
-                        <p>체크인 날짜: {booking.check_in_date || '정보 없음'}</p>
+                        <p>체크인 날짜: {(booking as unknown as { check_in_date?: string }).check_in_date || '정보 없음'}</p>
                         <p>체크인 시간: {booking.time || '정보 없음'}</p>
-                      {booking.notes && <p className="mt-2">메모: {booking.notes}</p>}
+                      {(booking as { notes?: string }).notes && <p className="mt-2">메모: {(booking as unknown as { notes: string }).notes}</p>}
                     </div>
                   </div>
                   )
@@ -971,7 +967,7 @@ export default function GuideTourDetailPage() {
         {/* 투어 사진 - 사진 탭에만 표시 */}
         <div className={`${activeTab === 'photos' ? 'block' : 'hidden'} lg:block`}>
           <AccordionSection id="photos" title="투어 사진" icon={Camera}>
-          <TourPhotoUpload tourId={tour.id} />
+          <TourPhotoUpload tourId={tour.id} uploadedBy={currentUserEmail || ''} />
           </AccordionSection>
         </div>
 
@@ -979,7 +975,7 @@ export default function GuideTourDetailPage() {
         <div className={`${activeTab === 'chat' ? 'block' : 'hidden'} lg:block`}>
           <AccordionSection id="chat" title="채팅" icon={MessageSquare}>
           <div style={{ height: '600px' }}>
-            <TourChatRoom tourId={tour.id} />
+            <TourChatRoom tourId={tour.id} guideEmail={currentUserEmail || ''} />
           </div>
           </AccordionSection>
         </div>
@@ -987,7 +983,7 @@ export default function GuideTourDetailPage() {
         {/* 정산 관리 - 정산 탭에만 표시 */}
         <div className={`${activeTab === 'expenses' ? 'block' : 'hidden'} lg:block`}>
           <AccordionSection id="expenses" title="정산 관리" icon={Calculator}>
-          <TourExpenseManager tourId={tour.id} />
+          <TourExpenseManager tourId={tour.id} tourDate={tour.tour_date} submittedBy={currentUserEmail || ''} />
           </AccordionSection>
         </div>
 
@@ -1005,7 +1001,7 @@ export default function GuideTourDetailPage() {
                 투어 리포트 추가
               </button>
             </div>
-            <TourReportSection tourId={tour.id} />
+          <TourReportSection tourId={tour.id} />
           </div>
           </AccordionSection>
         </div>
