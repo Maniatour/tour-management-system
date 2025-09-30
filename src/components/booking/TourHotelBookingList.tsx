@@ -264,7 +264,7 @@ export default function TourHotelBookingList() {
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="text-lg">로딩 중...</div>
+        <div className="text-lg">Loading...</div>
       </div>
     );
   }

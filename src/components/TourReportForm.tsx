@@ -9,15 +9,16 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Calendar, MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslations } from 'next-intl'
 
 interface TourReportFormProps {
   tourId: string
   onSuccess?: () => void
   onCancel?: () => void
+  locale?: string
 }
 
 interface TourReportData {
@@ -40,53 +41,90 @@ interface TourReportData {
 }
 
 const WEATHER_OPTIONS = [
-  { value: 'sunny', label: '맑음', icon: '☀️' },
-  { value: 'cloudy', label: '흐림', icon: '☁️' },
-  { value: 'rainy', label: '비', icon: '🌧️' },
-  { value: 'snowy', label: '눈', icon: '❄️' },
-  { value: 'windy', label: '바람', icon: '💨' },
-  { value: 'foggy', label: '안개', icon: '🌫️' }
+  { value: 'sunny', icon: '☀️' },
+  { value: 'cloudy', icon: '☁️' },
+  { value: 'rainy', icon: '🌧️' },
+  { value: 'snowy', icon: '❄️' },
+  { value: 'windy', icon: '💨' },
+  { value: 'foggy', icon: '🌫️' }
 ]
 
 const MOOD_OPTIONS = [
-  { value: 'excellent', label: '매우 좋음', icon: '😊' },
-  { value: 'good', label: '좋음', icon: '🙂' },
-  { value: 'average', label: '보통', icon: '😐' },
-  { value: 'poor', label: '나쁨', icon: '😞' },
-  { value: 'terrible', label: '매우 나쁨', icon: '😢' }
+  { value: 'excellent', icon: '😊', ko: '가장 좋음', en: 'Excellent' },
+  { value: 'good', icon: '🙂', ko: '전반적 만족', en: 'Good' },
+  { value: 'average', icon: '😐', ko: '보통', en: 'Average' },
+  { value: 'poor', icon: '😞', ko: '매우 불만', en: 'Poor' },
+  { value: 'terrible', icon: '😢', ko: '가이드 불만', en: 'Terrible' }
 ]
 
 const RATING_OPTIONS = [
-  { value: 'excellent', label: '매우 좋음', icon: '⭐⭐⭐' },
-  { value: 'good', label: '좋음', icon: '⭐⭐' },
-  { value: 'average', label: '보통', icon: '⭐' },
-  { value: 'poor', label: '나쁨', icon: '👎' }
+  { value: 'excellent', icon: '⭐⭐⭐', ko: '우수', en: 'Excellent' },
+  { value: 'good', icon: '⭐⭐', ko: '좋음', en: 'Good' },
+  { value: 'average', icon: '⭐', ko: '보통', en: 'Average' },
+  { value: 'poor', icon: '👎', ko: '나쁨', en: 'Poor' }
 ]
 
 const MAIN_STOPS_OPTIONS = [
-  '그랜드 캐니언', '앤텔로프 캐니언', '브라이스 캐니언', '자이온 국립공원',
-  '모뉴먼트 밸리', '아치스 국립공원', '캐피톨 리프', '코랄 핑크 샌듄스',
-  '호스슈 벤드', '글렌 캐니언', '페이지', '라스베가스', '로스앤젤레스'
+  { ko: '그랜드 캐니언', en: 'Grand Canyon' },
+  { ko: '앤텔로프 캐니언', en: 'Antelope Canyon' },
+  { ko: '브라이스 캐니언', en: 'Bryce Canyon' },
+  { ko: '자이온 국립공원', en: 'Zion National Park' },
+  { ko: '모뉴먼트 밸리', en: 'Monument Valley' },
+  { ko: '아치스 국립공원', en: 'Arches National Park' },
+  { ko: '캐피톨 리프', en: 'Capitol Reef' },
+  { ko: '코랄 핑크 샌듄스', en: 'Coral Pink Sand Dunes' },
+  { ko: '호스슈 벤드', en: 'Horseshoe Bend' },
+  { ko: '글렌 캐니언', en: 'Glen Canyon' },
+  { ko: '페이지', en: 'Page' },
+  { ko: '라스베가스', en: 'Las Vegas' },
+  { ko: '로스앤젤레스', en: 'Los Angeles' }
 ]
 
 const ACTIVITIES_OPTIONS = [
-  '하이킹', '사진 촬영', '관광', '식사', '쇼핑', '선셋 관람',
-  '선라이즈 관람', '헬리콥터 투어', '보트 투어', '버스 투어',
-  '걷기 투어', '자전거 투어', '캠핑', '피크닉'
+  { ko: '하이킹', en: 'Hiking' },
+  { ko: '사진 촬영', en: 'Photography' },
+  { ko: '관광', en: 'Sightseeing' },
+  { ko: '식사', en: 'Dining' },
+  { ko: '쇼핑', en: 'Shopping' },
+  { ko: '선셋 관람', en: 'Sunset Viewing' },
+  { ko: '선라이즈 관람', en: 'Sunrise Viewing' },
+  { ko: '헬리콥터 투어', en: 'Helicopter Tour' },
+  { ko: '보트 투어', en: 'Boat Tour' },
+  { ko: '버스 투어', en: 'Bus Tour' },
+  { ko: '걷기 투어', en: 'Walking Tour' },
+  { ko: '자전거 투어', en: 'Bike Tour' },
+  { ko: '캠핑', en: 'Camping' },
+  { ko: '피크닉', en: 'Picnic' }
 ]
 
 const INCIDENTS_OPTIONS = [
-  '교통 지연', '날씨 문제', '차량 고장', '건강 문제', '사고',
-  '예약 오류', '가이드 지연', '고객 불만', '기타'
+  { ko: '교통 지연', en: 'Traffic Delay' },
+  { ko: '날씨 문제', en: 'Weather Issue' },
+  { ko: '차량 고장', en: 'Vehicle Breakdown' },
+  { ko: '건강 문제', en: 'Health Issue' },
+  { ko: '사고', en: 'Accident' },
+  { ko: '예약 오류', en: 'Booking Error' },
+  { ko: '가이드 지연', en: 'Guide Delay' },
+  { ko: '고객 불만', en: 'Customer Complaint' },
+  { ko: '기타', en: 'Other' }
 ]
 
 const LOST_DAMAGE_OPTIONS = [
-  '분실물 없음', '가방 분실', '휴대폰 분실', '카메라 분실',
-  '차량 손상', '시설 손상', '기타 손상'
+  { ko: '분실물 없음', en: 'No Lost Items' },
+  { ko: '가방 분실', en: 'Bag Lost' },
+  { ko: '휴대폰 분실', en: 'Phone Lost' },
+  { ko: '카메라 분실', en: 'Camera Lost' },
+  { ko: '차량 손상', en: 'Vehicle Damage' },
+  { ko: '시설 손상', en: 'Facility Damage' },
+  { ko: '기타 손상', en: 'Other Damage' }
 ]
 
-export default function TourReportForm({ tourId, onSuccess, onCancel }: TourReportFormProps) {
+export default function TourReportForm({ tourId, onSuccess, onCancel, locale = 'ko' }: TourReportFormProps) {
+  const t = useTranslations('tourReportForm')
   const { user } = useAuth()
+  
+  // 번역 함수
+  const getText = (ko: string, en: string) => locale === 'en' ? en : ko
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState<TourReportData>({
     end_mileage: null,
@@ -150,11 +188,11 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
 
       if (error) throw error
 
-      toast.success('투어 리포트가 성공적으로 제출되었습니다.')
+      toast.success(t('reportSubmitted'))
       onSuccess?.()
     } catch (error) {
       console.error('Error submitting tour report:', error)
-      toast.error('리포트 제출 중 오류가 발생했습니다.')
+      toast.error(t('submitError'))
     } finally {
       setLoading(false)
     }
@@ -166,7 +204,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
         <CardHeader className="p-4 md:p-6">
           <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
             <FileText className="w-5 h-5" />
-            투어 리포트 작성
+            {t('title')}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-4 md:p-6">
@@ -176,20 +214,20 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
               <div>
                 <Label htmlFor="end_mileage" className="flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
-                  종료 마일리지
+                  {t('fields.endMileage')}
                 </Label>
                 <Input
                   id="end_mileage"
                   type="number"
                   value={formData.end_mileage || ''}
                   onChange={(e) => handleInputChange('end_mileage', parseInt(e.target.value) || null)}
-                  placeholder="마일리지 입력"
+                  placeholder={t('placeholders.endMileage')}
                 />
               </div>
               <div>
                 <Label htmlFor="cash_balance" className="flex items-center gap-2">
                   <DollarSign className="w-4 h-4" />
-                  현금 잔액
+                  {t('fields.cashBalance')}
                 </Label>
                 <Input
                   id="cash_balance"
@@ -197,20 +235,20 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
                   step="0.01"
                   value={formData.cash_balance || ''}
                   onChange={(e) => handleInputChange('cash_balance', parseFloat(e.target.value) || null)}
-                  placeholder="잔액 입력"
+                  placeholder={t('placeholders.cashBalance')}
                 />
               </div>
               <div>
                 <Label htmlFor="customer_count" className="flex items-center gap-2">
                   <Users className="w-4 h-4" />
-                  고객 수
+                  {t('fields.customerCount')}
                 </Label>
                 <Input
                   id="customer_count"
                   type="number"
                   value={formData.customer_count || ''}
                   onChange={(e) => handleInputChange('customer_count', parseInt(e.target.value) || null)}
-                  placeholder="고객 수 입력"
+                  placeholder={t('placeholders.customerCount')}
                 />
               </div>
             </div>
@@ -219,7 +257,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Cloud className="w-4 h-4" />
-                날씨
+                {t('fields.weather')}
               </Label>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                 {WEATHER_OPTIONS.map((option) => (
@@ -232,7 +270,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
                     className="flex items-center gap-1 text-xs md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{option.label}</span>
+                    <span className="truncate">{t(`weather.${option.value}`)}</span>
                   </Button>
                 ))}
               </div>
@@ -242,22 +280,31 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <MapPin className="w-4 h-4" />
-                주요 정류장 방문
+                {t('fields.mainStopsVisited')}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {MAIN_STOPS_OPTIONS.map((stop) => (
-                  <div key={stop} className="flex items-center space-x-2 p-2 border rounded-md hover:bg-gray-50">
-                    <Checkbox
-                      id={`stop-${stop}`}
-                      checked={formData.main_stops_visited.includes(stop)}
-                      onCheckedChange={(checked) => 
-                        handleArrayChange('main_stops_visited', stop, checked as boolean)
-                      }
-                    />
-                    <Label htmlFor={`stop-${stop}`} className="text-sm flex-1 cursor-pointer">
-                      {stop}
-                    </Label>
-                  </div>
+                  <Button
+                    key={stop.ko}
+                    type="button"
+                    variant={formData.main_stops_visited.includes(stop.ko) ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleArrayChange('main_stops_visited', stop.ko, !formData.main_stops_visited.includes(stop.ko))}
+                    className="flex items-center gap-2 text-xs md:text-sm justify-start"
+                  >
+                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                      formData.main_stops_visited.includes(stop.ko) 
+                        ? 'bg-blue-600 border-blue-600' 
+                        : 'border-gray-300'
+                    }`}>
+                      {formData.main_stops_visited.includes(stop.ko) && (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="truncate">{locale === 'en' ? stop.en : stop.ko}</span>
+                  </Button>
                 ))}
               </div>
               {formData.main_stops_visited.length > 0 && (
@@ -275,22 +322,31 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Package className="w-4 h-4" />
-                완료된 활동
+                {t('fields.activitiesCompleted')}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {ACTIVITIES_OPTIONS.map((activity) => (
-                  <div key={activity} className="flex items-center space-x-2 p-2 border rounded-md hover:bg-gray-50">
-                    <Checkbox
-                      id={`activity-${activity}`}
-                      checked={formData.activities_completed.includes(activity)}
-                      onCheckedChange={(checked) => 
-                        handleArrayChange('activities_completed', activity, checked as boolean)
-                      }
-                    />
-                    <Label htmlFor={`activity-${activity}`} className="text-sm flex-1 cursor-pointer">
-                      {activity}
-                    </Label>
-                  </div>
+                  <Button
+                    key={activity.ko}
+                    type="button"
+                    variant={formData.activities_completed.includes(activity.ko) ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleArrayChange('activities_completed', activity.ko, !formData.activities_completed.includes(activity.ko))}
+                    className="flex items-center gap-2 text-xs md:text-sm justify-start"
+                  >
+                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                      formData.activities_completed.includes(activity.ko) 
+                        ? 'bg-blue-600 border-blue-600' 
+                        : 'border-gray-300'
+                    }`}>
+                      {formData.activities_completed.includes(activity.ko) && (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="truncate">{locale === 'en' ? activity.en : activity.ko}</span>
+                  </Button>
                 ))}
               </div>
               {formData.activities_completed.length > 0 && (
@@ -308,7 +364,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Star className="w-4 h-4" />
-                전체적인 분위기
+                {t('fields.overallMood')}
               </Label>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
                 {MOOD_OPTIONS.map((option) => (
@@ -321,7 +377,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
                     className="flex items-center gap-1 text-xs md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{option.label}</span>
+                    <span className="truncate">{t(`mood.${option.value}`)}</span>
                   </Button>
                 ))}
               </div>
@@ -331,13 +387,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label htmlFor="guest_comments" className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
-                고객 코멘트
+                {t('fields.guestComments')}
               </Label>
               <Textarea
                 id="guest_comments"
                 value={formData.guest_comments || ''}
                 onChange={(e) => handleInputChange('guest_comments', e.target.value)}
-                placeholder="고객들의 의견이나 피드백을 입력하세요..."
+                placeholder={t('placeholders.guestComments')}
                 rows={3}
               />
             </div>
@@ -346,22 +402,31 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <AlertTriangle className="w-4 h-4" />
-                사고/지연/건강 문제
+                {t('fields.incidentsDelaysHealth')}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {INCIDENTS_OPTIONS.map((incident) => (
-                  <div key={incident} className="flex items-center space-x-2 p-2 border rounded-md hover:bg-gray-50">
-                    <Checkbox
-                      id={`incident-${incident}`}
-                      checked={formData.incidents_delays_health.includes(incident)}
-                      onCheckedChange={(checked) => 
-                        handleArrayChange('incidents_delays_health', incident, checked as boolean)
-                      }
-                    />
-                    <Label htmlFor={`incident-${incident}`} className="text-sm flex-1 cursor-pointer">
-                      {incident}
-                    </Label>
-                  </div>
+                  <Button
+                    key={incident.ko}
+                    type="button"
+                    variant={formData.incidents_delays_health.includes(incident.ko) ? "destructive" : "outline"}
+                    size="sm"
+                    onClick={() => handleArrayChange('incidents_delays_health', incident.ko, !formData.incidents_delays_health.includes(incident.ko))}
+                    className="flex items-center gap-2 text-xs md:text-sm justify-start"
+                  >
+                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                      formData.incidents_delays_health.includes(incident.ko) 
+                        ? 'bg-red-600 border-red-600' 
+                        : 'border-gray-300'
+                    }`}>
+                      {formData.incidents_delays_health.includes(incident.ko) && (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="truncate">{locale === 'en' ? incident.en : incident.ko}</span>
+                  </Button>
                 ))}
               </div>
               {formData.incidents_delays_health.length > 0 && (
@@ -379,22 +444,31 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Package className="w-4 h-4" />
-                분실물/손상
+                {t('fields.lostItemsDamage')}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {LOST_DAMAGE_OPTIONS.map((item) => (
-                  <div key={item} className="flex items-center space-x-2 p-2 border rounded-md hover:bg-gray-50">
-                    <Checkbox
-                      id={`lost-${item}`}
-                      checked={formData.lost_items_damage.includes(item)}
-                      onCheckedChange={(checked) => 
-                        handleArrayChange('lost_items_damage', item, checked as boolean)
-                      }
-                    />
-                    <Label htmlFor={`lost-${item}`} className="text-sm flex-1 cursor-pointer">
-                      {item}
-                    </Label>
-                  </div>
+                  <Button
+                    key={item.ko}
+                    type="button"
+                    variant={formData.lost_items_damage.includes(item.ko) ? "destructive" : "outline"}
+                    size="sm"
+                    onClick={() => handleArrayChange('lost_items_damage', item.ko, !formData.lost_items_damage.includes(item.ko))}
+                    className="flex items-center gap-2 text-xs md:text-sm justify-start"
+                  >
+                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                      formData.lost_items_damage.includes(item.ko) 
+                        ? 'bg-red-600 border-red-600' 
+                        : 'border-gray-300'
+                    }`}>
+                      {formData.lost_items_damage.includes(item.ko) && (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="truncate">{locale === 'en' ? item.en : item.ko}</span>
+                  </Button>
                 ))}
               </div>
               {formData.lost_items_damage.length > 0 && (
@@ -412,13 +486,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label htmlFor="suggestions_followup" className="flex items-center gap-2">
                 <Lightbulb className="w-4 h-4" />
-                제안사항 또는 후속 조치
+                {t('fields.suggestionsFollowup')}
               </Label>
               <Textarea
                 id="suggestions_followup"
                 value={formData.suggestions_followup || ''}
                 onChange={(e) => handleInputChange('suggestions_followup', e.target.value)}
-                placeholder="개선사항이나 후속 조치가 필요한 내용을 입력하세요..."
+                placeholder={t('placeholders.suggestionsFollowup')}
                 rows={3}
               />
             </div>
@@ -427,7 +501,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <MessageCircle className="w-4 h-4" />
-                커뮤니케이션
+                {t('fields.communication')}
               </Label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {RATING_OPTIONS.map((option) => (
@@ -440,7 +514,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
                     className="flex items-center gap-1 text-xs md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{option.label}</span>
+                    <span className="truncate">{t(`rating.${option.value}`)}</span>
                   </Button>
                 ))}
               </div>
@@ -450,7 +524,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Handshake className="w-4 h-4" />
-                팀워크
+                {t('fields.teamwork')}
               </Label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {RATING_OPTIONS.map((option) => (
@@ -463,7 +537,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
                     className="flex items-center gap-1 text-xs md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{option.label}</span>
+                    <span className="truncate">{t(`rating.${option.value}`)}</span>
                   </Button>
                 ))}
               </div>
@@ -473,13 +547,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label htmlFor="comments" className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
-                기타 코멘트
+                {t('fields.comments')}
               </Label>
               <Textarea
                 id="comments"
                 value={formData.comments || ''}
                 onChange={(e) => handleInputChange('comments', e.target.value)}
-                placeholder="기타 의견이나 메모를 입력하세요..."
+                placeholder={t('placeholders.comments')}
                 rows={3}
               />
             </div>
@@ -488,13 +562,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label htmlFor="sign" className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
-                서명
+                {t('fields.sign')}
               </Label>
               <Input
                 id="sign"
                 value={formData.sign || ''}
                 onChange={(e) => handleInputChange('sign', e.target.value)}
-                placeholder="서명을 입력하세요"
+                placeholder={t('placeholders.sign')}
               />
             </div>
 
@@ -502,13 +576,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
             <div>
               <Label htmlFor="office_note" className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
-                사무실 메모
+                {t('fields.officeNote')}
               </Label>
               <Textarea
                 id="office_note"
                 value={formData.office_note || ''}
                 onChange={(e) => handleInputChange('office_note', e.target.value)}
-                placeholder="사무실에서 확인할 메모를 입력하세요..."
+                placeholder={t('placeholders.officeNote')}
                 rows={2}
               />
             </div>
@@ -520,7 +594,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
                 disabled={loading}
                 className="flex-1 h-12 text-base font-medium"
               >
-                {loading ? '제출 중...' : '리포트 제출'}
+                {loading ? t('submitting') : t('submitReport')}
               </Button>
               {onCancel && (
                 <Button
@@ -529,7 +603,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel }: TourRepo
                   onClick={onCancel}
                   className="flex-1 sm:flex-none h-12 text-base"
                 >
-                  취소
+                  {t('cancel')}
                 </Button>
               )}
             </div>

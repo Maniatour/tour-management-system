@@ -655,7 +655,7 @@ export default function ReservationTemplatesPage() {
       </div>
       
       {loading ? (
-        <div className="p-6">로딩 중...</div>
+        <div className="p-6">Loading...</div>
       ) : (
         <div className="grid grid-cols-1 gap-6">
           {filteredTemplates.map(t => (

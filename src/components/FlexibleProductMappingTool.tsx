@@ -433,7 +433,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             <span>
               {loading 
-                ? `로딩 중... (${loadingProgress.current}/${loadingProgress.total})` 
+                ? `Loading... (${loadingProgress.current}/${loadingProgress.total})` 
                 : '새로고침'
               }
             </span>
@@ -881,7 +881,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                           allReservations = [...allReservations, ...data]
                           from += pageSize
                           hasMore = data.length >= pageSize
-                          console.log(`로딩 중: ${allReservations.length}개`)
+                          console.log(`Loading: ${allReservations.length} items`)
                         } else {
                           hasMore = false
                         }

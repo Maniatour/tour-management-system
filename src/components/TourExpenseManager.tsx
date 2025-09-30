@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, Upload, X, Check, Eye, Camera, DollarSign, MapPin, Calendar, CreditCard, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useTranslations } from 'next-intl'
 
 interface TourExpense {
   id: string
@@ -51,6 +52,7 @@ export default function TourExpenseManager({
   submittedBy, 
   onExpenseUpdated 
 }: TourExpenseManagerProps) {
+  const t = useTranslations('tourExpense')
   const [expenses, setExpenses] = useState<TourExpense[]>([])
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [vendors, setVendors] = useState<ExpenseVendor[]>([])
@@ -134,7 +136,7 @@ export default function TourExpenseManager({
 
       // MIME 타입 체크
       if (!file.type.startsWith('image/')) {
-        throw new Error('이미지 파일만 업로드 가능합니다')
+        throw new Error(t('imageOnlyError'))
       }
 
       // 고유한 파일명 생성
@@ -166,7 +168,7 @@ export default function TourExpenseManager({
     e.preventDefault()
     
     if (!formData.paid_for || !formData.amount) {
-      alert('필수 항목을 모두 입력해주세요.')
+      alert(t('fillRequiredFields'))
       return
     }
 
@@ -233,10 +235,10 @@ export default function TourExpenseManager({
       setShowCustomPaidFor(false)
       setShowCustomPaidTo(false)
       onExpenseUpdated?.()
-      alert('지출이 등록되었습니다.')
+      alert(t('expenseRegistered'))
     } catch (error) {
       console.error('Error adding expense:', error)
-      alert('지출 등록 중 오류가 발생했습니다.')
+      alert(t('expenseRegistrationError'))
     } finally {
       setUploading(false)
     }
@@ -257,7 +259,7 @@ export default function TourExpenseManager({
         image_url: imageUrl
       }))
     } catch (error) {
-      alert(`이미지 업로드 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+      alert(t('imageUploadFailed', { error: error instanceof Error ? error.message : t('unknownError') }))
     } finally {
       setUploading(false)
     }
@@ -313,7 +315,7 @@ export default function TourExpenseManager({
 
   // 지출 삭제
   const handleDeleteExpense = async (expenseId: string) => {
-    if (!confirm('이 지출을 삭제하시겠습니까?')) return
+    if (!confirm(t('deleteConfirm'))) return
 
     try {
       const { error } = await supabase
@@ -327,7 +329,7 @@ export default function TourExpenseManager({
       onExpenseUpdated?.()
     } catch (error) {
       console.error('Error deleting expense:', error)
-      alert('지출 삭제 중 오류가 발생했습니다.')
+      alert(t('deleteError'))
     }
   }
 
@@ -351,9 +353,9 @@ export default function TourExpenseManager({
   // 상태별 텍스트
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'approved': return '승인됨'
-      case 'rejected': return '거부됨'
-      default: return '대기중'
+      case 'approved': return t('status.approved')
+      case 'rejected': return t('status.rejected')
+      default: return t('status.pending')
     }
   }
 
@@ -366,13 +368,13 @@ export default function TourExpenseManager({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">지출 관리</h3>
+        <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         <button
           onClick={() => setShowAddForm(true)}
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           <Plus size={16} />
-          <span>지출 추가</span>
+          <span>{t('addExpense')}</span>
         </button>
       </div>
 
@@ -380,7 +382,7 @@ export default function TourExpenseManager({
       {loading ? (
         <div className="text-center py-4">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-500 mt-2">로딩 중...</p>
+          <p className="text-gray-500 mt-2">Loading...</p>
         </div>
       ) : expenses.length > 0 ? (
         <div className="space-y-3">
@@ -411,7 +413,7 @@ export default function TourExpenseManager({
                     )}
                     {expense.note && (
                       <div className="flex items-center space-x-2">
-                        <span className="text-gray-400">메모:</span>
+                        <span className="text-gray-400">{t('memo')}:</span>
                         <span>{expense.note}</span>
                       </div>
                     )}
@@ -427,7 +429,7 @@ export default function TourExpenseManager({
                     <button
                       onClick={() => window.open(expense.image_url!, '_blank')}
                       className="p-2 text-gray-600 hover:text-blue-600"
-                      title="영수증 보기"
+                      title={t('viewReceipt')}
                     >
                       <Eye size={16} />
                     </button>
@@ -438,14 +440,14 @@ export default function TourExpenseManager({
                       <button
                         onClick={() => handleStatusUpdate(expense.id, 'approved')}
                         className="p-2 text-green-600 hover:text-green-800"
-                        title="승인"
+                        title={t('approve')}
                       >
                         <Check size={16} />
                       </button>
                       <button
                         onClick={() => handleStatusUpdate(expense.id, 'rejected')}
                         className="p-2 text-red-600 hover:text-red-800"
-                        title="거부"
+                        title={t('reject')}
                       >
                         <X size={16} />
                       </button>
@@ -455,7 +457,7 @@ export default function TourExpenseManager({
                   <button
                     onClick={() => handleDeleteExpense(expense.id)}
                     className="p-2 text-gray-600 hover:text-red-600"
-                    title="삭제"
+                    title={t('delete')}
                   >
                     <X size={16} />
                   </button>
@@ -467,22 +469,22 @@ export default function TourExpenseManager({
       ) : (
         <div className="text-center py-8 text-gray-500">
           <DollarSign size={48} className="mx-auto mb-4 text-gray-300" />
-          <p>등록된 지출이 없습니다.</p>
+          <p>{t('noExpenses')}</p>
         </div>
       )}
 
       {/* 지출 추가 폼 모달 */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">지출 추가</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mt-8 mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('addExpense')}</h3>
             
             <form onSubmit={handleAddExpense} className="space-y-4">
               {/* 결제처와 결제내용을 같은 줄에 배치 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    결제처
+                    {t('paidTo')}
                   </label>
                   <div className="space-y-2">
                     <select
@@ -493,7 +495,7 @@ export default function TourExpenseManager({
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">선택하세요</option>
+                      <option value="">{t('selectOptions.pleaseSelect')}</option>
                       {vendors.map((vendor) => (
                         <option key={vendor.id} value={vendor.name}>
                           {vendor.name}
@@ -505,14 +507,14 @@ export default function TourExpenseManager({
                       onClick={() => setShowCustomPaidTo(!showCustomPaidTo)}
                       className="text-sm text-blue-600 hover:text-blue-800"
                     >
-                      {showCustomPaidTo ? '기존 목록에서 선택' : '직접 입력'}
+                      {showCustomPaidTo ? t('selectFromExisting') : t('enterDirectly')}
                     </button>
                     {showCustomPaidTo && (
                       <input
                         type="text"
                         value={formData.custom_paid_to}
                         onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_to: e.target.value }))}
-                        placeholder="새로운 결제처 입력"
+                        placeholder={t('newPaidToPlaceholder')}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     )}
@@ -521,7 +523,7 @@ export default function TourExpenseManager({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    결제내용 <span className="text-red-500">*</span>
+                    {t('paidFor')} <span className="text-red-500">*</span>
                   </label>
                   <div className="space-y-2">
                     <select
@@ -533,7 +535,7 @@ export default function TourExpenseManager({
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       required
                     >
-                      <option value="">선택하세요</option>
+                      <option value="">{t('selectOptions.pleaseSelect')}</option>
                       {categories.map((category) => (
                         <option key={category.id} value={category.name}>
                           {category.name}
@@ -545,14 +547,14 @@ export default function TourExpenseManager({
                       onClick={() => setShowCustomPaidFor(!showCustomPaidFor)}
                       className="text-sm text-blue-600 hover:text-blue-800"
                     >
-                      {showCustomPaidFor ? '기존 목록에서 선택' : '직접 입력'}
+                      {showCustomPaidFor ? t('selectFromExisting') : t('enterDirectly')}
                     </button>
                     {showCustomPaidFor && (
                       <input
                         type="text"
                         value={formData.custom_paid_for}
                         onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_for: e.target.value }))}
-                        placeholder="새로운 결제내용 입력"
+                        placeholder={t('newPaidForPlaceholder')}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     )}
@@ -564,7 +566,7 @@ export default function TourExpenseManager({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    금액 (USD) <span className="text-red-500">*</span>
+                    {t('amount')} (USD) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -586,24 +588,24 @@ export default function TourExpenseManager({
                     onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">선택하세요</option>
-                    <option value="cash">현금</option>
-                    <option value="credit_card">신용카드</option>
-                    <option value="debit_card">체크카드</option>
-                    <option value="mobile_payment">모바일 결제</option>
-                    <option value="other">기타</option>
+                    <option value="">{t('selectOptions.pleaseSelect')}</option>
+                    <option value="cash">{t('paymentMethods.cash')}</option>
+                    <option value="credit_card">{t('paymentMethods.creditCard')}</option>
+                    <option value="debit_card">{t('paymentMethods.debitCard')}</option>
+                    <option value="mobile_payment">{t('paymentMethods.mobilePayment')}</option>
+                    <option value="other">{t('paymentMethods.other')}</option>
                   </select>
                 </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  메모
+                  {t('memo')}
                 </label>
                 <textarea
                   value={formData.note}
                   onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
-                  placeholder="추가 정보나 메모"
+                  placeholder={t('memoPlaceholder')}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -612,7 +614,7 @@ export default function TourExpenseManager({
               {/* 영수증 이미지 업로드 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  영수증 사진
+                  {t('receiptPhoto')}
                 </label>
                 <div
                   className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
@@ -628,18 +630,18 @@ export default function TourExpenseManager({
                     <div className="space-y-2">
                       <img
                         src={formData.image_url}
-                        alt="영수증"
+                        alt={t('receipt')}
                         className="mx-auto max-h-32 rounded"
                       />
-                      <p className="text-sm text-green-600">영수증이 업로드되었습니다</p>
+                      <p className="text-sm text-green-600">{t('receiptUploaded')}</p>
                     </div>
                   ) : (
                     <div>
                       <Upload size={32} className="mx-auto text-gray-400 mb-2" />
                       <p className="text-sm text-gray-600">
-                        영수증을 드래그하여 놓거나 클릭하여 선택하세요
+                        {t('dragOrClickReceipt')}
                       </p>
-                      <p className="text-xs text-gray-500">📷 모바일에서 카메라 촬영 가능 | JPG, PNG, WebP 형식, 최대 5MB</p>
+                      <p className="text-xs text-gray-500">{t('mobileCameraInfo')}</p>
                     </div>
                   )}
                   <input
@@ -654,7 +656,7 @@ export default function TourExpenseManager({
                     onClick={() => fileInputRef.current?.click()}
                     className="mt-2 px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
                   >
-                    📷 촬영 또는 파일 선택
+                    {t('cameraOrFile')}
                   </button>
                 </div>
               </div>
@@ -665,14 +667,14 @@ export default function TourExpenseManager({
                   onClick={() => setShowAddForm(false)}
                   className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                 >
-                  취소
+                  {t('cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={uploading}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {uploading ? '등록 중...' : '등록'}
+                  {uploading ? t('buttons.registering') : t('buttons.register')}
                 </button>
               </div>
             </form>

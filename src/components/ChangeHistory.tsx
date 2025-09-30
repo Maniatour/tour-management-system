@@ -182,7 +182,7 @@ export default function ChangeHistory({
       <div className="bg-gray-50 rounded-lg p-4">
         <div className="flex items-center justify-center py-4">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-          <span className="ml-2 text-gray-600">변경 내역 로딩 중...</span>
+          <span className="ml-2 text-gray-600">Loading change history...</span>
         </div>
       </div>
     )

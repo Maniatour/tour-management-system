@@ -284,7 +284,7 @@ export default function CommonDetailsModal({
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="text-gray-500">로딩 중...</div>
+              <div className="text-gray-500">Loading...</div>
             </div>
           ) : (
             <div className="space-y-6">

@@ -25,7 +25,8 @@ import {
   ChevronDown,
   MessageCircle,
   FileSpreadsheet,
-  Globe
+  Globe,
+  User
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -34,6 +35,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import { useTranslations } from 'next-intl'
+import SimulationModal from './SimulationModal'
 
 interface AdminSidebarAndHeaderProps {
   locale: string
@@ -44,7 +46,7 @@ interface AdminSidebarAndHeaderProps {
 export default function AdminSidebarAndHeader({ locale, children }: AdminSidebarAndHeaderProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { signOut, authUser, userRole, isSimulating } = useAuth()
+  const { signOut, authUser, userRole, isSimulating, stopSimulation } = useAuth()
   const currentLocale = locale
   const t = useTranslations('common')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -52,6 +54,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
   const [teamBoardCount, setTeamBoardCount] = useState(0)
+  const [showSimulationModal, setShowSimulationModal] = useState(false)
   // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
   const { teamChatUnreadCount } = useAuth()
   
@@ -194,6 +197,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     console.log('New path:', newPath)
     console.log('Current locale:', currentLocale)
     console.log('New locale:', newLocale)
+    
+    // 언어 관련 상태 정리
+    localStorage.removeItem('locale')
+    localStorage.removeItem('preferred-locale')
+    
+    // 새로운 언어 설정 (쿠키 설정)
+    document.cookie = `NEXT_LOCALE=${newLocale}; path=/; max-age=31536000; SameSite=Lax`
     
     // Next.js router를 사용하여 클라이언트 사이드 네비게이션
     router.push(newPath)
@@ -446,6 +456,31 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                           </Link>
                         )}
                         
+                        {/* 시뮬레이션 메뉴 */}
+                        {isSimulating ? (
+                          <button
+                            onClick={() => {
+                              stopSimulation()
+                              handleUserMenuClick()
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-orange-600 hover:bg-orange-50 flex items-center"
+                          >
+                            <XCircle className="w-4 h-4 mr-2" />
+                            시뮬레이션 중지
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setShowSimulationModal(true)
+                              handleUserMenuClick()
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 flex items-center"
+                          >
+                            <User className="w-4 h-4 mr-2" />
+                            시뮬레이션 시작
+                          </button>
+                        )}
+                        
                         <div className="border-t border-gray-100 my-1"></div>
                         
                         <button
@@ -656,6 +691,12 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           </div>
         </div>
       )}
+
+      {/* 시뮬레이션 모달 */}
+      <SimulationModal
+        isOpen={showSimulationModal}
+        onClose={() => setShowSimulationModal(false)}
+      />
     </>
   )
 }

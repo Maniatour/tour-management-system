@@ -1989,7 +1989,7 @@ export default function TourDetailPage() {
                     {vehiclesLoading ? (
                       <div className="text-xs text-gray-500 flex items-center space-x-2">
                         <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-500"></div>
-                        <span>차량 데이터 로딩 중...</span>
+                        <span>Loading vehicle data...</span>
                       </div>
                     ) : vehiclesError ? (
                       <div className="text-xs text-red-500 flex items-center space-x-2">

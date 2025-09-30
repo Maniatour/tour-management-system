@@ -1174,7 +1174,7 @@ export default function ScheduleView() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg">로딩 중...</div>
+        <div className="text-lg">Loading...</div>
       </div>
     )
   }
@@ -2307,7 +2307,7 @@ export default function ScheduleView() {
                   })
                 ) : (
                   <div className="text-center py-8 text-gray-500">
-                    {loading ? '로딩 중...' : '표시할 상품이 없습니다.'}
+                    {loading ? 'Loading...' : 'No products to display.'}
                   </div>
                 )}
               </div>

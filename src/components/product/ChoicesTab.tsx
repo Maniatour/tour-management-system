@@ -170,7 +170,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="text-gray-500">로딩 중...</div>
+        <div className="text-gray-500">Loading...</div>
       </div>
     )
   }

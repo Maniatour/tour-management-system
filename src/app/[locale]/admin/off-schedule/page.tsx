@@ -226,7 +226,7 @@ export default function AdminOffSchedulePage() {
   if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg">로딩 중...</div>
+        <div className="text-lg">Loading...</div>
       </div>
     )
   }

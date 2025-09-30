@@ -9,6 +9,7 @@ import TourReportList from './TourReportList'
 import { FileText, Plus, Eye, Edit, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
+import { useTranslations } from 'next-intl'
 
 interface TourReportSectionProps {
   tourId: string
@@ -29,6 +30,7 @@ export default function TourReportSection({
   canDeleteReport = true,
   showHeader = true
 }: TourReportSectionProps) {
+  const t = useTranslations('tourReport')
   const [showForm, setShowForm] = useState(false)
   const [showList, setShowList] = useState(false)
   const [hasReports, setHasReports] = useState(false)
@@ -69,7 +71,7 @@ export default function TourReportSection({
     setShowForm(false)
     setShowList(true)
     setHasReports(true)
-    toast.success('리포트가 성공적으로 제출되었습니다.')
+    toast.success(t('reportSubmitted'))
   }
 
   const handleFormCancel = () => {
@@ -78,11 +80,11 @@ export default function TourReportSection({
 
   const handleEditReport = (report: any) => {
     // TODO: Implement edit functionality
-    toast.info('편집 기능은 곧 추가될 예정입니다.')
+    toast.info(t('editFeatureComingSoon'))
   }
 
   const handleDeleteReport = (reportId: string) => {
-    toast.success('리포트가 삭제되었습니다.')
+    toast.success(t('reportDeleted'))
   }
 
   if (showForm) {
@@ -91,7 +93,7 @@ export default function TourReportSection({
         {showHeader && (
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">투어 리포트 작성</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{t('writeReport')}</h3>
               {tourName && tourDate && (
                 <p className="text-sm text-gray-600">
                   {tourName} - {new Date(tourDate).toLocaleDateString('ko-KR')}
@@ -99,7 +101,7 @@ export default function TourReportSection({
               )}
             </div>
             <Button onClick={handleFormCancel} variant="outline" size="sm">
-              목록으로 돌아가기
+              {t('backToList')}
             </Button>
           </div>
         )}
@@ -118,7 +120,7 @@ export default function TourReportSection({
         {showHeader && (
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">투어 리포트 목록</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{t('reportList')}</h3>
               {tourName && tourDate && (
                 <p className="text-sm text-gray-600">
                   {tourName} - {new Date(tourDate).toLocaleDateString('ko-KR')}
@@ -129,11 +131,11 @@ export default function TourReportSection({
               {canCreateReport && (
                 <Button onClick={handleCreateReport} size="sm">
                   <Plus className="w-4 h-4 mr-2" />
-                  새 리포트
+                  {t('newReport')}
                 </Button>
               )}
               <Button onClick={() => setShowList(false)} variant="outline" size="sm">
-                닫기
+                {t('close')}
               </Button>
             </div>
           </div>
@@ -152,7 +154,7 @@ export default function TourReportSection({
     return (
       <div className="text-center py-8">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-500">로딩 중...</p>
+        <p className="text-gray-500">Loading...</p>
       </div>
     )
   }
@@ -161,9 +163,9 @@ export default function TourReportSection({
     return (
       <div className="text-center py-6">
         <FileText className="w-10 h-10 text-green-500 mx-auto mb-3" />
-        <p className="text-gray-700 text-base mb-1">작성된 리포트가 있습니다</p>
+        <p className="text-gray-700 text-base mb-1">{t('hasReports')}</p>
         <p className="text-gray-500 text-sm">
-          위의 "목록" 버튼을 클릭하여 리포트를 확인하세요
+          {t('clickListButton')}
         </p>
       </div>
     )
@@ -172,9 +174,9 @@ export default function TourReportSection({
   return (
     <div className="text-center py-8">
       <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-      <p className="text-gray-500 text-lg mb-2">아직 작성된 리포트가 없습니다</p>
+      <p className="text-gray-500 text-lg mb-2">{t('noReports')}</p>
       <p className="text-gray-400 text-sm">
-        투어 종료 후 가이드와 드라이버가 리포트를 작성할 수 있습니다
+        {t('reportAfterTour')}
       </p>
     </div>
   )

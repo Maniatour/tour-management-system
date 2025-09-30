@@ -255,8 +255,8 @@ export interface Database {
           tour_id: string | null
           status: string
           event_note: string | null
-          selected_options: any | null
-          selected_option_prices: any | null
+          selected_options: Record<string, unknown> | null
+          selected_option_prices: Record<string, unknown> | null
           is_private_tour: boolean
           created_at: string | null
         }
@@ -278,8 +278,8 @@ export interface Database {
           tour_id?: string | null
           status?: string
           event_note?: string | null
-          selected_options?: any | null
-          selected_option_prices?: any | null
+          selected_options?: Record<string, unknown> | null
+          selected_option_prices?: Record<string, unknown> | null
           is_private_tour?: boolean
           created_at?: string | null
         }
@@ -301,8 +301,8 @@ export interface Database {
           tour_id?: string | null
           status?: string
           event_note?: string | null
-          selected_options?: any | null
-          selected_option_prices?: any | null
+          selected_options?: Record<string, unknown> | null
+          selected_option_prices?: Record<string, unknown> | null
           is_private_tour?: boolean
           created_at?: string | null
         }
@@ -315,7 +315,7 @@ export interface Database {
           child_product_price: number
           infant_product_price: number
           product_price_total: number
-          required_options: any
+          required_options: Record<string, unknown>
           required_option_total: number
           subtotal: number
           coupon_code: string | null
@@ -326,7 +326,7 @@ export interface Database {
           tax: number
           prepayment_cost: number
           prepayment_tip: number
-          selected_options: any
+          selected_options: Record<string, unknown>
           option_total: number
           total_price: number
           deposit_amount: number
@@ -341,7 +341,7 @@ export interface Database {
           child_product_price?: number
           infant_product_price?: number
           product_price_total?: number
-          required_options?: any
+          required_options?: Record<string, unknown>
           required_option_total?: number
           subtotal?: number
           coupon_code?: string | null
@@ -352,7 +352,7 @@ export interface Database {
           tax?: number
           prepayment_cost?: number
           prepayment_tip?: number
-          selected_options?: any
+          selected_options?: Record<string, unknown>
           option_total?: number
           total_price?: number
           deposit_amount?: number
@@ -367,7 +367,7 @@ export interface Database {
           child_product_price?: number
           infant_product_price?: number
           product_price_total?: number
-          required_options?: any
+          required_options?: Record<string, unknown>
           required_option_total?: number
           subtotal?: number
           coupon_code?: string | null
@@ -378,7 +378,7 @@ export interface Database {
           tax?: number
           prepayment_cost?: number
           prepayment_tip?: number
-          selected_options?: any
+          selected_options?: Record<string, unknown>
           option_total?: number
           total_price?: number
           deposit_amount?: number
@@ -663,26 +663,84 @@ export interface Database {
           updated_at?: string | null
         }
       }
+      off_schedules: {
+        Row: {
+          id: string
+          team_email: string
+          off_date: string
+          reason: string
+          status: string | null
+          approved_by: string | null
+          approved_at: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          team_email: string
+          off_date: string
+          reason: string
+          status?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          team_email?: string
+          off_date?: string
+          reason?: string
+          status?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      team_announcement_acknowledgments: {
+        Row: {
+          id: string
+          announcement_id: string
+          ack_by: string
+          ack_at: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          announcement_id: string
+          ack_by: string
+          ack_at: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          announcement_id?: string
+          ack_by?: string
+          ack_at?: string
+          created_at?: string | null
+        }
+      }
     }
     Views: {
       [key: string]: {
         Row: {
-          [key: string]: any
+          [key: string]: unknown
         }
         Insert: {
-          [key: string]: any
+          [key: string]: unknown
         }
         Update: {
-          [key: string]: any
+          [key: string]: unknown
         }
       }
     }
     Functions: {
       [key: string]: {
         Args: {
-          [key: string]: any
+          [key: string]: unknown
         }
-        Returns: any
+        Returns: unknown
       }
     }
     Enums: {
@@ -788,7 +846,7 @@ export interface Database {
       }
     }
     CompositeTypes: {
-      [key: string]: Record<string, any>
+      [key: string]: Record<string, unknown>
     }
   }
 }

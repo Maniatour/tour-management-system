@@ -1562,7 +1562,7 @@ export default function DynamicPricingManager({
         {isLoadingChannels ? (
            <div className="flex items-center justify-center py-8">
              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-             <span className="ml-2 text-gray-600">채널 로딩 중...</span>
+             <span className="ml-2 text-gray-600">Loading channels...</span>
            </div>
          ) : (
            <div className="space-y-1 hidden lg:block">

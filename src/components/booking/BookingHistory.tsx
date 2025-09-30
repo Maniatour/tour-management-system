@@ -134,7 +134,7 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
           <div className="flex justify-center items-center h-64">
-            <div className="text-lg">로딩 중...</div>
+            <div className="text-lg">Loading...</div>
           </div>
         </div>
       </div>

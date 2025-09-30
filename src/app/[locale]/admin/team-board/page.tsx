@@ -42,6 +42,7 @@ type OpTodo = {
   description: string | null
   scope: 'common' | 'individual'
   category: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  department: 'office' | 'guide' | 'common'
   assigned_to: string | null
   due_date: string | null
   completed: boolean
@@ -132,15 +133,16 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
 
   const [opTodos, setOpTodos] = useState<OpTodo[]>([])
   const [showNewTodoModal, setShowNewTodoModal] = useState(false)
-  const [newTodo, setNewTodo] = useState<{ title: string; description: string; scope: 'common'|'individual'; category: 'daily'|'weekly'|'monthly'|'yearly'; assigned_to: string }>(
-    { title: '', description: '', scope: 'common', category: 'daily', assigned_to: '' }
+  const [newTodo, setNewTodo] = useState<{ title: string; description: string; scope: 'common'|'individual'; category: 'daily'|'weekly'|'monthly'|'yearly'; department: 'office'|'guide'|'common'; assigned_to: string }>(
+    { title: '', description: '', scope: 'common', category: 'daily', department: 'common', assigned_to: '' }
   )
   
   // 기존 항목 수정을 위한 상태
   const [editingTodo, setEditingTodo] = useState<OpTodo | null>(null)
-  const [editTodoForm, setEditTodoForm] = useState<{ title: string; category: 'daily'|'weekly'|'monthly'|'yearly' }>({
+  const [editTodoForm, setEditTodoForm] = useState<{ title: string; category: 'daily'|'weekly'|'monthly'|'yearly'; department: 'office'|'guide'|'common' }>({
     title: '',
-    category: 'daily'
+    category: 'daily',
+    department: 'common'
   })
   
   // 클릭 기록을 위한 상태 (현재 사용되지 않음)
@@ -150,6 +152,9 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
   const [showHistoryModal, setShowHistoryModal] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<'daily' | 'weekly' | 'monthly' | 'yearly' | null>(null)
   const [categoryHistory, setCategoryHistory] = useState<{ user: string; timestamp: string; action: 'completed' | 'uncompleted'; todoTitle: string }[]>([])
+  
+  // Todo List department 필터 상태
+  const [selectedDepartment, setSelectedDepartment] = useState<'all' | 'office' | 'guide' | 'common'>('all')
 
   // 클릭 기록 불러오기
   const loadClickLogs = async () => {
@@ -171,7 +176,7 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
           user: log.user_email,
           timestamp: log.timestamp,
           action: log.action
-        })
+        } as any)
       })
       
       // setClickLogs(groupedLogs)
@@ -473,7 +478,7 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
           priority: editAnnouncement.priority,
           tags: editAnnouncement.tags ? editAnnouncement.tags.split(',').map(t => t.trim()).filter(Boolean) : []
         } as any)
-        .eq('id', editingAnnouncement.id)
+        .eq('id', editingAnnouncement.id!)
         .select()
         .single()
       if (error) throw error
@@ -565,6 +570,7 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
         description: null,
         scope: 'common' as const,
         category: newTodo.category,
+        department: newTodo.department,
         assigned_to: null,
         created_by: authUser.email,
       }
@@ -575,7 +581,7 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
         .single()
       if (error) throw error
       setOpTodos(prev => [data as OpTodo, ...prev])
-      setNewTodo({ title: '', description: '', scope: 'common', category: 'daily', assigned_to: '' })
+      setNewTodo({ title: '', description: '', scope: 'common', category: 'daily', department: 'common', assigned_to: '' })
     } catch (e) {
       console.error(e)
       alert('ToDo 생성 중 오류가 발생했습니다.')
@@ -602,13 +608,14 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
     setEditingTodo(todo)
     setEditTodoForm({
       title: todo.title,
-      category: todo.category
+      category: todo.category,
+      department: todo.department
     })
   }
 
   const cancelEditTodo = () => {
     setEditingTodo(null)
-    setEditTodoForm({ title: '', category: 'daily' })
+    setEditTodoForm({ title: '', category: 'daily', department: 'common' })
   }
 
   const updateTodo = async () => {
@@ -619,7 +626,8 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
         .from('op_todos')
         .update({
           title: editTodoForm.title.trim(),
-          category: editTodoForm.category
+          category: editTodoForm.category,
+          department: editTodoForm.department
         } as any)
         .eq('id', editingTodo.id!)
         .select()
@@ -738,14 +746,16 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
         <h1 className="text-2xl font-bold text-gray-900">업무 관리</h1>
 
         {loading ? (
-          <div className="flex items-center text-gray-500"><Loader2 className="w-4 h-4 mr-2 animate-spin"/>로딩 중...</div>
+          <div className="flex items-center text-gray-500"><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Loading...</div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            {/* 1) 체크리스트 */}
+            {/* 1) Todo List */}
             <ChecklistPanel
               opTodos={opTodos}
+              selectedDepartment={selectedDepartment}
+              onDepartmentChange={setSelectedDepartment}
               onAddTodo={() => {
-                setNewTodo({ ...newTodo, category: 'daily', scope: 'individual', assigned_to: authUser?.email || '' })
+                setNewTodo({ ...newTodo, category: 'daily', scope: 'individual', department: 'common', assigned_to: authUser?.email || '' })
                 setShowNewTodoModal(true)
               }}
               toggleTodoCompletion={async (id: string, is_completed: boolean) => {
@@ -1627,6 +1637,22 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
                                   />
                                   <div className="space-y-1">
                                     <div className="flex flex-wrap gap-1">
+                                      {['office', 'guide', 'common'].map(dept => (
+                                        <button
+                                          key={dept}
+                                          onClick={() => setEditTodoForm({ ...editTodoForm, department: dept as 'office' | 'guide' | 'common' })}
+                                          className={`px-2 py-1 text-[10px] rounded ${
+                                            editTodoForm.department === dept
+                                              ? 'bg-green-600 text-white'
+                                              : 'bg-gray-200 text-gray-700'
+                                          }`}
+                                        >
+                                          {dept === 'office' ? 'Office' : 
+                                           dept === 'guide' ? 'Guide' : '공통'}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <div className="flex flex-wrap gap-1">
                                       {['daily', 'weekly', 'monthly', 'yearly'].map(period => (
                                         <button
                                           key={period}
@@ -1704,6 +1730,26 @@ export default function TeamBoardPage({ params }: TeamBoardPageProps) {
                     className="w-full px-3 py-2 border rounded-md"
                   />
                   
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">부서</label>
+                    <div className="flex space-x-2">
+                      {['office', 'guide', 'common'].map(dept => (
+                        <button
+                          key={dept}
+                          onClick={() => setNewTodo({ ...newTodo, department: dept as 'office' | 'guide' | 'common' })}
+                          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                            newTodo.department === dept
+                              ? 'bg-green-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {dept === 'office' ? 'Office' : 
+                           dept === 'guide' ? 'Guide' : '공통'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <label className="text-sm font-medium">기간</label>
                     <div className="flex space-x-2">
@@ -2152,8 +2198,10 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 
 
 
-function ChecklistPanel({ opTodos, onAddTodo, toggleTodoCompletion, openHistoryModal }: { 
+function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAddTodo, toggleTodoCompletion, openHistoryModal }: { 
   opTodos: OpTodo[]; 
+  selectedDepartment: 'all' | 'office' | 'guide' | 'common';
+  onDepartmentChange: (department: 'all' | 'office' | 'guide' | 'common') => void;
   onAddTodo: () => void; 
   toggleTodoCompletion: (id: string, is_completed: boolean) => Promise<void>;
   openHistoryModal: (category: 'daily' | 'weekly' | 'monthly' | 'yearly') => void;
@@ -2168,7 +2216,7 @@ function ChecklistPanel({ opTodos, onAddTodo, toggleTodoCompletion, openHistoryM
     // fallback 함수
     t = (key: string) => {
       const fallbacks: Record<string, string> = {
-        'checklist': '체크리스트',
+        'checklist': 'Todo List',
         'newTodo': '새 ToDo',
         'noTodos': '등록된 ToDo가 없습니다.'
       }
@@ -2176,11 +2224,17 @@ function ChecklistPanel({ opTodos, onAddTodo, toggleTodoCompletion, openHistoryM
     }
   }
 
+  // department 필터링된 todos
+  const filteredTodos = useMemo(() => {
+    if (selectedDepartment === 'all') return opTodos
+    return opTodos.filter(todo => todo.department === selectedDepartment)
+  }, [opTodos, selectedDepartment])
+
   const completionPercentage = useMemo(() => {
-    if (opTodos.length === 0) return 0
-    const completedCount = opTodos.filter(todo => todo.completed).length
-    return Math.round((completedCount / opTodos.length) * 100)
-  }, [opTodos])
+    if (filteredTodos.length === 0) return 0
+    const completedCount = filteredTodos.filter(todo => todo.completed).length
+    return Math.round((completedCount / filteredTodos.length) * 100)
+  }, [filteredTodos])
 
   // Helper: 날짜/기간 표기
   const days = ['일', '월', '화', '수', '목', '금', '토']
@@ -2209,9 +2263,21 @@ function ChecklistPanel({ opTodos, onAddTodo, toggleTodoCompletion, openHistoryM
   return (
     <section className="bg-white rounded-lg shadow border p-4 xl:col-span-3">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">{t('checklist')}</h2>
-        <div className="flex items-center">
-          <span className="text-xs text-gray-500 mr-2">{completionPercentage}%</span>
+        <h2 className="text-lg font-semibold">Todo List</h2>
+        <div className="flex items-center space-x-3">
+          {/* Department 필터 */}
+          <select
+            value={selectedDepartment}
+            onChange={(e) => onDepartmentChange(e.target.value as 'all' | 'office' | 'guide' | 'common')}
+            className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">전체</option>
+            <option value="office">Office</option>
+            <option value="guide">Guide</option>
+            <option value="common">공통</option>
+          </select>
+          
+          <span className="text-xs text-gray-500">{completionPercentage}%</span>
           <button
             onClick={onAddTodo}
             className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center transition-colors"
@@ -2224,7 +2290,7 @@ function ChecklistPanel({ opTodos, onAddTodo, toggleTodoCompletion, openHistoryM
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {(['daily', 'weekly', 'monthly', 'yearly'] as const).map(category => {
-          const categoryTodos = opTodos.filter(todo => todo.category === category)
+          const categoryTodos = filteredTodos.filter(todo => todo.category === category)
           const now = new Date()
           const colors = colorByCategory[category]
           const headerLabel = category === 'daily'

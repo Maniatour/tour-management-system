@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Calendar, LogIn, Home, Menu, X, User, Settings, LogOut, ChevronDown } from 'lucide-react'
+import { Calendar, LogIn, Home, Menu, X, User, Settings, LogOut, ChevronDown, UserCheck } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
 import UserProfile from './auth/UserProfile'
 import { useAuth } from '@/contexts/AuthContext'
@@ -71,7 +71,7 @@ const Navigation = () => {
             {loading ? (
               <div className="flex items-center text-gray-600">
                 <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-2" />
-                로딩 중...
+                Loading...
               </div>
             ) : user ? (
               <div className="flex items-center space-x-4">
@@ -211,7 +211,7 @@ const Navigation = () => {
               {loading ? (
                 <div className="flex items-center text-gray-600 px-2 py-2">
                   <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-2" />
-                  로딩 중...
+                  Loading...
                 </div>
               ) : user ? (
                 <div className="px-2 py-2 space-y-2">

@@ -65,7 +65,7 @@ interface TeamMember {
 }
 
 export default function TeamChatPage() {
-  const { user } = useAuth()
+  const { user, simulatedUser, isSimulating } = useAuth()
   const [selectedRoom, setSelectedRoom] = useState<TeamChatRoom | null>(null)
   const [messages, setMessages] = useState<TeamChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
@@ -94,8 +94,21 @@ export default function TeamChatPage() {
     participant_emails: [] as string[]
   })
   const [selectedPositionTab, setSelectedPositionTab] = useState<string>('all')
-  // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
-  const { teamChatUnreadCount } = useAuth()
+  // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기 (현재 사용하지 않음)
+  // const { teamChatUnreadCount } = useAuth()
+
+  // 안읽은 메시지 수 조회 함수
+  const fetchUnreadCount = useCallback(async () => {
+    if (!user?.email) return
+    
+    try {
+      // 각 채팅방의 안읽은 메시지 수를 계산하는 로직
+      // 실제 구현은 필요에 따라 추가
+      console.log('Fetching unread count for user:', user.email)
+    } catch (error) {
+      console.error('Error fetching unread count:', error)
+    }
+  }, [user?.email])
 
   // 팀 채팅방 데이터 로딩
   const { data: chatRoomsData, loading, refetch: refetchChatRooms } = useOptimizedData<TeamChatRoom[]>({
@@ -108,10 +121,17 @@ export default function TeamChatPage() {
           return []
         }
 
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+        
+        // 시뮬레이션 중인 사용자 이메일 추가
+        if (isSimulating && simulatedUser?.email) {
+          headers['x-simulated-user-email'] = simulatedUser.email
+        }
+
         const response = await fetch('/api/team-chat/rooms', {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
+          headers
         })
         
         const result = await response.json()
@@ -175,7 +195,7 @@ export default function TeamChatPage() {
 
         return roomsWithStats
       } catch (error) {
-        console.error('팀 채팅방 데이터 로딩 오류:', error)
+        console.error('Team chat room data loading error:', error)
         throw error
       }
     },
@@ -204,13 +224,13 @@ export default function TeamChatPage() {
       console.log('메시지 조회 응답:', result)
 
       if (result.error) {
-        console.error('메시지 로딩 오류:', result.error)
+        console.error('Message loading error:', result.error)
         return
       }
 
       setMessages(result.messages || [])
     } catch (error) {
-      console.error('메시지 로딩 중 예외 발생:', error)
+      console.error('Exception occurred while loading messages:', error)
     }
   }, [])
 
@@ -271,7 +291,7 @@ export default function TeamChatPage() {
         }
         return data || []
       } catch (error) {
-        console.error('팀원 목록 로딩 오류:', error)
+        console.error('Team member list loading error:', error)
         // 에러가 발생해도 빈 배열을 반환하여 앱이 중단되지 않도록 함
         return []
       }
@@ -402,7 +422,7 @@ export default function TeamChatPage() {
       }
 
       // 각 메시지에 대해 읽음 상태 확인
-      const messageIds = allMessages.map(msg => msg.id)
+      const messageIds = allMessages.map((msg: { id: string }) => msg.id)
       
       const { data: readStatuses, error: readError } = await supabase
         .from('team_chat_read_status')
@@ -416,10 +436,10 @@ export default function TeamChatPage() {
       }
 
       // 읽은 메시지 ID 목록
-      const readMessageIds = new Set(readStatuses?.map(status => status.message_id) || [])
+      const readMessageIds = new Set(readStatuses?.map((status: { message_id: string }) => status.message_id) || [])
       
       // 읽지 않은 메시지들만 읽음 처리
-      const unreadMessages = allMessages.filter(msg => !readMessageIds.has(msg.id))
+      const unreadMessages = allMessages.filter((msg: { id: string }) => !readMessageIds.has(msg.id))
 
       if (unreadMessages.length > 0) {
         // 각 읽지 않은 메시지를 읽음 처리
@@ -434,7 +454,7 @@ export default function TeamChatPage() {
               body: JSON.stringify({
                 action: 'mark_read',
                 room_id: roomId,
-                message_id: message.id,
+                message_id: (message as { id: string }).id,
                 reader_email: user.email
               })
             })
@@ -493,7 +513,7 @@ export default function TeamChatPage() {
 
       setRoomParticipants(result.participants || [])
     } catch (error) {
-      console.error('참여자 로딩 중 예외 발생:', error)
+      console.error('Exception occurred while loading participants:', error)
     }
   }
 

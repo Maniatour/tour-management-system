@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
@@ -30,6 +30,7 @@ type Product = Database['public']['Tables']['products']['Row']
 
 export default function GuideTours() {
   const t = useTranslations('tours')
+  const gt = useTranslations('tours.guideTours')
   const router = useRouter()
   const supabase = createClientSupabase()
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
@@ -47,11 +48,8 @@ export default function GuideTours() {
   // 투어 가이드는 항상 달력 보기, 관리자/매니저는 선택 가능
   const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'schedule'>('calendar')
   
-  // 투어 가이드일 때는 항상 달력 보기로 고정
-  const effectiveViewMode = (userRole === 'team_member' && !isSimulating) || 
-                           (isSimulating && simulatedUser?.role === 'team_member') 
-                           ? 'calendar' : viewMode
-  const [statusOptions, setStatusOptions] = useState<string[]>([])
+  // 모든 사용자가 뷰를 선택할 수 있음
+  const effectiveViewMode = viewMode
   const [gridMonth, setGridMonth] = useState<Date>(new Date())
 
   // 최적화된 데이터 로딩
@@ -358,14 +356,6 @@ export default function GuideTours() {
 
       setTours(toursWithDetails)
 
-      // 상태 옵션을 실제 컬럼 값으로 구성
-      const statusesSet = new Set<string>()
-      for (const t of toursWithDetails) {
-        const s = (t.tour_status || t.status || '').toString().trim()
-        if (s) statusesSet.add(s)
-      }
-      setStatusOptions(Array.from(statusesSet))
-      
       // 오프 스케줄 데이터 로드
       const { data: offSchedulesData, error: offSchedulesError } = await supabase
         .from('off_schedules')
@@ -391,9 +381,8 @@ export default function GuideTours() {
   }, [toursData, processToursData])
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedStatus, setSelectedStatus] = useState<string>('all')
 
-  // 필터링된 투어 목록 (투어 가이드가 배정된 투어만)
+  // 필터링된 투어 목록 (검색만 적용)
   const filteredTours = tours.filter(tour => {
     const matchesSearch = !searchTerm || 
       (tour.id || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -401,9 +390,7 @@ export default function GuideTours() {
       (tour.guide_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
       (tour.assistant_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesStatus = selectedStatus === 'all' || tour.status === selectedStatus
-
-    return matchesSearch && matchesStatus
+    return matchesSearch
   })
 
   // 리스트(카드) 뷰 전용: 선택된 gridMonth로 월 필터링
@@ -417,12 +404,36 @@ export default function GuideTours() {
     router.push(`/ko/guide/tours/${tour.id}`)
   }
 
+  // 오프 스케줄 변경 시 데이터 새로고침
+  const handleOffScheduleChange = useCallback(() => {
+    // 오프 스케줄 데이터 다시 로드
+    const loadOffSchedules = async () => {
+      try {
+        const { data: offSchedulesData, error: offSchedulesError } = await supabase
+          .from('off_schedules')
+          .select('*')
+          .eq('team_email', currentUserEmail)
+          .order('off_date', { ascending: false })
+
+        if (offSchedulesError) {
+          console.error('Error loading off schedules:', offSchedulesError)
+        } else {
+          setOffSchedules(offSchedulesData || [])
+        }
+      } catch (error) {
+        console.error('Error loading off schedules:', error)
+      }
+    }
+
+    loadOffSchedules()
+  }, [supabase, currentUserEmail])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">투어 데이터를 불러오는 중...</p>
+          <p className="text-gray-600">{gt('loading')}</p>
         </div>
       </div>
     )
@@ -431,92 +442,61 @@ export default function GuideTours() {
   return (
     <div className="-mx-4 sm:mx-0 px-0 sm:px-6 py-2 sm:py-6">
       {/* 헤더 */}
-      <div className="mb-6">
+      <div className="mb-6 px-[10px] sm:px-0">
+        {/* 가이드 대시보드로 돌아가기 버튼 */}
+        <div className="mb-3">
+          <button
+            onClick={() => router.push('/ko/guide')}
+            className="flex items-center text-blue-600 hover:text-blue-700 text-sm font-medium"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            {gt('backToDashboard')}
+          </button>
+        </div>
+        
         {/* 제목 + 뷰 전환 (한 줄) */}
         <div className="flex items-center justify-between gap-2 mb-3">
           <h1 className="text-lg sm:text-2xl font-bold text-gray-900 m-0">
-            {userRole === 'admin' || userRole === 'manager' ? '투어 관리 (관리자 모드)' : '내 투어 관리'}
+            {userRole === 'admin' || userRole === 'manager' ? gt('adminMode') : gt('myTours')}
           </h1>
-          {/* 뷰 전환 버튼 숨김 - 가이드 페이지에서는 달력 보기만 표시 */}
-          {userRole === 'admin' || userRole === 'manager' ? (
-            <div className="flex items-center gap-1 sm:gap-2">
-              <button
-                onClick={() => setViewMode('list')}
-                className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
-                  effectiveViewMode === 'list' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <Grid className="w-4 h-4" />
-                <span className="hidden sm:inline">리스트 뷰</span>
-              </button>
-              <button
-                onClick={() => setViewMode('calendar')}
-                className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
-                  effectiveViewMode === 'calendar' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <Calendar className="w-4 h-4" />
-                <span className="hidden sm:inline">달력 보기</span>
-              </button>
-              <button
-                onClick={() => setViewMode('schedule')}
-                className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
-                  effectiveViewMode === 'schedule' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <CalendarDays className="w-4 h-4" />
-                <span className="hidden sm:inline">스케줄 뷰</span>
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 sm:gap-2">
-              <div className="px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base bg-blue-600 text-white">
-                <Calendar className="w-4 h-4" />
-                <span className="hidden sm:inline">달력 보기</span>
-              </div>
-            </div>
-          )}
+          {/* 뷰 전환 버튼 */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
+                effectiveViewMode === 'calendar' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              <span className="hidden sm:inline">{gt('calendarView')}</span>
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
+                effectiveViewMode === 'list' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <Grid className="w-4 h-4" />
+              <span className="hidden sm:inline">카드 뷰</span>
+            </button>
+          </div>
         </div>
 
-        {/* 검색 및 필터 */}
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-stretch sm:gap-4 mb-4">
-          <div className="relative sm:flex-1 min-w-0 col-span-1">
+        {/* 검색 */}
+        <div className="mb-4">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
-              placeholder="투어 ID, 상품 ID로 검색..."
+              placeholder={gt('searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
-          </div>
-          
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="w-full sm:w-auto col-span-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
-          >
-            <option value="all">모든 상태</option>
-            {statusOptions.sort().map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-
-          {/* 필터 초기화 */}
-          <div className="flex items-center gap-2 col-span-1">
-            <button
-              type="button"
-              onClick={() => { setSearchTerm(''); setSelectedStatus('all') }}
-              className="w-full sm:w-auto px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded"
-            >
-              필터 초기화
-            </button>
           </div>
         </div>
       </div>
@@ -528,11 +508,11 @@ export default function GuideTours() {
             <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10 rounded-lg">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                <p className="text-sm text-gray-600">투어 상세 페이지로 이동 중...</p>
+                <p className="text-sm text-gray-600">{gt('navigatingToTour')}</p>
               </div>
             </div>
           )}
-          <TourCalendar tours={filteredTours} onTourClick={handleTourClick} allReservations={allReservations} offSchedules={offSchedules} />
+          <TourCalendar tours={filteredTours} onTourClick={handleTourClick} allReservations={allReservations} offSchedules={offSchedules} onOffScheduleChange={handleOffScheduleChange} />
         </div>
       )}
 
@@ -595,7 +575,7 @@ export default function GuideTours() {
             </div>
           ))}
           {listViewTours.length === 0 && (
-            <div className="col-span-full text-center text-sm text-gray-500 py-6">해당 월에 배정된 투어가 없습니다.</div>
+            <div className="col-span-full text-center text-sm text-gray-500 py-6">{gt('noToursThisMonth')}</div>
           )}
           </div>
         </>

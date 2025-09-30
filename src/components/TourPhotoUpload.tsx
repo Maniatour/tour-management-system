@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { Upload, X, Camera, Image as ImageIcon, Download, Share2, Eye } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useTranslations } from 'next-intl'
 
 interface TourPhoto {
   id: string
@@ -30,6 +31,7 @@ export default function TourPhotoUpload({
   uploadedBy, 
   onPhotosUpdated 
 }: TourPhotoUploadProps) {
+  const t = useTranslations('tourPhoto')
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -65,7 +67,7 @@ export default function TourPhotoUpload({
 
         // MIME 타입 체크
         if (!file.type.startsWith('image/')) {
-          throw new Error(`이미지 파일만 업로드 가능합니다: ${file.name}`)
+          throw new Error(`${t('imageOnlyError')}: ${file.name}`)
         }
 
         // 고유한 파일명 생성
@@ -116,11 +118,11 @@ export default function TourPhotoUpload({
       if (successfulUploads.length > 0) {
         setPhotos(prev => [...successfulUploads, ...prev])
         onPhotosUpdated?.()
-        alert(`${successfulUploads.length}개 사진이 업로드되었습니다.`)
+        alert(t('uploadSuccess', { count: successfulUploads.length }))
       }
     } catch (error) {
       console.error('Error uploading photos:', error)
-      alert('사진 업로드 중 오류가 발생했습니다.')
+      alert(t('uploadError'))
     } finally {
       setUploading(false)
     }
@@ -128,7 +130,7 @@ export default function TourPhotoUpload({
 
   // 사진 삭제
   const handleDeletePhoto = async (photoId: string, filePath: string) => {
-    if (!confirm('이 사진을 삭제하시겠습니까?')) return
+    if (!confirm(t('deleteConfirm'))) return
 
     try {
       // Storage에서 파일 삭제
@@ -150,7 +152,7 @@ export default function TourPhotoUpload({
       onPhotosUpdated?.()
     } catch (error) {
       console.error('Error deleting photo:', error)
-      alert('사진 삭제 중 오류가 발생했습니다.')
+      alert(t('deleteError'))
     }
   }
 
@@ -158,7 +160,7 @@ export default function TourPhotoUpload({
   const copyShareLink = (shareToken: string) => {
     const shareUrl = `${window.location.origin}/photos/${shareToken}`
     navigator.clipboard.writeText(shareUrl)
-    alert('공유 링크가 클립보드에 복사되었습니다.')
+    alert(t('shareLinkCopied'))
   }
 
   // 파일 크기 포맷팅
@@ -193,14 +195,14 @@ export default function TourPhotoUpload({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">투어 사진</h3>
+        <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
           className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
           <Camera size={16} />
-          <span>{uploading ? '업로드 중...' : '사진 추가'}</span>
+          <span>{uploading ? t('uploading') : t('addPhotos')}</span>
         </button>
       </div>
 
@@ -217,10 +219,10 @@ export default function TourPhotoUpload({
       >
         <Upload size={48} className="mx-auto text-gray-400 mb-4" />
         <p className="text-gray-600 mb-2">
-          사진을 드래그하여 놓거나 클릭하여 선택하세요
+          {t('dragOrClick')}
         </p>
         <p className="text-sm text-gray-500">
-          JPG, PNG, WebP, GIF 형식, 최대 10MB
+          {t('fileFormats')}
         </p>
         <input
           ref={fileInputRef}
@@ -251,21 +253,21 @@ export default function TourPhotoUpload({
                   <button
                     onClick={() => copyShareLink(photo.share_token!)}
                     className="p-2 bg-white rounded-full hover:bg-gray-100"
-                    title="공유 링크 복사"
+                    title={t('copyShareLink')}
                   >
                     <Share2 size={16} />
                   </button>
                   <button
                     onClick={() => window.open(`/photos/${photo.share_token}`, '_blank')}
                     className="p-2 bg-white rounded-full hover:bg-gray-100"
-                    title="새 창에서 보기"
+                    title={t('viewInNewWindow')}
                   >
                     <Eye size={16} />
                   </button>
                   <button
                     onClick={() => handleDeletePhoto(photo.id, photo.file_path)}
                     className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
-                    title="삭제"
+                    title={t('delete')}
                   >
                     <X size={16} />
                   </button>
@@ -286,7 +288,7 @@ export default function TourPhotoUpload({
       {photos.length === 0 && (
         <div className="text-center py-8 text-gray-500">
           <ImageIcon size={48} className="mx-auto mb-4 text-gray-300" />
-          <p>아직 업로드된 사진이 없습니다.</p>
+          <p>{t('noPhotos')}</p>
         </div>
       )}
     </div>

@@ -166,7 +166,7 @@ export default function ReservationDetailsPage() {
       return (
         <div className="bg-white rounded-lg shadow p-8 text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">로딩 중...</p>
+          <p className="text-gray-600">Loading...</p>
         </div>
       )
     }

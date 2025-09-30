@@ -32,7 +32,7 @@ export default function TestRedirectPage() {
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-semibold mb-4">현재 상태</h2>
         <div className="space-y-2">
-          <p><strong>로딩 중:</strong> {isLoading ? '예' : '아니오'}</p>
+          <p><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</p>
           <p><strong>사용자:</strong> {user ? user.email : '없음'}</p>
           <p><strong>사용자 역할:</strong> {userRole || '없음'}</p>
           <p><strong>현재 경로:</strong> {typeof window !== 'undefined' ? window.location.pathname : 'N/A'}</p>

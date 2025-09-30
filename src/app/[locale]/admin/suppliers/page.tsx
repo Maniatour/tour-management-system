@@ -180,7 +180,7 @@ export default function SuppliersPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg">로딩 중...</div>
+        <div className="text-lg">Loading...</div>
       </div>
     );
   }

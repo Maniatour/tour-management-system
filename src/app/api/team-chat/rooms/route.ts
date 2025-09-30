@@ -18,14 +18,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
+    // 시뮬레이션 중인 사용자 확인 (클라이언트에서 전달된 정보)
+    const simulatedUserEmail = request.headers.get('x-simulated-user-email')
+    const effectiveUserEmail = simulatedUserEmail || user.email
+
     const { searchParams } = new URL(request.url)
     const roomType = searchParams.get('type')
 
+    // 사용자가 참여 중인 채팅방만 조회
     let query = supabase
       .from('team_chat_rooms')
       .select(`
         *,
-        team_chat_participants(count),
+        team_chat_participants!inner(
+          participant_email,
+          participant_name,
+          participant_position,
+          is_admin
+        ),
         team_chat_messages(
           id,
           message,
@@ -35,6 +45,7 @@ export async function GET(request: NextRequest) {
         )
       `)
       .eq('is_active', true)
+      .eq('team_chat_participants.participant_email', effectiveUserEmail)
       .order('updated_at', { ascending: false })
 
     if (roomType && roomType !== 'all') {

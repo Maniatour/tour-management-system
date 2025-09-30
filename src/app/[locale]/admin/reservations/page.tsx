@@ -714,11 +714,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         <div className="bg-white rounded-lg shadow-lg p-8">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">예약 데이터 로딩 중...</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading reservation data...</h3>
             {loadingProgress.total > 0 && (
               <div className="space-y-2">
                 <div className="text-sm text-gray-600">
-                  {loadingProgress.current} / {loadingProgress.total} 예약 로딩 중
+                  {loadingProgress.current} / {loadingProgress.total} reservations loading
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div 

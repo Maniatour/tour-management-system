@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "../globals.css";
 import Navigation from "@/components/Navigation";
 import Sidebar from "@/components/Sidebar";
+import UserFooter from "@/components/UserFooter";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
@@ -64,8 +65,8 @@ export default async function LocaleLayout({
                          pathname === `/${locale}` ||
                          pathname === `/${locale}/`;
 
-  // Admin, Embed, Guide, Customer 페이지인 경우 기본 레이아웃만 제공
-  if (isAdminPage || isEmbedPage || isGuidePage || isCustomerPage) {
+  // Admin, Embed, Guide 페이지인 경우 기본 레이아웃만 제공 (푸터 없음)
+  if (isAdminPage || isEmbedPage || isGuidePage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <AuthProvider>
@@ -85,10 +86,11 @@ export default async function LocaleLayout({
           <Navigation />
           <div className="flex flex-col lg:flex-row">
             <Sidebar />
-            <main className="flex-1 p-4 lg:p-6">
+            <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">
               {children}
             </main>
           </div>
+          <UserFooter locale={locale} />
         </div>
       </AuthProvider>
           </NextIntlClientProvider>

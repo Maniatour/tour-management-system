@@ -48,7 +48,7 @@ export default function GuideDebugPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-semibold mb-4">인증 상태</h2>
           <div className="space-y-2">
-            <p><strong>로딩 중:</strong> {isLoading ? '예' : '아니오'}</p>
+            <p><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</p>
             <p><strong>사용자:</strong> {user ? user.email : '없음'}</p>
             <p><strong>사용자 역할:</strong> {userRole || '없음'}</p>
             <p><strong>권한:</strong> {permissions ? JSON.stringify(permissions, null, 2) : '없음'}</p>
@@ -59,7 +59,7 @@ export default function GuideDebugPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-semibold mb-4">팀 데이터</h2>
           {loading ? (
-            <p>로딩 중...</p>
+            <p>Loading...</p>
           ) : teamData ? (
             <div className="space-y-2">
               <p><strong>이메일:</strong> {teamData.email}</p>

@@ -161,7 +161,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg text-gray-600">로딩 중...</div>
+        <div className="text-lg text-gray-600">Loading...</div>
       </div>
     )
   }

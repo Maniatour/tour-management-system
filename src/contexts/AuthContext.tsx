@@ -5,6 +5,7 @@ import { User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
+import { useRouter } from 'next/navigation'
 
 interface TeamData {
   name_ko?: string
@@ -41,6 +42,7 @@ interface SimulatedUser {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [userRole, setUserRole] = useState<UserRole | null>(null)
@@ -309,6 +311,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
     
     console.log('Simulation started:', simulatedUserData)
+    
+    // tour guide를 시뮬레이션할 때 가이드 대시보드로 이동
+    if (simulatedUserData.position.toLowerCase().includes('guide')) {
+      // 현재 locale을 가져와서 가이드 대시보드로 이동
+      const currentPath = window.location.pathname
+      const localeMatch = currentPath.match(/^\/([a-z]{2})/)
+      const locale = localeMatch ? localeMatch[1] : 'ko'
+      router.push(`/${locale}/guide`)
+    }
   }
 
   const stopSimulation = () => {

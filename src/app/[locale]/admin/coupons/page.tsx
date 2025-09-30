@@ -257,7 +257,7 @@ export default function CouponsPage() {
 
       {/* 쿠폰 목록 */}
       {loading ? (
-        <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">로딩 중...</div>
+        <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">Loading...</div>
       ) : filteredCoupons.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
           {searchTerm || statusFilter !== 'all' ? '검색 결과가 없습니다.' : '등록된 쿠폰이 없습니다.'}
@@ -878,7 +878,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
             {/* 채널 목록 */}
             <div className="max-h-96 overflow-y-auto">
               {loadingChannels ? (
-                <div className="text-center py-8 text-gray-500">로딩 중...</div>
+                <div className="text-center py-8 text-gray-500">Loading...</div>
               ) : channels.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">해당 타입의 채널이 없습니다.</div>
               ) : (
@@ -955,7 +955,7 @@ function CouponModal({ coupon, onClose, onSave }: CouponModalProps) {
                          {/* 상품 목록 */}
              <div className="max-h-96 overflow-y-auto">
                {loadingProducts ? (
-                 <div className="text-center py-8 text-gray-500">로딩 중...</div>
+                 <div className="text-center py-8 text-gray-500">Loading...</div>
                ) : products.length === 0 ? (
                  <div className="text-center py-8 text-gray-500">해당 카테고리의 상품이 없습니다.</div>
                ) : (
