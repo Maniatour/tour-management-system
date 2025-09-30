@@ -67,7 +67,7 @@ export default function TourPhotoUpload({
     }
   }
 
-  // Storage 버킷 확인 및 생성
+  // Storage 버킷 확인
   const ensureStorageBucket = async () => {
     try {
       const { data: buckets, error } = await supabase.storage.listBuckets()
@@ -76,35 +76,30 @@ export default function TourPhotoUpload({
         return false
       }
       
+      console.log('Available buckets:', buckets)
+      
       const tourPhotosBucket = buckets?.find(bucket => bucket.name === 'tour-photos')
       if (!tourPhotosBucket) {
-        console.log('tour-photos bucket does not exist, creating...')
-        const { error: createError } = await supabase.storage.createBucket('tour-photos', {
-          public: true,
-          allowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'],
-          fileSizeLimit: 10485760 // 10MB
-        })
-        
-        if (createError) {
-          console.error('Error creating bucket:', createError)
-          return false
-        }
-        
-        console.log('tour-photos bucket created successfully')
+        console.error('tour-photos bucket not found in:', buckets?.map(b => b.name))
+        // 버킷이 없어도 일단 true를 반환하여 업로드를 시도해보자
+        console.log('Proceeding without bucket check...')
+        return true
       } else {
-        console.log('tour-photos bucket exists')
+        console.log('tour-photos bucket exists:', tourPhotosBucket)
       }
       
       return true
     } catch (error) {
-      console.error('Error ensuring storage bucket:', error)
-      return false
+      console.error('Error checking storage bucket:', error)
+      // 에러가 발생해도 일단 true를 반환하여 업로드를 시도해보자
+      return true
     }
   }
 
   // 컴포넌트 마운트 시 사진 목록 로드 및 Storage 확인
   useEffect(() => {
     const initialize = async () => {
+      console.log('TourPhotoUpload: Initializing...')
       await ensureStorageBucket()
       await loadPhotos()
     }
@@ -117,12 +112,8 @@ export default function TourPhotoUpload({
 
     console.log('Starting file upload for files:', Array.from(files).map(f => f.name))
     
-    // Storage 버킷 확인
-    const bucketExists = await ensureStorageBucket()
-    if (!bucketExists) {
-      alert('Storage 버킷을 확인할 수 없습니다. 관리자에게 문의하세요.')
-      return
-    }
+    // Storage 버킷 확인 (디버깅용)
+    await ensureStorageBucket()
     
     setUploading(true)
     
@@ -143,7 +134,7 @@ export default function TourPhotoUpload({
         // 고유한 파일명 생성
         const fileExt = file.name.split('.').pop()
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-        const filePath = `tour-photos/${tourId}/${fileName}`
+        const filePath = `${tourId}/${fileName}`
 
         console.log(`Uploading to storage: ${filePath}`)
 

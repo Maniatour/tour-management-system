@@ -30,7 +30,15 @@ CREATE INDEX IF NOT EXISTS idx_tour_photos_share_token ON public.tour_photos(sha
 -- 3. RLS (Row Level Security) 정책 설정
 ALTER TABLE public.tour_photos ENABLE ROW LEVEL SECURITY;
 
--- 4. RLS 정책 생성
+-- 4. 기존 RLS 정책 삭제 (있다면)
+DROP POLICY IF EXISTS "Anyone can view public tour photos" ON public.tour_photos;
+DROP POLICY IF EXISTS "Authenticated users can upload tour photos" ON public.tour_photos;
+DROP POLICY IF EXISTS "Users can update their own tour photos" ON public.tour_photos;
+DROP POLICY IF EXISTS "Users can delete their own tour photos" ON public.tour_photos;
+DROP POLICY IF EXISTS "Admins can view all tour photos" ON public.tour_photos;
+DROP POLICY IF EXISTS "Admins can manage all tour photos" ON public.tour_photos;
+
+-- 5. RLS 정책 생성
 -- 모든 사용자가 투어 사진을 조회할 수 있음 (공개 사진)
 CREATE POLICY "Anyone can view public tour photos" ON public.tour_photos
     FOR SELECT USING (is_public = true);
@@ -77,7 +85,10 @@ CREATE POLICY "Admins can view all tour photos" ON public.tour_photos
         )
     );
 
--- 5. updated_at 자동 업데이트를 위한 트리거 함수
+-- 6. 기존 트리거 삭제 (있다면)
+DROP TRIGGER IF EXISTS update_tour_photos_updated_at ON public.tour_photos;
+
+-- 7. updated_at 자동 업데이트를 위한 트리거 함수
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -86,16 +97,16 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- 6. updated_at 트리거 생성
+-- 8. updated_at 트리거 생성
 CREATE TRIGGER update_tour_photos_updated_at 
     BEFORE UPDATE ON public.tour_photos 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
--- 7. 테이블 생성 확인
+-- 9. 테이블 생성 확인
 SELECT 'tour_photos table created successfully' as status;
 
--- 8. 테이블 구조 확인
+-- 10. 테이블 구조 확인
 SELECT 
     column_name,
     data_type,
