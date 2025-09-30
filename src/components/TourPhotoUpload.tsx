@@ -59,18 +59,69 @@ export default function TourPhotoUpload({
     }
   }
 
-  // 컴포넌트 마운트 시 사진 목록 로드
+  // Storage 버킷 확인 및 생성
+  const ensureStorageBucket = async () => {
+    try {
+      const { data: buckets, error } = await supabase.storage.listBuckets()
+      if (error) {
+        console.error('Error listing buckets:', error)
+        return false
+      }
+      
+      const tourPhotosBucket = buckets?.find(bucket => bucket.name === 'tour-photos')
+      if (!tourPhotosBucket) {
+        console.log('tour-photos bucket does not exist, creating...')
+        const { error: createError } = await supabase.storage.createBucket('tour-photos', {
+          public: true,
+          allowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'],
+          fileSizeLimit: 10485760 // 10MB
+        })
+        
+        if (createError) {
+          console.error('Error creating bucket:', createError)
+          return false
+        }
+        
+        console.log('tour-photos bucket created successfully')
+      } else {
+        console.log('tour-photos bucket exists')
+      }
+      
+      return true
+    } catch (error) {
+      console.error('Error ensuring storage bucket:', error)
+      return false
+    }
+  }
+
+  // 컴포넌트 마운트 시 사진 목록 로드 및 Storage 확인
   useEffect(() => {
-    loadPhotos()
+    const initialize = async () => {
+      await ensureStorageBucket()
+      await loadPhotos()
+    }
+    initialize()
   }, [tourId])
 
   // 사진 업로드
   const handleFileUpload = async (files: FileList) => {
     if (!files.length) return
 
+    console.log('Starting file upload for files:', Array.from(files).map(f => f.name))
+    
+    // Storage 버킷 확인
+    const bucketExists = await ensureStorageBucket()
+    if (!bucketExists) {
+      alert('Storage 버킷을 확인할 수 없습니다. 관리자에게 문의하세요.')
+      return
+    }
+    
     setUploading(true)
+    
     const uploadPromises = Array.from(files).map(async (file) => {
       try {
+        console.log(`Processing file: ${file.name}, size: ${file.size}, type: ${file.type}`)
+        
         // 파일 크기 체크 (10MB)
         if (file.size > 10 * 1024 * 1024) {
           throw new Error(`파일 크기가 너무 큽니다: ${file.name}`)
@@ -86,15 +137,27 @@ export default function TourPhotoUpload({
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
         const filePath = `tour-photos/${tourId}/${fileName}`
 
-        // Supabase Storage에 업로드
-        const { error: uploadError } = await supabase.storage
-          .from('tour-photos')
-          .upload(filePath, file)
+        console.log(`Uploading to storage: ${filePath}`)
 
-        if (uploadError) throw uploadError
+        // Supabase Storage에 업로드
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('tour-photos')
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+          })
+
+        if (uploadError) {
+          console.error('Storage upload error:', uploadError)
+          throw uploadError
+        }
+
+        console.log('Storage upload successful:', uploadData)
 
         // 공유 토큰 생성
         const shareToken = crypto.randomUUID()
+
+        console.log('Inserting photo metadata to database')
 
         // 데이터베이스에 메타데이터 저장
         const { data: photoData, error: dbError } = await supabase
@@ -113,11 +176,16 @@ export default function TourPhotoUpload({
           .select()
           .single()
 
-        if (dbError) throw dbError
+        if (dbError) {
+          console.error('Database insert error:', dbError)
+          throw dbError
+        }
 
+        console.log('Photo metadata saved successfully:', photoData)
         return photoData
       } catch (error) {
         console.error(`Error uploading ${file.name}:`, error)
+        alert(`업로드 실패: ${file.name} - ${error.message || error}`)
         return null
       }
     })
