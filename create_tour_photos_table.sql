@@ -76,7 +76,15 @@ CREATE TRIGGER update_tour_photos_updated_at
 SELECT 'tour_photos table created successfully' as status;
 
 -- 8. 테이블 구조 확인
-\d public.tour_photos;
+SELECT 
+    column_name,
+    data_type,
+    is_nullable,
+    column_default
+FROM information_schema.columns 
+WHERE table_name = 'tour_photos' 
+AND table_schema = 'public'
+ORDER BY ordinal_position;
 
 COMMIT;
 
