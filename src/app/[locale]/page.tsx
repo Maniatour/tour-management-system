@@ -1,8 +1,10 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Star, MapPin, Users, Calendar, ArrowRight, Play, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useAuth } from '@/contexts/AuthContext'
+import { useRouter } from 'next/navigation'
 
 interface FeaturedProduct {
   id: string
@@ -15,7 +17,29 @@ interface FeaturedProduct {
   category: string
 }
 
-export default function HomePage() {
+export default function HomePage({ params }: { params: Promise<{ locale: string }> }) {
+  const { user, userRole, loading, getRedirectPath } = useAuth()
+  const router = useRouter()
+  
+  useEffect(() => {
+    const handleRedirect = async () => {
+      const { locale } = await params
+      
+      if (!loading && user && userRole) {
+        console.log('HomePage: User logged in, role:', userRole, 'redirecting...')
+        
+        const redirectPath = getRedirectPath(locale)
+        console.log('HomePage: Redirecting to:', redirectPath)
+        
+        // 현재 페이지가 리다이렉트 대상과 다른 경우에만 리다이렉트
+        if (redirectPath !== `/${locale}`) {
+          router.replace(redirectPath)
+        }
+      }
+    }
+    
+    handleRedirect()
+  }, [user, userRole, loading, router, params, getRedirectPath])
   const featuredProducts: FeaturedProduct[] = [
     {
       id: '1',
