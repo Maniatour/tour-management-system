@@ -35,20 +35,40 @@ ALTER TABLE public.tour_photos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can view public tour photos" ON public.tour_photos
     FOR SELECT USING (is_public = true);
 
--- 인증된 사용자가 투어 사진을 업로드할 수 있음
+-- 인증된 사용자가 투어 사진을 업로드할 수 있음 (더 관대한 정책)
 CREATE POLICY "Authenticated users can upload tour photos" ON public.tour_photos
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+    FOR INSERT WITH CHECK (
+        auth.role() = 'authenticated' AND 
+        auth.email() IS NOT NULL
+    );
 
--- 업로드한 사용자만 자신의 사진을 수정/삭제할 수 있음
+-- 업로드한 사용자만 자신의 사진을 수정할 수 있음
 CREATE POLICY "Users can update their own tour photos" ON public.tour_photos
-    FOR UPDATE USING (auth.email() = uploaded_by);
+    FOR UPDATE USING (
+        auth.email() = uploaded_by OR
+        EXISTS (
+            SELECT 1 FROM public.team 
+            WHERE team.email = auth.email() 
+            AND team.is_active = true 
+            AND team.position IN ('super', 'office manager', 'op')
+        )
+    );
 
+-- 업로드한 사용자만 자신의 사진을 삭제할 수 있음
 CREATE POLICY "Users can delete their own tour photos" ON public.tour_photos
-    FOR DELETE USING (auth.email() = uploaded_by);
+    FOR DELETE USING (
+        auth.email() = uploaded_by OR
+        EXISTS (
+            SELECT 1 FROM public.team 
+            WHERE team.email = auth.email() 
+            AND team.is_active = true 
+            AND team.position IN ('super', 'office manager', 'op')
+        )
+    );
 
--- 관리자는 모든 투어 사진을 관리할 수 있음
-CREATE POLICY "Admins can manage all tour photos" ON public.tour_photos
-    FOR ALL USING (
+-- 관리자는 모든 투어 사진을 조회할 수 있음
+CREATE POLICY "Admins can view all tour photos" ON public.tour_photos
+    FOR SELECT USING (
         EXISTS (
             SELECT 1 FROM public.team 
             WHERE team.email = auth.email() 
