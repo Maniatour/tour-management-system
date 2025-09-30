@@ -42,7 +42,7 @@ export default function TourPhotoUpload({
     try {
       console.log('Loading photos for tour:', tourId)
       const { data, error } = await supabase
-        .from('tour_photos')
+        .from('tour_course_photos')
         .select('*')
         .eq('tour_id', tourId)
         .order('created_at', { ascending: false })
@@ -71,18 +71,25 @@ export default function TourPhotoUpload({
       const tourPhotosBucket = buckets?.find(bucket => bucket.name === 'tour-photos')
       if (!tourPhotosBucket) {
         console.log('tour-photos bucket does not exist, creating...')
-        const { error: createError } = await supabase.storage.createBucket('tour-photos', {
-          public: true,
-          allowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'],
-          fileSizeLimit: 10485760 // 10MB
-        })
-        
-        if (createError) {
+        try {
+          const { error: createError } = await supabase.storage.createBucket('tour-photos', {
+            public: true,
+            allowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'],
+            fileSizeLimit: 10485760 // 10MB
+          })
+          
+          if (createError) {
+            console.error('Error creating bucket:', createError)
+            // 버킷 생성 실패해도 계속 진행 (이미 존재할 수 있음)
+            return true
+          }
+          
+          console.log('tour-photos bucket created successfully')
+        } catch (createError) {
           console.error('Error creating bucket:', createError)
-          return false
+          // 버킷 생성 실패해도 계속 진행
+          return true
         }
-        
-        console.log('tour-photos bucket created successfully')
       } else {
         console.log('tour-photos bucket exists')
       }
@@ -90,7 +97,7 @@ export default function TourPhotoUpload({
       return true
     } catch (error) {
       console.error('Error ensuring storage bucket:', error)
-      return false
+      return true // 에러가 발생해도 계속 진행
     }
   }
 
@@ -161,7 +168,7 @@ export default function TourPhotoUpload({
 
         // 데이터베이스에 메타데이터 저장
         const { data: photoData, error: dbError } = await supabase
-          .from('tour_photos')
+          .from('tour_course_photos')
           .insert({
             tour_id: tourId,
             reservation_id: reservationId,
@@ -225,7 +232,7 @@ export default function TourPhotoUpload({
 
       // 데이터베이스에서 레코드 삭제
       const { error: dbError } = await supabase
-        .from('tour_photos')
+        .from('tour_course_photos')
         .delete()
         .eq('id', photoId)
 
