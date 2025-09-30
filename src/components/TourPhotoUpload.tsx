@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Upload, X, Camera, Image as ImageIcon, Download, Share2, Eye } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -40,18 +40,29 @@ export default function TourPhotoUpload({
   // 사진 목록 로드
   const loadPhotos = async () => {
     try {
+      console.log('Loading photos for tour:', tourId)
       const { data, error } = await supabase
         .from('tour_photos')
         .select('*')
         .eq('tour_id', tourId)
         .order('created_at', { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error('Error loading photos:', error)
+        throw error
+      }
+      
+      console.log('Loaded photos:', data)
       setPhotos(data || [])
     } catch (error) {
       console.error('Error loading photos:', error)
     }
   }
+
+  // 컴포넌트 마운트 시 사진 목록 로드
+  useEffect(() => {
+    loadPhotos()
+  }, [tourId])
 
   // 사진 업로드
   const handleFileUpload = async (files: FileList) => {
@@ -116,9 +127,13 @@ export default function TourPhotoUpload({
       const successfulUploads = results.filter(Boolean)
       
       if (successfulUploads.length > 0) {
-        setPhotos(prev => [...successfulUploads, ...prev])
+        console.log('Upload successful, refreshing photos list')
+        // 사진 목록 새로고침
+        await loadPhotos()
         onPhotosUpdated?.()
         alert(t('uploadSuccess', { count: successfulUploads.length }))
+      } else {
+        alert(t('uploadError'))
       }
     } catch (error) {
       console.error('Error uploading photos:', error)
@@ -148,7 +163,8 @@ export default function TourPhotoUpload({
 
       if (dbError) throw dbError
 
-      setPhotos(prev => prev.filter(photo => photo.id !== photoId))
+      // 사진 목록 새로고침
+      await loadPhotos()
       onPhotosUpdated?.()
     } catch (error) {
       console.error('Error deleting photo:', error)
@@ -312,10 +328,17 @@ export default function TourPhotoUpload({
         </div>
       )}
 
-      {photos.length === 0 && (
+      {photos.length === 0 && !uploading && (
         <div className="text-center py-8 text-gray-500">
           <ImageIcon size={48} className="mx-auto mb-4 text-gray-300" />
           <p>{t('noPhotos')}</p>
+        </div>
+      )}
+
+      {uploading && (
+        <div className="text-center py-8 text-gray-500">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p>{t('uploading')}</p>
         </div>
       )}
     </div>
