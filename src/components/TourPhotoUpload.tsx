@@ -214,6 +214,7 @@ export default function TourPhotoUpload({
               cameraInput.type = 'file'
               cameraInput.accept = 'image/*'
               cameraInput.capture = 'environment'
+              cameraInput.multiple = false
               cameraInput.onchange = (e) => {
                 const target = e.target as HTMLInputElement
                 if (target.files && target.files.length > 0) {
@@ -255,7 +256,6 @@ export default function TourPhotoUpload({
           type="file"
           multiple
           accept="image/*,image/jpeg,image/jpg,image/png,image/webp"
-          capture="environment"
           onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
           className="hidden"
         />
