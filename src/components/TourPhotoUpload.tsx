@@ -196,19 +196,44 @@ export default function TourPhotoUpload({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-        >
-          <Camera size={16} />
-          <span>{uploading ? t('uploading') : t('addPhotos')}</span>
-        </button>
+        <div className="flex space-x-2">
+          {/* 갤러리에서 선택 */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            <ImageIcon size={16} />
+            <span>{uploading ? t('uploading') : t('selectFromGallery')}</span>
+          </button>
+          
+          {/* 카메라로 직접 촬영 */}
+          <button
+            onClick={() => {
+              const cameraInput = document.createElement('input')
+              cameraInput.type = 'file'
+              cameraInput.accept = 'image/*'
+              cameraInput.capture = 'environment'
+              cameraInput.onchange = (e) => {
+                const target = e.target as HTMLInputElement
+                if (target.files && target.files.length > 0) {
+                  handleFileUpload(target.files)
+                }
+              }
+              cameraInput.click()
+            }}
+            disabled={uploading}
+            className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+          >
+            <Camera size={16} />
+            <span>{t('takePhoto')}</span>
+          </button>
+        </div>
       </div>
 
       {/* 업로드 영역 */}
       <div
-        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+        className={`border-2 border-dashed rounded-lg p-4 sm:p-8 text-center transition-colors ${
           dragOver 
             ? 'border-blue-500 bg-blue-50' 
             : 'border-gray-300 hover:border-gray-400'
@@ -216,19 +241,21 @@ export default function TourPhotoUpload({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
       >
-        <Upload size={48} className="mx-auto text-gray-400 mb-4" />
-        <p className="text-gray-600 mb-2">
+        <Upload size={32} className="mx-auto text-gray-400 mb-2 sm:mb-4" />
+        <p className="text-gray-600 mb-1 sm:mb-2 text-sm sm:text-base">
           {t('dragOrClick')}
         </p>
-        <p className="text-sm text-gray-500">
+        <p className="text-xs sm:text-sm text-gray-500">
           {t('fileFormats')}
         </p>
         <input
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*"
+          accept="image/*,image/jpeg,image/jpg,image/png,image/webp"
+          capture="environment"
           onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
           className="hidden"
         />

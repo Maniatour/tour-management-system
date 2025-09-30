@@ -1042,6 +1042,8 @@
   "tourPhoto": {
     "title": "Tour Photos",
     "addPhotos": "Add Photos",
+    "selectFromGallery": "Select from Gallery",
+    "takePhoto": "Take Photo",
     "uploading": "Uploading...",
     "dragOrClick": "Drag and drop photos or click to select",
     "fileFormats": "JPG, PNG, WebP, GIF format, max 10MB",
