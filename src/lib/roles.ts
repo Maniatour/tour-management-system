@@ -99,14 +99,16 @@ export function getUserRole(email: string, teamData?: any): UserRole {
     
     console.log('Team data found, position:', position)
     
-    // position 기반으로 역할 결정
+    // position 기반으로 역할 결정 (대소문자 구별 없음)
     if (position === 'super') {
       return 'admin'  // Super는 최고 관리자
     }
     if (position === 'office manager') {
       return 'manager'  // Office Manager는 매니저
     }
-    if (position === 'tour guide' || position === 'op' || position === 'driver') {
+    // 투어 가이드 관련 position들 (대소문자 구별 없음)
+    if (position === 'tour guide' || position === 'tourguide' || position === 'guide' || 
+        position === 'op' || position === 'driver') {
       return 'team_member'  // Tour Guide, OP, Driver는 팀원
     }
     

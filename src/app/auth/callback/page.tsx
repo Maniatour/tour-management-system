@@ -38,7 +38,17 @@ export default function AuthCallbackPage() {
           console.log('Auth callback: User authenticated:', data.session.user.email)
           // 잠시 후 AuthContext가 로드되도록 대기
           setTimeout(() => {
-            router.replace(`/${locale}/admin`)
+            // 사용자 역할에 따라 적절한 페이지로 리다이렉트
+            const userEmail = data.session.user.email?.toLowerCase()
+            
+            // 슈퍼관리자 이메일 확인
+            const superAdminEmails = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
+            if (userEmail && superAdminEmails.includes(userEmail)) {
+              router.replace(`/${locale}/admin`)
+            } else {
+              // 일반 사용자는 guide 페이지로 리다이렉트 (AuthContext에서 역할 확인 후 재리다이렉트됨)
+              router.replace(`/${locale}/guide`)
+            }
           }, 100)
         } else {
           console.log('Auth callback: No session found')
