@@ -25,6 +25,8 @@ import TourPhotoUpload from '@/components/TourPhotoUpload'
 import TourChatRoom from '@/components/TourChatRoom'
 import TourExpenseManager from '@/components/TourExpenseManager'
 import TourReportSection from '@/components/TourReportSection'
+import TourWeather from '@/components/TourWeather'
+import TourSunriseTime from '@/components/TourSunriseTime'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -1635,9 +1637,13 @@ export default function TourDetailPage() {
             <ArrowLeft size={20} />
           </button>
               <div>
-                <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">
-                  {product?.name_ko || '투어 상세'}
-                </h1>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">
+                    {product?.name_ko || '투어 상세'}
+                  </h1>
+                  {/* 일출 시간 표시 (투어 날짜 기반) */}
+                  <TourSunriseTime tourDate={tour.tour_date} />
+                </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600 mt-1">
                   <span>투어 ID: {tour.id}</span>
                   <span className="hidden sm:inline">|</span>
@@ -1762,6 +1768,16 @@ export default function TourDetailPage() {
                     rows={3}
                   />
             </div>
+          </div>
+        </div>
+
+        {/* 날씨 정보 섹션 */}
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="p-4">
+            <TourWeather 
+              tourDate={tour.tour_date} 
+              productId={product?.id} 
+            />
           </div>
         </div>
 

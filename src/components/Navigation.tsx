@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Calendar, LogIn, Home, Menu, X, User, Settings, LogOut, ChevronDown, UserCheck } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
 import UserProfile from './auth/UserProfile'
+import SunriseTime from './SunriseTime'
 import { useAuth } from '@/contexts/AuthContext'
 
 const Navigation = () => {
@@ -65,6 +66,8 @@ const Navigation = () => {
               <Calendar className="w-4 h-4 mr-2" />
               상품
             </Link>
+            {/* 일출 시간 표시 */}
+            <SunriseTime />
             <LanguageSwitcher />
             
             {/* 인증 상태에 따른 메뉴 */}

@@ -276,7 +276,17 @@
         "자이언브라이스": "Zion Bryce",
         "1박2일": "2 Days 1 Night",
         "1박2일 단독": "2 Days 1 Night Private",
-        "데이투어": "Day Tour"
+        "데이투어": "Day Tour",
+        "라스베가스 시티 야경투어": "Las Vegas City Night Tour",
+        "불의계곡": "Valley of Fire",
+        "데쓰밸리": "Death Valley",
+        "그랜드캐년 웨스트림 VIP 투어": "Grand Canyon West Rim VIP Tour",
+        "null": "No Product Name",
+        "모뉴1박": "Monument Valley 1 Night",
+        "골프투어": "Golf Tour",
+        "드라이버": "Driver",
+        "2박3일 단독": "3 Days 2 Nights Private",
+        "후버댐": "Hoover Dam"
       },
       "reservationCalendar": "Calendar",
       "yearUnit": "",

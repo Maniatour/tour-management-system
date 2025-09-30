@@ -11,6 +11,10 @@ type Tour = Database['public']['Tables']['tours']['Row']
 
 interface ExtendedTour extends Tour {
   product_name?: string | null;
+  internal_name_ko?: string | null;
+  internal_name_en?: string | null;
+  customer_name_ko?: string | null;
+  customer_name_en?: string | null;
   total_people?: number;
   assigned_people?: number;
   unassigned_people?: number;
@@ -43,8 +47,16 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
   const { user, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('tours.calendar')
   
-  // 투어 이름 매핑 함수 (항상 영문으로 표시)
+  // 투어 이름 매핑 함수 (내부용 간단한 이름 사용)
   const getTourDisplayName = (tour: ExtendedTour) => {
+    // 내부용 간단한 이름이 있으면 사용, 없으면 기존 방식 사용
+    if (tour.internal_name_ko && tour.internal_name_en) {
+      // 현재 로케일에 따라 적절한 내부용 이름 반환
+      const locale = document.documentElement.lang || 'ko'
+      return locale === 'en' ? tour.internal_name_en : tour.internal_name_ko
+    }
+    
+    // 기존 방식 (fallback)
     const tourName = tour.product_name || tour.product_id
     try {
       // 한글 상품명을 영문으로 번역

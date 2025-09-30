@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { Calendar, Plus, Edit, Trash2 } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Calendar, Clock, MapPin, Utensils, Car, Coffee, Plus, Edit, Trash2, Save, AlertCircle, Map, Users, User } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import TableScheduleAdd from '../TableScheduleAdd'
+import LocationPickerModal from '../LocationPickerModal'
 
 interface ScheduleItem {
   id?: string
@@ -50,24 +51,36 @@ interface ScheduleItem {
 interface ProductScheduleTabProps {
   productId: string
   isNewProduct: boolean
-  formData: unknown
-  setFormData: (data: unknown) => void
+  formData: any
+  setFormData: (data: any) => void
 }
 
 export default function ProductScheduleTab({
   productId,
-  isNewProduct
+  isNewProduct,
+  formData,
+  setFormData
 }: ProductScheduleTabProps) {
   
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [editingSchedule, setEditingSchedule] = useState<ScheduleItem | null>(null)
   const [addMode, setAddMode] = useState<'modal' | 'table'>('modal')
   const [showTableAdd, setShowTableAdd] = useState(false)
   const [tableSchedules, setTableSchedules] = useState<ScheduleItem[]>([])
   const [saving, setSaving] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
 
-  const fetchSchedules = useCallback(async () => {
+  useEffect(() => {
+    if (!isNewProduct) {
+      fetchSchedules()
+      fetchTeamMembers()
+    }
+  }, [productId, isNewProduct])
+
+  const fetchSchedules = async () => {
     try {
       setLoading(true)
       const { data, error } = await supabase
@@ -88,11 +101,11 @@ export default function ProductScheduleTab({
     } finally {
       setLoading(false)
     }
-  }, [productId])
+  }
 
-  const fetchTeamMembers = useCallback(async () => {
+  const fetchTeamMembers = async () => {
     try {
-      const { data, error } = await (supabase as unknown as any)
+      const { data, error } = await (supabase as any)
         .from('team')
         .select('email, name_ko, position')
         .eq('is_active', true)
@@ -107,14 +120,7 @@ export default function ProductScheduleTab({
     } catch (error) {
       console.error('팀 멤버 로드 오류:', error)
     }
-  }, [])
-
-  useEffect(() => {
-    if (!isNewProduct) {
-      fetchSchedules()
-      fetchTeamMembers()
-    }
-  }, [productId, isNewProduct, fetchSchedules, fetchTeamMembers])
+  }
 
   const handleAddSchedule = () => {
     const newSchedule: ScheduleItem = {
@@ -136,7 +142,7 @@ export default function ProductScheduleTab({
       latitude: undefined,
       longitude: undefined,
       show_to_customers: true,
-      guide_assignment_type: 'none',
+      guide_assignment_type: '',
       assigned_guide_1: '',
       assigned_guide_2: '',
       assigned_guide_driver_guide: '',
@@ -157,20 +163,20 @@ export default function ProductScheduleTab({
     }
     
     if (addMode === 'modal') {
-      // 모달 모드는 현재 사용하지 않음
-      console.log('모달 모드는 현재 사용하지 않습니다')
+      setEditingSchedule(newSchedule)
+      setShowAddModal(true)
     } else {
       setTableSchedules(prev => [...prev, newSchedule])
       setShowTableAdd(true)
     }
   }
 
-  const handleEditSchedule = useCallback((schedule: ScheduleItem) => {
-    // 모달 편집 기능은 현재 사용하지 않음
-    console.log('편집 기능은 현재 사용하지 않습니다:', schedule)
-  }, [])
+  const handleEditSchedule = (schedule: ScheduleItem) => {
+    setEditingSchedule(schedule)
+    setShowAddModal(true)
+  }
 
-  const handleDeleteSchedule = useCallback(async (scheduleId: string) => {
+  const handleDeleteSchedule = async (scheduleId: string) => {
     try {
       const { error } = await supabase
         .from('product_schedules')
@@ -186,15 +192,15 @@ export default function ProductScheduleTab({
     } catch (error) {
       console.error('일정 삭제 오류:', error)
     }
-  }, [])
+  }
 
-  const handleSaveSchedule = useCallback(async (scheduleData: ScheduleItem) => {
+  const handleSaveSchedule = async (scheduleData: ScheduleItem) => {
     try {
       setSaving(true)
       
       if (scheduleData.id) {
         // 수정
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from('product_schedules')
           .update(scheduleData)
           .eq('id', scheduleData.id)
@@ -207,7 +213,7 @@ export default function ProductScheduleTab({
         setSchedules(prev => prev.map(s => s.id === scheduleData.id ? scheduleData : s))
       } else {
         // 추가
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from('product_schedules')
           .insert([scheduleData])
           .select()
@@ -224,9 +230,9 @@ export default function ProductScheduleTab({
     } finally {
       setSaving(false)
     }
-  }, [])
+  }
 
-  const handleSaveTableSchedules = useCallback(async () => {
+  const handleSaveTableSchedules = async () => {
     try {
       setSaving(true)
       
@@ -242,7 +248,7 @@ export default function ProductScheduleTab({
     } finally {
       setSaving(false)
     }
-  }, [tableSchedules, handleSaveSchedule, fetchSchedules])
+  }
 
   if (loading) {
     return (
@@ -299,7 +305,7 @@ export default function ProductScheduleTab({
                 latitude: undefined,
                 longitude: undefined,
                 show_to_customers: true,
-                guide_assignment_type: 'none',
+                guide_assignment_type: '',
                 assigned_guide_1: '',
                 assigned_guide_2: '',
                 assigned_guide_driver_guide: '',
@@ -394,9 +400,9 @@ export default function ProductScheduleTab({
                   </p>
                 ) : null}
                 
-                {(schedule.guide_notes_ko || schedule.guide_notes_en) && (
+                {(schedule.guide_notes_ko || schedule.guide_notes) && (
                   <p className="text-xs text-gray-500 mt-1 italic">
-                    가이드 메모: {schedule.guide_notes_ko || schedule.guide_notes_en}
+                    가이드 메모: {schedule.guide_notes_ko || schedule.guide_notes}
                     {schedule.guide_notes_en && schedule.guide_notes_ko && (
                       <span className="ml-1">({schedule.guide_notes_en})</span>
                     )}
@@ -431,18 +437,14 @@ export default function ProductScheduleTab({
 
       {/* 테이블 형식 일정 추가 모달 */}
       {showTableAdd && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-[90vw] h-[90vh] flex flex-col overflow-hidden">
-            <TableScheduleAdd
-              schedules={tableSchedules}
-              onSchedulesChange={setTableSchedules}
-              onSave={handleSaveTableSchedules}
-              onClose={() => setShowTableAdd(false)}
-              saving={saving}
-              teamMembers={teamMembers}
-            />
-          </div>
-        </div>
+        <TableScheduleAdd
+          schedules={tableSchedules}
+          onSchedulesChange={setTableSchedules}
+          onSave={handleSaveTableSchedules}
+          onClose={() => setShowTableAdd(false)}
+          saving={saving}
+          teamMembers={teamMembers}
+        />
       )}
     </div>
   )

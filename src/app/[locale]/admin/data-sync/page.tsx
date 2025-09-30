@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
+import WeatherDataCollector from '@/components/WeatherDataCollector'
 
 interface SheetInfo {
   name: string
@@ -921,10 +922,15 @@ export default function DataSyncPage() {
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">유연한 데이터 동기화</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">데이터 동기화</h1>
         <p className="text-gray-600">
-          구글 시트의 모든 데이터를 원하는 테이블로 유연하게 동기화합니다.
+          구글 시트 데이터 동기화 및 날씨 데이터 수집을 관리합니다.
         </p>
+      </div>
+
+      {/* 날씨 데이터 수집 섹션 */}
+      <div className="mb-6">
+        <WeatherDataCollector />
       </div>
 
       {/* 설정 섹션 */}

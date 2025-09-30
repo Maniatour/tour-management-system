@@ -132,6 +132,10 @@ export interface Database {
           id: string
           name_ko: string
           name_en: string | null
+          internal_name_ko: string
+          internal_name_en: string
+          customer_name_ko: string
+          customer_name_en: string
           sub_category: string | null
           category: string | null
           base_price: number | null
@@ -146,6 +150,10 @@ export interface Database {
           id?: string
           name_ko: string
           name_en?: string | null
+          internal_name_ko: string
+          internal_name_en: string
+          customer_name_ko: string
+          customer_name_en: string
           sub_category?: string | null
           category?: string | null
           base_price?: number | null
@@ -160,6 +168,10 @@ export interface Database {
           id?: string
           name_ko?: string
           name_en?: string | null
+          internal_name_ko?: string
+          internal_name_en?: string
+          customer_name_ko?: string
+          customer_name_en?: string
           sub_category?: string | null
           category?: string | null
           base_price?: number | null
@@ -843,6 +855,88 @@ export interface Database {
         id?: string
         name?: string
         created_at?: string
+      }
+    }
+    sunrise_sunset_data: {
+      Row: {
+        id: string
+        location_name: string
+        latitude: number
+        longitude: number
+        date: string
+        sunrise_time: string
+        sunset_time: string
+        created_at: string | null
+        updated_at: string | null
+      }
+      Insert: {
+        id?: string
+        location_name: string
+        latitude: number
+        longitude: number
+        date: string
+        sunrise_time: string
+        sunset_time: string
+        created_at?: string | null
+        updated_at?: string | null
+      }
+      Update: {
+        id?: string
+        location_name?: string
+        latitude?: number
+        longitude?: number
+        date?: string
+        sunrise_time?: string
+        sunset_time?: string
+        created_at?: string | null
+        updated_at?: string | null
+      }
+    }
+    weather_data: {
+      Row: {
+        id: string
+        location_name: string
+        latitude: number
+        longitude: number
+        date: string
+        temperature: number | null
+        humidity: number | null
+        weather_main: string | null
+        weather_description: string | null
+        wind_speed: number | null
+        visibility: number | null
+        created_at: string | null
+        updated_at: string | null
+      }
+      Insert: {
+        id?: string
+        location_name: string
+        latitude: number
+        longitude: number
+        date: string
+        temperature?: number | null
+        humidity?: number | null
+        weather_main?: string | null
+        weather_description?: string | null
+        wind_speed?: number | null
+        visibility?: number | null
+        created_at?: string | null
+        updated_at?: string | null
+      }
+      Update: {
+        id?: string
+        location_name?: string
+        latitude?: number
+        longitude?: number
+        date?: string
+        temperature?: number | null
+        humidity?: number | null
+        weather_main?: string | null
+        weather_description?: string | null
+        wind_speed?: number | null
+        visibility?: number | null
+        created_at?: string | null
+        updated_at?: string | null
       }
     }
     CompositeTypes: {

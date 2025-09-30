@@ -15,6 +15,10 @@ type Tour = Database['public']['Tables']['tours']['Row']
 
 type ExtendedTour = Tour & {
   product_name?: string | null;
+  internal_name_ko?: string | null;
+  internal_name_en?: string | null;
+  customer_name_ko?: string | null;
+  customer_name_en?: string | null;
   total_people?: number;
   assigned_people?: number;
   unassigned_people?: number;
@@ -76,7 +80,7 @@ export default function AdminTours() {
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, name_ko, name_en, status')
+        .select('id, name, name_ko, name_en, internal_name_ko, internal_name_en, customer_name_ko, customer_name_en, status')
         .order('created_at', { ascending: false })
       
       if (error) throw error
@@ -327,9 +331,15 @@ export default function AdminTours() {
         const guide = tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null
         const assistant = tour.assistant_id ? teamMap.get(tour.assistant_id) : null
 
+        const product = tour.product_id ? productsData.find(p => p.id === tour.product_id) : null
+        
         return {
           ...tour,
           product_name: tour.product_id ? productMap.get(tour.product_id) : null,
+          internal_name_ko: product?.internal_name_ko || null,
+          internal_name_en: product?.internal_name_en || null,
+          customer_name_ko: product?.customer_name_ko || null,
+          customer_name_en: product?.customer_name_en || null,
           total_people: totalPeople,
           assigned_people: assignedPeople,
           unassigned_people: unassignedPeople,

@@ -1,0 +1,2073 @@
+'use client'
+
+import React, { useState, useEffect } from 'react'
+import { Calendar, Clock, MapPin, Utensils, Car, Coffee, Plus, Edit, Trash2, Save, AlertCircle, Map, Users, User } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import TableScheduleAdd from '../TableScheduleAdd'
+import LocationPickerModal from '../LocationPickerModal'
+
+interface ScheduleItem {
+  id?: string
+  product_id: string
+  day_number: number
+  start_time: string
+  end_time: string
+  title: string
+  description: string
+  location: string
+  duration_minutes: number
+  is_break: boolean
+  is_meal: boolean
+  is_transport: boolean
+  transport_type: string
+  transport_details: string
+  notes: string
+  // 새로운 필드들
+  latitude?: number
+  longitude?: number
+  show_to_customers: boolean
+  guide_assignment_type: 'none' | 'single_guide' | 'two_guides' | 'guide_driver'
+  // 2가이드 전용 필드
+  assigned_guide_1?: string
+  assigned_guide_2?: string
+  // 가이드+드라이버 전용 필드
+  assigned_guide_driver_guide?: string
+  assigned_guide_driver_driver?: string
+  // 다국어 지원 필드들
+  title_ko?: string
+  title_en?: string
+  description_ko?: string
+  description_en?: string
+  location_ko?: string
+  location_en?: string
+  transport_details_ko?: string
+  transport_details_en?: string
+  notes_ko?: string
+  notes_en?: string
+  guide_notes_ko?: string
+  guide_notes_en?: string
+}
+
+interface ProductScheduleTabProps {
+  productId: string
+  isNewProduct: boolean
+  formData: any
+  setFormData: React.Dispatch<React.SetStateAction<any>>
+}
+
+export default function ProductScheduleTab({
+  productId,
+  isNewProduct,
+  formData,
+  setFormData
+}: ProductScheduleTabProps) {
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([])
+  const [editingSchedule, setEditingSchedule] = useState<ScheduleItem | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [addMode, setAddMode] = useState<'modal' | 'table'>('modal')
+  const [saving, setSaving] = useState(false)
+  const [showTableAdd, setShowTableAdd] = useState(false)
+  const [tableSchedules, setTableSchedules] = useState<ScheduleItem[]>([])
+  const [saveMessage, setSaveMessage] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
+  const [showMapModal, setShowMapModal] = useState(false)
+  const [mapLocation, setMapLocation] = useState<{lat: number, lng: number, address: string} | null>(null)
+
+  // 기존 일정 데이터 로드
+  useEffect(() => {
+    if (!isNewProduct && productId) {
+      fetchSchedules()
+      fetchTeamMembers()
+    } else {
+      setLoading(false)
+    }
+  }, [productId, isNewProduct])
+
+  const fetchSchedules = async () => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('product_schedules')
+        .select('*')
+        .eq('product_id', productId)
+        .order('day_number', { ascending: true })
+        .order('start_time', { ascending: true })
+
+      if (error) {
+        console.error('Supabase 오류:', error)
+        throw new Error(`데이터베이스 오류: ${error.message}`)
+      }
+
+      setSchedules(data || [])
+    } catch (error) {
+      console.error('일정 로드 오류:', error)
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
+      setSaveMessage(`일정을 불러오는데 실패했습니다: ${errorMessage}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchTeamMembers = async () => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('team')
+        .select('email, name_ko, position')
+        .eq('is_active', true)
+        .order('name_ko')
+
+      if (error) {
+        console.error('팀 멤버 로드 오류:', error)
+        return
+      }
+
+      setTeamMembers(data || [])
+    } catch (error) {
+      console.error('팀 멤버 로드 오류:', error)
+    }
+  }
+
+  const handleAddSchedule = () => {
+    const newSchedule: ScheduleItem = {
+      product_id: productId,
+      day_number: schedules.length > 0 ? Math.max(...schedules.map(s => s.day_number)) + 1 : 1,
+      start_time: '09:00',
+      end_time: '10:00',
+      title: '',
+      description: '',
+      location: '',
+      duration_minutes: 60,
+      is_break: false,
+      is_meal: false,
+      is_transport: false,
+      transport_type: '',
+      transport_details: '',
+      notes: '',
+      // 새로운 필드들
+      latitude: undefined,
+      longitude: undefined,
+      show_to_customers: true,
+      guide_assignment_type: '',
+      assigned_guide_1: '',
+      assigned_guide_2: '',
+      assigned_guide_driver_guide: '',
+      assigned_guide_driver_driver: '',
+      // 다국어 지원 필드들
+      title_ko: '',
+      title_en: '',
+      description_ko: '',
+      description_en: '',
+      location_ko: '',
+      location_en: '',
+      transport_details_ko: '',
+      transport_details_en: '',
+      notes_ko: '',
+      notes_en: '',
+      guide_notes_ko: '',
+      guide_notes_en: ''
+    }
+    
+    if (addMode === 'modal') {
+      setEditingSchedule(newSchedule)
+      setShowAddModal(true)
+    } else {
+      setTableSchedules(prev => [...prev, newSchedule])
+      setShowTableAdd(true)
+    }
+  }
+
+  const handleEditSchedule = (schedule: ScheduleItem) => {
+    setEditingSchedule(schedule)
+    setShowAddModal(true)
+  }
+
+  const handleDeleteSchedule = async (scheduleId: string) => {
+    if (!confirm('이 일정을 삭제하시겠습니까?')) return
+
+    try {
+      const { error } = await (supabase as any)
+        .from('product_schedules')
+        .delete()
+        .eq('id', scheduleId)
+
+      if (error) throw error
+
+      setSchedules(prev => prev.filter(s => s.id !== scheduleId))
+      setSaveMessage('일정이 삭제되었습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } catch (error) {
+      console.error('일정 삭제 오류:', error)
+      setSaveMessage('일정 삭제에 실패했습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+    }
+  }
+
+  const handleSaveSchedule = async (scheduleData: ScheduleItem) => {
+    setSaving(true)
+    setSaveMessage('')
+
+    try {
+      if (scheduleData.id) {
+        // 업데이트
+        const { error } = await (supabase as any)
+          .from('product_schedules')
+          .update({
+            ...scheduleData,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', scheduleData.id)
+
+        if (error) throw error
+
+        setSchedules(prev => prev.map(s => s.id === scheduleData.id ? scheduleData : s))
+      } else {
+        // 새로 생성
+        const { data, error } = await (supabase as any)
+          .from('product_schedules')
+          .insert([scheduleData])
+          .select()
+          .single()
+
+        if (error) throw error
+
+        setSchedules(prev => [...prev, data])
+      }
+
+      setSaveMessage('일정이 저장되었습니다!')
+      setTimeout(() => setSaveMessage(''), 3000)
+      setShowAddModal(false)
+      setEditingSchedule(null)
+    } catch (error) {
+      console.error('일정 저장 오류:', error)
+      setSaveMessage('일정 저장에 실패했습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSaveTableSchedules = async () => {
+    setSaving(true)
+    setSaveMessage('')
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('product_schedules')
+        .insert(tableSchedules)
+        .select()
+
+      if (error) throw error
+
+      setSchedules(prev => [...prev, ...data])
+      setSaveMessage(`${tableSchedules.length}개 일정이 저장되었습니다!`)
+      setTimeout(() => setSaveMessage(''), 3000)
+      setShowTableAdd(false)
+      setTableSchedules([])
+    } catch (error) {
+      console.error('일정 저장 오류:', error)
+      setSaveMessage('일정 저장에 실패했습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const getScheduleIcon = (schedule: ScheduleItem) => {
+    if (schedule.is_meal) return <Utensils className="h-4 w-4" />
+    if (schedule.is_transport) return <Car className="h-4 w-4" />
+    if (schedule.is_break) return <Coffee className="h-4 w-4" />
+    if (schedule.guide_assignment_type === 'two_guides' || schedule.guide_assignment_type === 'guide_driver') return <Users className="h-4 w-4" />
+    return <Calendar className="h-4 w-4" />
+  }
+
+  const getGuideAssignmentText = (schedule: ScheduleItem) => {
+    switch (schedule.guide_assignment_type) {
+      case 'two_guides':
+        if (schedule.assigned_guide_1 === 'guide') {
+          return '가이드가 담당'
+        } else if (schedule.assigned_guide_2 === 'assistant') {
+          return '어시스턴트가 담당'
+        } else {
+          return '담당자 미지정'
+        }
+      case 'guide_driver':
+        if (schedule.assigned_guide_1 === 'guide') {
+          return '가이드가 담당'
+        } else if (schedule.assigned_driver === 'driver') {
+          return '드라이버가 담당'
+        } else {
+          return '담당자 미지정'
+        }
+      default:
+        return ''
+    }
+  }
+
+  const openMapModal = (lat: number, lng: number, address: string) => {
+    setMapLocation({ lat, lng, address })
+    setShowMapModal(true)
+  }
+
+  const getScheduleColor = (schedule: ScheduleItem) => {
+    if (schedule.is_meal) return 'bg-orange-100 text-orange-800 border-orange-200'
+    if (schedule.is_transport) return 'bg-blue-100 text-blue-800 border-blue-200'
+    if (schedule.is_break) return 'bg-green-100 text-green-800 border-green-200'
+    return 'bg-gray-100 text-gray-800 border-gray-200'
+  }
+
+  const formatTime = (time: string) => {
+    if (!time) return ''
+    const [hours, minutes] = time.split(':')
+    return `${hours}:${minutes}`
+  }
+
+  const groupSchedulesByDay = () => {
+    const grouped: { [key: number]: ScheduleItem[] } = {}
+    schedules.forEach(schedule => {
+      if (!grouped[schedule.day_number]) {
+        grouped[schedule.day_number] = []
+      }
+      grouped[schedule.day_number].push(schedule)
+    })
+    return grouped
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span className="ml-2 text-gray-600">Loading...</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* 헤더 */}
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-medium text-gray-900 flex items-center">
+          <Calendar className="h-5 w-5 mr-2" />
+          투어 일정
+        </h3>
+        <div className="flex items-center space-x-4">
+          {saveMessage && (
+            <div className={`flex items-center text-sm ${
+              saveMessage.includes('성공') || saveMessage.includes('저장') ? 'text-green-600' : 'text-red-600'
+            }`}>
+              <AlertCircle className="h-4 w-4 mr-1" />
+              {saveMessage}
+            </div>
+          )}
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => {
+                setAddMode('modal')
+                const newSchedule: ScheduleItem = {
+                  product_id: productId,
+                  day_number: schedules.length > 0 ? Math.max(...schedules.map(s => s.day_number)) + 1 : 1,
+                  start_time: '09:00',
+                  end_time: '10:00',
+                  title: '',
+                  description: '',
+                  location: '',
+                  duration_minutes: 60,
+                  is_break: false,
+                  is_meal: false,
+                  is_transport: false,
+                  transport_type: '',
+                  transport_details: '',
+                  notes: '',
+                  latitude: undefined,
+                  longitude: undefined,
+                  show_to_customers: true,
+                  guide_assignment_type: '',
+                  assigned_guide_1: '',
+                  assigned_guide_2: '',
+                  assigned_driver: '',
+                  title_ko: '',
+                  title_en: '',
+                  description_ko: '',
+                  description_en: '',
+                  location_ko: '',
+                  location_en: '',
+                  transport_details_ko: '',
+                  transport_details_en: '',
+                  notes_ko: '',
+                  notes_en: '',
+                  guide_notes_ko: '',
+                  guide_notes_en: ''
+                }
+                setEditingSchedule(newSchedule)
+                setShowAddModal(true)
+              }}
+              disabled={isNewProduct}
+              className={`flex items-center px-3 py-2 rounded-lg text-sm ${
+                addMode === 'modal' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              모달로 추가
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddMode('table')
+                const newSchedule: ScheduleItem = {
+                  product_id: productId,
+                  day_number: schedules.length > 0 ? Math.max(...schedules.map(s => s.day_number)) + 1 : 1,
+                  start_time: '09:00',
+                  end_time: '10:00',
+                  title: '',
+                  description: '',
+                  location: '',
+                  duration_minutes: 60,
+                  is_break: false,
+                  is_meal: false,
+                  is_transport: false,
+                  transport_type: '',
+                  transport_details: '',
+                  notes: '',
+                  latitude: undefined,
+                  longitude: undefined,
+                  show_to_customers: true,
+                  guide_assignment_type: '',
+                  assigned_guide_1: '',
+                  assigned_guide_2: '',
+                  assigned_driver: '',
+                  title_ko: '',
+                  title_en: '',
+                  description_ko: '',
+                  description_en: '',
+                  location_ko: '',
+                  location_en: '',
+                  transport_details_ko: '',
+                  transport_details_en: '',
+                  notes_ko: '',
+                  notes_en: '',
+                  guide_notes_ko: '',
+                  guide_notes_en: ''
+                }
+                setTableSchedules(prev => [...prev, newSchedule])
+                setShowTableAdd(true)
+              }}
+              disabled={isNewProduct}
+              className={`flex items-center px-3 py-2 rounded-lg text-sm ${
+                addMode === 'table' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              테이블로 추가
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {isNewProduct && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+            <p className="text-yellow-800">
+              새 상품의 경우 상품을 먼저 저장한 후 일정을 추가할 수 있습니다.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* 일정 목록 */}
+      {schedules.length === 0 ? (
+        <div className="text-center py-12 text-gray-500">
+          <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+          <p>아직 등록된 일정이 없습니다.</p>
+          <p className="text-sm">일정 추가 버튼을 클릭하여 첫 번째 일정을 추가해보세요.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(groupSchedulesByDay()).map(([dayNumber, daySchedules]) => (
+            <div key={dayNumber} className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="text-lg font-medium text-gray-900 mb-4">
+                {dayNumber}일차
+              </h4>
+              <div className="space-y-3">
+                {daySchedules.map((schedule) => (
+                  <div
+                    key={schedule.id}
+                    className={`p-4 rounded-lg border ${getScheduleColor(schedule)}`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start space-x-3 flex-1">
+                        <div className="flex-shrink-0 mt-1">
+                          {getScheduleIcon(schedule)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <h5 className="font-medium text-sm">
+                              {schedule.title_ko || schedule.title}
+                              {schedule.title_en && schedule.title_ko && (
+                                <span className="text-xs text-gray-500 ml-2">({schedule.title_en})</span>
+                              )}
+                            </h5>
+                            {!schedule.show_to_customers && (
+                              <span className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full">
+                                가이드 전용
+                              </span>
+                            )}
+                            <div className="flex items-center text-xs text-gray-500">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {formatTime(schedule.start_time)} - {formatTime(schedule.end_time)}
+                            </div>
+                            {(schedule.location_ko || schedule.location) && (
+                              <div className="flex items-center text-xs text-gray-500">
+                                <MapPin className="h-3 w-3 mr-1" />
+                                {schedule.location_ko || schedule.location}
+                                {schedule.location_en && schedule.location_ko && (
+                                  <span className="ml-1">({schedule.location_en})</span>
+                                )}
+                                {schedule.latitude && schedule.longitude && (
+                                  <button
+                                    onClick={() => openMapModal(schedule.latitude!, schedule.longitude!, schedule.location_ko || schedule.location)}
+                                    className="ml-1 text-blue-600 hover:text-blue-800"
+                                    title="지도에서 보기"
+                                  >
+                                    <Map className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {(schedule.description_ko || schedule.description) && (
+                            <p className="text-sm text-gray-600 mb-2">
+                              {schedule.description_ko || schedule.description}
+                              {schedule.description_en && schedule.description_ko && (
+                                <span className="text-xs text-gray-500 ml-2">({schedule.description_en})</span>
+                              )}
+                            </p>
+                          )}
+                          {(schedule.transport_details_ko || schedule.transport_details) && (
+                            <p className="text-xs text-gray-500">
+                              <Car className="h-3 w-3 inline mr-1" />
+                              {schedule.transport_details_ko || schedule.transport_details}
+                              {schedule.transport_details_en && schedule.transport_details_ko && (
+                                <span className="ml-1">({schedule.transport_details_en})</span>
+                              )}
+                            </p>
+                          )}
+                          {(schedule.notes_ko || schedule.notes) && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              {schedule.notes_ko || schedule.notes}
+                              {schedule.notes_en && schedule.notes_ko && (
+                                <span className="ml-1">({schedule.notes_en})</span>
+                              )}
+                            </p>
+                          )}
+                          {getGuideAssignmentText(schedule) && (
+                            <p className="text-xs text-blue-600 mt-1 font-medium">
+                              <Users className="h-3 w-3 inline mr-1" />
+                              {getGuideAssignmentText(schedule)}
+                            </p>
+                          )}
+                          {(schedule.guide_notes_ko || schedule.guide_notes) && (
+                            <p className="text-xs text-gray-500 mt-1 italic">
+                              가이드 메모: {schedule.guide_notes_ko || schedule.guide_notes}
+                              {schedule.guide_notes_en && schedule.guide_notes_ko && (
+                                <span className="ml-1">({schedule.guide_notes_en})</span>
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2 ml-4">
+                        <button
+                          type="button"
+                          onClick={() => handleEditSchedule(schedule)}
+                          className="p-1 text-gray-400 hover:text-gray-600"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSchedule(schedule.id!)}
+                          className="p-1 text-gray-400 hover:text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 테이블 형식 일정 추가 모달 */}
+      {showTableAdd && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-[90vw] h-[90vh] overflow-hidden">
+            <TableScheduleAdd
+              schedules={tableSchedules}
+              onSchedulesChange={setTableSchedules}
+              onSave={handleSaveTableSchedules}
+              onClose={() => {
+                setShowTableAdd(false)
+                setTableSchedules([])
+              }}
+              saving={saving}
+              teamMembers={teamMembers}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 일정 추가/편집 모달 */}
+      {showAddModal && editingSchedule && (
+        <ScheduleModal
+          schedule={editingSchedule}
+          onSave={handleSaveSchedule}
+          onClose={() => {
+            setShowAddModal(false)
+            setEditingSchedule(null)
+          }}
+          saving={saving}
+          teamMembers={teamMembers}
+        />
+      )}
+
+      {/* 지도 모달 */}
+      {showMapModal && mapLocation && (
+        <MapModal
+          location={mapLocation}
+          onClose={() => setShowMapModal(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// 일정 추가/편집 모달 컴포넌트
+interface ScheduleModalProps {
+  schedule: ScheduleItem
+  onSave: (schedule: ScheduleItem) => void
+  onClose: () => void
+  saving: boolean
+  teamMembers: Array<{email: string, name_ko: string, position: string}>
+}
+
+function ScheduleModal({ schedule, onSave, onClose, saving, teamMembers }: ScheduleModalProps) {
+  const [formData, setFormData] = useState<ScheduleItem>(schedule)
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
+
+  const handleSave = () => {
+    onSave(formData)
+  }
+
+  const handleInputChange = (field: keyof ScheduleItem, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      handleSave()
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div 
+        className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        onKeyDown={handleKeyDown}
+      >
+        <h3 className="text-lg font-medium text-gray-900 mb-4">
+          {schedule.id ? '일정 편집' : '일정 추가'}
+        </h3>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                일차
+              </label>
+              <input
+                type="number"
+                value={formData.day_number}
+                onChange={(e) => handleInputChange('day_number', parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                min="1"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                소요시간 (분)
+              </label>
+              <input
+                type="number"
+                value={formData.duration_minutes}
+                onChange={(e) => handleInputChange('duration_minutes', parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                min="1"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                시작 시간
+              </label>
+              <input
+                type="time"
+                value={formData.start_time}
+                onChange={(e) => handleInputChange('start_time', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                종료 시간
+              </label>
+              <input
+                type="time"
+                value={formData.end_time}
+                onChange={(e) => handleInputChange('end_time', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+            </div>
+          </div>
+
+          {/* 다국어 제목 입력 */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-900">제목 *</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  한국어
+                </label>
+                <input
+                  type="text"
+                  value={formData.title_ko || ''}
+                  onChange={(e) => handleInputChange('title_ko', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="예: 호텔 픽업"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  English
+                </label>
+                <input
+                  type="text"
+                  value={formData.title_en || ''}
+                  onChange={(e) => handleInputChange('title_en', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Hotel Pickup"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 다국어 세부내용 입력 */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-900">세부내용</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  한국어
+                </label>
+                <textarea
+                  value={formData.description_ko || ''}
+                  onChange={(e) => handleInputChange('description_ko', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="일정에 대한 자세한 설명을 입력해주세요"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  English
+                </label>
+                <textarea
+                  value={formData.description_en || ''}
+                  onChange={(e) => handleInputChange('description_en', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Detailed description of the schedule"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 다국어 장소 입력 */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-900">장소</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  한국어
+                </label>
+                <input
+                  type="text"
+                  value={formData.location_ko || ''}
+                  onChange={(e) => handleInputChange('location_ko', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="예: 그랜드 하얏트 호텔"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  English
+                </label>
+                <input
+                  type="text"
+                  value={formData.location_en || ''}
+                  onChange={(e) => handleInputChange('location_en', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Grand Hyatt Hotel"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                위치 정보
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    위도 (Latitude)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={formData.latitude || ''}
+                    onChange={(e) => handleInputChange('latitude', e.target.value ? parseFloat(e.target.value) : undefined)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="예: 37.5665"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    경도 (Longitude)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={formData.longitude || ''}
+                    onChange={(e) => handleInputChange('longitude', e.target.value ? parseFloat(e.target.value) : undefined)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="예: 126.9780"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowLocationPicker(true)}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <Map className="h-4 w-4 mr-2" />
+                지도에서 위치 선택
+              </button>
+              {(formData.latitude && formData.longitude) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `https://maps.google.com/?q=${formData.latitude},${formData.longitude}`
+                    window.open(url, '_blank')
+                  }}
+                  className="flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                >
+                  <Map className="h-4 w-4 mr-1" />
+                  구글맵에서 보기
+                </button>
+              )}
+            </div>
+            
+            {(formData.latitude && formData.longitude) && (
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">선택된 위치:</span> 위도 {formData.latitude}, 경도 {formData.longitude}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="is_break"
+                checked={formData.is_break}
+                onChange={(e) => handleInputChange('is_break', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="is_break" className="ml-2 text-sm text-gray-700">
+                휴식시간
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="is_meal"
+                checked={formData.is_meal}
+                onChange={(e) => handleInputChange('is_meal', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="is_meal" className="ml-2 text-sm text-gray-700">
+                식사시간
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="is_transport"
+                checked={formData.is_transport}
+                onChange={(e) => handleInputChange('is_transport', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="is_transport" className="ml-2 text-sm text-gray-700">
+                이동시간
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="show_to_customers"
+                checked={formData.show_to_customers}
+                onChange={(e) => handleInputChange('show_to_customers', e.target.checked)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="show_to_customers" className="ml-2 text-sm text-gray-700">
+                고객에게 표시
+              </label>
+            </div>
+          </div>
+
+          {formData.is_transport && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  교통수단
+                </label>
+                <input
+                  type="text"
+                  value={formData.transport_type}
+                  onChange={(e) => handleInputChange('transport_type', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="예: 버스, 도보, 택시"
+                />
+              </div>
+              
+              {/* 다국어 교통 세부사항 입력 */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-900">교통 세부사항</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      한국어
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.transport_details_ko || ''}
+                      onChange={(e) => handleInputChange('transport_details_ko', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="예: 30분 버스 이동"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      English
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.transport_details_en || ''}
+                      onChange={(e) => handleInputChange('transport_details_en', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="e.g. 30 minutes bus ride"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 다국어 추가 메모 입력 */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-900">추가 메모</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  한국어
+                </label>
+                <textarea
+                  value={formData.notes_ko || ''}
+                  onChange={(e) => handleInputChange('notes_ko', e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="특별한 주의사항이나 추가 정보를 입력해주세요"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  English
+                </label>
+                <textarea
+                  value={formData.notes_en || ''}
+                  onChange={(e) => handleInputChange('notes_en', e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Special notes or additional information"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 담당자 할당 섹션 */}
+          <div className="border-t pt-4">
+            <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+              <Users className="h-4 w-4 mr-2" />
+              담당자 할당
+            </h4>
+            
+            {/* 2가이드 선택 */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                2가이드 담당자 선택
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleInputChange('guide_assignment_type', 'two_guides')
+                    handleInputChange('assigned_guide_1', 'guide')
+                    handleInputChange('assigned_guide_2', '')
+                    handleInputChange('assigned_driver', '')
+                  }}
+                  className={`px-3 py-2 text-sm rounded-lg border ${
+                    formData.guide_assignment_type === 'two_guides' && formData.assigned_guide_1 === 'guide'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  가이드가 담당
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleInputChange('guide_assignment_type', 'two_guides')
+                    handleInputChange('assigned_guide_1', '')
+                    handleInputChange('assigned_guide_2', 'assistant')
+                    handleInputChange('assigned_driver', '')
+                  }}
+                  className={`px-3 py-2 text-sm rounded-lg border ${
+                    formData.guide_assignment_type === 'two_guides' && formData.assigned_guide_2 === 'assistant'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  어시스턴트가 담당
+                </button>
+              </div>
+            </div>
+
+            {/* 가이드+드라이버 선택 */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                가이드+드라이버 담당자 선택
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleInputChange('guide_assignment_type', 'guide_driver')
+                    handleInputChange('assigned_guide_1', 'guide')
+                    handleInputChange('assigned_guide_2', '')
+                    handleInputChange('assigned_driver', '')
+                  }}
+                  className={`px-3 py-2 text-sm rounded-lg border ${
+                    formData.guide_assignment_type === 'guide_driver' && formData.assigned_guide_1 === 'guide'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  가이드가 담당
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleInputChange('guide_assignment_type', 'guide_driver')
+                    handleInputChange('assigned_guide_1', '')
+                    handleInputChange('assigned_guide_2', '')
+                    handleInputChange('assigned_driver', 'driver')
+                  }}
+                  className={`px-3 py-2 text-sm rounded-lg border ${
+                    formData.guide_assignment_type === 'guide_driver' && formData.assigned_driver === 'driver'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  드라이버가 담당
+                </button>
+              </div>
+            </div>
+
+            {/* 가이드 메모 */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-gray-900">가이드 메모</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    한국어
+                  </label>
+                  <textarea
+                    value={formData.guide_notes_ko || ''}
+                    onChange={(e) => handleInputChange('guide_notes_ko', e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="가이드에게 전달할 특별한 지시사항이나 메모를 입력해주세요"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    English
+                  </label>
+                  <textarea
+                    value={formData.guide_notes_en || ''}
+                    onChange={(e) => handleInputChange('guide_notes_en', e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Special instructions or notes for guides"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {saving ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      {/* 지도 위치 선택 모달 */}
+      {showLocationPicker && (
+        <LocationPickerModal
+          currentLat={formData.latitude}
+          currentLng={formData.longitude}
+          onLocationSelect={(lat, lng) => {
+            handleInputChange('latitude', lat)
+            handleInputChange('longitude', lng)
+            setShowLocationPicker(false)
+          }}
+          onClose={() => setShowLocationPicker(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// 테이블 형식 일정 추가 컴포넌트
+interface TableScheduleAddProps {
+  schedules: ScheduleItem[]
+  onSchedulesChange: (schedules: ScheduleItem[]) => void
+  onSave: () => void
+  onClose: () => void
+  saving: boolean
+  teamMembers: Array<{email: string, name_ko: string, position: string}>
+}
+
+function TableScheduleAdd({ schedules, onSchedulesChange, onSave, onClose, saving, teamMembers }: TableScheduleAddProps) {
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
+  const [locationPickerIndex, setLocationPickerIndex] = useState<number | null>(null)
+  const [showEnglishFields, setShowEnglishFields] = useState(false)
+  const [showOptionsModal, setShowOptionsModal] = useState(false)
+  const [currentScheduleIndex, setCurrentScheduleIndex] = useState<number | null>(null)
+
+  // 시간 계산 유틸리티 함수들
+  const timeToMinutes = (timeStr: string): number => {
+    const [hours, minutes] = timeStr.split(':').map(Number)
+    return hours * 60 + minutes
+  }
+
+  const minutesToTime = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
+  }
+
+  const calculateDuration = (startTime: string, endTime: string): number => {
+    const startMinutes = timeToMinutes(startTime)
+    const endMinutes = timeToMinutes(endTime)
+    return endMinutes - startMinutes
+  }
+
+  const calculateEndTime = (startTime: string, durationMinutes: number): string => {
+    const startMinutes = timeToMinutes(startTime)
+    const endMinutes = startMinutes + durationMinutes
+    return minutesToTime(endMinutes)
+  }
+
+  const addNewSchedule = () => {
+    // 마지막 행의 정보를 가져오기
+    const lastSchedule = schedules.length > 0 ? schedules[schedules.length - 1] : null
+    const lastDayNumber = lastSchedule ? lastSchedule.day_number : 1
+    const lastEndTime = lastSchedule ? lastSchedule.end_time : '09:00'
+    
+    const newSchedule: ScheduleItem = {
+      product_id: '',
+      day_number: lastDayNumber, // 윗 행과 같은 일차
+      start_time: lastEndTime, // 윗 행의 종료 시간을 시작 시간으로
+      end_time: calculateEndTime(lastEndTime, 60), // 시작 시간 + 60분
+      title: '',
+      description: '',
+      location: '',
+      duration_minutes: 60,
+      is_break: false,
+      is_meal: false,
+      is_transport: false,
+      transport_type: '',
+      transport_details: '',
+      notes: '',
+      latitude: undefined,
+      longitude: undefined,
+      show_to_customers: true,
+      guide_assignment_type: '',
+      assigned_guide_1: '',
+      assigned_guide_2: '',
+      assigned_guide_driver_guide: '',
+      assigned_guide_driver_driver: '',
+      title_ko: '',
+      title_en: '',
+      description_ko: '',
+      description_en: '',
+      location_ko: '',
+      location_en: '',
+      transport_details_ko: '',
+      transport_details_en: '',
+      notes_ko: '',
+      notes_en: '',
+      guide_notes_ko: '',
+      guide_notes_en: ''
+    }
+    onSchedulesChange([...schedules, newSchedule])
+  }
+
+  const updateSchedule = (index: number, field: keyof ScheduleItem, value: any) => {
+    const updatedSchedules = [...schedules]
+    updatedSchedules[index] = { ...updatedSchedules[index], [field]: value }
+    onSchedulesChange(updatedSchedules)
+  }
+
+  const removeSchedule = (index: number) => {
+    onSchedulesChange(schedules.filter((_, i) => i !== index))
+  }
+
+  // 이동시간 합산 계산 함수 (각 가이드 유형별로 분리)
+  const calculateTotalTransportTime = () => {
+    let twoGuidesGuideTime = 0
+    let twoGuidesAssistantTime = 0
+    let guideDriverGuideTime = 0
+    let guideDriverDriverTime = 0
+
+    schedules.forEach(schedule => {
+      if (schedule.is_transport) {
+        const duration = schedule.duration_minutes
+        
+        // 2가이드에서 가이드가 선택된 경우
+        if (schedule.assigned_guide_1 === 'guide') {
+          twoGuidesGuideTime += duration
+        }
+        // 2가이드에서 어시스턴트가 선택된 경우
+        else if (schedule.assigned_guide_2 === 'assistant') {
+          twoGuidesAssistantTime += duration
+        }
+        
+        // 가이드+드라이버에서 가이드가 선택된 경우
+        if (schedule.assigned_guide_driver_guide === 'guide') {
+          guideDriverGuideTime += duration
+        }
+        // 가이드+드라이버에서 드라이버가 선택된 경우
+        else if (schedule.assigned_guide_driver_driver === 'driver') {
+          guideDriverDriverTime += duration
+        }
+      }
+    })
+
+    const formatTime = (minutes: number) => {
+      const hours = Math.floor(minutes / 60)
+      const mins = minutes % 60
+      
+      if (hours > 0 && mins > 0) {
+        return `${hours}:${mins.toString().padStart(2, '0')}`
+      } else if (hours > 0) {
+        return `${hours}:00`
+      } else {
+        return `${mins}분`
+      }
+    }
+
+    return {
+      twoGuidesGuide: formatTime(twoGuidesGuideTime),
+      twoGuidesAssistant: formatTime(twoGuidesAssistantTime),
+      guideDriverGuide: formatTime(guideDriverGuideTime),
+      guideDriverDriver: formatTime(guideDriverDriverTime)
+    }
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* 헤더 */}
+      <div className="flex justify-between items-center p-4 border-b border-gray-200">
+        <div className="flex items-center space-x-4">
+          <h4 className="text-lg font-medium text-gray-900 flex items-center">
+            <Calendar className="h-5 w-5 mr-2" />
+            테이블 형식 일정 추가
+          </h4>
+          <div className="text-sm text-gray-600">
+            <div className="flex items-center space-x-4">
+              {(() => {
+                const timeData = calculateTotalTransportTime()
+                return (
+                  <>
+                    <span>2가이드 (가이드: {timeData.twoGuidesGuide}, 어시스턴트: {timeData.twoGuidesAssistant})</span>
+                    <span>가이드+드라이버 (가이드: {timeData.guideDriverGuide}, 드라이버: {timeData.guideDriverDriver})</span>
+                  </>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={() => setShowEnglishFields(!showEnglishFields)}
+            className={`px-3 py-1 text-sm rounded-lg border ${
+              showEnglishFields 
+                ? 'bg-blue-600 text-white border-blue-600' 
+                : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+            }`}
+          >
+            {showEnglishFields ? 'EN' : 'KO'}
+          </button>
+          <button
+            type="button"
+            onClick={addNewSchedule}
+            className="flex items-center px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            행 추가
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving || schedules.length === 0}
+            className="flex items-center px-4 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+          >
+            <Save className="h-4 w-4 mr-1" />
+            {saving ? '저장 중...' : '모두 저장'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-1 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm"
+          >
+            취소
+          </button>
+        </div>
+      </div>
+
+      {/* 테이블 영역 */}
+      <div className="flex-1 overflow-auto p-4">
+        {/* 헤더 행 */}
+        <div className="flex gap-2 items-end mb-4 pb-2 border-b border-gray-200">
+          <div className="w-8"></div> {/* 삭제 버튼 공간 */}
+          <div className="w-12">
+            <div className="text-xs font-medium text-gray-600">일차</div>
+          </div>
+          <div className="w-[120px]">
+            <div className="text-xs font-medium text-gray-600">시작</div>
+          </div>
+          <div className="w-[120px]">
+            <div className="text-xs font-medium text-gray-600">종료</div>
+          </div>
+          <div className="w-16">
+            <div className="text-xs font-medium text-gray-600">소요(분)</div>
+          </div>
+          <div className="w-48">
+            <div className="text-xs font-medium text-gray-600">제목</div>
+          </div>
+          <div className="w-64">
+            <div className="text-xs font-medium text-gray-600">설명</div>
+          </div>
+          <div className="w-40">
+            <div className="text-xs font-medium text-gray-600">가이드 메모</div>
+          </div>
+          <div className="w-40">
+            <div className="text-xs font-medium text-gray-600">2가이드</div>
+          </div>
+          <div className="w-40">
+            <div className="text-xs font-medium text-gray-600">가이드+드라이버</div>
+          </div>
+          <div className="w-40">
+            <div className="text-xs font-medium text-gray-600">옵션</div>
+          </div>
+          <div className="w-40">
+            <div className="text-xs font-medium text-gray-600">위치</div>
+          </div>
+        </div>
+
+        {/* 일정 행들 */}
+        <div className="space-y-2">
+          {schedules.map((schedule, index) => (
+            <div key={index} className="flex gap-2 items-end">
+              {/* 삭제 버튼 */}
+              <div className="w-8 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => removeSchedule(index)}
+                  className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* 일차 */}
+              <div className="w-12">
+                <input
+                  type="number"
+                  value={schedule.day_number}
+                  onChange={(e) => updateSchedule(index, 'day_number', parseInt(e.target.value))}
+                  className="w-full px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  min="1"
+                />
+              </div>
+
+              {/* 시작시간 */}
+              <div className="w-30">
+                <input
+                  type="time"
+                  value={schedule.start_time}
+                  onChange={(e) => {
+                    const newStartTime = e.target.value
+                    const newEndTime = calculateEndTime(newStartTime, schedule.duration_minutes)
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      start_time: newStartTime,
+                      end_time: newEndTime
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 종료시간 */}
+              <div className="w-30">
+                <input
+                  type="time"
+                  value={schedule.end_time}
+                  onChange={(e) => {
+                    const newEndTime = e.target.value
+                    const newDuration = calculateDuration(schedule.start_time, newEndTime)
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      end_time: newEndTime,
+                      duration_minutes: newDuration
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 소요시간 */}
+              <div className="w-16">
+                <input
+                  type="number"
+                  value={schedule.duration_minutes}
+                  onChange={(e) => {
+                    const newDuration = parseInt(e.target.value) || 0
+                    const newEndTime = calculateEndTime(schedule.start_time, newDuration)
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      duration_minutes: newDuration,
+                      end_time: newEndTime
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  onWheel={(e) => {
+                    e.preventDefault()
+                    const delta = e.deltaY > 0 ? -5 : 5
+                    const newDuration = Math.max(5, schedule.duration_minutes + delta)
+                    const newEndTime = calculateEndTime(schedule.start_time, newDuration)
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      duration_minutes: newDuration,
+                      end_time: newEndTime
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-full px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  min="5"
+                  step="5"
+                />
+              </div>
+
+              {/* 제목 필드 */}
+              <div className="w-48">
+                <input
+                  type="text"
+                  value={showEnglishFields ? (schedule.title_en || '') : (schedule.title_ko || '')}
+                  onChange={(e) => {
+                    if (showEnglishFields) {
+                      updateSchedule(index, 'title_en', e.target.value)
+                    } else {
+                      updateSchedule(index, 'title_ko', e.target.value)
+                    }
+                  }}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder={showEnglishFields ? "English title" : "한국어 제목"}
+                />
+              </div>
+
+              {/* 설명 필드 */}
+              <div className="w-64">
+                <input
+                  type="text"
+                  value={showEnglishFields ? (schedule.description_en || '') : (schedule.description_ko || '')}
+                  onChange={(e) => {
+                    if (showEnglishFields) {
+                      updateSchedule(index, 'description_en', e.target.value)
+                    } else {
+                      updateSchedule(index, 'description_ko', e.target.value)
+                    }
+                  }}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder={showEnglishFields ? "English description" : "한국어 설명"}
+                />
+              </div>
+
+              {/* 가이드 메모 */}
+              <div className="w-40">
+                <input
+                  type="text"
+                  value={showEnglishFields ? (schedule.guide_notes_en || '') : (schedule.guide_notes_ko || '')}
+                  onChange={(e) => {
+                    if (showEnglishFields) {
+                      updateSchedule(index, 'guide_notes_en', e.target.value)
+                    } else {
+                      updateSchedule(index, 'guide_notes_ko', e.target.value)
+                    }
+                  }}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder={showEnglishFields ? "Guide notes (English)" : "가이드 메모 (한국어)"}
+                />
+              </div>
+
+              {/* 2가이드 담당자 선택 */}
+              <div className="w-40">
+                <select
+                  value={(() => {
+                    const result = schedule.assigned_guide_1 === 'guide' ? 'guide' : 
+                                   schedule.assigned_guide_2 === 'assistant' ? 'assistant' : ''
+                    console.log('2가이드 드롭다운 value 계산:', {
+                      assigned_guide_1: schedule.assigned_guide_1,
+                      assigned_guide_2: schedule.assigned_guide_2,
+                      result
+                    })
+                    return result
+                  })()}
+                  onChange={(e) => {
+                    console.log('2가이드 드롭다운 변경:', e.target.value)
+                    // 2가이드 드롭다운만 독립적으로 업데이트 (assigned_driver는 건드리지 않음)
+                    const updatedSchedules = [...schedules]
+                    if (e.target.value === 'guide') {
+                      updatedSchedules[index] = {
+                        ...updatedSchedules[index],
+                        assigned_guide_1: 'guide',
+                        assigned_guide_2: ''
+                      }
+                    } else if (e.target.value === 'assistant') {
+                      updatedSchedules[index] = {
+                        ...updatedSchedules[index],
+                        assigned_guide_1: '',
+                        assigned_guide_2: 'assistant'
+                      }
+                    } else {
+                      // 선택 해제 시
+                      updatedSchedules[index] = {
+                        ...updatedSchedules[index],
+                        assigned_guide_1: '',
+                        assigned_guide_2: ''
+                      }
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">선택</option>
+                  <option value="guide">가이드</option>
+                  <option value="assistant">어시스턴트</option>
+                </select>
+              </div>
+
+              {/* 가이드+드라이버 담당자 선택 */}
+              <div className="w-40">
+                <select
+                  value={(() => {
+                    const result = schedule.assigned_guide_driver_guide === 'guide' ? 'guide' : 
+                                   schedule.assigned_guide_driver_driver === 'driver' ? 'driver' : ''
+                    console.log('가이드+드라이버 드롭다운 value 계산:', {
+                      assigned_guide_driver_guide: schedule.assigned_guide_driver_guide,
+                      assigned_guide_driver_driver: schedule.assigned_guide_driver_driver,
+                      result
+                    })
+                    return result
+                  })()}
+                  onChange={(e) => {
+                    console.log('가이드+드라이버 드롭다운 변경:', e.target.value)
+                    // 가이드+드라이버 드롭다운만 독립적으로 업데이트
+                    const updatedSchedules = [...schedules]
+                    if (e.target.value === 'guide') {
+                      // 가이드 선택 시: assigned_guide_driver_guide에 'guide' 저장
+                      updatedSchedules[index] = {
+                        ...updatedSchedules[index],
+                        assigned_guide_driver_guide: 'guide',
+                        assigned_guide_driver_driver: ''
+                      }
+                    } else if (e.target.value === 'driver') {
+                      // 드라이버 선택 시: assigned_guide_driver_driver에 'driver' 저장
+                      updatedSchedules[index] = {
+                        ...updatedSchedules[index],
+                        assigned_guide_driver_guide: '',
+                        assigned_guide_driver_driver: 'driver'
+                      }
+                    } else {
+                      // 선택 해제 시
+                      updatedSchedules[index] = {
+                        ...updatedSchedules[index],
+                        assigned_guide_driver_guide: '',
+                        assigned_guide_driver_driver: ''
+                      }
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">선택</option>
+                  <option value="guide">가이드</option>
+                  <option value="driver">드라이버</option>
+                </select>
+              </div>
+
+              {/* 옵션 선택 버튼 */}
+              <div className="w-40">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentScheduleIndex(index)
+                    setShowOptionsModal(true)
+                  }}
+                  className="w-full px-2 py-1 text-xs bg-gray-100 text-gray-700 border border-gray-300 rounded hover:bg-gray-200 text-center"
+                >
+                  {[
+                    schedule.is_break && '휴식',
+                    schedule.is_meal && '식사',
+                    schedule.is_transport && '이동',
+                    schedule.show_to_customers && '고객표시'
+                  ].filter(Boolean).join(',') || '옵션 선택'}
+                </button>
+              </div>
+
+              {/* 위치 좌표 및 지도 버튼 */}
+              <div className="w-40">
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    value={`${schedule.latitude || ''}, ${schedule.longitude || ''}`}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      const parts = value.split(',').map(part => part.trim())
+                      const lat = parts[0] ? parseFloat(parts[0]) : undefined
+                      const lng = parts[1] ? parseFloat(parts[1]) : undefined
+                      updateSchedule(index, 'latitude', lat)
+                      updateSchedule(index, 'longitude', lng)
+                    }}
+                    className="flex-1 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="위도, 경도"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocationPickerIndex(index)
+                      setShowLocationPicker(true)
+                    }}
+                    className="w-8 h-6 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center"
+                  >
+                    <Map className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 지도 위치 선택 모달 */}
+      {showLocationPicker && locationPickerIndex !== null && (
+        <LocationPickerModal
+          currentLat={schedules[locationPickerIndex]?.latitude}
+          currentLng={schedules[locationPickerIndex]?.longitude}
+          onLocationSelect={(lat, lng) => {
+            updateSchedule(locationPickerIndex, 'latitude', lat)
+            updateSchedule(locationPickerIndex, 'longitude', lng)
+            setShowLocationPicker(false)
+            setLocationPickerIndex(null)
+          }}
+          onClose={() => {
+            setShowLocationPicker(false)
+            setLocationPickerIndex(null)
+          }}
+        />
+      )}
+
+      {/* 옵션 설정 모달 */}
+      {showOptionsModal && currentScheduleIndex !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">옵션 설정</h3>
+            <div className="space-y-3">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={schedules[currentScheduleIndex]?.is_break || false}
+                  onChange={(e) => updateSchedule(currentScheduleIndex, 'is_break', e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="ml-2 text-sm text-gray-700">휴식시간</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={schedules[currentScheduleIndex]?.is_meal || false}
+                  onChange={(e) => updateSchedule(currentScheduleIndex, 'is_meal', e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="ml-2 text-sm text-gray-700">식사시간</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={schedules[currentScheduleIndex]?.is_transport || false}
+                  onChange={(e) => updateSchedule(currentScheduleIndex, 'is_transport', e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="ml-2 text-sm text-gray-700">이동시간</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={schedules[currentScheduleIndex]?.show_to_customers || false}
+                  onChange={(e) => updateSchedule(currentScheduleIndex, 'show_to_customers', e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="ml-2 text-sm text-gray-700">고객에게 표시</span>
+              </label>
+            </div>
+            <div className="flex justify-end mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOptionsModal(false)
+                  setCurrentScheduleIndex(null)
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+// 지도 위치 선택 모달 컴포넌트
+interface LocationPickerModalProps {
+  currentLat?: number
+  currentLng?: number
+  onLocationSelect: (lat: number, lng: number) => void
+  onClose: () => void
+}
+
+function LocationPickerModal({ currentLat, currentLng, onLocationSelect, onClose }: LocationPickerModalProps) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedLat, setSelectedLat] = useState(currentLat || 37.5665)
+  const [selectedLng, setSelectedLng] = useState(currentLng || 126.9780)
+  const [address, setAddress] = useState('')
+
+  const handleMapClick = (lat: number, lng: number) => {
+    setSelectedLat(lat)
+    setSelectedLng(lng)
+    // 간단한 주소 변환 (실제로는 Google Geocoding API 사용 권장)
+    setAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`)
+  }
+
+  const handleConfirm = () => {
+    onLocationSelect(selectedLat, selectedLng)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900 flex items-center">
+            <Map className="h-5 w-5 mr-2" />
+            지도에서 위치 선택
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-1 text-gray-400 hover:text-gray-600"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          {/* 검색 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              장소 검색
+            </label>
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="장소명을 입력하세요 (예: 서울시청, 그랜드캐니언)"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  // 실제로는 Google Places API 사용 권장
+                  if (searchQuery.toLowerCase().includes('서울')) {
+                    handleMapClick(37.5665, 126.9780)
+                  } else if (searchQuery.toLowerCase().includes('그랜드캐니언')) {
+                    handleMapClick(36.1069, -112.1129)
+                  } else if (searchQuery.toLowerCase().includes('라스베가스')) {
+                    handleMapClick(36.1699, -115.1398)
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                검색
+              </button>
+            </div>
+          </div>
+
+          {/* 지도 영역 */}
+          <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+            <Map className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+            <h4 className="text-lg font-medium text-gray-700 mb-2">지도 영역</h4>
+            <p className="text-gray-500 mb-4">
+              실제 구현 시 Google Maps API를 연동하여<br />
+              지도를 표시하고 클릭으로 위치를 선택할 수 있습니다.
+            </p>
+            
+            {/* 간단한 위치 선택 시뮬레이션 */}
+            <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+              <button
+                type="button"
+                onClick={() => handleMapClick(37.5665, 126.9780)}
+                className="p-3 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                <div className="text-sm font-medium">서울시청</div>
+                <div className="text-xs text-gray-500">37.5665, 126.9780</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMapClick(36.1069, -112.1129)}
+                className="p-3 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                <div className="text-sm font-medium">그랜드캐니언</div>
+                <div className="text-xs text-gray-500">36.1069, -112.1129</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMapClick(36.1699, -115.1398)}
+                className="p-3 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                <div className="text-sm font-medium">라스베가스</div>
+                <div className="text-xs text-gray-500">36.1699, -115.1398</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMapClick(34.0522, -118.2437)}
+                className="p-3 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                <div className="text-sm font-medium">로스앤젤레스</div>
+                <div className="text-xs text-gray-500">34.0522, -118.2437</div>
+              </button>
+            </div>
+          </div>
+
+          {/* 선택된 위치 정보 */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-medium text-gray-900 mb-2">선택된 위치</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">위도</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={selectedLat}
+                  onChange={(e) => setSelectedLat(parseFloat(e.target.value))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">경도</label>
+                <input
+                  type="number"
+                  step="any"
+                  value={selectedLng}
+                  onChange={(e) => setSelectedLng(parseFloat(e.target.value))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            {address && (
+              <div className="mt-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">주소</label>
+                <p className="text-sm text-gray-700">{address}</p>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex justify-end space-x-3 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            위치 선택
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 지도 모달 컴포넌트
+interface MapModalProps {
+  location: { lat: number; lng: number; address: string }
+  onClose: () => void
+}
+
+function MapModal({ location, onClose }: MapModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900 flex items-center">
+            <Map className="h-5 w-5 mr-2" />
+            위치 정보
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-1 text-gray-400 hover:text-gray-600"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-medium text-gray-900 mb-2">주소</h4>
+            <p className="text-gray-700">{location.address}</p>
+          </div>
+          
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-medium text-gray-900 mb-2">좌표</h4>
+            <p className="text-gray-700">
+              위도: {location.lat}, 경도: {location.lng}
+            </p>
+          </div>
+          
+          <div className="bg-gray-100 p-4 rounded-lg text-center">
+            <p className="text-gray-600 mb-2">지도 표시 영역</p>
+            <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-8">
+              <Map className="h-12 w-12 mx-auto text-gray-400 mb-2" />
+              <p className="text-gray-500">
+                실제 지도 구현 시 Google Maps 또는 Kakao Map API를 연동하여<br />
+                위도/경도 좌표를 기반으로 지도를 표시할 수 있습니다.
+              </p>
+              <div className="mt-4 text-sm text-gray-400">
+                <p>Google Maps: https://maps.google.com/?q={location.lat},{location.lng}</p>
+                <p>Kakao Map: https://map.kakao.com/link/map/위치,{location.lat},{location.lng}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex justify-end mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

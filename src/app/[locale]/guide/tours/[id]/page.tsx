@@ -12,6 +12,7 @@ import TourChatRoom from '@/components/TourChatRoom'
 import TourExpenseManager from '@/components/TourExpenseManager'
 import TourReportSection from '@/components/TourReportSection'
 import TourReportForm from '@/components/TourReportForm'
+import TourWeather from '@/components/TourWeather'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -680,6 +681,12 @@ export default function GuideTourDetailPage() {
             )}
                 </div>
               </div>
+
+        {/* 밤도깨비 투어 특별 정보 */}
+        <TourWeather 
+          tourDate={tour.tour_date} 
+          productId={(tour as TourRow & { product_id?: string }).product_id} 
+        />
 
         {/* 예약 정보 - 개요 탭에만 표시 */}
         <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
