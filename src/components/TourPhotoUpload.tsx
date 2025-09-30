@@ -35,6 +35,7 @@ export default function TourPhotoUpload({
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, batch: 0, totalBatches: 0 })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 사진 목록 로드
@@ -117,102 +118,148 @@ export default function TourPhotoUpload({
     
     setUploading(true)
     
-    const uploadPromises = Array.from(files).map(async (file) => {
-      try {
-        console.log(`Processing file: ${file.name}, size: ${file.size}, type: ${file.type}`)
-        
-        // 파일 크기 체크 (10MB)
-        if (file.size > 10 * 1024 * 1024) {
-          throw new Error(`파일 크기가 너무 큽니다: ${file.name}`)
-        }
+    // 파일 개수 제한 체크 (최대 500개)
+    if (files.length > 500) {
+      alert('한번에 최대 500개의 파일만 업로드할 수 있습니다.')
+      return
+    }
 
-        // MIME 타입 체크
-        if (!file.type.startsWith('image/')) {
-          throw new Error(`${t('imageOnlyError')}: ${file.name}`)
-        }
+    console.log(`총 ${files.length}개 파일 업로드 시작`)
 
-        // 고유한 파일명 생성
-        const fileExt = file.name.split('.').pop()
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-        const filePath = `${tourId}/${fileName}`
+    // 대량 파일 처리를 위한 배치 업로드 (한번에 20개씩)
+    const batchSize = 20
+    const fileArray = Array.from(files)
+    const batches = []
+    
+    for (let i = 0; i < fileArray.length; i += batchSize) {
+      batches.push(fileArray.slice(i, i + batchSize))
+    }
 
-        console.log(`Uploading to storage: ${filePath}`)
+    console.log(`${batches.length}개 배치로 나누어 업로드 (배치당 ${batchSize}개)`)
+    
+    // 업로드 진행 상황 초기화
+    setUploadProgress({ current: 0, total: files.length, batch: 0, totalBatches: batches.length })
 
-        // Supabase Storage에 업로드
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('tour-photos')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false
-          })
-
-        if (uploadError) {
-          console.error('Storage upload error:', uploadError)
-          throw uploadError
-        }
-
-        console.log('Storage upload successful:', uploadData)
-
-        // 공유 토큰 생성
-        const shareToken = crypto.randomUUID()
-
-        console.log('Inserting photo metadata to database')
-
-        // 데이터베이스에 메타데이터 저장
-        const { data: photoData, error: dbError } = await supabase
-          .from('tour_photos')
-          .insert({
-            tour_id: tourId,
-            reservation_id: reservationId,
-            uploaded_by: uploadedBy,
-            file_name: file.name,
-            file_path: filePath,
-            file_size: file.size,
-            mime_type: file.type,
-            is_public: true,
-            share_token: shareToken
-          })
-          .select()
-          .single()
-
-        if (dbError) {
-          console.error('Database insert error:', dbError)
-          // 테이블이 존재하지 않는 경우 Storage에서 파일 삭제
-          if (dbError.code === 'PGRST205') {
-            console.warn('tour_photos table does not exist, cleaning up uploaded file')
-            await supabase.storage
-              .from('tour-photos')
-              .remove([filePath])
-            throw new Error('tour_photos 테이블이 존재하지 않습니다. 관리자에게 문의하세요.')
-          }
-          throw dbError
-        }
-
-        console.log('Photo metadata saved successfully:', photoData)
-        return photoData
-      } catch (error) {
-        console.error(`Error uploading ${file.name}:`, error)
-        alert(`업로드 실패: ${file.name} - ${error.message || error}`)
-        return null
-      }
-    })
 
     try {
-      const results = await Promise.all(uploadPromises)
-      const successfulUploads = results.filter(Boolean)
+      let totalSuccessful = 0
+      let totalFailed = 0
       
-      if (successfulUploads.length > 0) {
-        console.log('Upload successful, refreshing photos list')
+      // 배치별로 순차 업로드
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex]
+        console.log(`배치 ${batchIndex + 1}/${batches.length} 업로드 중... (${batch.length}개 파일)`)
+        
+        // 진행 상황 업데이트
+        setUploadProgress(prev => ({ 
+          ...prev, 
+          batch: batchIndex + 1,
+          current: batchIndex * batchSize
+        }))
+        
+        const batchPromises = batch.map(async (file) => {
+          try {
+            console.log(`Processing file: ${file.name}, size: ${file.size}, type: ${file.type}`)
+            
+            // 파일 크기 체크 (50MB로 증가)
+            if (file.size > 50 * 1024 * 1024) {
+              throw new Error(`파일 크기가 너무 큽니다: ${file.name} (최대 50MB)`)
+            }
+
+            // MIME 타입 체크
+            if (!file.type.startsWith('image/')) {
+              throw new Error(`${t('imageOnlyError')}: ${file.name}`)
+            }
+
+            // 고유한 파일명 생성
+            const fileExt = file.name.split('.').pop()
+            const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+            const filePath = `${tourId}/${fileName}`
+
+            console.log(`Uploading to storage: ${filePath}`)
+
+            // Supabase Storage에 업로드
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('tour-photos')
+              .upload(filePath, file, {
+                cacheControl: '3600',
+                upsert: false
+              })
+
+            if (uploadError) {
+              console.error('Storage upload error:', uploadError)
+              throw uploadError
+            }
+
+            console.log('Storage upload successful:', uploadData)
+
+            // 공유 토큰 생성
+            const shareToken = crypto.randomUUID()
+
+            console.log('Inserting photo metadata to database')
+
+            // 데이터베이스에 메타데이터 저장
+            const { data: photoData, error: dbError } = await supabase
+              .from('tour_photos')
+              .insert({
+                tour_id: tourId,
+                file_path: uploadData.path,
+                file_name: file.name,
+                file_size: file.size,
+                file_type: file.type,
+                uploaded_by: user?.id,
+                share_token: shareToken
+              })
+              .select()
+              .single()
+
+            if (dbError) {
+              console.error('Database insert error:', dbError)
+              // Storage에서 파일 삭제
+              await supabase.storage.from('tour-photos').remove([uploadData.path])
+              throw dbError
+            }
+
+            console.log(`Successfully uploaded ${file.name}`)
+            return photoData
+          } catch (error) {
+            console.error(`Error uploading ${file.name}:`, error)
+            return null
+          }
+        })
+
+        const batchResults = await Promise.allSettled(batchPromises)
+        const batchSuccessful = batchResults.filter(r => r.status === 'fulfilled' && r.value !== null).length
+        const batchFailed = batchResults.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && r.value === null)).length
+        
+        totalSuccessful += batchSuccessful
+        totalFailed += batchFailed
+        
+        console.log(`배치 ${batchIndex + 1} 완료: ${batchSuccessful}개 성공, ${batchFailed}개 실패`)
+        
+        // 배치 간 잠시 대기 (서버 부하 방지)
+        if (batchIndex < batches.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+      }
+      
+      if (totalSuccessful > 0) {
+        console.log(`전체 업로드 완료: ${totalSuccessful}개 성공, ${totalFailed}개 실패`)
         // 사진 목록 새로고침
         await loadPhotos()
         onPhotosUpdated?.()
-        alert(t('uploadSuccess', { count: successfulUploads.length }))
+        
+        if (totalFailed > 0) {
+          alert(`📊 업로드 완료: ${totalSuccessful}개 성공, ${totalFailed}개 실패`)
+        } else {
+          alert(`✅ 성공적으로 ${totalSuccessful}개 파일을 업로드했습니다.`)
+        }
       } else {
-        alert(t('uploadError'))
+        alert(`❌ 모든 파일 업로드에 실패했습니다. (${totalFailed}개 파일)`)
       }
     } catch (error) {
       console.error('Error uploading photos:', error)
-      alert(t('uploadError'))
+      alert(`❌ 업로드 중 오류가 발생했습니다: ${error.message}`)
     } finally {
       setUploading(false)
     }
@@ -414,6 +461,25 @@ export default function TourPhotoUpload({
         <div className="text-center py-8 text-gray-500">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p>{t('uploading')}</p>
+          
+          {/* 업로드 진행 상황 */}
+          {uploadProgress.total > 0 && (
+            <div className="mt-4 max-w-md mx-auto">
+              <div className="flex justify-between text-sm text-gray-600 mb-2">
+                <span>배치 {uploadProgress.batch}/{uploadProgress.totalBatches}</span>
+                <span>{uploadProgress.current}/{uploadProgress.total} 파일</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {Math.round((uploadProgress.current / uploadProgress.total) * 100)}% 완료
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
