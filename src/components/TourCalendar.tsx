@@ -46,9 +46,16 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
   // 투어 이름 매핑 함수 (항상 영문으로 표시)
   const getTourDisplayName = (tour: ExtendedTour) => {
     const tourName = tour.product_name || tour.product_id
-    // 한글 상품명을 영문으로 번역
-    const translatedName = t(`tourNameMapping.${tourName}`) || tourName
-    return translatedName
+    try {
+      // 한글 상품명을 영문으로 번역
+      const translatedName = t(`tourNameMapping.${tourName}`)
+      // 번역이 실패하거나 원본과 같으면 원본 반환
+      return translatedName && translatedName !== `tourNameMapping.${tourName}` ? translatedName : tourName
+    } catch (error) {
+      // 번역 실패 시 원본 이름 반환
+      console.warn(`Translation failed for tour name: ${tourName}`, error)
+      return tourName
+    }
   }
   const [currentDate, setCurrentDate] = useState(new Date())
   const [productMetaById, setProductMetaById] = useState<{[id: string]: { name: string; sub_category: string }}>({})

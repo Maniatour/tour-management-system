@@ -271,7 +271,12 @@
         "Mania Service": "Mania Service",
         "투어": "Tour",
         "단독 투어": "Private Tour",
-        "그룹 투어": "Group Tour"
+        "그룹 투어": "Group Tour",
+        "야경투어": "Night Tour",
+        "자이언브라이스": "Zion Bryce",
+        "1박2일": "2 Days 1 Night",
+        "1박2일 단독": "2 Days 1 Night Private",
+        "데이투어": "Day Tour"
       },
       "reservationCalendar": "Calendar",
       "yearUnit": "",
