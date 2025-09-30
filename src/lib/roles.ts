@@ -106,15 +106,18 @@ export function getUserRole(email: string, teamData?: any): UserRole {
     if (position === 'office manager') {
       return 'manager'  // Office Manager는 매니저
     }
-    // 투어 가이드 관련 position들 (대소문자 구별 없음)
-    if (position === 'tour guide' || position === 'tourguide' || position === 'guide' || 
-        position === 'op' || position === 'driver') {
-      return 'team_member'  // Tour Guide, OP, Driver는 팀원
+    // 투어 가이드만 team_member로 분류 (guide 페이지로 리다이렉트)
+    if (position === 'tour guide' || position === 'tourguide' || position === 'guide') {
+      return 'team_member'  // 투어 가이드만 team_member
+    }
+    // OP, Driver 등은 관리자 권한으로 분류 (admin 페이지로 리다이렉트)
+    if (position === 'op' || position === 'driver') {
+      return 'admin'  // OP, Driver는 관리자 권한
     }
     
-    // position이 있지만 특정 키워드가 없는 경우 팀원으로 처리
+    // position이 있지만 특정 키워드가 없는 경우 관리자 권한으로 처리
     if (position) {
-      return 'team_member'
+      return 'admin'
     }
   }
   

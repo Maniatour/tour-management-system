@@ -41,12 +41,13 @@ export default function AuthCallbackPage() {
             // 사용자 역할에 따라 적절한 페이지로 리다이렉트
             const userEmail = data.session.user.email?.toLowerCase()
             
-            // 슈퍼관리자 이메일 확인
+            // 슈퍼관리자 이메일 확인 (무조건 admin 페이지)
             const superAdminEmails = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
             if (userEmail && superAdminEmails.includes(userEmail)) {
               router.replace(`/${locale}/admin`)
             } else {
-              // 일반 사용자는 guide 페이지로 리다이렉트 (AuthContext에서 역할 확인 후 재리다이렉트됨)
+              // 일반 사용자는 AuthContext에서 역할 확인 후 적절한 페이지로 리다이렉트됨
+              // 투어 가이드는 /guide로, 나머지(매니저, op, admin, super 등)는 /admin으로
               router.replace(`/${locale}/guide`)
             }
           }, 100)

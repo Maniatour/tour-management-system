@@ -355,12 +355,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     switch (currentRole) {
       case 'admin':
       case 'manager':
+        // 관리자, 매니저, 슈퍼관리자 등은 admin 페이지로
         return `/${locale}/admin`
       case 'team_member':
-        // 투어 가이드는 guide 페이지로 리다이렉트
+        // 투어 가이드만 guide 페이지로 리다이렉트
         return `/${locale}/guide`
       case 'customer':
       default:
+        // 일반 고객은 로그인 페이지로
         return `/${locale}/auth`
     }
   }
