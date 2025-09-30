@@ -128,8 +128,8 @@ export default function TourPhotoUpload({
 
     console.log(`총 ${files.length}개 파일 업로드 시작`)
 
-    // 대량 파일 처리를 위한 배치 업로드 (한번에 20개씩)
-    const batchSize = 20
+    // 대량 파일 처리를 위한 배치 업로드 (한번에 10개씩으로 조정)
+    const batchSize = 10
     const fileArray = Array.from(files)
     const batches = []
     
@@ -146,6 +146,7 @@ export default function TourPhotoUpload({
     try {
       let totalSuccessful = 0
       let totalFailed = 0
+      const failedFiles: string[] = []
       
       // 배치별로 순차 업로드
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -173,9 +174,10 @@ export default function TourPhotoUpload({
               throw new Error(`${t('imageOnlyError')}: ${file.name}`)
             }
 
-            // 고유한 파일명 생성
+            // 고유한 파일명 생성 (타임스탬프 추가로 중복 방지)
             const fileExt = file.name.split('.').pop()
-            const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+            const timestamp = Date.now() + Math.random().toString(36).substring(2)
+            const fileName = `${timestamp}.${fileExt}`
             const filePath = `${tourId}/${fileName}`
 
             console.log(`Uploading to storage: ${filePath}`)
@@ -226,6 +228,7 @@ export default function TourPhotoUpload({
             return photoData
           } catch (error) {
             console.error(`Error uploading ${file.name}:`, error)
+            failedFiles.push(`${file.name}: ${error.message || error}`)
             return null
           }
         })
@@ -239,8 +242,20 @@ export default function TourPhotoUpload({
         
         console.log(`배치 ${batchIndex + 1} 완료: ${batchSuccessful}개 성공, ${batchFailed}개 실패`)
         
+        // 진행 상황 업데이트
+        setUploadProgress(prev => ({ 
+          ...prev, 
+          current: Math.min((batchIndex + 1) * batchSize, files.length)
+        }))
+        
         // 배치 간 잠시 대기 (서버 부하 방지)
         if (batchIndex < batches.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500)) // 1초에서 0.5초로 단축
+        }
+        
+        // 배치 실패율이 높으면 대기 시간 증가
+        if (batchFailed > batchSuccessful) {
+          console.log('배치 실패율이 높음, 추가 대기 시간 적용')
           await new Promise(resolve => setTimeout(resolve, 1000))
         }
       }
@@ -252,12 +267,12 @@ export default function TourPhotoUpload({
         onPhotosUpdated?.()
         
         if (totalFailed > 0) {
-          alert(`📊 업로드 완료: ${totalSuccessful}개 성공, ${totalFailed}개 실패`)
+          alert(`📊 업로드 완료: ${totalSuccessful}개 성공, ${totalFailed}개 실패\n\n실패한 파일들:\n${failedFiles.slice(0, 5).join('\n')}${failedFiles.length > 5 ? `\n... 외 ${failedFiles.length - 5}개` : ''}`)
         } else {
           alert(`✅ 성공적으로 ${totalSuccessful}개 파일을 업로드했습니다.`)
         }
       } else {
-        alert(`❌ 모든 파일 업로드에 실패했습니다. (${totalFailed}개 파일)`)
+        alert(`❌ 모든 파일 업로드에 실패했습니다. (${totalFailed}개 파일)\n\n실패 원인:\n${failedFiles.slice(0, 10).join('\n')}${failedFiles.length > 10 ? `\n... 외 ${failedFiles.length - 10}개` : ''}`)
       }
     } catch (error) {
       console.error('Error uploading photos:', error)
