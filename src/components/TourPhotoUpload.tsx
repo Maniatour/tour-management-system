@@ -36,6 +36,8 @@ export default function TourPhotoUpload({
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, batch: 0, totalBatches: 0 })
+  const [selectedPhoto, setSelectedPhoto] = useState<TourPhoto | null>(null)
+  const [showModal, setShowModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 사진 목록 로드
@@ -301,6 +303,33 @@ export default function TourPhotoUpload({
     alert(t('shareLinkCopied'))
   }
 
+  // 사진 모달 열기
+  const openPhotoModal = (photo: TourPhoto) => {
+    setSelectedPhoto(photo)
+    setShowModal(true)
+  }
+
+  // 사진 모달 닫기
+  const closePhotoModal = () => {
+    setShowModal(false)
+    setSelectedPhoto(null)
+  }
+
+  // 키보드 네비게이션
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showModal || !selectedPhoto) return
+
+    const currentIndex = photos.findIndex(p => p.id === selectedPhoto.id)
+    
+    if (e.key === 'ArrowLeft' && currentIndex > 0) {
+      setSelectedPhoto(photos[currentIndex - 1])
+    } else if (e.key === 'ArrowRight' && currentIndex < photos.length - 1) {
+      setSelectedPhoto(photos[currentIndex + 1])
+    } else if (e.key === 'Escape') {
+      closePhotoModal()
+    }
+  }
+
   // 파일 크기 포맷팅
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes'
@@ -403,12 +432,15 @@ export default function TourPhotoUpload({
       {photos.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {photos.map((photo) => (
-            <div key={photo.id} className="relative group">
-              <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+            <div key={photo.id} className="relative group cursor-pointer">
+              <div 
+                className="aspect-square bg-gray-100 rounded-lg overflow-hidden"
+                onClick={() => openPhotoModal(photo)}
+              >
                 <img
                   src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photo.file_path}`}
                   alt={photo.file_name}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
                 />
               </div>
               
@@ -480,6 +512,122 @@ export default function TourPhotoUpload({
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 사진 모달 갤러리 */}
+      {showModal && selectedPhoto && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+          onKeyDown={handleKeyDown}
+          tabIndex={-1}
+        >
+          {/* 모달 배경 클릭으로 닫기 */}
+          <div 
+            className="absolute inset-0"
+            onClick={closePhotoModal}
+          ></div>
+          
+          {/* 모달 콘텐츠 */}
+          <div className="relative max-w-7xl max-h-full w-full h-full flex items-center justify-center">
+            {/* 닫기 버튼 */}
+            <button
+              onClick={closePhotoModal}
+              className="absolute top-4 right-4 z-10 p-2 bg-black bg-opacity-50 text-white rounded-full hover:bg-opacity-70 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* 이전 버튼 */}
+            {photos.findIndex(p => p.id === selectedPhoto.id) > 0 && (
+              <button
+                onClick={() => {
+                  const currentIndex = photos.findIndex(p => p.id === selectedPhoto.id)
+                  setSelectedPhoto(photos[currentIndex - 1])
+                }}
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 p-3 bg-black bg-opacity-50 text-white rounded-full hover:bg-opacity-70 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+
+            {/* 다음 버튼 */}
+            {photos.findIndex(p => p.id === selectedPhoto.id) < photos.length - 1 && (
+              <button
+                onClick={() => {
+                  const currentIndex = photos.findIndex(p => p.id === selectedPhoto.id)
+                  setSelectedPhoto(photos[currentIndex + 1])
+                }}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 p-3 bg-black bg-opacity-50 text-white rounded-full hover:bg-opacity-70 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+
+            {/* 메인 이미지 */}
+            <div className="flex items-center justify-center w-full h-full">
+              <img
+                src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${selectedPhoto.file_path}`}
+                alt={selectedPhoto.file_name}
+                className="max-w-full max-h-full object-contain"
+              />
+            </div>
+
+            {/* 이미지 정보 */}
+            <div className="absolute bottom-4 left-4 right-4 bg-black bg-opacity-50 text-white p-4 rounded-lg">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg font-semibold">{selectedPhoto.file_name}</h3>
+                  <p className="text-sm text-gray-300">
+                    {formatFileSize(selectedPhoto.file_size)} • {selectedPhoto.file_type}
+                  </p>
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => copyShareLink(selectedPhoto.share_token!)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  >
+                    공유 링크 복사
+                  </button>
+                  <button
+                    onClick={() => handleDeletePhoto(selectedPhoto.id, selectedPhoto.file_path)}
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                  >
+                    삭제
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 썸네일 네비게이션 */}
+            {photos.length > 1 && (
+              <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2">
+                <div className="flex space-x-2 bg-black bg-opacity-50 p-2 rounded-lg">
+                  {photos.map((photo, index) => (
+                    <button
+                      key={photo.id}
+                      onClick={() => setSelectedPhoto(photo)}
+                      className={`w-12 h-12 rounded overflow-hidden ${
+                        photo.id === selectedPhoto.id ? 'ring-2 ring-blue-500' : ''
+                      }`}
+                    >
+                      <img
+                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photo.file_path}`}
+                        alt={photo.file_name}
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
