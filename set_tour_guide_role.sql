@@ -34,7 +34,7 @@ SELECT
     CASE 
         WHEN LOWER(position) = 'super' THEN 'admin'
         WHEN LOWER(position) = 'office manager' THEN 'manager'
-        WHEN LOWER(position) IN ('tour guide', 'tourguide', 'guide', 'op', 'driver') THEN 'team_member'
+        WHEN LOWER(position) IN ('tour guide', 'tourguide', 'guide', 'driver') THEN 'team_member'
         WHEN position IS NOT NULL AND position != '' THEN 'team_member'
         ELSE 'customer'
     END as determined_role
