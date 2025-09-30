@@ -42,13 +42,19 @@ export default function TourPhotoUpload({
     try {
       console.log('Loading photos for tour:', tourId)
       const { data, error } = await supabase
-        .from('tour_course_photos')
+        .from('tour_photos')
         .select('*')
         .eq('tour_id', tourId)
         .order('created_at', { ascending: false })
 
       if (error) {
         console.error('Error loading photos:', error)
+        // 테이블이 존재하지 않는 경우 빈 배열로 설정
+        if (error.code === 'PGRST205') {
+          console.warn('tour_photos table does not exist, returning empty array')
+          setPhotos([])
+          return
+        }
         throw error
       }
       
@@ -56,6 +62,8 @@ export default function TourPhotoUpload({
       setPhotos(data || [])
     } catch (error) {
       console.error('Error loading photos:', error)
+      // 에러 발생 시 빈 배열로 설정하여 앱이 크래시되지 않도록 함
+      setPhotos([])
     }
   }
 
@@ -71,25 +79,18 @@ export default function TourPhotoUpload({
       const tourPhotosBucket = buckets?.find(bucket => bucket.name === 'tour-photos')
       if (!tourPhotosBucket) {
         console.log('tour-photos bucket does not exist, creating...')
-        try {
-          const { error: createError } = await supabase.storage.createBucket('tour-photos', {
-            public: true,
-            allowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'],
-            fileSizeLimit: 10485760 // 10MB
-          })
-          
-          if (createError) {
-            console.error('Error creating bucket:', createError)
-            // 버킷 생성 실패해도 계속 진행 (이미 존재할 수 있음)
-            return true
-          }
-          
-          console.log('tour-photos bucket created successfully')
-        } catch (createError) {
+        const { error: createError } = await supabase.storage.createBucket('tour-photos', {
+          public: true,
+          allowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'],
+          fileSizeLimit: 10485760 // 10MB
+        })
+        
+        if (createError) {
           console.error('Error creating bucket:', createError)
-          // 버킷 생성 실패해도 계속 진행
-          return true
+          return false
         }
+        
+        console.log('tour-photos bucket created successfully')
       } else {
         console.log('tour-photos bucket exists')
       }
@@ -97,7 +98,7 @@ export default function TourPhotoUpload({
       return true
     } catch (error) {
       console.error('Error ensuring storage bucket:', error)
-      return true // 에러가 발생해도 계속 진행
+      return false
     }
   }
 
@@ -168,7 +169,7 @@ export default function TourPhotoUpload({
 
         // 데이터베이스에 메타데이터 저장
         const { data: photoData, error: dbError } = await supabase
-          .from('tour_course_photos')
+          .from('tour_photos')
           .insert({
             tour_id: tourId,
             reservation_id: reservationId,
@@ -185,6 +186,14 @@ export default function TourPhotoUpload({
 
         if (dbError) {
           console.error('Database insert error:', dbError)
+          // 테이블이 존재하지 않는 경우 Storage에서 파일 삭제
+          if (dbError.code === 'PGRST205') {
+            console.warn('tour_photos table does not exist, cleaning up uploaded file')
+            await supabase.storage
+              .from('tour-photos')
+              .remove([filePath])
+            throw new Error('tour_photos 테이블이 존재하지 않습니다. 관리자에게 문의하세요.')
+          }
           throw dbError
         }
 
@@ -232,7 +241,7 @@ export default function TourPhotoUpload({
 
       // 데이터베이스에서 레코드 삭제
       const { error: dbError } = await supabase
-        .from('tour_course_photos')
+        .from('tour_photos')
         .delete()
         .eq('id', photoId)
 
