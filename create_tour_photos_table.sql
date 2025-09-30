@@ -6,8 +6,8 @@ BEGIN;
 -- 1. tour_photos 테이블 생성
 CREATE TABLE IF NOT EXISTS public.tour_photos (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    tour_id UUID NOT NULL REFERENCES public.tours(id) ON DELETE CASCADE,
-    reservation_id UUID REFERENCES public.reservations(id) ON DELETE SET NULL,
+    tour_id TEXT NOT NULL REFERENCES public.tours(id) ON DELETE CASCADE,
+    reservation_id TEXT REFERENCES public.reservations(id) ON DELETE SET NULL,
     uploaded_by TEXT NOT NULL,
     file_name TEXT NOT NULL,
     file_path TEXT NOT NULL,
