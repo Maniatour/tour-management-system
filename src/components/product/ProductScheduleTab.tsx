@@ -461,7 +461,7 @@ export default function ProductScheduleTab({
                         
                         {/* 시간 */}
                         <span className="text-sm text-gray-600 font-medium">
-                          {schedule.start_time ? schedule.start_time.substring(0, 5) : '시간 미정'}
+                          {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                           {!schedule.duration_minutes && (
                             <span className="ml-1 text-xs text-gray-400 italic">
                               {getText('참고용', '(Reference)')}
@@ -632,7 +632,7 @@ export default function ProductScheduleTab({
                                 </div>
                                 
                                 <span className="text-sm text-gray-600">
-                                  {schedule.start_time ? schedule.start_time.substring(0, 5) : '시간 미정'}
+                                  {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                                   {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
                                   {schedule.duration_minutes && ` (${schedule.duration_minutes}${getText('분', 'min')})`}
                                   {!schedule.duration_minutes && (
@@ -757,7 +757,7 @@ export default function ProductScheduleTab({
               </div>
               
                                 <span className="text-sm text-gray-600">
-                                  {schedule.start_time ? schedule.start_time.substring(0, 5) : '시간 미정'}
+                                  {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                                   {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
                                   {schedule.duration_minutes && ` (${schedule.duration_minutes}${getText('분', 'min')})`}
                                   {!schedule.duration_minutes && (

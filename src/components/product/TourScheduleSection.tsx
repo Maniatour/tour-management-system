@@ -295,7 +295,7 @@ export default function TourScheduleSection({
                           <div className="flex items-center space-x-1 text-xs text-gray-600">
                             <Clock className="h-3 w-3" />
                             <span>
-                              {schedule.start_time ? formatTime(schedule.start_time) : '시간 미정'}
+                              {schedule.start_time ? formatTime(schedule.start_time) : ''}
                               {schedule.end_time ? `-${formatTime(schedule.end_time)}` : ''}
                               {!schedule.duration_minutes && (
                                 <span className="ml-1 text-xs text-gray-400 italic">
