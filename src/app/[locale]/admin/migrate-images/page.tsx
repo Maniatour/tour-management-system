@@ -19,12 +19,18 @@ interface FileInfo {
   date?: string
 }
 
+interface Hotel {
+  id: string
+  hotel: string
+  pick_up_location: string
+}
+
 export default function MigrateImagesPage() {
   const [googleDriveUrls, setGoogleDriveUrls] = useState('')
   const [hotelId, setHotelId] = useState('')
   const [migrating, setMigrating] = useState(false)
   const [result, setResult] = useState<MigrationResult | null>(null)
-  const [hotels, setHotels] = useState<any[]>([])
+  const [hotels, setHotels] = useState<Hotel[]>([])
   
   // 대량 처리 관련 상태
   const [bulkMode, setBulkMode] = useState(false)

@@ -649,9 +649,9 @@ export default function TableScheduleAdd({
                       updateSchedule(index, 'description_ko', e.target.value)
                     }
                   }}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y min-h-[32px]"
                   placeholder={showEnglishFields ? "English description" : "한국어 설명"}
-                  rows={2}
+                  rows={1}
                 />
               </div>
 
@@ -666,9 +666,9 @@ export default function TableScheduleAdd({
                       updateSchedule(index, 'guide_notes_ko', e.target.value)
                     }
                   }}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y min-h-[32px]"
                   placeholder={showEnglishFields ? "Guide notes (English)" : "가이드 메모 (한국어)"}
-                  rows={2}
+                  rows={1}
                 />
               </div>
 

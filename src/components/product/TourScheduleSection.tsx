@@ -59,10 +59,6 @@ export default function TourScheduleSection({
   const [loading, setLoading] = useState(true)
   const [expandedDays, setExpandedDays] = useState<Set<number>>(new Set())
 
-  useEffect(() => {
-    fetchSchedules()
-  }, [productId, teamType, fetchSchedules])
-
   const fetchSchedules = async () => {
     try {
       setLoading(true)
@@ -132,6 +128,10 @@ export default function TourScheduleSection({
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    fetchSchedules()
+  }, [productId, teamType])
 
   const toggleDayExpansion = (dayNumber: number) => {
     const newExpandedDays = new Set(expandedDays)
