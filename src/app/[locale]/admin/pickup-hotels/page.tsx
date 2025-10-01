@@ -165,7 +165,6 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
         await fetchHotels()
         setEditingHotel(null)
-        alert('호텔이 성공적으로 수정되었습니다!')
       } catch (error) {
         console.error('Error updating hotel:', error)
         alert('호텔 수정 중 오류가 발생했습니다.')
