@@ -443,9 +443,9 @@ export default function ProductScheduleTab({
                 <div className="space-y-2">
                   {schedules.map((schedule) => (
                     <div key={schedule.id} className="bg-white border border-gray-200 rounded-lg p-3">
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-start space-x-3">
                         {/* 썸네일 */}
-                        <div className="w-12 h-8 flex-shrink-0">
+                        <div className="w-12 h-8 flex-shrink-0 pt-1">
                           {schedule.thumbnail_url ? (
                             <img 
                               src={schedule.thumbnail_url} 
@@ -460,7 +460,7 @@ export default function ProductScheduleTab({
                         </div>
                         
                         {/* 시간 */}
-                        <div className="w-28 flex-shrink-0">
+                        <div className="w-28 flex-shrink-0 pt-1">
                           <span className="text-sm text-gray-600 font-medium whitespace-nowrap">
                             {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                             {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
@@ -468,25 +468,27 @@ export default function ProductScheduleTab({
                         </div>
                         
                         {/* 소요시간 */}
-                        <div className="w-16 flex-shrink-0 text-right">
+                        <div className="w-16 flex-shrink-0 text-right pt-1">
                           <span className="text-sm text-gray-500">
                             {schedule.duration_minutes && schedule.duration_minutes > 0 ? `${schedule.duration_minutes}분` : ''}
                           </span>
                         </div>
                         
-                        {/* 제목 */}
+                        {/* 제목과 설명 */}
                         <div className="flex-1 min-w-0">
-                          <span className="font-medium text-gray-900 truncate block">
+                          <div className="font-medium text-gray-900 text-sm leading-tight">
                             {getScheduleText(schedule, 'title')}
-                          </span>
-                        </div>
-                        
-                        {/* 설명 */}
-                        {getScheduleText(schedule, 'description') && (
-                          <div className="text-sm text-gray-600 whitespace-pre-line">
-                            - {getScheduleText(schedule, 'description')}
                           </div>
-                        )}
+                          {getScheduleText(schedule, 'description') && (
+                            <div className="text-xs text-gray-600 mt-1 overflow-hidden" style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical'
+                            }}>
+                              {getScheduleText(schedule, 'description')}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
