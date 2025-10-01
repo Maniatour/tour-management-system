@@ -345,20 +345,26 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleToggleActive(hotel.id, hotel.is_active)
-                    }}
-                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                      hotel.is_active
-                        ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                        : 'bg-green-100 text-green-700 hover:bg-green-200'
-                    }`}
-                    title={hotel.is_active ? '비활성화' : '활성화'}
-                  >
-                    {hotel.is_active ? '비활성화' : '활성화'}
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-600">활성</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToggleActive(hotel.id, hotel.is_active)
+                      }}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                        hotel.is_active ? 'bg-blue-600' : 'bg-gray-300'
+                      }`}
+                      title={hotel.is_active ? '비활성화' : '활성화'}
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                          hotel.is_active ? 'translate-x-5' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                    <span className="text-xs text-gray-600">비활성</span>
+                  </div>
                   {hotel.link && (
                     <a
                       href={hotel.link}
