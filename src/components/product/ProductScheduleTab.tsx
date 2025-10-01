@@ -460,14 +460,26 @@ export default function ProductScheduleTab({
                         </div>
                         
                         {/* 시간 */}
-                        <span className="text-sm text-gray-600 font-medium">
-                          {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
-                        </span>
+                        <div className="w-20 flex-shrink-0">
+                          <span className="text-sm text-gray-600 font-medium">
+                            {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
+                            {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
+                          </span>
+                        </div>
+                        
+                        {/* 소요시간 */}
+                        <div className="w-16 flex-shrink-0 text-right">
+                          <span className="text-sm text-gray-500">
+                            {schedule.duration_minutes && schedule.duration_minutes > 0 ? `${schedule.duration_minutes}분` : ''}
+                          </span>
+                        </div>
                         
                         {/* 제목 */}
-                        <span className="font-medium text-gray-900">
-                          {getScheduleText(schedule, 'title')}
-                        </span>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-gray-900 truncate block">
+                            {getScheduleText(schedule, 'title')}
+                          </span>
+                        </div>
                         
                         {/* 설명 */}
                         {getScheduleText(schedule, 'description') && (
@@ -626,11 +638,19 @@ export default function ProductScheduleTab({
                                   )}
                                 </div>
                                 
-                                <span className="text-sm text-gray-600">
-                                  {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
-                                  {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
-                                  {schedule.duration_minutes && ` (${schedule.duration_minutes}${getText('분', 'min')})`}
-                  </span>
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-20 flex-shrink-0">
+                                    <span className="text-sm text-gray-600">
+                                      {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
+                                      {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
+                                    </span>
+                                  </div>
+                                  <div className="w-16 flex-shrink-0 text-right">
+                                    <span className="text-sm text-gray-500">
+                                      {schedule.duration_minutes && schedule.duration_minutes > 0 ? `${schedule.duration_minutes}${getText('분', 'min')}` : ''}
+                                    </span>
+                                  </div>
+                                </div>
                                 <span className="font-medium text-gray-900">
                                   {getScheduleText(schedule, 'title')}
                   </span>
@@ -746,11 +766,19 @@ export default function ProductScheduleTab({
                 )}
               </div>
               
-                                <span className="text-sm text-gray-600">
-                                  {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
-                                  {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
-                                  {schedule.duration_minutes && ` (${schedule.duration_minutes}${getText('분', 'min')})`}
-                  </span>
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-20 flex-shrink-0">
+                                    <span className="text-sm text-gray-600">
+                                      {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
+                                      {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
+                                    </span>
+                                  </div>
+                                  <div className="w-16 flex-shrink-0 text-right">
+                                    <span className="text-sm text-gray-500">
+                                      {schedule.duration_minutes && schedule.duration_minutes > 0 ? `${schedule.duration_minutes}${getText('분', 'min')}` : ''}
+                                    </span>
+                                  </div>
+                                </div>
                                 <span className="font-medium text-gray-900">
                                   {getScheduleText(schedule, 'title')}
                   </span>
