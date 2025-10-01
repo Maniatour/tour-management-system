@@ -82,9 +82,9 @@ export default function ProductScheduleTab({
       switch (field) {
         case 'title': return schedule.title_ko || schedule.title
         case 'description': return schedule.description_ko || schedule.description
-        case 'location': return schedule.location_ko || schedule.location
-        case 'transport_details': return schedule.transport_details_ko || schedule.transport_details
-        case 'notes': return schedule.notes_ko || schedule.notes
+        case 'location': return getScheduleText(schedule, 'location')
+        case 'transport_details': return getScheduleText(schedule, 'transport_details')
+        case 'notes': return getScheduleText(schedule, 'notes')
         case 'guide_notes': return schedule.guide_notes_ko || schedule.guide_notes_en
         default: return ''
       }
@@ -695,32 +695,29 @@ export default function ProductScheduleTab({
                   </p>
                 ) : null}
                 
-                {schedule.location_ko || schedule.location ? (
+                {getScheduleText(schedule, 'location') ? (
                                   <p className="text-sm text-gray-500 mt-1">
-                    📍 {schedule.location_ko || schedule.location}
+                    📍 {getScheduleText(schedule, 'location')}
                   </p>
                 ) : null}
                 
-                {schedule.transport_details_ko || schedule.transport_details ? (
+                {getScheduleText(schedule, 'transport_details') ? (
                                   <p className="text-sm text-gray-500 mt-1">
-                    🚗 {schedule.transport_details_ko || schedule.transport_details}
+                    🚗 {getScheduleText(schedule, 'transport_details')}
                   </p>
                 ) : null}
                 
-                {schedule.notes_ko || schedule.notes ? (
+                {getScheduleText(schedule, 'notes') ? (
                                   <p className="text-sm text-gray-500 mt-1">
-                    📝 {schedule.notes_ko || schedule.notes}
+                    📝 {getScheduleText(schedule, 'notes')}
                   </p>
                 ) : null}
                               </div>
                 
-                {(schedule.guide_notes_ko || schedule.guide_notes_en) && (
+                {getScheduleText(schedule, 'guide_notes') && (
                                 <div className="text-right ml-4">
                                   <p className="text-xs text-gray-500 italic">
-                    가이드 메모: {schedule.guide_notes_ko || schedule.guide_notes_en}
-                    {schedule.guide_notes_en && schedule.guide_notes_ko && (
-                      <span className="ml-1">({schedule.guide_notes_en})</span>
-                    )}
+                    {getText('가이드 메모', 'Guide Notes')}: {getScheduleText(schedule, 'guide_notes')}
                   </p>
                                 </div>
                               )}
@@ -827,21 +824,21 @@ export default function ProductScheduleTab({
                   </p>
                 ) : null}
                 
-                {schedule.location_ko || schedule.location ? (
+                {getScheduleText(schedule, 'location') ? (
                                   <p className="text-sm text-gray-500 mt-1">
-                    📍 {schedule.location_ko || schedule.location}
+                    📍 {getScheduleText(schedule, 'location')}
                   </p>
                 ) : null}
                 
-                {schedule.transport_details_ko || schedule.transport_details ? (
+                {getScheduleText(schedule, 'transport_details') ? (
                                   <p className="text-sm text-gray-500 mt-1">
-                    🚗 {schedule.transport_details_ko || schedule.transport_details}
+                    🚗 {getScheduleText(schedule, 'transport_details')}
                   </p>
                 ) : null}
                 
-                {schedule.notes_ko || schedule.notes ? (
+                {getScheduleText(schedule, 'notes') ? (
                                   <p className="text-sm text-gray-500 mt-1">
-                    📝 {schedule.notes_ko || schedule.notes}
+                    📝 {getScheduleText(schedule, 'notes')}
                   </p>
                 ) : null}
                               </div>
