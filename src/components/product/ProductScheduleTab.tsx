@@ -445,7 +445,7 @@ export default function ProductScheduleTab({
                     <div key={schedule.id} className="bg-white border border-gray-200 rounded-lg p-3">
                       <div className="flex items-start space-x-3">
                         {/* 썸네일 */}
-                        <div className="w-12 h-8 flex-shrink-0 pt-1">
+                        <div className="w-12 h-8 flex-shrink-0 flex items-center justify-center">
                           {schedule.thumbnail_url ? (
                             <img 
                               src={schedule.thumbnail_url} 
@@ -460,7 +460,7 @@ export default function ProductScheduleTab({
                         </div>
                         
                         {/* 시간 */}
-                        <div className="w-28 flex-shrink-0 pt-1">
+                        <div className="w-28 flex-shrink-0 flex items-center justify-center">
                           <span className="text-sm text-gray-600 font-medium whitespace-nowrap">
                             {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                             {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
@@ -468,7 +468,7 @@ export default function ProductScheduleTab({
                         </div>
                         
                         {/* 소요시간 */}
-                        <div className="w-16 flex-shrink-0 text-right pt-1">
+                        <div className="w-16 flex-shrink-0 flex items-center justify-center">
                           <span className="text-sm text-gray-500">
                             {schedule.duration_minutes && schedule.duration_minutes > 0 ? `${schedule.duration_minutes}분` : ''}
                           </span>
