@@ -483,9 +483,9 @@ export default function ProductScheduleTab({
                         
                         {/* 설명 */}
                         {getScheduleText(schedule, 'description') && (
-                          <span className="text-sm text-gray-600">
+                          <div className="text-sm text-gray-600 whitespace-pre-line">
                             - {getScheduleText(schedule, 'description')}
-                          </span>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -686,7 +686,7 @@ export default function ProductScheduleTab({
             <div className="flex justify-between items-start">
               <div className="flex-1">
                 {schedule.description_ko || schedule.description ? (
-                                  <p className="text-sm text-gray-600">
+                                  <p className="text-sm text-gray-600 whitespace-pre-line">
                     {schedule.description_ko || schedule.description}
                   </p>
                 ) : null}
@@ -818,7 +818,7 @@ export default function ProductScheduleTab({
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
                 {schedule.description_ko || schedule.description ? (
-                                  <p className="text-sm text-gray-600">
+                                  <p className="text-sm text-gray-600 whitespace-pre-line">
                     {schedule.description_ko || schedule.description}
                   </p>
                 ) : null}
