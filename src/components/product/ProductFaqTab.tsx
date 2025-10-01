@@ -1,14 +1,17 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { HelpCircle, Plus, Edit, Trash2, Save, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { HelpCircle, Plus, Edit, Trash2, Save, AlertCircle, ChevronDown, ChevronUp, Languages, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { translateFaqFields, type FaqTranslationFields } from '@/lib/translationService'
 
 interface FaqItem {
   id?: string
   product_id: string
   question: string
   answer: string
+  question_en?: string
+  answer_en?: string
   order_index: number
   is_active: boolean
 }
@@ -33,6 +36,9 @@ export default function ProductFaqTab({
   const [saveMessage, setSaveMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [expandedFaqs, setExpandedFaqs] = useState<Set<string>>(new Set())
+  const [translating, setTranslating] = useState(false)
+  const [translationError, setTranslationError] = useState<string | null>(null)
+  const [showEnglishFields, setShowEnglishFields] = useState(false)
 
   // 기존 FAQ 데이터 로드
   useEffect(() => {
@@ -193,6 +199,92 @@ export default function ProductFaqTab({
     }
   }
 
+  // 번역 함수
+  const translateAllFaqs = async () => {
+    setTranslating(true)
+    setTranslationError(null)
+
+    try {
+      const updatedFaqs = [...faqs]
+      
+      for (let i = 0; i < faqs.length; i++) {
+        const faq = faqs[i]
+        
+        // 번역할 필드들 수집
+        const fieldsToTranslate: FaqTranslationFields = {
+          question: faq.question,
+          answer: faq.answer
+        }
+
+        // 번역 실행
+        const result = await translateFaqFields(fieldsToTranslate)
+
+        if (result.success && result.translatedFields) {
+          // 번역된 내용을 FAQ에 적용
+          updatedFaqs[i] = {
+            ...updatedFaqs[i],
+            question_en: result.translatedFields.question,
+            answer_en: result.translatedFields.answer
+          }
+        } else {
+          console.warn(`FAQ ${i + 1}번 번역 실패:`, result.error)
+        }
+
+        // API 제한을 고려하여 잠시 대기
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+
+      setFaqs(updatedFaqs)
+      setSaveMessage('모든 FAQ가 번역되었습니다!')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } catch (error) {
+      console.error('전체 FAQ 번역 오류:', error)
+      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
+  // 개별 FAQ 번역 함수
+  const translateFaq = async (faqId: string) => {
+    const faqIndex = faqs.findIndex(f => f.id === faqId)
+    if (faqIndex === -1) return
+
+    setTranslating(true)
+    setTranslationError(null)
+
+    try {
+      const faq = faqs[faqIndex]
+      
+      // 번역할 필드들 수집
+      const fieldsToTranslate: FaqTranslationFields = {
+        question: faq.question,
+        answer: faq.answer
+      }
+
+      // 번역 실행
+      const result = await translateFaqFields(fieldsToTranslate)
+
+      if (result.success && result.translatedFields) {
+        // 번역된 내용을 FAQ에 적용
+        const updatedFaqs = [...faqs]
+        updatedFaqs[faqIndex] = {
+          ...updatedFaqs[faqIndex],
+          question_en: result.translatedFields.question,
+          answer_en: result.translatedFields.answer
+        }
+        setFaqs(updatedFaqs)
+      } else {
+        setTranslationError(result.error || '번역에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('FAQ 번역 오류:', error)
+      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -213,12 +305,37 @@ export default function ProductFaqTab({
         <div className="flex items-center space-x-4">
           {saveMessage && (
             <div className={`flex items-center text-sm ${
-              saveMessage.includes('성공') || saveMessage.includes('저장') ? 'text-green-600' : 'text-red-600'
+              saveMessage.includes('성공') || saveMessage.includes('저장') || saveMessage.includes('번역') ? 'text-green-600' : 'text-red-600'
             }`}>
               <AlertCircle className="h-4 w-4 mr-1" />
               {saveMessage}
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => setShowEnglishFields(!showEnglishFields)}
+            className={`px-3 py-2 text-sm rounded-lg border ${
+              showEnglishFields 
+                ? 'bg-blue-600 text-white border-blue-600' 
+                : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+            }`}
+          >
+            {showEnglishFields ? 'EN' : 'KO'}
+          </button>
+          <button
+            type="button"
+            onClick={translateAllFaqs}
+            disabled={translating || faqs.length === 0}
+            className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm"
+            title="모든 FAQ를 한국어에서 영어로 번역"
+          >
+            {translating ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Languages className="h-4 w-4 mr-1" />
+            )}
+            {translating ? '번역 중...' : '전체 번역'}
+          </button>
           <button
             type="button"
             onClick={handleAddFaq}
@@ -230,6 +347,29 @@ export default function ProductFaqTab({
           </button>
         </div>
       </div>
+
+      {/* 번역 오류 메시지 */}
+      {translationError && (
+        <div className="bg-red-50 border-l-4 border-red-400 p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <AlertCircle className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{translationError}</p>
+            </div>
+            <div className="ml-auto pl-3">
+              <button
+                type="button"
+                onClick={() => setTranslationError(null)}
+                className="inline-flex text-red-400 hover:text-red-600"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isNewProduct && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -260,7 +400,7 @@ export default function ProductFaqTab({
                 >
                   <span className="text-sm font-medium text-gray-500">Q{index + 1}</span>
                   <h4 className="text-left font-medium text-gray-900">
-                    {faq.question}
+                    {showEnglishFields ? (faq.question_en || faq.question) : faq.question}
                   </h4>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -289,6 +429,18 @@ export default function ProductFaqTab({
                     </button>
                   </div>
                   <div className="flex space-x-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        translateFaq(faq.id!)
+                      }}
+                      disabled={translating}
+                      className="p-1 text-purple-400 hover:text-purple-600 disabled:opacity-50"
+                      title="이 FAQ를 번역"
+                    >
+                      <Languages className="h-4 w-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -328,7 +480,9 @@ export default function ProductFaqTab({
                   <div className="flex items-start space-x-3">
                     <span className="text-sm font-medium text-gray-500 mt-1">A</span>
                     <div className="flex-1">
-                      <p className="text-gray-700 whitespace-pre-wrap">{faq.answer}</p>
+                      <p className="text-gray-700 whitespace-pre-wrap">
+                        {showEnglishFields ? (faq.answer_en || faq.answer) : faq.answer}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -364,6 +518,7 @@ interface FaqModalProps {
 
 function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
   const [formData, setFormData] = useState<FaqItem>(faq)
+  const [showEnglishFields, setShowEnglishFields] = useState(false)
 
   const handleSave = () => {
     if (!formData.question.trim() || !formData.answer.trim()) {
@@ -393,36 +548,49 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
         className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onKeyDown={handleKeyDown}
       >
-        <h3 className="text-lg font-medium text-gray-900 mb-4">
-          {faq.id ? 'FAQ 편집' : 'FAQ 추가'}
-        </h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900">
+            {faq.id ? 'FAQ 편집' : 'FAQ 추가'}
+          </h3>
+          <button
+            type="button"
+            onClick={() => setShowEnglishFields(!showEnglishFields)}
+            className={`px-3 py-1 text-sm rounded border ${
+              showEnglishFields 
+                ? 'bg-blue-600 text-white border-blue-600' 
+                : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+            }`}
+          >
+            {showEnglishFields ? 'EN' : 'KO'}
+          </button>
+        </div>
 
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              질문 *
+              {showEnglishFields ? '질문 (영어)' : '질문 (한국어)'} *
             </label>
             <input
               type="text"
-              value={formData.question}
-              onChange={(e) => handleInputChange('question', e.target.value)}
+              value={showEnglishFields ? (formData.question_en || '') : formData.question}
+              onChange={(e) => handleInputChange(showEnglishFields ? 'question_en' : 'question', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="자주 묻는 질문을 입력해주세요"
-              required
+              placeholder={showEnglishFields ? "Enter frequently asked question in English" : "자주 묻는 질문을 입력해주세요"}
+              required={!showEnglishFields}
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              답변 *
+              {showEnglishFields ? '답변 (영어)' : '답변 (한국어)'} *
             </label>
             <textarea
-              value={formData.answer}
-              onChange={(e) => handleInputChange('answer', e.target.value)}
+              value={showEnglishFields ? (formData.answer_en || '') : formData.answer}
+              onChange={(e) => handleInputChange(showEnglishFields ? 'answer_en' : 'answer', e.target.value)}
               rows={6}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="질문에 대한 답변을 입력해주세요"
-              required
+              placeholder={showEnglishFields ? "Enter answer in English" : "질문에 대한 답변을 입력해주세요"}
+              required={!showEnglishFields}
             />
           </div>
 

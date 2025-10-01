@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { FileText, Save, AlertCircle, Settings } from 'lucide-react'
+import { FileText, Save, AlertCircle, Settings, Languages, Loader2 } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import CommonDetailsModal from './CommonDetailsModal'
+import { translateProductDetailsFields, type ProductDetailsTranslationFields } from '@/lib/translationService'
 
 interface ProductDetailsFields {
   slogan1: string
@@ -103,6 +104,8 @@ export default function ProductDetailsTab({
   const [commonPreview, setCommonPreview] = useState<MultilingualProductDetails | null>(null)
   const [availableLanguages] = useState(['ko', 'en', 'ja', 'zh'])
   const [isCommonModalOpen, setIsCommonModalOpen] = useState(false)
+  const [translating, setTranslating] = useState(false)
+  const [translationError, setTranslationError] = useState<string | null>(null)
   // const [loadingCommon, setLoadingCommon] = useState(false)
 
   const supabase = createClientSupabase()
@@ -349,6 +352,98 @@ export default function ProductDetailsTab({
     }))
   }
 
+  // 번역 함수
+  const translateCurrentLanguageDetails = async () => {
+    const currentLang = formData.currentLanguage || 'ko'
+    
+    // 한국어가 아닌 경우 번역하지 않음
+    if (currentLang !== 'ko') {
+      setTranslationError('한국어 내용만 번역할 수 있습니다.')
+      return
+    }
+
+    setTranslating(true)
+    setTranslationError(null)
+
+    try {
+      const currentDetails = getCurrentLanguageDetails()
+      
+      // 번역할 필드들 수집
+      const fieldsToTranslate: ProductDetailsTranslationFields = {
+        slogan1: currentDetails.slogan1,
+        slogan2: currentDetails.slogan2,
+        slogan3: currentDetails.slogan3,
+        description: currentDetails.description,
+        included: currentDetails.included,
+        not_included: currentDetails.not_included,
+        pickup_drop_info: currentDetails.pickup_drop_info,
+        luggage_info: currentDetails.luggage_info,
+        tour_operation_info: currentDetails.tour_operation_info,
+        preparation_info: currentDetails.preparation_info,
+        small_group_info: currentDetails.small_group_info,
+        notice_info: currentDetails.notice_info,
+        private_tour_info: currentDetails.private_tour_info,
+        cancellation_policy: currentDetails.cancellation_policy,
+        chat_announcement: currentDetails.chat_announcement
+      }
+
+      // 번역 실행
+      const result = await translateProductDetailsFields(fieldsToTranslate)
+
+      if (result.success && result.translatedFields) {
+        // 영어 언어가 없으면 생성
+        if (!formData.productDetails.en) {
+          setFormData(prev => ({
+            ...prev,
+            productDetails: {
+              ...prev.productDetails,
+              en: {
+                slogan1: '',
+                slogan2: '',
+                slogan3: '',
+                description: '',
+                included: '',
+                not_included: '',
+                pickup_drop_info: '',
+                luggage_info: '',
+                tour_operation_info: '',
+                preparation_info: '',
+                small_group_info: '',
+                notice_info: '',
+                private_tour_info: '',
+                cancellation_policy: '',
+                chat_announcement: '',
+                tags: []
+              }
+            }
+          }))
+        }
+
+        // 번역된 내용을 영어 필드에 적용
+        setFormData(prev => ({
+          ...prev,
+          productDetails: {
+            ...prev.productDetails,
+            en: {
+              ...prev.productDetails.en,
+              ...result.translatedFields
+            }
+          }
+        }))
+
+        setSaveMessage('번역이 완료되었습니다! 영어 탭에서 확인하세요.')
+        setTimeout(() => setSaveMessage(''), 3000)
+      } else {
+        setTranslationError(result.error || '번역에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('번역 오류:', error)
+      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   const handleSave = async (e?: React.MouseEvent) => {
     // 이벤트 전파 방지
     if (e) {
@@ -483,10 +578,26 @@ export default function ProductDetailsTab({
     <div className="space-y-8">
       {/* 언어 선택 탭 */}
       <div className="bg-white border border-gray-200 rounded-lg p-4">
-        <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-          <FileText className="h-5 w-5 mr-2" />
-          상품 세부정보
-        </h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900 flex items-center">
+            <FileText className="h-5 w-5 mr-2" />
+            상품 세부정보
+          </h3>
+          <button
+            type="button"
+            onClick={translateCurrentLanguageDetails}
+            disabled={translating || (formData.currentLanguage || 'ko') !== 'ko'}
+            className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            title="한국어 내용을 영어로 번역"
+          >
+            {translating ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Languages className="h-4 w-4 mr-1" />
+            )}
+            {translating ? '번역 중...' : '번역'}
+          </button>
+        </div>
         <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
           {availableLanguages.map((lang) => (
             <button
@@ -508,13 +619,36 @@ export default function ProductDetailsTab({
         </div>
       </div>
 
+      {/* 번역 오류 메시지 */}
+      {translationError && (
+        <div className="bg-red-50 border-l-4 border-red-400 p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <AlertCircle className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{translationError}</p>
+            </div>
+            <div className="ml-auto pl-3">
+              <button
+                type="button"
+                onClick={() => setTranslationError(null)}
+                className="inline-flex text-red-400 hover:text-red-600"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 저장 버튼 및 메시지 */}
       <div className="flex justify-between items-center">
         <div></div>
         <div className="flex items-center space-x-4">
           {saveMessage && (
             <div className={`flex items-center text-sm ${
-              saveMessage.includes('성공') ? 'text-green-600' : 'text-red-600'
+              saveMessage.includes('성공') || saveMessage.includes('번역') ? 'text-green-600' : 'text-red-600'
             }`}>
               <AlertCircle className="h-4 w-4 mr-1" />
               {saveMessage}

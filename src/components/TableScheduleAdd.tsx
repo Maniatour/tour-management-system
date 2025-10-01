@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useState, useRef, useCallback } from 'react'
-import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, ChevronUp, ChevronDown } from 'lucide-react'
+import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, ChevronUp, ChevronDown, Languages } from 'lucide-react'
 import LocationPickerModal from './LocationPickerModal'
 import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl, uploadProductMedia } from '@/lib/productMediaUpload'
 import { supabase } from '@/lib/supabase'
+import { translateScheduleFields, type ScheduleTranslationFields } from '@/lib/translationService'
 
 interface ScheduleItem {
   id?: string
@@ -78,6 +79,8 @@ export default function TableScheduleAdd({
   const [bucketImages, setBucketImages] = useState<Array<{name: string, url: string}>>([])
   const [loadingBucketImages, setLoadingBucketImages] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [translating, setTranslating] = useState(false)
+  const [translationError, setTranslationError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 시간 계산 유틸리티 함수들
@@ -315,6 +318,94 @@ export default function TableScheduleAdd({
     onSchedulesChange(schedules.filter((_, i) => i !== index))
   }
 
+  // 번역 함수
+  const translateSchedule = async (index: number) => {
+    const schedule = schedules[index]
+    if (!schedule) return
+
+    setTranslating(true)
+    setTranslationError(null)
+
+    try {
+      // 번역할 필드들 수집
+      const fieldsToTranslate: ScheduleTranslationFields = {
+        title_ko: schedule.title_ko,
+        description_ko: schedule.description_ko,
+        location_ko: schedule.location_ko,
+        transport_details_ko: schedule.transport_details_ko,
+        notes_ko: schedule.notes_ko,
+        guide_notes_ko: schedule.guide_notes_ko
+      }
+
+      // 번역 실행
+      const result = await translateScheduleFields(fieldsToTranslate)
+
+      if (result.success && result.translatedFields) {
+        // 번역된 내용을 스케줄에 적용
+        const updatedSchedules = [...schedules]
+        updatedSchedules[index] = {
+          ...updatedSchedules[index],
+          ...result.translatedFields
+        }
+        onSchedulesChange(updatedSchedules)
+      } else {
+        setTranslationError(result.error || '번역에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('번역 오류:', error)
+      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
+  // 모든 스케줄 번역 함수
+  const translateAllSchedules = async () => {
+    setTranslating(true)
+    setTranslationError(null)
+
+    try {
+      const updatedSchedules = [...schedules]
+      
+      for (let i = 0; i < schedules.length; i++) {
+        const schedule = schedules[i]
+        
+        // 번역할 필드들 수집
+        const fieldsToTranslate: ScheduleTranslationFields = {
+          title_ko: schedule.title_ko,
+          description_ko: schedule.description_ko,
+          location_ko: schedule.location_ko,
+          transport_details_ko: schedule.transport_details_ko,
+          notes_ko: schedule.notes_ko,
+          guide_notes_ko: schedule.guide_notes_ko
+        }
+
+        // 번역 실행
+        const result = await translateScheduleFields(fieldsToTranslate)
+
+        if (result.success && result.translatedFields) {
+          // 번역된 내용을 스케줄에 적용
+          updatedSchedules[i] = {
+            ...updatedSchedules[i],
+            ...result.translatedFields
+          }
+        } else {
+          console.warn(`스케줄 ${i + 1}번 번역 실패:`, result.error)
+        }
+
+        // API 제한을 고려하여 잠시 대기
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+
+      onSchedulesChange(updatedSchedules)
+    } catch (error) {
+      console.error('전체 번역 오류:', error)
+      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   // 이동시간 합산 계산 함수 (각 가이드 유형별로 분리, 시간이 있는 일정만 계산)
   const calculateTotalTransportTime = () => {
     let twoGuidesGuideTime = 0
@@ -405,6 +496,20 @@ export default function TableScheduleAdd({
           </button>
           <button
             type="button"
+            onClick={translateAllSchedules}
+            disabled={translating || schedules.length === 0}
+            className="flex items-center px-3 py-1 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm"
+            title="모든 스케줄을 한국어에서 영어로 번역"
+          >
+            {translating ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Languages className="h-4 w-4 mr-1" />
+            )}
+            {translating ? '번역 중...' : '전체 번역'}
+          </button>
+          <button
+            type="button"
             onClick={addNewSchedule}
             className="flex items-center px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
           >
@@ -456,8 +561,32 @@ export default function TableScheduleAdd({
           <div className="w-40">가이드+드라이버</div>
           <div className="w-40">옵션</div>
           <div className="w-32">위치</div>
+          <div className="w-20">번역</div>
         </div>
       </div>
+
+      {/* 번역 오류 메시지 */}
+      {translationError && (
+        <div className="px-4 py-2 bg-red-50 border-l-4 border-red-400">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <X className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{translationError}</p>
+            </div>
+            <div className="ml-auto pl-3">
+              <button
+                type="button"
+                onClick={() => setTranslationError(null)}
+                className="inline-flex text-red-400 hover:text-red-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 테이블 내용 */}
       <div className="flex-1 overflow-y-auto px-4 py-2">
@@ -809,6 +938,23 @@ export default function TableScheduleAdd({
                     지도
                   </button>
                 </div>
+              </div>
+
+              {/* 번역 버튼 */}
+              <div className="w-20 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => translateSchedule(index)}
+                  disabled={translating}
+                  className="flex items-center justify-center h-8 w-16 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="이 행을 한국어에서 영어로 번역"
+                >
+                  {translating ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Languages className="h-3 w-3" />
+                  )}
+                </button>
               </div>
 
             </div>
