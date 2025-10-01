@@ -369,26 +369,22 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                   >
                     <Trash2 size={16} />
                   </button>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-gray-600">활성</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleToggleActive(hotel.id, hotel.is_active)
-                      }}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                        hotel.is_active ? 'bg-blue-600' : 'bg-gray-300'
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleToggleActive(hotel.id, hotel.is_active)
+                    }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      hotel.is_active ? 'bg-blue-600' : 'bg-gray-300'
+                    }`}
+                    title={hotel.is_active ? '비활성화' : '활성화'}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                        hotel.is_active ? 'translate-x-5' : 'translate-x-1'
                       }`}
-                      title={hotel.is_active ? '비활성화' : '활성화'}
-                    >
-                      <span
-                        className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                          hotel.is_active ? 'translate-x-5' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                    <span className="text-xs text-gray-600">비활성</span>
-                  </div>
+                    />
+                  </button>
                 </div>
               </div>
             </div>
