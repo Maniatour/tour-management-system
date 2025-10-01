@@ -640,8 +640,7 @@ export default function TableScheduleAdd({
 
               {/* 설명 필드 */}
               <div className="w-64">
-                <input
-                  type="text"
+                <textarea
                   value={showEnglishFields ? (schedule.description_en || '') : (schedule.description_ko || '')}
                   onChange={(e) => {
                     if (showEnglishFields) {
@@ -650,15 +649,15 @@ export default function TableScheduleAdd({
                       updateSchedule(index, 'description_ko', e.target.value)
                     }
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
                   placeholder={showEnglishFields ? "English description" : "한국어 설명"}
+                  rows={2}
                 />
               </div>
 
               {/* 가이드 메모 */}
               <div className="w-32">
-                <input
-                  type="text"
+                <textarea
                   value={showEnglishFields ? (schedule.guide_notes_en || '') : (schedule.guide_notes_ko || '')}
                   onChange={(e) => {
                     if (showEnglishFields) {
@@ -667,8 +666,9 @@ export default function TableScheduleAdd({
                       updateSchedule(index, 'guide_notes_ko', e.target.value)
                     }
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
                   placeholder={showEnglishFields ? "Guide notes (English)" : "가이드 메모 (한국어)"}
+                  rows={2}
                 />
               </div>
 
