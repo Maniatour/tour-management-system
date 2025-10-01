@@ -30,17 +30,26 @@ export default function LocationPickerModal({
   const [mapLoaded, setMapLoaded] = useState(false)
   const [map, setMap] = useState<any>(null)
   const [marker, setMarker] = useState<any>(null)
+  const [apiKeyError, setApiKeyError] = useState(false)
 
   // 라스베가스 중심 좌표
   const LAS_VEGAS_CENTER = { lat: 36.1699, lng: -115.1398 }
 
   useEffect(() => {
+    // Google Maps API 키 확인
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    if (!apiKey || apiKey === 'undefined') {
+      console.error('Google Maps API 키가 설정되지 않았습니다. .env.local 파일에 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY를 설정해주세요.')
+      setApiKeyError(true)
+      return
+    }
+
     // Google Maps API 로드 (중복 로드 방지)
     const existingScript = document.querySelector('script[src*="maps.googleapis.com"]')
     
     if (!window.google && !existingScript) {
       const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`
       script.async = true
       script.defer = true
       script.id = 'google-maps-script'
@@ -202,14 +211,45 @@ export default function LocationPickerModal({
 
         {/* 지도 영역 */}
         <div className="flex-1 relative">
-          <div id="map" className="w-full h-full" />
-          {!mapLoaded && (
+          {apiKeyError ? (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                <p className="text-gray-600">지도를 불러오는 중...</p>
+              <div className="text-center p-6">
+                <div className="text-red-500 mb-4">
+                  <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Google Maps API 키 오류</h3>
+                <p className="text-gray-600 mb-4">
+                  Google Maps API 키가 설정되지 않았습니다.
+                </p>
+                <div className="text-left bg-gray-50 p-4 rounded-lg text-sm text-gray-700">
+                  <p className="font-medium mb-2">해결 방법:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>프로젝트 루트에 <code className="bg-gray-200 px-1 rounded">.env.local</code> 파일 생성</li>
+                    <li>다음 내용 추가:</li>
+                  </ol>
+                  <pre className="mt-2 bg-gray-200 p-2 rounded text-xs overflow-x-auto">
+{`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_api_key_here`}
+                  </pre>
+                  <p className="mt-2 text-xs text-gray-500">
+                    * Google Cloud Console에서 Maps JavaScript API 키를 발급받아 사용하세요.
+                  </p>
+                </div>
               </div>
             </div>
+          ) : (
+            <>
+              <div id="map" className="w-full h-full" />
+              {!mapLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p className="text-gray-600">지도를 불러오는 중...</p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
