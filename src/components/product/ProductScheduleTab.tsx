@@ -82,9 +82,9 @@ export default function ProductScheduleTab({
       switch (field) {
         case 'title': return schedule.title_ko || schedule.title
         case 'description': return schedule.description_ko || schedule.description
-        case 'location': return getScheduleText(schedule, 'location')
-        case 'transport_details': return getScheduleText(schedule, 'transport_details')
-        case 'notes': return getScheduleText(schedule, 'notes')
+        case 'location': return schedule.location_ko || schedule.location
+        case 'transport_details': return schedule.transport_details_ko || schedule.transport_details
+        case 'notes': return schedule.notes_ko || schedule.notes
         case 'guide_notes': return schedule.guide_notes_ko || schedule.guide_notes_en
         default: return ''
       }
