@@ -56,21 +56,50 @@ export default function LocationPickerModal({
       
       // 스크립트 로드 완료 후 초기화
       script.onload = () => {
-        if (window.google) {
-          initializeMap()
+        // Google Maps API가 완전히 로드될 때까지 대기
+        const checkGoogleMaps = () => {
+          if (window.google && window.google.maps && window.google.maps.MapTypeId) {
+            initializeMap()
+          } else {
+            setTimeout(checkGoogleMaps, 50)
+          }
         }
+        checkGoogleMaps()
+      }
+      
+      // 스크립트 로드 실패 처리
+      script.onerror = () => {
+        console.error('Google Maps API 스크립트 로드에 실패했습니다.')
+        setApiKeyError(true)
       }
       
       document.head.appendChild(script)
-    } else if (window.google) {
+    } else if (window.google && window.google.maps && window.google.maps.MapTypeId) {
       // 이미 로드된 경우 바로 초기화
       initializeMap()
+    } else if (window.google) {
+      // Google이 로드되었지만 Maps API가 아직 준비되지 않은 경우
+      const checkGoogleMaps = () => {
+        if (window.google && window.google.maps && window.google.maps.MapTypeId) {
+          initializeMap()
+        } else {
+          setTimeout(checkGoogleMaps, 50)
+        }
+      }
+      checkGoogleMaps()
     }
   }, [])
 
   const initializeMap = () => {
     const mapElement = document.getElementById('map')
-    if (!mapElement || !window.google) return
+    if (!mapElement || !window.google || !window.google.maps) return
+
+    // Google Maps API가 완전히 로드되었는지 확인
+    if (!window.google.maps.MapTypeId || !window.google.maps.MapTypeId.ROADMAP) {
+      console.warn('Google Maps API가 완전히 로드되지 않았습니다. 잠시 후 다시 시도합니다.')
+      setTimeout(initializeMap, 100)
+      return
+    }
 
     const newMap = new window.google.maps.Map(mapElement, {
       center: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
