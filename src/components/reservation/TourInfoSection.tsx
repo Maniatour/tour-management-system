@@ -4,6 +4,7 @@ interface PickupHotel {
   id: string
   hotel: string
   pick_up_location: string
+  is_active: boolean | null
 }
 
 interface TourInfoSectionProps {
@@ -83,8 +84,10 @@ export default function TourInfoSection({
               <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                 {pickupHotels
                   .filter(hotel => 
-                    hotel.hotel.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase()) ||
-                    hotel.pick_up_location.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase())
+                    hotel.is_active && (
+                      hotel.hotel.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase()) ||
+                      hotel.pick_up_location.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase())
+                    )
                   )
                   .map((hotel) => (
                     <div
@@ -104,8 +107,10 @@ export default function TourInfoSection({
                     </div>
                   ))}
                 {pickupHotels.filter(hotel => 
-                  hotel.hotel.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase()) ||
-                  hotel.pick_up_location.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase())
+                  hotel.is_active && (
+                    hotel.hotel.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase()) ||
+                    hotel.pick_up_location.toLowerCase().includes(formData.pickUpHotelSearch.toLowerCase())
+                  )
                 ).length === 0 && (
                   <div className="px-3 py-2 text-gray-500 text-center">
                     검색 결과가 없습니다

@@ -9,12 +9,12 @@ interface ScheduleItem {
   id?: string
   product_id: string
   day_number: number
-  start_time: string
-  end_time: string
+  start_time: string | null
+  end_time: string | null
   title: string
   description: string
   location: string
-  duration_minutes: number
+  duration_minutes: number | null
   is_break: boolean
   is_meal: boolean
   is_transport: boolean
@@ -47,6 +47,7 @@ interface ScheduleItem {
   guide_notes_ko?: string
   guide_notes_en?: string
   thumbnail_url?: string
+  order_index?: number
 }
 
 interface ProductScheduleTabProps {
@@ -108,6 +109,7 @@ export default function ProductScheduleTab({
         .select('*')
         .eq('product_id', productId)
         .order('day_number', { ascending: true })
+        .order('order_index', { ascending: true })
         .order('start_time', { ascending: true })
 
       if (error) {
@@ -454,7 +456,7 @@ export default function ProductScheduleTab({
                         
                         {/* 시간 */}
                         <span className="text-sm text-gray-600 font-medium">
-                          {schedule.start_time.substring(0, 5)}
+                          {schedule.start_time ? schedule.start_time.substring(0, 5) : '시간 미정'}
                         </span>
                         
                         {/* 제목 */}
@@ -620,7 +622,9 @@ export default function ProductScheduleTab({
                                 </div>
                                 
                                 <span className="text-sm text-gray-600">
-                                  {schedule.start_time.substring(0, 5)} - {schedule.end_time.substring(0, 5)} ({schedule.duration_minutes}{getText('분', 'min')})
+                                  {schedule.start_time ? schedule.start_time.substring(0, 5) : '시간 미정'}
+                                  {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
+                                  {schedule.duration_minutes && ` (${schedule.duration_minutes}${getText('분', 'min')})`}
                   </span>
                                 <span className="font-medium text-gray-900">
                                   {getScheduleText(schedule, 'title')}
@@ -738,7 +742,9 @@ export default function ProductScheduleTab({
               </div>
               
                                 <span className="text-sm text-gray-600">
-                                  {schedule.start_time.substring(0, 5)} - {schedule.end_time.substring(0, 5)} ({schedule.duration_minutes}{getText('분', 'min')})
+                                  {schedule.start_time ? schedule.start_time.substring(0, 5) : '시간 미정'}
+                                  {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
+                                  {schedule.duration_minutes && ` (${schedule.duration_minutes}${getText('분', 'min')})`}
                   </span>
                                 <span className="font-medium text-gray-900">
                                   {getScheduleText(schedule, 'title')}

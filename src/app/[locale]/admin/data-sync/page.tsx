@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink } from 'lucide-react'
+import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import WeatherDataCollector from '@/components/WeatherDataCollector'
 
@@ -21,6 +21,11 @@ interface SyncResult {
     updated?: number
     errors?: number
     errorDetails?: string[]
+    mdgcSunriseXUpdated?: number
+    mdgc1DXUpdated?: number
+    mdgcSunriseUpdated?: number
+    mdgc1DUpdated?: number
+    totalUpdated?: number
   }
   syncTime?: string
 }
@@ -68,6 +73,8 @@ export default function DataSyncPage() {
   }>({ processed: 0, inserted: 0, updated: 0, errors: 0 })
   const [logFilter, setLogFilter] = useState<string>('all') // 'all', 'info', 'warn', 'error'
   const [showFullLogs, setShowFullLogs] = useState(false)
+  const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [cleanupResult, setCleanupResult] = useState<SyncResult | null>(null)
 
   // 컬럼 매핑을 localStorage에 저장
   const saveColumnMapping = (tableName: string, mapping: ColumnMapping) => {
@@ -590,14 +597,27 @@ export default function DataSyncPage() {
     }
 
     setLoading(true)
+    setSheetInfo([]) // 이전 데이터 초기화
+    
     try {
+      // 타임아웃 설정 (35초)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 35000)
+
       const response = await fetch('/api/sync/sheets', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ spreadsheetId }),
+        signal: controller.signal
       })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
 
       const result = await response.json()
       
@@ -607,13 +627,30 @@ export default function DataSyncPage() {
         // 첫 번째 시트를 기본 선택
         if (result.data.sheets.length > 0) {
           setSelectedSheet(result.data.sheets[0].name)
+        } else {
+          alert('시트를 찾을 수 없습니다. 스프레드시트에 "S"로 시작하는 시트가 있는지 확인해주세요.')
         }
       } else {
         alert(`시트 정보를 가져오는데 실패했습니다: ${result.message}`)
       }
     } catch (error) {
       console.error('Error getting sheet info:', error)
-      alert('시트 정보를 가져오는데 오류가 발생했습니다.')
+      
+      let errorMessage = '시트 정보를 가져오는데 오류가 발생했습니다.'
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          errorMessage = '요청 시간이 초과되었습니다. 구글 시트 API 응답이 너무 오래 걸립니다.'
+        } else if (error.message.includes('403')) {
+          errorMessage = '구글 시트 접근 권한이 없습니다. 시트 공유 설정을 확인해주세요.'
+        } else if (error.message.includes('404')) {
+          errorMessage = '구글 시트를 찾을 수 없습니다. 스프레드시트 ID를 확인해주세요.'
+        } else {
+          errorMessage = `오류: ${error.message}`
+        }
+      }
+      
+      alert(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -873,6 +910,36 @@ export default function DataSyncPage() {
     }
   }
 
+  // 예약 데이터 정리 함수
+  const handleReservationCleanup = async () => {
+    if (!confirm('예약 데이터를 정리하시겠습니까?\n\n- MDGCSUNRISE_X → MDGCSUNRISE (Antelope X Canyon 옵션 추가)\n- MDGC1D_X → MDGC1D (Antelope X Canyon 옵션 추가)\n- MDGCSUNRISE → Lower Antelope Canyon 옵션 추가\n- MDGC1D → Lower Antelope Canyon 옵션 추가')) {
+      return
+    }
+
+    setCleanupLoading(true)
+    setCleanupResult(null)
+
+    try {
+      const response = await fetch('/api/reservations/cleanup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const result = await response.json()
+      setCleanupResult(result)
+    } catch (error) {
+      console.error('예약 데이터 정리 오류:', error)
+      setCleanupResult({
+        success: false,
+        message: `예약 데이터 정리 중 오류가 발생했습니다: ${error}`
+      })
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
+
   // 컴포넌트 마운트 시 사용 가능한 테이블만 가져오기
   useEffect(() => {
     getAvailableTables()
@@ -931,6 +998,88 @@ export default function DataSyncPage() {
       {/* 날씨 데이터 수집 섹션 */}
       <div className="mb-6">
         <WeatherDataCollector />
+      </div>
+
+      {/* 예약 데이터 정리 섹션 */}
+      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+          <Database className="h-5 w-5 mr-2" />
+          예약 데이터 정리
+        </h2>
+        
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <h3 className="text-sm font-medium text-yellow-800 mb-2">정리 규칙:</h3>
+          <ul className="text-sm text-yellow-700 space-y-1">
+            <li>• <strong>MDGCSUNRISE_X</strong> → <strong>MDGCSUNRISE</strong>로 변경하고 <strong>Antelope X Canyon</strong> 옵션 추가</li>
+            <li>• <strong>MDGC1D_X</strong> → <strong>MDGC1D</strong>로 변경하고 <strong>Antelope X Canyon</strong> 옵션 추가</li>
+            <li>• <strong>MDGCSUNRISE</strong> → <strong>Lower Antelope Canyon</strong> 옵션 추가 (옵션이 없는 경우)</li>
+            <li>• <strong>MDGC1D</strong> → <strong>Lower Antelope Canyon</strong> 옵션 추가 (옵션이 없는 경우)</li>
+          </ul>
+        </div>
+
+        <div className="flex space-x-3">
+          <button
+            onClick={handleReservationCleanup}
+            disabled={cleanupLoading}
+            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+          >
+            <Database className="h-4 w-4 mr-2" />
+            {cleanupLoading ? '정리 중...' : '예약 데이터 정리 실행'}
+          </button>
+        </div>
+
+        {/* 정리 결과 표시 */}
+        {cleanupResult && (
+          <div className="mt-4 p-4 rounded-lg border">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-900 flex items-center">
+                {cleanupResult.success ? (
+                  <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500 mr-2" />
+                )}
+                정리 결과
+              </h4>
+              <button
+                onClick={() => setCleanupResult(null)}
+                className="text-gray-400 hover:text-gray-600 text-sm"
+              >
+                ✕ 닫기
+              </button>
+            </div>
+            
+            <div className={`p-3 rounded-lg ${
+              cleanupResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+            }`}>
+              <p className={`text-sm font-medium ${
+                cleanupResult.success ? 'text-green-800' : 'text-red-800'
+              }`}>
+                {cleanupResult.message}
+              </p>
+              
+              {cleanupResult.data && (
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  <div className="bg-blue-50 p-2 rounded text-center">
+                    <div className="font-bold text-blue-600">{cleanupResult.data.mdgcSunriseXUpdated || 0}</div>
+                    <div className="text-blue-800">MDGCSUNRISE_X</div>
+                  </div>
+                  <div className="bg-purple-50 p-2 rounded text-center">
+                    <div className="font-bold text-purple-600">{cleanupResult.data.mdgc1DXUpdated || 0}</div>
+                    <div className="text-purple-800">MDGC1D_X</div>
+                  </div>
+                  <div className="bg-green-50 p-2 rounded text-center">
+                    <div className="font-bold text-green-600">{cleanupResult.data.mdgcSunriseUpdated || 0}</div>
+                    <div className="text-green-800">MDGCSUNRISE</div>
+                  </div>
+                  <div className="bg-yellow-50 p-2 rounded text-center">
+                    <div className="font-bold text-yellow-600">{cleanupResult.data.mdgc1DUpdated || 0}</div>
+                    <div className="text-yellow-800">MDGC1D</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 설정 섹션 */}

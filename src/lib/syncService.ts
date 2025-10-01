@@ -48,6 +48,21 @@ const transformReservationData = (sheetData: any[]) => {
       }
     })
 
+    // 상품 ID 자동 변환 로직
+    if (transformed.product_id) {
+      if (transformed.product_id === 'MDGCSUNRISE_X') {
+        transformed.product_id = 'MDGCSUNRISE'
+        transformed.choice = 'Antelope X Canyon'
+      } else if (transformed.product_id === 'MDGC1D_X') {
+        transformed.product_id = 'MDGC1D'
+        transformed.choice = 'Antelope X Canyon'
+      } else if (transformed.product_id === 'MDGCSUNRISE') {
+        transformed.choice = 'Lower Antelope Canyon'
+      } else if (transformed.product_id === 'MDGC1D') {
+        transformed.choice = 'Lower Antelope Canyon'
+      }
+    }
+
     // 데이터 타입 변환
     if (transformed.adults) {
       transformed.adults = parseInt(transformed.adults) || 0
@@ -185,6 +200,10 @@ export const syncReservations = async (spreadsheetId: string, sheetName: string)
           row.customer_id = customerId
         }
 
+        // choice 정보 분리 (reservations 테이블에는 저장하지 않음)
+        const choice = row.choice
+        delete row.choice
+
         // 기존 예약 확인
         const { data: existingReservation } = await supabase
           .from('reservations')
@@ -221,6 +240,24 @@ export const syncReservations = async (spreadsheetId: string, sheetName: string)
             results.errorDetails.push(`Insert failed for ${row.id}: ${insertError.message}`)
           } else {
             results.inserted++
+          }
+        }
+
+        // choice 정보가 있으면 reservation_options 테이블에 저장
+        if (choice) {
+          const { error: optionError } = await supabase
+            .from('reservation_options')
+            .upsert({
+              reservation_id: row.id,
+              option_name: choice,
+              option_value: choice,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+
+          if (optionError) {
+            console.error('Option insert error:', optionError)
+            results.errorDetails.push(`Option insert failed for ${row.id}: ${optionError.message}`)
           }
         }
       } catch (error) {

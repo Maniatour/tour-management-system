@@ -915,6 +915,7 @@ export default function TourDetailPage() {
             supabase
               .from('pickup_hotels')
               .select('*')
+              .eq('is_active', true)
               .then(({ data }) => {
                 const hotels = (data as PickupHotel[]) || []
                 cache.set(hotelsCacheKey, hotels, 30 * 60 * 1000) // 30분 캐시

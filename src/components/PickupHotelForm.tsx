@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { X, Upload, MapPin, Globe, Image, Video, Trash2 } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { X, Upload, MapPin, Globe, Video, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface PickupHotel {
@@ -14,6 +14,7 @@ interface PickupHotel {
   pin: string | null
   link: string | null
   media: string[] | null
+  is_active: boolean | null
   created_at: string | null
   updated_at: string | null
 }
@@ -49,7 +50,8 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     address: hotel?.address || '',
     pin: hotel?.pin || '',
     link: hotel?.link || '',
-    media: hotel?.media || []
+    media: hotel?.media || [],
+    is_active: hotel?.is_active ?? true
   })
 
   const [uploading, setUploading] = useState(false)
@@ -131,13 +133,48 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     }))
   }
 
+  // 구글 드라이브 URL을 다운로드 URL로 변환
+  const convertGoogleDriveUrl = (url: string) => {
+    const fileIdMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+    if (fileIdMatch) {
+      const fileId = fileIdMatch[1]
+      return `https://drive.google.com/uc?export=download&id=${fileId}`
+    }
+    return url
+  }
+
+  // URL 자동 변환 함수
+  const handleUrlChange = (index: number, url: string) => {
+    let processedUrl = url.trim()
+    
+    // 구글 드라이브 공유 링크인 경우 다운로드 URL로 변환
+    if (processedUrl.includes('drive.google.com/file/d/')) {
+      processedUrl = convertGoogleDriveUrl(processedUrl)
+    }
+    
+    const newMedia = [...(formData.media || [])]
+    if (processedUrl) {
+      newMedia[index] = processedUrl
+    } else {
+      newMedia.splice(index, 1)
+    }
+    setFormData({ ...formData, media: newMedia })
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[95vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">
-            {hotel ? translations.editTitle : translations.title}
-          </h2>
+          <div className="flex items-center space-x-3">
+            <h2 className="text-2xl font-bold">
+              {hotel ? translations.editTitle : translations.title}
+            </h2>
+            {hotel && (
+              <span className="px-3 py-1 bg-gray-100 text-gray-700 text-sm font-mono rounded-lg">
+                ID: {hotel.id}
+              </span>
+            )}
+          </div>
           <button
             onClick={onCancel}
             className="text-gray-500 hover:text-gray-700"
@@ -257,24 +294,98 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
             </div>
           </div>
 
+          {/* 활성화 상태 */}
+          <div>
+            <label className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                checked={formData.is_active}
+                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                픽업 호텔로 사용 (체크 해제 시 예약 폼에서 선택할 수 없음)
+              </span>
+            </label>
+          </div>
+
           {/* 미디어 파일 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {translations.media}
             </label>
             
+            {/* 구글 드라이브 URL 입력 */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">구글 드라이브 이미지 URL (최대 5개)</h4>
+              <div className="space-y-3">
+                {[1, 2, 3, 4, 5].map((index) => (
+                  <div key={index} className="flex items-center space-x-3">
+                    <span className="text-sm text-gray-500 w-8">#{index}</span>
+                    <input
+                      type="url"
+                      placeholder={`구글 드라이브 이미지 URL ${index}`}
+                      value={formData.media?.[index - 1] || ''}
+                      onChange={(e) => handleUrlChange(index - 1, e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {formData.media?.[index - 1] && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newMedia = [...(formData.media || [])]
+                          newMedia.splice(index - 1, 1)
+                          setFormData({ ...formData, media: newMedia })
+                        }}
+                        className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                        title="URL 제거"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-800 mb-2">
+                  <strong>💡 사용 방법:</strong>
+                </p>
+                <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
+                  <li>구글 드라이브 이미지를 "링크가 있는 모든 사용자"로 공개 설정</li>
+                  <li>공유 링크를 복사하여 위 입력 필드에 붙여넣기</li>
+                  <li>자동으로 다운로드 URL로 변환됩니다</li>
+                  <li>최대 5개의 이미지 URL을 입력할 수 있습니다</li>
+                </ul>
+              </div>
+            </div>
+
             {/* 기존 미디어 표시 */}
             {formData.media && formData.media.length > 0 && (
               <div className="mb-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">기존 미디어:</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">미디어 미리보기:</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {formData.media.map((url, index) => (
                     <div key={index} className="relative group">
-                      {url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                      {url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || url.includes('drive.google.com') ? (
                         <img
                           src={url}
                           alt={`미디어 ${index + 1}`}
                           className="w-full h-24 object-cover rounded-lg"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement
+                            target.style.display = 'none'
+                            const parent = target.parentElement
+                            if (parent) {
+                              parent.innerHTML = `
+                                <div class="w-full h-24 bg-gray-100 rounded-lg flex items-center justify-center">
+                                  <div class="text-center">
+                                    <div class="text-red-500 text-xs">이미지 로드 실패</div>
+                                    <div class="text-gray-400 text-xs mt-1">URL 확인 필요</div>
+                                  </div>
+                                </div>
+                              `
+                            }
+                          }}
                         />
                       ) : (
                         <div className="w-full h-24 bg-gray-100 rounded-lg flex items-center justify-center">
@@ -288,13 +399,16 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                       >
                         <Trash2 size={12} />
                       </button>
+                      <div className="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                        #{index + 1}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* 새 파일 업로드 */}
+            {/* 새 파일 업로드 (기존 기능 유지) */}
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
               <input
                 ref={fileInputRef}
@@ -310,7 +424,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                 className="flex flex-col items-center space-y-2 text-gray-600 hover:text-gray-800"
               >
                 <Upload size={32} />
-                <span>파일을 선택하거나 여기로 드래그하세요</span>
+                <span>또는 파일을 선택하거나 여기로 드래그하세요</span>
                 <span className="text-sm text-gray-500">지원 형식: JPG, PNG, GIF, MP4, MOV</span>
               </button>
             </div>

@@ -610,7 +610,13 @@ export interface Database {
           id: string
           hotel: string
           pick_up_location: string
+          description_ko: string | null
+          description_en: string | null
+          address: string
+          pin: string | null
           link: string | null
+          media: string[] | null
+          is_active: boolean | null
           created_at: string | null
           updated_at: string | null
         }
@@ -618,7 +624,13 @@ export interface Database {
           id?: string
           hotel: string
           pick_up_location: string
+          description_ko?: string | null
+          description_en?: string | null
+          address: string
+          pin?: string | null
           link?: string | null
+          media?: string[] | null
+          is_active?: boolean | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -626,7 +638,13 @@ export interface Database {
           id?: string
           hotel?: string
           pick_up_location?: string
+          description_ko?: string | null
+          description_en?: string | null
+          address?: string
+          pin?: string | null
           link?: string | null
+          media?: string[] | null
+          is_active?: boolean | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -937,6 +955,137 @@ export interface Database {
         visibility?: number | null
         created_at?: string | null
         updated_at?: string | null
+      }
+    }
+    product_schedules: {
+      Row: {
+        id: string
+        product_id: string
+        day_number: number
+        start_time: string | null
+        end_time: string | null
+        title: string
+        title_ko: string | null
+        title_en: string | null
+        description: string | null
+        description_ko: string | null
+        description_en: string | null
+        location: string | null
+        location_ko: string | null
+        location_en: string | null
+        duration_minutes: number | null
+        is_break: boolean
+        is_meal: boolean
+        is_transport: boolean
+        is_tour: boolean
+        transport_type: string | null
+        transport_details: string | null
+        transport_details_ko: string | null
+        transport_details_en: string | null
+        notes: string | null
+        notes_ko: string | null
+        notes_en: string | null
+        guide_notes_ko: string | null
+        guide_notes_en: string | null
+        show_to_customers: boolean
+        guide_assignment_type: string
+        assigned_guide_1: string | null
+        assigned_guide_2: string | null
+        assigned_guide_driver_guide: string | null
+        assigned_guide_driver_driver: string | null
+        assigned_driver: string | null
+        latitude: number | null
+        longitude: number | null
+        thumbnail_url: string | null
+        order_index: number
+        created_at: string
+        updated_at: string
+      }
+      Insert: {
+        id?: string
+        product_id: string
+        day_number: number
+        start_time?: string | null
+        end_time?: string | null
+        title: string
+        title_ko?: string | null
+        title_en?: string | null
+        description?: string | null
+        description_ko?: string | null
+        description_en?: string | null
+        location?: string | null
+        location_ko?: string | null
+        location_en?: string | null
+        duration_minutes?: number | null
+        is_break?: boolean
+        is_meal?: boolean
+        is_transport?: boolean
+        is_tour?: boolean
+        transport_type?: string | null
+        transport_details?: string | null
+        transport_details_ko?: string | null
+        transport_details_en?: string | null
+        notes?: string | null
+        notes_ko?: string | null
+        notes_en?: string | null
+        guide_notes_ko?: string | null
+        guide_notes_en?: string | null
+        show_to_customers?: boolean
+        guide_assignment_type?: string
+        assigned_guide_1?: string | null
+        assigned_guide_2?: string | null
+        assigned_guide_driver_guide?: string | null
+        assigned_guide_driver_driver?: string | null
+        assigned_driver?: string | null
+        latitude?: number | null
+        longitude?: number | null
+        thumbnail_url?: string | null
+        order_index?: number
+        created_at?: string
+        updated_at?: string
+      }
+      Update: {
+        id?: string
+        product_id?: string
+        day_number?: number
+        start_time?: string | null
+        end_time?: string | null
+        title?: string
+        title_ko?: string | null
+        title_en?: string | null
+        description?: string | null
+        description_ko?: string | null
+        description_en?: string | null
+        location?: string | null
+        location_ko?: string | null
+        location_en?: string | null
+        duration_minutes?: number | null
+        is_break?: boolean
+        is_meal?: boolean
+        is_transport?: boolean
+        is_tour?: boolean
+        transport_type?: string | null
+        transport_details?: string | null
+        transport_details_ko?: string | null
+        transport_details_en?: string | null
+        notes?: string | null
+        notes_ko?: string | null
+        notes_en?: string | null
+        guide_notes_ko?: string | null
+        guide_notes_en?: string | null
+        show_to_customers?: boolean
+        guide_assignment_type?: string
+        assigned_guide_1?: string | null
+        assigned_guide_2?: string | null
+        assigned_guide_driver_guide?: string | null
+        assigned_guide_driver_driver?: string | null
+        assigned_driver?: string | null
+        latitude?: number | null
+        longitude?: number | null
+        thumbnail_url?: string | null
+        order_index?: number
+        created_at?: string
+        updated_at?: string
       }
     }
     CompositeTypes: {

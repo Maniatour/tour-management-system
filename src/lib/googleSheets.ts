@@ -90,12 +90,24 @@ export const getSheetNames = async (spreadsheetId: string) => {
       return cached.data
     }
 
+    // 환경변수 확인
+    if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      throw new Error('Google Sheets API credentials not configured. Please check environment variables.')
+    }
+
     const auth = getAuthClient()
     const sheets = google.sheets({ version: 'v4', auth })
 
-    const response = await sheets.spreadsheets.get({
+    // 타임아웃 설정 (20초)
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Google Sheets API timeout')), 20000)
+    })
+
+    const fetchPromise = sheets.spreadsheets.get({
       spreadsheetId,
     })
+
+    const response = await Promise.race([fetchPromise, timeoutPromise]) as any
 
     const allSheets = response.data.sheets || []
     
@@ -123,6 +135,20 @@ export const getSheetNames = async (spreadsheetId: string) => {
     return filteredSheets
   } catch (error) {
     console.error('Error getting sheet names:', error)
+    
+    // 구체적인 에러 메시지 제공
+    if (error instanceof Error) {
+      if (error.message.includes('timeout')) {
+        throw new Error('구글 시트 API 응답 시간 초과')
+      } else if (error.message.includes('403')) {
+        throw new Error('구글 시트 접근 권한이 없습니다. 시트 공유 설정을 확인해주세요')
+      } else if (error.message.includes('404')) {
+        throw new Error('구글 시트를 찾을 수 없습니다. 스프레드시트 ID를 확인해주세요')
+      } else if (error.message.includes('credentials')) {
+        throw new Error('구글 시트 API 인증 정보가 설정되지 않았습니다')
+      }
+    }
+    
     throw error
   }
 }

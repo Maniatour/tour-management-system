@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Clock, MapPin, Users, Calendar, ChevronDown, ChevronUp } from 'lucide-react'
+import { Clock, Calendar, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ScheduleItem {
@@ -39,6 +39,7 @@ interface ScheduleItem {
   assigned_driver: string | null
   assigned_guide_driver_guide: string | null
   assigned_guide_driver_driver: string | null
+  order_index: number
   created_at: string
   updated_at: string
 }
@@ -60,14 +61,12 @@ export default function TourScheduleSection({
 
   useEffect(() => {
     fetchSchedules()
-  }, [productId, teamType])
+  }, [productId, teamType, fetchSchedules])
 
   const fetchSchedules = async () => {
     try {
       setLoading(true)
       
-      // team_type에 따라 필터링 조건 설정
-      let filterCondition = { product_id: productId }
       
       if (teamType === '2guide') {
         // 2가이드 담당 일정: guide_assignment_type이 'two_guides'이거나 'none', 'single_guide'인 경우
@@ -83,6 +82,7 @@ export default function TourScheduleSection({
           .eq('product_id', productId)
           .in('guide_assignment_type', ['two_guides', 'none', 'single_guide'])
           .order('day_number', { ascending: true })
+          .order('order_index', { ascending: true })
           .order('start_time', { ascending: true })
         
         if (error) throw error
@@ -101,6 +101,7 @@ export default function TourScheduleSection({
           .eq('product_id', productId)
           .in('guide_assignment_type', ['guide_driver', 'none', 'single_guide'])
           .order('day_number', { ascending: true })
+          .order('order_index', { ascending: true })
           .order('start_time', { ascending: true })
         
         if (error) throw error
@@ -119,6 +120,7 @@ export default function TourScheduleSection({
           `)
           .eq('product_id', productId)
           .order('day_number', { ascending: true })
+          .order('order_index', { ascending: true })
           .order('start_time', { ascending: true })
         
         if (error) throw error
@@ -152,19 +154,6 @@ export default function TourScheduleSection({
     return fallback || ''
   }
 
-  const getScheduleTypeIcon = (schedule: ScheduleItem) => {
-    if (schedule.is_meal) return '🍽️'
-    if (schedule.is_transport) return '🚌'
-    if (schedule.is_break) return '☕'
-    return '📍'
-  }
-
-  const getScheduleTypeLabel = (schedule: ScheduleItem) => {
-    if (schedule.is_meal) return '식사'
-    if (schedule.is_transport) return '이동'
-    if (schedule.is_break) return '휴식'
-    return '관광'
-  }
 
   const getScheduleBackgroundColor = (schedule: ScheduleItem) => {
     // team_type에 따라 다른 필드로 배경 색깔 결정
@@ -306,7 +295,7 @@ export default function TourScheduleSection({
                           <div className="flex items-center space-x-1 text-xs text-gray-600">
                             <Clock className="h-3 w-3" />
                             <span>
-                              {schedule.start_time ? formatTime(schedule.start_time) : ''}
+                              {schedule.start_time ? formatTime(schedule.start_time) : '시간 미정'}
                               {schedule.end_time ? `-${formatTime(schedule.end_time)}` : ''}
                             </span>
                           </div>

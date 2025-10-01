@@ -683,11 +683,13 @@ export default function GuideTourDetailPage() {
                 </div>
               </div>
 
-        {/* 밤도깨비 투어 특별 정보 */}
-        <TourWeather 
-          tourDate={tour.tour_date} 
-          productId={(tour as TourRow & { product_id?: string }).product_id} 
-        />
+        {/* 밤도깨비 투어 특별 정보 - 개요 탭에만 표시 */}
+        <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
+          <TourWeather 
+            tourDate={tour.tour_date} 
+            productId={(tour as TourRow & { product_id?: string }).product_id} 
+          />
+        </div>
 
         {/* 예약 정보 - 개요 탭에만 표시 */}
         <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>

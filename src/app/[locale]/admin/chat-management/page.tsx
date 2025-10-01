@@ -488,6 +488,7 @@ export default function ChatManagementPage() {
             .from('pickup_hotels')
             .select('*')
             .in('id', pickupHotelIds)
+            .eq('is_active', true)
 
           if (!pickupHotelsError) {
             pickupHotelsData = pickupHotels || []

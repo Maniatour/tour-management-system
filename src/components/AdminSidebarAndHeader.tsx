@@ -26,7 +26,8 @@ import {
   MessageCircle,
   FileSpreadsheet,
   Globe,
-  User
+  User,
+  Download
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -221,6 +222,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },
     { name: t('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
     { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
+    { name: '이미지 마이그레이션', href: `/${locale}/admin/migrate-images`, icon: Download },
     { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
     { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
     { name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },

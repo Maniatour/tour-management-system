@@ -238,6 +238,7 @@ export default function TourChatRoom({
           .from('pickup_hotels')
           .select('id, hotel, pick_up_location')
           .in('id', pickupHotelIds)
+          .eq('is_active', true)
         
         if (hotelsError) {
           console.error('Error loading pickup hotels:', hotelsError)

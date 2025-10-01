@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
-import { Plus, Search, Edit, Trash2, MapPin, Globe, Image, Video } from 'lucide-react'
+import { Plus, Search, MapPin, Image, Video, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import PickupHotelForm from '@/components/PickupHotelForm'
 
@@ -15,6 +15,7 @@ interface PickupHotel {
   pin: string | null
   link: string | null
   media: string[] | null
+  is_active: boolean | null
   created_at: string | null
   updated_at: string | null
 }
@@ -24,7 +25,7 @@ interface AdminPickupHotelsProps {
 }
 
 export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
-  const { locale } = use(params)
+  use(params) // locale 사용하지 않지만 params는 필요
   
   // 번역 문자열 정의
   const translations = {
@@ -48,6 +49,17 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingHotel, setEditingHotel] = useState<PickupHotel | null>(null)
+  const [imageViewer, setImageViewer] = useState<{
+    isOpen: boolean
+    images: string[]
+    currentIndex: number
+    hotelName: string
+  }>({
+    isOpen: false,
+    images: [],
+    currentIndex: 0,
+    hotelName: ''
+  })
 
   // Supabase에서 픽업 호텔 데이터 가져오기
   const fetchHotels = async () => {
@@ -78,18 +90,42 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     loadData()
   }, [])
 
-  const filteredHotels = hotels.filter(hotel => 
-    hotel.hotel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    hotel.pick_up_location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    hotel.address.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  // 키보드 네비게이션
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!imageViewer.isOpen) return
+
+      switch (e.key) {
+        case 'Escape':
+          closeImageViewer()
+          break
+        case 'ArrowLeft':
+          prevImage()
+          break
+        case 'ArrowRight':
+          nextImage()
+          break
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [imageViewer.isOpen])
+
+  const filteredHotels = hotels.filter(hotel => {
+    const searchLower = searchTerm.toLowerCase()
+    return (
+      hotel.hotel?.toLowerCase().includes(searchLower) ||
+      hotel.pick_up_location?.toLowerCase().includes(searchLower) ||
+      hotel.address?.toLowerCase().includes(searchLower)
+    )
+  })
 
   const handleAddHotel = async (hotelData: Omit<PickupHotel, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('pickup_hotels')
         .insert(hotelData)
-        .select()
 
       if (error) {
         console.error('Error adding hotel:', error)
@@ -111,7 +147,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       try {
         const { error } = await supabase
           .from('pickup_hotels')
-          .update(hotelData)
+          .update(hotelData as any)
           .eq('id', editingHotel.id)
 
         if (error) {
@@ -153,9 +189,67 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     }
   }
 
+  const handleToggleActive = async (id: string, currentStatus: boolean | null) => {
+    try {
+      const newStatus = !currentStatus
+      const { error } = await supabase
+        .from('pickup_hotels')
+        .update({ is_active: newStatus } as any)
+        .eq('id', id)
+
+      if (error) {
+        console.error('Error toggling hotel status:', error)
+        alert('호텔 상태 변경 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+
+      await fetchHotels()
+      alert(`호텔이 ${newStatus ? '활성화' : '비활성화'}되었습니다!`)
+    } catch (error) {
+      console.error('Error toggling hotel status:', error)
+      alert('호텔 상태 변경 중 오류가 발생했습니다.')
+    }
+  }
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '날짜 없음'
     return new Date(dateString).toLocaleDateString('ko-KR')
+  }
+
+  // 이미지 뷰어 열기
+  const openImageViewer = (images: string[], startIndex: number, hotelName: string) => {
+    setImageViewer({
+      isOpen: true,
+      images,
+      currentIndex: startIndex,
+      hotelName
+    })
+  }
+
+  // 이미지 뷰어 닫기
+  const closeImageViewer = () => {
+    setImageViewer({
+      isOpen: false,
+      images: [],
+      currentIndex: 0,
+      hotelName: ''
+    })
+  }
+
+  // 이전 이미지
+  const prevImage = () => {
+    setImageViewer(prev => ({
+      ...prev,
+      currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.images.length - 1
+    }))
+  }
+
+  // 다음 이미지
+  const nextImage = () => {
+    setImageViewer(prev => ({
+      ...prev,
+      currentIndex: prev.currentIndex < prev.images.length - 1 ? prev.currentIndex + 1 : 0
+    }))
   }
 
   if (loading) {
@@ -202,18 +296,43 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
             {/* 호텔명 */}
             <div className="mb-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold text-gray-900">{hotel.hotel}</h3>
-                {hotel.link && (
-                  <a
-                    href={hotel.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 transition-colors"
-                    onClick={(e) => e.stopPropagation()}
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-base font-semibold text-gray-900">{hotel.hotel}</h3>
+                  <span className={`px-2 py-1 text-xs rounded-full ${
+                    hotel.is_active 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-red-100 text-red-800'
+                  }`}>
+                    {hotel.is_active ? '활성' : '비활성'}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleToggleActive(hotel.id, hotel.is_active)
+                    }}
+                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                      hotel.is_active
+                        ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                        : 'bg-green-100 text-green-700 hover:bg-green-200'
+                    }`}
+                    title={hotel.is_active ? '비활성화' : '활성화'}
                   >
-                    <MapPin size={16} />
-                  </a>
-                )}
+                    {hotel.is_active ? '비활성화' : '활성화'}
+                  </button>
+                  {hotel.link && (
+                    <a
+                      href={hotel.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 transition-colors"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MapPin size={16} />
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -289,18 +408,64 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
               <div className="mb-4">
                 <div className="text-sm font-medium text-gray-700 mb-2">미디어:</div>
                 <div className="grid grid-cols-4 gap-2">
-                  {hotel.media.slice(0, 4).map((url, index) => (
-                    <div key={index} className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
-                      {url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                        <Image size={16} className="text-green-600" />
-                      ) : (
-                        <Video size={16} className="text-blue-600" />
-                      )}
-                    </div>
-                  ))}
+                  {hotel.media.slice(0, 4).map((url, index) => {
+                    const isImage = url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || url.includes('drive.google.com')
+                    return (
+                      <div 
+                        key={index} 
+                        className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors relative group"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (isImage) {
+                            openImageViewer(hotel.media || [], index, hotel.hotel)
+                          }
+                        }}
+                      >
+                        {isImage ? (
+                          <img
+                            src={url}
+                            alt={`${hotel.hotel} 이미지 ${index + 1}`}
+                            className="w-full h-full object-cover rounded-lg"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement
+                              target.style.display = 'none'
+                              const parent = target.parentElement
+                              if (parent) {
+                                parent.innerHTML = `
+                                  <div class="w-full h-full flex items-center justify-center">
+                                    <div class="text-center">
+                                      <div class="text-red-500 text-xs">이미지 로드 실패</div>
+                                      <div class="text-gray-400 text-xs mt-1">URL 확인 필요</div>
+                                    </div>
+                                  </div>
+                                `
+                              }
+                            }}
+                          />
+                        ) : (
+                          <Video size={16} className="text-blue-600" />
+                        )}
+                        
+                        {/* 호버 오버레이 */}
+                        {isImage && (
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity rounded-lg flex items-center justify-center">
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Image size={20} className="text-white" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                   {hotel.media.length > 4 && (
-                    <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center text-xs text-gray-500">
-                      +{hotel.media.length - 4}
+                    <div 
+                      className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center text-xs text-gray-500 cursor-pointer hover:bg-gray-200 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openImageViewer(hotel.media || [], 4, hotel.hotel)
+                      }}
+                    >
+                      +{hotel.media.length - 4}개 더
                     </div>
                   )}
                 </div>
@@ -332,6 +497,98 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
            translations={translations}
          />
        )}
+
+      {/* 이미지 뷰어 모달 */}
+      {imageViewer.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+          <div className="relative w-full h-full flex items-center justify-center">
+            {/* 닫기 버튼 */}
+            <button
+              onClick={closeImageViewer}
+              className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+            >
+              <X size={32} />
+            </button>
+
+            {/* 호텔명 */}
+            <div className="absolute top-4 left-4 text-white text-lg font-semibold z-10">
+              {imageViewer.hotelName}
+            </div>
+
+            {/* 이미지 카운터 */}
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 text-white text-sm z-10">
+              {imageViewer.currentIndex + 1} / {imageViewer.images.length}
+            </div>
+
+            {/* 이전 버튼 */}
+            {imageViewer.images.length > 1 && (
+              <button
+                onClick={prevImage}
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 z-10"
+              >
+                <ChevronLeft size={48} />
+              </button>
+            )}
+
+            {/* 다음 버튼 */}
+            {imageViewer.images.length > 1 && (
+              <button
+                onClick={nextImage}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white hover:text-gray-300 z-10"
+              >
+                <ChevronRight size={48} />
+              </button>
+            )}
+
+            {/* 메인 이미지 */}
+            <div className="max-w-4xl max-h-4xl mx-auto">
+              <img
+                src={imageViewer.images[imageViewer.currentIndex]}
+                alt={`${imageViewer.hotelName} 이미지 ${imageViewer.currentIndex + 1}`}
+                className="max-w-full max-h-full object-contain"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement
+                  target.style.display = 'none'
+                  const parent = target.parentElement
+                  if (parent) {
+                    parent.innerHTML = `
+                      <div class="w-full h-64 flex items-center justify-center bg-gray-800 rounded-lg">
+                        <div class="text-center text-white">
+                          <div class="text-red-400 text-lg mb-2">이미지 로드 실패</div>
+                          <div class="text-gray-400">URL을 확인해주세요</div>
+                        </div>
+                      </div>
+                    `
+                  }
+                }}
+              />
+            </div>
+
+            {/* 썸네일 네비게이션 */}
+            {imageViewer.images.length > 1 && (
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2 z-10">
+                {imageViewer.images.map((url, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setImageViewer(prev => ({ ...prev, currentIndex: index }))}
+                    className={`w-12 h-12 rounded-lg overflow-hidden border-2 transition-all ${
+                      index === imageViewer.currentIndex 
+                        ? 'border-white' 
+                        : 'border-transparent hover:border-gray-400'
+                    }`}
+                  >
+                    <img
+                      src={url}
+                      alt={`썸네일 ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

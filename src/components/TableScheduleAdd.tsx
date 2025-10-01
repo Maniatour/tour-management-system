@@ -10,12 +10,12 @@ interface ScheduleItem {
   id?: string
   product_id: string
   day_number: number
-  start_time: string
-  end_time: string
+  start_time: string | null
+  end_time: string | null
   title: string
   description: string
   location: string
-  duration_minutes: number
+  duration_minutes: number | null
   is_break: boolean
   is_meal: boolean
   is_transport: boolean
@@ -44,6 +44,7 @@ interface ScheduleItem {
   guide_notes_ko?: string
   guide_notes_en?: string
   thumbnail_url?: string
+  order_index?: number
 }
 
 interface TableScheduleAddProps {
@@ -80,7 +81,8 @@ export default function TableScheduleAdd({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 시간 계산 유틸리티 함수들
-  const timeToMinutes = (timeStr: string): number => {
+  const timeToMinutes = (timeStr: string | null): number => {
+    if (!timeStr) return 0
     const [hours, minutes] = timeStr.split(':').map(Number)
     return hours * 60 + minutes
   }
@@ -91,13 +93,15 @@ export default function TableScheduleAdd({
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
   }
 
-  const calculateDuration = (startTime: string, endTime: string): number => {
+  const calculateDuration = (startTime: string | null, endTime: string | null): number => {
+    if (!startTime || !endTime) return 0
     const startMinutes = timeToMinutes(startTime)
     const endMinutes = timeToMinutes(endTime)
     return endMinutes - startMinutes
   }
 
-  const calculateEndTime = (startTime: string, durationMinutes: number): string => {
+  const calculateEndTime = (startTime: string | null, durationMinutes: number): string | null => {
+    if (!startTime) return null
     const startMinutes = timeToMinutes(startTime)
     const endMinutes = startMinutes + durationMinutes
     return minutesToTime(endMinutes)
@@ -107,17 +111,23 @@ export default function TableScheduleAdd({
     // 마지막 행의 정보를 가져오기
     const lastSchedule = schedules.length > 0 ? schedules[schedules.length - 1] : null
     const lastDayNumber = lastSchedule ? lastSchedule.day_number : 1
-    const lastEndTime = lastSchedule ? lastSchedule.end_time : '09:00'
+    const lastEndTime = lastSchedule ? lastSchedule.end_time : null
+    
+    // 같은 일차의 마지막 order_index 찾기
+    const sameDaySchedules = schedules.filter(s => s.day_number === lastDayNumber)
+    const maxOrderIndex = sameDaySchedules.length > 0 
+      ? Math.max(...sameDaySchedules.map(s => s.order_index || 0))
+      : 0
     
     const newSchedule: ScheduleItem = {
       product_id: productId, // 올바른 product_id 설정
       day_number: lastDayNumber, // 윗 행과 같은 일차
-      start_time: lastEndTime, // 윗 행의 종료 시간을 시작 시간으로
-      end_time: calculateEndTime(lastEndTime, 60), // 시작 시간 + 60분
+      start_time: lastEndTime, // 윗 행의 종료 시간을 시작 시간으로 (null 가능)
+      end_time: lastEndTime ? calculateEndTime(lastEndTime, 60) : null, // 시작 시간이 있으면 + 60분
       title: '',
       description: '',
       location: '',
-      duration_minutes: 60,
+      duration_minutes: lastEndTime ? 60 : null, // 시간이 없으면 null
       is_break: false,
       is_meal: false,
       is_transport: false,
@@ -145,7 +155,8 @@ export default function TableScheduleAdd({
       notes_en: '',
       guide_notes_ko: '',
       guide_notes_en: '',
-      thumbnail_url: ''
+      thumbnail_url: '',
+      order_index: maxOrderIndex + 1 // 다음 순서로 설정
     }
     onSchedulesChange([...schedules, newSchedule])
   }
@@ -156,24 +167,48 @@ export default function TableScheduleAdd({
     onSchedulesChange(updatedSchedules)
   }
 
-  // Row 이동 함수들
+  // Row 이동 함수들 (order_index 업데이트 포함)
   const moveScheduleUp = (index: number) => {
     if (index > 0) {
       const updatedSchedules = [...schedules]
-      const temp = updatedSchedules[index]
-      updatedSchedules[index] = updatedSchedules[index - 1]
-      updatedSchedules[index - 1] = temp
-      onSchedulesChange(updatedSchedules)
+      const currentSchedule = updatedSchedules[index]
+      const previousSchedule = updatedSchedules[index - 1]
+      
+      // 같은 일차인 경우에만 이동
+      if (currentSchedule.day_number === previousSchedule.day_number) {
+        // order_index 교환
+        const tempOrderIndex = currentSchedule.order_index
+        currentSchedule.order_index = previousSchedule.order_index
+        previousSchedule.order_index = tempOrderIndex
+        
+        // 배열에서 위치 교환
+        updatedSchedules[index] = previousSchedule
+        updatedSchedules[index - 1] = currentSchedule
+        
+        onSchedulesChange(updatedSchedules)
+      }
     }
   }
 
   const moveScheduleDown = (index: number) => {
     if (index < schedules.length - 1) {
       const updatedSchedules = [...schedules]
-      const temp = updatedSchedules[index]
-      updatedSchedules[index] = updatedSchedules[index + 1]
-      updatedSchedules[index + 1] = temp
-      onSchedulesChange(updatedSchedules)
+      const currentSchedule = updatedSchedules[index]
+      const nextSchedule = updatedSchedules[index + 1]
+      
+      // 같은 일차인 경우에만 이동
+      if (currentSchedule.day_number === nextSchedule.day_number) {
+        // order_index 교환
+        const tempOrderIndex = currentSchedule.order_index
+        currentSchedule.order_index = nextSchedule.order_index
+        nextSchedule.order_index = tempOrderIndex
+        
+        // 배열에서 위치 교환
+        updatedSchedules[index] = nextSchedule
+        updatedSchedules[index + 1] = currentSchedule
+        
+        onSchedulesChange(updatedSchedules)
+      }
     }
   }
 
@@ -401,8 +436,9 @@ export default function TableScheduleAdd({
           <div className="w-12">이동</div>
           <div className="w-12">썸네일</div>
           <div className="w-12">일차</div>
-          <div className="w-32">시작</div>
-          <div className="w-32">종료</div>
+          <div className="w-12">순서</div>
+          <div className="w-32">시작 (선택)</div>
+          <div className="w-32">종료 (선택)</div>
           <div className="w-16">소요(분)</div>
           <div className="w-48">제목</div>
           <div className="w-64">설명</div>
@@ -486,14 +522,27 @@ export default function TableScheduleAdd({
                 />
               </div>
 
-              {/* 시작시간 */}
+              {/* 순서 */}
+              <div className="w-12">
+                <input
+                  type="number"
+                  value={schedule.order_index || 0}
+                  onChange={(e) => updateSchedule(index, 'order_index', parseInt(e.target.value) || 0)}
+                  className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  min="0"
+                />
+              </div>
+
+              {/* 시작시간 (선택사항) */}
               <div className="w-32">
                 <input
                   type="time"
-                  value={schedule.start_time}
+                  value={schedule.start_time || ''}
                   onChange={(e) => {
-                    const newStartTime = e.target.value
-                    const newEndTime = calculateEndTime(newStartTime, schedule.duration_minutes)
+                    const newStartTime = e.target.value || null
+                    const newEndTime = newStartTime && schedule.duration_minutes 
+                      ? calculateEndTime(newStartTime, schedule.duration_minutes) 
+                      : null
                     const updatedSchedules = [...schedules]
                     updatedSchedules[index] = {
                       ...updatedSchedules[index],
@@ -503,17 +552,20 @@ export default function TableScheduleAdd({
                     onSchedulesChange(updatedSchedules)
                   }}
                   className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="선택사항"
                 />
               </div>
 
-              {/* 종료시간 */}
+              {/* 종료시간 (선택사항) */}
               <div className="w-32">
                 <input
                   type="time"
-                  value={schedule.end_time}
+                  value={schedule.end_time || ''}
                   onChange={(e) => {
-                    const newEndTime = e.target.value
-                    const newDuration = calculateDuration(schedule.start_time, newEndTime)
+                    const newEndTime = e.target.value || null
+                    const newDuration = schedule.start_time && newEndTime 
+                      ? calculateDuration(schedule.start_time, newEndTime) 
+                      : null
                     const updatedSchedules = [...schedules]
                     updatedSchedules[index] = {
                       ...updatedSchedules[index],
@@ -523,17 +575,20 @@ export default function TableScheduleAdd({
                     onSchedulesChange(updatedSchedules)
                   }}
                   className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="선택사항"
                 />
               </div>
 
-              {/* 소요시간 */}
+              {/* 소요시간 (선택사항) */}
               <div className="w-16">
                 <input
                   type="number"
-                  value={schedule.duration_minutes}
+                  value={schedule.duration_minutes || ''}
                   onChange={(e) => {
-                    const newDuration = parseInt(e.target.value) || 0
-                    const newEndTime = calculateEndTime(schedule.start_time, newDuration)
+                    const newDuration = parseInt(e.target.value) || null
+                    const newEndTime = schedule.start_time && newDuration 
+                      ? calculateEndTime(schedule.start_time, newDuration) 
+                      : null
                     const updatedSchedules = [...schedules]
                     updatedSchedules[index] = {
                       ...updatedSchedules[index],
@@ -545,8 +600,11 @@ export default function TableScheduleAdd({
                   onWheel={(e) => {
                     e.preventDefault()
                     const delta = e.deltaY > 0 ? -5 : 5
-                    const newDuration = Math.max(5, schedule.duration_minutes + delta)
-                    const newEndTime = calculateEndTime(schedule.start_time, newDuration)
+                    const currentDuration = schedule.duration_minutes || 0
+                    const newDuration = Math.max(5, currentDuration + delta)
+                    const newEndTime = schedule.start_time 
+                      ? calculateEndTime(schedule.start_time, newDuration) 
+                      : null
                     const updatedSchedules = [...schedules]
                     updatedSchedules[index] = {
                       ...updatedSchedules[index],
@@ -558,6 +616,7 @@ export default function TableScheduleAdd({
                   className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   min="5"
                   step="5"
+                  placeholder="분"
                 />
               </div>
 
