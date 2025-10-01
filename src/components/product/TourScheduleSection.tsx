@@ -291,10 +291,10 @@ export default function TourScheduleSection({
                     {daySchedules.map((schedule) => (
                       <div key={schedule.id} className={`flex items-start justify-between p-3 rounded-lg border ${getScheduleBackgroundColor(schedule)}`}>
                         {/* 시간 */}
-                        <div className="flex-shrink-0 w-20 pt-1">
+                        <div className="flex-shrink-0 w-28 pt-1">
                           <div className="flex items-center space-x-1 text-xs text-gray-600">
                             <Clock className="h-3 w-3" />
-                            <span>
+                            <span className="whitespace-nowrap">
                               {schedule.start_time ? formatTime(schedule.start_time) : ''}
                               {schedule.end_time ? `-${formatTime(schedule.end_time)}` : ''}
                             </span>
