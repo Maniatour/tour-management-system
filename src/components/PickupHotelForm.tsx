@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { X, Upload, MapPin, Globe, Video, Trash2 } from 'lucide-react'
+import { X, Upload, MapPin, Globe, Video, Trash2, Languages, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { translatePickupHotelFields, type PickupHotelTranslationFields } from '@/lib/translationService'
 
 interface PickupHotel {
   id: string
@@ -57,6 +58,8 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
   const [uploading, setUploading] = useState(false)
   const [mediaFiles, setMediaFiles] = useState<File[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [translating, setTranslating] = useState(false)
+  const [translationError, setTranslationError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,7 +87,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
         setUploading(true)
         const uploadPromises = mediaFiles.map(async (file) => {
           const fileName = `${Date.now()}_${file.name}`
-          const { data, error } = await supabase.storage
+          const { error } = await supabase.storage
             .from('pickup-hotel-media')
             .upload(fileName, file)
 
@@ -161,6 +164,45 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     setFormData({ ...formData, media: newMedia })
   }
 
+  // 번역 함수
+  const translateHotelData = async () => {
+    setTranslating(true)
+    setTranslationError(null)
+
+    try {
+      // 번역할 필드들 수집
+      const fieldsToTranslate: PickupHotelTranslationFields = {
+        hotel: formData.hotel,
+        pick_up_location: formData.pick_up_location,
+        description_ko: formData.description_ko,
+        address: formData.address
+      }
+
+      // 번역 실행
+      const result = await translatePickupHotelFields(fieldsToTranslate)
+
+      if (result.success && result.translatedFields) {
+        // 번역된 내용을 영어 필드에 적용
+        setFormData(prev => ({
+          ...prev,
+          description_en: result.translatedFields?.description_ko || prev.description_en
+        }))
+
+        // 번역된 호텔명과 픽업 위치를 별도로 표시하거나 처리할 수 있습니다
+        console.log('번역된 호텔명:', result.translatedFields?.hotel)
+        console.log('번역된 픽업 위치:', result.translatedFields?.pick_up_location)
+        console.log('번역된 주소:', result.translatedFields?.address)
+      } else {
+        setTranslationError(result.error || '번역에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('번역 오류:', error)
+      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[95vh] overflow-y-auto">
@@ -175,13 +217,52 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
               </span>
             )}
           </div>
-          <button
-            onClick={onCancel}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <X size={24} />
-          </button>
+          <div className="flex items-center space-x-3">
+            <button
+              type="button"
+              onClick={translateHotelData}
+              disabled={translating}
+              className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm"
+              title="한국어 내용을 영어로 번역"
+            >
+              {translating ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Languages className="h-4 w-4 mr-1" />
+              )}
+              {translating ? '번역 중...' : '번역'}
+            </button>
+            <button
+              onClick={onCancel}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <X size={24} />
+            </button>
+          </div>
         </div>
+
+        {/* 번역 오류 메시지 */}
+        {translationError && (
+          <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <X className="h-5 w-5 text-red-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-700">{translationError}</p>
+              </div>
+              <div className="ml-auto pl-3">
+                <button
+                  type="button"
+                  onClick={() => setTranslationError(null)}
+                  className="inline-flex text-red-400 hover:text-red-600"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* 호텔명과 픽업 위치 */}
@@ -351,7 +432,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                   <strong>💡 사용 방법:</strong>
                 </p>
                 <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-                  <li>구글 드라이브 이미지를 "링크가 있는 모든 사용자"로 공개 설정</li>
+                  <li>구글 드라이브 이미지를 &quot;링크가 있는 모든 사용자&quot;로 공개 설정</li>
                   <li>공유 링크를 복사하여 위 입력 필드에 붙여넣기</li>
                   <li>자동으로 다운로드 URL로 변환됩니다</li>
                   <li>최대 5개의 이미지 URL을 입력할 수 있습니다</li>

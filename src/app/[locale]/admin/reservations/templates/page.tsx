@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { renderTemplateString } from '@/lib/template'
+import { translateDocumentTemplateFields, type DocumentTemplateTranslationFields } from '@/lib/translationService'
+import { Languages, Loader2 } from 'lucide-react'
 
 type DocTemplate = {
   id: string
@@ -33,6 +35,8 @@ export default function ReservationTemplatesPage() {
   const [selectedProductSubCategory, setSelectedProductSubCategory] = useState<string>('all')
   const [showVarModal, setShowVarModal] = useState<{ open: boolean; tplId?: string; relation?: string }>({ open: false })
   const [showCopyModal, setShowCopyModal] = useState<{ open: boolean; sourceTemplate?: DocTemplate }>({ open: false })
+  const [translating, setTranslating] = useState(false)
+  const [translationError, setTranslationError] = useState<string | null>(null)
   
   const filteredTemplates = useMemo(() => {
     return templates.filter(t => {
@@ -247,11 +251,74 @@ export default function ReservationTemplatesPage() {
     }
   }
 
+  // 번역 함수
+  const translateTemplate = async (templateId: string) => {
+    const template = templates.find(t => t.id === templateId)
+    if (!template) return
+
+    setTranslating(true)
+    setTranslationError(null)
+
+    try {
+      // 번역할 필드들 수집
+      const fieldsToTranslate: DocumentTemplateTranslationFields = {
+        subject: template.subject,
+        content: template.content
+      }
+
+      // 번역 실행
+      const result = await translateDocumentTemplateFields(fieldsToTranslate)
+
+      if (result.success && result.translatedFields) {
+        // 번역된 내용을 영어 템플릿에 적용
+        const englishTemplate = templates.find(t => 
+          t.template_key === template.template_key && 
+          t.language === 'en' &&
+          t.channel_id === template.channel_id &&
+          t.product_id === template.product_id
+        )
+
+        if (englishTemplate) {
+          // 기존 영어 템플릿 업데이트
+          updateField(englishTemplate.id, 'subject', result.translatedFields.subject || '')
+          updateField(englishTemplate.id, 'content', result.translatedFields.content || '')
+        } else {
+          // 새 영어 템플릿 생성
+          const newTemplate: DocTemplate = {
+            id: `temp-${Date.now()}`,
+            template_key: template.template_key,
+            language: 'en',
+            channel_id: template.channel_id,
+            product_id: template.product_id,
+            name: `${template.name} (English)`,
+            subject: result.translatedFields.subject || '',
+            content: result.translatedFields.content || ''
+          }
+          setTemplates(prev => [...prev, newTemplate])
+        }
+      } else {
+        setTranslationError(result.error || '번역에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('번역 오류:', error)
+      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">예약 문서 템플릿</h1>
-        <button onClick={save} disabled={saving} className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
+        <div className="flex items-center space-x-3">
+          {translationError && (
+            <div className="text-red-600 text-sm">
+              {translationError}
+            </div>
+          )}
+          <button onClick={save} disabled={saving} className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
+        </div>
       </div>
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b">
@@ -712,6 +779,22 @@ export default function ReservationTemplatesPage() {
                     className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200"
                     onClick={() => copyTemplate(t)}
                   >복사</button>
+                  {t.language === 'ko' && (
+                    <button
+                      type="button"
+                      onClick={() => translateTemplate(t.id)}
+                      disabled={translating}
+                      className="flex items-center text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded hover:bg-purple-200 disabled:opacity-50"
+                      title="한국어 내용을 영어로 번역"
+                    >
+                      {translating ? (
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      ) : (
+                        <Languages className="h-3 w-3 mr-1" />
+                      )}
+                      번역
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

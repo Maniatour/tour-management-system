@@ -241,6 +241,32 @@ export interface FaqTranslationResult {
   error?: string
 }
 
+// 픽업 호텔 관련 번역 유틸리티
+export interface PickupHotelTranslationFields {
+  hotel?: string
+  pick_up_location?: string
+  description_ko?: string
+  address?: string
+}
+
+export interface PickupHotelTranslationResult {
+  success: boolean
+  translatedFields?: PickupHotelTranslationFields
+  error?: string
+}
+
+// 문서 템플릿 관련 번역 유틸리티
+export interface DocumentTemplateTranslationFields {
+  subject?: string
+  content?: string
+}
+
+export interface DocumentTemplateTranslationResult {
+  success: boolean
+  translatedFields?: DocumentTemplateTranslationFields
+  error?: string
+}
+
 // 스케줄 필드들을 한 번에 번역
 export const translateScheduleFields = async (fields: ScheduleTranslationFields): Promise<ScheduleTranslationResult> => {
   try {
@@ -374,6 +400,98 @@ export const translateFaqFields = async (fields: FaqTranslationFields): Promise<
     }
   } catch (error) {
     console.error('FAQ 필드 번역 오류:', error)
+    return {
+      success: false,
+      error: `번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
+    }
+  }
+}
+
+// 픽업 호텔 필드들을 한 번에 번역
+export const translatePickupHotelFields = async (fields: PickupHotelTranslationFields): Promise<PickupHotelTranslationResult> => {
+  try {
+    const textsToTranslate: string[] = []
+    const fieldKeys: (keyof PickupHotelTranslationFields)[] = []
+    
+    // 번역할 텍스트가 있는 필드들만 수집
+    Object.entries(fields).forEach(([key, value]) => {
+      if (value && value.trim().length > 0) {
+        textsToTranslate.push(value.trim())
+        fieldKeys.push(key as keyof PickupHotelTranslationFields)
+      }
+    })
+
+    if (textsToTranslate.length === 0) {
+      return {
+        success: false,
+        error: '번역할 내용이 없습니다.'
+      }
+    }
+
+    // 모든 텍스트를 한 번에 번역
+    const results = await translateMultipleTexts(textsToTranslate, 'en')
+    
+    // 번역 결과를 필드별로 매핑
+    const translatedFields: PickupHotelTranslationFields = {}
+    fieldKeys.forEach((key, index) => {
+      const result = results[index]
+      if (result.success && result.translatedText) {
+        translatedFields[key] = result.translatedText
+      }
+    })
+
+    return {
+      success: true,
+      translatedFields
+    }
+  } catch (error) {
+    console.error('픽업 호텔 필드 번역 오류:', error)
+    return {
+      success: false,
+      error: `번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
+    }
+  }
+}
+
+// 문서 템플릿 필드들을 한 번에 번역
+export const translateDocumentTemplateFields = async (fields: DocumentTemplateTranslationFields): Promise<DocumentTemplateTranslationResult> => {
+  try {
+    const textsToTranslate: string[] = []
+    const fieldKeys: (keyof DocumentTemplateTranslationFields)[] = []
+    
+    // 번역할 텍스트가 있는 필드들만 수집
+    Object.entries(fields).forEach(([key, value]) => {
+      if (value && value.trim().length > 0) {
+        textsToTranslate.push(value.trim())
+        fieldKeys.push(key as keyof DocumentTemplateTranslationFields)
+      }
+    })
+
+    if (textsToTranslate.length === 0) {
+      return {
+        success: false,
+        error: '번역할 내용이 없습니다.'
+      }
+    }
+
+    // 모든 텍스트를 한 번에 번역
+    const results = await translateMultipleTexts(textsToTranslate, 'en')
+    
+    // 번역 결과를 필드별로 매핑
+    const translatedFields: DocumentTemplateTranslationFields = {}
+    fieldKeys.forEach((key, index) => {
+      const result = results[index]
+      if (result.success && result.translatedText) {
+        translatedFields[key] = result.translatedText
+      }
+    })
+
+    return {
+      success: true,
+      translatedFields
+    }
+  } catch (error) {
+    console.error('문서 템플릿 필드 번역 오류:', error)
     return {
       success: false,
       error: `번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
