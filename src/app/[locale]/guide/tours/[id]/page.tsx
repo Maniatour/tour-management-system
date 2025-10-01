@@ -13,6 +13,7 @@ import TourExpenseManager from '@/components/TourExpenseManager'
 import TourReportSection from '@/components/TourReportSection'
 import TourReportForm from '@/components/TourReportForm'
 import TourWeather from '@/components/TourWeather'
+import TourScheduleSection from '@/components/product/TourScheduleSection'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -194,7 +195,7 @@ export default function GuideTourDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [params.id, currentUserEmail, userRole])
+  }, [params.id, currentUserEmail, userRole, t])
 
   useEffect(() => {
     loadTourData()
@@ -417,7 +418,7 @@ export default function GuideTourDetailPage() {
           <h1 className="text-2xl font-bold text-gray-900 mb-4">오류</h1>
           <p className="text-gray-600 mb-4">{error}</p>
           <button 
-            onClick={() => router.push('/ko/guide/tours')}
+            onClick={() => router.push('/${locale}/guide/tours')}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             {t('backToTourList')}
@@ -433,7 +434,7 @@ export default function GuideTourDetailPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">투어를 찾을 수 없습니다</h1>
           <button 
-            onClick={() => router.push('/ko/guide/tours')}
+            onClick={() => router.push('/${locale}/guide/tours')}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             {t('backToTourList')}
@@ -448,7 +449,7 @@ export default function GuideTourDetailPage() {
       {/* 헤더 - 모바일 최적화 */}
       <div className="mb-6">
         <button
-          onClick={() => router.push('/ko/guide/tours')}
+          onClick={() => router.push('/${locale}/guide/tours')}
           className="flex items-center text-gray-600 hover:text-gray-900 mb-4 text-sm sm:text-base"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -879,6 +880,18 @@ export default function GuideTourDetailPage() {
         </AccordionSection>
         </div>
 
+        {/* 투어 스케줄 - 스케줄 탭에만 표시 */}
+        {tour.product_id && (
+          <div className={`${activeTab === 'schedule' ? 'block' : 'hidden'} lg:block`}>
+            <div className="bg-white rounded-lg shadow mb-3 sm:mb-4 p-3 sm:p-4">
+              <TourScheduleSection 
+                productId={tour.product_id} 
+                teamType={tour.team_type as 'guide+driver' | '2guide' | null}
+                locale={locale}
+              />
+            </div>
+          </div>
+        )}
 
         {/* 투어 메모 - 개요 탭에만 표시 */}
           {(tour as { tour_info?: string }).tour_info && (

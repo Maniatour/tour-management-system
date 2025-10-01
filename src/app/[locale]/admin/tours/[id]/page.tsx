@@ -27,6 +27,7 @@ import TourExpenseManager from '@/components/TourExpenseManager'
 import TourReportSection from '@/components/TourReportSection'
 import TourWeather from '@/components/TourWeather'
 import TourSunriseTime from '@/components/TourSunriseTime'
+import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -1781,6 +1782,17 @@ export default function TourDetailPage() {
           </div>
         </div>
 
+        {/* 투어 스케줄 섹션 */}
+        {tour.product_id && (
+          <div className="bg-white rounded-lg shadow-sm border p-4">
+            <TourScheduleSection 
+              productId={tour.product_id} 
+              teamType={tour.team_type as 'guide+driver' | '2guide' | null}
+              locale="ko"
+            />
+          </div>
+        )}
+
             {/* 픽업 스케줄 */}
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
@@ -2799,7 +2811,7 @@ export default function TourDetailPage() {
                  <div data-tour-report-section>
                    <TourReportSection
                      tourId={tour.id}
-                     tourName={product?.name_ko}
+                     tourName={product?.name_ko || ''}
                      tourDate={tour.tour_date}
                      canCreateReport={isStaff}
                      canEditReport={isStaff}

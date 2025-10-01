@@ -92,7 +92,7 @@ export default function GuideDebugPage() {
             <p><strong>guide 페이지 접근 가능:</strong> {['admin', 'manager', 'team_member'].includes(userRole || '') ? '예' : '아니오'}</p>
             <p><strong>현재 사용자 역할:</strong> {userRole}</p>
             <p><strong>필요한 역할:</strong> admin, manager, team_member 중 하나</p>
-            <p><strong>AuthContext 리다이렉트 경로:</strong> {userRole === 'admin' || userRole === 'manager' ? '/ko/admin' : userRole === 'team_member' ? '/ko/guide' : '/ko/auth'}</p>
+            <p><strong>AuthContext 리다이렉트 경로:</strong> {userRole === 'admin' || userRole === 'manager' ? '/${locale}/admin' : userRole === 'team_member' ? '/${locale}/guide' : '/${locale}/auth'}</p>
           </div>
         </div>
 

@@ -1,104 +1,98 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import ProductScheduleDisplay from '@/components/ProductScheduleDisplay'
 import ProductFaqDisplay from '@/components/ProductFaqDisplay'
 import ProductMediaDisplay from '@/components/ProductMediaDisplay'
+import TourScheduleSection from '@/components/product/TourScheduleSection'
+import { supabase } from '@/lib/supabase'
+import { useLocale } from 'next-intl'
 
 interface Product {
   id: string
-  name: string
-  category: string
-  description: string
-  detailedDescription: string
-  duration: number
-  basePrice: {
-    adult: number
-    child: number
-    infant: number
-  }
-  minParticipants: number
-  maxParticipants: number
-  difficulty: 'easy' | 'medium' | 'hard'
-  status: 'active' | 'inactive' | 'draft'
-  tags: string[]
-  images: string[]
-  rating: number
-  reviewCount: number
-  highlights: string[]
-  itinerary: string[]
-  included: string[]
-  notIncluded: string[]
-  faq: Array<{ question: string; answer: string }>
+  name_ko: string
+  name_en: string | null
+  internal_name_ko: string
+  internal_name_en: string
+  customer_name_ko: string
+  customer_name_en: string
+  sub_category: string | null
+  category: string | null
+  base_price: number | null
+  duration: string | null
+  max_participants: number | null
+  status: string | null
+  tags: string[] | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 export default function ProductDetailPage() {
   const params = useParams()
   const productId = params.id as string
+  const locale = useLocale()
   
-  const [product] = useState<Product>({
+  const [product, setProduct] = useState<Product | null>(null)
+  const [teamType, setTeamType] = useState<'guide+driver' | '2guide' | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  
+  // 임시 하드코딩된 데이터 (실제 구현 시 제거)
+  const mockProduct: Product = {
     id: '1',
-    name: '그랜드서클 1박2일 투어',
+    name_ko: '그랜드서클 1박2일 투어',
+    name_en: 'Grand Circle 2-Day Tour',
+    internal_name_ko: '그랜드서클 투어',
+    internal_name_en: 'Grand Circle Tour',
+    customer_name_ko: '그랜드서클 1박2일 투어',
+    customer_name_en: 'Grand Circle 2-Day Tour',
+    sub_category: 'nature',
     category: 'nature',
-    description: '그랜드 캐년, 브라이스 캐년, 자이온 국립공원을 포함한 1박2일 투어',
-    detailedDescription: '아리조나와 유타 주의 가장 아름다운 자연 경관을 둘러보는 프리미엄 투어입니다. 그랜드 캐년의 장엄한 풍경, 브라이스 캐년의 독특한 후두형 지형, 자이온 국립공원의 웅장한 협곡을 경험할 수 있습니다. 전문 가이드의 상세한 설명과 함께 자연의 신비를 깊이 있게 탐험해보세요.',
-    duration: 2,
-    basePrice: { adult: 299, child: 249, infant: 199 },
-    minParticipants: 2,
-    maxParticipants: 15,
-    difficulty: 'medium',
+    base_price: 299,
+    duration: '2일',
+    max_participants: 15,
     status: 'active',
     tags: ['그랜드서클', '자연', '1박2일', '프리미엄'],
-    images: ['/images/grand-circle-1.jpg', '/images/grand-circle-2.jpg', '/images/grand-circle-3.jpg'],
-    rating: 4.8,
-    reviewCount: 127,
-    highlights: [
-      '세계적인 자연 경관 그랜드 캐년 방문',
-      '브라이스 캐년의 독특한 후두형 지형 감상',
-      '자이온 국립공원의 웅장한 협곡 탐험',
-      '전문 가이드의 상세한 설명',
-      '편안한 숙박과 맛있는 식사 제공',
-      '소규모 그룹으로 개인적인 관심'
-    ],
-    itinerary: [
-      '1일차: 라스베가스 출발 → 그랜드 캐년 남쪽 가장자리 → 브라이스 캐년 → 호텔 체크인',
-      '2일차: 자이온 국립공원 → 앤젤스 랜딩 트레킹 → 라스베가스 도착'
-    ],
-    included: [
-      '전문 가이드 동행',
-      '편안한 교통편 (에어컨, Wi-Fi)',
-      '1박 호텔 숙박',
-      '아침식사 1회, 저녁식사 1회',
-      '입장료 및 관광지 수수료',
-      '보험'
-    ],
-    notIncluded: [
-      '개인 경비',
-      '선택적 액티비티',
-      '가이드 팁',
-      '기타 개인 지출'
-    ],
-    faq: [
-      {
-        question: '투어는 언제 출발하나요?',
-        answer: '매주 월요일과 목요일 오전 7시에 라스베가스에서 출발합니다.'
-      },
-      {
-        question: '어떤 복장을 준비해야 하나요?',
-        answer: '편안한 등산화와 계절에 맞는 옷차림을 권장합니다. 야간에는 기온이 낮아질 수 있으니 겉옷을 준비하세요.'
-      },
-      {
-        question: '식사는 어떻게 제공되나요?',
-        answer: '1박 2일 동안 아침식사 1회, 저녁식사 1회가 포함되어 있습니다. 점심은 개별적으로 준비하거나 현지 식당에서 드실 수 있습니다.'
-      }
-    ]
-  })
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }
 
   const [selectedImage, setSelectedImage] = useState(0)
   const [activeTab, setActiveTab] = useState('overview')
+
+  // 실제 데이터 로드 (임시로 mockProduct 사용)
+  useEffect(() => {
+    const loadProductData = async () => {
+      try {
+        setLoading(true)
+        
+        // 실제 구현 시에는 supabase에서 데이터를 가져옴
+        // const { data: productData, error } = await supabase
+        //   .from('products')
+        //   .select('*')
+        //   .eq('id', productId)
+        //   .single()
+        
+        // 임시로 mockProduct 사용
+        setProduct(mockProduct)
+        
+        // team_type 결정 (실제로는 tours 테이블에서 가져와야 함)
+        // 임시로 하드코딩
+        setTeamType('2guide')
+        
+      } catch (error) {
+        console.error('상품 데이터 로드 오류:', error)
+        setError('상품 정보를 불러오는데 실패했습니다.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadProductData()
+  }, [productId])
 
   const getDifficultyLabel = (difficulty: string) => {
     const difficultyLabels: { [key: string]: string } = {
@@ -132,10 +126,45 @@ export default function ProductDetailPage() {
   const tabs = [
     { id: 'overview', label: '개요' },
     { id: 'itinerary', label: '일정' },
+    { id: 'tour-schedule', label: '투어 스케줄' },
     { id: 'details', label: '상세정보' },
     { id: 'faq', label: 'FAQ' },
     { id: 'media', label: '미디어' }
   ]
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">상품 정보를 불러오는 중...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !product) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-500 mb-4">
+            <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">오류가 발생했습니다</h2>
+          <p className="text-gray-600 mb-4">{error || '상품을 찾을 수 없습니다.'}</p>
+          <Link 
+            href="/products" 
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            상품 목록으로 돌아가기
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -147,14 +176,18 @@ export default function ProductDetailPage() {
               <ArrowLeft size={24} />
             </Link>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{product.name}</h1>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {locale === 'en' && product.name_en ? product.name_en : product.name_ko}
+              </h1>
               <div className="flex items-center space-x-4 text-sm text-gray-600">
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDifficultyColor(product.difficulty)}`}>
-                  {getDifficultyLabel(product.difficulty)}
-                </span>
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                  {getCategoryLabel(product.category)}
+                  {getCategoryLabel(product.category || '')}
                 </span>
+                {product.tags && product.tags.length > 0 && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    {product.tags[0]}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -231,51 +264,75 @@ export default function ProductDetailPage() {
                   <div className="space-y-6">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">투어 소개</h3>
-                      <p className="text-gray-700 leading-relaxed">{product.detailedDescription}</p>
+                      <p className="text-gray-700 leading-relaxed">
+                        {locale === 'en' && product.customer_name_en ? product.customer_name_en : product.customer_name_ko}
+                      </p>
                     </div>
 
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">하이라이트</h3>
-                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {product.highlights.map((highlight, index) => (
-                          <li key={index} className="flex items-start">
-                            <Star className="h-5 w-5 text-yellow-400 mr-3 mt-0.5 flex-shrink-0" />
-                            <span className="text-gray-700">{highlight}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">기본 정보</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex items-center space-x-3">
+                          <Calendar className="h-5 w-5 text-blue-500" />
+                          <div>
+                            <span className="text-sm text-gray-600">기간</span>
+                            <p className="font-medium">{product.duration || '미정'}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <Users className="h-5 w-5 text-green-500" />
+                          <div>
+                            <span className="text-sm text-gray-600">최대 참가자</span>
+                            <p className="font-medium">{product.max_participants || 0}명</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <MapPin className="h-5 w-5 text-red-500" />
+                          <div>
+                            <span className="text-sm text-gray-600">카테고리</span>
+                            <p className="font-medium">{getCategoryLabel(product.category || '')}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <Star className="h-5 w-5 text-yellow-500" />
+                          <div>
+                            <span className="text-sm text-gray-600">상태</span>
+                            <p className="font-medium">{product.status || '미정'}</p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {product.tags && product.tags.length > 0 && (
                       <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3">포함 사항</h3>
-                        <ul className="space-y-2">
-                          {product.included.map((item, index) => (
-                            <li key={index} className="flex items-center text-gray-700">
-                              <div className="w-2 h-2 bg-green-500 rounded-full mr-3" />
-                              {item}
-                            </li>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-3">태그</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {product.tags.map((tag, index) => (
+                            <span
+                              key={index}
+                              className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
+                            >
+                              {tag}
+                            </span>
                           ))}
-                        </ul>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3">불포함 사항</h3>
-                        <ul className="space-y-2">
-                          {product.notIncluded.map((item, index) => (
-                            <li key={index} className="flex items-center text-gray-700">
-                              <div className="w-2 h-2 bg-red-500 rounded-full mr-3" />
-                              {item}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
                 {/* 일정 탭 */}
                 {activeTab === 'itinerary' && (
                   <ProductScheduleDisplay productId={productId} />
+                )}
+
+                {/* 투어 스케줄 탭 */}
+                {activeTab === 'tour-schedule' && product && (
+                  <TourScheduleSection 
+                    productId={productId} 
+                    teamType={teamType}
+                    locale={locale}
+                  />
                 )}
 
                 {/* 상세정보 탭 */}
@@ -288,33 +345,41 @@ export default function ProductDetailPage() {
                         <dl className="space-y-2 text-sm">
                           <div className="flex justify-between">
                             <dt className="text-gray-600">카테고리</dt>
-                            <dd className="text-gray-900">{getCategoryLabel(product.category)}</dd>
+                            <dd className="text-gray-900">{getCategoryLabel(product.category || '')}</dd>
                           </div>
                           <div className="flex justify-between">
-                            <dt className="text-gray-600">난이도</dt>
-                            <dd className="text-gray-900">{getDifficultyLabel(product.difficulty)}</dd>
+                            <dt className="text-gray-600">서브 카테고리</dt>
+                            <dd className="text-gray-900">{product.sub_category || '미정'}</dd>
                           </div>
                           <div className="flex justify-between">
                             <dt className="text-gray-600">기간</dt>
-                            <dd className="text-gray-900">{product.duration}일</dd>
+                            <dd className="text-gray-900">{product.duration || '미정'}</dd>
                           </div>
                           <div className="flex justify-between">
-                            <dt className="text-gray-600">참가자</dt>
-                            <dd className="text-gray-900">{product.minParticipants}-{product.maxParticipants}명</dd>
+                            <dt className="text-gray-600">최대 참가자</dt>
+                            <dd className="text-gray-900">{product.max_participants || 0}명</dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt className="text-gray-600">상태</dt>
+                            <dd className="text-gray-900">{product.status || '미정'}</dd>
                           </div>
                         </dl>
                       </div>
                       <div>
                         <h4 className="font-medium text-gray-900 mb-2">태그</h4>
                         <div className="flex flex-wrap gap-2">
-                          {product.tags.map((tag, index) => (
-                            <span
-                              key={index}
-                              className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800"
-                            >
-                              {tag}
-                            </span>
-                          ))}
+                          {product.tags && product.tags.length > 0 ? (
+                            product.tags.map((tag, index) => (
+                              <span
+                                key={index}
+                                className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800"
+                              >
+                                {tag}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-gray-500">태그가 없습니다.</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -339,18 +404,20 @@ export default function ProductDetailPage() {
             {/* 예약 카드 */}
             <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-6">
               <div className="text-center mb-6">
-                <div className="text-3xl font-bold text-gray-900">${product.basePrice.adult}</div>
-                <div className="text-sm text-gray-600">성인 기준</div>
+                <div className="text-3xl font-bold text-gray-900">
+                  ${product.base_price || 0}
+                </div>
+                <div className="text-sm text-gray-600">기본 가격</div>
               </div>
 
               <div className="space-y-4 mb-6">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">아동 (3-12세)</span>
-                  <span className="font-medium">${product.basePrice.child}</span>
+                  <span className="text-gray-600">최대 참가자</span>
+                  <span className="font-medium">{product.max_participants || 0}명</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">유아 (0-2세)</span>
-                  <span className="font-medium">${product.basePrice.infant}</span>
+                  <span className="text-gray-600">기간</span>
+                  <span className="font-medium">{product.duration || '미정'}</span>
                 </div>
               </div>
 

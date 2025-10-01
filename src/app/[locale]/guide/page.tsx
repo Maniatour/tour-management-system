@@ -103,8 +103,8 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
             .select('id, name_ko, name_en, name')
             .in('id', productIds) as { data: { id: string; name_ko: string; name_en: string; name: string }[] | null }
           
-          productMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name_en || p.name]))
-          productEnMap = new Map((productsData || []).map(p => [p.id, p.name_en || p.name_ko || p.name]))
+          productMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name]))
+          productEnMap = new Map((productsData || []).map(p => [p.id, p.name_en || p.name]))
         }
 
         // 팀원 정보 가져오기
@@ -442,7 +442,7 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
             <div className="space-y-2">
               {upcomingTours.length > 0 ? (
                         upcomingTours.map((tour) => (
-                          <TourCard key={tour.id} tour={tour} onClick={() => router.push(`/ko/guide/tours/${tour.id}`)} locale={locale} />
+                          <TourCard key={tour.id} tour={tour} onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)} locale={locale} />
                         ))
               ) : (
                 <div className="text-center text-gray-500 py-8">
@@ -457,7 +457,7 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
             <div className="space-y-2">
               {pastTours.length > 0 ? (
                         pastTours.map((tour) => (
-                          <TourCard key={tour.id} tour={tour} onClick={() => router.push(`/ko/guide/tours/${tour.id}`)} locale={locale} />
+                          <TourCard key={tour.id} tour={tour} onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)} locale={locale} />
                         ))
               ) : (
                 <div className="text-center text-gray-500 py-8">
@@ -666,13 +666,10 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
   // 투어 이름 매핑 함수
   const getTourDisplayName = (tour: ExtendedTour, locale: string) => {
     if (locale === 'en') {
-      // 영어 모드에서는 매핑된 이름 사용
-      const tourName = tour.product_name || tour.product_id
-      if (tourName === '도깨비') return 'Sunrise'
-      if (tourName === '앤텔롭') return '1 Day'
+      // 영어 모드에서는 영어 이름 우선 사용
       return tour.product_name_en || tour.product_name || tour.product_id
     } else {
-      // 한국어 모드에서는 원래 이름 사용
+      // 한국어 모드에서는 한국어 이름 우선 사용
       return tour.product_name || tour.product_id
     }
   }

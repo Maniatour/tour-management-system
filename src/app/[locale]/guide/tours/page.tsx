@@ -412,7 +412,7 @@ export default function GuideTours() {
 
   const handleTourClick = (tour: ExtendedTour) => {
     setNavigatingToTour(tour.id)
-    router.push(`/ko/guide/tours/${tour.id}`)
+    router.push(`/${locale}/guide/tours/${tour.id}`)
   }
 
   // 오프 스케줄 변경 시 데이터 새로고침
@@ -457,7 +457,7 @@ export default function GuideTours() {
         {/* 가이드 대시보드로 돌아가기 버튼 */}
         <div className="mb-3">
           <button
-            onClick={() => router.push('/ko/guide')}
+            onClick={() => router.push('/${locale}/guide')}
             className="flex items-center text-blue-600 hover:text-blue-700 text-sm font-medium"
           >
             <ArrowLeft className="w-4 h-4 mr-1" />
