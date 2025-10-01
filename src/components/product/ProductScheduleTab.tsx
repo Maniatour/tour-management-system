@@ -480,7 +480,7 @@ export default function ProductScheduleTab({
                             {getScheduleText(schedule, 'title')}
                           </div>
                           {getScheduleText(schedule, 'description') && (
-                            <div className="text-xs text-gray-600 mt-1 overflow-hidden" style={{
+                            <div className="text-xs text-gray-600 mt-1 overflow-hidden whitespace-pre-line" style={{
                               display: '-webkit-box',
                               WebkitLineClamp: 2,
                               WebkitBoxOrient: 'vertical'
@@ -641,8 +641,8 @@ export default function ProductScheduleTab({
                                 </div>
                                 
                                 <div className="flex items-center space-x-3">
-                                  <div className="w-20 flex-shrink-0">
-                                    <span className="text-sm text-gray-600">
+                                  <div className="w-28 flex-shrink-0">
+                                    <span className="text-sm text-gray-600 whitespace-nowrap">
                                       {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                                       {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
                                     </span>
@@ -769,8 +769,8 @@ export default function ProductScheduleTab({
               </div>
               
                                 <div className="flex items-center space-x-3">
-                                  <div className="w-20 flex-shrink-0">
-                                    <span className="text-sm text-gray-600">
+                                  <div className="w-28 flex-shrink-0">
+                                    <span className="text-sm text-gray-600 whitespace-nowrap">
                                       {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                                       {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
                                     </span>
