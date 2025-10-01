@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Image, Upload, Plus, Edit, Trash2, Save, AlertCircle, Eye, Download, Star } from 'lucide-react'
+import { Image, Upload, Plus, Edit, Trash2, Save, AlertCircle, Eye, Download, Star, FolderOpen, Search, Copy, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface MediaItem {
@@ -41,6 +41,9 @@ export default function ProductMediaTab({
   const [uploading, setUploading] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [showBucketBrowser, setShowBucketBrowser] = useState(false)
+  const [bucketImages, setBucketImages] = useState<Array<{name: string, url: string, path: string}>>([])
+  const [loadingBucketImages, setLoadingBucketImages] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
 
@@ -74,6 +77,147 @@ export default function ProductMediaTab({
       setSaveMessage(`미디어를 불러오는데 실패했습니다: ${errorMessage}`)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 버킷에서 이미지 목록 가져오기 (모든 하위 폴더 포함)
+  const fetchBucketImages = async () => {
+    setLoadingBucketImages(true)
+    try {
+      // 모든 이미지를 수집할 배열
+      const allImages: Array<{name: string, url: string, path: string}> = []
+
+      // 루트 폴더의 이미지들 가져오기
+      const { data: rootData, error: rootError } = await (supabase as any)
+        .storage
+        .from('product-media')
+        .list('', {
+          limit: 1000,
+          sortBy: { column: 'created_at', order: 'desc' }
+        })
+
+      if (rootError) {
+        console.error('루트 폴더 이미지 로드 오류:', rootError)
+        throw rootError
+      }
+
+      // 루트 폴더의 이미지 파일들 처리
+      const rootImageFiles = rootData?.filter((file: any) => 
+        file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)
+      ) || []
+
+      rootImageFiles.forEach((file: any) => {
+        const { data: { publicUrl } } = (supabase as any)
+          .storage
+          .from('product-media')
+          .getPublicUrl(file.name)
+        
+        allImages.push({
+          name: file.name,
+          url: publicUrl,
+          path: file.name
+        })
+      })
+
+      // 하위 폴더들 찾기
+      const folders = rootData?.filter((item: any) => item.name && !item.name.includes('.')) || []
+
+      // 각 하위 폴더의 이미지들 가져오기
+      for (const folder of folders) {
+        try {
+          const { data: folderData, error: folderError } = await (supabase as any)
+            .storage
+            .from('product-media')
+            .list(folder.name, {
+              limit: 1000,
+              sortBy: { column: 'created_at', order: 'desc' }
+            })
+
+          if (folderError) {
+            console.warn(`폴더 ${folder.name} 로드 오류:`, folderError)
+            continue
+          }
+
+          // 폴더 내의 이미지 파일들 처리
+          const folderImageFiles = folderData?.filter((file: any) => 
+            file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)
+          ) || []
+
+          folderImageFiles.forEach((file: any) => {
+            const filePath = `${folder.name}/${file.name}`
+            const { data: { publicUrl } } = (supabase as any)
+              .storage
+              .from('product-media')
+              .getPublicUrl(filePath)
+            
+            allImages.push({
+              name: file.name,
+              url: publicUrl,
+              path: filePath
+            })
+          })
+
+          // 폴더 내의 하위 폴더들도 확인 (재귀적으로 2단계까지만)
+          const subFolders = folderData?.filter((item: any) => item.name && !item.name.includes('.')) || []
+          
+          for (const subFolder of subFolders) {
+            try {
+              const { data: subFolderData, error: subFolderError } = await (supabase as any)
+                .storage
+                .from('product-media')
+                .list(`${folder.name}/${subFolder.name}`, {
+                  limit: 1000,
+                  sortBy: { column: 'created_at', order: 'desc' }
+                })
+
+              if (subFolderError) {
+                console.warn(`하위 폴더 ${folder.name}/${subFolder.name} 로드 오류:`, subFolderError)
+                continue
+              }
+
+              const subFolderImageFiles = subFolderData?.filter((file: any) => 
+                file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)
+              ) || []
+
+              subFolderImageFiles.forEach((file: any) => {
+                const filePath = `${folder.name}/${subFolder.name}/${file.name}`
+                const { data: { publicUrl } } = (supabase as any)
+                  .storage
+                  .from('product-media')
+                  .getPublicUrl(filePath)
+                
+                allImages.push({
+                  name: file.name,
+                  url: publicUrl,
+                  path: filePath
+                })
+              })
+            } catch (error) {
+              console.warn(`하위 폴더 ${folder.name}/${subFolder.name} 처리 오류:`, error)
+            }
+          }
+        } catch (error) {
+          console.warn(`폴더 ${folder.name} 처리 오류:`, error)
+        }
+      }
+
+      // 생성일 기준으로 정렬 (최신순)
+      allImages.sort((a, b) => {
+        // 파일명에서 타임스탬프 추출하여 정렬
+        const getTimestamp = (path: string) => {
+          const match = path.match(/(\d{13})/)
+          return match ? parseInt(match[1]) : 0
+        }
+        return getTimestamp(b.path) - getTimestamp(a.path)
+      })
+
+      setBucketImages(allImages)
+    } catch (error) {
+      console.error('버킷 이미지 로드 오류:', error)
+      setSaveMessage('버킷 이미지를 불러오는데 실패했습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } finally {
+      setLoadingBucketImages(false)
     }
   }
 
@@ -140,6 +284,44 @@ export default function ProductMediaTab({
 
   const handleAddMedia = () => {
     fileInputRef.current?.click()
+  }
+
+  // 버킷 이미지를 미디어로 추가
+  const handleAddFromBucket = async (imageUrl: string, fileName: string) => {
+    try {
+      // 미디어 아이템 생성
+      const newMedia: MediaItem = {
+        product_id: productId,
+        file_name: fileName,
+        file_url: imageUrl,
+        file_type: 'image',
+        file_size: 0, // 버킷에서 가져온 이미지는 크기를 알 수 없음
+        mime_type: 'image/jpeg', // 기본값
+        alt_text: '',
+        caption: '',
+        order_index: mediaItems.length,
+        is_primary: mediaItems.length === 0, // 첫 번째 파일을 기본 이미지로 설정
+        is_active: true
+      }
+
+      // 데이터베이스에 저장
+      const { data: savedMedia, error: saveError } = await (supabase as any)
+        .from('product_media')
+        .insert([newMedia])
+        .select()
+        .single()
+
+      if (saveError) throw saveError
+
+      setMediaItems(prev => [...prev, savedMedia])
+      setShowBucketBrowser(false)
+      setSaveMessage('버킷 이미지가 미디어로 추가되었습니다!')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } catch (error) {
+      console.error('버킷 이미지 추가 오류:', error)
+      setSaveMessage('버킷 이미지 추가에 실패했습니다.')
+      setTimeout(() => setSaveMessage(''), 3000)
+    }
   }
 
   // 드래그 앤 드롭 핸들러
@@ -373,6 +555,18 @@ export default function ProductMediaTab({
           )}
           <button
             type="button"
+            onClick={() => {
+              setShowBucketBrowser(true)
+              fetchBucketImages()
+            }}
+            disabled={isNewProduct}
+            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <FolderOpen className="h-4 w-4 mr-2" />
+            버킷에서 선택
+          </button>
+          <button
+            type="button"
             onClick={handleAddMedia}
             disabled={isNewProduct || uploading}
             className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -542,6 +736,87 @@ export default function ProductMediaTab({
           saving={saving}
           previewUrl={previewUrl}
         />
+      )}
+
+      {/* 버킷 이미지 브라우저 모달 */}
+      {showBucketBrowser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                <FolderOpen className="h-5 w-5 mr-2" />
+                버킷 이미지 선택
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowBucketBrowser(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                버킷에 저장된 이미지 중에서 미디어로 추가할 이미지를 선택하세요.
+              </p>
+            </div>
+
+            {loadingBucketImages ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <span className="ml-2 text-gray-600">이미지 로딩 중...</span>
+              </div>
+            ) : bucketImages.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {bucketImages.map((image, index) => (
+                  <div
+                    key={index}
+                    className="relative group cursor-pointer border border-gray-200 rounded-lg overflow-hidden hover:border-blue-500 transition-colors"
+                    onClick={() => handleAddFromBucket(image.url, image.name)}
+                  >
+                    <img
+                      src={image.url}
+                      alt={image.name}
+                      className="w-full h-32 object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all flex items-center justify-center">
+                      <Copy className="h-6 w-6 text-white opacity-0 group-hover:opacity-100" />
+                    </div>
+                    <div className="p-2 bg-white">
+                      <p className="text-xs text-gray-600 truncate" title={image.name}>
+                        {image.name}
+                      </p>
+                      {image.path !== image.name && (
+                        <p className="text-xs text-gray-400 truncate" title={image.path}>
+                          📁 {image.path}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-500">
+                <FolderOpen className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <p>버킷에 이미지가 없습니다.</p>
+                <p className="text-sm">먼저 이미지를 업로드해주세요.</p>
+              </div>
+            )}
+
+            <div className="flex justify-end mt-6">
+              <button
+                type="button"
+                onClick={() => setShowBucketBrowser(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

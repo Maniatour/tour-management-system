@@ -7,7 +7,6 @@ import { MapPin, Search, X } from 'lucide-react'
 declare global {
   interface Window {
     google: any
-    initMap: () => void
   }
 }
 
@@ -36,25 +35,27 @@ export default function LocationPickerModal({
   const LAS_VEGAS_CENTER = { lat: 36.1699, lng: -115.1398 }
 
   useEffect(() => {
-    // Google Maps API 로드
-    if (!window.google) {
+    // Google Maps API 로드 (중복 로드 방지)
+    const existingScript = document.querySelector('script[src*="maps.googleapis.com"]')
+    
+    if (!window.google && !existingScript) {
       const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&callback=initMap`
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`
       script.async = true
       script.defer = true
+      script.id = 'google-maps-script'
+      
+      // 스크립트 로드 완료 후 초기화
+      script.onload = () => {
+        if (window.google) {
+          initializeMap()
+        }
+      }
+      
       document.head.appendChild(script)
-
-      window.initMap = () => {
-        initializeMap()
-      }
-    } else {
+    } else if (window.google) {
+      // 이미 로드된 경우 바로 초기화
       initializeMap()
-    }
-
-    return () => {
-      if (window.initMap) {
-        delete window.initMap
-      }
     }
   }, [])
 

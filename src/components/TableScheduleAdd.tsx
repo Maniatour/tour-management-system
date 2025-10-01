@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useState } from 'react'
-import { Calendar, Plus, Save, Trash2 } from 'lucide-react'
+import React, { useState, useRef, useCallback } from 'react'
+import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy } from 'lucide-react'
 import LocationPickerModal from './LocationPickerModal'
+import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl, uploadProductMedia } from '@/lib/productMediaUpload'
+import { supabase } from '@/lib/supabase'
 
 interface ScheduleItem {
   id?: string
@@ -17,6 +19,7 @@ interface ScheduleItem {
   is_break: boolean
   is_meal: boolean
   is_transport: boolean
+  is_tour: boolean
   transport_type: string
   transport_details: string
   notes: string
@@ -40,6 +43,7 @@ interface ScheduleItem {
   notes_en?: string
   guide_notes_ko?: string
   guide_notes_en?: string
+  thumbnail_url?: string
 }
 
 interface TableScheduleAddProps {
@@ -49,6 +53,7 @@ interface TableScheduleAddProps {
   onClose: () => void
   saving: boolean
   teamMembers: Array<{email: string, name_ko: string, position: string}>
+  productId: string
 }
 
 export default function TableScheduleAdd({ 
@@ -57,13 +62,22 @@ export default function TableScheduleAdd({
   onSave, 
   onClose, 
   saving, 
-  teamMembers 
+  teamMembers,
+  productId
 }: TableScheduleAddProps) {
   const [showLocationPicker, setShowLocationPicker] = useState(false)
   const [locationPickerIndex, setLocationPickerIndex] = useState<number | null>(null)
   const [showEnglishFields, setShowEnglishFields] = useState(false)
   const [showOptionsModal, setShowOptionsModal] = useState(false)
   const [currentScheduleIndex, setCurrentScheduleIndex] = useState<number | null>(null)
+  const [showThumbnailModal, setShowThumbnailModal] = useState(false)
+  const [thumbnailIndex, setThumbnailIndex] = useState<number | null>(null)
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false)
+  const [showBucketImages, setShowBucketImages] = useState(false)
+  const [bucketImages, setBucketImages] = useState<Array<{name: string, url: string}>>([])
+  const [loadingBucketImages, setLoadingBucketImages] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 시간 계산 유틸리티 함수들
   const timeToMinutes = (timeStr: string): number => {
@@ -96,7 +110,7 @@ export default function TableScheduleAdd({
     const lastEndTime = lastSchedule ? lastSchedule.end_time : '09:00'
     
     const newSchedule: ScheduleItem = {
-      product_id: '',
+      product_id: productId, // 올바른 product_id 설정
       day_number: lastDayNumber, // 윗 행과 같은 일차
       start_time: lastEndTime, // 윗 행의 종료 시간을 시작 시간으로
       end_time: calculateEndTime(lastEndTime, 60), // 시작 시간 + 60분
@@ -107,13 +121,14 @@ export default function TableScheduleAdd({
       is_break: false,
       is_meal: false,
       is_transport: false,
+      is_tour: false,
       transport_type: '',
       transport_details: '',
       notes: '',
       latitude: undefined,
       longitude: undefined,
       show_to_customers: true,
-      guide_assignment_type: '',
+      guide_assignment_type: 'none',
       assigned_guide_1: '',
       assigned_guide_2: '',
       assigned_guide_driver_guide: '',
@@ -129,7 +144,8 @@ export default function TableScheduleAdd({
       notes_ko: '',
       notes_en: '',
       guide_notes_ko: '',
-      guide_notes_en: ''
+      guide_notes_en: '',
+      thumbnail_url: ''
     }
     onSchedulesChange([...schedules, newSchedule])
   }
@@ -139,6 +155,105 @@ export default function TableScheduleAdd({
     updatedSchedules[index] = { ...updatedSchedules[index], [field]: value }
     onSchedulesChange(updatedSchedules)
   }
+
+  // 버킷에서 이미지 목록 가져오기
+  const fetchBucketImages = useCallback(async () => {
+    setLoadingBucketImages(true)
+    try {
+      const { data, error } = await supabase.storage
+        .from('product-media')
+        .list('images', {
+          limit: 50,
+          sortBy: { column: 'created_at', order: 'desc' }
+        })
+
+      if (error) {
+        console.error('이미지 목록 가져오기 오류:', error)
+        return
+      }
+
+      const images = await Promise.all(
+        data.map(async (file) => {
+          const { data: urlData } = supabase.storage
+            .from('product-media')
+            .getPublicUrl(`images/${file.name}`)
+          return {
+            name: file.name,
+            url: urlData.publicUrl
+          }
+        })
+      )
+
+      setBucketImages(images)
+    } catch (error) {
+      console.error('이미지 목록 가져오기 예외:', error)
+    } finally {
+      setLoadingBucketImages(false)
+    }
+  }, [])
+
+  // 드래그 앤 드롭 핸들러
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    const imageFiles = files.filter(file => file.type.startsWith('image/'))
+    
+    if (imageFiles.length > 0 && thumbnailIndex !== null) {
+      const file = imageFiles[0]
+      setUploadingThumbnail(true)
+      try {
+        const result = await uploadThumbnail(file, productId)
+        if (result.success && result.url) {
+          updateSchedule(thumbnailIndex, 'thumbnail_url', result.url)
+        } else {
+          alert(result.error || '업로드에 실패했습니다.')
+        }
+      } catch (error) {
+        console.error('드래그 업로드 오류:', error)
+        alert('업로드 중 오류가 발생했습니다.')
+      } finally {
+        setUploadingThumbnail(false)
+      }
+    }
+  }, [thumbnailIndex, productId, updateSchedule])
+
+  // 클립보드 붙여넣기 핸들러
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items)
+    const imageItem = items.find(item => item.type.startsWith('image/'))
+    
+    if (imageItem && thumbnailIndex !== null) {
+      const file = imageItem.getAsFile()
+      if (file) {
+        setUploadingThumbnail(true)
+        try {
+          const result = await uploadThumbnail(file, productId)
+          if (result.success && result.url) {
+            updateSchedule(thumbnailIndex, 'thumbnail_url', result.url)
+          } else {
+            alert(result.error || '업로드에 실패했습니다.')
+          }
+        } catch (error) {
+          console.error('붙여넣기 업로드 오류:', error)
+          alert('업로드 중 오류가 발생했습니다.')
+        } finally {
+          setUploadingThumbnail(false)
+        }
+      }
+    }
+  }, [thumbnailIndex, productId, updateSchedule])
 
   const removeSchedule = (index: number) => {
     onSchedulesChange(schedules.filter((_, i) => i !== index))
@@ -262,6 +377,7 @@ export default function TableScheduleAdd({
       <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
         <div className="flex gap-2 text-xs font-medium text-gray-600">
           <div className="w-8">삭제</div>
+          <div className="w-12">썸네일</div>
           <div className="w-12">일차</div>
           <div className="w-32">시작</div>
           <div className="w-32">종료</div>
@@ -272,7 +388,7 @@ export default function TableScheduleAdd({
           <div className="w-40">2가이드</div>
           <div className="w-40">가이드+드라이버</div>
           <div className="w-40">옵션</div>
-          <div className="w-28">위치</div>
+          <div className="w-32">위치</div>
         </div>
       </div>
 
@@ -289,6 +405,29 @@ export default function TableScheduleAdd({
                   className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
                 >
                   <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* 썸네일 필드 */}
+              <div className="w-12 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setThumbnailIndex(index)
+                    setShowThumbnailModal(true)
+                  }}
+                  className="h-8 w-8 flex items-center justify-center bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+                  title="썸네일 업로드"
+                >
+                  {schedule.thumbnail_url ? (
+                    <img 
+                      src={schedule.thumbnail_url} 
+                      alt="썸네일" 
+                      className="w-6 h-6 object-cover rounded"
+                    />
+                  ) : (
+                    <Image className="h-4 w-4" />
+                  )}
                 </button>
               </div>
 
@@ -539,13 +678,14 @@ export default function TableScheduleAdd({
                     schedule.is_break && '휴식',
                     schedule.is_meal && '식사',
                     schedule.is_transport && '이동',
+                    schedule.is_tour && '관광',
                     schedule.show_to_customers && '고객표시'
                   ].filter(Boolean).join(',') || '옵션 설정'}
                 </button>
               </div>
 
               {/* 위치 필드 */}
-              <div className="w-28">
+              <div className="w-32">
                 <div className="flex gap-1">
                   <input
                     type="text"
@@ -634,6 +774,15 @@ export default function TableScheduleAdd({
               <label className="flex items-center">
                 <input
                   type="checkbox"
+                  checked={schedules[currentScheduleIndex]?.is_tour || false}
+                  onChange={(e) => updateSchedule(currentScheduleIndex, 'is_tour', e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="ml-2 text-sm text-gray-700">관광시간</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
                   checked={schedules[currentScheduleIndex]?.show_to_customers || false}
                   onChange={(e) => updateSchedule(currentScheduleIndex, 'show_to_customers', e.target.checked)}
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
@@ -645,6 +794,220 @@ export default function TableScheduleAdd({
               <button
                 type="button"
                 onClick={() => setShowOptionsModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 썸네일 업로드 모달 */}
+      {showThumbnailModal && thumbnailIndex !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">썸네일 업로드</h3>
+              <button
+                onClick={() => {
+                  setShowThumbnailModal(false)
+                  setThumbnailIndex(null)
+                  setShowBucketImages(false)
+                }}
+                className="p-1 hover:bg-gray-100 rounded-full"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* 왼쪽: 업로드 영역 */}
+              <div className="space-y-4">
+                {/* 현재 썸네일 표시 */}
+                {schedules[thumbnailIndex]?.thumbnail_url && (
+                  <div className="text-center">
+                    <p className="text-sm text-gray-600 mb-2">현재 썸네일:</p>
+                    <img 
+                      src={schedules[thumbnailIndex].thumbnail_url} 
+                      alt="현재 썸네일" 
+                      className="mx-auto max-w-full max-h-48 object-contain rounded-lg border"
+                    />
+                  </div>
+                )}
+                
+                {/* 드래그 앤 드롭 영역 */}
+                <div
+                  className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                    dragOver 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onPaste={handlePaste}
+                  tabIndex={0}
+                >
+                  <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                  <p className="text-sm text-gray-600 mb-2">
+                    파일을 드래그하거나 클릭하여 업로드
+                  </p>
+                  <p className="text-xs text-gray-500 mb-4">
+                    또는 Ctrl+V로 클립보드 이미지 붙여넣기
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingThumbnail}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {uploadingThumbnail ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+                        업로드 중...
+                      </>
+                    ) : (
+                      '파일 선택'
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (file && thumbnailIndex !== null) {
+                        setUploadingThumbnail(true)
+                        try {
+                          const result = await uploadThumbnail(file, productId)
+                          if (result.success && result.url) {
+                            updateSchedule(thumbnailIndex, 'thumbnail_url', result.url)
+                          } else {
+                            alert(result.error || '업로드에 실패했습니다.')
+                          }
+                        } catch (error) {
+                          console.error('업로드 오류:', error)
+                          alert('업로드 중 오류가 발생했습니다.')
+                        } finally {
+                          setUploadingThumbnail(false)
+                        }
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </div>
+                
+                {/* URL 입력 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    이미지 URL 입력
+                  </label>
+                  <input
+                    type="url"
+                    value={schedules[thumbnailIndex]?.thumbnail_url || ''}
+                    onChange={(e) => updateSchedule(thumbnailIndex, 'thumbnail_url', e.target.value)}
+                    placeholder="https://example.com/image.jpg"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                
+                {/* 썸네일 삭제 */}
+                {schedules[thumbnailIndex]?.thumbnail_url && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (thumbnailIndex !== null) {
+                        const currentUrl = schedules[thumbnailIndex].thumbnail_url
+                        if (currentUrl) {
+                          // Supabase Storage URL인 경우 실제 파일도 삭제
+                          if (isSupabaseStorageUrl(currentUrl)) {
+                            try {
+                              await deleteThumbnail(currentUrl)
+                            } catch (error) {
+                              console.error('파일 삭제 오류:', error)
+                              // 파일 삭제 실패해도 DB에서 URL은 제거
+                            }
+                          }
+                          updateSchedule(thumbnailIndex, 'thumbnail_url', '')
+                        }
+                      }
+                    }}
+                    className="w-full px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+                  >
+                    썸네일 삭제
+                  </button>
+                )}
+              </div>
+              
+              {/* 오른쪽: 버킷 이미지 선택 */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-md font-medium text-gray-900">기존 이미지 선택</h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBucketImages(!showBucketImages)
+                      if (!showBucketImages && bucketImages.length === 0) {
+                        fetchBucketImages()
+                      }
+                    }}
+                    className="flex items-center px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  >
+                    <FolderOpen className="h-4 w-4 mr-1" />
+                    {showBucketImages ? '숨기기' : '보기'}
+                  </button>
+                </div>
+                
+                {showBucketImages && (
+                  <div className="border rounded-lg p-4 max-h-96 overflow-y-auto">
+                    {loadingBucketImages ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                        <span className="ml-2 text-gray-600">이미지 로딩 중...</span>
+                      </div>
+                    ) : bucketImages.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {bucketImages.map((image, index) => (
+                          <div
+                            key={index}
+                            className="relative group cursor-pointer"
+                            onClick={() => {
+                              if (thumbnailIndex !== null) {
+                                updateSchedule(thumbnailIndex, 'thumbnail_url', image.url)
+                              }
+                            }}
+                          >
+                            <img
+                              src={image.url}
+                              alt={image.name}
+                              className="w-full h-20 object-cover rounded border hover:border-blue-500 transition-colors"
+                            />
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all rounded flex items-center justify-center">
+                              <Copy className="h-4 w-4 text-white opacity-0 group-hover:opacity-100" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p>업로드된 이미지가 없습니다.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex justify-end mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowThumbnailModal(false)
+                  setThumbnailIndex(null)
+                  setShowBucketImages(false)
+                }}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
               >
                 닫기
