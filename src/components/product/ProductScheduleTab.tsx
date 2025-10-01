@@ -206,7 +206,7 @@ export default function ProductScheduleTab({
       .map(day => ({ day, schedules: grouped[day] }))
   }
 
-  // 통계 계산 함수
+  // 통계 계산 함수 (시간이 있는 일정만 계산)
   const getScheduleStats = () => {
     let twoGuidesGuideTransport = 0
     let twoGuidesGuideTour = 0
@@ -222,6 +222,11 @@ export default function ProductScheduleTab({
     let guideDriverDriverTotal = 0
 
     schedules.forEach(schedule => {
+      // 시간이 있는 일정만 통계에 포함
+      if (!schedule.duration_minutes || schedule.duration_minutes <= 0) {
+        return
+      }
+      
       const duration = schedule.duration_minutes
       
       // 2가이드에서 가이드가 선택된 경우
@@ -457,6 +462,11 @@ export default function ProductScheduleTab({
                         {/* 시간 */}
                         <span className="text-sm text-gray-600 font-medium">
                           {schedule.start_time ? schedule.start_time.substring(0, 5) : '시간 미정'}
+                          {!schedule.duration_minutes && (
+                            <span className="ml-1 text-xs text-gray-400 italic">
+                              {getText('참고용', '(Reference)')}
+                            </span>
+                          )}
                         </span>
                         
                         {/* 제목 */}
@@ -625,6 +635,11 @@ export default function ProductScheduleTab({
                                   {schedule.start_time ? schedule.start_time.substring(0, 5) : '시간 미정'}
                                   {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
                                   {schedule.duration_minutes && ` (${schedule.duration_minutes}${getText('분', 'min')})`}
+                                  {!schedule.duration_minutes && (
+                                    <span className="ml-1 text-xs text-gray-400 italic">
+                                      {getText('참고용', '(Reference)')}
+                                    </span>
+                                  )}
                   </span>
                                 <span className="font-medium text-gray-900">
                                   {getScheduleText(schedule, 'title')}
@@ -745,6 +760,11 @@ export default function ProductScheduleTab({
                                   {schedule.start_time ? schedule.start_time.substring(0, 5) : '시간 미정'}
                                   {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
                                   {schedule.duration_minutes && ` (${schedule.duration_minutes}${getText('분', 'min')})`}
+                                  {!schedule.duration_minutes && (
+                                    <span className="ml-1 text-xs text-gray-400 italic">
+                                      {getText('참고용', '(Reference)')}
+                                    </span>
+                                  )}
                   </span>
                                 <span className="font-medium text-gray-900">
                                   {getScheduleText(schedule, 'title')}

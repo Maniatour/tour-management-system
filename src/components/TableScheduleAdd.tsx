@@ -315,7 +315,7 @@ export default function TableScheduleAdd({
     onSchedulesChange(schedules.filter((_, i) => i !== index))
   }
 
-  // 이동시간 합산 계산 함수 (각 가이드 유형별로 분리)
+  // 이동시간 합산 계산 함수 (각 가이드 유형별로 분리, 시간이 있는 일정만 계산)
   const calculateTotalTransportTime = () => {
     let twoGuidesGuideTime = 0
     let twoGuidesAssistantTime = 0
@@ -323,7 +323,8 @@ export default function TableScheduleAdd({
     let guideDriverDriverTime = 0
 
     schedules.forEach(schedule => {
-      if (schedule.is_transport) {
+      // 시간이 있는 이동 일정만 통계에 포함
+      if (schedule.is_transport && schedule.duration_minutes && schedule.duration_minutes > 0) {
         const duration = schedule.duration_minutes
         
         // 2가이드에서 가이드가 선택된 경우
