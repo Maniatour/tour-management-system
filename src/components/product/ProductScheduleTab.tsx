@@ -480,11 +480,7 @@ export default function ProductScheduleTab({
                             {getScheduleText(schedule, 'title')}
                           </div>
                           {getScheduleText(schedule, 'description') && (
-                            <div className="text-xs text-gray-600 mt-1 overflow-hidden whitespace-pre-line" style={{
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical'
-                            }}>
+                            <div className="text-xs text-gray-600 mt-1 whitespace-pre-line">
                               {getScheduleText(schedule, 'description')}
                             </div>
                           )}
