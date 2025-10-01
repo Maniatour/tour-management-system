@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
-import { Plus, Search, MapPin, Image, Video, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, MapPin, Image, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import PickupHotelForm from '@/components/PickupHotelForm'
 
@@ -59,6 +59,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     images: [],
     currentIndex: 0,
     hotelName: ''
+  })
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean
+    hotel: PickupHotel | null
+  }>({
+    isOpen: false,
+    hotel: null
   })
 
   // Supabase에서 픽업 호텔 데이터 가져오기
@@ -166,26 +173,25 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     }
   }
 
-  const handleDeleteHotel = async (id: string) => {
-    if (confirm('호텔을 삭제하시겠습니까?')) {
-      try {
-        const { error } = await supabase
-          .from('pickup_hotels')
-          .delete()
-          .eq('id', id)
+  const handleDeleteHotel = async (hotel: PickupHotel) => {
+    try {
+      const { error } = await supabase
+        .from('pickup_hotels')
+        .delete()
+        .eq('id', hotel.id)
 
-        if (error) {
-          console.error('Error deleting hotel:', error)
-          alert('호텔 삭제 중 오류가 발생했습니다: ' + error.message)
-          return
-        }
-
-        await fetchHotels()
-        alert('호텔이 성공적으로 삭제되었습니다!')
-      } catch (error) {
+      if (error) {
         console.error('Error deleting hotel:', error)
-        alert('호텔 삭제 중 오류가 발생했습니다.')
+        alert('호텔 삭제 중 오류가 발생했습니다: ' + error.message)
+        return
       }
+
+      await fetchHotels()
+      setDeleteConfirm({ isOpen: false, hotel: null })
+      alert('호텔이 성공적으로 삭제되었습니다!')
+    } catch (error) {
+      console.error('Error deleting hotel:', error)
+      alert('호텔 삭제 중 오류가 발생했습니다.')
     }
   }
 
@@ -208,6 +214,39 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     } catch (error) {
       console.error('Error toggling hotel status:', error)
       alert('호텔 상태 변경 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 호텔 복사 함수
+  const handleCopyHotel = async (hotel: PickupHotel) => {
+    try {
+      const newHotel = {
+        hotel: `${hotel.hotel} (복사본)`,
+        pick_up_location: hotel.pick_up_location,
+        description_ko: hotel.description_ko,
+        description_en: hotel.description_en,
+        address: hotel.address,
+        pin: hotel.pin,
+        link: hotel.link,
+        media: hotel.media,
+        is_active: false // 복사본은 비활성 상태로 생성
+      }
+
+      const { error } = await supabase
+        .from('pickup_hotels')
+        .insert([newHotel])
+
+      if (error) {
+        console.error('Error copying hotel:', error)
+        alert('호텔 복사 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+
+      await fetchHotels()
+      alert('호텔이 복사되었습니다!')
+    } catch (error) {
+      console.error('Error copying hotel:', error)
+      alert('호텔 복사 중 오류가 발생했습니다.')
     }
   }
 
@@ -332,6 +371,26 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                       <MapPin size={16} />
                     </a>
                   )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleCopyHotel(hotel)
+                    }}
+                    className="text-blue-600 hover:text-blue-800 transition-colors"
+                    title="호텔 복사"
+                  >
+                    <Copy size={16} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setDeleteConfirm({ isOpen: true, hotel })
+                    }}
+                    className="text-red-600 hover:text-red-800 transition-colors"
+                    title="호텔 삭제"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -586,6 +645,46 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 삭제 확인 모달 */}
+      {deleteConfirm.isOpen && deleteConfirm.hotel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center mb-4">
+              <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
+              <h3 className="text-lg font-semibold text-gray-900">호텔 삭제 확인</h3>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-gray-700 mb-2">
+                다음 호텔을 삭제하시겠습니까?
+              </p>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="font-medium text-gray-900">{deleteConfirm.hotel.hotel}</p>
+                <p className="text-sm text-gray-600">{deleteConfirm.hotel.pick_up_location}</p>
+              </div>
+              <p className="text-sm text-red-600 mt-2">
+                ⚠️ 이 작업은 되돌릴 수 없습니다.
+              </p>
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setDeleteConfirm({ isOpen: false, hotel: null })}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => handleDeleteHotel(deleteConfirm.hotel)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                삭제
+              </button>
+            </div>
           </div>
         </div>
       )}
