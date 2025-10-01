@@ -443,7 +443,7 @@ export default function ProductScheduleTab({
                 <div className="space-y-2">
                   {schedules.map((schedule) => (
                     <div key={schedule.id} className="bg-white border border-gray-200 rounded-lg p-3">
-                      <div className="flex items-start space-x-3">
+                      <div className="flex items-center space-x-3">
                         {/* 썸네일 */}
                         <div className="w-12 h-8 flex-shrink-0 flex items-center justify-center">
                           {schedule.thumbnail_url ? (
