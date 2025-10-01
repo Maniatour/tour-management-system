@@ -81,6 +81,9 @@ export default function TableScheduleAdd({
   const [dragOver, setDragOver] = useState(false)
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
+  const [showTextModal, setShowTextModal] = useState(false)
+  const [textModalType, setTextModalType] = useState<'description' | 'guide_notes'>('description')
+  const [textModalIndex, setTextModalIndex] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 시간 계산 유틸리티 함수들
@@ -767,36 +770,38 @@ export default function TableScheduleAdd({
 
               {/* 설명 필드 */}
               <div className="w-64">
-                <textarea
-                  value={showEnglishFields ? (schedule.description_en || '') : (schedule.description_ko || '')}
-                  onChange={(e) => {
-                    if (showEnglishFields) {
-                      updateSchedule(index, 'description_en', e.target.value)
-                    } else {
-                      updateSchedule(index, 'description_ko', e.target.value)
-                    }
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTextModalType('description')
+                    setTextModalIndex(index)
+                    setShowTextModal(true)
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize min-h-[32px] align-top"
-                  placeholder={showEnglishFields ? "English description" : "한국어 설명"}
-                  rows={1}
-                />
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between"
+                >
+                  <span className="truncate">
+                    {showEnglishFields ? (schedule.description_en || '') : (schedule.description_ko || '') || (showEnglishFields ? "English description" : "한국어 설명")}
+                  </span>
+                  <span className="text-gray-400 text-xs">✏️</span>
+                </button>
               </div>
 
               {/* 가이드 메모 */}
               <div className="w-32">
-                <textarea
-                  value={showEnglishFields ? (schedule.guide_notes_en || '') : (schedule.guide_notes_ko || '')}
-                  onChange={(e) => {
-                    if (showEnglishFields) {
-                      updateSchedule(index, 'guide_notes_en', e.target.value)
-                    } else {
-                      updateSchedule(index, 'guide_notes_ko', e.target.value)
-                    }
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTextModalType('guide_notes')
+                    setTextModalIndex(index)
+                    setShowTextModal(true)
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize min-h-[32px] align-top"
-                  placeholder={showEnglishFields ? "Guide notes (English)" : "가이드 메모 (한국어)"}
-                  rows={1}
-                />
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between"
+                >
+                  <span className="truncate">
+                    {showEnglishFields ? (schedule.guide_notes_en || '') : (schedule.guide_notes_ko || '') || (showEnglishFields ? "Guide notes (English)" : "가이드 메모 (한국어)")}
+                  </span>
+                  <span className="text-gray-400 text-xs">✏️</span>
+                </button>
               </div>
 
               {/* 2가이드 담당자 선택 */}
@@ -1255,6 +1260,65 @@ export default function TableScheduleAdd({
                   setShowThumbnailModal(false)
                   setThumbnailIndex(null)
                   setShowBucketImages(false)
+                }}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 텍스트 입력 모달 */}
+      {showTextModal && textModalIndex !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">
+              {textModalType === 'description' 
+                ? (showEnglishFields ? 'English Description' : '한국어 설명')
+                : (showEnglishFields ? 'Guide Notes (English)' : '가이드 메모 (한국어)')
+              }
+            </h3>
+            
+            <textarea
+              value={(() => {
+                const schedule = schedules[textModalIndex]
+                if (textModalType === 'description') {
+                  return showEnglishFields ? (schedule.description_en || '') : (schedule.description_ko || '')
+                } else {
+                  return showEnglishFields ? (schedule.guide_notes_en || '') : (schedule.guide_notes_ko || '')
+                }
+              })()}
+              onChange={(e) => {
+                const schedule = schedules[textModalIndex]
+                if (textModalType === 'description') {
+                  if (showEnglishFields) {
+                    updateSchedule(textModalIndex, 'description_en', e.target.value)
+                  } else {
+                    updateSchedule(textModalIndex, 'description_ko', e.target.value)
+                  }
+                } else {
+                  if (showEnglishFields) {
+                    updateSchedule(textModalIndex, 'guide_notes_en', e.target.value)
+                  } else {
+                    updateSchedule(textModalIndex, 'guide_notes_ko', e.target.value)
+                  }
+                }
+              }}
+              className="w-full h-64 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              placeholder={textModalType === 'description' 
+                ? (showEnglishFields ? 'Enter English description...' : '한국어 설명을 입력하세요...')
+                : (showEnglishFields ? 'Enter guide notes in English...' : '가이드 메모를 입력하세요...')
+              }
+            />
+            
+            <div className="flex justify-end space-x-3 mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTextModal(false)
+                  setTextModalIndex(null)
                 }}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
               >
