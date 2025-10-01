@@ -637,7 +637,7 @@ export default function ProductScheduleTab({
                                 </div>
                                 
                                 <div className="flex items-center space-x-3">
-                                  <div className="w-28 flex-shrink-0">
+                                  <div className="w-24 flex-shrink-0">
                                     <span className="text-sm text-gray-600 whitespace-nowrap">
                                       {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                                       {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
@@ -765,7 +765,7 @@ export default function ProductScheduleTab({
               </div>
               
                                 <div className="flex items-center space-x-3">
-                                  <div className="w-28 flex-shrink-0">
+                                  <div className="w-24 flex-shrink-0">
                                     <span className="text-sm text-gray-600 whitespace-nowrap">
                                       {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                                       {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
