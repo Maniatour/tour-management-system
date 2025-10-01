@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useCallback } from 'react'
-import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy } from 'lucide-react'
+import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, ChevronUp, ChevronDown } from 'lucide-react'
 import LocationPickerModal from './LocationPickerModal'
 import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl, uploadProductMedia } from '@/lib/productMediaUpload'
 import { supabase } from '@/lib/supabase'
@@ -154,6 +154,27 @@ export default function TableScheduleAdd({
     const updatedSchedules = [...schedules]
     updatedSchedules[index] = { ...updatedSchedules[index], [field]: value }
     onSchedulesChange(updatedSchedules)
+  }
+
+  // Row 이동 함수들
+  const moveScheduleUp = (index: number) => {
+    if (index > 0) {
+      const updatedSchedules = [...schedules]
+      const temp = updatedSchedules[index]
+      updatedSchedules[index] = updatedSchedules[index - 1]
+      updatedSchedules[index - 1] = temp
+      onSchedulesChange(updatedSchedules)
+    }
+  }
+
+  const moveScheduleDown = (index: number) => {
+    if (index < schedules.length - 1) {
+      const updatedSchedules = [...schedules]
+      const temp = updatedSchedules[index]
+      updatedSchedules[index] = updatedSchedules[index + 1]
+      updatedSchedules[index + 1] = temp
+      onSchedulesChange(updatedSchedules)
+    }
   }
 
   // 버킷에서 이미지 목록 가져오기
@@ -377,6 +398,7 @@ export default function TableScheduleAdd({
       <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
         <div className="flex gap-2 text-xs font-medium text-gray-600">
           <div className="w-8">삭제</div>
+          <div className="w-12">이동</div>
           <div className="w-12">썸네일</div>
           <div className="w-12">일차</div>
           <div className="w-32">시작</div>
@@ -405,6 +427,28 @@ export default function TableScheduleAdd({
                   className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
                 >
                   <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* 이동 버튼들 */}
+              <div className="w-12 flex flex-col items-center justify-center space-y-1">
+                <button
+                  type="button"
+                  onClick={() => moveScheduleUp(index)}
+                  disabled={index === 0}
+                  className="p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="위로 이동"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveScheduleDown(index)}
+                  disabled={index === schedules.length - 1}
+                  className="p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="아래로 이동"
+                >
+                  <ChevronDown className="h-3 w-3" />
                 </button>
               </div>
 
