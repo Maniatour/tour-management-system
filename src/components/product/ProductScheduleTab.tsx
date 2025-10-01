@@ -482,6 +482,12 @@ export default function ProductScheduleTab({
                           {getScheduleText(schedule, 'description') && (
                             <div className="text-xs text-gray-600 mt-1 whitespace-pre-line">
                               {getScheduleText(schedule, 'description')}
+                              {/* 디버깅: 현재 언어와 데이터 확인 */}
+                              {process.env.NODE_ENV === 'development' && (
+                                <div className="text-xs text-red-500 mt-1">
+                                  Debug: Lang={language}, EN={schedule.description_en || 'null'}, KO={schedule.description_ko || 'null'}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -637,7 +643,7 @@ export default function ProductScheduleTab({
                                 </div>
                                 
                                 <div className="flex items-center space-x-3">
-                                  <div className="w-24 flex-shrink-0">
+                                  <div className="w-20 flex-shrink-0">
                                     <span className="text-sm text-gray-600 whitespace-nowrap">
                                       {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
                                       {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
