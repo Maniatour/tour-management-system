@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Clock, Calendar, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -59,7 +59,7 @@ export default function TourScheduleSection({
   const [loading, setLoading] = useState(true)
   const [expandedDays, setExpandedDays] = useState<Set<number>>(new Set())
 
-  const fetchSchedules = async () => {
+  const fetchSchedules = useCallback(async () => {
     try {
       setLoading(true)
       
@@ -127,11 +127,11 @@ export default function TourScheduleSection({
     } finally {
       setLoading(false)
     }
-  }
+  }, [productId, teamType])
 
   useEffect(() => {
     fetchSchedules()
-  }, [productId, teamType])
+  }, [fetchSchedules])
 
   const toggleDayExpansion = (dayNumber: number) => {
     const newExpandedDays = new Set(expandedDays)
@@ -289,9 +289,9 @@ export default function TourScheduleSection({
                 {isExpanded && (
                   <div className="px-3 pb-3 space-y-1">
                     {daySchedules.map((schedule) => (
-                      <div key={schedule.id} className={`flex items-center justify-between p-2 rounded-lg border ${getScheduleBackgroundColor(schedule)}`}>
+                      <div key={schedule.id} className={`flex items-start justify-between p-3 rounded-lg border ${getScheduleBackgroundColor(schedule)}`}>
                         {/* 시간 */}
-                        <div className="flex-shrink-0 w-20">
+                        <div className="flex-shrink-0 w-20 pt-1">
                           <div className="flex items-center space-x-1 text-xs text-gray-600">
                             <Clock className="h-3 w-3" />
                             <span>
@@ -301,15 +301,24 @@ export default function TourScheduleSection({
                           </div>
                         </div>
                         
-                        {/* 제목 */}
-                        <div className="flex-1 px-3">
-                          <h5 className="font-medium text-gray-900 text-sm truncate">
+                        {/* 제목과 설명 */}
+                        <div className="flex-1 px-3 min-w-0">
+                          <h5 className="font-medium text-gray-900 text-sm leading-tight">
                             {getLocalizedText(schedule.title_ko, schedule.title_en, schedule.title)}
                           </h5>
+                          {getLocalizedText(schedule.description_ko, schedule.description_en, schedule.description) && (
+                            <p className="text-xs text-gray-600 mt-1 overflow-hidden" style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical'
+                            }}>
+                              {getLocalizedText(schedule.description_ko, schedule.description_en, schedule.description)}
+                            </p>
+                          )}
                         </div>
                         
                         {/* 담당자 */}
-                        <div className="flex-shrink-0 w-24 text-right">
+                        <div className="flex-shrink-0 w-24 text-right pt-1">
                           <span className="text-xs text-gray-600 font-medium">
                             {getResponsibleLabel(schedule)}
                           </span>
