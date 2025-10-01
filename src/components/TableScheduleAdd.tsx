@@ -413,7 +413,15 @@ export default function TableScheduleAdd({
           </button>
           <button
             type="button"
-            onClick={onSave}
+            onClick={() => {
+              // 저장 전에 순서 자동 설정
+              const updatedSchedules = schedules.map((schedule, index) => ({
+                ...schedule,
+                order_index: index + 1
+              }))
+              onSchedulesChange(updatedSchedules)
+              onSave()
+            }}
             disabled={saving || schedules.length === 0}
             className="flex items-center px-4 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
           >
@@ -523,16 +531,6 @@ export default function TableScheduleAdd({
                 />
               </div>
 
-              {/* 순서 */}
-              <div className="w-12">
-                <input
-                  type="number"
-                  value={schedule.order_index || 0}
-                  onChange={(e) => updateSchedule(index, 'order_index', parseInt(e.target.value) || 0)}
-                  className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  min="0"
-                />
-              </div>
 
               {/* 시작시간 (선택사항) */}
               <div className="w-32">
