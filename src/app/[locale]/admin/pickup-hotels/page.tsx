@@ -74,7 +74,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       const { data, error } = await supabase
         .from('pickup_hotels')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('hotel', { ascending: true })
 
       if (error) {
         console.error('Error fetching pickup hotels:', error)
