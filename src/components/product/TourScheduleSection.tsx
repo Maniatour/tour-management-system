@@ -297,11 +297,6 @@ export default function TourScheduleSection({
                             <span>
                               {schedule.start_time ? formatTime(schedule.start_time) : ''}
                               {schedule.end_time ? `-${formatTime(schedule.end_time)}` : ''}
-                              {!schedule.duration_minutes && (
-                                <span className="ml-1 text-xs text-gray-400 italic">
-                                  참고용
-                                </span>
-                              )}
                             </span>
                           </div>
                         </div>
