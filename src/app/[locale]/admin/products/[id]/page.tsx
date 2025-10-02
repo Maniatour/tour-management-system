@@ -695,7 +695,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                          productOptions: (() => {
                try {
                  // 새로운 통합 구조에 맞게 그룹화
-                 const optionsMap = new Map()
+                 const optionsMap: { [key: string]: any } = {}
                  
                  (optionsData || []).forEach((option: {
                    id: string
@@ -713,8 +713,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                  }) => {
                    const optionKey = option.name
                    
-                   if (!optionsMap.has(optionKey)) {
-                     optionsMap.set(optionKey, {
+                   if (!optionsMap[optionKey]) {
+                     optionsMap[optionKey] = {
                        id: option.id,
                        name: option.name,
                        description: option.description,
@@ -722,12 +722,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                        isMultiple: option.is_multiple,
                        linkedOptionId: option.linked_option_id || undefined,
                        choices: []
-                     })
+                     }
                    }
                    
                    // choice가 있는 경우에만 추가
                    if (option.choice_name) {
-                     const existingOption = optionsMap.get(optionKey) as any
+                     const existingOption = optionsMap[optionKey]
                      if (existingOption && existingOption.choices) {
                        existingOption.choices.push({
                          id: option.id, // choice ID는 option ID와 동일
@@ -744,7 +744,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                    }
                  })
                  
-                 return Array.from(optionsMap.values())
+                 return Object.values(optionsMap)
                } catch (error) {
                  console.error('productOptions 초기화 오류:', error)
                  return []
