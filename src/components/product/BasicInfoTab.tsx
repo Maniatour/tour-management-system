@@ -12,7 +12,6 @@ import { supabase } from '@/lib/supabase'
       category: string
       subCategory: string
       description: string
-      descriptionEn?: string
       duration: number
       maxParticipants: number
       departureCity: string
@@ -83,7 +82,6 @@ export default function BasicInfoTab({
             category: formData.category,
             sub_category: formData.subCategory.trim(),
             description: formData.description.trim(),
-            description_en: formData.descriptionEn?.trim() || null,
             duration: formData.duration.toString(),
             base_price: 0, // 기본값
             max_participants: formData.maxParticipants,
@@ -125,7 +123,6 @@ export default function BasicInfoTab({
             category: formData.category,
             sub_category: formData.subCategory.trim(),
             description: formData.description.trim(),
-            description_en: formData.descriptionEn?.trim() || null,
             duration: formData.duration.toString(),
             base_price: 0, // 기본 가격은 동적 가격에서 설정
             max_participants: formData.maxParticipants,
@@ -559,28 +556,16 @@ export default function BasicInfoTab({
       </div>
       
       {/* 설명 */}
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">설명 (한국어) *</label>
-          <textarea
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="한국어 설명을 입력하세요"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">설명 (영어)</label>
-          <textarea
-            value={formData.descriptionEn || ''}
-            onChange={(e) => setFormData({ ...formData, descriptionEn: e.target.value })}
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="English description"
-          />
-        </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">설명 *</label>
+        <textarea
+          value={formData.description}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          rows={3}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          placeholder="상품 설명을 입력하세요"
+          required
+        />
       </div>
 
       <div className="grid grid-cols-3 gap-4">

@@ -258,7 +258,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     category: 'nature',
     subCategory: '',
     description: '',
-    descriptionEn: '',
     duration: 1,
     basePrice: {
       adult: 0,
@@ -416,7 +415,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         category: 'nature',
         subCategory: '',
         description: '',
-        descriptionEn: '',
         duration: 3.5,
         basePrice: { adult: 0, child: 0, infant: 0 },
         channelPricing: [
@@ -558,7 +556,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             category: productData.category || 'nature',
             subCategory: productData.sub_category || '',
             description: productData.description || '',
-            descriptionEn: productData.description_en || '',
             duration: typeof productData.duration === 'string' ? parseInt(productData.duration) || 1 : productData.duration || 1,
             basePrice: {
               adult: productData.base_price || 0,

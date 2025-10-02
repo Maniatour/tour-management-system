@@ -136,7 +136,6 @@ export interface Database {
           sub_category: string | null
           category: string | null
           description: string | null
-          description_en: string | null
           base_price: number | null
           duration: string | null
           max_participants: number | null
@@ -163,7 +162,6 @@ export interface Database {
           sub_category?: string | null
           category?: string | null
           description?: string | null
-          description_en?: string | null
           base_price?: number | null
           duration?: string | null
           max_participants?: number | null
@@ -190,7 +188,6 @@ export interface Database {
           sub_category?: string | null
           category?: string | null
           description?: string | null
-          description_en?: string | null
           base_price?: number | null
           duration?: string | null
           max_participants?: number | null
