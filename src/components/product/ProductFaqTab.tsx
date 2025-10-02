@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { HelpCircle, Plus, Edit, Trash2, Save, AlertCircle, ChevronDown, ChevronUp, Languages, Loader2 } from 'lucide-react'
+import { HelpCircle, Plus, Edit, Trash2, Save, AlertCircle, ChevronDown, ChevronUp, Languages, Loader2, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { translateFaqFields, type FaqTranslationFields } from '@/lib/translationService'
+import { suggestFAQQuestion, suggestFAQAnswer } from '@/lib/chatgptService'
 
 interface FaqItem {
   id?: string
@@ -38,6 +39,8 @@ export default function ProductFaqTab({
   const [expandedFaqs, setExpandedFaqs] = useState<Set<string>>(new Set())
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestionError, setSuggestionError] = useState<string | null>(null)
   const [showEnglishFields, setShowEnglishFields] = useState(false)
 
   // 기존 FAQ 데이터 로드
@@ -285,6 +288,51 @@ export default function ProductFaqTab({
     }
   }
 
+  // ChatGPT 추천 함수들
+  const suggestFAQQuestionForIndex = async (index: number) => {
+    setSuggesting(true)
+    setSuggestionError(null)
+
+    try {
+      const productTitle = product?.title || '투어 상품'
+      const suggestedQuestion = await suggestFAQQuestion(productTitle)
+      
+      const updatedFaqs = [...faqs]
+      updatedFaqs[index] = {
+        ...updatedFaqs[index],
+        question: suggestedQuestion
+      }
+      setFaqs(updatedFaqs)
+    } catch (error) {
+      console.error('ChatGPT 질문 추천 오류:', error)
+      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  const suggestFAQAnswerForIndex = async (index: number) => {
+    setSuggesting(true)
+    setSuggestionError(null)
+
+    try {
+      const faq = faqs[index]
+      const suggestedAnswer = await suggestFAQAnswer(faq.question)
+      
+      const updatedFaqs = [...faqs]
+      updatedFaqs[index] = {
+        ...updatedFaqs[index],
+        answer: suggestedAnswer
+      }
+      setFaqs(updatedFaqs)
+    } catch (error) {
+      console.error('ChatGPT 답변 추천 오류:', error)
+      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -338,6 +386,26 @@ export default function ProductFaqTab({
           </button>
           <button
             type="button"
+            onClick={() => {
+              // 모든 FAQ의 질문과 답변을 ChatGPT로 추천받기
+              faqs.forEach((_, index) => {
+                suggestFAQQuestionForIndex(index)
+                suggestFAQAnswerForIndex(index)
+              })
+            }}
+            disabled={suggesting || faqs.length === 0}
+            className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm"
+            title="모든 FAQ의 질문과 답변을 ChatGPT로 추천받기"
+          >
+            {suggesting ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-1" />
+            )}
+            {suggesting ? '추천 중...' : 'AI 추천'}
+          </button>
+          <button
+            type="button"
             onClick={handleAddFaq}
             disabled={isNewProduct}
             className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -362,6 +430,29 @@ export default function ProductFaqTab({
               <button
                 type="button"
                 onClick={() => setTranslationError(null)}
+                className="inline-flex text-red-400 hover:text-red-600"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ChatGPT 추천 오류 메시지 */}
+      {suggestionError && (
+        <div className="bg-red-50 border-l-4 border-red-400 p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <AlertCircle className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{suggestionError}</p>
+            </div>
+            <div className="ml-auto pl-3">
+              <button
+                type="button"
+                onClick={() => setSuggestionError(null)}
                 className="inline-flex text-red-400 hover:text-red-600"
               >
                 ×
@@ -570,28 +661,67 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {showEnglishFields ? '질문 (영어)' : '질문 (한국어)'} *
             </label>
-            <input
-              type="text"
-              value={showEnglishFields ? (formData.question_en || '') : formData.question}
-              onChange={(e) => handleInputChange(showEnglishFields ? 'question_en' : 'question', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={showEnglishFields ? "Enter frequently asked question in English" : "자주 묻는 질문을 입력해주세요"}
-              required={!showEnglishFields}
-            />
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                value={showEnglishFields ? (formData.question_en || '') : formData.question}
+                onChange={(e) => handleInputChange(showEnglishFields ? 'question_en' : 'question', e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={showEnglishFields ? "Enter frequently asked question in English" : "자주 묻는 질문을 입력해주세요"}
+                required={!showEnglishFields}
+              />
+              {!showEnglishFields && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const productTitle = product?.title || '투어 상품'
+                      const suggestedQuestion = await suggestFAQQuestion(productTitle)
+                      handleInputChange('question', suggestedQuestion)
+                    } catch (error) {
+                      console.error('ChatGPT 질문 추천 오류:', error)
+                    }
+                  }}
+                  className="px-3 py-2 text-sm bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200"
+                  title="ChatGPT로 질문 추천받기"
+                >
+                  <Sparkles className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               {showEnglishFields ? '답변 (영어)' : '답변 (한국어)'} *
             </label>
-            <textarea
-              value={showEnglishFields ? (formData.answer_en || '') : formData.answer}
-              onChange={(e) => handleInputChange(showEnglishFields ? 'answer_en' : 'answer', e.target.value)}
-              rows={6}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={showEnglishFields ? "Enter answer in English" : "질문에 대한 답변을 입력해주세요"}
-              required={!showEnglishFields}
-            />
+            <div className="flex space-x-2">
+              <textarea
+                value={showEnglishFields ? (formData.answer_en || '') : formData.answer}
+                onChange={(e) => handleInputChange(showEnglishFields ? 'answer_en' : 'answer', e.target.value)}
+                rows={6}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={showEnglishFields ? "Enter answer in English" : "질문에 대한 답변을 입력해주세요"}
+                required={!showEnglishFields}
+              />
+              {!showEnglishFields && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const suggestedAnswer = await suggestFAQAnswer(formData.question)
+                      handleInputChange('answer', suggestedAnswer)
+                    } catch (error) {
+                      console.error('ChatGPT 답변 추천 오류:', error)
+                    }
+                  }}
+                  className="px-3 py-2 text-sm bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200"
+                  title="ChatGPT로 답변 추천받기"
+                >
+                  <Sparkles className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center">

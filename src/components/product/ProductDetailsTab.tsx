@@ -1,11 +1,12 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { FileText, Save, AlertCircle, Settings, Languages, Loader2 } from 'lucide-react'
+import { FileText, Save, AlertCircle, Settings, Languages, Loader2, Sparkles } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import CommonDetailsModal from './CommonDetailsModal'
 import { translateProductDetailsFields, type ProductDetailsTranslationFields } from '@/lib/translationService'
+import { suggestTourDescription } from '@/lib/chatgptService'
 
 interface ProductDetailsFields {
   slogan1: string
@@ -106,6 +107,8 @@ export default function ProductDetailsTab({
   const [isCommonModalOpen, setIsCommonModalOpen] = useState(false)
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestionError, setSuggestionError] = useState<string | null>(null)
   // const [loadingCommon, setLoadingCommon] = useState(false)
 
   const supabase = createClientSupabase()
@@ -444,6 +447,51 @@ export default function ProductDetailsTab({
     }
   }
 
+  // ChatGPT 추천 함수
+  const suggestDescription = async () => {
+    setSuggesting(true)
+    setSuggestionError(null)
+
+    try {
+      const productTitle = `투어 상품 (ID: ${productId})`
+      const suggestedDescription = await suggestTourDescription(productTitle)
+      
+      // 현재 언어에 따라 적절한 필드에 적용
+      const currentLang = formData.currentLanguage || 'ko'
+      if (currentLang === 'ko') {
+        setFormData(prev => ({
+          ...prev,
+          productDetails: {
+            ...prev.productDetails,
+            ko: {
+              ...prev.productDetails.ko,
+              description: suggestedDescription
+            }
+          }
+        }))
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          productDetails: {
+            ...prev.productDetails,
+            [currentLang]: {
+              ...prev.productDetails[currentLang as keyof typeof prev.productDetails],
+              description: suggestedDescription
+            }
+          }
+        }))
+      }
+
+      setSaveMessage('ChatGPT 추천 설명이 적용되었습니다!')
+      setTimeout(() => setSaveMessage(''), 3000)
+    } catch (error) {
+      console.error('ChatGPT 추천 오류:', error)
+      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
   const handleSave = async (e?: React.MouseEvent) => {
     // 이벤트 전파 방지
     if (e) {
@@ -597,6 +645,20 @@ export default function ProductDetailsTab({
             )}
             {translating ? '번역 중...' : '번역'}
           </button>
+          <button
+            type="button"
+            onClick={suggestDescription}
+            disabled={suggesting}
+            className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            title="ChatGPT로 설명 추천받기"
+          >
+            {suggesting ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-1" />
+            )}
+            {suggesting ? '추천 중...' : 'AI 추천'}
+          </button>
         </div>
         <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
           {availableLanguages.map((lang) => (
@@ -633,6 +695,29 @@ export default function ProductDetailsTab({
               <button
                 type="button"
                 onClick={() => setTranslationError(null)}
+                className="inline-flex text-red-400 hover:text-red-600"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ChatGPT 추천 오류 메시지 */}
+      {suggestionError && (
+        <div className="bg-red-50 border-l-4 border-red-400 p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <AlertCircle className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{suggestionError}</p>
+            </div>
+            <div className="ml-auto pl-3">
+              <button
+                type="button"
+                onClick={() => setSuggestionError(null)}
                 className="inline-flex text-red-400 hover:text-red-600"
               >
                 ×

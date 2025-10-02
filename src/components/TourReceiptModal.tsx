@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLocale } from 'next-intl'
 import { X, Receipt, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle, Edit, Clock, Upload, Camera } from 'lucide-react'
 
 type Tour = Database['public']['Tables']['tours']['Row']
@@ -25,9 +26,10 @@ interface TourReceiptModalProps {
 export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceiptModalProps) {
   const supabase = createClientSupabase()
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
+  const currentLocale = useLocale()
   
   // 번역 함수
-  const getText = (ko: string, en: string) => locale === 'en' ? en : ko
+  const getText = (ko: string, en: string) => currentLocale === 'en' ? en : ko
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUser = isSimulating && simulatedUser ? simulatedUser : user
@@ -136,10 +138,24 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
         return []
       }))]
 
-      const { data: reservationsData } = await supabase
-        .from('reservations')
-        .select('id, number_of_people')
-        .in('id', reservationIds)
+      // 배치로 나누어 조회 (URL 길이 제한 방지)
+      const batchSize = 50
+      const reservationBatches = []
+      for (let i = 0; i < reservationIds.length; i += batchSize) {
+        reservationBatches.push(reservationIds.slice(i, i + batchSize))
+      }
+
+      const allReservationsData = []
+      for (const batch of reservationBatches) {
+        const { data: batchData } = await supabase
+          .from('reservations')
+          .select('id, number_of_people')
+          .in('id', batch)
+        if (batchData) {
+          allReservationsData.push(...batchData)
+        }
+      }
+      const reservationsData = allReservationsData
 
       const reservationMap = new Map(
         (reservationsData || []).map(reservation => [reservation.id, reservation.number_of_people || 0])
@@ -443,14 +459,14 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
                       <div className="space-y-2">
                         {/* 상단: 투어 이름 */}
                         <h4 className="font-semibold text-gray-900 text-base">
-                          {locale === 'en' ? (tour.product_name_en || tour.product_name || tour.product_id) : (tour.product_name || tour.product_id)}
+                          {currentLocale === 'en' ? (tour.product_name_en || tour.product_name || tour.product_id) : (tour.product_name || tour.product_id)}
                         </h4>
                         
                         {/* 중단: 날짜, 인원, 상태 */}
                         <div className="flex items-center space-x-4 text-sm text-gray-600">
                           <div className="flex items-center">
                             <Calendar className="w-4 h-4 mr-1" />
-                            {new Date(tour.tour_date).toLocaleDateString(locale === 'en' ? 'en-US' : 'ko-KR')}
+                            {new Date(tour.tour_date).toLocaleDateString(currentLocale === 'en' ? 'en-US' : 'ko-KR')}
                           </div>
                           <div className="flex items-center">
                             <Users className="w-4 h-4 mr-1" />
@@ -501,7 +517,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
               {currentEditingTour && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <h4 className="font-semibold text-green-800 mb-2">
-                    {getText('리포트 작성', 'Report Creation')} : {locale === 'en' ? (currentEditingTour.product_name_en || currentEditingTour.product_name || currentEditingTour.product_id) : (currentEditingTour.product_name || currentEditingTour.product_id)} {currentEditingTour.tour_date} ({new Date(currentEditingTour.tour_date).toLocaleDateString(locale === 'en' ? 'en-US' : 'ko-KR', { weekday: 'short' })}) {currentEditingTour.assigned_people}
+                    {getText('리포트 작성', 'Report Creation')} : {currentLocale === 'en' ? (currentEditingTour.product_name_en || currentEditingTour.product_name || currentEditingTour.product_id) : (currentEditingTour.product_name || currentEditingTour.product_id)} {currentEditingTour.tour_date} ({new Date(currentEditingTour.tour_date).toLocaleDateString(currentLocale === 'en' ? 'en-US' : 'ko-KR', { weekday: 'short' })}) {currentEditingTour.assigned_people}
                   </h4>
                 </div>
               )}

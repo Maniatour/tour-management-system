@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Upload, Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface MigrationResult {
@@ -157,7 +157,7 @@ export default function MigrateImagesPage() {
           const fileName = `${hotelId}_${timestamp}_${i + 1}.jpg`
           
           // Supabase에 업로드
-          const { data: uploadData, error: uploadError } = await supabase.storage
+          const { error: uploadError } = await supabase.storage
             .from('pickup-hotel-media')
             .upload(`hotels/${hotelId}/${fileName}`, blob, {
               contentType: 'image/jpeg',
@@ -194,13 +194,13 @@ export default function MigrateImagesPage() {
         }
 
         // 기존 미디어와 새 미디어 합치기
-        const existingMedia = hotel.media || []
+        const existingMedia = (hotel as { media?: string[] }).media || []
         const updatedMedia = [...existingMedia, ...uploadedUrls]
 
         // 데이터베이스 업데이트
         const { error: updateError } = await supabase
           .from('pickup_hotels')
-          .update({ media: updatedMedia })
+          .update({ media: updatedMedia } as never)
           .eq('id', hotelId)
 
         if (updateError) {
@@ -247,7 +247,7 @@ export default function MigrateImagesPage() {
 
     try {
       // 파일 파싱
-      const { parsedFiles, invalidFiles } = parseExtractedFiles(extractedFiles)
+      const { parsedFiles } = parseExtractedFiles(extractedFiles)
       
       if (parsedFiles.length === 0) {
         setResult({
@@ -291,7 +291,7 @@ export default function MigrateImagesPage() {
             const blob = await response.blob()
             
             // Supabase에 업로드
-            const { data: uploadData, error: uploadError } = await supabase.storage
+            const { error: uploadError } = await supabase.storage
               .from('pickup-hotel-media')
               .upload(`hotels/${hotelId}/${file.fileName}`, blob, {
                 contentType: 'image/png',
@@ -336,13 +336,13 @@ export default function MigrateImagesPage() {
 
             if (!fetchError && hotel) {
               // 기존 미디어와 새 미디어 합치기
-              const existingMedia = hotel.media || []
+              const existingMedia = (hotel as { media?: string[] }).media || []
               const updatedMedia = [...existingMedia, ...uploadedUrls]
 
               // 데이터베이스 업데이트
               await supabase
                 .from('pickup_hotels')
-                .update({ media: updatedMedia })
+                .update({ media: updatedMedia } as never)
                 .eq('id', hotelId)
             }
           } catch (error) {
@@ -686,7 +686,7 @@ export default function MigrateImagesPage() {
               <li>공유 링크를 복사 (https://drive.google.com/file/d/FILE_ID/view?usp=sharing 형식)</li>
               <li>위의 텍스트 영역에 링크를 한 줄에 하나씩 입력</li>
               <li>마이그레이션할 호텔을 선택</li>
-              <li>"마이그레이션 시작" 버튼 클릭</li>
+              <li>&quot;마이그레이션 시작&quot; 버튼 클릭</li>
             </ol>
           ) : (
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
@@ -694,7 +694,7 @@ export default function MigrateImagesPage() {
               <li>개발자 도구(F12) → Console에서 JavaScript 코드 실행</li>
               <li>추출된 JSON 배열을 위의 텍스트 영역에 붙여넣기</li>
               <li>파일 목록 미리보기에서 패턴 검증 확인</li>
-              <li>"대량 마이그레이션 시작" 버튼 클릭</li>
+              <li>&quot;대량 마이그레이션 시작&quot; 버튼 클릭</li>
             </ol>
           )}
           
@@ -1004,7 +1004,7 @@ if (pngFiles) {
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
                 <h5 className="font-medium text-red-900 mb-2">🚨 문제 해결 가이드</h5>
                 <div className="text-sm text-red-800 space-y-2">
-                  <p><strong>문제 1:</strong> "추출된 파일: 0개"가 나오는 경우</p>
+                  <p><strong>문제 1:</strong> &quot;추출된 파일: 0개&quot;가 나오는 경우</p>
                   <ul className="ml-4 list-disc space-y-1">
                     <li>페이지가 완전히 로딩될 때까지 기다리세요</li>
                     <li>구글 드라이브 폴더를 새로고침(F5) 후 다시 시도하세요</li>
@@ -1023,12 +1023,12 @@ if (pngFiles) {
                   <ul className="ml-4 list-disc space-y-1">
                     <li>파일명 패턴이 정확한지 확인하세요: <code className="bg-red-100 px-1 rounded">0f7f30a4.Photo 1.041046.png</code></li>
                     <li>파일이 실제로 폴더에 있는지 확인하세요</li>
-                    <li>파일 공유 설정이 "링크가 있는 모든 사용자"로 되어 있는지 확인하세요</li>
+                    <li>파일 공유 설정이 &quot;링크가 있는 모든 사용자&quot;로 되어 있는지 확인하세요</li>
                   </ul>
                   
                   <p><strong>최종 해결책:</strong> 모든 자동 방법이 실패하면</p>
                   <ul className="ml-4 list-disc space-y-1">
-                    <li>각 파일을 우클릭 → "링크 복사" 또는 "공유" 사용</li>
+                    <li>각 파일을 우클릭 → &quot;링크 복사&quot; 또는 &quot;공유&quot; 사용</li>
                     <li>고급 수동 입력 도우미에서 파일명과 URL을 수동으로 입력</li>
                     <li>개별 마이그레이션 모드로 전환하여 파일별로 처리</li>
                   </ul>
@@ -1039,7 +1039,7 @@ if (pngFiles) {
           
           <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
             <p className="text-sm text-yellow-800">
-              <strong>주의:</strong> 구글 드라이브 이미지는 "링크가 있는 모든 사용자"로 공개 설정되어야 합니다.
+              <strong>주의:</strong> 구글 드라이브 이미지는 &quot;링크가 있는 모든 사용자&quot;로 공개 설정되어야 합니다.
             </p>
           </div>
         </div>

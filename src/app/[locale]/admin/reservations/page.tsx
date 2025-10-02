@@ -124,16 +124,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       const matchesCustomer = !customerIdFromUrl || reservation.customerId === customerIdFromUrl
       
       // 검색 조건 - 검색어가 있을 때만 검색 수행
+      const customer = customers?.find(c => c.id === reservation.customerId)
+      const customerSpecialRequests = customer?.special_requests || ''
+      
       const matchesSearch = !searchTerm || 
       reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.channelRN.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getCustomerName(reservation.customerId, customers as Customer[]).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getCustomerName(reservation.customerId, customers as Customer[] || []).toLowerCase().includes(searchTerm.toLowerCase()) ||
       getProductName(reservation.productId, products).toLowerCase().includes(searchTerm.toLowerCase()) ||
       getChannelName(reservation.channelId, channels).toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.tourDate.toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.tourTime.toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.pickUpHotel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reservation.addedBy.toLowerCase().includes(searchTerm.toLowerCase())
+      reservation.addedBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customerSpecialRequests.toLowerCase().includes(searchTerm.toLowerCase())
     
       // 상태 필터
     const matchesStatus = selectedStatus === 'all' || reservation.status === selectedStatus
@@ -794,7 +798,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
               <input
                 type="text"
-                placeholder="검색..."
+                placeholder="예약번호, 고객명, 다른 이름(영문명 등), 특별요청, 상품명으로 검색..."
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value)

@@ -371,10 +371,10 @@ export default function TourExpenseManager({
         <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         <button
           onClick={() => setShowAddForm(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          title={t('addExpense')}
         >
-          <Plus size={16} />
-          <span>{t('addExpense')}</span>
+          <Plus size={20} />
         </button>
       </div>
 

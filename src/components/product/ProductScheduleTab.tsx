@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Calendar, Plus, Eye, Users, Globe } from 'lucide-react'
+import Image from 'next/image'
+import { Calendar, Plus, Eye, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import TableScheduleAdd from '../TableScheduleAdd'
 
@@ -27,12 +28,14 @@ interface ScheduleItem {
   longitude?: number
   show_to_customers: boolean
   guide_assignment_type: 'none' | 'single_guide' | 'two_guides' | 'guide_driver'
-  // 2가이드 전용 필드
-  assigned_guide_1?: string
-  assigned_guide_2?: string
-  // 가이드+드라이버 전용 필드
-  assigned_guide_driver_guide?: string
-  assigned_guide_driver_driver?: string
+  // 단순화된 가이드 할당 필드
+  two_guide_schedule?: 'guide' | 'assistant'
+  guide_driver_schedule?: 'guide' | 'assistant'
+  // 가이드 할당 필드들 (누락된 필드들 추가)
+  assigned_guide_1?: 'guide' | 'assistant'
+  assigned_guide_2?: 'guide' | 'assistant'
+  assigned_guide_driver_guide?: 'guide' | 'driver'
+  assigned_guide_driver_driver?: 'guide' | 'driver'
   // 다국어 지원 필드들
   title_ko?: string
   title_en?: string
@@ -127,7 +130,7 @@ export default function ProductScheduleTab({
 
   const fetchTeamMembers = useCallback(async () => {
     try {
-      const { data, error } = await (supabase as unknown as any)
+      const { data, error } = await supabase
         .from('team')
         .select('email, name_ko, position')
         .eq('is_active', true)
@@ -316,6 +319,7 @@ export default function ProductScheduleTab({
       // 새로운 일정들을 모두 추가 (id 필드 제외, product_id 설정)
       if (tableSchedules.length > 0) {
         const schedulesToInsert = tableSchedules.map(schedule => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { id, ...scheduleWithoutId } = schedule
           // is_tour 필드가 없으면 기본값 false로 설정
           const scheduleData = {
@@ -326,10 +330,10 @@ export default function ProductScheduleTab({
           return scheduleData
         })
 
-        const { data, error } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
           .from('product_schedules')
           .insert(schedulesToInsert)
-          .select()
 
         if (error) {
           console.error('일정 저장 오류:', error)
@@ -447,9 +451,11 @@ export default function ProductScheduleTab({
                         {/* 썸네일 */}
                         <div className="w-12 h-8 flex-shrink-0 flex items-center justify-center">
                           {schedule.thumbnail_url ? (
-                            <img 
+                            <Image 
                               src={schedule.thumbnail_url} 
                               alt="썸네일" 
+                              width={48}
+                              height={32}
                               className="w-full h-full object-cover rounded border"
                             />
                           ) : (
@@ -624,9 +630,11 @@ export default function ProductScheduleTab({
                                 {/* 썸네일 */}
                                 <div className="w-12 h-8 flex-shrink-0">
                                   {schedule.thumbnail_url ? (
-                                    <img 
+                                    <Image 
                                       src={schedule.thumbnail_url} 
                                       alt="썸네일" 
+                                      width={48}
+                                      height={32}
                                       className="w-full h-full object-cover rounded border"
                                     />
                                   ) : (
@@ -749,17 +757,19 @@ export default function ProductScheduleTab({
                                 {/* 썸네일 */}
                                 <div className="w-12 h-8 flex-shrink-0">
                                   {schedule.thumbnail_url ? (
-                                    <img 
+                                    <Image 
                                       src={schedule.thumbnail_url} 
                                       alt="썸네일" 
+                                      width={48}
+                                      height={32}
                                       className="w-full h-full object-cover rounded border"
                                     />
                                   ) : (
                                     <div className="w-full h-full bg-gray-100 rounded border flex items-center justify-center">
                                       <span className="text-xs text-gray-400">이미지</span>
                                     </div>
-                )}
-              </div>
+                                  )}
+                                </div>
               
                                 <div className="flex items-center space-x-3">
                                   <div className="w-24 flex-shrink-0">
@@ -871,8 +881,10 @@ export default function ProductScheduleTab({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-[90vw] h-[90vh] flex flex-col overflow-hidden">
             <TableScheduleAdd
-              schedules={tableSchedules}
-              onSchedulesChange={setTableSchedules}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              schedules={tableSchedules as any}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onSchedulesChange={setTableSchedules as any}
               onSave={handleSaveTableSchedules}
               onClose={() => setShowTableAdd(false)}
               saving={saving}

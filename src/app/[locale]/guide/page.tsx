@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
-import { Calendar, Users, MapPin, Clock, ArrowRight, CalendarOff, CheckCircle, XCircle, Clock as ClockIcon, Plus, X, User, Car, History } from 'lucide-react'
+import { Calendar, Users, CalendarOff, CheckCircle, XCircle, Clock as ClockIcon, Plus, X, User, Car, History } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -12,9 +12,12 @@ type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Tour & {
   product_name?: string | null;
   product_name_en?: string | null;
+  internal_name_ko?: string | null;
+  internal_name_en?: string | null;
   assigned_people?: number;
   guide_name?: string | null;
   assistant_name?: string | null;
+  assignment_status?: string | null;
   vehicle_number?: string | null;
 }
 
@@ -28,7 +31,6 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
   const { locale } = use(params)
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   
   // 오늘 날짜 (컴포넌트 레벨에서 정의)
@@ -43,7 +45,6 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
   }
   
   const [upcomingTours, setUpcomingTours] = useState<ExtendedTour[]>([])
-  const [todayTours, setTodayTours] = useState<ExtendedTour[]>([])
   const [pastTours, setPastTours] = useState<ExtendedTour[]>([])
   const [offSchedules, setOffSchedules] = useState<OffSchedule[]>([])
   const [loading, setLoading] = useState(true)
@@ -69,10 +70,6 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
 
         if (!currentUserEmail) return
         
-        // 내일 날짜
-        const tomorrow = new Date()
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        const tomorrowStr = tomorrow.toISOString().split('T')[0]
 
         // 투어 가이드가 배정된 투어 가져오기 (최근 30일)
         const thirtyDaysAgo = new Date()
@@ -96,15 +93,19 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
         const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter(Boolean))]
         let productMap = new Map()
         let productEnMap = new Map()
+        let productInternalKoMap = new Map()
+        let productInternalEnMap = new Map()
         
         if (productIds.length > 0) {
           const { data: productsData } = await supabase
             .from('products')
-            .select('id, name_ko, name_en, name')
-            .in('id', productIds) as { data: { id: string; name_ko: string; name_en: string; name: string }[] | null }
+            .select('id, name_ko, name_en, name, internal_name_ko, internal_name_en')
+            .in('id', productIds) as { data: { id: string; name_ko: string; name_en: string; name: string; internal_name_ko: string | null; internal_name_en: string | null }[] | null }
           
           productMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name]))
           productEnMap = new Map((productsData || []).map(p => [p.id, p.name_en || p.name]))
+          productInternalKoMap = new Map((productsData || []).map(p => [p.id, p.internal_name_ko]))
+          productInternalEnMap = new Map((productsData || []).map(p => [p.id, p.internal_name_en]))
         }
 
         // 팀원 정보 가져오기
@@ -168,6 +169,8 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
             ...tour,
             product_name: tour.product_id ? productMap.get(tour.product_id) : null,
             product_name_en: tour.product_id ? productEnMap.get(tour.product_id) : null,
+            internal_name_ko: tour.product_id ? productInternalKoMap.get(tour.product_id) : null,
+            internal_name_en: tour.product_id ? productInternalEnMap.get(tour.product_id) : null,
             assigned_people: assignedPeople,
             guide_name: tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null,
             assistant_name: tour.assistant_id ? teamMap.get(tour.assistant_id) : null,
@@ -176,11 +179,9 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
         })
 
         // 투어 분류
-        const todayToursList = extendedTours.filter(tour => tour.tour_date === today)
         const upcomingToursList = extendedTours.filter(tour => tour.tour_date >= today)
         const pastToursList = extendedTours.filter(tour => tour.tour_date < today)
 
-        setTodayTours(todayToursList)
         setUpcomingTours(upcomingToursList.slice(0, 5)) // 최대 5개만 표시
         setPastTours(pastToursList.slice(0, 10)) // 최대 10개만 표시
 
@@ -215,54 +216,7 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
   //   }
   // }, [activeTab, currentUserEmail])
 
-  // 전달사항 확인 처리
-  const handleAnnouncementAck = async (announcementId: string) => {
-    try {
-      if (!currentUserEmail) return
 
-      const { error } = await (supabase as unknown as { from: (table: string) => { insert: (data: Record<string, unknown>) => Promise<{ error: Error | null }> } })
-        .from('team_announcement_acknowledgments')
-        .insert({
-          announcement_id: announcementId,
-          ack_by: currentUserEmail,
-          ack_at: new Date().toISOString()
-        })
-
-      if (error) {
-        console.error('Error acknowledging announcement:', error)
-        return
-      }
-
-      // 팀보드 데이터 다시 로드 (제거됨 - 별도 페이지로 이동)
-      // loadTeamBoard()
-    } catch (error) {
-      console.error('Error acknowledging announcement:', error)
-    }
-  }
-
-  const getStatusBadgeClasses = (status: string | null | undefined) => {
-    const s = (status || '').toString().toLowerCase()
-    switch (s) {
-      case 'confirmed':
-        return 'bg-green-100 text-green-800'
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800'
-      case 'completed':
-        return 'bg-blue-100 text-blue-800'
-      case 'cancelled':
-      case 'canceled':
-        return 'bg-red-100 text-red-800'
-      case 'recruiting':
-        return 'bg-purple-100 text-purple-800'
-      case 'scheduled':
-        return 'bg-gray-100 text-gray-800'
-      case 'inprogress':
-      case 'in_progress':
-        return 'bg-amber-100 text-amber-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
 
   const getOffScheduleStatusBadgeClasses = (status: string | null | undefined) => {
     const s = (status || '').toString().toLowerCase()
@@ -661,29 +615,25 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
 // 투어 카드 컴포넌트
 function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () => void; locale: string }) {
   const t = useTranslations('guide')
-  const ct = useTranslations('tours.calendar')
   
   // 투어 이름 매핑 함수
   const getTourDisplayName = (tour: ExtendedTour, locale: string) => {
     if (locale === 'en') {
-      // 영어 모드에서는 영어 이름 우선 사용
-      return tour.product_name_en || tour.product_name || tour.product_id
+      // 영어 모드에서는 internal_name_en 우선 사용
+      return tour.internal_name_en || tour.product_name_en || tour.product_name || tour.product_id
     } else {
-      // 한국어 모드에서는 한국어 이름 우선 사용
-      return tour.product_name || tour.product_id
+      // 한국어 모드에서는 internal_name_ko 우선 사용
+      return tour.internal_name_ko || tour.product_name || tour.product_id
     }
   }
   
-  const getStatusBadgeClasses = (status: string | null) => {
+
+  const getAssignmentStatusBadgeClasses = (status: string | null | undefined) => {
     switch (status?.toLowerCase()) {
       case 'confirmed':
-        return 'bg-green-100 text-green-800'
-      case 'scheduled':
-        return 'bg-blue-100 text-blue-800'
-      case 'completed':
-        return 'bg-gray-100 text-gray-800'
-      case 'cancelled':
-        return 'bg-red-100 text-red-800'
+        return 'bg-emerald-100 text-emerald-800'
+      case 'pending':
+        return 'bg-amber-100 text-amber-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -716,11 +666,12 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
               <Users className="w-3 h-3 mr-1" />
               {tour.assigned_people || 0}
             </span>
+
           </div>
 
-          {/* 상태 배지 - 오른쪽 끝 정렬 */}
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadgeClasses(tour.tour_status)}`}>
-            {tour.tour_status || t('tourCard.status.noStatus')}
+          {/* 배정 상태 배지 - 오른쪽 끝 정렬 (투어 상태 대신 배정 상태 표시) */}
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getAssignmentStatusBadgeClasses(tour.assignment_status)}`}>
+            {tour.assignment_status === 'confirmed' ? 'Confirmed' : 'Pending'}
           </span>
         </div>
 

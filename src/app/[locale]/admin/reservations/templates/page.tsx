@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { renderTemplateString } from '@/lib/template'
 import { translateDocumentTemplateFields, type DocumentTemplateTranslationFields } from '@/lib/translationService'
-import { Languages, Loader2 } from 'lucide-react'
+import { suggestDocumentTemplateSubject, suggestDocumentTemplateContent } from '@/lib/chatgptService'
+import { Languages, Loader2, Sparkles } from 'lucide-react'
 
 type DocTemplate = {
   id: string
@@ -37,6 +38,8 @@ export default function ReservationTemplatesPage() {
   const [showCopyModal, setShowCopyModal] = useState<{ open: boolean; sourceTemplate?: DocTemplate }>({ open: false })
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestionError, setSuggestionError] = useState<string | null>(null)
   
   const filteredTemplates = useMemo(() => {
     return templates.filter(t => {
@@ -307,6 +310,53 @@ export default function ReservationTemplatesPage() {
     }
   }
 
+  // ChatGPT 추천 함수
+  const suggestTemplateContent = async (templateId: string) => {
+    const template = templates.find(t => t.id === templateId)
+    if (!template) return
+
+    setSuggesting(true)
+    setSuggestionError(null)
+
+    try {
+      // 템플릿 유형 결정
+      const templateType = getTemplateTypeName(template.template_key)
+      
+      // 제목과 내용 추천
+      const suggestedSubject = await suggestDocumentTemplateSubject(templateType)
+      const suggestedContent = await suggestDocumentTemplateContent(suggestedSubject, templateType)
+      
+      // 추천된 내용을 템플릿에 적용
+      setTemplates(prev => prev.map(t => 
+        t.id === templateId 
+          ? { ...t, subject: suggestedSubject, content: suggestedContent }
+          : t
+      ))
+    } catch (error) {
+      console.error('ChatGPT 추천 오류:', error)
+      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  // 템플릿 유형명 가져오기
+  const getTemplateTypeName = (templateKey: string): string => {
+    const typeMap: { [key: string]: string } = {
+      'reservation_confirmation': '예약 확인서',
+      'reservation_cancellation': '예약 취소서',
+      'tour_reminder': '투어 안내서',
+      'tour_completion': '투어 완료서',
+      'payment_confirmation': '결제 확인서',
+      'refund_notification': '환불 안내서',
+      'tour_schedule': '투어 일정표',
+      'pickup_notification': '픽업 안내서',
+      'weather_notification': '날씨 안내서',
+      'emergency_contact': '비상 연락처'
+    }
+    return typeMap[templateKey] || templateKey
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -315,6 +365,11 @@ export default function ReservationTemplatesPage() {
           {translationError && (
             <div className="text-red-600 text-sm">
               {translationError}
+            </div>
+          )}
+          {suggestionError && (
+            <div className="text-red-600 text-sm">
+              {suggestionError}
             </div>
           )}
           <button onClick={save} disabled={saving} className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button>
@@ -780,20 +835,36 @@ export default function ReservationTemplatesPage() {
                     onClick={() => copyTemplate(t)}
                   >복사</button>
                   {t.language === 'ko' && (
-                    <button
-                      type="button"
-                      onClick={() => translateTemplate(t.id)}
-                      disabled={translating}
-                      className="flex items-center text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded hover:bg-purple-200 disabled:opacity-50"
-                      title="한국어 내용을 영어로 번역"
-                    >
-                      {translating ? (
-                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                      ) : (
-                        <Languages className="h-3 w-3 mr-1" />
-                      )}
-                      번역
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => translateTemplate(t.id)}
+                        disabled={translating}
+                        className="flex items-center text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded hover:bg-purple-200 disabled:opacity-50"
+                        title="한국어 내용을 영어로 번역"
+                      >
+                        {translating ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <Languages className="h-3 w-3 mr-1" />
+                        )}
+                        번역
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => suggestTemplateContent(t.id)}
+                        disabled={suggesting}
+                        className="flex items-center text-xs px-2 py-1 bg-indigo-100 text-indigo-800 rounded hover:bg-indigo-200 disabled:opacity-50"
+                        title="ChatGPT로 템플릿 초안 생성"
+                      >
+                        {suggesting ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3 w-3 mr-1" />
+                        )}
+                        AI 초안
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

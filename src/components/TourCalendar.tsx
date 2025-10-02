@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from 'lucide-r
 import type { Database } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -20,6 +20,7 @@ interface ExtendedTour extends Tour {
   unassigned_people?: number;
   guide_name?: string | null;
   assistant_name?: string | null;
+  assignment_status?: string | null;
   vehicle_number?: string | null;
 }
 
@@ -46,23 +47,35 @@ interface TourCalendarProps {
 const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [], offSchedules = [], onOffScheduleChange }: TourCalendarProps) {
   const { user, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('tours.calendar')
+  const locale = useLocale()
   
   // 투어 이름 매핑 함수 (내부용 간단한 이름 사용)
   const getTourDisplayName = (tour: ExtendedTour) => {
-    // 내부용 간단한 이름이 있으면 사용, 없으면 기존 방식 사용
-    if (tour.internal_name_ko && tour.internal_name_en) {
+    // 내부용 간단한 이름이 있으면 사용
+    if (tour.internal_name_ko || tour.internal_name_en) {
       // 현재 로케일에 따라 적절한 내부용 이름 반환
-      const locale = document.documentElement.lang || 'ko'
-      return locale === 'en' ? tour.internal_name_en : tour.internal_name_ko
+      if (locale === 'en') {
+        return tour.internal_name_en || tour.internal_name_ko || tour.product_name || tour.product_id
+      } else {
+        return tour.internal_name_ko || tour.internal_name_en || tour.product_name || tour.product_id
+      }
     }
     
     // 기존 방식 (fallback)
     const tourName = tour.product_name || tour.product_id
     try {
-      // 한글 상품명을 영문으로 번역
-      const translatedName = t(`tourNameMapping.${tourName}`)
-      // 번역이 실패하거나 원본과 같으면 원본 반환
-      return translatedName && translatedName !== `tourNameMapping.${tourName}` ? translatedName : tourName
+      // 번역 키 존재 여부 확인
+      const translationKey = `tourNameMapping.${tourName}`
+      
+      try {
+        const translatedName = t(translationKey)
+        // 번역이 성공하고 원본과 다르면 번역된 이름 반환
+        return translatedName && translatedName !== translationKey ? translatedName : tourName
+      } catch {
+        // 번역 키가 없으면 원본 이름 반환
+        console.warn(`Translation key not found for tour name: ${tourName}`)
+        return tourName
+      }
     } catch (error) {
       // 번역 실패 시 원본 이름 반환
       console.warn(`Translation failed for tour name: ${tourName}`, error)
@@ -122,12 +135,13 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     try {
       if (selectedOffSchedule) {
         // 수정 (단일 날짜만)
-        const { error } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
           .from('off_schedules')
           .update({
             off_date: offScheduleForm.off_date,
             reason: offScheduleForm.reason.trim()
-          } as any)
+          })
           .eq('id', selectedOffSchedule.id)
           .eq('team_email', currentUserEmail)
 
@@ -148,13 +162,14 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
 
         // 각 날짜에 대해 오프 스케줄 생성
         const insertPromises = dates.map(date => 
-          supabase
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (supabase as any)
             .from('off_schedules')
             .insert({
               team_email: currentUserEmail,
               off_date: date,
               reason: offScheduleForm.reason.trim()
-            } as any)
+            })
         )
 
         const results = await Promise.all(insertPromises)
@@ -176,7 +191,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
       console.error('Error saving off schedule:', error)
       alert('오프 스케줄 저장 중 오류가 발생했습니다.')
     }
-  }, [currentUserEmail, offScheduleForm, selectedOffSchedule, closeOffScheduleModal, onOffScheduleChange])
+  }, [currentUserEmail, offScheduleForm, selectedOffSchedule, closeOffScheduleModal, onOffScheduleChange, t])
 
   // 오프 스케줄 삭제
   const handleOffScheduleDelete = useCallback(async () => {
@@ -431,7 +446,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
 
         const { data, error } = await supabase
           .from('products')
-          .select('id, name, name_ko, name_en, sub_category')
+          .select('id, name, name_ko, name_en, internal_name_ko, internal_name_en, sub_category')
           .in('id', missing)
 
         if (error) {
@@ -440,8 +455,14 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
         }
 
         const next: {[id: string]: { name: string; sub_category: string }} = {}
-        ;(data as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; sub_category?: string | null }> | null || []).forEach((p) => {
-          const label = (p.name as string) || p.name_ko || p.name_en || p.id
+        ;(data as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; internal_name_ko?: string | null; internal_name_en?: string | null; sub_category?: string | null }> | null || []).forEach((p) => {
+          // internal_name을 우선 사용, 없으면 기존 방식 사용
+          let label = ''
+          if (locale === 'en') {
+            label = p.internal_name_en || p.internal_name_ko || p.name_en || p.name_ko || p.name || p.id
+          } else {
+            label = p.internal_name_ko || p.internal_name_en || p.name_ko || p.name_en || p.name || p.id
+          }
           next[p.id] = { name: label, sub_category: p.sub_category || '' }
         })
 
@@ -465,13 +486,13 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
       const meta = productMetaById[pid]
       if (!meta) continue
       if (!allowed.has(meta.sub_category)) continue
-      // 한글 상품명을 영어로 번역
-      const translatedName = t(`tourNameMapping.${meta.name}`) || meta.name
+      // internal_name이 이미 로케일에 맞게 설정되어 있으므로 그대로 사용
+      const translatedName = meta.name
       items.push({ id: pid, label: translatedName, colorClass: getProductColor(pid, meta.name) })
       added.add(pid)
     }
     return items
-  }, [tours, productMetaById, getProductColor, t])
+  }, [tours, productMetaById, getProductColor])
 
   return (
     <div className="bg-white rounded-lg shadow-md border p-2 sm:p-4">
@@ -489,7 +510,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
             <ChevronLeft className="w-5 h-5" />
           </button>
           <span className="text-sm sm:text-base font-medium text-gray-900">
-            {currentDate.getFullYear()}{t('yearUnit')} {monthNames[currentDate.getMonth()]}
+            {currentDate.getFullYear()}{locale === 'ko' ? '년' : ''} {monthNames[currentDate.getMonth()]}
           </span>
           <button
             onClick={goToNextMonth}

@@ -65,16 +65,17 @@ export async function getCachedSunriseSunsetData(locationName: string, date: str
       .select('sunrise_time, sunset_time')
       .eq('location_name', locationName)
       .eq('date', date)
-      .single()
+      .limit(1)
     
-    if (error || !data) {
+    if (error || !data || data.length === 0) {
       console.warn(`No cached sunrise/sunset data for ${locationName} on ${date}:`, error?.message)
       return null
     }
     
+    const record = data[0]
     return {
-      sunrise: convertToArizonaTime(data.sunrise_time),
-      sunset: convertToArizonaTime(data.sunset_time)
+      sunrise: convertToArizonaTime(record.sunrise_time),
+      sunset: convertToArizonaTime(record.sunset_time)
     }
   } catch (error) {
     console.warn(`Error fetching sunrise/sunset data for ${locationName}:`, error)
@@ -92,14 +93,14 @@ async function getCachedWeatherData(locationName: string, date: string) {
       .select('temperature, temp_max, temp_min, humidity, weather_main, weather_description, wind_speed, visibility')
       .eq('location_name', locationName)
       .eq('date', date)
-      .single()
+      .limit(1)
     
-    if (error || !data) {
+    if (error || !data || data.length === 0) {
       console.warn(`No cached weather data for ${locationName} on ${date}:`, error?.message)
       return null
     }
     
-    return data
+    return data[0]
   } catch (error) {
     console.warn(`Error fetching weather data for ${locationName}:`, error)
     return null

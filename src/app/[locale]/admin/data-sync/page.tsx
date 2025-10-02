@@ -64,6 +64,7 @@ export default function DataSyncPage() {
   const [progress, setProgress] = useState(0)
   const [etaMs, setEtaMs] = useState<number | null>(null)
   const progressTimerRef = useRef<number | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
   const [syncLogs, setSyncLogs] = useState<string[]>([])
   const [realTimeStats, setRealTimeStats] = useState<{
     processed: number
@@ -596,14 +597,27 @@ export default function DataSyncPage() {
       return
     }
 
+    console.log('Starting getSheetInfo with spreadsheetId:', spreadsheetId)
     setLoading(true)
     setSheetInfo([]) // 이전 데이터 초기화
     
     try {
-      // 타임아웃 설정 (35초)
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 35000)
+      // 이전 요청이 있다면 취소
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
 
+      // 새로운 AbortController 생성
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
+      // 타임아웃 설정 (70초로 증가)
+      const timeoutId = setTimeout(() => {
+        console.log('Request timeout - aborting fetch')
+        controller.abort()
+      }, 70000)
+
+      console.log('Sending request to /api/sync/sheets')
       const response = await fetch('/api/sync/sheets', {
         method: 'POST',
         headers: {
@@ -614,12 +628,18 @@ export default function DataSyncPage() {
       })
 
       clearTimeout(timeoutId)
+      abortControllerRef.current = null
 
+      console.log('Response received:', response.status, response.statusText)
+      
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        const errorText = await response.text()
+        console.error('API Error Response:', errorText)
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`)
       }
 
       const result = await response.json()
+      console.log('API Response:', result)
       
       if (result.success) {
         setSheetInfo(result.data.sheets)
@@ -639,8 +659,8 @@ export default function DataSyncPage() {
       let errorMessage = '시트 정보를 가져오는데 오류가 발생했습니다.'
       
       if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          errorMessage = '요청 시간이 초과되었습니다. 구글 시트 API 응답이 너무 오래 걸립니다.'
+        if (error.name === 'AbortError' || error.message.includes('aborted')) {
+          errorMessage = '요청 시간 초과 (70초) - 구글 시트가 너무 크거나 네트워크가 느립니다. 시트 크기를 줄이거나 잠시 후 다시 시도해주세요.'
         } else if (error.message.includes('403')) {
           errorMessage = '구글 시트 접근 권한이 없습니다. 시트 공유 설정을 확인해주세요.'
         } else if (error.message.includes('404')) {
@@ -944,6 +964,16 @@ export default function DataSyncPage() {
   useEffect(() => {
     getAvailableTables()
   }, [getAvailableTables])
+
+  // 컴포넌트 언마운트 시 진행 중인 요청 취소
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
+      }
+    }
+  }, [])
 
   // 주기적 동기화 (사용하지 않음)
   // const handlePeriodicSync = async () => {

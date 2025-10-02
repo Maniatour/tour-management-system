@@ -1,11 +1,27 @@
 'use client'
 
-import React, { useState, useRef, useCallback } from 'react'
-import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, ChevronUp, ChevronDown, Languages } from 'lucide-react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
+import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, ChevronUp, ChevronDown, Languages, MapPin, Sparkles } from 'lucide-react'
 import LocationPickerModal from './LocationPickerModal'
 import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl, uploadProductMedia } from '@/lib/productMediaUpload'
 import { supabase } from '@/lib/supabase'
 import { translateScheduleFields, type ScheduleTranslationFields } from '@/lib/translationService'
+import { suggestScheduleTitle, suggestScheduleDescription } from '@/lib/chatgptService'
+
+// Google Maps 타입 정의
+declare global {
+  interface Window {
+    google: {
+      maps: {
+        Map: any
+        Marker: any
+        MapTypeId: any
+        Geocoder: any
+        MapMouseEvent: any
+      }
+    }
+  }
+}
 
 interface ScheduleItem {
   id?: string
@@ -81,10 +97,162 @@ export default function TableScheduleAdd({
   const [dragOver, setDragOver] = useState(false)
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestionError, setSuggestionError] = useState<string | null>(null)
   const [showTextModal, setShowTextModal] = useState(false)
   const [textModalType, setTextModalType] = useState<'description' | 'guide_notes'>('description')
   const [textModalIndex, setTextModalIndex] = useState<number | null>(null)
+  const [showMapModal, setShowMapModal] = useState(false)
+  const [mapModalIndex, setMapModalIndex] = useState<number | null>(null)
+  const [selectedAddress, setSelectedAddress] = useState<string>('')
+  const [selectedGoogleMapLink, setSelectedGoogleMapLink] = useState<string>('')
+  const [mapLoaded, setMapLoaded] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 지도 관련 함수들
+  const handleMapCoordinateSelect = (lat: number, lng: number, address?: string) => {
+    if (mapModalIndex !== null) {
+      const coordinates = `${lat}, ${lng}`
+      const googleMapLink = `https://www.google.com/maps?q=${lat},${lng}`
+      
+      updateSchedule(mapModalIndex, 'latitude', lat)
+      updateSchedule(mapModalIndex, 'longitude', lng)
+      updateSchedule(mapModalIndex, 'location', address || schedules[mapModalIndex].location)
+      
+      setShowMapModal(false)
+      setMapModalIndex(null)
+    }
+  }
+
+  const initializeMap = () => {
+    if (typeof window !== 'undefined' && window.google && window.google.maps) {
+      const mapElement = document.getElementById('map')
+      if (!mapElement) return
+
+      const map = new window.google.maps.Map(mapElement, {
+        center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
+        zoom: 12,
+        mapTypeId: window.google.maps.MapTypeId.ROADMAP
+      })
+
+      let marker: any = null
+
+      // 지도 클릭 이벤트
+      map.addListener('click', (event: any) => {
+        const lat = event.latLng?.lat()
+        const lng = event.latLng?.lng()
+        
+        if (lat && lng) {
+          // 기존 마커 제거
+          if (marker) {
+            marker.setMap(null)
+          }
+
+          // 새 마커 추가
+          marker = new window.google.maps.Marker({
+            position: { lat, lng },
+            map: map,
+            title: '선택된 위치'
+          })
+
+          // 좌표 입력 필드 업데이트
+          const latInput = document.getElementById('latitude') as HTMLInputElement
+          const lngInput = document.getElementById('longitude') as HTMLInputElement
+          if (latInput) latInput.value = lat.toString()
+          if (lngInput) lngInput.value = lng.toString()
+
+          // 역지오코딩으로 주소 가져오기
+          const geocoder = new window.google.maps.Geocoder()
+          geocoder.geocode({ location: { lat, lng } }, (results: any, status: any) => {
+            if (status === 'OK' && results && results[0]) {
+              const address = results[0].formatted_address
+              setSelectedAddress(address)
+              setSelectedGoogleMapLink(`https://www.google.com/maps?q=${lat},${lng}`)
+            }
+          })
+        }
+      })
+
+      setMapLoaded(true)
+    }
+  }
+
+  const handleMapSearch = async () => {
+    const searchTerm = (document.getElementById('mapSearch') as HTMLInputElement)?.value
+    if (!searchTerm) return
+
+    try {
+      const geocoder = new window.google.maps.Geocoder()
+      geocoder.geocode({ address: searchTerm + ' Las Vegas' }, (results: any, status: any) => {
+        if (status === 'OK' && results && results[0]) {
+          const location = results[0].geometry.location
+          const lat = location.lat()
+          const lng = location.lng()
+          const address = results[0].formatted_address
+
+          // 지도 중심 이동
+          const mapElement = document.getElementById('map')
+          if (mapElement && window.google && window.google.maps) {
+            const map = new window.google.maps.Map(mapElement, {
+              center: { lat, lng },
+              zoom: 15,
+              mapTypeId: window.google.maps.MapTypeId.ROADMAP
+            })
+
+            // 마커 추가
+            new window.google.maps.Marker({
+              position: { lat, lng },
+              map: map,
+              title: searchTerm
+            })
+
+            // 좌표 입력 필드 업데이트
+            const latInput = document.getElementById('latitude') as HTMLInputElement
+            const lngInput = document.getElementById('longitude') as HTMLInputElement
+            if (latInput) latInput.value = lat.toString()
+            if (lngInput) lngInput.value = lng.toString()
+
+            // 주소 정보 업데이트
+            setSelectedAddress(address)
+            setSelectedGoogleMapLink(`https://www.google.com/maps?q=${lat},${lng}`)
+          }
+        } else {
+          alert('검색 결과를 찾을 수 없습니다.')
+        }
+      })
+    } catch (error) {
+      console.error('검색 오류:', error)
+      alert('검색 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 모달이 열릴 때 지도 초기화
+  useEffect(() => {
+    if (showMapModal && !mapLoaded) {
+      // Google Maps API 스크립트 로드
+      if (!window.google) {
+        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+        if (!apiKey) {
+          alert('Google Maps API 키가 설정되지 않았습니다. 환경변수 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY를 설정해주세요.')
+          return
+        }
+        
+        const script = document.createElement('script')
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+        script.async = true
+        script.defer = true
+        script.onload = () => {
+          setTimeout(initializeMap, 100)
+        }
+        script.onerror = () => {
+          alert('Google Maps API 로드 중 오류가 발생했습니다. API 키를 확인해주세요.')
+        }
+        document.head.appendChild(script)
+      } else {
+        setTimeout(initializeMap, 100)
+      }
+    }
+  }, [showMapModal, mapLoaded])
 
   // 시간 계산 유틸리티 함수들
   const timeToMinutes = (timeStr: string | null): number => {
@@ -409,6 +577,45 @@ export default function TableScheduleAdd({
     }
   }
 
+  // ChatGPT 추천 함수들
+  const suggestScheduleTitleForIndex = async (index: number) => {
+    setSuggesting(true)
+    setSuggestionError(null)
+
+    try {
+      const schedule = schedules[index]
+      const dayNumber = index + 1
+      const suggestedTitle = await suggestScheduleTitle(dayNumber, schedule.location_ko || schedule.location)
+      
+      updateSchedule(index, 'title_ko', suggestedTitle)
+    } catch (error) {
+      console.error('ChatGPT 제목 추천 오류:', error)
+      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  const suggestScheduleDescriptionForIndex = async (index: number) => {
+    setSuggesting(true)
+    setSuggestionError(null)
+
+    try {
+      const schedule = schedules[index]
+      const suggestedDescription = await suggestScheduleDescription(
+        schedule.title_ko || schedule.title, 
+        schedule.location_ko || schedule.location
+      )
+      
+      updateSchedule(index, 'description_ko', suggestedDescription)
+    } catch (error) {
+      console.error('ChatGPT 설명 추천 오류:', error)
+      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
   // 이동시간 합산 계산 함수 (각 가이드 유형별로 분리, 시간이 있는 일정만 계산)
   const calculateTotalTransportTime = () => {
     let twoGuidesGuideTime = 0
@@ -513,6 +720,26 @@ export default function TableScheduleAdd({
           </button>
           <button
             type="button"
+            onClick={() => {
+              // 모든 스케줄의 제목과 설명을 ChatGPT로 추천받기
+              schedules.forEach((_, index) => {
+                suggestScheduleTitleForIndex(index)
+                suggestScheduleDescriptionForIndex(index)
+              })
+            }}
+            disabled={suggesting || schedules.length === 0}
+            className="flex items-center px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm"
+            title="모든 스케줄의 제목과 설명을 ChatGPT로 추천받기"
+          >
+            {suggesting ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-1" />
+            )}
+            {suggesting ? '추천 중...' : 'AI 추천'}
+          </button>
+          <button
+            type="button"
             onClick={addNewSchedule}
             className="flex items-center px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
           >
@@ -558,7 +785,7 @@ export default function TableScheduleAdd({
           <div className="w-32">종료 (선택)</div>
           <div className="w-16">소요(분)</div>
           <div className="w-48">제목</div>
-          <div className="w-64">설명</div>
+          <div className="w-48">설명</div>
           <div className="w-32">가이드 메모</div>
           <div className="w-40">2가이드</div>
           <div className="w-40">가이드+드라이버</div>
@@ -582,6 +809,29 @@ export default function TableScheduleAdd({
               <button
                 type="button"
                 onClick={() => setTranslationError(null)}
+                className="inline-flex text-red-400 hover:text-red-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ChatGPT 추천 오류 메시지 */}
+      {suggestionError && (
+        <div className="px-4 py-2 bg-red-50 border-l-4 border-red-400">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <X className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{suggestionError}</p>
+            </div>
+            <div className="ml-auto pl-3">
+              <button
+                type="button"
+                onClick={() => setSuggestionError(null)}
                 className="inline-flex text-red-400 hover:text-red-600"
               >
                 <X className="h-4 w-4" />
@@ -753,37 +1003,63 @@ export default function TableScheduleAdd({
 
               {/* 제목 필드 */}
               <div className="w-48">
-                <input
-                  type="text"
-                  value={showEnglishFields ? (schedule.title_en || '') : (schedule.title_ko || '')}
-                  onChange={(e) => {
-                    if (showEnglishFields) {
-                      updateSchedule(index, 'title_en', e.target.value)
-                    } else {
-                      updateSchedule(index, 'title_ko', e.target.value)
-                    }
-                  }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder={showEnglishFields ? "English title" : "한국어 제목"}
-                />
+                <div className="flex space-x-1">
+                  <input
+                    type="text"
+                    value={showEnglishFields ? (schedule.title_en || '') : (schedule.title_ko || '')}
+                    onChange={(e) => {
+                      if (showEnglishFields) {
+                        updateSchedule(index, 'title_en', e.target.value)
+                      } else {
+                        updateSchedule(index, 'title_ko', e.target.value)
+                      }
+                    }}
+                    className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder={showEnglishFields ? "English title" : "한국어 제목"}
+                  />
+                  {!showEnglishFields && (
+                    <button
+                      type="button"
+                      onClick={() => suggestScheduleTitleForIndex(index)}
+                      disabled={suggesting}
+                      className="px-2 py-1 text-xs bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 disabled:opacity-50"
+                      title="ChatGPT로 제목 추천받기"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* 설명 필드 */}
-              <div className="w-64">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTextModalType('description')
-                    setTextModalIndex(index)
-                    setShowTextModal(true)
-                  }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between"
-                >
-                  <span className="truncate">
-                    {showEnglishFields ? (schedule.description_en || '') : (schedule.description_ko || '') || (showEnglishFields ? "English description" : "한국어 설명")}
-                  </span>
-                  <span className="text-gray-400 text-xs">✏️</span>
-                </button>
+              <div className="w-48">
+                <div className="flex space-x-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTextModalType('description')
+                      setTextModalIndex(index)
+                      setShowTextModal(true)
+                    }}
+                    className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between"
+                  >
+                    <span className="truncate">
+                      {showEnglishFields ? (schedule.description_en || '') : (schedule.description_ko || '') || (showEnglishFields ? "English description" : "한국어 설명")}
+                    </span>
+                    <span className="text-gray-400 text-xs">✏️</span>
+                  </button>
+                  {!showEnglishFields && (
+                    <button
+                      type="button"
+                      onClick={() => suggestScheduleDescriptionForIndex(index)}
+                      disabled={suggesting}
+                      className="px-2 py-1 text-xs bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 disabled:opacity-50"
+                      title="ChatGPT로 설명 추천받기"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* 가이드 메모 */}
@@ -807,39 +1083,12 @@ export default function TableScheduleAdd({
               {/* 2가이드 담당자 선택 */}
               <div className="w-40">
                 <select
-                  value={(() => {
-                    const result = schedule.assigned_guide_1 === 'guide' ? 'guide' : 
-                                   schedule.assigned_guide_2 === 'assistant' ? 'assistant' : ''
-                    console.log('2가이드 드롭다운 value 계산:', {
-                      assigned_guide_1: schedule.assigned_guide_1,
-                      assigned_guide_2: schedule.assigned_guide_2,
-                      result
-                    })
-                    return result
-                  })()}
+                  value={schedule.two_guide_schedule || ''}
                   onChange={(e) => {
-                    console.log('2가이드 드롭다운 변경:', e.target.value)
-                    // 2가이드 드롭다운만 독립적으로 업데이트 (assigned_driver는 건드리지 않음)
                     const updatedSchedules = [...schedules]
-                    if (e.target.value === 'guide') {
-                      updatedSchedules[index] = {
-                        ...updatedSchedules[index],
-                        assigned_guide_1: 'guide',
-                        assigned_guide_2: ''
-                      }
-                    } else if (e.target.value === 'assistant') {
-                      updatedSchedules[index] = {
-                        ...updatedSchedules[index],
-                        assigned_guide_1: '',
-                        assigned_guide_2: 'assistant'
-                      }
-                    } else {
-                      // 선택 해제 시
-                      updatedSchedules[index] = {
-                        ...updatedSchedules[index],
-                        assigned_guide_1: '',
-                        assigned_guide_2: ''
-                      }
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      two_guide_schedule: e.target.value as 'guide' | 'assistant' | undefined
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
@@ -854,41 +1103,12 @@ export default function TableScheduleAdd({
               {/* 가이드+드라이버 담당자 선택 */}
               <div className="w-40">
                 <select
-                  value={(() => {
-                    const result = schedule.assigned_guide_driver_guide === 'guide' ? 'guide' : 
-                                   schedule.assigned_guide_driver_driver === 'driver' ? 'driver' : ''
-                    console.log('가이드+드라이버 드롭다운 value 계산:', {
-                      assigned_guide_driver_guide: schedule.assigned_guide_driver_guide,
-                      assigned_guide_driver_driver: schedule.assigned_guide_driver_driver,
-                      result
-                    })
-                    return result
-                  })()}
+                  value={schedule.guide_driver_schedule || ''}
                   onChange={(e) => {
-                    console.log('가이드+드라이버 드롭다운 변경:', e.target.value)
-                    // 가이드+드라이버 드롭다운만 독립적으로 업데이트
                     const updatedSchedules = [...schedules]
-                    if (e.target.value === 'guide') {
-                      // 가이드 선택 시: assigned_guide_driver_guide에 'guide' 저장
-                      updatedSchedules[index] = {
-                        ...updatedSchedules[index],
-                        assigned_guide_driver_guide: 'guide',
-                        assigned_guide_driver_driver: ''
-                      }
-                    } else if (e.target.value === 'driver') {
-                      // 드라이버 선택 시: assigned_guide_driver_driver에 'driver' 저장
-                      updatedSchedules[index] = {
-                        ...updatedSchedules[index],
-                        assigned_guide_driver_guide: '',
-                        assigned_guide_driver_driver: 'driver'
-                      }
-                    } else {
-                      // 선택 해제 시
-                      updatedSchedules[index] = {
-                        ...updatedSchedules[index],
-                        assigned_guide_driver_guide: '',
-                        assigned_guide_driver_driver: ''
-                      }
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      guide_driver_schedule: e.target.value as 'guide' | 'assistant' | undefined
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
@@ -896,7 +1116,7 @@ export default function TableScheduleAdd({
                 >
                   <option value="">선택</option>
                   <option value="guide">가이드</option>
-                  <option value="driver">드라이버</option>
+                  <option value="assistant">드라이버</option>
                 </select>
               </div>
 
@@ -935,32 +1155,17 @@ export default function TableScheduleAdd({
                   <button
                     type="button"
                     onClick={() => {
-                      setLocationPickerIndex(index)
-                      setShowLocationPicker(true)
+                      setMapModalIndex(index)
+                      setShowMapModal(true)
                     }}
-                    className="h-8 px-1 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
+                    className="h-8 px-1 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center"
                   >
+                    <MapPin className="h-3 w-3 mr-1" />
                     지도
                   </button>
                 </div>
               </div>
 
-              {/* 번역 버튼 */}
-              <div className="w-20 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => translateSchedule(index)}
-                  disabled={translating}
-                  className="flex items-center justify-center h-8 w-16 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="이 행을 한국어에서 영어로 번역"
-                >
-                  {translating ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Languages className="h-3 w-3" />
-                  )}
-                </button>
-              </div>
 
             </div>
           ))}
@@ -1323,6 +1528,143 @@ export default function TableScheduleAdd({
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
               >
                 닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 새로운 지도 모달 */}
+      {showMapModal && mapModalIndex !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">위치 선택</h3>
+              <button
+                onClick={() => {
+                  setShowMapModal(false)
+                  setMapModalIndex(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                라스베가스 지역에서 투어 위치를 검색하거나 지도에서 클릭하여 좌표를 선택하세요.
+              </p>
+              
+              {/* 검색 기능 */}
+              <div className="mb-3">
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    id="mapSearch"
+                    placeholder="투어 위치를 검색하세요 (예: Bellagio Hotel)"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleMapSearch()
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleMapSearch}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    검색
+                  </button>
+                </div>
+              </div>
+
+              {/* 검색 결과 미리보기 */}
+              {selectedAddress && (
+                <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <h4 className="text-sm font-medium text-green-800 mb-2">검색 결과:</h4>
+                  <p className="text-sm text-green-700 mb-1">
+                    <strong>주소:</strong> {selectedAddress}
+                  </p>
+                  <p className="text-sm text-green-700 mb-1">
+                    <strong>구글 맵 링크:</strong> 
+                    <a 
+                      href={selectedGoogleMapLink} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="ml-1 text-blue-600 hover:text-blue-800 underline"
+                    >
+                      링크 열기
+                    </a>
+                  </p>
+                </div>
+              )}
+
+              {/* 지도 컨테이너 */}
+              <div className="bg-gray-100 p-4 rounded-lg">
+                <div 
+                  id="map" 
+                  style={{ width: '100%', height: '400px' }}
+                  className="rounded-lg"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  위도 (Latitude)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  id="latitude"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="예: 36.1699"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  경도 (Longitude)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  id="longitude"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="예: -115.1398"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowMapModal(false)
+                  setMapModalIndex(null)
+                }}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  const lat = (document.getElementById('latitude') as HTMLInputElement)?.value
+                  const lng = (document.getElementById('longitude') as HTMLInputElement)?.value
+                  if (lat && lng) {
+                    handleMapCoordinateSelect(
+                      parseFloat(lat), 
+                      parseFloat(lng), 
+                      selectedAddress || undefined
+                    )
+                  } else {
+                    alert('위도와 경도를 입력해주세요.')
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                좌표 적용
               </button>
             </div>
           </div>

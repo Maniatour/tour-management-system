@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, MapPin, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, EyeOff } from 'lucide-react'
 import { getGoblinTourWeatherData, type LocationWeather } from '@/lib/weatherApi'
 
@@ -57,16 +58,17 @@ const getWeatherIcon = (weatherMain: string, weatherDescription: string) => {
 }
 
 // 가시거리 기준 반환 함수
-const getVisibilityLevel = (visibility: number) => {
+const getVisibilityLevel = (visibility: number, t: any) => {
   const km = visibility / 1000
   
-  if (km >= 10) return '(매우좋음)'
-  if (km >= 5) return '(좋음)'
-  if (km >= 1) return '(보통)'
-  return '(나쁨)'
+  if (km >= 10) return t('visibilityLevels.excellent')
+  if (km >= 5) return t('visibilityLevels.good')
+  if (km >= 1) return t('visibilityLevels.fair')
+  return t('visibilityLevels.poor')
 }
 
 export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
+  const t = useTranslations('weather')
   const [weatherData, setWeatherData] = useState<{
     grandCanyon: LocationWeather
     zionCanyon: LocationWeather
@@ -84,7 +86,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
       const data = await getGoblinTourWeatherData(tourDate || new Date().toISOString().split('T')[0])
       setWeatherData(data)
     } catch (err) {
-      setError('날씨 정보를 불러올 수 없습니다')
+      setError(t('error'))
       console.error('날씨 데이터 로딩 실패:', err)
     } finally {
       setLoading(false)
@@ -113,10 +115,10 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
         await loadWeatherData()
       } else {
         const errorData = await response.json()
-        setError(`날씨 업데이트 실패: ${errorData.error}`)
+        setError(`${t('update')} 실패: ${errorData.error}`)
       }
     } catch (err) {
-      setError(`날씨 업데이트 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`)
+      setError(`${t('update')} 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`)
     } finally {
       setUpdating(false)
     }
@@ -140,7 +142,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
     return (
       <div className="flex items-center justify-center py-4">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
-        <span className="ml-2 text-purple-700 text-sm">날씨 정보를 불러오는 중...</span>
+        <span className="ml-2 text-purple-700 text-sm">{t('loading')}</span>
       </div>
     )
   }
@@ -149,7 +151,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
     return (
       <div className="text-center py-3">
         <Cloud className="h-6 w-6 text-purple-400 mx-auto mb-1" />
-        <p className="text-purple-700 text-sm">날씨 정보를 불러올 수 없습니다</p>
+        <p className="text-purple-700 text-sm">{t('error')}</p>
       </div>
     )
   }
@@ -192,7 +194,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
           <Eye className="h-3 w-3 text-gray-500 mr-1" />
           <span className="text-xs text-gray-600">
             {locationData.weather.visibility ? 
-              `${Math.round(locationData.weather.visibility / 1000)}km ${getVisibilityLevel(locationData.weather.visibility)}` : 
+              `${Math.round(locationData.weather.visibility / 1000)}km ${getVisibilityLevel(locationData.weather.visibility, t)}` : 
               'N/A'
             }
           </span>
@@ -205,13 +207,13 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
         {(locationData.weather.temp_max !== null || locationData.weather.temp_min !== null) && (
           <div className="col-span-2 flex items-center justify-between text-xs text-gray-600 border-t border-gray-100 pt-1 mt-1">
             <span>
-              최고: {locationData.weather.temp_max ? 
+              {t('maxTemp')}: {locationData.weather.temp_max ? 
                 `${Math.round(locationData.weather.temp_max)}°C (${Math.round(locationData.weather.temp_max * 9/5 + 32)}°F)` : 
                 'N/A'
               }
             </span>
             <span>
-              최저: {locationData.weather.temp_min ? 
+              {t('minTemp')}: {locationData.weather.temp_min ? 
                 `${Math.round(locationData.weather.temp_min)}°C (${Math.round(locationData.weather.temp_min * 9/5 + 32)}°F)` : 
                 'N/A'
               }
@@ -226,7 +228,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
             <div className="flex items-center">
               <Sun className="h-3 w-3 text-yellow-500 mr-1" />
               <div>
-                <div className="text-xs text-gray-500">일출</div>
+                <div className="text-xs text-gray-500">{t('sunrise')}</div>
                 <div className="text-xs font-medium text-gray-800">
                   {locationData.sunrise}
                 </div>
@@ -235,7 +237,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
             <div className="flex items-center">
               <Sunset className="h-3 w-3 text-orange-500 mr-1" />
               <div>
-                <div className="text-xs text-gray-500">일몰</div>
+                <div className="text-xs text-gray-500">{t('sunset')}</div>
                 <div className="text-xs font-medium text-gray-800">
                   {locationData.sunset}
                 </div>
@@ -255,15 +257,15 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
             <Cloud className="h-4 w-4 text-purple-600" />
           </div>
                <div>
-                 <h2 className="text-sm font-semibold text-purple-800">날씨 정보</h2>
-                 <p className="text-xs text-purple-600">그랜드캐년 일출, 자이온 캐년 일몰, 페이지 시티 날씨</p>
+                 <h2 className="text-sm font-semibold text-purple-800">{t('title')}</h2>
+                 <p className="text-xs text-purple-600">{t('subtitle')}</p>
                </div>
         </div>
         <button
           onClick={updateWeatherData}
           disabled={updating || loading}
           className="p-1.5 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-          title="날씨 업데이트"
+          title={t('update')}
         >
           {updating ? (
             <RefreshCw className="h-3 w-3 animate-spin" />
@@ -283,12 +285,12 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
         <div className="flex items-start">
           <Clock className="h-3 w-3 text-purple-600 mr-1 mt-0.5" />
           <div className="text-xs text-purple-700">
-            <p className="font-medium mb-1">투어 일정 참고사항:</p>
+            <p className="font-medium mb-1">{t('tourNotes.title')}</p>
             <ul className="text-xs space-y-0.5">
-              <li>• 그랜드캐년 일출 시간: {weatherData.grandCanyon.sunrise}</li>
-              <li>• 자이온 캐년 일몰 시간: {weatherData.zionCanyon.sunset}</li>
-              <li>• 날씨에 따라 옷차림을 준비해 주세요</li>
-              <li>• 일출/일몰 시간은 계절에 따라 변동됩니다</li>
+              <li>• {t('tourNotes.sunriseTime')} {weatherData.grandCanyon.sunrise}</li>
+              <li>• {t('tourNotes.sunsetTime')} {weatherData.zionCanyon.sunset}</li>
+              <li>• {t('tourNotes.clothing')}</li>
+              <li>• {t('tourNotes.seasonal')}</li>
             </ul>
           </div>
         </div>

@@ -989,11 +989,8 @@ export interface Database {
         guide_notes_en: string | null
         show_to_customers: boolean
         guide_assignment_type: string
-        assigned_guide_1: string | null
-        assigned_guide_2: string | null
-        assigned_guide_driver_guide: string | null
-        assigned_guide_driver_driver: string | null
-        assigned_driver: string | null
+        two_guide_schedule: string | null
+        guide_driver_schedule: string | null
         latitude: number | null
         longitude: number | null
         thumbnail_url: string | null
@@ -1032,11 +1029,8 @@ export interface Database {
         guide_notes_en?: string | null
         show_to_customers?: boolean
         guide_assignment_type?: string
-        assigned_guide_1?: string | null
-        assigned_guide_2?: string | null
-        assigned_guide_driver_guide?: string | null
-        assigned_guide_driver_driver?: string | null
-        assigned_driver?: string | null
+        two_guide_schedule?: string | null
+        guide_driver_schedule?: string | null
         latitude?: number | null
         longitude?: number | null
         thumbnail_url?: string | null
@@ -1075,11 +1069,8 @@ export interface Database {
         guide_notes_en?: string | null
         show_to_customers?: boolean
         guide_assignment_type?: string
-        assigned_guide_1?: string | null
-        assigned_guide_2?: string | null
-        assigned_guide_driver_guide?: string | null
-        assigned_guide_driver_driver?: string | null
-        assigned_driver?: string | null
+        two_guide_schedule?: string | null
+        guide_driver_schedule?: string | null
         latitude?: number | null
         longitude?: number | null
         thumbnail_url?: string | null

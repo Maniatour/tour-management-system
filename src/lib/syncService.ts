@@ -22,7 +22,9 @@ const RESERVATION_COLUMN_MAPPING = {
   '추가자': 'added_by',
   '상태': 'status',
   '특이사항': 'event_note',
-  '개인투어': 'is_private_tour'
+  '개인투어': 'is_private_tour',
+  '내부명한글': 'internal_name_ko',
+  '내부명영어': 'internal_name_en'
 }
 
 const TOUR_COLUMN_MAPPING = {
@@ -33,7 +35,10 @@ const TOUR_COLUMN_MAPPING = {
   '가이드이메일': 'tour_guide_id',
   '어시스턴트이메일': 'assistant_id',
   '차량ID': 'tour_car_id',
-  '개인투어': 'is_private_tour'
+  '개인투어': 'is_private_tour',
+  '내부명한글': 'internal_name_ko',
+  '내부명영어': 'internal_name_en',
+  '배정현황': 'assignment_status'
 }
 
 // 예약 데이터 변환
@@ -114,6 +119,7 @@ const transformTourData = (sheetData: any[]) => {
 
     // 기본값 설정
     transformed.tour_status = transformed.tour_status || 'Recruiting'
+    transformed.assignment_status = transformed.assignment_status || 'pending'
     transformed.created_at = new Date().toISOString()
     transformed.updated_at = new Date().toISOString()
 
@@ -378,6 +384,62 @@ export const syncTours = async (spreadsheetId: string, sheetName: string) => {
   }
 }
 
+// 증분 동기화 (변경된 데이터만)
+export const runIncrementalSync = async (spreadsheetId: string, reservationsSheet: string, toursSheet: string) => {
+  try {
+    console.log('Starting incremental sync...')
+    
+    // 마지막 동기화 시간 확인
+    const { data: lastSync } = await supabase
+      .from('sync_logs')
+      .select('last_sync_time')
+      .eq('spreadsheet_id', spreadsheetId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    
+    const lastSyncTime = lastSync?.last_sync_time || new Date('1900-01-01').toISOString()
+    console.log('Last sync time:', lastSyncTime)
+    
+    // 증분 동기화 실행 (현재는 전체 동기화와 동일하지만 향후 개선 가능)
+    const reservationResult = await syncReservations(spreadsheetId, reservationsSheet)
+    const tourResult = await syncTours(spreadsheetId, toursSheet)
+    
+    // 동기화 로그 저장
+    await supabase
+      .from('sync_logs')
+      .insert({
+        spreadsheet_id: spreadsheetId,
+        reservations_sheet: reservationsSheet,
+        tours_sheet: toursSheet,
+        sync_type: 'incremental',
+        last_sync_time: new Date().toISOString(),
+        reservations_count: reservationResult.count || 0,
+        tours_count: tourResult.count || 0,
+        success: reservationResult.success && tourResult.success,
+        error_message: reservationResult.success && tourResult.success ? null : 'Sync completed with errors',
+        created_at: new Date().toISOString()
+      })
+    
+    return {
+      success: reservationResult.success && tourResult.success,
+      message: `Incremental sync completed. Reservations: ${reservationResult.message}, Tours: ${tourResult.message}`,
+      details: {
+        reservations: reservationResult,
+        tours: tourResult,
+        lastSyncTime
+      }
+    }
+  } catch (error) {
+    console.error('Incremental sync error:', error)
+    return {
+      success: false,
+      message: `Incremental sync failed: ${error}`,
+      details: null
+    }
+  }
+}
+
 // 전체 동기화 실행
 export const runFullSync = async (spreadsheetId: string, reservationsSheet: string, toursSheet: string) => {
   try {
@@ -385,6 +447,22 @@ export const runFullSync = async (spreadsheetId: string, reservationsSheet: stri
     
     const reservationResult = await syncReservations(spreadsheetId, reservationsSheet)
     const tourResult = await syncTours(spreadsheetId, toursSheet)
+    
+    // 동기화 로그 저장
+    await supabase
+      .from('sync_logs')
+      .insert({
+        spreadsheet_id: spreadsheetId,
+        reservations_sheet: reservationsSheet,
+        tours_sheet: toursSheet,
+        sync_type: 'full',
+        last_sync_time: new Date().toISOString(),
+        reservations_count: reservationResult.count || 0,
+        tours_count: tourResult.count || 0,
+        success: reservationResult.success && tourResult.success,
+        error_message: reservationResult.success && tourResult.success ? null : 'Sync completed with errors',
+        created_at: new Date().toISOString()
+      })
     
     return {
       success: reservationResult.success && tourResult.success,

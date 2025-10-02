@@ -460,16 +460,26 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                         
                         {/* 시뮬레이션 메뉴 */}
                         {isSimulating ? (
-                          <button
-                            onClick={() => {
-                              stopSimulation()
-                              handleUserMenuClick()
-                            }}
-                            className="w-full px-4 py-2 text-left text-sm text-orange-600 hover:bg-orange-50 flex items-center"
-                          >
-                            <XCircle className="w-4 h-4 mr-2" />
-                            시뮬레이션 중지
-                          </button>
+                          <>
+                            <Link
+                              href={`/${locale}/guide`}
+                              onClick={handleUserMenuClick}
+                              className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center"
+                            >
+                              <User className="w-4 h-4 mr-2" />
+                              가이드 페이지
+                            </Link>
+                            <button
+                              onClick={() => {
+                                stopSimulation()
+                                handleUserMenuClick()
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-orange-600 hover:bg-orange-50 flex items-center"
+                            >
+                              <XCircle className="w-4 h-4 mr-2" />
+                              시뮬레이션 중지
+                            </button>
+                          </>
                         ) : (
                           <button
                             onClick={() => {

@@ -3,7 +3,7 @@
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, use, useState } from 'react'
-import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt } from 'lucide-react'
+import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourReportModal from '@/components/TourReportModal'
@@ -263,7 +263,19 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
 
       {/* 모바일 푸터 네비게이션 */}
       <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-50">
-        <div className="grid grid-cols-6 py-2">
+        <div className="grid grid-cols-4 py-2">
+          <button
+            onClick={() => router.push(`/${locale}/guide`)}
+            className={`flex flex-col items-center py-1 px-1 transition-colors ${
+              pathname === `/${locale}/guide` || pathname === `/${locale}/guide/`
+                ? 'text-purple-600'
+                : 'text-gray-600 hover:text-purple-600'
+            }`}
+          >
+            <Home className="w-5 h-5 mb-1" />
+            <span className="text-xs">{t('footer.home')}</span>
+          </button>
+          
           <button
             onClick={() => router.push(`/${locale}/guide/tours?view=calendar`)}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
@@ -294,47 +306,6 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
           </button>
           
           <button
-            onClick={() => setShowPhotoModal(true)}
-            className={`flex flex-col items-center py-1 px-1 transition-colors ${
-              showPhotoModal
-                ? 'text-orange-600'
-                : 'text-gray-600 hover:text-orange-600'
-            }`}
-          >
-            <Camera className="w-5 h-5 mb-1" />
-            <span className="text-xs">{t('footer.photos')}</span>
-          </button>
-          
-          <button
-            onClick={() => setShowReportModal(true)}
-            className={`flex flex-col items-center py-1 px-1 transition-colors relative ${
-              showReportModal
-                ? 'text-red-600'
-                : 'text-gray-600 hover:text-red-600'
-            }`}
-          >
-            <FileText className="w-5 h-5 mb-1" />
-            <span className="text-xs">{t('footer.report')}</span>
-              {uncompletedReportCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
-                  {uncompletedReportCount > 99 ? '99+' : uncompletedReportCount}
-                </span>
-              )}
-          </button>
-          
-          <button
-            onClick={() => setShowReceiptModal(true)}
-            className={`flex flex-col items-center py-1 px-1 transition-colors ${
-              showReceiptModal
-                ? 'text-green-600'
-                : 'text-gray-600 hover:text-green-600'
-            }`}
-          >
-            <Receipt className="w-5 h-5 mb-1" />
-            <span className="text-xs">{t('footer.receipt')}</span>
-          </button>
-          
-          <button
             onClick={() => router.push(`/${locale}/guide/team-board`)}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
               pathname.includes('/guide/team-board')
@@ -342,8 +313,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
                 : 'text-gray-600 hover:text-indigo-600'
             }`}
           >
-            <MessageSquare className="w-5 h-5 mb-1" />
-            <span className="text-xs">Message</span>
+            <BookOpen className="w-5 h-5 mb-1" />
+            <span className="text-xs">{t('footer.manual')}</span>
           </button>
         </div>
       </footer>

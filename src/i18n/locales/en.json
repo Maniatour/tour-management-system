@@ -264,28 +264,28 @@
       "noProductColors": "No product colors to display (Mania Tour / Mania Service)",
       "tourNameMapping": {
         "도깨비": "Sunrise",
-        "앤텔롭": "1 Day",
-        "도깨비 단독": "Sunrise Private",
-        "앤텔롭 단독": "1 Day Private",
+        "1일": "1 Day",
+        "도깨비 프라이빗": "Sunrise Private",
+        "1일 프라이빗": "1 Day Private",
         "Mania Tour": "Mania Tour",
         "Mania Service": "Mania Service",
         "투어": "Tour",
-        "단독 투어": "Private Tour",
+        "프라이빗 투어": "Private Tour",
         "그룹 투어": "Group Tour",
         "야경투어": "Night Tour",
-        "자이언브라이스": "Zion Bryce",
+        "자이언 브라이스": "Zion Bryce",
         "1박2일": "2 Days 1 Night",
-        "1박2일 단독": "2 Days 1 Night Private",
+        "1박2일 프라이빗": "2 Days 1 Night Private",
         "데이투어": "Day Tour",
         "라스베가스 시티 야경투어": "Las Vegas City Night Tour",
         "불의계곡": "Valley of Fire",
-        "데쓰밸리": "Death Valley",
-        "그랜드캐년 웨스트림 VIP 투어": "Grand Canyon West Rim VIP Tour",
+        "데스밸리": "Death Valley",
+        "그랜드캐니언 웨스트림 VIP 투어": "Grand Canyon West Rim VIP Tour",
         "null": "No Product Name",
-        "모뉴1박": "Monument Valley 1 Night",
+        "모뉴밸리 1박": "Monument Valley 1 Night",
         "골프투어": "Golf Tour",
         "드라이버": "Driver",
-        "2박3일 단독": "3 Days 2 Nights Private",
+        "2박3일 프라이빗": "3 Days 2 Nights Private",
         "후버댐": "Hoover Dam"
       },
       "reservationCalendar": "Calendar",
@@ -599,9 +599,9 @@
       "equipment": "Equipment",
       "activity": "Activity",
       "other": "Other",
-      "식사": "Meal",
-      "장비": "Equipment",
-      "교통수단": "Transportation",
+      "?�사": "Meal",
+      "?�비": "Equipment",
+      "교통?�단": "Transportation",
       "Entrance Fee": "Entrance Fee",
       "entrance fee": "Entrance Fee",
       "accommodation": "Accommodation",
@@ -983,13 +983,15 @@
       }
     },
     "footer": {
+      "home": "Home",
       "tours": "Tours",
       "chat": "Chat",
       "photos": "Photos",
       "report": "Report",
       "receipt": "Receipt",
       "teamChat": "Team Chat",
-      "teamBoard": "Team Board"
+      "teamBoard": "Team Board",
+      "manual": "Manual"
     }
   },
   "guideTour": {
@@ -1045,6 +1047,7 @@
     "expenses": "Expenses",
     "report": "Report",
     "tourInfo": "Tour Information",
+    "assignmentStatus": "Assignment Status",
     "noPickupSchedule": "No pickup schedule available.",
     "noBookingInfo": "No booking information available.",
     "addTourReport": "Add Tour Report",
@@ -1099,8 +1102,8 @@
     "receipt": "Receipt",
     "receiptUploaded": "Receipt uploaded successfully",
     "dragOrClickReceipt": "Drag and drop receipt or click to select",
-    "mobileCameraInfo": "📷 Camera shooting available on mobile | JPG, PNG, WebP format, max 5MB",
-    "cameraOrFile": "📷 Camera or File Selection",
+    "mobileCameraInfo": "?�� Camera shooting available on mobile | JPG, PNG, WebP format, max 5MB",
+    "cameraOrFile": "?�� Camera or File Selection",
     "cancel": "Cancel",
     "fillRequiredFields": "Please fill in all required fields.",
     "newPaidToPlaceholder": "Enter new payment recipient",
@@ -1108,20 +1111,6 @@
     "memoPlaceholder": "Additional information or memo",
     "selectFromExisting": "Select from existing list",
     "enterDirectly": "Enter directly"
-  },
-  "tourReport": {
-    "writeReport": "Write Tour Report",
-    "reportList": "Tour Report List",
-    "newReport": "New Report",
-    "backToList": "Back to List",
-    "close": "Close",
-    "hasReports": "Reports have been written",
-    "clickListButton": "Click the \"List\" button above to view reports",
-    "noReports": "No reports written yet",
-    "reportAfterTour": "Guides and drivers can write reports after the tour ends",
-    "reportSubmitted": "Report submitted successfully.",
-    "editFeatureComingSoon": "Edit feature will be added soon.",
-    "reportDeleted": "Report deleted successfully."
   },
   "tourReportForm": {
     "title": "Write Tour Report",
@@ -1198,52 +1187,6 @@
       "other": "Other"
     }
   },
-  "tourExpense": {
-    "title": "Expense Management",
-    "addExpense": "Add Expense",
-    "noExpenses": "No expenses registered.",
-    "paidTo": "Paid To",
-    "paidFor": "Paid For",
-    "amount": "Amount",
-    "memo": "Memo",
-    "receiptPhoto": "Receipt Photo",
-    "enterDirectly": "Enter directly",
-    "memoPlaceholder": "Additional information or memo",
-    "dragOrClickReceipt": "Drag and drop receipt or click to select",
-    "mobileCameraInfo": "📷 Camera shooting available on mobile | JPG, PNG, WebP format, max 5MB",
-    "cameraOrFile": "📷 Camera or File Selection",
-    "cancel": "Cancel",
-    "selectOptions": {
-      "pleaseSelect": "Please select",
-      "selectPaidTo": "Select payment recipient",
-      "selectPaidFor": "Select payment purpose",
-      "selectPaymentMethod": "Select payment method"
-    },
-    "buttons": {
-      "register": "Register",
-      "registering": "Registering...",
-      "cancel": "Cancel"
-    },
-    "paymentMethods": {
-      "cash": "Cash",
-      "creditCard": "Credit Card",
-      "debitCard": "Debit Card",
-      "mobilePayment": "Mobile Payment",
-      "other": "Other"
-    },
-    "status": {
-      "pending": "Pending",
-      "approved": "Approved",
-      "rejected": "Rejected"
-    },
-    "delete": "Delete",
-    "approve": "Approve",
-    "reject": "Reject",
-    "selectFromExisting": "Select from existing",
-    "newPaidToPlaceholder": "Enter new payment recipient",
-    "newPaidForPlaceholder": "Enter new payment purpose",
-    "imageOnlyError": "Only image files are allowed"
-  },
   "teamChat": {
     "title": "Guide Team Chat",
     "subtitle": "Communicate with guides",
@@ -1277,5 +1220,112 @@
     "loading": "Loading guide team chat...",
     "backToRoomList": "Back to room list",
     "refreshMessages": "Refresh messages"
+  },
+  "weather": {
+    "title": "Weather Information",
+    "subtitle": "Grand Canyon sunrise, Zion Canyon sunset, Page City weather",
+    "loading": "Loading weather information...",
+    "error": "Unable to load weather information",
+    "update": "Update Weather",
+    "updating": "Updating...",
+    "temperature": "Temperature",
+    "humidity": "Humidity",
+    "windSpeed": "Wind Speed",
+    "visibility": "Visibility",
+    "maxTemp": "Max",
+    "minTemp": "Min",
+    "sunrise": "Sunrise",
+    "sunset": "Sunset",
+    "visibilityLevels": {
+      "excellent": "(Excellent)",
+      "good": "(Good)",
+      "fair": "(Fair)",
+      "poor": "(Poor)"
+    },
+    "tourNotes": {
+      "title": "Tour Schedule Notes:",
+      "sunriseTime": "Grand Canyon sunrise time:",
+      "sunsetTime": "Zion Canyon sunset time:",
+      "clothing": "Please prepare appropriate clothing based on weather",
+      "seasonal": "Sunrise/sunset times vary by season"
+    }
+  },
+  "tourExpense": {
+    "title": "Tour Expense Management",
+    "addExpense": "Add Expense",
+    "expenseList": "Expense List",
+    "totalAmount": "Total Amount",
+    "noExpenses": "No expenses registered.",
+    "form": {
+      "paidTo": "Paid To",
+      "paidFor": "Paid For",
+      "amount": "Amount",
+      "paymentMethod": "Payment Method",
+      "note": "Note",
+      "image": "Receipt Image"
+    },
+    "paidTo": "Paid To",
+    "paidFor": "Paid For",
+    "amount": "Amount",
+    "memo": "Memo",
+    "memoPlaceholder": "Enter memo",
+    "receiptPhoto": "Receipt Photo",
+    "enterDirectly": "Enter Directly",
+    "dragOrClickReceipt": "Drag or click to upload receipt",
+    "mobileCameraInfo": "You can take photos with camera on mobile",
+    "cameraOrFile": "Camera or File",
+    "cancel": "Cancel",
+    "selectOptions": {
+      "pleaseSelect": "Please Select"
+    },
+    "paymentMethods": {
+      "cash": "Cash",
+      "creditCard": "Credit Card",
+      "debitCard": "Debit Card",
+      "mobilePayment": "Mobile Payment",
+      "other": "Other"
+    },
+    "buttons": {
+      "register": "Register",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save"
+    },
+    "messages": {
+      "expenseAdded": "Expense has been registered.",
+      "expenseUpdated": "Expense has been updated.",
+      "expenseDeleted": "Expense has been deleted.",
+      "confirmDelete": "Are you sure you want to delete this expense?"
+    }
+  },
+  "tourReport": {
+    "title": "Tour Report",
+    "addReport": "Add Report",
+    "reportList": "Report List",
+    "noReports": "No reports registered.",
+    "reportAfterTour": "Please write a report after completing the tour.",
+    "form": {
+      "tourDate": "Tour Date",
+      "participants": "Number of Participants",
+      "weather": "Weather",
+      "highlights": "Highlights",
+      "issues": "Issues",
+      "suggestions": "Suggestions",
+      "overallRating": "Overall Rating"
+    },
+    "buttons": {
+      "submit": "Submit",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save"
+    },
+    "messages": {
+      "reportSubmitted": "Report has been submitted.",
+      "reportUpdated": "Report has been updated.",
+      "reportDeleted": "Report has been deleted.",
+      "confirmDelete": "Are you sure you want to delete this report?"
+    }
   }
 }

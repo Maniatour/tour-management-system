@@ -383,10 +383,10 @@ export default function TourPhotoUpload({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            title={uploading ? t('uploading') : t('selectFromGallery')}
           >
-            <ImageIcon size={16} />
-            <span>{uploading ? t('uploading') : t('selectFromGallery')}</span>
+            <ImageIcon size={20} />
           </button>
           
           {/* 카메라로 직접 촬영 */}
@@ -406,10 +406,10 @@ export default function TourPhotoUpload({
               cameraInput.click()
             }}
             disabled={uploading}
-            className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+            className="flex items-center justify-center w-10 h-10 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+            title={t('takePhoto')}
           >
-            <Camera size={16} />
-            <span>{t('takePhoto')}</span>
+            <Camera size={20} />
           </button>
         </div>
       </div>

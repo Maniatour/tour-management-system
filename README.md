@@ -29,7 +29,14 @@
 - 날씨, 하이라이트, 어려웠던 점, 고객 피드백 기록
 - 투어 성과 분석을 위한 데이터 수집
 
-### 6. 사용자 인증 및 역할 관리 시스템
+### 6. AI 추천 기능 (ChatGPT)
+- **상품 설명 추천**: 투어 제목을 바탕으로 매력적인 설명 생성
+- **투어 일정 추천**: 일차와 위치를 바탕으로 제목과 설명 생성
+- **호텔 설명 추천**: 호텔명과 위치를 바탕으로 매력적인 설명 생성
+- **FAQ 추천**: 상품 주제를 바탕으로 질문과 답변 생성
+- 전체 또는 개별 항목별 추천 가능
+
+### 7. 사용자 인증 및 역할 관리 시스템
 - 이메일/비밀번호 회원가입 및 로그인
 - 구글 OAuth 소셜 로그인
 - 이메일 인증 및 비밀번호 재설정
@@ -60,8 +67,24 @@ npm install
 `.env.local` 파일을 생성하고 다음 내용을 추가하세요:
 
 ```env
+# Supabase 설정
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url_here
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+
+# Google Maps API Key (호텔 위치 선택 기능용)
+# https://console.cloud.google.com/ 에서 API 키 생성
+# Maps JavaScript API, Geocoding API, Places API 활성화 필요
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+
+# Google Translate API Key (자동 번역 기능용)
+# https://console.cloud.google.com/ 에서 API 키 생성
+# Google Translate API 활성화 필요
+GOOGLE_TRANSLATE_API_KEY=your_google_translate_api_key_here
+
+# ChatGPT API Key (AI 추천 기능용)
+# https://platform.openai.com/ 에서 API 키 생성
+# GPT-3.5-turbo 모델 사용
+NEXT_PUBLIC_OPENAI_API_KEY=your_openai_api_key_here
 ```
 
 ### 3. Supabase 인증 설정
@@ -79,6 +102,8 @@ Supabase 대시보드에서 다음 설정을 완료하세요:
    - Redirect URLs: `http://localhost:3000/auth/callback`
 
 ### 4. Google Cloud Console 설정
+
+#### OAuth 2.0 클라이언트 ID 설정 (인증용)
 Google Cloud Console에서 OAuth 2.0 클라이언트 ID를 생성하고 다음 설정을 완료하세요:
 
 1. **Google Cloud Console** > **API 및 서비스** > **인증 정보**로 이동
@@ -89,6 +114,27 @@ Google Cloud Console에서 OAuth 2.0 클라이언트 ID를 생성하고 다음 �
 4. **승인된 JavaScript 원본**에 다음 URL 추가:
    - `http://localhost:3000`
    - `https://your-domain.com` (프로덕션용)
+
+#### Google Maps API 설정 (호텔 위치 선택 기능용)
+1. **Google Cloud Console** > **API 및 서비스** > **라이브러리**로 이동
+2. 다음 API들을 활성화:
+   - **Maps JavaScript API**
+   - **Geocoding API**
+   - **Places API**
+   - **Maps JavaScript API (Advanced Markers)** (권장)
+3. **API 및 서비스** > **인증 정보**로 이동
+4. **API 키** 생성
+5. API 키 제한 설정:
+   - **HTTP referrers (web sites)** 제한 설정
+   - 도메인 패턴 추가: `localhost:3000/*`, `yourdomain.com/*`
+   - **API restrictions**에서 위 API들만 선택
+6. 생성된 API 키를 `.env.local`의 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`에 설정
+
+#### Google Translate API 설정 (자동 번역 기능용)
+1. **Google Cloud Console** > **API 및 서비스** > **라이브러리**로 이동
+2. **Google Translate API** 활성화
+3. 별도 API 키 생성 또는 기존 키 사용
+4. API 키를 `.env.local`의 `GOOGLE_TRANSLATE_API_KEY`에 설정
 
 ### 🔧 Google OAuth 오류 해결
 

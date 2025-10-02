@@ -132,7 +132,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     try {
       const { error } = await supabase
         .from('pickup_hotels')
-        .insert(hotelData)
+        .insert([hotelData] as never[])
 
       if (error) {
         console.error('Error adding hotel:', error)
@@ -154,7 +154,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       try {
         const { error } = await supabase
           .from('pickup_hotels')
-          .update(hotelData as any)
+          .update(hotelData as never)
           .eq('id', editingHotel.id)
 
         if (error) {
@@ -199,7 +199,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       const newStatus = !currentStatus
       const { error } = await supabase
         .from('pickup_hotels')
-        .update({ is_active: newStatus } as any)
+        .update({ is_active: newStatus } as never)
         .eq('id', id)
 
       if (error) {
@@ -233,7 +233,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       const { error } = await supabase
         .from('pickup_hotels')
-        .insert([newHotel])
+        .insert([newHotel] as never[])
 
       if (error) {
         console.error('Error copying hotel:', error)
@@ -249,10 +249,6 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     }
   }
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return '날짜 없음'
-    return new Date(dateString).toLocaleDateString('ko-KR')
-  }
 
   // 이미지 뷰어 열기
   const openImageViewer = (images: string[], startIndex: number, hotelName: string) => {
@@ -546,7 +542,10 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
            onCancel={() => {
              setEditingHotel(null)
            }}
-           onDelete={handleDeleteHotel}
+           onDelete={(id: string) => {
+             const hotel = hotels.find(h => h.id === id)
+             if (hotel) handleDeleteHotel(hotel)
+           }}
            translations={translations}
          />
        )}
@@ -673,7 +672,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                 취소
               </button>
               <button
-                onClick={() => handleDeleteHotel(deleteConfirm.hotel)}
+                onClick={() => deleteConfirm.hotel && handleDeleteHotel(deleteConfirm.hotel)}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
                 삭제

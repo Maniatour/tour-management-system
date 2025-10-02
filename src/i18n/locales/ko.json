@@ -347,14 +347,42 @@
         "데이투어": "데이투어",
         "라스베가스 시티 야경투어": "라스베가스 시티 야경투어",
         "불의계곡": "불의계곡",
+        "불의계곡 - 밸리오브파이어 주립공원": "불의계곡 - 밸리오브파이어 주립공원",
         "데쓰밸리": "데쓰밸리",
         "그랜드캐년 웨스트림 VIP 투어": "그랜드캐년 웨스트림 VIP 투어",
-        "null": "상품명 없음",
+        "그랜드캐년": "그랜드캐년",
+        "그랜드캐년 사우스림": "그랜드캐년 사우스림",
+        "그랜드캐년 노스림": "그랜드캐년 노스림",
+        "그랜드캐년 웨스트림": "그랜드캐년 웨스트림",
+        "밸리오브파이어": "밸리오브파이어",
+        "밸리오브파이어 주립공원": "밸리오브파이어 주립공원",
+        "앤텔롭 캐년": "앤텔롭 캐년",
+        "앤텔롭 캐년 투어": "앤텔롭 캐년 투어",
+        "라스베가스": "라스베가스",
+        "라스베가스 시티투어": "라스베가스 시티투어",
+        "라스베가스 야경투어": "라스베가스 야경투어",
+        "라스베가스 쇼": "라스베가스 쇼",
+        "후버댐 투어": "후버댐 투어",
+        "후버댐": "후버댐",
+        "자이언브라이스 투어": "자이언브라이스 투어",
+        "브라이스 캐년": "브라이스 캐년",
+        "브라이스 캐년 투어": "브라이스 캐년 투어",
+        "모뉴먼트 밸리": "모뉴먼트 밸리",
+        "모뉴먼트 밸리 투어": "모뉴먼트 밸리 투어",
         "모뉴1박": "모뉴1박",
+        "모뉴먼트 밸리 1박2일": "모뉴먼트 밸리 1박2일",
         "골프투어": "골프투어",
+        "골프 투어": "골프 투어",
         "드라이버": "드라이버",
+        "전용 드라이버": "전용 드라이버",
+        "2박3일": "2박3일",
         "2박3일 단독": "2박3일 단독",
-        "후버댐": "후버댐"
+        "3박4일": "3박4일",
+        "3박4일 단독": "3박4일 단독",
+        "null": "상품명 없음",
+        "기타": "기타",
+        "특별 투어": "특별 투어",
+        "커스텀 투어": "커스텀 투어"
       },
       "reservationCalendar": "달력",
       "yearUnit": "년",
@@ -428,6 +456,10 @@
       "Requested for Delete": "삭제 요청됨",
       "Deleted": "삭제됨",
       "null": "상태 없음"
+    },
+    "assignmentStatus": {
+      "pending": "대기",
+      "confirmed": "확정"
     },
     "form": {
       "title": "새 투어 추가",
@@ -1026,13 +1058,15 @@
       }
     },
     "footer": {
+      "home": "홈",
       "tours": "투어",
       "chat": "채팅",
       "photos": "사진",
       "report": "리포트",
       "receipt": "영수증",
       "teamChat": "팀채팅",
-      "teamBoard": "팀보드"
+      "teamBoard": "팀보드",
+      "manual": "메뉴얼"
     }
   },
   "guideTour": {
@@ -1088,6 +1122,7 @@
     "expenses": "정산",
     "report": "리포트",
     "tourInfo": "투어 정보",
+    "assignmentStatus": "배정 상태",
     "noPickupSchedule": "픽업 스케줄이 없습니다.",
     "noBookingInfo": "부킹 정보가 없습니다.",
     "addTourReport": "투어 리포트 추가",
@@ -1151,20 +1186,6 @@
     "memoPlaceholder": "추가 정보나 메모",
     "selectFromExisting": "기존 목록에서 선택",
     "enterDirectly": "직접 입력"
-  },
-  "tourReport": {
-    "writeReport": "투어 리포트 작성",
-    "reportList": "투어 리포트 목록",
-    "newReport": "새 리포트",
-    "backToList": "목록으로 돌아가기",
-    "close": "닫기",
-    "hasReports": "작성된 리포트가 있습니다",
-    "clickListButton": "위의 \"목록\" 버튼을 클릭하여 리포트를 확인하세요",
-    "noReports": "아직 작성된 리포트가 없습니다",
-    "reportAfterTour": "투어 종료 후 가이드와 드라이버가 리포트를 작성할 수 있습니다",
-    "reportSubmitted": "리포트가 성공적으로 제출되었습니다.",
-    "editFeatureComingSoon": "편집 기능은 곧 추가될 예정입니다.",
-    "reportDeleted": "리포트가 삭제되었습니다."
   },
   "tourReportForm": {
     "title": "투어 리포트 작성",
@@ -1241,52 +1262,6 @@
       "other": "기타"
     }
   },
-  "tourExpense": {
-    "title": "지출 관리",
-    "addExpense": "지출 추가",
-    "noExpenses": "등록된 지출이 없습니다.",
-    "paidTo": "결제처",
-    "paidFor": "결제내용",
-    "amount": "금액",
-    "memo": "메모",
-    "receiptPhoto": "영수증 사진",
-    "enterDirectly": "직접 입력",
-    "memoPlaceholder": "추가 정보나 메모",
-    "dragOrClickReceipt": "영수증을 드래그하여 놓거나 클릭하여 선택하세요",
-    "mobileCameraInfo": "📷 모바일에서 카메라 촬영 가능 | JPG, PNG, WebP 형식, 최대 5MB",
-    "cameraOrFile": "📷 촬영 또는 파일 선택",
-    "cancel": "취소",
-    "selectOptions": {
-      "pleaseSelect": "선택하세요",
-      "selectPaidTo": "결제처 선택",
-      "selectPaidFor": "결제내용 선택",
-      "selectPaymentMethod": "결제방법 선택"
-    },
-    "buttons": {
-      "register": "등록",
-      "registering": "등록 중...",
-      "cancel": "취소"
-    },
-    "paymentMethods": {
-      "cash": "현금",
-      "creditCard": "신용카드",
-      "debitCard": "체크카드",
-      "mobilePayment": "모바일 결제",
-      "other": "기타"
-    },
-    "status": {
-      "pending": "대기중",
-      "approved": "승인됨",
-      "rejected": "거부됨"
-    },
-    "delete": "삭제",
-    "approve": "승인",
-    "reject": "거부",
-    "selectFromExisting": "기존에서 선택",
-    "newPaidToPlaceholder": "새로운 결제처를 입력하세요",
-    "newPaidForPlaceholder": "새로운 결제내용을 입력하세요",
-    "imageOnlyError": "이미지 파일만 허용됩니다"
-  },
   "teamChat": {
     "title": "가이드 팀 채팅",
     "subtitle": "가이드들과 소통하세요",
@@ -1320,5 +1295,112 @@
     "loading": "가이드 팀 채팅을 불러오는 중...",
     "backToRoomList": "채팅방 목록으로 돌아가기",
     "refreshMessages": "메시지 새로고침"
+  },
+  "weather": {
+    "title": "날씨 정보",
+    "subtitle": "그랜드캐년 일출, 자이온 캐년 일몰, 페이지 시티 날씨",
+    "loading": "날씨 정보를 불러오는 중...",
+    "error": "날씨 정보를 불러올 수 없습니다",
+    "update": "날씨 업데이트",
+    "updating": "업데이트 중...",
+    "temperature": "기온",
+    "humidity": "습도",
+    "windSpeed": "풍속",
+    "visibility": "가시거리",
+    "maxTemp": "최고",
+    "minTemp": "최저",
+    "sunrise": "일출",
+    "sunset": "일몰",
+    "visibilityLevels": {
+      "excellent": "(매우좋음)",
+      "good": "(좋음)",
+      "fair": "(보통)",
+      "poor": "(나쁨)"
+    },
+    "tourNotes": {
+      "title": "투어 일정 참고사항:",
+      "sunriseTime": "그랜드캐년 일출 시간:",
+      "sunsetTime": "자이온 캐년 일몰 시간:",
+      "clothing": "날씨에 따라 옷차림을 준비해 주세요",
+      "seasonal": "일출/일몰 시간은 계절에 따라 변동됩니다"
+    }
+  },
+  "tourExpense": {
+    "title": "투어 비용 관리",
+    "addExpense": "비용 추가",
+    "expenseList": "비용 목록",
+    "totalAmount": "총 금액",
+    "noExpenses": "등록된 비용이 없습니다.",
+    "form": {
+      "paidTo": "지급 대상",
+      "paidFor": "지급 목적",
+      "amount": "금액",
+      "paymentMethod": "결제 방법",
+      "note": "메모",
+      "image": "영수증 이미지"
+    },
+    "paidTo": "지급 대상",
+    "paidFor": "지급 목적",
+    "amount": "금액",
+    "memo": "메모",
+    "memoPlaceholder": "메모를 입력하세요",
+    "receiptPhoto": "영수증 사진",
+    "enterDirectly": "직접 입력",
+    "dragOrClickReceipt": "영수증을 드래그하거나 클릭하여 업로드하세요",
+    "mobileCameraInfo": "모바일에서는 카메라로 촬영할 수 있습니다",
+    "cameraOrFile": "카메라 또는 파일",
+    "cancel": "취소",
+    "selectOptions": {
+      "pleaseSelect": "선택해주세요"
+    },
+    "paymentMethods": {
+      "cash": "현금",
+      "creditCard": "신용카드",
+      "debitCard": "체크카드",
+      "mobilePayment": "모바일 결제",
+      "other": "기타"
+    },
+    "buttons": {
+      "register": "등록",
+      "cancel": "취소",
+      "edit": "수정",
+      "delete": "삭제",
+      "save": "저장"
+    },
+    "messages": {
+      "expenseAdded": "비용이 등록되었습니다.",
+      "expenseUpdated": "비용이 수정되었습니다.",
+      "expenseDeleted": "비용이 삭제되었습니다.",
+      "confirmDelete": "정말로 이 비용을 삭제하시겠습니까?"
+    }
+  },
+  "tourReport": {
+    "title": "투어 리포트",
+    "addReport": "리포트 추가",
+    "reportList": "리포트 목록",
+    "noReports": "등록된 리포트가 없습니다.",
+    "reportAfterTour": "투어 완료 후 리포트를 작성해주세요.",
+    "form": {
+      "tourDate": "투어 날짜",
+      "participants": "참가자 수",
+      "weather": "날씨",
+      "highlights": "하이라이트",
+      "issues": "문제점",
+      "suggestions": "개선사항",
+      "overallRating": "전체 평가"
+    },
+    "buttons": {
+      "submit": "제출",
+      "cancel": "취소",
+      "edit": "수정",
+      "delete": "삭제",
+      "save": "저장"
+    },
+    "messages": {
+      "reportSubmitted": "리포트가 제출되었습니다.",
+      "reportUpdated": "리포트가 수정되었습니다.",
+      "reportDeleted": "리포트가 삭제되었습니다.",
+      "confirmDelete": "정말로 이 리포트를 삭제하시겠습니까?"
+    }
   }
 }

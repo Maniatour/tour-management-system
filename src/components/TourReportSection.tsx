@@ -129,9 +129,8 @@ export default function TourReportSection({
             </div>
             <div className="flex gap-2">
               {canCreateReport && (
-                <Button onClick={handleCreateReport} size="sm">
-                  <Plus className="w-4 h-4 mr-2" />
-                  {t('newReport')}
+                <Button onClick={handleCreateReport} size="sm" className="px-3">
+                  <Plus className="w-4 h-4" />
                 </Button>
               )}
               <Button onClick={() => setShowList(false)} variant="outline" size="sm">

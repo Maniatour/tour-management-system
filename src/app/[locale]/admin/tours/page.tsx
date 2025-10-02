@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -26,6 +26,7 @@ type ExtendedTour = Tour & {
   assistant_name?: string | null;
   status?: string | null;
   tour_status?: string | null;
+  assignment_status?: string | null;
   vehicle_number?: string | null;
 }
 
@@ -34,6 +35,7 @@ type Product = Database['public']['Tables']['products']['Row']
 
 export default function AdminTours() {
   const t = useTranslations('tours')
+  const locale = useLocale()
   const router = useRouter()
   const supabase = createClientSupabase()
   
@@ -331,15 +333,20 @@ export default function AdminTours() {
         const guide = tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null
         const assistant = tour.assistant_id ? teamMap.get(tour.assistant_id) : null
 
-        const product = tour.product_id ? productsData.find(p => p.id === tour.product_id) : null
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const product = tour.product_id && productsData ? productsData.find((p: any) => p.id === tour.product_id) : null
         
         return {
           ...tour,
           product_name: tour.product_id ? productMap.get(tour.product_id) : null,
-          internal_name_ko: product?.internal_name_ko || null,
-          internal_name_en: product?.internal_name_en || null,
-          customer_name_ko: product?.customer_name_ko || null,
-          customer_name_en: product?.customer_name_en || null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          internal_name_ko: (product as any)?.internal_name_ko || null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          internal_name_en: (product as any)?.internal_name_en || null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          customer_name_ko: (product as any)?.customer_name_ko || null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          customer_name_en: (product as any)?.customer_name_en || null,
           total_people: totalPeople,
           assigned_people: assignedPeople,
           unassigned_people: unassignedPeople,
@@ -409,10 +416,43 @@ export default function AdminTours() {
   const listViewTours = filteredTours.filter(t => (t.tour_date || '').startsWith(listMonthPrefix))
 
   const [navigatingToTour, setNavigatingToTour] = useState<string | null>(null)
+  const [updatingAssignment, setUpdatingAssignment] = useState<string | null>(null)
 
   const handleTourClick = (tour: ExtendedTour) => {
     setNavigatingToTour(tour.id)
-    router.push(`/ko/admin/tours/${tour.id}`)
+    router.push(`/${locale}/admin/tours/${tour.id}`)
+  }
+
+  // 배정 현황 업데이트 함수
+  const handleAssignmentStatusChange = async (tourId: string, newStatus: string) => {
+    setUpdatingAssignment(tourId)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('tours')
+        .update({ assignment_status: newStatus })
+        .eq('id', tourId)
+
+      if (error) {
+        console.error('Error updating assignment status:', error)
+        alert('배정 현황 업데이트에 실패했습니다.')
+        return
+      }
+
+      // 로컬 상태 업데이트
+      setTours(prevTours => 
+        prevTours.map(tour => 
+          tour.id === tourId 
+            ? { ...tour, assignment_status: newStatus }
+            : tour
+        )
+      )
+    } catch (error) {
+      console.error('Error updating assignment status:', error)
+      alert('배정 현황 업데이트에 실패했습니다.')
+    } finally {
+      setUpdatingAssignment(null)
+    }
   }
 
   // 삭제 기능은 카드뷰 간소화 요구에 따라 제거됨
@@ -601,6 +641,24 @@ export default function AdminTours() {
                       {(tour.status || tour.tour_status) || '-'}
                     </span>
                   </div>
+                </div>
+                
+                {/* 배정 현황 선택 */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">배정 현황:</span>
+                  <select
+                    value={tour.assignment_status || 'pending'}
+                    onChange={(e) => handleAssignmentStatusChange(tour.id, e.target.value)}
+                    disabled={updatingAssignment === tour.id}
+                    className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <option value="pending">대기</option>
+                    <option value="confirmed">확정</option>
+                  </select>
+                  {updatingAssignment === tour.id && (
+                    <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-600"></div>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <span className="inline-flex items-center px-2 py-0.5 border border-blue-200 rounded text-xs text-blue-700 bg-blue-50">

@@ -6,7 +6,7 @@ const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
 // 시트 정보 캐시 (메모리 캐시)
 const sheetInfoCache = new Map<string, { data: any, timestamp: number }>()
-const CACHE_DURATION = 5 * 60 * 1000 // 5분
+const CACHE_DURATION = 10 * 60 * 1000 // 10분으로 증가 (API 호출 감소)
 
 // 서비스 계정 인증을 위한 설정
 const getAuthClient = () => {
@@ -32,38 +32,82 @@ const getAuthClient = () => {
   return auth
 }
 
-// 구글 시트에서 데이터 읽기
-export const readGoogleSheet = async (spreadsheetId: string, range: string) => {
-  try {
-    const auth = getAuthClient()
-    const sheets = google.sheets({ version: 'v4', auth })
+// 재시도 로직을 위한 헬퍼 함수
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range,
-    })
-
-    const rows = response.data.values
-    if (!rows || rows.length === 0) {
-      console.log('No data found.')
-      return []
-    }
-
-    // 첫 번째 행을 헤더로 사용
-    const headers = rows[0]
-    const data = rows.slice(1).map(row => {
-      const obj: any = {}
-      headers.forEach((header, index) => {
-        obj[header] = row[index] || ''
+// 구글 시트에서 데이터 읽기 (재시도 로직 포함)
+export const readGoogleSheet = async (spreadsheetId: string, range: string, retries: number = 3) => {
+  let lastError: Error | null = null
+  
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`Attempt ${attempt}/${retries} - Reading range: ${range}`)
+      
+      // 매번 새로운 인증 클라이언트 생성
+      const auth = getAuthClient()
+      
+      // 더 관대한 설정으로 Google Sheets 클라이언트 생성
+      const sheets = google.sheets({ 
+        version: 'v4', 
+        auth,
+        timeout: 120000, // 120초 타임아웃
+        retry: true, // 자동 재시도 활성화
+        retryConfig: {
+          retry: 3,
+          retryDelay: 1000,
+          statusCodesToRetry: [[100, 199], [429, 429], [500, 599]]
+        }
       })
-      return obj
-    })
 
-    return data
-  } catch (error) {
-    console.error('Error reading Google Sheet:', error)
-    throw error
+      // AbortController를 사용하지 않고 직접 요청
+      const requestOptions = {
+        spreadsheetId,
+        range,
+        valueRenderOption: 'UNFORMATTED_VALUE',
+        dateTimeRenderOption: 'FORMATTED_STRING'
+      }
+      
+      console.log(`Making request with options:`, requestOptions)
+      
+      const response = await sheets.spreadsheets.values.get(requestOptions)
+
+      const rows = response.data.values
+      if (!rows || rows.length === 0) {
+        console.log('No data found.')
+        return []
+      }
+
+      // 첫 번째 행을 헤더로 사용
+      const headers = rows[0]
+      const data = rows.slice(1).map(row => {
+        const obj: any = {}
+        headers.forEach((header, index) => {
+          obj[header] = row[index] || ''
+        })
+        return obj
+      })
+
+      console.log(`Successfully read ${data.length} rows on attempt ${attempt}`)
+      return data
+    } catch (error) {
+      lastError = error as Error
+      console.error(`Attempt ${attempt}/${retries} failed:`, error)
+      
+      // AbortError인 경우 더 긴 지연 시간 적용
+      const isAbortError = error instanceof Error && 
+        (error.message.includes('aborted') || error.message.includes('AbortError'))
+      
+      if (attempt < retries) {
+        const baseDelay = isAbortError ? 3000 : 1000 // AbortError인 경우 3초, 그 외는 1초
+        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000) // 최대 10초
+        console.log(`Retrying in ${delay}ms... (AbortError: ${isAbortError})`)
+        await sleep(delay)
+      }
+    }
   }
+  
+  console.error('All retry attempts failed')
+  throw lastError || new Error('Failed to read Google Sheet after all retries')
 }
 
 // 구글 시트에서 특정 시트의 모든 데이터 읽기
@@ -81,6 +125,9 @@ export const readSheetRange = async (spreadsheetId: string, sheetName: string, s
 // 구글 시트의 시트 목록과 메타데이터 가져오기 (첫 글자가 'S'인 시트만 필터링)
 export const getSheetNames = async (spreadsheetId: string) => {
   try {
+    console.log('=== getSheetNames started ===')
+    console.log('spreadsheetId:', spreadsheetId)
+    
     // 캐시 확인
     const cacheKey = `sheetNames_${spreadsheetId}`
     const cached = sheetInfoCache.get(cacheKey)
@@ -91,23 +138,34 @@ export const getSheetNames = async (spreadsheetId: string) => {
     }
 
     // 환경변수 확인
+    console.log('Checking environment variables...')
+    console.log('GOOGLE_CLIENT_EMAIL:', !!process.env.GOOGLE_CLIENT_EMAIL)
+    console.log('GOOGLE_PRIVATE_KEY:', !!process.env.GOOGLE_PRIVATE_KEY)
+    console.log('GOOGLE_PROJECT_ID:', !!process.env.GOOGLE_PROJECT_ID)
+    
     if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
       throw new Error('Google Sheets API credentials not configured. Please check environment variables.')
     }
 
+    console.log('Creating auth client...')
     const auth = getAuthClient()
+    console.log('Auth client created successfully')
+    
     const sheets = google.sheets({ version: 'v4', auth })
+    console.log('Google Sheets client created')
 
-    // 타임아웃 설정 (20초)
+    // 타임아웃 설정 (90초로 증가)
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Google Sheets API timeout')), 20000)
+      setTimeout(() => reject(new Error('Google Sheets API timeout')), 90000)
     })
 
+    console.log('Making API request to Google Sheets...')
     const fetchPromise = sheets.spreadsheets.get({
       spreadsheetId,
     })
 
     const response = await Promise.race([fetchPromise, timeoutPromise]) as any
+    console.log('API response received:', !!response?.data)
 
     const allSheets = response.data.sheets || []
     
@@ -233,8 +291,30 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
       return cached.data
     }
 
-    const range = `${sheetName}!A1:M${maxRows}` // 첫 3행, A-M 컬럼만 (더 적은 데이터)
-    const data = await readGoogleSheet(spreadsheetId, range)
+    // 더 작은 범위로 시도 (A1:E1만 먼저 시도)
+    let data: any[] = []
+    let range = `${sheetName}!A1:E1` // 매우 작은 범위로 시작
+    
+    try {
+      console.log(`Trying small range first: ${range}`)
+      data = await readGoogleSheet(spreadsheetId, range, 2) // 재시도 횟수 줄임
+      
+      if (data.length > 0) {
+        // 성공하면 더 큰 범위로 확장
+        range = `${sheetName}!A1:M${maxRows}`
+        console.log(`Small range successful, trying larger range: ${range}`)
+        data = await readGoogleSheet(spreadsheetId, range, 2)
+      }
+    } catch (error) {
+      console.error(`Failed to read sheet ${sheetName}, returning empty data`)
+      const result = { columns: [], sampleData: [] }
+      // 빈 결과도 캐시에 저장
+      sheetInfoCache.set(cacheKey, {
+        data: result,
+        timestamp: Date.now()
+      })
+      return result
+    }
     
     if (data.length === 0) {
       const result = { columns: [], sampleData: [] }

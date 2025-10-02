@@ -281,9 +281,9 @@ export default function AdminCustomers() {
   }
 
   // 예약 저장 함수
-  const handleSaveReservation = async (reservationData: Omit<Reservation, 'id'>) => {
+  const handleSaveReservation = async (reservationData: any) => {
     try {
-      const { error } = await (supabase as unknown as any)
+      const { error } = await supabase
         .from('reservations')
         .insert([reservationData])
 
@@ -656,7 +656,7 @@ export default function AdminCustomers() {
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
         <input
           type="text"
-            placeholder="고객 검색..."
+            placeholder="이름, 이메일, 전화번호, 다른 이름(영문명 등), 특별요청으로 검색..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1109,6 +1109,24 @@ export default function AdminCustomers() {
                             )
                           })()}
                         </div>
+
+                        {/* 특별요청 정보 */}
+                        {customer.special_requests && (
+                          <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <div className="flex items-start space-x-2">
+                              <FileText className="h-3 w-3 text-yellow-600 mt-0.5 flex-shrink-0" />
+                              <div className="text-xs text-yellow-800">
+                                <div className="font-medium mb-1">특별요청:</div>
+                                <div className="whitespace-pre-wrap break-words">
+                                  {customer.special_requests.length > 100 
+                                    ? `${customer.special_requests.substring(0, 100)}...` 
+                                    : customer.special_requests
+                                  }
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
                         {/* 예약 추가 버튼 */}
                         <div className="mt-2">
@@ -1809,7 +1827,7 @@ function CustomerForm({
               onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="특별한 요청사항이 있다면 입력해주세요"
+              placeholder="특별한 요청사항, 다른 이름(영문명, 다국어명 등), 알레르기 정보 등을 입력해주세요"
             />
           </div>
 
