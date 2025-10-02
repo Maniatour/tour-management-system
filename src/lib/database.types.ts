@@ -130,54 +130,81 @@ export interface Database {
       products: {
         Row: {
           id: string
-          name_ko: string
+          name: string
           name_en: string | null
-          internal_name_ko: string
-          internal_name_en: string
-          customer_name_ko: string
-          customer_name_en: string
+          product_code: string | null
           sub_category: string | null
           category: string | null
+          description: string | null
+          description_en: string | null
           base_price: number | null
           duration: string | null
           max_participants: number | null
           status: string | null
+          departure_city: string | null
+          arrival_city: string | null
+          departure_country: string | null
+          arrival_country: string | null
+          languages: string[] | null
+          group_size: string | null
+          adult_age: number | null
+          child_age_min: number | null
+          child_age_max: number | null
+          infant_age: number | null
           tags: string[] | null
           created_at: string | null
           updated_at: string | null
         }
         Insert: {
           id?: string
-          name_ko: string
+          name: string
           name_en?: string | null
-          internal_name_ko: string
-          internal_name_en: string
-          customer_name_ko: string
-          customer_name_en: string
+          product_code?: string | null
           sub_category?: string | null
           category?: string | null
+          description?: string | null
+          description_en?: string | null
           base_price?: number | null
           duration?: string | null
           max_participants?: number | null
           status?: string | null
+          departure_city?: string | null
+          arrival_city?: string | null
+          departure_country?: string | null
+          arrival_country?: string | null
+          languages?: string[] | null
+          group_size?: string | null
+          adult_age?: number | null
+          child_age_min?: number | null
+          child_age_max?: number | null
+          infant_age?: number | null
           tags?: string[] | null
           created_at?: string | null
           updated_at?: string | null
         }
         Update: {
           id?: string
-          name_ko?: string
+          name?: string
           name_en?: string | null
-          internal_name_ko?: string
-          internal_name_en?: string
-          customer_name_ko?: string
-          customer_name_en?: string
+          product_code?: string | null
           sub_category?: string | null
           category?: string | null
+          description?: string | null
+          description_en?: string | null
           base_price?: number | null
           duration?: string | null
           max_participants?: number | null
           status?: string | null
+          departure_city?: string | null
+          arrival_city?: string | null
+          departure_country?: string | null
+          arrival_country?: string | null
+          languages?: string[] | null
+          group_size?: string | null
+          adult_age?: number | null
+          child_age_min?: number | null
+          child_age_max?: number | null
+          infant_age?: number | null
           tags?: string[] | null
           created_at?: string | null
           updated_at?: string | null

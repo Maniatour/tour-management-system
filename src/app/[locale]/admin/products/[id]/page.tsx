@@ -253,10 +253,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     }
   }>({
     name: '',
+    nameEn: '',
     productCode: '',
     category: 'nature',
     subCategory: '',
     description: '',
+    descriptionEn: '',
     duration: 1,
     basePrice: {
       adult: 0,
@@ -409,10 +411,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       setFormData(prevData => ({
         ...prevData,
         name: '',
+        nameEn: '',
         productCode: '',
         category: 'nature',
         subCategory: '',
         description: '',
+        descriptionEn: '',
         duration: 3.5,
         basePrice: { adult: 0, child: 0, infant: 0 },
         channelPricing: [
@@ -549,10 +553,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           setFormData((prevData: any) => ({
             ...prevData,
             name: productData.name || '',
+            nameEn: productData.name_en || '',
             productCode: productData.product_code || '',
             category: productData.category || 'nature',
             subCategory: productData.sub_category || '',
             description: productData.description || '',
+            descriptionEn: productData.description_en || '',
             duration: typeof productData.duration === 'string' ? parseInt(productData.duration) || 1 : productData.duration || 1,
             basePrice: {
               adult: productData.base_price || 0,
