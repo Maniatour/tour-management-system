@@ -586,7 +586,10 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                   return (
                     <div
                       key={uniqueKey}
-                      onClick={() => onTourClick(tour)}
+                      onClick={(e) => {
+                        e.stopPropagation() // 부모 요소의 클릭 이벤트 방지
+                        onTourClick(tour)
+                      }}
                       onMouseEnter={(e) => handleMouseEnter(tour, e)}
                       onMouseLeave={handleMouseLeave}
                       className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
@@ -618,7 +621,11 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                   return (
                     <div
                       key={`off-${schedule.id}-${scheduleIndex}`}
-                      className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-default text-white ${statusColor}`}
+                      onClick={(e) => {
+                        e.stopPropagation() // 부모 요소의 클릭 이벤트 방지
+                        openOffScheduleModal(date, schedule)
+                      }}
+                      className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${statusColor}`}
                       title={`오프 스케줄: ${schedule.reason} (${statusText})`}
                     >
                       <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
