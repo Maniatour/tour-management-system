@@ -5,7 +5,7 @@ import { MessageCircle, Plus, Settings, Pin, Search, X, Paperclip, Image, File, 
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useSearchParams } from 'next/navigation'
@@ -94,7 +94,8 @@ interface TourChatMessage {
 
 export default function GuideChatPage() {
   const { user, simulatedUser, isSimulating } = useAuth()
-  const t = useTranslations('teamChat')
+  const t = useTranslations('guide')
+  const locale = useLocale()
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState<'team' | 'tour'>('team')
   const [selectedRoom, setSelectedRoom] = useState<TeamChatRoom | TourChatRoom | null>(null)
@@ -256,13 +257,15 @@ export default function GuideChatPage() {
         const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
         
         let teamMap = new Map()
+        let teamEnMap = new Map()
         if (allEmails.length > 0) {
           const { data: teamData } = await supabaseClient
             .from('team')
-            .select('email, name_ko')
+            .select('email, name_ko, name_en')
             .in('email', allEmails)
           
           teamMap = new Map((teamData || []).map(member => [member.email, member.name_ko]))
+          teamEnMap = new Map((teamData || []).map(member => [member.email, member.name_en || member.name_ko]))
         }
 
         // 차량 정보 가져오기
@@ -307,16 +310,22 @@ export default function GuideChatPage() {
             assignedPeople = ids.reduce((sum, id) => sum + (reservationMap.get(id) || 0), 0)
           }
 
+          // 로케일에 따라 다른 이름 사용
+          const isEnglish = locale === 'en'
+          const productName = tour.product_id ? (isEnglish ? productEnMap.get(tour.product_id) : productMap.get(tour.product_id)) : (isEnglish ? `Tour ${tour.id}` : `투어 ${tour.id}`)
+          const guideName = tour.tour_guide_id ? (isEnglish ? teamEnMap.get(tour.tour_guide_id) : teamMap.get(tour.tour_guide_id)) : null
+          const assistantName = tour.assistant_id ? (isEnglish ? teamEnMap.get(tour.assistant_id) : teamMap.get(tour.assistant_id)) : null
+
           return {
             id: `tour_${tour.id}`,
             tour_id: tour.id,
-            tour_name: tour.product_id ? productMap.get(tour.product_id) : `투어 ${tour.id}`,
+            tour_name: productName,
             tour_date: tour.tour_date,
             product_name: tour.product_id ? productMap.get(tour.product_id) : null,
             product_name_en: tour.product_id ? productEnMap.get(tour.product_id) : null,
             assigned_people: assignedPeople,
-            guide_name: tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null,
-            assistant_name: tour.assistant_id ? teamMap.get(tour.assistant_id) : null,
+            guide_name: guideName,
+            assistant_name: assistantName,
             vehicle_number: tour.tour_car_id ? vehicleMap.get(tour.tour_car_id) : null,
             last_message: null,
             unread_count: 0
@@ -329,7 +338,7 @@ export default function GuideChatPage() {
         throw error
       }
     },
-    dependencies: [user?.email]
+    dependencies: [user?.email, locale]
   })
 
   // 메시지 로딩
@@ -560,13 +569,13 @@ export default function GuideChatPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-lg font-semibold text-gray-900">채팅</h1>
-              <p className="text-sm text-gray-500">팀 채팅과 투어 채팅</p>
+              <p className="text-sm text-gray-500">{t('chatSubtitle')}</p>
             </div>
             {activeTab === 'team' && (
               <button
                 onClick={() => setShowCreateRoom(true)}
                 className="flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                title="새 채팅방 만들기"
+                title={t('createRoom')}
               >
                 <Plus size={16} />
               </button>
@@ -587,7 +596,7 @@ export default function GuideChatPage() {
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              팀 채팅
+              {t('teamChat')}
             </button>
             <button
               onClick={() => {
@@ -601,7 +610,7 @@ export default function GuideChatPage() {
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              투어 채팅
+              {t('tourChat')}
             </button>
           </div>
           
@@ -611,7 +620,7 @@ export default function GuideChatPage() {
               <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder={activeTab === 'team' ? '채팅방 검색...' : '투어 검색...'}
+                placeholder={activeTab === 'team' ? t('searchTeam') : t('searchTour')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -639,7 +648,7 @@ export default function GuideChatPage() {
           {filteredRooms.length === 0 ? (
             <div className="p-4 text-center text-gray-500">
               <MessageCircle size={48} className="mx-auto mb-2 text-gray-300" />
-              <p>{activeTab === 'team' ? '채팅방이 없습니다' : '투어가 없습니다'}</p>
+              <p>{activeTab === 'team' ? t('noRooms') : t('noTours')}</p>
             </div>
           ) : (
             filteredRooms.map((room) => (
@@ -664,7 +673,7 @@ export default function GuideChatPage() {
                       }`}>
                         {activeTab === 'team' && 'room_name' in room ? room.room_name : 
                          activeTab === 'tour' && 'tour_name' in room ? room.tour_name : room.id}
-                        {room.unread_count > 0 && ' • 새 메시지'}
+                        {room.unread_count > 0 && t('newMessage')}
                         {activeTab === 'team' && 'room_type' in room && room.room_type === 'announcement' && (
                           <Pin size={10} className="inline ml-1 text-yellow-500" />
                         )}
@@ -691,7 +700,7 @@ export default function GuideChatPage() {
                       <div className="flex items-center">
                         <span className="truncate">
                           {activeTab === 'team' && 'description' in room ? 
-                            (room.description || `참여자 ${'participants_count' in room ? room.participants_count : 0}명`) :
+                            (room.description || `${t('participants')} ${'participants_count' in room ? room.participants_count : 0}`) :
                             activeTab === 'tour' && 'tour_date' in room ? 
                             formatDateWithDay(room.tour_date) : ''}
                         </span>
@@ -707,7 +716,7 @@ export default function GuideChatPage() {
                       <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
                         <span className="flex items-center">
                           <Users className="w-3 h-3 mr-1" />
-                          {room.assigned_people || 0}명
+                          {room.assigned_people || 0}{locale === 'en' ? ' people' : '명'}
                         </span>
                         {room.guide_name && (
                           <span className="flex items-center">
@@ -756,7 +765,7 @@ export default function GuideChatPage() {
                     <button
                       onClick={() => setSelectedRoom(null)}
                       className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
-                      title="채팅방 목록으로"
+                      title={t('backToList')}
                     >
                       ←
                     </button>
@@ -767,7 +776,7 @@ export default function GuideChatPage() {
                   </h2>
                   <p className="text-sm text-gray-500 truncate">
                     {activeTab === 'team' && 'description' in selectedRoom ? 
-                      (selectedRoom.description || `참여자 ${'participants_count' in selectedRoom ? selectedRoom.participants_count : 0}명`) :
+                      (selectedRoom.description || `${t('participants')} ${'participants_count' in selectedRoom ? selectedRoom.participants_count : 0}`) :
                       activeTab === 'tour' && 'tour_date' in selectedRoom ? 
                       formatDateWithDay(selectedRoom.tour_date) : ''}
                   </p>
@@ -777,7 +786,7 @@ export default function GuideChatPage() {
                     onClick={refreshMessages}
                     disabled={refreshing}
                     className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="메시지 새로고침"
+                    title={t('refreshMessages')}
                   >
                     <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
                   </button>
@@ -790,8 +799,8 @@ export default function GuideChatPage() {
               {messages.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <MessageCircle size={48} className="mx-auto mb-2 text-gray-300" />
-                  <p>메시지가 없습니다</p>
-                  <p className="text-sm">첫 번째 메시지를 보내보세요</p>
+                  <p>{t('noMessages')}</p>
+                  <p className="text-sm">{t('firstMessage')}</p>
                 </div>
               ) : (
                 messages.map((message) => (
@@ -844,7 +853,7 @@ export default function GuideChatPage() {
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
-                  placeholder="메시지를 입력하세요..."
+                  placeholder={t('messagePlaceholder')}
                   className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm lg:text-base"
                   disabled={sending}
                 />
@@ -853,8 +862,8 @@ export default function GuideChatPage() {
                   disabled={!newMessage.trim() || sending}
                   className="flex-shrink-0 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm lg:text-base"
                 >
-                  <span className="hidden lg:inline">{sending ? '전송 중...' : '전송'}</span>
-                  <span className="lg:hidden">{sending ? '...' : '전송'}</span>
+                  <span className="hidden lg:inline">{sending ? t('sending') : t('send')}</span>
+                  <span className="lg:hidden">{sending ? '...' : t('send')}</span>
                 </button>
               </div>
             </div>
@@ -863,8 +872,8 @@ export default function GuideChatPage() {
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center text-gray-500">
               <MessageCircle size={64} className="mx-auto mb-4 text-gray-300" />
-              <h3 className="text-lg font-medium mb-2">채팅방을 선택하세요</h3>
-              <p>{activeTab === 'team' ? '팀 채팅방을 선택하여 대화를 시작하세요' : '투어를 선택하여 채팅을 시작하세요'}</p>
+              <h3 className="text-lg font-medium mb-2">{t('selectRoom')}</h3>
+              <p>{activeTab === 'team' ? t('selectTeamRoom') : t('selectTour')}</p>
             </div>
           </div>
         )}
@@ -874,48 +883,48 @@ export default function GuideChatPage() {
       {showCreateRoom && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-4">새 채팅방 만들기</h3>
+            <h3 className="text-lg font-semibold mb-4">{t('createRoomTitle')}</h3>
             
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  채팅방 이름
+                  {t('roomName')}
                 </label>
                 <input
                   type="text"
                   value={newRoomData.room_name}
                   onChange={(e) => setNewRoomData(prev => ({ ...prev, room_name: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="채팅방 이름을 입력하세요"
+                  placeholder={t('roomNamePlaceholder')}
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  채팅방 유형
+                  {t('roomType')}
                 </label>
                 <select
                   value={newRoomData.room_type}
                   onChange={(e) => setNewRoomData(prev => ({ ...prev, room_type: e.target.value as 'general' | 'department' | 'project' | 'announcement' }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="general">일반</option>
-                  <option value="department">부서</option>
-                  <option value="project">프로젝트</option>
-                  <option value="announcement">공지</option>
+                  <option value="general">{t('general')}</option>
+                  <option value="department">{t('department')}</option>
+                  <option value="project">{t('project')}</option>
+                  <option value="announcement">{t('announcement')}</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  설명
+                  {t('roomDescription')}
                 </label>
                 <textarea
                   value={newRoomData.description}
                   onChange={(e) => setNewRoomData(prev => ({ ...prev, description: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   rows={3}
-                  placeholder="채팅방 설명을 입력하세요"
+                  placeholder={t('roomDescriptionPlaceholder')}
                 />
               </div>
             </div>

@@ -22,10 +22,13 @@ import {
   MapPin,
   Clock,
   Tag,
-  Globe
+  Globe,
+  Play
 } from 'lucide-react'
 import { toast } from 'sonner'
 import TourMaterialUploadModal from '@/components/TourMaterialUploadModal'
+import TourMaterialEditModal from '@/components/TourMaterialEditModal'
+import AudioPlayer from '@/components/AudioPlayer'
 import GuideQuizModal from '@/components/GuideQuizModal'
 import AttractionModal from '@/components/AttractionModal'
 
@@ -51,6 +54,8 @@ export default function TourMaterialsManagementPage() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showQuizModal, setShowQuizModal] = useState(false)
   const [showAttractionModal, setShowAttractionModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [selectedMaterial, setSelectedMaterial] = useState<TourMaterial | null>(null)
 
   useEffect(() => {
     loadData()
@@ -134,6 +139,48 @@ export default function TourMaterialsManagementPage() {
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = seconds % 60
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+
+  // 파일 URL 가져오기
+  const getFileUrl = (filePath: string) => {
+    const { data } = supabase.storage
+      .from('tour-materials')
+      .getPublicUrl(filePath)
+    return data.publicUrl
+  }
+
+  // 파일 다운로드
+  const handleDownload = async (material: TourMaterial) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('tour-materials')
+        .download(material.file_path)
+
+      if (error) throw error
+
+      const url = URL.createObjectURL(data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = material.file_name
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('다운로드 오류:', error)
+      toast.error('파일 다운로드 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 수정 모달 열기
+  const handleEdit = (material: TourMaterial) => {
+    setSelectedMaterial(material)
+    setShowEditModal(true)
+  }
+
+  // 수정 완료 후 데이터 새로고침
+  const handleEditSuccess = () => {
+    loadData()
   }
 
   const filteredMaterials = materials.filter(material => {
@@ -329,16 +376,34 @@ export default function TourMaterialsManagementPage() {
                                 <span>{material.language?.toUpperCase() || 'KO'}</span>
                               </span>
                             </div>
+                            
+                            {/* 오디오 파일인 경우 플레이어 표시 */}
+                            {material.file_type === 'audio' && (
+                              <div className="mt-3">
+                                <AudioPlayer
+                                  src={getFileUrl(material.file_path)}
+                                  title={material.title}
+                                  audioDuration={material.duration || undefined}
+                                  className="max-w-md"
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
                           <button className="p-2 text-gray-400 hover:text-blue-600">
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button className="p-2 text-gray-400 hover:text-green-600">
+                          <button 
+                            onClick={() => handleDownload(material)}
+                            className="p-2 text-gray-400 hover:text-green-600"
+                          >
                             <Download className="w-4 h-4" />
                           </button>
-                          <button className="p-2 text-gray-400 hover:text-blue-600">
+                          <button 
+                            onClick={() => handleEdit(material)}
+                            className="p-2 text-gray-400 hover:text-blue-600"
+                          >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button className="p-2 text-gray-400 hover:text-red-600">
@@ -470,6 +535,14 @@ export default function TourMaterialsManagementPage() {
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}
         onSuccess={loadData}
+      />
+
+      {/* 수정 모달 */}
+      <TourMaterialEditModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        material={selectedMaterial}
+        onSuccess={handleEditSuccess}
       />
 
       {/* 퀴즈 모달 */}

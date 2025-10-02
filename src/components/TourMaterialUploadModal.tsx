@@ -150,6 +150,12 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
     try {
       setLoading(true)
 
+      // 오디오 파일인 경우 duration 추출
+      let duration = null
+      if (formData.file.type.startsWith('audio/')) {
+        duration = await getAudioDuration(formData.file)
+      }
+
       // 파일 업로드
       const fileExt = formData.file.name.split('.').pop()
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
@@ -174,6 +180,7 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
           file_size: formData.file.size,
           file_type: getFileType(formData.file),
           mime_type: formData.file.type,
+          duration: duration,
           language: formData.language,
           tags: formData.tags.length > 0 ? formData.tags : null,
           is_active: true,
@@ -192,6 +199,26 @@ export default function TourMaterialUploadModal({ isOpen, onClose, onSuccess }: 
     } finally {
       setLoading(false)
     }
+  }
+
+  // 오디오 파일의 duration 추출
+  const getAudioDuration = (file: File): Promise<number> => {
+    return new Promise((resolve, reject) => {
+      const audio = new Audio()
+      const url = URL.createObjectURL(file)
+      
+      audio.addEventListener('loadedmetadata', () => {
+        URL.revokeObjectURL(url)
+        resolve(Math.floor(audio.duration))
+      })
+      
+      audio.addEventListener('error', () => {
+        URL.revokeObjectURL(url)
+        reject(new Error('오디오 파일을 로드할 수 없습니다.'))
+      })
+      
+      audio.src = url
+    })
   }
 
   // 모달 닫기

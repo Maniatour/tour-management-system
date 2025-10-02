@@ -257,7 +257,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 메인 컨텐츠 */}
-      <main className="max-w-7xl mx-auto px-0 sm:px-2 lg:px-4 py-4 sm:py-8 pb-20 sm:pb-8">
+      <main className="max-w-7xl mx-auto px-0 sm:px-1 lg:px-2 py-2 sm:py-4 pb-20 sm:pb-4">
         {children}
       </main>
 

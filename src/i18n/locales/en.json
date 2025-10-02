@@ -245,11 +245,27 @@
       "title": "Tour Calendar",
       "legend": "Tour Status Legend",
       "months": {
-        "0": "Jan", "1": "Feb", "2": "Mar", "3": "Apr", "4": "May", "5": "Jun",
-        "6": "Jul", "7": "Aug", "8": "Sep", "9": "Oct", "10": "Nov", "11": "Dec"
+        "0": "Jan",
+        "1": "Feb",
+        "2": "Mar",
+        "3": "Apr",
+        "4": "May",
+        "5": "Jun",
+        "6": "Jul",
+        "7": "Aug",
+        "8": "Sep",
+        "9": "Oct",
+        "10": "Nov",
+        "11": "Dec"
       },
       "days": {
-        "0": "Sun", "1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu", "5": "Fri", "6": "Sat"
+        "0": "Sun",
+        "1": "Mon",
+        "2": "Tue",
+        "3": "Wed",
+        "4": "Thu",
+        "5": "Fri",
+        "6": "Sat"
       },
       "tourType": "Tour Type",
       "privateTour": "Private Tour",
@@ -380,22 +396,32 @@
     }
   },
   "tourReport": {
-    "title": "Create Tour Report",
-    "tourInfo": "Tour Information",
-    "tourName": "Tour Name",
-    "customer": "Customer",
-    "date": "Date",
-    "participants": "Participants",
-    "weather": "Weather",
-    "highlights": "Highlights",
-    "challenges": "Challenges",
-    "customerFeedback": "Customer Feedback",
-    "saveReport": "Save Report",
-    "placeholders": {
-      "weather": "Sunny, cloudy, rainy, etc.",
-      "highlights": "Record special moments or highlights during the tour",
-      "challenges": "Record any difficulties or areas for improvement during the tour",
-      "feedback": "Record customer opinions or feedback"
+    "title": "Tour Report",
+    "addReport": "Add Report",
+    "reportList": "Report List",
+    "noReports": "No reports registered.",
+    "reportAfterTour": "Please write a report after completing the tour.",
+    "form": {
+      "tourDate": "Tour Date",
+      "participants": "Number of Participants",
+      "weather": "Weather",
+      "highlights": "Highlights",
+      "issues": "Issues",
+      "suggestions": "Suggestions",
+      "overallRating": "Overall Rating"
+    },
+    "buttons": {
+      "submit": "Submit",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save"
+    },
+    "messages": {
+      "reportSubmitted": "Report has been submitted.",
+      "reportUpdated": "Report has been updated.",
+      "reportDeleted": "Report has been deleted.",
+      "confirmDelete": "Are you sure you want to delete this report?"
     }
   },
   "customerInfo": {
@@ -985,17 +1011,49 @@
       }
     },
     "footer": {
+      "chat": "Chat",
       "home": "Home",
       "tours": "Tours",
-      "chat": "Chat",
-      "photos": "Photos",
-      "report": "Report",
-      "receipt": "Receipt",
-      "teamChat": "Team Chat",
-      "teamBoard": "Team Board",
       "manual": "Manual",
-      "tourMaterials": "Data"
-    }
+      "tourMaterials": "Materials"
+    },
+    "tourMaterialsTitle": "Tour Materials",
+    "searchPlaceholder": "Search by title or description...",
+    "narrationAudio": "Narration Audio",
+    "guideScript": "Guide Script",
+    "noTourMaterials": "No tour materials available",
+    "noAttraction": "No attraction",
+    "noCategory": "No category",
+    "chatSubtitle": "Communicate with your team",
+    "createRoom": "Create Room",
+    "teamChat": "Team Chat",
+    "tourChat": "Tour Chat",
+    "searchTeam": "Search team chat rooms...",
+    "searchTour": "Search tour chat rooms...",
+    "selectRoom": "Select a chat room",
+    "selectTeamRoom": "Choose a team chat room from the left to start a conversation",
+    "selectTour": "Choose a tour chat room from the left to start a conversation",
+    "noRooms": "No chat rooms available",
+    "noTours": "No tour chat rooms available",
+    "newMessage": "New",
+    "participants": "Participants",
+    "backToList": "Back to list",
+    "refreshMessages": "Refresh messages",
+    "noMessages": "No messages yet",
+    "firstMessage": "Send your first message!",
+    "messagePlaceholder": "Type a message...",
+    "send": "Send",
+    "sending": "Sending...",
+    "createRoomTitle": "Create New Chat Room",
+    "roomName": "Room Name",
+    "roomNamePlaceholder": "Enter room name",
+    "roomType": "Room Type",
+    "roomDescription": "Description (Optional)",
+    "roomDescriptionPlaceholder": "Enter room description",
+    "general": "General",
+    "department": "Department",
+    "project": "Project",
+    "announcement": "Announcement"
   },
   "documents": {
     "title": "Document Management",
@@ -1192,40 +1250,53 @@
     "shareLinkCopied": "Share link copied to clipboard."
   },
   "tourExpense": {
-    "title": "Expense Management",
+    "title": "Tour Expense Management",
     "addExpense": "Add Expense",
+    "expenseList": "Expense List",
+    "totalAmount": "Total Amount",
     "noExpenses": "No expenses registered.",
-    "imageOnlyError": "Only image files can be uploaded",
-    "expenseRegistered": "Expense registered successfully.",
-    "expenseRegistrationError": "Error occurred while registering expense.",
-    "imageUploadFailed": "Image upload failed: {error}",
-    "unknownError": "Unknown error",
-    "deleteConfirm": "Are you sure you want to delete this expense?",
-    "deleteError": "Error occurred while deleting expense.",
-    "approved": "Approved",
-    "rejected": "Rejected",
-    "pending": "Pending",
-    "viewReceipt": "View Receipt",
-    "approve": "Approve",
-    "reject": "Reject",
-    "delete": "Delete",
+    "form": {
+      "paidTo": "Paid To",
+      "paidFor": "Paid For",
+      "amount": "Amount",
+      "paymentMethod": "Payment Method",
+      "note": "Note",
+      "image": "Receipt Image"
+    },
     "paidTo": "Paid To",
     "paidFor": "Paid For",
     "amount": "Amount",
     "memo": "Memo",
+    "memoPlaceholder": "Enter memo",
     "receiptPhoto": "Receipt Photo",
-    "receipt": "Receipt",
-    "receiptUploaded": "Receipt uploaded successfully",
-    "dragOrClickReceipt": "Drag and drop receipt or click to select",
-    "mobileCameraInfo": "?�� Camera shooting available on mobile | JPG, PNG, WebP format, max 5MB",
-    "cameraOrFile": "?�� Camera or File Selection",
+    "enterDirectly": "Enter Directly",
+    "dragOrClickReceipt": "Drag or click to upload receipt",
+    "mobileCameraInfo": "You can take photos with camera on mobile",
+    "cameraOrFile": "Camera or File",
     "cancel": "Cancel",
-    "fillRequiredFields": "Please fill in all required fields.",
-    "newPaidToPlaceholder": "Enter new payment recipient",
-    "newPaidForPlaceholder": "Enter new payment purpose",
-    "memoPlaceholder": "Additional information or memo",
-    "selectFromExisting": "Select from existing list",
-    "enterDirectly": "Enter directly"
+    "selectOptions": {
+      "pleaseSelect": "Please Select"
+    },
+    "paymentMethods": {
+      "cash": "Cash",
+      "creditCard": "Credit Card",
+      "debitCard": "Debit Card",
+      "mobilePayment": "Mobile Payment",
+      "other": "Other"
+    },
+    "buttons": {
+      "register": "Register",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save"
+    },
+    "messages": {
+      "expenseAdded": "Expense has been registered.",
+      "expenseUpdated": "Expense has been updated.",
+      "expenseDeleted": "Expense has been deleted.",
+      "confirmDelete": "Are you sure you want to delete this expense?"
+    }
   },
   "tourReportForm": {
     "title": "Write Tour Report",
@@ -1363,84 +1434,6 @@
       "sunsetTime": "Zion Canyon sunset time:",
       "clothing": "Please prepare appropriate clothing based on weather",
       "seasonal": "Sunrise/sunset times vary by season"
-    }
-  },
-  "tourExpense": {
-    "title": "Tour Expense Management",
-    "addExpense": "Add Expense",
-    "expenseList": "Expense List",
-    "totalAmount": "Total Amount",
-    "noExpenses": "No expenses registered.",
-    "form": {
-      "paidTo": "Paid To",
-      "paidFor": "Paid For",
-      "amount": "Amount",
-      "paymentMethod": "Payment Method",
-      "note": "Note",
-      "image": "Receipt Image"
-    },
-    "paidTo": "Paid To",
-    "paidFor": "Paid For",
-    "amount": "Amount",
-    "memo": "Memo",
-    "memoPlaceholder": "Enter memo",
-    "receiptPhoto": "Receipt Photo",
-    "enterDirectly": "Enter Directly",
-    "dragOrClickReceipt": "Drag or click to upload receipt",
-    "mobileCameraInfo": "You can take photos with camera on mobile",
-    "cameraOrFile": "Camera or File",
-    "cancel": "Cancel",
-    "selectOptions": {
-      "pleaseSelect": "Please Select"
-    },
-    "paymentMethods": {
-      "cash": "Cash",
-      "creditCard": "Credit Card",
-      "debitCard": "Debit Card",
-      "mobilePayment": "Mobile Payment",
-      "other": "Other"
-    },
-    "buttons": {
-      "register": "Register",
-      "cancel": "Cancel",
-      "edit": "Edit",
-      "delete": "Delete",
-      "save": "Save"
-    },
-    "messages": {
-      "expenseAdded": "Expense has been registered.",
-      "expenseUpdated": "Expense has been updated.",
-      "expenseDeleted": "Expense has been deleted.",
-      "confirmDelete": "Are you sure you want to delete this expense?"
-    }
-  },
-  "tourReport": {
-    "title": "Tour Report",
-    "addReport": "Add Report",
-    "reportList": "Report List",
-    "noReports": "No reports registered.",
-    "reportAfterTour": "Please write a report after completing the tour.",
-    "form": {
-      "tourDate": "Tour Date",
-      "participants": "Number of Participants",
-      "weather": "Weather",
-      "highlights": "Highlights",
-      "issues": "Issues",
-      "suggestions": "Suggestions",
-      "overallRating": "Overall Rating"
-    },
-    "buttons": {
-      "submit": "Submit",
-      "cancel": "Cancel",
-      "edit": "Edit",
-      "delete": "Delete",
-      "save": "Save"
-    },
-    "messages": {
-      "reportSubmitted": "Report has been submitted.",
-      "reportUpdated": "Report has been updated.",
-      "reportDeleted": "Report has been deleted.",
-      "confirmDelete": "Are you sure you want to delete this report?"
     }
   }
 }
