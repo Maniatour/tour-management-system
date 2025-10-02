@@ -576,7 +576,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             productDetails: detailsData ? (() => {
               // 다국어 데이터를 언어별로 매핑
               const multilingualDetails: any = {}
-              if (Array.isArray(detailsData)) {
+              if (Array.isArray(detailsData) && detailsData.length > 0) {
                 // 여러 언어 데이터가 있는 경우
                 detailsData.forEach((item: any) => {
                   multilingualDetails[item.language_code || 'ko'] = {
@@ -714,7 +714,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                  }>
                }>()
                
-               optionsData?.forEach((option: {
+               (optionsData || []).forEach((option: {
                  id: string
                  name: string
                  description: string
