@@ -12,45 +12,26 @@ interface ScheduleItem {
   day_number: number
   start_time: string | null
   end_time: string | null
-  title: string
-  description: string
-  location: string
   duration_minutes: number | null
-  is_break: boolean
-  is_meal: boolean
-  is_transport: boolean
-  is_tour: boolean
-  transport_type: string
-  transport_details: string
-  notes: string
-  // 새로운 필드들
-  latitude?: number
-  longitude?: number
-  show_to_customers: boolean
-  guide_assignment_type: 'none' | 'single_guide' | 'two_guides' | 'guide_driver'
-  // 단순화된 가이드 할당 필드
-  two_guide_schedule?: 'guide' | 'assistant'
-  guide_driver_schedule?: 'guide' | 'assistant'
-  // 가이드 할당 필드들 (누락된 필드들 추가)
-  assigned_guide_1?: 'guide' | 'assistant'
-  assigned_guide_2?: 'guide' | 'assistant'
-  assigned_guide_driver_guide?: 'guide' | 'driver'
-  assigned_guide_driver_driver?: 'guide' | 'driver'
-  // 다국어 지원 필드들
-  title_ko?: string
-  title_en?: string
-  description_ko?: string
-  description_en?: string
-  location_ko?: string
-  location_en?: string
-  transport_details_ko?: string
-  transport_details_en?: string
-  notes_ko?: string
-  notes_en?: string
-  guide_notes_ko?: string
-  guide_notes_en?: string
-  thumbnail_url?: string
-  order_index?: number
+  is_break: boolean | null
+  is_meal: boolean | null
+  is_transport: boolean | null
+  is_tour: boolean | null
+  latitude?: number | null
+  longitude?: number | null
+  show_to_customers: boolean | null
+  title_ko?: string | null
+  title_en?: string | null
+  description_ko?: string | null
+  description_en?: string | null
+  location_ko?: string | null
+  location_en?: string | null
+  guide_notes_ko?: string | null
+  guide_notes_en?: string | null
+  thumbnail_url?: string | null
+  order_index?: number | null
+  two_guide_schedule?: string | null
+  guide_driver_schedule?: string | null
 }
 
 interface ProductScheduleTabProps {
@@ -80,25 +61,21 @@ export default function ProductScheduleTab({
   }
 
   // 일정의 언어별 텍스트 가져오기
-  const getScheduleText = (schedule: ScheduleItem, field: 'title' | 'description' | 'location' | 'transport_details' | 'notes' | 'guide_notes') => {
+  const getScheduleText = (schedule: ScheduleItem, field: 'title' | 'description' | 'location' | 'guide_notes') => {
     if (language === 'ko') {
       switch (field) {
-        case 'title': return schedule.title_ko || schedule.title
-        case 'description': return schedule.description_ko || schedule.description
-        case 'location': return schedule.location_ko || schedule.location
-        case 'transport_details': return schedule.transport_details_ko || schedule.transport_details
-        case 'notes': return schedule.notes_ko || schedule.notes
-        case 'guide_notes': return schedule.guide_notes_ko || schedule.guide_notes_en
+        case 'title': return schedule.title_ko || ''
+        case 'description': return schedule.description_ko || ''
+        case 'location': return schedule.location_ko || ''
+        case 'guide_notes': return schedule.guide_notes_ko || ''
         default: return ''
       }
     } else {
       switch (field) {
-        case 'title': return schedule.title_en || schedule.title
-        case 'description': return schedule.description_en || schedule.description
-        case 'location': return schedule.location_en || schedule.location
-        case 'transport_details': return schedule.transport_details_en || schedule.transport_details
-        case 'notes': return schedule.notes_en || schedule.notes
-        case 'guide_notes': return schedule.guide_notes_en || schedule.guide_notes_ko
+        case 'title': return schedule.title_en || schedule.title_ko || ''
+        case 'description': return schedule.description_en || schedule.description_ko || ''
+        case 'location': return schedule.location_en || schedule.location_ko || ''
+        case 'guide_notes': return schedule.guide_notes_en || schedule.guide_notes_ko || ''
         default: return ''
       }
     }
@@ -173,21 +150,15 @@ export default function ProductScheduleTab({
   // 가이드 담당별로 일정 분류 (모든 일정 표시)
   const getTwoGuidesSchedules = () => {
     return schedules.filter(schedule => 
-      schedule.guide_assignment_type === 'two_guides' || 
-      schedule.assigned_guide_1 === 'guide' || 
-      schedule.assigned_guide_2 === 'assistant' ||
-      schedule.guide_assignment_type === 'none' ||
-      schedule.guide_assignment_type === 'single_guide'
+      schedule.two_guide_schedule === 'guide' || 
+      schedule.two_guide_schedule === 'assistant'
     )
   }
 
   const getGuideDriverSchedules = () => {
     return schedules.filter(schedule => 
-      schedule.guide_assignment_type === 'guide_driver' || 
-      schedule.assigned_guide_driver_guide === 'guide' || 
-      schedule.assigned_guide_driver_driver === 'driver' ||
-      schedule.guide_assignment_type === 'none' ||
-      schedule.guide_assignment_type === 'single_guide'
+      schedule.guide_driver_schedule === 'guide' || 
+      schedule.guide_driver_schedule === 'assistant'
     )
   }
 
@@ -233,26 +204,26 @@ export default function ProductScheduleTab({
       const duration = schedule.duration_minutes
       
       // 2가이드에서 가이드가 선택된 경우
-      if (schedule.assigned_guide_1 === 'guide') {
+      if (schedule.two_guide_schedule === 'guide') {
         twoGuidesGuideTotal += duration
         if (schedule.is_transport) twoGuidesGuideTransport += duration
         if (schedule.is_tour) twoGuidesGuideTour += duration
       }
       // 2가이드에서 어시스턴트가 선택된 경우
-      else if (schedule.assigned_guide_2 === 'assistant') {
+      else if (schedule.two_guide_schedule === 'assistant') {
         twoGuidesAssistantTotal += duration
         if (schedule.is_transport) twoGuidesAssistantTransport += duration
         if (schedule.is_tour) twoGuidesAssistantTour += duration
       }
       
       // 가이드+드라이버에서 가이드가 선택된 경우
-      if (schedule.assigned_guide_driver_guide === 'guide') {
+      if (schedule.guide_driver_schedule === 'guide') {
         guideDriverGuideTotal += duration
         if (schedule.is_transport) guideDriverGuideTransport += duration
         if (schedule.is_tour) guideDriverGuideTour += duration
       }
       // 가이드+드라이버에서 드라이버가 선택된 경우
-      else if (schedule.assigned_guide_driver_driver === 'driver') {
+      else if (schedule.guide_driver_schedule === 'assistant') {
         guideDriverDriverTotal += duration
         if (schedule.is_transport) guideDriverDriverTransport += duration
         if (schedule.is_tour) guideDriverDriverTour += duration
@@ -661,7 +632,7 @@ export default function ProductScheduleTab({
                                   {getScheduleText(schedule, 'title')}
                   </span>
                                 <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
-                                  {schedule.assigned_guide_1 === 'guide' ? getText('가이드 담당', 'Guide Assigned') : getText('어시스턴트 담당', 'Assistant Assigned')}
+                                  {schedule.two_guide_schedule === 'guide' ? getText('가이드 담당', 'Guide Assigned') : getText('어시스턴트 담당', 'Assistant Assigned')}
                   </span>
                               </div>
                               <div className="flex items-center space-x-1">
@@ -703,17 +674,6 @@ export default function ProductScheduleTab({
                   </p>
                 ) : null}
                 
-                {getScheduleText(schedule, 'transport_details') ? (
-                                  <p className="text-sm text-gray-500 mt-1">
-                    🚗 {getScheduleText(schedule, 'transport_details')}
-                  </p>
-                ) : null}
-                
-                {getScheduleText(schedule, 'notes') ? (
-                                  <p className="text-sm text-gray-500 mt-1">
-                    📝 {getScheduleText(schedule, 'notes')}
-                  </p>
-                ) : null}
                               </div>
                 
                 {getScheduleText(schedule, 'guide_notes') && (
@@ -788,11 +748,11 @@ export default function ProductScheduleTab({
                                   {getScheduleText(schedule, 'title')}
                   </span>
                                 <span className={`px-2 py-1 text-xs rounded ${
-                                  schedule.assigned_guide_driver_guide === 'guide' 
+                                  schedule.guide_driver_schedule === 'guide' 
                                     ? 'bg-blue-100 text-blue-800' 
                                     : 'bg-orange-100 text-orange-800'
                                 }`}>
-                                  {schedule.assigned_guide_driver_guide === 'guide' ? getText('가이드 담당', 'Guide Assigned') : getText('드라이버 담당', 'Driver Assigned')}
+                                  {schedule.guide_driver_schedule === 'guide' ? getText('가이드 담당', 'Guide Assigned') : getText('드라이버 담당', 'Driver Assigned')}
                   </span>
                               </div>
                               <div className="flex items-center space-x-1">
@@ -834,17 +794,6 @@ export default function ProductScheduleTab({
                   </p>
                 ) : null}
                 
-                {getScheduleText(schedule, 'transport_details') ? (
-                                  <p className="text-sm text-gray-500 mt-1">
-                    🚗 {getScheduleText(schedule, 'transport_details')}
-                  </p>
-                ) : null}
-                
-                {getScheduleText(schedule, 'notes') ? (
-                                  <p className="text-sm text-gray-500 mt-1">
-                    📝 {getScheduleText(schedule, 'notes')}
-                  </p>
-                ) : null}
                               </div>
                 
                 {(schedule.guide_notes_ko || schedule.guide_notes_en) && (

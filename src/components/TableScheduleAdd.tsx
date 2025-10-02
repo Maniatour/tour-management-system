@@ -29,39 +29,26 @@ interface ScheduleItem {
   day_number: number
   start_time: string | null
   end_time: string | null
-  title: string
-  description: string
-  location: string
   duration_minutes: number | null
-  is_break: boolean
-  is_meal: boolean
-  is_transport: boolean
-  is_tour: boolean
-  transport_type: string
-  transport_details: string
-  notes: string
-  latitude?: number
-  longitude?: number
-  show_to_customers: boolean
-  guide_assignment_type: 'none' | 'single_guide' | 'two_guides' | 'guide_driver'
-  assigned_guide_1?: string
-  assigned_guide_2?: string
-  assigned_guide_driver_guide?: string
-  assigned_guide_driver_driver?: string
-  title_ko?: string
-  title_en?: string
-  description_ko?: string
-  description_en?: string
-  location_ko?: string
-  location_en?: string
-  transport_details_ko?: string
-  transport_details_en?: string
-  notes_ko?: string
-  notes_en?: string
-  guide_notes_ko?: string
-  guide_notes_en?: string
-  thumbnail_url?: string
-  order_index?: number
+  is_break: boolean | null
+  is_meal: boolean | null
+  is_transport: boolean | null
+  is_tour: boolean | null
+  latitude?: number | null
+  longitude?: number | null
+  show_to_customers: boolean | null
+  title_ko?: string | null
+  title_en?: string | null
+  description_ko?: string | null
+  description_en?: string | null
+  location_ko?: string | null
+  location_en?: string | null
+  guide_notes_ko?: string | null
+  guide_notes_en?: string | null
+  thumbnail_url?: string | null
+  order_index?: number | null
+  two_guide_schedule?: string | null
+  guide_driver_schedule?: string | null
 }
 
 interface TableScheduleAddProps {
@@ -117,7 +104,7 @@ export default function TableScheduleAdd({
       
       updateSchedule(mapModalIndex, 'latitude', lat)
       updateSchedule(mapModalIndex, 'longitude', lng)
-      updateSchedule(mapModalIndex, 'location', address || schedules[mapModalIndex].location)
+      updateSchedule(mapModalIndex, 'location_ko', address || schedules[mapModalIndex].location_ko)
       
       setShowMapModal(false)
       setMapModalIndex(null)
@@ -298,39 +285,26 @@ export default function TableScheduleAdd({
       day_number: lastDayNumber, // 윗 행과 같은 일차
       start_time: lastEndTime, // 윗 행의 종료 시간을 시작 시간으로 (null 가능)
       end_time: lastEndTime ? calculateEndTime(lastEndTime, 60) : null, // 시작 시간이 있으면 + 60분
-      title: '',
-      description: '',
-      location: '',
       duration_minutes: lastEndTime ? 60 : null, // 시간이 없으면 null
       is_break: false,
       is_meal: false,
       is_transport: false,
       is_tour: false,
-      transport_type: '',
-      transport_details: '',
-      notes: '',
-      latitude: undefined,
-      longitude: undefined,
+      latitude: null,
+      longitude: null,
       show_to_customers: true,
-      guide_assignment_type: 'none',
-      assigned_guide_1: '',
-      assigned_guide_2: '',
-      assigned_guide_driver_guide: '',
-      assigned_guide_driver_driver: '',
       title_ko: '',
       title_en: '',
       description_ko: '',
       description_en: '',
       location_ko: '',
       location_en: '',
-      transport_details_ko: '',
-      transport_details_en: '',
-      notes_ko: '',
-      notes_en: '',
       guide_notes_ko: '',
       guide_notes_en: '',
       thumbnail_url: '',
-      order_index: maxOrderIndex + 1 // 다음 순서로 설정
+      order_index: maxOrderIndex + 1, // 다음 순서로 설정
+      two_guide_schedule: null,
+      guide_driver_schedule: null
     }
     onSchedulesChange([...schedules, newSchedule])
   }
@@ -503,8 +477,6 @@ export default function TableScheduleAdd({
         title_ko: schedule.title_ko,
         description_ko: schedule.description_ko,
         location_ko: schedule.location_ko,
-        transport_details_ko: schedule.transport_details_ko,
-        notes_ko: schedule.notes_ko,
         guide_notes_ko: schedule.guide_notes_ko
       }
 
@@ -546,8 +518,6 @@ export default function TableScheduleAdd({
           title_ko: schedule.title_ko,
           description_ko: schedule.description_ko,
           location_ko: schedule.location_ko,
-          transport_details_ko: schedule.transport_details_ko,
-          notes_ko: schedule.notes_ko,
           guide_notes_ko: schedule.guide_notes_ko
         }
 
@@ -585,7 +555,7 @@ export default function TableScheduleAdd({
     try {
       const schedule = schedules[index]
       const dayNumber = index + 1
-      const suggestedTitle = await suggestScheduleTitle(dayNumber, schedule.location_ko || schedule.location)
+      const suggestedTitle = await suggestScheduleTitle(dayNumber, schedule.location_ko || '')
       
       updateSchedule(index, 'title_ko', suggestedTitle)
     } catch (error) {
@@ -603,8 +573,8 @@ export default function TableScheduleAdd({
     try {
       const schedule = schedules[index]
       const suggestedDescription = await suggestScheduleDescription(
-        schedule.title_ko || schedule.title, 
-        schedule.location_ko || schedule.location
+        schedule.title_ko || '', 
+        schedule.location_ko || ''
       )
       
       updateSchedule(index, 'description_ko', suggestedDescription)
@@ -629,20 +599,20 @@ export default function TableScheduleAdd({
         const duration = schedule.duration_minutes
         
         // 2가이드에서 가이드가 선택된 경우
-        if (schedule.assigned_guide_1 === 'guide') {
+        if (schedule.two_guide_schedule === 'guide') {
           twoGuidesGuideTime += duration
         }
         // 2가이드에서 어시스턴트가 선택된 경우
-        else if (schedule.assigned_guide_2 === 'assistant') {
+        else if (schedule.two_guide_schedule === 'assistant') {
           twoGuidesAssistantTime += duration
         }
         
         // 가이드+드라이버에서 가이드가 선택된 경우
-        if (schedule.assigned_guide_driver_guide === 'guide') {
+        if (schedule.guide_driver_schedule === 'guide') {
           guideDriverGuideTime += duration
         }
         // 가이드+드라이버에서 드라이버가 선택된 경우
-        else if (schedule.assigned_guide_driver_driver === 'driver') {
+        else if (schedule.guide_driver_schedule === 'assistant') {
           guideDriverDriverTime += duration
         }
       }
@@ -1166,6 +1136,22 @@ export default function TableScheduleAdd({
                 </div>
               </div>
 
+              {/* 번역 버튼 */}
+              <div className="w-20 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => translateSchedule(index)}
+                  disabled={translating}
+                  className="px-2 py-1 text-xs bg-purple-100 text-purple-600 rounded hover:bg-purple-200 disabled:opacity-50"
+                  title="이 행 번역"
+                >
+                  {translating ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Languages className="h-3 w-3" />
+                  )}
+                </button>
+              </div>
 
             </div>
           ))}

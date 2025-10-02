@@ -10,37 +10,28 @@ interface ScheduleItem {
   day_number: number
   start_time: string | null
   end_time: string | null
-  title: string
-  title_ko: string | null
-  title_en: string | null
-  description: string | null
-  description_ko: string | null
-  description_en: string | null
-  location: string | null
-  location_ko: string | null
-  location_en: string | null
+  duration_minutes: number | null
+  is_break: boolean | null
+  is_meal: boolean | null
+  is_transport: boolean | null
+  is_tour: boolean | null
   latitude: number | null
   longitude: number | null
-  duration_minutes: number | null
-  is_break: boolean
-  is_meal: boolean
-  is_transport: boolean
-  transport_type: string | null
-  transport_details: string | null
-  transport_details_ko: string | null
-  transport_details_en: string | null
-  notes: string | null
-  notes_ko: string | null
-  notes_en: string | null
+  show_to_customers: boolean | null
+  title_ko: string | null
+  title_en: string | null
+  description_ko: string | null
+  description_en: string | null
+  location_ko: string | null
+  location_en: string | null
   guide_notes_ko: string | null
   guide_notes_en: string | null
-  show_to_customers: boolean
-  guide_assignment_type: string
+  thumbnail_url: string | null
+  order_index: number | null
   two_guide_schedule: string | null
   guide_driver_schedule: string | null
-  order_index: number
-  created_at: string
-  updated_at: string
+  created_at: string | null
+  updated_at: string | null
 }
 
 interface TourScheduleSectionProps {
@@ -63,7 +54,7 @@ export default function TourScheduleSection({
       
       
       if (teamType === '2guide') {
-        // 2가이드 담당 일정: guide_assignment_type이 'two_guides'이거나 'none', 'single_guide'인 경우
+        // 2가이드 담당 일정: two_guide_schedule이 설정된 경우
         const { data, error } = await supabase
           .from('product_schedules')
           .select(`
@@ -72,7 +63,7 @@ export default function TourScheduleSection({
             guide_driver_schedule
           `)
           .eq('product_id', productId)
-          .in('guide_assignment_type', ['two_guides', 'none', 'single_guide'])
+          .not('two_guide_schedule', 'is', null)
           .order('day_number', { ascending: true })
           .order('order_index', { ascending: true })
           .order('start_time', { ascending: true })
@@ -80,7 +71,7 @@ export default function TourScheduleSection({
         if (error) throw error
         setSchedules(data || [])
       } else if (teamType === 'guide+driver') {
-        // 가이드+드라이버 담당 일정: guide_assignment_type이 'guide_driver'이거나 'none', 'single_guide'인 경우
+        // 가이드+드라이버 담당 일정: guide_driver_schedule이 설정된 경우
         const { data, error } = await supabase
           .from('product_schedules')
           .select(`
@@ -89,7 +80,7 @@ export default function TourScheduleSection({
             guide_driver_schedule
           `)
           .eq('product_id', productId)
-          .in('guide_assignment_type', ['guide_driver', 'none', 'single_guide'])
+          .not('guide_driver_schedule', 'is', null)
           .order('day_number', { ascending: true })
           .order('order_index', { ascending: true })
           .order('start_time', { ascending: true })
@@ -166,9 +157,7 @@ export default function TourScheduleSection({
 
   const getResponsibleLabel = (schedule: ScheduleItem) => {
     console.log('담당자 라벨 계산:', {
-      title: schedule.title,
       teamType: teamType,
-      guide_assignment_type: schedule.guide_assignment_type,
       two_guide_schedule: schedule.two_guide_schedule,
       guide_driver_schedule: schedule.guide_driver_schedule
     })
@@ -200,22 +189,18 @@ export default function TourScheduleSection({
       .filter(schedule => {
         // 좌표가 있거나 위치 텍스트가 있는 일정만 포함
         return (schedule.latitude && schedule.longitude) || 
-               getLocalizedText(schedule.location_ko, schedule.location_en, schedule.location)
+               getLocalizedText(schedule.location_ko, schedule.location_en, '')
       })
       .map(schedule => {
         // 좌표가 있으면 좌표를 우선 사용
         if (schedule.latitude && schedule.longitude) {
           return `${schedule.latitude},${schedule.longitude}`
         } 
-        // 좌표가 없으면 location 컬럼 우선
-        else if (schedule.location) {
-          return schedule.location
-        }
-        // location도 없으면 location_ko 사용
+        // 좌표가 없으면 location_ko 컬럼 우선
         else if (schedule.location_ko) {
           return schedule.location_ko
         }
-        // 마지막으로 location_en 사용
+        // location_ko도 없으면 location_en 사용
         else if (schedule.location_en) {
           return schedule.location_en
         }
@@ -241,7 +226,7 @@ export default function TourScheduleSection({
     }
     
     if (waypoints.length > 0) {
-      url += `&waypoints=${waypoints.map(wp => encodeURIComponent(wp)).join('|')}`
+      url += `&waypoints=${waypoints.map(wp => wp ? encodeURIComponent(wp) : '').filter(wp => wp).join('|')}`
     }
     
     return url
@@ -359,11 +344,11 @@ export default function TourScheduleSection({
                       <div className="mb-2">
                         <div className="flex items-center justify-between">
                           <h5 className="font-semibold text-gray-900 text-base">
-                            {getLocalizedText(schedule.title_ko, schedule.title_en, schedule.title)}
+                            {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
                           </h5>
-                          {getLocalizedText(schedule.location_ko, schedule.location_en, schedule.location) && (
+                          {getLocalizedText(schedule.location_ko, schedule.location_en, '') && (
                             <a
-                              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(getLocalizedText(schedule.location_ko, schedule.location_en, schedule.location))}`}
+                              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(getLocalizedText(schedule.location_ko, schedule.location_en, ''))}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-800 hover:bg-red-200 transition-colors"
@@ -376,10 +361,10 @@ export default function TourScheduleSection({
                       </div>
                       
                       {/* 세 번째 줄: 설명 */}
-                      {getLocalizedText(schedule.description_ko, schedule.description_en, schedule.description) && (
+                      {getLocalizedText(schedule.description_ko, schedule.description_en, '') && (
                         <div>
                           <p className="text-sm text-gray-600 leading-relaxed">
-                            {getLocalizedText(schedule.description_ko, schedule.description_en, schedule.description)}
+                            {getLocalizedText(schedule.description_ko, schedule.description_en, '')}
                           </p>
                         </div>
                       )}

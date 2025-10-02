@@ -988,39 +988,28 @@ export interface Database {
         day_number: number
         start_time: string | null
         end_time: string | null
-        title: string
-        title_ko: string | null
-        title_en: string | null
-        description: string | null
-        description_ko: string | null
-        description_en: string | null
-        location: string | null
-        location_ko: string | null
-        location_en: string | null
         duration_minutes: number | null
-        is_break: boolean
-        is_meal: boolean
-        is_transport: boolean
-        is_tour: boolean
-        transport_type: string | null
-        transport_details: string | null
-        transport_details_ko: string | null
-        transport_details_en: string | null
-        notes: string | null
-        notes_ko: string | null
-        notes_en: string | null
-        guide_notes_ko: string | null
-        guide_notes_en: string | null
-        show_to_customers: boolean
-        guide_assignment_type: string
-        two_guide_schedule: string | null
-        guide_driver_schedule: string | null
+        is_break: boolean | null
+        is_meal: boolean | null
+        is_transport: boolean | null
+        created_at: string | null
+        updated_at: string | null
         latitude: number | null
         longitude: number | null
+        show_to_customers: boolean | null
+        title_ko: string | null
+        title_en: string | null
+        description_ko: string | null
+        description_en: string | null
+        location_ko: string | null
+        location_en: string | null
+        guide_notes_ko: string | null
+        guide_notes_en: string | null
+        is_tour: boolean | null
         thumbnail_url: string | null
-        order_index: number
-        created_at: string
-        updated_at: string
+        order_index: number | null
+        two_guide_schedule: string | null
+        guide_driver_schedule: string | null
       }
       Insert: {
         id?: string
@@ -1028,39 +1017,28 @@ export interface Database {
         day_number: number
         start_time?: string | null
         end_time?: string | null
-        title: string
-        title_ko?: string | null
-        title_en?: string | null
-        description?: string | null
-        description_ko?: string | null
-        description_en?: string | null
-        location?: string | null
-        location_ko?: string | null
-        location_en?: string | null
         duration_minutes?: number | null
-        is_break?: boolean
-        is_meal?: boolean
-        is_transport?: boolean
-        is_tour?: boolean
-        transport_type?: string | null
-        transport_details?: string | null
-        transport_details_ko?: string | null
-        transport_details_en?: string | null
-        notes?: string | null
-        notes_ko?: string | null
-        notes_en?: string | null
-        guide_notes_ko?: string | null
-        guide_notes_en?: string | null
-        show_to_customers?: boolean
-        guide_assignment_type?: string
-        two_guide_schedule?: string | null
-        guide_driver_schedule?: string | null
+        is_break?: boolean | null
+        is_meal?: boolean | null
+        is_transport?: boolean | null
+        created_at?: string | null
+        updated_at?: string | null
         latitude?: number | null
         longitude?: number | null
+        show_to_customers?: boolean | null
+        title_ko?: string | null
+        title_en?: string | null
+        description_ko?: string | null
+        description_en?: string | null
+        location_ko?: string | null
+        location_en?: string | null
+        guide_notes_ko?: string | null
+        guide_notes_en?: string | null
+        is_tour?: boolean | null
         thumbnail_url?: string | null
-        order_index?: number
-        created_at?: string
-        updated_at?: string
+        order_index?: number | null
+        two_guide_schedule?: string | null
+        guide_driver_schedule?: string | null
       }
       Update: {
         id?: string
@@ -1068,39 +1046,28 @@ export interface Database {
         day_number?: number
         start_time?: string | null
         end_time?: string | null
-        title?: string
-        title_ko?: string | null
-        title_en?: string | null
-        description?: string | null
-        description_ko?: string | null
-        description_en?: string | null
-        location?: string | null
-        location_ko?: string | null
-        location_en?: string | null
         duration_minutes?: number | null
-        is_break?: boolean
-        is_meal?: boolean
-        is_transport?: boolean
-        is_tour?: boolean
-        transport_type?: string | null
-        transport_details?: string | null
-        transport_details_ko?: string | null
-        transport_details_en?: string | null
-        notes?: string | null
-        notes_ko?: string | null
-        notes_en?: string | null
-        guide_notes_ko?: string | null
-        guide_notes_en?: string | null
-        show_to_customers?: boolean
-        guide_assignment_type?: string
-        two_guide_schedule?: string | null
-        guide_driver_schedule?: string | null
+        is_break?: boolean | null
+        is_meal?: boolean | null
+        is_transport?: boolean | null
+        created_at?: string | null
+        updated_at?: string | null
         latitude?: number | null
         longitude?: number | null
+        show_to_customers?: boolean | null
+        title_ko?: string | null
+        title_en?: string | null
+        description_ko?: string | null
+        description_en?: string | null
+        location_ko?: string | null
+        location_en?: string | null
+        guide_notes_ko?: string | null
+        guide_notes_en?: string | null
+        is_tour?: boolean | null
         thumbnail_url?: string | null
-        order_index?: number
-        created_at?: string
-        updated_at?: string
+        order_index?: number | null
+        two_guide_schedule?: string | null
+        guide_driver_schedule?: string | null
       }
       tour_attractions: {
         Row: {
@@ -1335,6 +1302,242 @@ export interface Database {
           is_correct?: boolean
           time_taken?: number | null
           created_at?: string | null
+        }
+      }
+      tour_course_categories: {
+        Row: {
+          id: string
+          name_ko: string
+          name_en: string
+          description_ko: string | null
+          description_en: string | null
+          color: string | null
+          icon: string | null
+          sort_order: number | null
+          is_active: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name_ko: string
+          name_en: string
+          description_ko?: string | null
+          description_en?: string | null
+          color?: string | null
+          icon?: string | null
+          sort_order?: number | null
+          is_active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name_ko?: string
+          name_en?: string
+          description_ko?: string | null
+          description_en?: string | null
+          color?: string | null
+          icon?: string | null
+          sort_order?: number | null
+          is_active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      tour_course_photos: {
+        Row: {
+          id: string
+          course_id: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          mime_type: string
+          thumbnail_url: string | null
+          is_primary: boolean | null
+          sort_order: number | null
+          uploaded_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          course_id: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          mime_type: string
+          thumbnail_url?: string | null
+          is_primary?: boolean | null
+          sort_order?: number | null
+          uploaded_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          course_id?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          mime_type?: string
+          thumbnail_url?: string | null
+          is_primary?: boolean | null
+          sort_order?: number | null
+          uploaded_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      tour_course_points: {
+        Row: {
+          id: string
+          course_id: string
+          point_name: string
+          location: string | null
+          latitude: number | null
+          longitude: number | null
+          description_ko: string | null
+          description_en: string | null
+          visit_duration: number | null
+          sort_order: number | null
+          is_active: boolean | null
+          google_maps_url: string | null
+          place_id: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          course_id: string
+          point_name: string
+          location?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          description_ko?: string | null
+          description_en?: string | null
+          visit_duration?: number | null
+          sort_order?: number | null
+          is_active?: boolean | null
+          google_maps_url?: string | null
+          place_id?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          course_id?: string
+          point_name?: string
+          location?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          description_ko?: string | null
+          description_en?: string | null
+          visit_duration?: number | null
+          sort_order?: number | null
+          is_active?: boolean | null
+          google_maps_url?: string | null
+          place_id?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      tour_courses: {
+        Row: {
+          id: string
+          name_ko: string
+          name_en: string
+          description_ko: string | null
+          description_en: string | null
+          category_id: string | null
+          point_name: string | null
+          location: string | null
+          start_latitude: number | null
+          start_longitude: number | null
+          end_latitude: number | null
+          end_longitude: number | null
+          internal_note: string | null
+          google_maps_url: string | null
+          place_id: string | null
+          start_google_maps_url: string | null
+          start_place_id: string | null
+          end_google_maps_url: string | null
+          end_place_id: string | null
+          duration_hours: number
+          difficulty_level: 'easy' | 'medium' | 'hard'
+          max_participants: number
+          min_participants: number
+          price_adult: number | null
+          price_child: number | null
+          price_infant: number | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name_ko: string
+          name_en: string
+          description_ko?: string | null
+          description_en?: string | null
+          category_id?: string | null
+          point_name?: string | null
+          location?: string | null
+          start_latitude?: number | null
+          start_longitude?: number | null
+          end_latitude?: number | null
+          end_longitude?: number | null
+          internal_note?: string | null
+          google_maps_url?: string | null
+          place_id?: string | null
+          start_google_maps_url?: string | null
+          start_place_id?: string | null
+          end_google_maps_url?: string | null
+          end_place_id?: string | null
+          duration_hours: number
+          difficulty_level: 'easy' | 'medium' | 'hard'
+          max_participants: number
+          min_participants: number
+          price_adult?: number | null
+          price_child?: number | null
+          price_infant?: number | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name_ko?: string
+          name_en?: string
+          description_ko?: string | null
+          description_en?: string | null
+          category_id?: string | null
+          point_name?: string | null
+          location?: string | null
+          start_latitude?: number | null
+          start_longitude?: number | null
+          end_latitude?: number | null
+          end_longitude?: number | null
+          internal_note?: string | null
+          google_maps_url?: string | null
+          place_id?: string | null
+          start_google_maps_url?: string | null
+          start_place_id?: string | null
+          end_google_maps_url?: string | null
+          end_place_id?: string | null
+          duration_hours?: number
+          difficulty_level?: 'easy' | 'medium' | 'hard'
+          max_participants?: number
+          min_participants?: number
+          price_adult?: number | null
+          price_child?: number | null
+          price_infant?: number | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
         }
       }
     }
