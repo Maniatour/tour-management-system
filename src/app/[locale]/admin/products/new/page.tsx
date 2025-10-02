@@ -103,8 +103,7 @@ export default function NewProductPage({ params }: NewProductPageProps) {
           base_price: productData.base_price,
           description: productData.description,
           is_active: productData.is_active,
-          is_tour: productData.is_tour,
-          created_by: user.id
+          is_tour: productData.is_tour
         }])
         .select()
         .single()
