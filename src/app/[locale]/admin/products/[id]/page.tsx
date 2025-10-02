@@ -1291,6 +1291,10 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         <nav className="-mb-px flex space-x-8 overflow-x-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon
+            // 새 상품일 때는 기본정보 탭만 표시
+            if (isNewProduct && tab.id !== 'basic') {
+              return null
+            }
             return (
               <button
                 key={tab.id}
@@ -1321,132 +1325,137 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           />
         )}
 
-        {/* 가격관리 탭 - 동적 가격으로 통합됨 */}
-        {activeTab === 'pricing' && (
-          <div className="text-center py-12">
-            <DollarSign className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">가격 관리</h3>
-            <p className="text-gray-600">가격 관리는 &apos;동적 가격&apos; 탭에서 통합하여 관리합니다.</p>
-                      </div>
-        )}
+        {/* 새 상품이 아닐 때만 다른 탭들 표시 */}
+        {!isNewProduct && (
+          <>
+            {/* 가격관리 탭 - 동적 가격으로 통합됨 */}
+            {activeTab === 'pricing' && (
+              <div className="text-center py-12">
+                <DollarSign className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">가격 관리</h3>
+                <p className="text-gray-600">가격 관리는 &apos;동적 가격&apos; 탭에서 통합하여 관리합니다.</p>
+              </div>
+            )}
 
-        {/* 동적 가격 탭 */}
-        {activeTab === 'dynamic-pricing' && (
-          <div className="space-y-6">
-            <DynamicPricingManager 
-              productId={id} 
-              isNewProduct={isNewProduct}
-              onSave={(rule) => {
-                console.log('통합 가격 정보 저장됨:', rule);
-                // 동적 가격 정보가 성공적으로 저장되었음을 알림
-                // 상품 자체의 저장은 하단의 "변경사항 저장" 버튼을 통해 처리
-              }}
-            />
-          </div>
-        )}
+            {/* 동적 가격 탭 */}
+            {activeTab === 'dynamic-pricing' && (
+              <div className="space-y-6">
+                <DynamicPricingManager 
+                  productId={id} 
+                  isNewProduct={isNewProduct}
+                  onSave={(rule) => {
+                    console.log('통합 가격 정보 저장됨:', rule);
+                    // 동적 가격 정보가 성공적으로 저장되었음을 알림
+                    // 상품 자체의 저장은 하단의 "변경사항 저장" 버튼을 통해 처리
+                  }}
+                />
+              </div>
+            )}
 
-        {/* 초이스 관리 탭 */}
-        {activeTab === 'choices' && (
-          <ChoicesTab
-            productId={id}
-            isNewProduct={isNewProduct}
-          />
-        )}
+            {/* 초이스 관리 탭 */}
+            {activeTab === 'choices' && (
+              <ChoicesTab
+                productId={id}
+                isNewProduct={isNewProduct}
+              />
+            )}
 
-        {/* 옵션관리 탭 */}
-        {activeTab === 'options' && (
-          <OptionsTab
-            formData={formData}
-            setShowAddOptionModal={setShowAddOptionModal}
-            removeProductOption={removeProductOption}
-            updateProductOption={updateProductOption}
-            productId={id}
-            isNewProduct={isNewProduct}
-          />
-        )}
+            {/* 옵션관리 탭 */}
+            {activeTab === 'options' && (
+              <OptionsTab
+                formData={formData}
+                setShowAddOptionModal={setShowAddOptionModal}
+                removeProductOption={removeProductOption}
+                updateProductOption={updateProductOption}
+                productId={id}
+                isNewProduct={isNewProduct}
+              />
+            )}
 
-        {/* 세부정보 탭 */}
-        {activeTab === 'details' && (
-          <ProductDetailsTab
-            productId={id}
-            isNewProduct={isNewProduct}
-            subCategory={formData.subCategory}
-            formData={{
-              useCommonDetails: formData.useCommonDetails,
-              productDetails: formData.productDetails,
-              currentLanguage: formData.currentLanguage,
-              useCommonForField: formData.useCommonForField
-            }}
-            setFormData={(updater: any) => {
-              setFormData((prev: any) => {
-                const current: any = {
-                  useCommonDetails: prev.useCommonDetails,
-                  productDetails: prev.productDetails,
-                  currentLanguage: prev.currentLanguage,
-                  useCommonForField: prev.useCommonForField
-                }
-                const next = typeof updater === 'function'
-                  ? updater(current)
-                  : updater
-                return {
-                  ...prev,
-                  useCommonDetails: next.useCommonDetails,
-                  productDetails: next.productDetails,
-                  currentLanguage: next.currentLanguage,
-                  useCommonForField: next.useCommonForField
-                }
-              })
-            }}
-          />
-        )}
+            {/* 세부정보 탭 */}
+            {activeTab === 'details' && (
+              <ProductDetailsTab
+                productId={id}
+                isNewProduct={isNewProduct}
+                subCategory={formData.subCategory}
+                formData={{
+                  useCommonDetails: formData.useCommonDetails,
+                  productDetails: formData.productDetails,
+                  currentLanguage: formData.currentLanguage,
+                  useCommonForField: formData.useCommonForField
+                }}
+                setFormData={(updater: any) => {
+                  setFormData((prev: any) => {
+                    const current: any = {
+                      useCommonDetails: prev.useCommonDetails,
+                      productDetails: prev.productDetails,
+                      currentLanguage: prev.currentLanguage,
+                      useCommonForField: prev.useCommonForField
+                    }
+                    const next = typeof updater === 'function'
+                      ? updater(current)
+                      : updater
+                    return {
+                      ...prev,
+                      useCommonDetails: next.useCommonDetails,
+                      productDetails: next.productDetails,
+                      currentLanguage: next.currentLanguage,
+                      useCommonForField: next.useCommonForField
+                    }
+                  })
+                }}
+              />
+            )}
 
-        {/* 일정 탭 */}
-        {activeTab === 'schedule' && (
-          <ProductScheduleTab
-            productId={id}
-            isNewProduct={isNewProduct}
-            formData={formData}
-            setFormData={setFormData}
-          />
-        )}
+            {/* 일정 탭 */}
+            {activeTab === 'schedule' && (
+              <ProductScheduleTab
+                productId={id}
+                isNewProduct={isNewProduct}
+                formData={formData}
+                setFormData={setFormData}
+              />
+            )}
 
-        {/* FAQ 탭 */}
-        {activeTab === 'faq' && (
-          <ProductFaqTab
-            productId={id}
-            isNewProduct={isNewProduct}
-            formData={formData}
-            setFormData={setFormData}
-          />
-        )}
+            {/* FAQ 탭 */}
+            {activeTab === 'faq' && (
+              <ProductFaqTab
+                productId={id}
+                isNewProduct={isNewProduct}
+                formData={formData}
+                setFormData={setFormData}
+              />
+            )}
 
-        {/* 미디어 탭 */}
-        {activeTab === 'media' && (
-          <ProductMediaTab
-            productId={id}
-            isNewProduct={isNewProduct}
-            formData={formData}
-            setFormData={setFormData}
-          />
-        )}
+            {/* 미디어 탭 */}
+            {activeTab === 'media' && (
+              <ProductMediaTab
+                productId={id}
+                isNewProduct={isNewProduct}
+                formData={formData}
+                setFormData={setFormData}
+              />
+            )}
 
-        {/* 변경 내역 탭 */}
-        {activeTab === 'history' && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4">상품 변경 내역</h3>
-              <p className="text-gray-600 mb-6">
-                이 상품의 모든 변경 사항을 추적하고 확인할 수 있습니다.
-              </p>
-            </div>
-            
-            <ChangeHistory 
-              tableName="products" 
-              recordId={id} 
-              title="상품 변경 내역"
-              maxItems={10}
-            />
-          </div>
+            {/* 변경 내역 탭 */}
+            {activeTab === 'history' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">상품 변경 내역</h3>
+                  <p className="text-gray-600 mb-6">
+                    이 상품의 모든 변경 사항을 추적하고 확인할 수 있습니다.
+                  </p>
+                </div>
+                
+                <ChangeHistory 
+                  tableName="products" 
+                  recordId={id} 
+                  title="상품 변경 내역"
+                  maxItems={10}
+                />
+              </div>
+            )}
+          </>
         )}
 
         {/* 저장 버튼 */}

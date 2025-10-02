@@ -44,44 +44,104 @@ export default function BasicInfoTab({
 
   // 기본 정보 저장 함수
   const handleSave = async () => {
-    if (isNewProduct) {
-      setSaveMessage('새 상품은 전체 저장을 사용해주세요.')
-      return
-    }
-
     setSaving(true)
     setSaveMessage('')
 
     try {
-      const { error } = await supabase
-        .from('products')
-        .update({
-          name: formData.name.trim(),
-          product_code: formData.productCode.trim(),
-          category: formData.category,
-          sub_category: formData.subCategory.trim(),
-          description: formData.description.trim(),
-          duration: formData.duration.toString(),
-          base_price: 0, // 기본 가격은 동적 가격에서 설정
-          max_participants: formData.maxParticipants,
-          status: formData.status,
-          departure_city: formData.departureCity.trim(),
-          arrival_city: formData.arrivalCity.trim(),
-          departure_country: formData.departureCountry,
-          arrival_country: formData.arrivalCountry,
-          languages: formData.languages,
-          group_size: formData.groupSize.toString(),
-          adult_age: formData.adultAge,
-          child_age_min: formData.childAgeMin,
-          child_age_max: formData.childAgeMax,
-          infant_age: formData.infantAge
-        })
-        .eq('id', productId)
+      // 필수 필드 검증
+      if (!formData.name.trim()) {
+        setSaveMessage('상품명을 입력해주세요.')
+        return
+      }
+      if (!formData.category) {
+        setSaveMessage('카테고리를 선택해주세요.')
+        return
+      }
+      if (!formData.subCategory) {
+        setSaveMessage('하위 카테고리를 선택해주세요.')
+        return
+      }
+      if (formData.duration <= 0) {
+        setSaveMessage('소요시간을 입력해주세요.')
+        return
+      }
+      if (formData.maxParticipants <= 0) {
+        setSaveMessage('최대 참가자 수를 입력해주세요.')
+        return
+      }
 
-      if (error) throw error
+      if (isNewProduct) {
+        // 새 상품 생성
+        const { data, error } = await supabase
+          .from('products')
+          .insert([{
+            name: formData.name.trim(),
+            product_code: formData.productCode.trim(),
+            category: formData.category,
+            sub_category: formData.subCategory.trim(),
+            description: formData.description.trim(),
+            duration: formData.duration.toString(),
+            base_price: 0, // 기본값
+            max_participants: formData.maxParticipants,
+            status: formData.status,
+            departure_city: formData.departureCity.trim(),
+            arrival_city: formData.arrivalCity.trim(),
+            departure_country: formData.departureCountry,
+            arrival_country: formData.arrivalCountry,
+            languages: formData.languages,
+            group_size: formData.groupSize.join(','),
+            adult_age: formData.adultAge,
+            child_age_min: formData.childAgeMin,
+            child_age_max: formData.childAgeMax,
+            infant_age: formData.infantAge
+          }])
+          .select()
+          .single()
 
-      setSaveMessage('기본 정보가 성공적으로 저장되었습니다.')
-      setTimeout(() => setSaveMessage(''), 3000)
+        if (error) {
+          console.error('상품 생성 오류:', error)
+          setSaveMessage('상품 생성에 실패했습니다.')
+          return
+        }
+
+        setSaveMessage('상품이 성공적으로 생성되었습니다!')
+        
+        // 상품 편집 페이지로 이동 (새로 생성된 ID로)
+        setTimeout(() => {
+          window.location.href = `/admin/products/${data.id}`
+        }, 1500)
+      } else {
+        // 기존 상품 업데이트
+        const { error } = await supabase
+          .from('products')
+          .update({
+            name: formData.name.trim(),
+            product_code: formData.productCode.trim(),
+            category: formData.category,
+            sub_category: formData.subCategory.trim(),
+            description: formData.description.trim(),
+            duration: formData.duration.toString(),
+            base_price: 0, // 기본 가격은 동적 가격에서 설정
+            max_participants: formData.maxParticipants,
+            status: formData.status,
+            departure_city: formData.departureCity.trim(),
+            arrival_city: formData.arrivalCity.trim(),
+            departure_country: formData.departureCountry,
+            arrival_country: formData.arrivalCountry,
+            languages: formData.languages,
+            group_size: formData.groupSize.toString(),
+            adult_age: formData.adultAge,
+            child_age_min: formData.childAgeMin,
+            child_age_max: formData.childAgeMax,
+            infant_age: formData.infantAge
+          })
+          .eq('id', productId)
+
+        if (error) throw error
+
+        setSaveMessage('기본 정보가 성공적으로 저장되었습니다.')
+        setTimeout(() => setSaveMessage(''), 3000)
+      }
     } catch (error) {
       console.error('기본 정보 저장 오류:', error)
       setSaveMessage('기본 정보 저장 중 오류가 발생했습니다.')
