@@ -52,6 +52,7 @@
     "suppliers": "Suppliers",
     "supplierSettlement": "Supplier Settlement",
     "teamBoard": "Team Board",
+    "tourMaterials": "Tour Materials",
     "dataSync": "Data Sync",
     "dataReview": "Data Review",
     "auditLogs": "Audit Logs",
@@ -992,7 +993,8 @@
       "receipt": "Receipt",
       "teamChat": "Team Chat",
       "teamBoard": "Team Board",
-      "manual": "Manual"
+      "manual": "Manual",
+      "tourMaterials": "Data"
     }
   },
   "documents": {

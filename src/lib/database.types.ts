@@ -1102,6 +1102,241 @@ export interface Database {
         created_at?: string
         updated_at?: string
       }
+      tour_attractions: {
+        Row: {
+          id: string
+          name_ko: string
+          name_en: string
+          description_ko: string | null
+          description_en: string | null
+          location: string | null
+          coordinates: unknown | null
+          category: string | null
+          visit_duration: number | null
+          is_active: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name_ko: string
+          name_en: string
+          description_ko?: string | null
+          description_en?: string | null
+          location?: string | null
+          coordinates?: unknown | null
+          category?: string | null
+          visit_duration?: number | null
+          is_active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name_ko?: string
+          name_en?: string
+          description_ko?: string | null
+          description_en?: string | null
+          location?: string | null
+          coordinates?: unknown | null
+          category?: string | null
+          visit_duration?: number | null
+          is_active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      tour_material_categories: {
+        Row: {
+          id: string
+          name_ko: string
+          name_en: string
+          description_ko: string | null
+          description_en: string | null
+          icon: string | null
+          color: string | null
+          sort_order: number | null
+          is_active: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name_ko: string
+          name_en: string
+          description_ko?: string | null
+          description_en?: string | null
+          icon?: string | null
+          color?: string | null
+          sort_order?: number | null
+          is_active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name_ko?: string
+          name_en?: string
+          description_ko?: string | null
+          description_en?: string | null
+          icon?: string | null
+          color?: string | null
+          sort_order?: number | null
+          is_active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      tour_materials: {
+        Row: {
+          id: string
+          title: string
+          description: string | null
+          attraction_id: string | null
+          category_id: string | null
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          mime_type: string
+          duration: number | null
+          language: string | null
+          tags: string[] | null
+          is_active: boolean | null
+          is_public: boolean | null
+          created_by: string | null
+          updated_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          title: string
+          description?: string | null
+          attraction_id?: string | null
+          category_id?: string | null
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          mime_type: string
+          duration?: number | null
+          language?: string | null
+          tags?: string[] | null
+          is_active?: boolean | null
+          is_public?: boolean | null
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          title?: string
+          description?: string | null
+          attraction_id?: string | null
+          category_id?: string | null
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          mime_type?: string
+          duration?: number | null
+          language?: string | null
+          tags?: string[] | null
+          is_active?: boolean | null
+          is_public?: boolean | null
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      guide_quizzes: {
+        Row: {
+          id: string
+          title: string
+          description: string | null
+          attraction_id: string | null
+          question: string
+          options: unknown
+          correct_answer: number
+          explanation: string | null
+          difficulty: string | null
+          language: string | null
+          tags: string[] | null
+          is_active: boolean | null
+          created_by: string | null
+          updated_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          title: string
+          description?: string | null
+          attraction_id?: string | null
+          question: string
+          options: unknown
+          correct_answer: number
+          explanation?: string | null
+          difficulty?: string | null
+          language?: string | null
+          tags?: string[] | null
+          is_active?: boolean | null
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          title?: string
+          description?: string | null
+          attraction_id?: string | null
+          question?: string
+          options?: unknown
+          correct_answer?: number
+          explanation?: string | null
+          difficulty?: string | null
+          language?: string | null
+          tags?: string[] | null
+          is_active?: boolean | null
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      guide_quiz_results: {
+        Row: {
+          id: string
+          quiz_id: string | null
+          user_id: string | null
+          selected_answer: number
+          is_correct: boolean
+          time_taken: number | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          quiz_id?: string | null
+          user_id?: string | null
+          selected_answer: number
+          is_correct: boolean
+          time_taken?: number | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          quiz_id?: string | null
+          user_id?: string | null
+          selected_answer?: number
+          is_correct?: boolean
+          time_taken?: number | null
+          created_at?: string | null
+        }
+      }
     }
     CompositeTypes: {
       [key: string]: Record<string, unknown>

@@ -52,6 +52,7 @@
     "suppliers": "공급업체 관리",
     "supplierSettlement": "공급업체 정산",
     "teamBoard": "팀 보드",
+    "tourMaterials": "투어 자료 관리",
     "dataSync": "데이터 동기화",
     "dataReview": "데이터 검수",
     "auditLogs": "감사 추적",
@@ -1067,7 +1068,8 @@
       "receipt": "영수증",
       "teamChat": "팀채팅",
       "teamBoard": "팀보드",
-      "manual": "메뉴얼"
+      "manual": "메뉴얼",
+      "tourMaterials": "투어자료"
     }
   },
   "documents": {

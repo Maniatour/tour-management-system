@@ -263,7 +263,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
 
       {/* 모바일 푸터 네비게이션 */}
       <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-50">
-        <div className="grid grid-cols-4 py-2">
+        <div className="grid grid-cols-5 py-2">
           <button
             onClick={() => router.push(`/${locale}/guide`)}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
@@ -315,6 +315,18 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
           >
             <BookOpen className="w-5 h-5 mb-1" />
             <span className="text-xs">{t('footer.manual')}</span>
+          </button>
+
+          <button
+            onClick={() => router.push(`/${locale}/guide/tour-materials`)}
+            className={`flex flex-col items-center py-1 px-1 transition-colors ${
+              pathname.includes('/guide/tour-materials')
+                ? 'text-blue-600'
+                : 'text-gray-600 hover:text-blue-600'
+            }`}
+          >
+            <FileText className="w-5 h-5 mb-1" />
+            <span className="text-xs">{t('footer.tourMaterials')}</span>
           </button>
         </div>
       </footer>

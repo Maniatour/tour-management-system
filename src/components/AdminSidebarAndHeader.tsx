@@ -270,6 +270,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
     { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: BookOpen },
+    { name: t('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
     { name: t('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
     { name: t('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: t('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
