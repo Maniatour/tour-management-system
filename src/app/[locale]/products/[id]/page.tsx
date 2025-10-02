@@ -79,9 +79,12 @@ export default function ProductDetailPage() {
         // 임시로 mockProduct 사용
         setProduct(mockProduct)
         
-        // team_type 결정 (실제로는 tours 테이블에서 가져와야 함)
-        // 임시로 하드코딩
-        setTeamType('2guide')
+        // selectedImage 안전하게 초기화
+        if (mockProduct.images && mockProduct.images.length > 0) {
+          setSelectedImage(0)
+        } else {
+          setSelectedImage(0) // 이미지가 없어도 0으로 설정
+        }
         
       } catch (error) {
         console.error('상품 데이터 로드 오류:', error)
@@ -202,7 +205,9 @@ export default function ProductDetailPage() {
             <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
               <div className="relative h-96 bg-gray-200">
                 <img
-                  src={product.images[selectedImage]}
+                  src={product.images && product.images.length > 0 && selectedImage < product.images.length 
+                    ? product.images[selectedImage] 
+                    : '/placeholder-image.jpg'}
                   alt={product.name}
                   className="w-full h-full object-cover"
                 />
@@ -218,21 +223,27 @@ export default function ProductDetailPage() {
               </div>
               <div className="p-4">
                 <div className="flex space-x-2 overflow-x-auto">
-                  {product.images.map((image, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setSelectedImage(index)}
-                      className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 ${
-                        selectedImage === index ? 'border-blue-500' : 'border-gray-200'
-                      }`}
-                    >
-                      <img
-                        src={image}
-                        alt={`${product.name} ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </button>
-                  ))}
+                  {product.images && product.images.length > 0 ? (
+                    product.images.map((image, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setSelectedImage(index)}
+                        className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 ${
+                          selectedImage === index ? 'border-blue-500' : 'border-gray-200'
+                        }`}
+                      >
+                        <img
+                          src={image}
+                          alt={`${product.name} ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="flex-shrink-0 w-20 h-20 rounded-lg bg-gray-200 flex items-center justify-center text-gray-500 text-xs">
+                      이미지 없음
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
