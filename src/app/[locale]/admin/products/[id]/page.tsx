@@ -693,72 +693,80 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
               return useCommonForField
             })(),
                          productOptions: (() => {
-               // 새로운 통합 구조에 맞게 그룹화
-               const optionsMap = new Map<string, {
-                 id: string
-                 name: string
-                 description: string
-                 isRequired: boolean
-                 isMultiple: boolean
-                 linkedOptionId?: string
-                 choices: Array<{
+               try {
+                 // 새로운 통합 구조에 맞게 그룹화
+                 const optionsMap = new Map<string, {
                    id: string
                    name: string
                    description: string
-                   priceAdjustment: {
-                     adult: number
-                     child: number
-                     infant: number
-                   }
-                   isDefault: boolean
-                 }>
-               }>()
-               
-               (optionsData || []).forEach((option: {
-                 id: string
-                 name: string
-                 description: string
-                 is_required: boolean
-                 is_multiple: boolean
-                 linked_option_id: string | null
-                 choice_name: string | null
-                 choice_description: string | null
-                 adult_price_adjustment: number
-                 child_price_adjustment: number
-                 infant_price_adjustment: number
-                 is_default: boolean
-               }) => {
-                 const optionKey = option.name
-                 
-                 if (!optionsMap.has(optionKey)) {
-                   optionsMap.set(optionKey, {
-                     id: option.id,
-                     name: option.name,
-                     description: option.description,
-                     isRequired: option.is_required,
-                     isMultiple: option.is_multiple,
-                     linkedOptionId: option.linked_option_id || undefined,
-                     choices: []
-                   })
-                 }
-                 
-                 // choice가 있는 경우에만 추가
-                 if (option.choice_name) {
-                   optionsMap.get(optionKey)!.choices.push({
-                     id: option.id, // choice ID는 option ID와 동일
-                     name: option.choice_name,
-                     description: option.choice_description || '',
+                   isRequired: boolean
+                   isMultiple: boolean
+                   linkedOptionId?: string
+                   choices: Array<{
+                     id: string
+                     name: string
+                     description: string
                      priceAdjustment: {
-                       adult: option.adult_price_adjustment || 0,
-                       child: option.child_price_adjustment || 0,
-                       infant: option.infant_price_adjustment || 0
-                     },
-                     isDefault: option.is_default || false
-                   })
-                 }
-               })
-               
-               return Array.from(optionsMap.values())
+                       adult: number
+                       child: number
+                       infant: number
+                     }
+                     isDefault: boolean
+                   }>
+                 }>()
+                 
+                 (optionsData || []).forEach((option: {
+                   id: string
+                   name: string
+                   description: string
+                   is_required: boolean
+                   is_multiple: boolean
+                   linked_option_id: string | null
+                   choice_name: string | null
+                   choice_description: string | null
+                   adult_price_adjustment: number
+                   child_price_adjustment: number
+                   infant_price_adjustment: number
+                   is_default: boolean
+                 }) => {
+                   const optionKey = option.name
+                   
+                   if (!optionsMap.has(optionKey)) {
+                     optionsMap.set(optionKey, {
+                       id: option.id,
+                       name: option.name,
+                       description: option.description,
+                       isRequired: option.is_required,
+                       isMultiple: option.is_multiple,
+                       linkedOptionId: option.linked_option_id || undefined,
+                       choices: []
+                     })
+                   }
+                   
+                   // choice가 있는 경우에만 추가
+                   if (option.choice_name) {
+                     const existingOption = optionsMap.get(optionKey)
+                     if (existingOption) {
+                       existingOption.choices.push({
+                         id: option.id, // choice ID는 option ID와 동일
+                         name: option.choice_name,
+                         description: option.choice_description || '',
+                         priceAdjustment: {
+                           adult: option.adult_price_adjustment || 0,
+                           child: option.child_price_adjustment || 0,
+                           infant: option.infant_price_adjustment || 0
+                         },
+                         isDefault: option.is_default || false
+                       })
+                     }
+                   }
+                 })
+                 
+                 return Array.from(optionsMap.values())
+               } catch (error) {
+                 console.error('productOptions 초기화 오류:', error)
+                 return []
+               }
              })()
           }))
         } catch (error) {
