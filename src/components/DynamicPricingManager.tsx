@@ -890,6 +890,30 @@ export default function DynamicPricingManager({
         end_date: endDate
       }));
     }
+    
+    // 다중 선택 모드에서 첫 번째 선택된 채널의 가격 설정 로드
+    if (isMultiChannelMode && selectedChannels.length > 0 && dynamicPricingData.length > 0) {
+      const firstChannelId = selectedChannels[0];
+      const channelPricing = dynamicPricingData.find(data => 
+        data.channel_id === firstChannelId
+      );
+      
+      if (channelPricing) {
+        console.log(`다중 선택 모드에서 첫 번째 채널 ${firstChannelId}의 가격 설정 로드:`, channelPricing);
+        setPricingConfig(prev => ({
+          ...prev,
+          adult_price: channelPricing.adult_price || 0,
+          child_price: channelPricing.child_price || 0,
+          infant_price: channelPricing.infant_price || 0,
+          commission_percent: channelPricing.commission_percent || 0,
+          markup_amount: channelPricing.markup_amount || 0,
+          coupon_percentage_discount: channelPricing.coupon_percent || 0,
+          is_sale_available: channelPricing.is_sale_available || false,
+          not_included_price: channelPricing.not_included_price || 0,
+          required_options: []
+        }));
+      }
+    }
   };
 
 
@@ -1490,24 +1514,107 @@ export default function DynamicPricingManager({
             ))}
           </select>
         </div>
-        <div className="flex items-center justify-between mb-4 hidden lg:block">
+        <div className="hidden lg:block mb-4">
+          <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">채널 관리</h3>
-          <button
-            type="button"
-            onClick={() => {
-              setIsMultiChannelMode(!isMultiChannelMode);
-              if (isMultiChannelMode) {
-                setSelectedChannels([]);
-              }
-            }}
-            className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-              isMultiChannelMode 
-                ? 'bg-blue-600 text-white' 
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            {isMultiChannelMode ? '단일 선택' : '다중 선택'}
-          </button>
+          <div className="flex space-x-2">
+            {isMultiChannelMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  const currentTypeChannels = getChannelsByType(selectedChannelType);
+                  const allSelected = currentTypeChannels.every(channel => 
+                    selectedChannels.includes(channel.id)
+                  );
+                  
+                  if (allSelected) {
+                    // 전체 선택 해제
+                    const newSelectedChannels = selectedChannels.filter(id => 
+                      !currentTypeChannels.some(c => c.id === id)
+                    );
+                    setSelectedChannels(newSelectedChannels);
+                    
+                    // 선택된 채널이 있으면 첫 번째 채널의 가격 설정 로드
+                    if (newSelectedChannels.length > 0 && dynamicPricingData.length > 0) {
+                      const firstChannelId = newSelectedChannels[0];
+                      const channelPricing = dynamicPricingData.find(data => 
+                        data.channel_id === firstChannelId
+                      );
+                      
+                      if (channelPricing) {
+                        setPricingConfig(prev => ({
+                          ...prev,
+                          adult_price: channelPricing.adult_price || 0,
+                          child_price: channelPricing.child_price || 0,
+                          infant_price: channelPricing.infant_price || 0,
+                          commission_percent: channelPricing.commission_percent || 0,
+                          markup_amount: channelPricing.markup_amount || 0,
+                          coupon_percentage_discount: channelPricing.coupon_percent || 0,
+                          is_sale_available: channelPricing.is_sale_available || false,
+                          not_included_price: channelPricing.not_included_price || 0,
+                          required_options: []
+                        }));
+                      }
+                    }
+                  } else {
+                    // 전체 선택
+                    const newSelected = [...selectedChannels];
+                    currentTypeChannels.forEach(channel => {
+                      if (!newSelected.includes(channel.id)) {
+                        newSelected.push(channel.id);
+                      }
+                    });
+                    setSelectedChannels(newSelected);
+                    
+                    // 첫 번째 채널의 가격 설정 로드
+                    if (newSelected.length > 0 && dynamicPricingData.length > 0) {
+                      const firstChannelId = newSelected[0];
+                      const channelPricing = dynamicPricingData.find(data => 
+                        data.channel_id === firstChannelId
+                      );
+                      
+                      if (channelPricing) {
+                        setPricingConfig(prev => ({
+                          ...prev,
+                          adult_price: channelPricing.adult_price || 0,
+                          child_price: channelPricing.child_price || 0,
+                          infant_price: channelPricing.infant_price || 0,
+                          commission_percent: channelPricing.commission_percent || 0,
+                          markup_amount: channelPricing.markup_amount || 0,
+                          coupon_percentage_discount: channelPricing.coupon_percent || 0,
+                          is_sale_available: channelPricing.is_sale_available || false,
+                          not_included_price: channelPricing.not_included_price || 0,
+                          required_options: []
+                        }));
+                      }
+                    }
+                  }
+                }}
+                className="px-2 py-1 text-xs rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+              >
+                {getChannelsByType(selectedChannelType).every(channel => 
+                  selectedChannels.includes(channel.id)
+                ) ? '전체 해제' : '전체 선택'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setIsMultiChannelMode(!isMultiChannelMode);
+                if (isMultiChannelMode) {
+                  setSelectedChannels([]);
+                }
+              }}
+              className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                isMultiChannelMode 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {isMultiChannelMode ? '단일 선택' : '다중 선택'}
+            </button>
+          </div>
+          </div>
         </div>
         
         {/* 채널 타입 탭 - 모바일에서는 숨김 */}
@@ -1580,11 +1687,35 @@ export default function DynamicPricingManager({
                  }`}
                  onClick={() => {
                    if (isMultiChannelMode) {
-                     setSelectedChannels(prev => 
-                       prev.includes(channel.id) 
-                         ? prev.filter(id => id !== channel.id)
-                         : [...prev, channel.id]
-                     );
+                     const newSelectedChannels = selectedChannels.includes(channel.id) 
+                       ? selectedChannels.filter(id => id !== channel.id)
+                       : [...selectedChannels, channel.id];
+                     
+                     setSelectedChannels(newSelectedChannels);
+                     
+                     // 다중 선택 모드에서 첫 번째 선택된 채널의 가격 설정 로드
+                     if (newSelectedChannels.length > 0 && dynamicPricingData.length > 0) {
+                       const firstChannelId = newSelectedChannels[0];
+                       const channelPricing = dynamicPricingData.find(data => 
+                         data.channel_id === firstChannelId
+                       );
+                       
+                       if (channelPricing) {
+                         console.log(`다중 선택 모드에서 첫 번째 채널 ${firstChannelId}의 가격 설정 로드:`, channelPricing);
+                         setPricingConfig(prev => ({
+                           ...prev,
+                           adult_price: channelPricing.adult_price || 0,
+                           child_price: channelPricing.child_price || 0,
+                           infant_price: channelPricing.infant_price || 0,
+                           commission_percent: channelPricing.commission_percent || 0,
+                           markup_amount: channelPricing.markup_amount || 0,
+                           coupon_percentage_discount: channelPricing.coupon_percent || 0,
+                           is_sale_available: channelPricing.is_sale_available || false,
+                           not_included_price: channelPricing.not_included_price || 0,
+                           required_options: []
+                         }));
+                       }
+                     }
                    } else {
                      handleChannelSelect(channel.id);
                    }
@@ -2056,7 +2187,7 @@ export default function DynamicPricingManager({
               {selectedChannel ? `${channels.find(c => c.id === selectedChannel)?.name} 가격 설정` : '가격 설정'}
             </h2>
            
-           {!selectedChannel ? (
+           {!selectedChannel && !isMultiChannelMode ? (
              <div className="text-center py-12">
                <AlertCircle className="h-12 w-12 mx-auto mb-4 text-gray-400" />
                <h3 className="text-lg font-medium text-gray-900 mb-2">채널을 선택해주세요</h3>
@@ -2064,6 +2195,22 @@ export default function DynamicPricingManager({
              </div>
            ) : (
              <div className="space-y-4">
+               {/* 다중 선택 모드일 때 안내 메시지 */}
+               {isMultiChannelMode && selectedChannels.length > 0 && (
+                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                   <div className="flex items-center">
+                     <AlertCircle className="h-5 w-5 text-blue-600 mr-2" />
+                     <div>
+                       <p className="text-sm font-medium text-blue-800">
+                         {selectedChannels.length}개 채널 선택됨
+                       </p>
+                       <p className="text-xs text-blue-600">
+                         설정한 가격이 모든 선택된 채널에 적용됩니다.
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               )}
 
               {/* 기간 설정 */}
               <div className="grid grid-cols-2 gap-2 lg:gap-6">

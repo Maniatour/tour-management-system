@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
+import ReactCountryFlag from 'react-country-flag'
+import { supabase } from '@/lib/supabase'
 import { 
   Plus, 
   Search, 
@@ -16,7 +18,6 @@ import {
   Grid,
   List
 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
 type TeamMember = Database['public']['Tables']['team']['Row']
@@ -390,7 +391,8 @@ export default function AdminTeam() {
                         )}
                       </div>
                     </th>
-                    <th 
+                    {/* 주소 컬럼 제거 - 데이터베이스에 address 컬럼이 없음 */}
+                    {/* <th 
                       className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('address')}
                     >
@@ -402,7 +404,7 @@ export default function AdminTeam() {
                           </span>
                         )}
                       </div>
-                    </th>
+                    </th> */}
                     <th 
                       className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('is_active')}
@@ -462,9 +464,10 @@ export default function AdminTeam() {
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {member.position || '-'}
                       </td>
-                      <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {/* 주소 컬럼 제거 - 데이터베이스에 address 컬럼이 없음 */}
+                      {/* <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {member.address || '-'}
-                      </td>
+                      </td> */}
                       <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => handleToggleActive(member.email, member.is_active ?? true)}
@@ -534,21 +537,69 @@ export default function AdminTeam() {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-lg font-semibold text-gray-900 truncate">
-                            {member.name_ko}
-                          </h3>
+                          <div className="flex items-center space-x-2">
+                            <h3 className="text-lg font-semibold text-gray-900 truncate">
+                              {member.name_ko}
+                            </h3>
+                            {member.languages && member.languages.length > 0 && (
+                              <div className="flex space-x-1">
+                                {member.languages.map((lang, index) => (
+                                  <ReactCountryFlag
+                                    key={index}
+                                    countryCode={lang === 'KR' ? 'KR' : lang === 'EN' ? 'US' : lang === 'JP' ? 'JP' : lang === 'CN' ? 'CN' : lang === 'ES' ? 'ES' : lang === 'FR' ? 'FR' : lang === 'DE' ? 'DE' : lang === 'RU' ? 'RU' : 'US'}
+                                    svg
+                                    style={{
+                                      width: '16px',
+                                      height: '12px',
+                                      borderRadius: '2px'
+                                    }}
+                                    title={lang}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
                           <p className="text-sm text-gray-600 truncate">
                             {member.name_en || '영문명 없음'}
                           </p>
                         </div>
                       </div>
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        member.is_active 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {member.is_active ? '활성' : '비활성'}
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleToggleActive(member.email, member.is_active ?? true)
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                            member.is_active ? 'bg-green-600' : 'bg-gray-200'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              member.is_active ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                        <div className="flex space-x-1">
+                          <button
+                            onClick={() => {
+                              setEditingMember(member)
+                              setShowForm(true)
+                            }}
+                            className="p-1.5 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors"
+                            title="편집"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteMember(member.email)}
+                            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            title="삭제"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     {/* 카드 내용 */}
@@ -568,17 +619,7 @@ export default function AdminTeam() {
                         <span className="font-medium">{member.phone || '미등록'}</span>
                       </div>
                       
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">입사일</span>
-                        <span className="font-medium">{member.hire_date || '미등록'}</span>
-                      </div>
 
-                      {member.languages && member.languages.length > 0 && (
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">언어</span>
-                          <span className="font-medium">{member.languages.join(', ')}</span>
-                        </div>
-                      )}
 
                       {/* 특별 자격사항 */}
                       <div className="border-t pt-3">
@@ -586,18 +627,26 @@ export default function AdminTeam() {
                           <span className="text-gray-500">자격사항</span>
                         </div>
                         <div className="flex space-x-2">
-                          {member.cpr && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                              <Shield size={12} className="mr-1" />
-                              CPR
-                            </span>
-                          )}
-                          {member.medical_report && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              <FileText size={12} className="mr-1" />
-                              의료보고서
-                            </span>
-                          )}
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            member.cpr 
+                              ? (member.cpr_expired && new Date(member.cpr_expired) < new Date() 
+                                  ? 'bg-red-100 text-red-800' 
+                                  : 'bg-green-100 text-green-800')
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            <Shield size={12} className="mr-1" />
+                            CPR {member.cpr ? (member.cpr_expired && new Date(member.cpr_expired) < new Date() ? '(만료)' : '') : '(없음)'}
+                          </span>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            member.medical_report 
+                              ? (member.medical_expired && new Date(member.medical_expired) < new Date() 
+                                  ? 'bg-red-100 text-red-800' 
+                                  : 'bg-green-100 text-green-800')
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            <FileText size={12} className="mr-1" />
+                            의료보고서 {member.medical_report ? (member.medical_expired && new Date(member.medical_expired) < new Date() ? '(만료)' : '') : '(없음)'}
+                          </span>
                           {member.personal_car_model && (
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                               <Car size={12} className="mr-1" />
@@ -606,40 +655,9 @@ export default function AdminTeam() {
                           )}
                         </div>
                       </div>
+
                     </div>
 
-                    {/* 액션 버튼들 */}
-                    <div className="mt-4 pt-4 border-t">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => {
-                            setSelectedMember(member)
-                            setShowDetailModal(true)
-                          }}
-                          className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
-                        >
-                          <Eye size={14} />
-                          <span>상세</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingMember(member)
-                            setShowForm(true)
-                          }}
-                          className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
-                        >
-                          <Edit size={14} />
-                          <span>편집</span>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMember(member.email)}
-                          className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors flex items-center justify-center space-x-1"
-                        >
-                          <Trash2 size={14} />
-                          <span>삭제</span>
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 </div>
               ))}
@@ -687,17 +705,56 @@ function TeamMemberForm({
   onSubmit: (data: TeamMemberInsert) => void
   onCancel: () => void
 }) {
+  const [uploadedDocuments, setUploadedDocuments] = useState<{[key: string]: string}>({})
+  const [uploading, setUploading] = useState(false)
+  
+  // 문서 업로드 함수
+  const handleDocumentUpload = async (file: File, documentType: string) => {
+    setUploading(true)
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+      const filePath = `team-documents/${member?.email || 'new'}/${documentType}/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(filePath, file)
+
+      if (uploadError) {
+        console.error('파일 업로드 오류:', uploadError)
+        alert('파일 업로드 중 오류가 발생했습니다.')
+        return
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('documents')
+        .getPublicUrl(filePath)
+
+      setUploadedDocuments(prev => ({
+        ...prev,
+        [documentType]: publicUrl
+      }))
+
+      alert('문서가 성공적으로 업로드되었습니다!')
+    } catch (error) {
+      console.error('문서 업로드 오류:', error)
+      alert('문서 업로드 중 오류가 발생했습니다.')
+    } finally {
+      setUploading(false)
+    }
+  }
+  
   const [formData, setFormData] = useState<TeamMemberInsert>({
     email: member?.email || '',
     name_ko: member?.name_ko || '',
     name_en: member?.name_en || '',
     phone: member?.phone || '',
     position: member?.position || '',
-    languages: member?.languages || ['ko'],
+    languages: member?.languages || ['KR'],
     avatar_url: member?.avatar_url || '',
     is_active: member?.is_active ?? true,
     hire_date: member?.hire_date || '',
-    address: member?.address || '',
+    // address: member?.address || '', // 데이터베이스에 address 컬럼이 없음
     emergency_contact: member?.emergency_contact || '',
     date_of_birth: member?.date_of_birth || '',
     ssn: member?.ssn || '',
@@ -816,7 +873,8 @@ function TeamMemberForm({
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              {/* 주소 필드 제거 - 데이터베이스에 address 컬럼이 없음 */}
+              {/* <label className="block text-sm font-medium text-gray-700 mb-1">
                 주소
               </label>
               <input
@@ -825,7 +883,7 @@ function TeamMemberForm({
                 onChange={(e) => setFormData({...formData, address: e.target.value})}
                 className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
                 placeholder="주소를 입력하세요"
-              />
+              /> */}
             </div>
           </div>
 
@@ -863,14 +921,14 @@ function TeamMemberForm({
             </label>
             <div className="flex flex-wrap gap-2">
               {[
-                { value: 'ko', label: '한국어' },
-                { value: 'en', label: '영어' },
-                { value: 'ja', label: '일본어' },
-                { value: 'zh', label: '중국어' },
-                { value: 'es', label: '스페인어' },
-                { value: 'fr', label: '프랑스어' },
-                { value: 'de', label: '독일어' },
-                { value: 'ru', label: '러시아어' }
+                { value: 'KR', label: '한국어' },
+                { value: 'EN', label: '영어' },
+                { value: 'JP', label: '일본어' },
+                { value: 'CN', label: '중국어' },
+                { value: 'ES', label: '스페인어' },
+                { value: 'FR', label: '프랑스어' },
+                { value: 'DE', label: '독일어' },
+                { value: 'RU', label: '러시아어' }
               ].map((language) => (
                 <button
                   key={language.value}
@@ -1148,6 +1206,171 @@ function TeamMemberForm({
             </div>
           </div>
 
+          {/* 문서 업로드 섹션 */}
+          <div className="border-t pt-4">
+            <h3 className="text-base font-medium mb-3 flex items-center">
+              <FileText className="w-5 h-5 mr-2" />
+              문서 업로드
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 계약서 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  계약서
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleDocumentUpload(file, 'contract')
+                    }}
+                    className="hidden"
+                    id="contract-upload"
+                    disabled={uploading}
+                  />
+                  <label
+                    htmlFor="contract-upload"
+                    className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">
+                      {uploadedDocuments.contract ? '계약서 업로드됨' : '계약서 업로드'}
+                    </p>
+                    {uploadedDocuments.contract && (
+                      <a
+                        href={uploadedDocuments.contract}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 text-sm hover:underline"
+                      >
+                        문서 보기
+                      </a>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {/* 신분증 사본 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  신분증 사본
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleDocumentUpload(file, 'id_copy')
+                    }}
+                    className="hidden"
+                    id="id-upload"
+                    disabled={uploading}
+                  />
+                  <label
+                    htmlFor="id-upload"
+                    className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">
+                      {uploadedDocuments.id_copy ? '신분증 사본 업로드됨' : '신분증 사본 업로드'}
+                    </p>
+                    {uploadedDocuments.id_copy && (
+                      <a
+                        href={uploadedDocuments.id_copy}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 text-sm hover:underline"
+                      >
+                        문서 보기
+                      </a>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {/* 은행 계좌 정보 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  은행 계좌 정보
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleDocumentUpload(file, 'bank_info')
+                    }}
+                    className="hidden"
+                    id="bank-upload"
+                    disabled={uploading}
+                  />
+                  <label
+                    htmlFor="bank-upload"
+                    className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">
+                      {uploadedDocuments.bank_info ? '은행 정보 업로드됨' : '은행 정보 업로드'}
+                    </p>
+                    {uploadedDocuments.bank_info && (
+                      <a
+                        href={uploadedDocuments.bank_info}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 text-sm hover:underline"
+                      >
+                        문서 보기
+                      </a>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {/* 기타 문서 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  기타 문서
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleDocumentUpload(file, 'other')
+                    }}
+                    className="hidden"
+                    id="other-upload"
+                    disabled={uploading}
+                  />
+                  <label
+                    htmlFor="other-upload"
+                    className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">
+                      {uploadedDocuments.other ? '기타 문서 업로드됨' : '기타 문서 업로드'}
+                    </p>
+                    {uploadedDocuments.other && (
+                      <a
+                        href={uploadedDocuments.other}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 text-sm hover:underline"
+                      >
+                        문서 보기
+                      </a>
+                    )}
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* 버튼 */}
           <div className="flex justify-end space-x-3 pt-4 border-t">
             <button
@@ -1232,12 +1455,13 @@ function TeamMemberDetailModal({
                   <p className="text-gray-900">{member.hire_date}</p>
                 </div>
               )}
-              {member.address && (
+              {/* 주소 정보 제거 - 데이터베이스에 address 컬럼이 없음 */}
+              {/* {member.address && (
                 <div>
                   <span className="text-sm font-medium text-gray-500">주소</span>
                   <p className="text-gray-900">{member.address}</p>
                 </div>
-              )}
+              )} */}
             </div>
           </div>
 

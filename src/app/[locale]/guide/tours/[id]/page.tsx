@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
-import { ArrowLeft, Hotel, MapPin, Clock, Users, Camera, MessageSquare, FileText, Calculator, ChevronDown, ChevronUp, Calendar, Phone, Mail, Plus } from 'lucide-react'
+import { ArrowLeft, Hotel, MapPin, Clock, Users, Camera, MessageSquare, FileText, Calculator, ChevronDown, ChevronUp, Calendar, Phone, Mail } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -523,13 +523,13 @@ export default function GuideTourDetailPage() {
               </div>
               <div className="flex items-center space-x-2">
                 <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
-                  tour.tour_status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                  tour.tour_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                  tour.tour_status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                  tour.tour_status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
+                  (tour as any).assignment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                  (tour as any).assignment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                  (tour as any).assignment_status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                  (tour as any).assignment_status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
                   'bg-gray-100 text-gray-800'
                 }`}>
-                  {tour.tour_status || t('assignmentStatus')}
+                  {(tour as any).assignment_status || t('assignmentStatus')}
                 </span>
                 {expandedSections.has('tour-info') ? (
                   <ChevronUp className="w-5 h-5 text-gray-400" />

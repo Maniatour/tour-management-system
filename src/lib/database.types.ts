@@ -33,7 +33,7 @@ export interface Database {
           medical_report: boolean | null
           medical_acquired: string | null
           medical_expired: string | null
-          address: string | null
+          // address: string | null // 실제 데이터베이스에 컬럼이 없음
         }
         Insert: {
           email: string
@@ -64,7 +64,7 @@ export interface Database {
           medical_report?: boolean | null
           medical_acquired?: string | null
           medical_expired?: string | null
-          address?: string | null
+          // address?: string | null // 실제 데이터베이스에 컬럼이 없음
         }
         Update: {
           email?: string
@@ -95,7 +95,7 @@ export interface Database {
           medical_report?: boolean | null
           medical_acquired?: string | null
           medical_expired?: string | null
-          address?: string | null
+          // address?: string | null // 실제 데이터베이스에 컬럼이 없음
         }
       }
       customers: {
