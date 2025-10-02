@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, use } from 'react'
 import { Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
@@ -33,7 +33,12 @@ type ExtendedTour = Tour & {
 type Employee = Database['public']['Tables']['team']['Row']
 type Product = Database['public']['Tables']['products']['Row']
 
-export default function GuideTours() {
+interface GuideToursProps {
+  params: Promise<{ locale: string }>
+}
+
+export default function GuideTours({ params }: GuideToursProps) {
+  const { locale } = use(params)
   const t = useTranslations('tours')
   const gt = useTranslations('tours.guideTours')
   const router = useRouter()
