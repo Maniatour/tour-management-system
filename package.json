@@ -23,6 +23,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "csv-parser": "^3.2.0",
+    "date-fns": "^4.1.0",
     "dayjs": "^1.11.18",
     "google-auth-library": "^10.3.0",
     "googleapis": "^159.0.0",

@@ -24,9 +24,15 @@ export function useAttendanceSync() {
 
   // 오늘의 출퇴근 기록 조회
   const fetchTodayRecords = useCallback(async () => {
-    if (!authUser?.email) return
+    console.log('fetchTodayRecords 시작, authUser.email:', authUser?.email)
+    
+    if (!authUser?.email) {
+      console.log('authUser.email이 없습니다')
+      return
+    }
 
     try {
+      console.log('직원 정보 조회 시작...')
       // 먼저 이메일로 직원 정보 조회
       const { data: employeeData, error: employeeError } = await supabase
         .from('team')
@@ -34,6 +40,8 @@ export function useAttendanceSync() {
         .eq('email', authUser.email)
         .eq('is_active', true)
         .single()
+
+      console.log('직원 정보 조회 결과:', { employeeData, employeeError })
 
       if (employeeError) {
         console.error('직원 정보 조회 오류:', employeeError)
@@ -47,13 +55,33 @@ export function useAttendanceSync() {
         return
       }
 
-      // 오늘의 모든 출퇴근 기록 조회
+      console.log('출퇴근 기록 조회 시작...')
+      // 최근 미체크아웃 기록 조회 (체크아웃되지 않은 모든 기록)
+      const today = new Date().toISOString().split('T')[0]
+      console.log('오늘 날짜 (UTC):', today)
+      
+      // 라스베가스 시간대 고려 (UTC-8)
+      const lasVegasTime = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+      const lasVegasToday = lasVegasTime.toISOString().split('T')[0]
+      console.log('라스베가스 오늘 날짜:', lasVegasToday)
+      
+      // 하루를 넘나드는 근무를 고려하여 최근 2일간의 미체크아웃 기록 조회
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      const yesterdayStr = yesterday.toISOString().split('T')[0]
+      
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('employee_email', employeeData.email)
-        .eq('date', new Date().toISOString().split('T')[0])
+        .is('check_out_time', null)
+        .in('date', [today, yesterdayStr]) // 오늘과 어제의 기록만 조회
+        .order('date', { ascending: false })
         .order('session_number', { ascending: true })
+        .limit(1) // 가장 최근 미체크아웃 기록만
+
+      console.log('출퇴근 기록 조회 결과:', { data, error })
+      console.log('조회 범위:', { today, yesterdayStr })
 
       if (error && error.code !== 'PGRST116') {
         console.log('출퇴근 기록 테이블이 아직 생성되지 않았습니다.')
@@ -69,11 +97,18 @@ export function useAttendanceSync() {
         }))
         
         // 현재 진행 중인 세션 찾기 (퇴근하지 않은 세션)
+        // check_out_time이 null이거나 빈 문자열인 경우를 모두 체크
         const activeSession = records.find(record => 
-          record.check_in_time && !record.check_out_time
+          record.check_in_time && 
+          (record.check_out_time === null || record.check_out_time === '')
         )
+        
+        console.log('미체크아웃 기록:', records)
+        console.log('현재 세션:', activeSession)
+        
         setCurrentSession(activeSession || null)
       } else {
+        console.log('최근 2일간 미체크아웃 기록이 없습니다.')
         setCurrentSession(null)
       }
     } catch (error) {
@@ -150,10 +185,18 @@ export function useAttendanceSync() {
     if (!currentSession) return
 
     try {
+      const checkOutTime = new Date().toISOString()
+      const checkInTime = new Date(currentSession.check_in_time!)
+      
+      // 근무시간 계산 (시간 단위)
+      const workHours = (new Date(checkOutTime).getTime() - checkInTime.getTime()) / (1000 * 60 * 60)
+      const roundedWorkHours = Math.round(workHours * 100) / 100 // 소수점 둘째 자리까지 반올림
+
       const { error } = await supabase
         .from('attendance_records')
         .update({
-          check_out_time: new Date().toISOString()
+          check_out_time: checkOutTime,
+          work_hours: roundedWorkHours
         })
         .eq('id', currentSession.id)
 
@@ -163,7 +206,7 @@ export function useAttendanceSync() {
         return
       }
 
-      alert(`${currentSession.session_number}번째 퇴근 체크아웃이 완료되었습니다!`)
+      alert(`${currentSession.session_number}번째 퇴근 체크아웃이 완료되었습니다! (근무시간: ${roundedWorkHours}시간)`)
       await fetchTodayRecords()
     } catch (error) {
       console.error('퇴근 체크아웃 중 오류:', error)

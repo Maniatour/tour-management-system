@@ -26,8 +26,7 @@ import {
   MessageCircle,
   FileSpreadsheet,
   Globe,
-  User,
-  Download
+  User
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -56,6 +55,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
   const [teamBoardCount, setTeamBoardCount] = useState(0)
   const [showSimulationModal, setShowSimulationModal] = useState(false)
+  const [expiringDocumentsCount, setExpiringDocumentsCount] = useState(0)
   // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
   const { teamChatUnreadCount } = useAuth()
   
@@ -104,6 +104,39 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   }
 
   // 경과 시간과 타이머는 커스텀 훅에서 처리됨
+
+  // 만료 예정 문서 수 가져오기
+  const fetchExpiringDocumentsCount = useCallback(async () => {
+    try {
+      if (!authUser?.email) {
+        setExpiringDocumentsCount(0)
+        return
+      }
+
+      const now = new Date()
+      const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+      
+      let query = supabase
+        .from('documents')
+        .select('id, expiry_date')
+        .not('expiry_date', 'is', null)
+        .lte('expiry_date', thirtyDaysFromNow.toISOString().split('T')[0])
+        .gte('expiry_date', now.toISOString().split('T')[0])
+
+      // 관리자가 아닌 경우 자신이 생성한 문서만 조회
+      if (userRole !== 'admin') {
+        query = query.eq('created_by', authUser.id)
+      }
+
+      const { data, error } = await query
+
+      if (error) throw error
+      setExpiringDocumentsCount(data?.length || 0)
+    } catch (error) {
+      console.error('만료 예정 문서 수 조회 오류:', error)
+      setExpiringDocumentsCount(0)
+    }
+  }, [authUser, userRole])
 
   // 팀 보드 배지 카운트: 내가 받아야 할 공지(미확인) + 내게 할당된 진행중 업무 수
   const fetchTeamBoardCount = useCallback(async () => {
@@ -170,9 +203,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
   useEffect(() => {
     fetchTeamBoardCount()
-    const interval = setInterval(fetchTeamBoardCount, 60_000)
+    fetchExpiringDocumentsCount()
+    const interval = setInterval(() => {
+      fetchTeamBoardCount()
+      fetchExpiringDocumentsCount()
+    }, 60_000)
     return () => clearInterval(interval)
-  }, [fetchTeamBoardCount])
+  }, [fetchTeamBoardCount, fetchExpiringDocumentsCount])
 
   // AuthContext에서 자동으로 관리되므로 별도 useEffect 불필요
 
@@ -222,7 +259,6 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },
     { name: t('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
     { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
-    { name: '이미지 마이그레이션', href: `/${locale}/admin/migrate-images`, icon: Download },
     { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
     { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
     { name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
@@ -230,6 +266,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('team'), href: `/${locale}/admin/team`, icon: Users },
     { name: t('teamChat'), href: `/${locale}/admin/team-chat`, icon: MessageCircle },
     { name: t('attendance'), href: `/${locale}/admin/attendance`, icon: Clock },
+    { name: t('documents'), href: `/${locale}/admin/documents`, icon: FileText },
     { name: t('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
     { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: BookOpen },
@@ -569,6 +606,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               const Icon = item.icon
               const isActive = pathname === item.href
               const isTeamChat = item.name === '팀 채팅'
+              const isDocuments = item.name === t('documents')
               return (
                 <Link
                   key={item.name}
@@ -585,6 +623,11 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   {isTeamChat && teamChatUnreadCount > 0 && (
                     <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
                       {teamChatUnreadCount > 99 ? '99+' : teamChatUnreadCount}
+                    </span>
+                  )}
+                  {isDocuments && expiringDocumentsCount > 0 && (
+                    <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
+                      {expiringDocumentsCount > 99 ? '99+' : expiringDocumentsCount}
                     </span>
                   )}
                 </Link>
@@ -614,6 +657,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               const Icon = item.icon
               const isActive = pathname === item.href
               const isTeamChat = item.name === '팀 채팅'
+              const isDocuments = item.name === t('documents')
               return (
                 <Link
                   key={item.name}
@@ -629,6 +673,11 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   {isTeamChat && teamChatUnreadCount > 0 && (
                     <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
                       {teamChatUnreadCount > 99 ? '99+' : teamChatUnreadCount}
+                    </span>
+                  )}
+                  {isDocuments && expiringDocumentsCount > 0 && (
+                    <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-2 py-0.5 min-w-[20px] text-center">
+                      {expiringDocumentsCount > 99 ? '99+' : expiringDocumentsCount}
                     </span>
                   )}
                 </Link>
