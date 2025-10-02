@@ -698,82 +698,52 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
               
               return useCommonForField
             })(),
-                         productOptions: (() => {
-               try {
-                 // 새로운 통합 구조에 맞게 그룹화
-                 const optionsMap: { [key: string]: {
-                   id: string
-                   name: string
-                   description: string
-                   isRequired: boolean
-                   isMultiple: boolean
-                   linkedOptionId?: string
-                   choices: Array<{
-                     id: string
-                     name: string
-                     description: string
-                     priceAdjustment: {
-                       adult: number
-                       child: number
-                       infant: number
-                     }
-                     isDefault: boolean
-                   }>
-                 } } = {}
-                 
-                 (optionsData || []).forEach((option: {
-                   id: string
-                   name: string
-                   description: string
-                   is_required: boolean
-                   is_multiple: boolean
-                   linked_option_id: string | null
-                   choice_name: string | null
-                   choice_description: string | null
-                   adult_price_adjustment: number
-                   child_price_adjustment: number
-                   infant_price_adjustment: number
-                   is_default: boolean
-                 }) => {
-                   const optionKey = option.name
-                   
-                   if (!optionsMap[optionKey]) {
-                     optionsMap[optionKey] = {
-                       id: option.id,
-                       name: option.name,
-                       description: option.description,
-                       isRequired: option.is_required,
-                       isMultiple: option.is_multiple,
-                       linkedOptionId: option.linked_option_id || undefined,
-                       choices: []
-                     }
-                   }
-                   
-                   // choice가 있는 경우에만 추가
-                   if (option.choice_name) {
-                     const existingOption = optionsMap[optionKey]
-                     if (existingOption && Array.isArray(existingOption.choices)) {
-                       existingOption.choices.push({
-                         id: option.id, // choice ID는 option ID와 동일
-                         name: option.choice_name,
-                         description: option.choice_description || '',
-                         priceAdjustment: {
-                           adult: option.adult_price_adjustment || 0,
-                           child: option.child_price_adjustment || 0,
-                           infant: option.infant_price_adjustment || 0
-                         },
-                         isDefault: option.is_default || false
-                       })
-                     }
-                   }
-                 })
-                 
-                 return Object.values(optionsMap)
-               } catch (error) {
-                 console.error('productOptions 초기화 오류:', error)
-                 return []
-               }
-             })()
+            productOptions: (() => {
+              try {
+                if (!optionsData || !Array.isArray(optionsData)) {
+                  return []
+                }
+
+                // 간단한 그룹화 로직
+                const groupedOptions: any = {}
+                
+                optionsData.forEach((option: any) => {
+                  const optionKey = option.name || 'unnamed'
+                  
+                  if (!groupedOptions[optionKey]) {
+                    groupedOptions[optionKey] = {
+                      id: option.id,
+                      name: option.name,
+                      description: option.description || '',
+                      isRequired: option.is_required || false,
+                      isMultiple: option.is_multiple || false,
+                      linkedOptionId: option.linked_option_id || undefined,
+                      choices: []
+                    }
+                  }
+                  
+                  // choice가 있는 경우에만 추가
+                  if (option.choice_name) {
+                    groupedOptions[optionKey].choices.push({
+                      id: option.id,
+                      name: option.choice_name,
+                      description: option.choice_description || '',
+                      priceAdjustment: {
+                        adult: option.adult_price_adjustment || 0,
+                        child: option.child_price_adjustment || 0,
+                        infant: option.infant_price_adjustment || 0
+                      },
+                      isDefault: option.is_default || false
+                    })
+                  }
+                })
+                
+                return Object.values(groupedOptions)
+              } catch (error) {
+                console.error('productOptions 초기화 오류:', error)
+                return []
+              }
+            })()
           }))
         } catch (error) {
           console.error('상품 데이터 로드 중 오류 발생:', error)
