@@ -778,16 +778,20 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       }
 
       // 옵션 데이터 검증
-      for (const option of formData.productOptions) {
-        if (!option.name || !option.name.trim()) {
-          alert('모든 옵션의 이름을 입력해주세요.')
-          return
-        }
-        
-        for (const choice of option.choices) {
-          if (!choice.name || !choice.name.trim()) {
-            alert('모든 선택 항목의 이름을 입력해주세요.')
+      if (formData.productOptions && formData.productOptions.length > 0) {
+        for (const option of formData.productOptions) {
+          if (!option.name || !option.name.trim()) {
+            alert('모든 옵션의 이름을 입력해주세요.')
             return
+          }
+          
+          if (option.choices && option.choices.length > 0) {
+            for (const choice of option.choices) {
+              if (!choice.name || !choice.name.trim()) {
+                alert('모든 선택 항목의 이름을 입력해주세요.')
+                return
+              }
+            }
           }
         }
       }
@@ -871,7 +875,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       }
 
       // 2. 기존 product_options 삭제 (업데이트 시)
-      if (!isNewProduct && formData.productOptions.length > 0) {
+      if (!isNewProduct && formData.productOptions && formData.productOptions.length > 0) {
         console.log('기존 옵션 삭제 시작')
         const { error: deleteError } = await (supabase as any)
           .from('product_options')
@@ -886,7 +890,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       }
 
       // 3. 새로운 product_options 저장
-      if (formData.productOptions.length > 0) {
+      if (formData.productOptions && formData.productOptions.length > 0) {
         console.log('새 옵션 저장 시작:', formData.productOptions.length, '개')
         
         for (const option of formData.productOptions) {
