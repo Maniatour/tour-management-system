@@ -501,6 +501,14 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
 
           if (optionsError) throw optionsError
 
+          // optionsData 안전성 확인
+          console.log('=== Options Data Debug ===')
+          console.log('optionsData:', optionsData)
+          console.log('optionsData type:', Array.isArray(optionsData) ? 'array' : typeof optionsData)
+          if (Array.isArray(optionsData) && optionsData.length > 0) {
+            console.log('optionsData length:', optionsData.length)
+          }
+
           // 3. 상품 세부정보 로드 (공통 여부 반영)
           let detailsData: any = null
           let detailsError: { code?: string } | null = null
@@ -530,11 +538,13 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           console.log('=== Product Details Data Debug ===')
           console.log('detailsData:', detailsData)
           console.log('detailsData type:', Array.isArray(detailsData) ? 'array' : typeof detailsData)
-          if (Array.isArray(detailsData)) {
+          if (Array.isArray(detailsData) && detailsData.length > 0) {
             console.log('detailsData length:', detailsData.length)
             detailsData.forEach((item, index) => {
               console.log(`detailsData[${index}]:`, item)
             })
+          } else if (detailsData && !Array.isArray(detailsData)) {
+            console.log('detailsData (object):', detailsData)
           }
 
 
