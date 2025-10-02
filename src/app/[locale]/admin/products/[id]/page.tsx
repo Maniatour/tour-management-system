@@ -695,25 +695,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                          productOptions: (() => {
                try {
                  // 새로운 통합 구조에 맞게 그룹화
-                 const optionsMap = new Map<string, {
-                   id: string
-                   name: string
-                   description: string
-                   isRequired: boolean
-                   isMultiple: boolean
-                   linkedOptionId?: string
-                   choices: Array<{
-                     id: string
-                     name: string
-                     description: string
-                     priceAdjustment: {
-                       adult: number
-                       child: number
-                       infant: number
-                     }
-                     isDefault: boolean
-                   }>
-                 }>()
+                 const optionsMap = new Map()
                  
                  (optionsData || []).forEach((option: {
                    id: string
@@ -745,8 +727,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                    
                    // choice가 있는 경우에만 추가
                    if (option.choice_name) {
-                     const existingOption = optionsMap.get(optionKey)
-                     if (existingOption) {
+                     const existingOption = optionsMap.get(optionKey) as any
+                     if (existingOption && existingOption.choices) {
                        existingOption.choices.push({
                          id: option.id, // choice ID는 option ID와 동일
                          name: option.choice_name,
