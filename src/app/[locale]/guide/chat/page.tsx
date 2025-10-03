@@ -568,7 +568,7 @@ export default function GuideChatPage() {
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-lg font-semibold text-gray-900">채팅</h1>
+              <h1 className="text-lg font-semibold text-gray-900">{t('chat')}</h1>
               <p className="text-sm text-gray-500">{t('chatSubtitle')}</p>
             </div>
             {activeTab === 'team' && (

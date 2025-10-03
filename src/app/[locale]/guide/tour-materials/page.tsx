@@ -11,10 +11,12 @@ import {
   FileText,
   ChevronDown,
   ChevronUp,
-  Music
+  Music,
+  Play,
+  Pause
 } from 'lucide-react'
 import { toast } from 'sonner'
-import AudioPlayer from '@/components/AudioPlayer'
+import { useAudioPlayer } from '@/contexts/AudioPlayerContext'
 import ReactCountryFlag from 'react-country-flag'
 
 type TourMaterial = {
@@ -44,6 +46,7 @@ type TourMaterial = {
 export default function GuideTourMaterialsPage() {
   const t = useTranslations('guide')
   const supabase = createClientSupabase()
+  const { playTrack, currentTrack, isPlaying } = useAudioPlayer()
   
   const [materials, setMaterials] = useState<TourMaterial[]>([])
   const [loading, setLoading] = useState(true)
@@ -328,20 +331,135 @@ export default function GuideTourMaterialsPage() {
                       </div>
                     )}
                     
-                    {/* 오디오 파일인 경우 플레이어만 표시 */}
+                    {/* 오디오 파일인 경우 카드 표시 */}
                     {material.file_type === 'audio' && (
-                      <AudioPlayer
-                        src={getFileUrl(material.file_path)}
-                        title={material.title}
-                        audioDuration={material.duration || undefined}
-                        language={material.language}
-                        attraction={material.tour_attractions?.name_ko || t('noAttraction')}
-                        category={material.tour_material_categories?.name_ko || t('noCategory')}
-                        fileSize={formatFileSize(material.file_size)}
-                        className="max-w-full"
-                        isExpanded={expandedCards.has(material.id)}
-                        onToggleExpanded={() => toggleAccordion(material.id)}
-                      />
+                      <div className="border border-gray-200 rounded-lg hover:shadow-sm transition-shadow">
+                        {/* 아코디언 헤더 */}
+                        <div 
+                          className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                          onClick={() => toggleAccordion(material.id)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3 flex-1 min-w-0">
+                              {/* 플레이 버튼 */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  playTrack({
+                                    src: getFileUrl(material.file_path),
+                                    title: material.title,
+                                    duration: material.duration || undefined
+                                  })
+                                }}
+                                className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                                  currentTrack?.src === getFileUrl(material.file_path) && isPlaying
+                                    ? 'bg-red-600 text-white hover:bg-red-700'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                }`}
+                                title={currentTrack?.src === getFileUrl(material.file_path) && isPlaying ? '재생 중' : '재생'}
+                              >
+                                {currentTrack?.src === getFileUrl(material.file_path) && isPlaying ? (
+                                  <Pause className="w-4 h-4" />
+                                ) : (
+                                  <Play className="w-4 h-4" />
+                                )}
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center space-x-2">
+                                  <h3 className="font-medium text-gray-900 text-sm truncate">{material.title}</h3>
+                                  <ReactCountryFlag
+                                    countryCode={getLanguageFlag(material.language)}
+                                    svg
+                                    style={{
+                                      width: '20px',
+                                      height: '15px',
+                                      borderRadius: '2px'
+                                    }}
+                                  />
+                                  {material.duration && (
+                                    <span className="text-xs text-gray-500">
+                                      {Math.floor(material.duration / 60)}:{(material.duration % 60).toString().padStart(2, '0')}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="ml-2">
+                              {/* 펼쳐보기 버튼 */}
+                              {expandedCards.has(material.id) ? (
+                                <ChevronUp className="w-4 h-4 text-gray-400" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 text-gray-400" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* 아코디언 콘텐츠 */}
+                        {expandedCards.has(material.id) && (
+                          <div className="px-3 pb-3 border-t border-gray-100">
+                            <div className="pt-3 space-y-2">
+                              {material.description && (
+                                <div>
+                                  <h4 className="text-xs font-medium text-gray-700 mb-1">설명</h4>
+                                  <p className="text-xs text-gray-600 leading-relaxed">{material.description}</p>
+                                </div>
+                              )}
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <span className="font-medium text-gray-700">파일명:</span>
+                                  <span className="ml-1 text-gray-600">{material.file_name}</span>
+                                </div>
+                                <div>
+                                  <span className="font-medium text-gray-700">파일 타입:</span>
+                                  <span className="ml-1 text-gray-600">{material.file_type}</span>
+                                </div>
+                                <div>
+                                  <span className="font-medium text-gray-700">언어:</span>
+                                  <span className="ml-1">
+                                    <ReactCountryFlag
+                                      countryCode={getLanguageFlag(material.language)}
+                                      svg
+                                      style={{
+                                        width: '16px',
+                                        height: '12px',
+                                        borderRadius: '2px'
+                                      }}
+                                    />
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="font-medium text-gray-700">크기:</span>
+                                  <span className="ml-1 text-gray-600">{formatFileSize(material.file_size)}</span>
+                                </div>
+                                {material.duration && (
+                                  <div>
+                                    <span className="font-medium text-gray-700">재생 시간:</span>
+                                    <span className="ml-1 text-gray-600">
+                                      {Math.floor(material.duration / 60)}:{(material.duration % 60).toString().padStart(2, '0')}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              {material.tags && material.tags.length > 0 && (
+                                <div>
+                                  <h4 className="text-xs font-medium text-gray-700 mb-1">태그</h4>
+                                  <div className="flex flex-wrap gap-1">
+                                    {material.tags.map((tag, index) => (
+                                      <span 
+                                        key={index}
+                                        className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}

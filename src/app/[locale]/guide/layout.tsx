@@ -1,5 +1,7 @@
 'use client'
 
+import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
+import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, use, useState } from 'react'
@@ -255,14 +257,18 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* 메인 컨텐츠 */}
-      <main className="max-w-7xl mx-auto px-0 sm:px-1 lg:px-2 py-2 sm:py-4 pb-20 sm:pb-4">
-        {children}
-      </main>
+    <AudioPlayerProvider>
+      <div className="min-h-screen bg-gray-50">
+        {/* 메인 컨텐츠 */}
+        <main className="max-w-7xl mx-auto px-0 sm:px-1 lg:px-2 py-2 sm:py-4 pb-20 sm:pb-4">
+          {children}
+        </main>
 
-      {/* 모바일 푸터 네비게이션 */}
-      <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-50">
+        {/* 전역 오디오 플레이어 */}
+        <GlobalAudioPlayer />
+
+        {/* 모바일 푸터 네비게이션 */}
+        <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-50">
         <div className="grid grid-cols-5 py-2">
           <button
             onClick={() => router.push(`/${locale}/guide`)}
@@ -355,6 +361,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
         onClose={() => setShowReceiptModal(false)}
         locale={locale}
       />
-    </div>
+      </div>
+    </AudioPlayerProvider>
   )
 }
