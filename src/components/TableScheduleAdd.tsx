@@ -1118,16 +1118,16 @@ export default function TableScheduleAdd({
           <div className="w-[32px] text-center">삭제</div>
           <div className="w-[64px] text-center">썸네일</div>
           <div className="w-[40px] text-center">일차</div>
-          <div className="w-[40px] text-center">순서</div>
+          <div className="w-[40px] text-center">#</div>
           <div className="w-[120px] text-center">시작</div>
           <div className="w-[120px] text-center">종료</div>
           <div className="w-[50px] text-center">소요(분)</div>
           <div className="w-[32px] text-center">시간없음</div>
           <div className="w-[160px] text-center">제목</div>
-          <div className="w-[128px] text-center">설명</div>
-          <div className="w-[128px] text-center">가이드메모</div>
-          <div className="w-[120px] text-center">2가이드</div>
-          <div className="w-[120px] text-center">가이드+드라이버</div>
+          <div className="w-[100px] text-center">설명</div>
+          <div className="w-[100px] text-center">가이드메모</div>
+          <div className="w-[100px] text-center">2가이드</div>
+          <div className="w-[100px] text-center">가이드+드라이버</div>
           <div className="w-[32px] text-center">휴식</div>
           <div className="w-[32px] text-center">식사</div>
           <div className="w-[32px] text-center">이동</div>
@@ -1237,14 +1237,10 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 순서 */}
-              <div className="w-[40px]">
-                <input
-                  type="number"
-                  value={schedule.order_index || index + 1}
-                  onChange={(e) => updateSchedule(index, 'order_index', parseInt(e.target.value))}
-                  className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  min="1"
-                />
+              <div className="w-[40px] flex justify-center items-center">
+                <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
+                  {schedule.order_index || index + 1}
+                </div>
               </div>
 
               {/* 시작시간 (선택사항) */}
@@ -1382,7 +1378,7 @@ export default function TableScheduleAdd({
                       setTextModalIndex(index)
                       setShowTextModal(true)
                     }}
-                    className={`w-[128px] h-8 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
+                    className={`w-[100px] h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
                       (showEnglishFields ? !schedule.description_en : !schedule.description_ko) 
                         ? 'bg-red-50 border-red-300 text-red-700' 
                         : 'bg-blue-50 border-blue-300 text-blue-700'
@@ -1397,7 +1393,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 가이드 메모 */}
-              <div className="w-[128px]">
+              <div className="w-[100px]">
                 <button
                   type="button"
                   onClick={() => {
@@ -1405,7 +1401,7 @@ export default function TableScheduleAdd({
                     setTextModalIndex(index)
                     setShowTextModal(true)
                   }}
-                  className={`w-full h-8 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
+                  className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
                     (showEnglishFields ? !schedule.guide_notes_en : !schedule.guide_notes_ko) 
                       ? 'bg-red-50 border-red-300 text-red-700' 
                       : 'bg-green-50 border-green-300 text-green-700'
@@ -1419,7 +1415,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 2가이드 담당자 선택 */}
-              <div className="w-[120px]">
+              <div className="w-[100px]">
                 <button
                   type="button"
                   onClick={() => {
@@ -1434,7 +1430,7 @@ export default function TableScheduleAdd({
                     }
                     updateSchedule(index, 'two_guide_schedule', nextValue)
                   }}
-                  className={`w-full h-8 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
+                  className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
                     schedule.two_guide_schedule === 'guide' 
                       ? 'bg-blue-100 border-blue-400 text-blue-800' 
                       : schedule.two_guide_schedule === 'assistant'
@@ -1451,7 +1447,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 가이드+드라이버 담당자 선택 */}
-              <div className="w-[120px]">
+              <div className="w-[100px]">
                 <button
                   type="button"
                   onClick={() => {
@@ -1466,7 +1462,7 @@ export default function TableScheduleAdd({
                     }
                     updateSchedule(index, 'guide_driver_schedule', nextValue)
                   }}
-                  className={`w-full h-8 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
+                  className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
                     schedule.guide_driver_schedule === 'guide' 
                       ? 'bg-blue-100 border-blue-400 text-blue-800' 
                       : schedule.guide_driver_schedule === 'assistant'
