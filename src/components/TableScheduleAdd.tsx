@@ -1,12 +1,11 @@
 'use client'
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, ChevronUp, ChevronDown, Languages, MapPin, Sparkles, ExternalLink } from 'lucide-react'
+import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, Languages, MapPin, ExternalLink, GripVertical } from 'lucide-react'
 import LocationPickerModal from './LocationPickerModal'
 import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl, uploadProductMedia } from '@/lib/productMediaUpload'
 import { supabase } from '@/lib/supabase'
 import { translateScheduleFields, type ScheduleTranslationFields } from '@/lib/translationService'
-import { suggestScheduleTitle, suggestScheduleDescription } from '@/lib/chatgptService'
 
 // Google Maps 타입 정의
 declare global {
@@ -30,6 +29,7 @@ interface ScheduleItem {
   start_time: string | null
   end_time: string | null
   duration_minutes: number | null
+  no_time: boolean | null // 시간 없음 체크박스
   is_break: boolean | null
   is_meal: boolean | null
   is_transport: boolean | null
@@ -73,8 +73,6 @@ export default function TableScheduleAdd({
   const [showLocationPicker, setShowLocationPicker] = useState(false)
   const [locationPickerIndex, setLocationPickerIndex] = useState<number | null>(null)
   const [showEnglishFields, setShowEnglishFields] = useState(false)
-  const [showOptionsModal, setShowOptionsModal] = useState(false)
-  const [currentScheduleIndex, setCurrentScheduleIndex] = useState<number | null>(null)
   const [showThumbnailModal, setShowThumbnailModal] = useState(false)
   const [thumbnailIndex, setThumbnailIndex] = useState<number | null>(null)
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false)
@@ -84,8 +82,6 @@ export default function TableScheduleAdd({
   const [dragOver, setDragOver] = useState(false)
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
-  const [suggesting, setSuggesting] = useState(false)
-  const [suggestionError, setSuggestionError] = useState<string | null>(null)
   const [showTextModal, setShowTextModal] = useState(false)
   const [textModalType, setTextModalType] = useState<'description' | 'guide_notes'>('description')
   const [textModalIndex, setTextModalIndex] = useState<number | null>(null)
@@ -98,6 +94,8 @@ export default function TableScheduleAdd({
   const [mapSuggestions, setMapSuggestions] = useState<any[]>([])
   const [showMapSuggestions, setShowMapSuggestions] = useState(false)
   const [isMapSearchLoading, setIsMapSearchLoading] = useState(false)
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 지도 관련 함수들
@@ -506,6 +504,7 @@ export default function TableScheduleAdd({
       start_time: lastEndTime, // 윗 행의 종료 시간을 시작 시간으로 (null 가능)
       end_time: lastEndTime ? calculateEndTime(lastEndTime, 60) : null, // 시작 시간이 있으면 + 60분
       duration_minutes: lastEndTime ? 60 : null, // 시간이 없으면 null
+      no_time: false, // 시간 없음 체크박스 기본값
       is_break: false,
       is_meal: false,
       is_transport: false,
@@ -535,50 +534,102 @@ export default function TableScheduleAdd({
     onSchedulesChange(updatedSchedules)
   }
 
-  // Row 이동 함수들 (order_index 업데이트 포함)
-  const moveScheduleUp = (index: number) => {
-    if (index > 0) {
-      const updatedSchedules = [...schedules]
-      const currentSchedule = updatedSchedules[index]
-      const previousSchedule = updatedSchedules[index - 1]
-      
-      // 같은 일차인 경우에만 이동
-      if (currentSchedule.day_number === previousSchedule.day_number) {
-        // order_index 교환
-        const tempOrderIndex = currentSchedule.order_index
-        currentSchedule.order_index = previousSchedule.order_index
-        previousSchedule.order_index = tempOrderIndex
-        
-        // 배열에서 위치 교환
-        updatedSchedules[index] = previousSchedule
-        updatedSchedules[index - 1] = currentSchedule
-        
-        onSchedulesChange(updatedSchedules)
-      }
-    }
+  // 드래그 앤 드롭 핸들러들
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/html', '')
   }
 
-  const moveScheduleDown = (index: number) => {
-    if (index < schedules.length - 1) {
-      const updatedSchedules = [...schedules]
-      const currentSchedule = updatedSchedules[index]
-      const nextSchedule = updatedSchedules[index + 1]
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverIndex(index)
+  }
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null)
+  }
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault()
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null)
+      setDragOverIndex(null)
+      return
+    }
+
+    const updatedSchedules = [...schedules]
+    const draggedSchedule = updatedSchedules[draggedIndex]
+    
+    // 같은 일차인 경우에만 이동 허용
+    if (draggedSchedule.day_number === updatedSchedules[dropIndex].day_number) {
+      // 드래그된 아이템 제거
+      updatedSchedules.splice(draggedIndex, 1)
       
-      // 같은 일차인 경우에만 이동
-      if (currentSchedule.day_number === nextSchedule.day_number) {
-        // order_index 교환
-        const tempOrderIndex = currentSchedule.order_index
-        currentSchedule.order_index = nextSchedule.order_index
-        nextSchedule.order_index = tempOrderIndex
+      // 새로운 위치에 삽입
+      const newIndex = draggedIndex < dropIndex ? dropIndex - 1 : dropIndex
+      updatedSchedules.splice(newIndex, 0, draggedSchedule)
+      
+      // order_index 재정렬
+      updatedSchedules.forEach((schedule, index) => {
+        schedule.order_index = index + 1
+      })
+      
+      // 시간 자동 업데이트
+      const schedulesWithUpdatedTimes = updateTimesBasedOnDuration(updatedSchedules)
+      onSchedulesChange(schedulesWithUpdatedTimes)
+    }
+    
+    setDraggedIndex(null)
+    setDragOverIndex(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null)
+    setDragOverIndex(null)
+  }
+
+  // 시간 업데이트 함수 (첫 번째 줄부터 모든 행의 시간을 순차적으로 계산, 시간 없음 행은 스킵)
+  const updateTimesBasedOnDuration = (schedules: any[]) => {
+    const updatedSchedules = [...schedules]
+    let currentTime = '09:00' // 기본 시작 시간
+    
+    // 모든 행을 순차적으로 처리
+    for (let i = 0; i < updatedSchedules.length; i++) {
+      const schedule = updatedSchedules[i]
+      
+      // 시간 없음이 체크된 행은 스킵
+      if (schedule.no_time) {
+        continue
+      }
+      
+      if (schedule.duration_minutes && schedule.duration_minutes > 0) {
+        // 시작 시간 설정
+        updatedSchedules[i] = {
+          ...updatedSchedules[i],
+          start_time: currentTime
+        }
         
-        // 배열에서 위치 교환
-        updatedSchedules[index] = nextSchedule
-        updatedSchedules[index + 1] = currentSchedule
+        // 종료 시간 계산 (시작 시간 + 소요시간)
+        const startMinutes = timeToMinutes(currentTime)
+        const endMinutes = startMinutes + schedule.duration_minutes
+        const endTime = minutesToTime(endMinutes)
         
-        onSchedulesChange(updatedSchedules)
+        updatedSchedules[i] = {
+          ...updatedSchedules[i],
+          end_time: endTime
+        }
+        
+        // 다음 일정의 시작 시간을 현재 종료 시간으로 설정
+        currentTime = endTime
       }
     }
+    
+    return updatedSchedules
   }
+
 
   // 버킷에서 이미지 목록 가져오기
   const fetchBucketImages = useCallback(async () => {
@@ -616,18 +667,7 @@ export default function TableScheduleAdd({
     }
   }, [])
 
-  // 드래그 앤 드롭 핸들러
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(true)
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-  }, [])
-
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
+  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
     
@@ -683,44 +723,6 @@ export default function TableScheduleAdd({
     onSchedulesChange(schedules.filter((_, i) => i !== index))
   }
 
-  // 번역 함수
-  const translateSchedule = async (index: number) => {
-    const schedule = schedules[index]
-    if (!schedule) return
-
-    setTranslating(true)
-    setTranslationError(null)
-
-    try {
-      // 번역할 필드들 수집
-      const fieldsToTranslate: ScheduleTranslationFields = {
-        title_ko: schedule.title_ko,
-        description_ko: schedule.description_ko,
-        location_ko: schedule.location_ko,
-        guide_notes_ko: schedule.guide_notes_ko
-      }
-
-      // 번역 실행
-      const result = await translateScheduleFields(fieldsToTranslate)
-
-      if (result.success && result.translatedFields) {
-        // 번역된 내용을 스케줄에 적용
-        const updatedSchedules = [...schedules]
-        updatedSchedules[index] = {
-          ...updatedSchedules[index],
-          ...result.translatedFields
-        }
-        onSchedulesChange(updatedSchedules)
-      } else {
-        setTranslationError(result.error || '번역에 실패했습니다.')
-      }
-    } catch (error) {
-      console.error('번역 오류:', error)
-      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
-    } finally {
-      setTranslating(false)
-    }
-  }
 
   // 모든 스케줄 번역 함수
   const translateAllSchedules = async () => {
@@ -767,44 +769,6 @@ export default function TableScheduleAdd({
     }
   }
 
-  // ChatGPT 추천 함수들
-  const suggestScheduleTitleForIndex = async (index: number) => {
-    setSuggesting(true)
-    setSuggestionError(null)
-
-    try {
-      const schedule = schedules[index]
-      const dayNumber = index + 1
-      const suggestedTitle = await suggestScheduleTitle(dayNumber, schedule.location_ko || '')
-      
-      updateSchedule(index, 'title_ko', suggestedTitle)
-    } catch (error) {
-      console.error('ChatGPT 제목 추천 오류:', error)
-      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
-    } finally {
-      setSuggesting(false)
-    }
-  }
-
-  const suggestScheduleDescriptionForIndex = async (index: number) => {
-    setSuggesting(true)
-    setSuggestionError(null)
-
-    try {
-      const schedule = schedules[index]
-      const suggestedDescription = await suggestScheduleDescription(
-        schedule.title_ko || '', 
-        schedule.location_ko || ''
-      )
-      
-      updateSchedule(index, 'description_ko', suggestedDescription)
-    } catch (error) {
-      console.error('ChatGPT 설명 추천 오류:', error)
-      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
-    } finally {
-      setSuggesting(false)
-    }
-  }
 
   // 시간 합산 계산 함수 (각 가이드 유형별로 분리, 모든 일정의 소요시간 계산)
   const calculateTotalTransportTime = () => {
@@ -911,22 +875,15 @@ export default function TableScheduleAdd({
           <button
             type="button"
             onClick={() => {
-              // 모든 스케줄의 제목과 설명을 ChatGPT로 추천받기
-              schedules.forEach((_, index) => {
-                suggestScheduleTitleForIndex(index)
-                suggestScheduleDescriptionForIndex(index)
-              })
+              const updatedSchedules = updateTimesBasedOnDuration(schedules)
+              onSchedulesChange(updatedSchedules)
             }}
-            disabled={suggesting || schedules.length === 0}
-            className="flex items-center px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm"
-            title="모든 스케줄의 제목과 설명을 ChatGPT로 추천받기"
+            disabled={schedules.length === 0}
+            className="flex items-center px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+            title="모든 스케줄의 시간을 소요시간 기준으로 자동 계산"
           >
-            {suggesting ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4 mr-1" />
-            )}
-            {suggesting ? '추천 중...' : 'AI 추천'}
+            <Calendar className="h-4 w-4 mr-1" />
+            시간 계산
           </button>
           <button
             type="button"
@@ -966,22 +923,26 @@ export default function TableScheduleAdd({
       {/* 테이블 헤더 */}
       <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
         <div className="flex gap-2 text-xs font-medium text-gray-600">
-          <div className="w-8">삭제</div>
-          <div className="w-12">이동</div>
-          <div className="w-12">썸네일</div>
-          <div className="w-12">일차</div>
-          <div className="w-12">순서</div>
-          <div className="w-32">시작 (선택)</div>
-          <div className="w-32">종료 (선택)</div>
-          <div className="w-16">소요(분)</div>
-          <div className="w-48">제목</div>
-          <div className="w-48">설명</div>
-          <div className="w-32">가이드 메모</div>
-          <div className="w-40">2가이드</div>
-          <div className="w-40">가이드+드라이버</div>
-          <div className="w-40">옵션</div>
-          <div className="w-32">위치</div>
-          <div className="w-20">번역</div>
+          <div className="w-[24px]"></div>
+          <div className="w-[32px]">삭제</div>
+          <div className="w-[64px]">썸네일</div>
+          <div className="w-[32px]">일차</div>
+          <div className="w-[32px]">순서</div>
+          <div className="w-[120px]">시작</div>
+          <div className="w-[120px]">종료</div>
+          <div className="w-[32px]">소요(분)</div>
+          <div className="w-[32px]">시간없음</div>
+          <div className="w-[160px]">제목</div>
+          <div className="w-[128px]">설명</div>
+          <div className="w-[128px]">가이드메모</div>
+          <div className="w-[120px]">2가이드</div>
+          <div className="w-[120px]">가이드+드라이버</div>
+          <div className="w-[32px]">휴식</div>
+          <div className="w-[32px]">식사</div>
+          <div className="w-[32px]">이동</div>
+          <div className="w-[32px]">관광</div>
+          <div className="w-[48px]">고객표시</div>
+          <div className="w-[160px]">위치</div>
         </div>
       </div>
 
@@ -1008,36 +969,33 @@ export default function TableScheduleAdd({
         </div>
       )}
 
-      {/* ChatGPT 추천 오류 메시지 */}
-      {suggestionError && (
-        <div className="px-4 py-2 bg-red-50 border-l-4 border-red-400">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <X className="h-5 w-5 text-red-400" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-red-700">{suggestionError}</p>
-            </div>
-            <div className="ml-auto pl-3">
-              <button
-                type="button"
-                onClick={() => setSuggestionError(null)}
-                className="inline-flex text-red-400 hover:text-red-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 테이블 내용 */}
       <div className="flex-1 overflow-y-auto px-4 py-2">
         <div className="space-y-2">
           {schedules.map((schedule, index) => (
-            <div key={index} className="flex gap-2 items-end">
+            <div 
+              key={index} 
+              className={`flex gap-2 items-end p-2 border rounded-lg transition-all duration-200 ${
+                draggedIndex === index ? 'opacity-50 scale-95 shadow-lg' : ''
+              } ${
+                dragOverIndex === index ? 'bg-blue-50 border-blue-400 border-2 shadow-md transform scale-105' : 'border-gray-200'
+              } ${
+                draggedIndex !== null && draggedIndex !== index && dragOverIndex === index ? 'border-dashed border-blue-500 bg-blue-100' : ''
+              }`}
+              draggable
+              onDragStart={(e) => handleDragStart(e, index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, index)}
+              onDragEnd={handleDragEnd}
+            >
+              {/* 드래그 핸들 */}
+              <div className="flex items-center justify-center w-[24px] h-8 cursor-move text-gray-400 hover:text-gray-600">
+                <GripVertical className="h-4 w-4" />
+              </div>
               {/* 삭제 버튼 */}
-              <div className="w-8 flex items-center justify-center">
+              <div className="w-[32px] flex items-center justify-center">
                 <button
                   type="button"
                   onClick={() => removeSchedule(index)}
@@ -1047,30 +1005,9 @@ export default function TableScheduleAdd({
                 </button>
               </div>
 
-              {/* 이동 버튼들 */}
-              <div className="w-12 flex flex-col items-center justify-center space-y-1">
-                <button
-                  type="button"
-                  onClick={() => moveScheduleUp(index)}
-                  disabled={index === 0}
-                  className="p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="위로 이동"
-                >
-                  <ChevronUp className="h-3 w-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveScheduleDown(index)}
-                  disabled={index === schedules.length - 1}
-                  className="p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="아래로 이동"
-                >
-                  <ChevronDown className="h-3 w-3" />
-                </button>
-              </div>
 
               {/* 썸네일 필드 */}
-              <div className="w-12 flex justify-center">
+              <div className="w-[64px] flex justify-center">
                 <button
                   type="button"
                   onClick={() => {
@@ -1093,7 +1030,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 일차 */}
-              <div className="w-12">
+              <div className="w-[32px]">
                 <input
                   type="number"
                   value={schedule.day_number}
@@ -1103,9 +1040,19 @@ export default function TableScheduleAdd({
                 />
               </div>
 
+              {/* 순서 */}
+              <div className="w-[32px]">
+                <input
+                  type="number"
+                  value={schedule.order_index || index + 1}
+                  onChange={(e) => updateSchedule(index, 'order_index', parseInt(e.target.value))}
+                  className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  min="1"
+                />
+              </div>
 
               {/* 시작시간 (선택사항) */}
-              <div className="w-32">
+              <div className="w-[120px]">
                 <input
                   type="time"
                   value={schedule.start_time || ''}
@@ -1122,13 +1069,16 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  disabled={index === 0}
+                  className={`w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                    index === 0 ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
                   placeholder="선택사항"
                 />
               </div>
 
               {/* 종료시간 (선택사항) */}
-              <div className="w-32">
+              <div className="w-[120px]">
                 <input
                   type="time"
                   value={schedule.end_time || ''}
@@ -1145,13 +1095,16 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  disabled={index === 0}
+                  className={`w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                    index === 0 ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
                   placeholder="선택사항"
                 />
               </div>
 
               {/* 소요시간 (선택사항) */}
-              <div className="w-16">
+              <div className="w-[32px]">
                 <input
                   type="number"
                   value={schedule.duration_minutes || ''}
@@ -1191,8 +1144,28 @@ export default function TableScheduleAdd({
                 />
               </div>
 
+              {/* 시간 없음 체크박스 */}
+              <div className="w-[32px] flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={schedule.no_time || false}
+                  onChange={(e) => {
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      no_time: e.target.checked,
+                      start_time: e.target.checked ? null : updatedSchedules[index].start_time,
+                      end_time: e.target.checked ? null : updatedSchedules[index].end_time
+                      // duration_minutes는 유지
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </div>
+
               {/* 제목 필드 */}
-              <div className="w-48">
+              <div className="w-[160px]">
                 <div className="flex space-x-1">
                   <input
                     type="text"
@@ -1207,22 +1180,11 @@ export default function TableScheduleAdd({
                     className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder={showEnglishFields ? "English title" : "한국어 제목"}
                   />
-                  {!showEnglishFields && (
-                    <button
-                      type="button"
-                      onClick={() => suggestScheduleTitleForIndex(index)}
-                      disabled={suggesting}
-                      className="px-2 py-1 text-xs bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 disabled:opacity-50"
-                      title="ChatGPT로 제목 추천받기"
-                    >
-                      <Sparkles className="h-3 w-3" />
-                    </button>
-                  )}
                 </div>
               </div>
 
               {/* 설명 필드 */}
-              <div className="w-48">
+              <div className="w-[128px]">
                 <div className="flex space-x-1">
                   <button
                     type="button"
@@ -1234,26 +1196,15 @@ export default function TableScheduleAdd({
                     className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between"
                   >
                     <span className="truncate">
-                      {showEnglishFields ? (schedule.description_en || '') : (schedule.description_ko || '') || (showEnglishFields ? "English description" : "한국어 설명")}
+                      {showEnglishFields ? "English description" : "한국어 설명"}
                     </span>
                     <span className="text-gray-400 text-xs">✏️</span>
                   </button>
-                  {!showEnglishFields && (
-                    <button
-                      type="button"
-                      onClick={() => suggestScheduleDescriptionForIndex(index)}
-                      disabled={suggesting}
-                      className="px-2 py-1 text-xs bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 disabled:opacity-50"
-                      title="ChatGPT로 설명 추천받기"
-                    >
-                      <Sparkles className="h-3 w-3" />
-                    </button>
-                  )}
                 </div>
               </div>
 
               {/* 가이드 메모 */}
-              <div className="w-32">
+              <div className="w-[128px]">
                 <button
                   type="button"
                   onClick={() => {
@@ -1271,7 +1222,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 2가이드 담당자 선택 */}
-              <div className="w-40">
+              <div className="w-[120px]">
                 <select
                   value={schedule.two_guide_schedule || ''}
                   onChange={(e) => {
@@ -1291,7 +1242,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 가이드+드라이버 담당자 선택 */}
-              <div className="w-40">
+              <div className="w-[120px]">
                 <select
                   value={schedule.guide_driver_schedule || ''}
                   onChange={(e) => {
@@ -1310,28 +1261,93 @@ export default function TableScheduleAdd({
                 </select>
               </div>
 
-              {/* 옵션 선택 버튼 */}
-              <div className="w-40">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCurrentScheduleIndex(index)
-                    setShowOptionsModal(true)
+              {/* 휴식 체크박스 */}
+              <div className="w-[32px] flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={schedule.is_break || false}
+                  onChange={(e) => {
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      is_break: e.target.checked
+                    }
+                    onSchedulesChange(updatedSchedules)
                   }}
-                  className="w-full h-8 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                >
-                  {[
-                    schedule.is_break && '휴식',
-                    schedule.is_meal && '식사',
-                    schedule.is_transport && '이동',
-                    schedule.is_tour && '관광',
-                    schedule.show_to_customers && '고객표시'
-                  ].filter(Boolean).join(',') || '옵션 설정'}
-                </button>
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 식사 체크박스 */}
+              <div className="w-[32px] flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={schedule.is_meal || false}
+                  onChange={(e) => {
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      is_meal: e.target.checked
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 이동 체크박스 */}
+              <div className="w-[32px] flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={schedule.is_transport || false}
+                  onChange={(e) => {
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      is_transport: e.target.checked
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 관광 체크박스 */}
+              <div className="w-[32px] flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={schedule.is_tour || false}
+                  onChange={(e) => {
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      is_tour: e.target.checked
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 고객표시 체크박스 */}
+              <div className="w-[48px] flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={schedule.show_to_customers || false}
+                  onChange={(e) => {
+                    const updatedSchedules = [...schedules]
+                    updatedSchedules[index] = {
+                      ...updatedSchedules[index],
+                      show_to_customers: e.target.checked
+                    }
+                    onSchedulesChange(updatedSchedules)
+                  }}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                />
               </div>
 
               {/* 위치 필드 */}
-              <div className="w-32">
+              <div className="w-[160px]">
                 <div className="flex gap-1">
                   <input
                     type="text"
@@ -1356,22 +1372,6 @@ export default function TableScheduleAdd({
                 </div>
               </div>
 
-              {/* 번역 버튼 */}
-              <div className="w-20 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => translateSchedule(index)}
-                  disabled={translating}
-                  className="px-2 py-1 text-xs bg-purple-100 text-purple-600 rounded hover:bg-purple-200 disabled:opacity-50"
-                  title="이 행 번역"
-                >
-                  {translating ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Languages className="h-3 w-3" />
-                  )}
-                </button>
-              </div>
 
             </div>
           ))}
@@ -1401,71 +1401,6 @@ export default function TableScheduleAdd({
             setLocationPickerIndex(null)
           }}
         />
-      )}
-
-      {/* 옵션 설정 모달 */}
-      {showOptionsModal && currentScheduleIndex !== null && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">옵션 설정</h3>
-            <div className="space-y-3">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={schedules[currentScheduleIndex]?.is_break || false}
-                  onChange={(e) => updateSchedule(currentScheduleIndex, 'is_break', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-700">휴식시간</span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={schedules[currentScheduleIndex]?.is_meal || false}
-                  onChange={(e) => updateSchedule(currentScheduleIndex, 'is_meal', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-700">식사시간</span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={schedules[currentScheduleIndex]?.is_transport || false}
-                  onChange={(e) => updateSchedule(currentScheduleIndex, 'is_transport', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-700">이동시간</span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={schedules[currentScheduleIndex]?.is_tour || false}
-                  onChange={(e) => updateSchedule(currentScheduleIndex, 'is_tour', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-700">관광시간</span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={schedules[currentScheduleIndex]?.show_to_customers || false}
-                  onChange={(e) => updateSchedule(currentScheduleIndex, 'show_to_customers', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-700">고객에게 표시</span>
-              </label>
-            </div>
-            <div className="flex justify-end mt-6">
-              <button
-                type="button"
-                onClick={() => setShowOptionsModal(false)}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-              >
-                닫기
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* 썸네일 업로드 모달 */}
@@ -1510,7 +1445,7 @@ export default function TableScheduleAdd({
                   }`}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
+                  onDrop={handleFileDrop}
                   onPaste={handlePaste}
                   tabIndex={0}
                 >
