@@ -314,13 +314,15 @@ export default function TableScheduleAdd({
     }
   }
 
-  // 지도 검색 기능 (LocationSearch와 같은 방식 + Plus Code 지원)
+  // 향상된 지도 검색 기능 - 다중 검색 방법 지원
   const searchMapPlaces = async (query: string) => {
     if (!query.trim() || !mapLoaded) return
 
     setIsMapSearchLoading(true)
+    const allResults: any[] = []
+
     try {
-      // Plus Code인 경우 특별 처리
+      // 1. Plus Code 검색 (가장 정확함)
       if (isPlusCode(query)) {
         const geocodeResult = await decodePlusCode(query)
         if (geocodeResult) {
@@ -330,14 +332,16 @@ export default function TableScheduleAdd({
           
           const plusCodeResult = {
             placeId: `plus_code_${Date.now()}`,
-            name: `Plus Code 위치 (${query})`,
+            name: `📍 Plus Code: ${query}`,
             address: (geocodeResult as any)?.formatted_address || '',
             latitude: lat,
             longitude: lng,
             googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
             rating: undefined,
+            ratingDisplay: undefined,
             userRatingsTotal: undefined,
-            types: ['plus_code']
+            types: ['plus_code'],
+            searchType: 'plus_code'
           }
           
           setMapSuggestions([plusCodeResult])
@@ -347,79 +351,189 @@ export default function TableScheduleAdd({
         }
       }
 
-      // 일반 장소 검색
-      const service = new (window.google as any).maps.places.PlacesService(
-        document.createElement('div')
-      )
-
-      const request = {
-        query: query,
-        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url', 'types', 'rating', 'user_ratings_total'],
-        locationBias: { lat: 36.1699, lng: -115.1398, radius: 100000 }, // 라스베가스 중심 100km 반경
-        region: 'US' // 미국 지역 우선
-      }
-
-      service.textSearch(request, (results: any[], status: any) => {
-        if (status === (window.google as any).maps.places.PlacesServiceStatus.OK && results) {
-          // 결과를 평점과 리뷰 수로 정렬하여 더 관련성 높은 결과 우선 표시
-          const sortedResults = results
-            .filter((place: any) => place.rating && place.user_ratings_total > 0) // 평점이 있는 장소만
-            .sort((a: any, b: any) => {
-              // 평점과 리뷰 수를 고려한 점수 계산
-              const scoreA = (a.rating * Math.log(a.user_ratings_total + 1))
-              const scoreB = (b.rating * Math.log(b.user_ratings_total + 1))
-              return scoreB - scoreA
-            })
-            .slice(0, 8) // 상위 8개 결과만 표시
-
-          const formattedResults = sortedResults.map((place: any) => ({
-            placeId: place.place_id,
-            name: place.name,
-            address: place.formatted_address,
-            latitude: place.geometry.location.lat(),
-            longitude: place.geometry.location.lng(),
-            googleMapsUrl: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
-            rating: place.rating,
-            userRatingsTotal: place.user_ratings_total,
-            types: place.types
-          }))
-          
-          setMapSuggestions(formattedResults)
-          setShowMapSuggestions(true)
-        } else {
-          // Places API 실패 시 Geocoder로 일반 주소 검색 시도
+      // 2. 좌표 검색 패턴 감지 (예: "36.1699, -115.1398" 또는 "36.1699 -115.1398")
+      const coordinateMatch = query.match(/(-?\d+\.?\d*)\s*[,]\s*(-?\d+\.?\d*)|(-?\d+\.?\d*)\s+(-?\d+\.?\d*)/)
+      if (coordinateMatch) {
+        const latitude = parseFloat(coordinateMatch[1] || coordinateMatch[3])
+        const longitude = parseFloat(coordinateMatch[2] || coordinateMatch[4])
+        
+        // 좌표 유효성 검사
+        if (latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) {
+          // 역지오코딩으로 주소 가져오기
           const geocoder = new (window.google as any).maps.Geocoder()
-          geocoder.geocode({ address: query }, (geocodeResults: any[], geocodeStatus: any) => {
-            if (geocodeStatus === 'OK' && geocodeResults && geocodeResults[0]) {
-              const location = geocodeResults[0].geometry.location
-              const lat = location.lat()
-              const lng = location.lng()
-              
-              const geocodeResult = {
-                placeId: `geocode_${Date.now()}`,
-                name: `검색된 위치`,
-                address: geocodeResults[0].formatted_address,
-                latitude: lat,
-                longitude: lng,
-                googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
-                rating: undefined,
-                userRatingsTotal: undefined,
-                types: ['geocode']
-              }
-              
-              setMapSuggestions([geocodeResult])
-              setShowMapSuggestions(true)
-            } else {
-              // 모든 검색 실패 시 빈 결과 표시
-              setMapSuggestions([])
-              setShowMapSuggestions(false)
+          geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results: any, status: any) => {
+            const coordResult = {
+              placeId: `coord_${Date.now()}`,
+              name: `🎯 좌표: ${latitude}, ${longitude}`,
+              address: results && results[0] ? results[0].formatted_address : `${latitude}, ${longitude}`,
+              latitude: latitude,
+              longitude: longitude,
+              googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+              rating: undefined,
+              ratingDisplay: undefined,
+              userRatingsTotal: undefined,
+              types: ['coordinate'],
+              searchType: 'coordinate'
             }
+            
+            setMapSuggestions([coordResult])
+            setShowMapSuggestions(true)
             setIsMapSearchLoading(false)
           })
+          return
         }
+      }
+
+      // 3. Places API 검색 (장소명, 주소, 업체명 등)
+      const placesPromises = []
+      
+      // 텍스트 검색
+      placesPromises.push(
+        new Promise((resolve) => {
+          const service = new (window.google as any).maps.places.PlacesService(
+            document.createElement('div')
+          )
+          
+          const textRequest = {
+            query: query,
+            fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url', 'types', 'rating', 'user_ratings_total'],
+            locationBias: { lat: 36.1699, lng: -115.1398, radius: 200000 }, // 라스베가스 중심 200km 반경 확장
+            region: 'US'
+          }
+          
+          service.textSearch(textRequest, (results: any[], status: any) => {
+            if (status === (window.google as any).maps.places.PlacesServiceStatus.OK && results) {
+              resolve(results.map(place => ({ ...place, searchType: 'text_search' })))
+            } else {
+              resolve([])
+            }
+          })
+        })
+      )
+
+      // 자동완성 검색 (더 넓은 범위)
+      placesPromises.push(
+        new Promise((resolve) => {
+          const autocompleteService = new (window.google as any).maps.places.AutocompleteService()
+          autocompleteService.getPlacePredictions({
+            input: query,
+            types: ['establishment', 'geocode', 'regions'],
+            location: new (window.google as any).maps.LatLng(36.1699, -115.1398),
+            radius: 200000
+          }, (predictions: any[], status: any) => {
+            if (status === (window.google as any).maps.places.PlacesServiceStatus.OK && predictions) {
+              resolve(predictions.slice(0, 5).map(prediction => ({ ...prediction, searchType: 'autocomplete' })))
+            } else {
+              resolve([])
+            }
+          })
+        })
+      )
+
+      // 4. Geocoder 일반 주소 검색 (백업)
+      placesPromises.push(
+        new Promise((resolve) => {
+          const geocoder = new (window.google as any).maps.Geocoder()
+          
+          const addressTypes = [
+            { address: query, region: 'US' },
+            { address: `${query}, Las Vegas, NV` },
+            { address: `${query}, Nevada, USA` },
+            { address: query } // 지역 제한 없음
+          ]
+          
+          let foundResults = false
+          let completed = 0
+          
+          addressTypes.forEach(({ address, region }, index) => {
+            geocoder.geocode({ address, region }, (geocodeResults: any[], geocodeStatus: any) => {
+              completed++
+              
+              if (geocodeStatus === 'OK' && geocodeResults && !foundResults) {
+                foundResults = true
+                resolve(geocodeResults.map((result, i) => ({
+                  ...result,
+                  searchType: 'geocoder',
+                  priority: index === 0 ? 'exact' : 'related'
+                })))
+              } else if (completed === addressTypes.length && !foundResults) {
+                resolve([])
+              }
+            })
+          })
+        })
+      )
+
+      // 모든 검색 방법 병렬 실행
+      const searchResults = await Promise.all(placesPromises)
+      const processedResults = []
+
+      searchResults.forEach((results: any, index) => {
+        if (!results || results.length === 0) return
+        
+        results.slice(0, index === 0 ? 6 : index === 1 ? 4 : 6).forEach((result: any) => {
+          if (result.searchType === 'autocomplete') {
+            // 자동완성 결과는 추가 검색 필요
+            processedResults.push({
+              placeId: `autocomplete_${result.place_id}`,
+              name: result.description,
+              address: result.structured_formatting?.secondary_text || '',
+              latitude: 0, // 나중에 실제 검색에서 채워짐
+              longitude: 0,
+              googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+              rating: undefined,
+              ratingDisplay: undefined,
+              userRatingsTotal: undefined,
+              types: [],
+              searchType: 'autocomplete_results',
+              prediction: result
+            })
+          } else if (result.name || result.formatted_address) {
+            processedResults.push({
+              placeId: result.place_id || `geo_${Date.now()}_${Math.random()}`,
+              name: result.name || `📍 ${result.formatted_address}`,
+              address: result.formatted_address || '',
+              latitude: result.geometry ? result.geometry.location.lat() : 0,
+              longitude: result.geometry ? result.geometry.location.lng() : 0,
+              googleMapsUrl: result.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+              rating: result.rating || undefined,
+              ratingDisplay: result.rating ? `⭐ ${result.rating.toFixed(1)}` : undefined,
+              userRatingsTotal: result.user_ratings_total || undefined,
+              types: result.types || [],
+              searchType: result.searchType || 'places'
+            })
+          }
+        })
       })
+
+      // 중복 제거 및 결과 정렬
+      const uniqueResults = processedResults.filter((result, index, self) => 
+        index === self.findIndex(r => r.name === result.name && r.address === result.address)
+      )
+
+      // 검색 유형별 우선순위 정렬
+      const sortedResults = uniqueResults.sort((a, b) => {
+        const priorityA = a.searchType === 'coordinate' ? 0 : 
+                         a.searchType === 'plus_code' ? 1 : 
+                         a.searchType !== 'geocoder' ? 2 : 3
+        const priorityB = b.searchType === 'coordinate' ? 0 : 
+                         b.searchType === 'plus_code' ? 1 : 
+                         b.searchType !== 'geocoder' ? 2 : 3
+        
+        return priorityA - priorityB
+      }).slice(0, 10) // 최대 10개 결과
+
+      if (sortedResults.length > 0) {
+        setMapSuggestions(sortedResults)
+        setShowMapSuggestions(true)
+      } else {
+        setMapSuggestions([])
+        setShowMapSuggestions(false)
+      }
+
+      setIsMapSearchLoading(false)
     } catch (error) {
-      console.error('위치 검색 오류:', error)
+      console.error('향상된 위치 검색 오류:', error)
       setIsMapSearchLoading(false)
     }
   }
@@ -1964,7 +2078,18 @@ export default function TableScheduleAdd({
             
             <div className="mb-4">
               <p className="text-sm text-gray-600 mb-2">
-                라스베가스 지역에서 투어 위치를 검색하거나 지도에서 클릭하여 좌표를 선택하세요.
+                다양한 방법으로 위치를 검색할 수 있습니다:
+              </p>
+              <ul className="text-xs text-gray-500 mb-3 ml-4 space-y-1">
+                <li>• <strong>장소명:</strong> "Bellagio Hotel", "베네시안 호텔"</li>
+                <li>• <strong>주소:</strong> "3750 Las Vegas Blvd S", "라스베가스 스트립"</li>
+                <li>• <strong>좌표:</strong> "36.1699, -115.1398" 또는 "36.1699 -115.1398"</li>
+                <li>• <strong>Plus Code:</strong> "MGXF+WC Las Vegas"</li>
+                <li>• <strong>업체/브랜드:</strong> "마땡땡스 필립", "인앤아웃 버거"</li>
+                <li>• <strong>카테고리:</strong> "호텔", "식당", "쇼핑몰"</li>
+              </ul>
+              <p className="text-xs text-gray-400 mb-3">
+                지도에서 클릭하여 좌표를 직접 선택할 수도 있습니다.
               </p>
               
               {/* 검색 기능 */}
@@ -1987,7 +2112,7 @@ export default function TableScheduleAdd({
                         setShowMapSuggestions(true)
                       }
                     }}
-                    placeholder="투어 위치를 검색하세요 (예: Bellagio Hotel)"
+                    placeholder="장소명, 주소, 좌표, Plus Code 등으로 검색하세요..."
                     className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   {isMapSearchLoading && (
