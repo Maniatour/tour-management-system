@@ -225,7 +225,7 @@ export default function TableScheduleAdd({
       const geocoder = new window.google.maps.Geocoder()
       const result = await new Promise((resolve, reject) => {
         geocoder.geocode({ address: plusCode }, (results: any, status: any) => {
-          if (status === 'OK' && results && results[0]) {
+        if (status === 'OK' && results && results[0]) {
             resolve(results[0])
           } else {
             reject(new Error('Plus Code 디코딩 실패'))
@@ -377,18 +377,18 @@ export default function TableScheduleAdd({
     if (lngInput) lngInput.value = lng.toString()
 
     // 지도 중심 이동 및 마커 업데이트
-    const mapElement = document.getElementById('map')
-    if (mapElement && window.google && window.google.maps) {
-      const map = new window.google.maps.Map(mapElement, {
-        center: { lat, lng },
-        zoom: 15,
-        mapTypeId: window.google.maps.MapTypeId.ROADMAP
-      })
+          const mapElement = document.getElementById('map')
+          if (mapElement && window.google && window.google.maps) {
+            const map = new window.google.maps.Map(mapElement, {
+              center: { lat, lng },
+              zoom: 15,
+              mapTypeId: window.google.maps.MapTypeId.ROADMAP
+            })
 
       // 마커 추가 (드래그 가능)
       const marker = new window.google.maps.Marker({
-        position: { lat, lng },
-        map: map,
+              position: { lat, lng },
+              map: map,
         title: location.name,
         draggable: true
       })
@@ -398,10 +398,10 @@ export default function TableScheduleAdd({
         const position = marker.getPosition()
         const newLat = position.lat()
         const newLng = position.lng()
-        
-        // 좌표 입력 필드 업데이트
-        const latInput = document.getElementById('latitude') as HTMLInputElement
-        const lngInput = document.getElementById('longitude') as HTMLInputElement
+
+            // 좌표 입력 필드 업데이트
+            const latInput = document.getElementById('latitude') as HTMLInputElement
+            const lngInput = document.getElementById('longitude') as HTMLInputElement
         if (latInput) latInput.value = newLat.toString()
         if (lngInput) lngInput.value = newLng.toString()
 
@@ -806,7 +806,7 @@ export default function TableScheduleAdd({
     }
   }
 
-  // 이동시간 합산 계산 함수 (각 가이드 유형별로 분리, 시간이 있는 일정만 계산)
+  // 시간 합산 계산 함수 (각 가이드 유형별로 분리, 모든 일정의 소요시간 계산)
   const calculateTotalTransportTime = () => {
     let twoGuidesGuideTime = 0
     let twoGuidesAssistantTime = 0
@@ -814,8 +814,8 @@ export default function TableScheduleAdd({
     let guideDriverDriverTime = 0
 
     schedules.forEach(schedule => {
-      // 시간이 있는 이동 일정만 통계에 포함
-      if (schedule.is_transport && schedule.duration_minutes && schedule.duration_minutes > 0) {
+      // 시간이 있는 모든 일정을 통계에 포함 (is_transport 조건 제거)
+      if (schedule.duration_minutes && schedule.duration_minutes > 0) {
         const duration = schedule.duration_minutes
         
         // 2가이드에서 가이드가 선택된 경우
@@ -1797,7 +1797,7 @@ export default function TableScheduleAdd({
                 {showMapSuggestions && mapSuggestions.length > 0 && (
                   <div className="relative z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                     {mapSuggestions.map((suggestion, index) => (
-                      <button
+                  <button
                         key={suggestion.placeId}
                         onClick={() => handleMapLocationSelect(suggestion)}
                         className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
@@ -1837,9 +1837,9 @@ export default function TableScheduleAdd({
                             </div>
                           </div>
                         </div>
-                      </button>
+                  </button>
                     ))}
-                  </div>
+                </div>
                 )}
               </div>
 
@@ -1858,15 +1858,15 @@ export default function TableScheduleAdd({
                       </div>
                     </div>
                     {selectedGoogleMapLink && (
-                      <a
-                        href={selectedGoogleMapLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    <a 
+                      href={selectedGoogleMapLink} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
                         className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm"
-                      >
+                    >
                         <ExternalLink className="w-3 h-3" />
                         구글 맵
-                      </a>
+                    </a>
                     )}
                   </div>
                 </div>
