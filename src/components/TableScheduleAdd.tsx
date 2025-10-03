@@ -107,25 +107,25 @@ export default function TableScheduleAdd({
       const mapsLink = googleMapsLink || `https://www.google.com/maps?q=${lat},${lng}`
       
       // 스케줄 업데이트
-      updateSchedule(mapModalIndex, 'latitude', lat)
-      updateSchedule(mapModalIndex, 'longitude', lng)
-      updateSchedule(mapModalIndex, 'location_ko', address || schedules[mapModalIndex].location_ko)
-      updateSchedule(mapModalIndex, 'google_maps_link', mapsLink)
+      updateSchedule(mapModalIndex!, 'latitude', lat)
+      updateSchedule(mapModalIndex!, 'longitude', lng)
+      updateSchedule(mapModalIndex!, 'location_ko', address || schedules[mapModalIndex!].location_ko)
+      updateSchedule(mapModalIndex!, 'google_maps_link', mapsLink)
       
       // Supabase에 즉시 저장 (실시간 동기화)
-      console.log('좌표 저장 시도 - schedule ID:', schedules[mapModalIndex].id)
+      console.log('좌표 저장 시도 - schedule ID:', schedules[mapModalIndex!].id)
       console.log('저장할 좌표:', { lat, lng, address, googleMapsLink: mapsLink })
       
-      if (schedules[mapModalIndex].id) {
+      if (schedules[mapModalIndex!].id) {
         supabase
           .from('product_schedules')
           .update({
             latitude: lat,
             longitude: lng,
-            location_ko: address || schedules[mapModalIndex].location_ko,
+            location_ko: address || schedules[mapModalIndex!].location_ko,
             google_maps_link: mapsLink
           } as any)
-          .eq('id', schedules[mapModalIndex].id!)
+          .eq('id', schedules[mapModalIndex!].id!)
           .select()
           .then(({ error, data, count }) => {
             if (error) {
@@ -162,7 +162,7 @@ export default function TableScheduleAdd({
       if (!mapElement) return
 
       // 저장된 좌표가 있으면 해당 위치를 중심으로, 없으면 라스베가스 중심으로
-      const currentSchedule = mapModalIndex !== null ? schedules[mapModalIndex] : null
+      const currentSchedule = mapModalIndex !== null ? schedules[mapModalIndex!] : null
       console.log('지도 초기화 - mapModalIndex:', mapModalIndex, 'currentSchedule:', currentSchedule)
       console.log('좌표 확인 - latitude:', currentSchedule?.latitude, 'longitude:', currentSchedule?.longitude)
       console.log('전체 스케줄 데이터:', JSON.stringify(currentSchedule, null, 2))
@@ -522,7 +522,7 @@ export default function TableScheduleAdd({
   useEffect(() => {
     if (showMapModal && mapModalIndex !== null) {
       // 현재 스케줄의 위치 정보로 초기화
-      const currentSchedule = schedules[mapModalIndex]
+      const currentSchedule = schedules[mapModalIndex!]
       console.log('모달 초기화 - mapModalIndex:', mapModalIndex, 'currentSchedule:', currentSchedule)
       
       if (currentSchedule?.latitude && currentSchedule?.longitude) {
@@ -1649,18 +1649,17 @@ export default function TableScheduleAdd({
           ))}
         </div>
       </div>
-      </div>
 
       {/* 지도 위치 선택 모달 */}
-      {showLocationPicker && locationPickerIndex !== null && (
+        {showLocationPicker && locationPickerIndex !== null && (
         <LocationPickerModal
-          currentLat={schedules[locationPickerIndex]?.latitude ?? undefined}
-          currentLng={schedules[locationPickerIndex]?.longitude ?? undefined}
-          scheduleId={schedules[locationPickerIndex]?.id} // 스케줄 ID 전달
+          currentLat={schedules[locationPickerIndex!]?.latitude ?? undefined}
+          currentLng={schedules[locationPickerIndex!]?.longitude ?? undefined}
+          scheduleId={schedules[locationPickerIndex!]?.id} // 스케줄 ID 전달
           onLocationSelect={(lat, lng, address) => {
             const updatedSchedules = [...schedules]
-            updatedSchedules[locationPickerIndex] = {
-              ...updatedSchedules[locationPickerIndex],
+            updatedSchedules[locationPickerIndex!] = {
+              ...updatedSchedules[locationPickerIndex!],
               latitude: lat,
               longitude: lng,
               location_ko: address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`
@@ -1698,11 +1697,11 @@ export default function TableScheduleAdd({
               {/* 왼쪽: 업로드 영역 */}
               <div className="space-y-4">
                 {/* 현재 썸네일 표시 */}
-                {schedules[thumbnailIndex]?.thumbnail_url && (
+                {schedules[thumbnailIndex!]?.thumbnail_url && (
                   <div className="text-center">
                     <p className="text-sm text-gray-600 mb-2">현재 썸네일:</p>
                     <Image 
-                      src={schedules[thumbnailIndex].thumbnail_url} 
+                      src={schedules[thumbnailIndex!].thumbnail_url!} 
                       alt="현재 썸네일" 
                       width={400}
                       height={192}
@@ -1718,7 +1717,7 @@ export default function TableScheduleAdd({
                       ? 'border-blue-500 bg-blue-50' 
                       : 'border-gray-300 hover:border-gray-400'
                   }`}
-                  onDragOver={(e) => handleDragOver(e, thumbnailIndex)}
+                  onDragOver={(e) => handleDragOver(e, thumbnailIndex!)}
                   onDragLeave={handleDragLeave}
                   onDrop={handleFileDrop}
                   onPaste={handlePaste}
@@ -1757,7 +1756,7 @@ export default function TableScheduleAdd({
                         try {
                           const result = await uploadThumbnail(file, productId)
                           if (result.success && result.url) {
-                            updateSchedule(thumbnailIndex, 'thumbnail_url', result.url)
+                            updateSchedule(thumbnailIndex!, 'thumbnail_url', result.url)
                           } else {
                             alert(result.error || '업로드에 실패했습니다.')
                           }
@@ -2101,7 +2100,7 @@ export default function TableScheduleAdd({
                   type="number"
                   step="any"
                   id="latitude"
-                  defaultValue={mapModalIndex !== null ? (schedules[mapModalIndex]?.latitude?.toString() || '') : ''}
+                  defaultValue={mapModalIndex !== null ? (schedules[mapModalIndex!]?.latitude?.toString() || '') : ''}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="예: 36.1699"
                 />
@@ -2114,7 +2113,7 @@ export default function TableScheduleAdd({
                   type="number"
                   step="any"
                   id="longitude"
-                  defaultValue={mapModalIndex !== null ? (schedules[mapModalIndex]?.longitude?.toString() || '') : ''}
+                  defaultValue={mapModalIndex !== null ? (schedules[mapModalIndex!]?.longitude?.toString() || '') : ''}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="예: -115.1398"
                 />
@@ -2136,7 +2135,7 @@ export default function TableScheduleAdd({
                   const lat = (document.getElementById('latitude') as HTMLInputElement)?.value
                   const lng = (document.getElementById('longitude') as HTMLInputElement)?.value
                   console.log('좌표 적용 버튼 클릭 - 입력된 좌표:', { lat, lng })
-                  console.log('현재 스케줄 ID:', mapModalIndex !== null ? schedules[mapModalIndex]?.id : 'null')
+                  console.log('현재 스케줄 ID:', mapModalIndex !== null ? schedules[mapModalIndex!]?.id : 'null')
                   
                   if (lat && lng) {
                     handleMapCoordinateSelect(
