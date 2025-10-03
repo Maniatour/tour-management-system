@@ -9,6 +9,16 @@ const nextConfig = {
 	typescript: {
 		ignoreBuildErrors: true
 	},
+	images: {
+		remotePatterns: [
+			{
+				protocol: 'https',
+				hostname: 'tyilwbytyuqrhxekjxcd.supabase.co',
+				port: '',
+				pathname: '/storage/v1/object/public/**',
+			},
+		],
+	},
 	env: {
 		NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
 	}
