@@ -1631,19 +1631,18 @@ export default function TableScheduleAdd({
                   >
                     <MapPin className="h-4 w-4" />
                   </button>
+                  {schedule.google_maps_link && (
+                    <a
+                      href={schedule.google_maps_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-8 h-8 text-green-600 hover:text-green-800 hover:bg-green-50 rounded flex items-center justify-center"
+                      title="구글맵 링크 열기"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  )}
                 </div>
-                {schedule.google_maps_link && (
-                  <a
-                    type="button"
-                    href={schedule.google_maps_link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800 mt-1"
-                  >
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    링크 열기
-                  </a>
-                )}
               </div>
             </div>
           ))}
