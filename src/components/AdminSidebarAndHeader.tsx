@@ -26,7 +26,8 @@ import {
   MessageCircle,
   FileSpreadsheet,
   Globe,
-  User
+  User,
+  Camera
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -271,6 +272,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
     { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: BookOpen },
     { name: t('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
+    { name: t('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
     { name: t('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
     { name: t('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: t('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },

@@ -426,7 +426,7 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
       </div>
 
       {/* 오프 스케줄 */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white rounded-lg shadow p-3 sm:p-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900 flex items-center">
             <CalendarOff className="w-5 h-5 mr-2 text-purple-500" />
@@ -455,7 +455,7 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
                   })
                   setShowOffScheduleModal(true)
                 }}
-                className={`border rounded-lg p-3 sm:p-4 hover:bg-gray-50 transition-colors cursor-pointer ${
+                className={`border rounded-lg p-2 sm:p-3 hover:bg-gray-50 transition-colors cursor-pointer ${
                   schedule.off_date < today 
                     ? 'border-gray-200 bg-gray-50' 
                     : schedule.off_date === today

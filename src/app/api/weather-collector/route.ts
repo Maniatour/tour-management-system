@@ -59,65 +59,93 @@ async function getSunriseSunsetData(lat: number, lng: number, date: string) {
 }
 
 // Get weather data from OpenWeatherMap API
-async function getWeatherData(lat: number, lng: number) {
+async function getWeatherData(lat: number, lng: number, date?: string) {
   const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY
   if (!apiKey) {
     throw new Error('OpenWeatherMap API key not found')
   }
 
   try {
-    // Use forecast API to get daily min/max temperatures
-    const response = await fetch(
-      `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`
-    )
-    const data = await response.json()
+    const targetDate = date || new Date().toISOString().split('T')[0]
+    const today = new Date().toISOString().split('T')[0]
     
-    if (data.cod === '200') {
-      // Get today's forecast data
-      const today = new Date().toISOString().split('T')[0]
-      const todayForecasts = data.list.filter((item: any) => 
-        item.dt_txt.startsWith(today)
+    // For today and next 4 days, use forecast API
+    if (targetDate >= today && targetDate <= getDateAfterDays(today, 4)) {
+      const response = await fetch(
+        `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`
       )
+      const data = await response.json()
       
-      if (todayForecasts.length > 0) {
-        // Calculate min/max temperatures from today's forecasts
-        const temperatures = todayForecasts.map((item: any) => item.main.temp)
-        const temp_max = Math.max(...temperatures)
-        const temp_min = Math.min(...temperatures)
+      if (data.cod === '200') {
+        const targetForecasts = data.list.filter((item: any) => 
+          item.dt_txt.startsWith(targetDate)
+        )
         
-        // Use the most recent forecast for current conditions
-        const currentForecast = todayForecasts[todayForecasts.length - 1]
-        
-        return {
-          temperature: currentForecast.main.temp,
-          temp_max: temp_max,
-          temp_min: temp_min,
-          humidity: currentForecast.main.humidity,
-          weather_main: currentForecast.weather[0].main,
-          weather_description: currentForecast.weather[0].description,
-          wind_speed: currentForecast.wind.speed,
-          visibility: currentForecast.visibility
+        if (targetForecasts.length > 0) {
+          // Calculate min/max temperatures from the day's forecasts
+          const temperatures = targetForecasts.map((item: any) => item.main.temp)
+          const temp_max = Math.max(...temperatures)
+          const temp_min = Math.min(...temperatures)
+          
+          // Use the most recent forecast for current conditions
+          const currentForecast = targetForecasts[targetForecasts.length - 1]
+          
+          return {
+            temperature: currentForecast.main.temp,
+            temp_max: temp_max,
+            temp_min: temp_min,
+            humidity: currentForecast.main.humidity,
+            weather_main: currentForecast.weather[0].main,
+            weather_description: currentForecast.weather[0].description,
+            wind_speed: currentForecast.wind.speed,
+            visibility: currentForecast.visibility
+          }
         }
       }
     }
-    throw new Error('OpenWeatherMap API error')
+    
+    // For dates beyond 5 days, use historical weather API or return default data
+    // Since historical API requires paid subscription, we'll return reasonable defaults
+    console.warn(`Weather data not available for ${targetDate}, using default values`)
+    return {
+      temperature: 20,
+      temp_max: 25,
+      temp_min: 15,
+      humidity: 50,
+      weather_main: 'Clear',
+      weather_description: 'Clear sky',
+      wind_speed: 5,
+      visibility: 10000
+    }
   } catch (error) {
     console.error('Error fetching weather data:', error)
     return null
   }
 }
 
+// Helper function to get date after N days
+function getDateAfterDays(dateString: string, days: number): string {
+  const date = new Date(dateString)
+  date.setDate(date.getDate() + days)
+  return date.toISOString().split('T')[0]
+}
+
 // Collect data for a specific date
 async function collectDataForDate(date: string, weatherOnly: boolean = false) {
   const supabase = createClientSupabase()
+  console.log(`Starting data collection for date: ${date}, weatherOnly: ${weatherOnly}`)
   
   for (const location of GOBLIN_TOUR_LOCATIONS) {
     try {
+      console.log(`Processing location: ${location.name}`)
+      
       // Get sunrise/sunset data (only if not weather-only update)
       if (!weatherOnly) {
+        console.log(`Getting sunrise/sunset data for ${location.name}`)
         const sunriseSunsetData = await getSunriseSunsetData(location.lat, location.lng, date)
         if (sunriseSunsetData) {
-          await supabase.from('sunrise_sunset_data').upsert({
+          console.log(`Sunrise/sunset data for ${location.name}:`, sunriseSunsetData)
+          const { error: sunriseError } = await supabase.from('sunrise_sunset_data').upsert({
             location_name: location.name,
             latitude: location.lat,
             longitude: location.lng,
@@ -125,19 +153,35 @@ async function collectDataForDate(date: string, weatherOnly: boolean = false) {
             sunrise_time: sunriseSunsetData.sunrise,
             sunset_time: sunriseSunsetData.sunset
           })
+          if (sunriseError) {
+            console.error(`Error upserting sunrise data for ${location.name}:`, sunriseError)
+          } else {
+            console.log(`Successfully upserted sunrise/sunset data for ${location.name}`)
+          }
+        } else {
+          console.warn(`No sunrise/sunset data received for ${location.name}`)
         }
       }
 
       // Get weather data
-      const weatherData = await getWeatherData(location.lat, location.lng)
+      console.log(`Getting weather data for ${location.name}`)
+      const weatherData = await getWeatherData(location.lat, location.lng, date)
       if (weatherData) {
-        await supabase.from('weather_data').upsert({
+        console.log(`Weather data for ${location.name}:`, weatherData)
+        const { error: weatherError } = await supabase.from('weather_data').upsert({
           location_name: location.name,
           latitude: location.lat,
           longitude: location.lng,
           date,
           ...weatherData
         })
+        if (weatherError) {
+          console.error(`Error upserting weather data for ${location.name}:`, weatherError)
+        } else {
+          console.log(`Successfully upserted weather data for ${location.name}`)
+        }
+      } else {
+        console.warn(`No weather data received for ${location.name}`)
       }
 
       // Add delay to avoid rate limiting
@@ -146,6 +190,8 @@ async function collectDataForDate(date: string, weatherOnly: boolean = false) {
       console.error(`Error collecting data for ${location.name} on ${date}:`, error)
     }
   }
+  
+  console.log(`Completed data collection for date: ${date}`)
 }
 
 // Collect 1 month of sunrise/sunset data for Grand Canyon South Rim

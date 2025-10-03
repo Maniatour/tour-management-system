@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Upload, X, Camera, Image as ImageIcon, Download, Share2, Eye } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
+import { createTourPhotosBucket, checkTourPhotosBucket } from '@/lib/tourPhotoBucket'
 
 interface TourPhoto {
   id: string
@@ -70,32 +71,28 @@ export default function TourPhotoUpload({
     }
   }
 
-  // Storage 버킷 확인
+  // Storage 버킷 확인 및 생성
   const ensureStorageBucket = async () => {
     try {
-      const { data: buckets, error } = await supabase.storage.listBuckets()
-      if (error) {
-        console.error('Error listing buckets:', error)
-        return false
+      const bucketExists = await checkTourPhotosBucket()
+      if (bucketExists) {
+        console.log('tour-photos bucket exists')
+        return true
       }
       
-      console.log('Available buckets:', buckets)
+      console.log('tour-photos bucket not found, attempting to create...')
+      const created = await createTourPhotosBucket()
       
-      const tourPhotosBucket = buckets?.find(bucket => bucket.name === 'tour-photos')
-      if (!tourPhotosBucket) {
-        console.error('tour-photos bucket not found in:', buckets?.map(b => b.name))
-        // 버킷이 없어도 일단 true를 반환하여 업로드를 시도해보자
-        console.log('Proceeding without bucket check...')
+      if (created) {
+        console.log('tour-photos bucket created successfully')
         return true
       } else {
-        console.log('tour-photos bucket exists:', tourPhotosBucket)
+        console.error('Failed to create tour-photos bucket')
+        return false
       }
-      
-      return true
     } catch (error) {
-      console.error('Error checking storage bucket:', error)
-      // 에러가 발생해도 일단 true를 반환하여 업로드를 시도해보자
-      return true
+      console.error('Error ensuring storage bucket:', error)
+      return false
     }
   }
 

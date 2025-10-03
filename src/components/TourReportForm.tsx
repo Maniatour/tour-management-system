@@ -283,37 +283,46 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                 {t('fields.mainStopsVisited')}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {MAIN_STOPS_OPTIONS.map((stop) => (
-                  <Button
-                    key={stop.ko}
-                    type="button"
-                    variant={formData.main_stops_visited.includes(stop.ko) ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => handleArrayChange('main_stops_visited', stop.ko, !formData.main_stops_visited.includes(stop.ko))}
-                    className="flex items-center gap-2 text-xs md:text-sm justify-start"
-                  >
-                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
-                      formData.main_stops_visited.includes(stop.ko) 
-                        ? 'bg-blue-600 border-blue-600' 
-                        : 'border-gray-300'
-                    }`}>
-                      {formData.main_stops_visited.includes(stop.ko) && (
-                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="truncate">{locale === 'en' ? stop.en : stop.ko}</span>
-                  </Button>
-                ))}
+                {MAIN_STOPS_OPTIONS.map((stop) => {
+                  const displayText = locale === 'en' ? stop.en : stop.ko
+                  const keyText = locale === 'en' ? stop.en : stop.ko
+                  return (
+                    <Button
+                      key={keyText}
+                      type="button"
+                      variant={formData.main_stops_visited.includes(keyText) ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleArrayChange('main_stops_visited', keyText, !formData.main_stops_visited.includes(keyText))}
+                      className="flex items-center gap-2 text-xs md:text-sm justify-start"
+                    >
+                      <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                        formData.main_stops_visited.includes(keyText) 
+                          ? 'bg-blue-600 border-blue-600' 
+                          : 'border-gray-300'
+                      }`}>
+                        {formData.main_stops_visited.includes(keyText) && (
+                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className="truncate">{displayText}</span>
+                    </Button>
+                  )
+                })}
               </div>
               {formData.main_stops_visited.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {formData.main_stops_visited.map((stop) => (
-                    <Badge key={stop} variant="secondary">
-                      {stop}
-                    </Badge>
-                  ))}
+                  {formData.main_stops_visited.map((stop) => {
+                    // 선택된 값이 한국어인지 영어인지 확인하고 적절한 표시 텍스트 찾기
+                    const option = MAIN_STOPS_OPTIONS.find(opt => opt.ko === stop || opt.en === stop)
+                    const displayText = option ? (locale === 'en' ? option.en : option.ko) : stop
+                    return (
+                      <Badge key={stop} variant="secondary">
+                        {displayText}
+                      </Badge>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -325,37 +334,46 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                 {t('fields.activitiesCompleted')}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {ACTIVITIES_OPTIONS.map((activity) => (
-                  <Button
-                    key={activity.ko}
-                    type="button"
-                    variant={formData.activities_completed.includes(activity.ko) ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => handleArrayChange('activities_completed', activity.ko, !formData.activities_completed.includes(activity.ko))}
-                    className="flex items-center gap-2 text-xs md:text-sm justify-start"
-                  >
-                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
-                      formData.activities_completed.includes(activity.ko) 
-                        ? 'bg-blue-600 border-blue-600' 
-                        : 'border-gray-300'
-                    }`}>
-                      {formData.activities_completed.includes(activity.ko) && (
-                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="truncate">{locale === 'en' ? activity.en : activity.ko}</span>
-                  </Button>
-                ))}
+                {ACTIVITIES_OPTIONS.map((activity) => {
+                  const displayText = locale === 'en' ? activity.en : activity.ko
+                  const keyText = locale === 'en' ? activity.en : activity.ko
+                  return (
+                    <Button
+                      key={keyText}
+                      type="button"
+                      variant={formData.activities_completed.includes(keyText) ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleArrayChange('activities_completed', keyText, !formData.activities_completed.includes(keyText))}
+                      className="flex items-center gap-2 text-xs md:text-sm justify-start"
+                    >
+                      <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                        formData.activities_completed.includes(keyText) 
+                          ? 'bg-blue-600 border-blue-600' 
+                          : 'border-gray-300'
+                      }`}>
+                        {formData.activities_completed.includes(keyText) && (
+                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className="truncate">{displayText}</span>
+                    </Button>
+                  )
+                })}
               </div>
               {formData.activities_completed.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {formData.activities_completed.map((activity) => (
-                    <Badge key={activity} variant="secondary">
-                      {activity}
-                    </Badge>
-                  ))}
+                  {formData.activities_completed.map((activity) => {
+                    // 선택된 값이 한국어인지 영어인지 확인하고 적절한 표시 텍스트 찾기
+                    const option = ACTIVITIES_OPTIONS.find(opt => opt.ko === activity || opt.en === activity)
+                    const displayText = option ? (locale === 'en' ? option.en : option.ko) : activity
+                    return (
+                      <Badge key={activity} variant="secondary">
+                        {displayText}
+                      </Badge>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -405,37 +423,46 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                 {t('fields.incidentsDelaysHealth')}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {INCIDENTS_OPTIONS.map((incident) => (
-                  <Button
-                    key={incident.ko}
-                    type="button"
-                    variant={formData.incidents_delays_health.includes(incident.ko) ? "destructive" : "outline"}
-                    size="sm"
-                    onClick={() => handleArrayChange('incidents_delays_health', incident.ko, !formData.incidents_delays_health.includes(incident.ko))}
-                    className="flex items-center gap-2 text-xs md:text-sm justify-start"
-                  >
-                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
-                      formData.incidents_delays_health.includes(incident.ko) 
-                        ? 'bg-red-600 border-red-600' 
-                        : 'border-gray-300'
-                    }`}>
-                      {formData.incidents_delays_health.includes(incident.ko) && (
-                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="truncate">{locale === 'en' ? incident.en : incident.ko}</span>
-                  </Button>
-                ))}
+                {INCIDENTS_OPTIONS.map((incident) => {
+                  const displayText = locale === 'en' ? incident.en : incident.ko
+                  const keyText = locale === 'en' ? incident.en : incident.ko
+                  return (
+                    <Button
+                      key={keyText}
+                      type="button"
+                      variant={formData.incidents_delays_health.includes(keyText) ? "destructive" : "outline"}
+                      size="sm"
+                      onClick={() => handleArrayChange('incidents_delays_health', keyText, !formData.incidents_delays_health.includes(keyText))}
+                      className="flex items-center gap-2 text-xs md:text-sm justify-start"
+                    >
+                      <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                        formData.incidents_delays_health.includes(keyText) 
+                          ? 'bg-red-600 border-red-600' 
+                          : 'border-gray-300'
+                      }`}>
+                        {formData.incidents_delays_health.includes(keyText) && (
+                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className="truncate">{displayText}</span>
+                    </Button>
+                  )
+                })}
               </div>
               {formData.incidents_delays_health.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {formData.incidents_delays_health.map((incident) => (
-                    <Badge key={incident} variant="destructive">
-                      {incident}
-                    </Badge>
-                  ))}
+                  {formData.incidents_delays_health.map((incident) => {
+                    // 선택된 값이 한국어인지 영어인지 확인하고 적절한 표시 텍스트 찾기
+                    const option = INCIDENTS_OPTIONS.find(opt => opt.ko === incident || opt.en === incident)
+                    const displayText = option ? (locale === 'en' ? option.en : option.ko) : incident
+                    return (
+                      <Badge key={incident} variant="destructive">
+                        {displayText}
+                      </Badge>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -447,37 +474,46 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                 {t('fields.lostItemsDamage')}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {LOST_DAMAGE_OPTIONS.map((item) => (
-                  <Button
-                    key={item.ko}
-                    type="button"
-                    variant={formData.lost_items_damage.includes(item.ko) ? "destructive" : "outline"}
-                    size="sm"
-                    onClick={() => handleArrayChange('lost_items_damage', item.ko, !formData.lost_items_damage.includes(item.ko))}
-                    className="flex items-center gap-2 text-xs md:text-sm justify-start"
-                  >
-                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
-                      formData.lost_items_damage.includes(item.ko) 
-                        ? 'bg-red-600 border-red-600' 
-                        : 'border-gray-300'
-                    }`}>
-                      {formData.lost_items_damage.includes(item.ko) && (
-                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="truncate">{locale === 'en' ? item.en : item.ko}</span>
-                  </Button>
-                ))}
+                {LOST_DAMAGE_OPTIONS.map((item) => {
+                  const displayText = locale === 'en' ? item.en : item.ko
+                  const keyText = locale === 'en' ? item.en : item.ko
+                  return (
+                    <Button
+                      key={keyText}
+                      type="button"
+                      variant={formData.lost_items_damage.includes(keyText) ? "destructive" : "outline"}
+                      size="sm"
+                      onClick={() => handleArrayChange('lost_items_damage', keyText, !formData.lost_items_damage.includes(keyText))}
+                      className="flex items-center gap-2 text-xs md:text-sm justify-start"
+                    >
+                      <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                        formData.lost_items_damage.includes(keyText) 
+                          ? 'bg-red-600 border-red-600' 
+                          : 'border-gray-300'
+                      }`}>
+                        {formData.lost_items_damage.includes(keyText) && (
+                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className="truncate">{displayText}</span>
+                    </Button>
+                  )
+                })}
               </div>
               {formData.lost_items_damage.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {formData.lost_items_damage.map((item) => (
-                    <Badge key={item} variant="outline">
-                      {item}
-                    </Badge>
-                  ))}
+                  {formData.lost_items_damage.map((item) => {
+                    // 선택된 값이 한국어인지 영어인지 확인하고 적절한 표시 텍스트 찾기
+                    const option = LOST_DAMAGE_OPTIONS.find(opt => opt.ko === item || opt.en === item)
+                    const displayText = option ? (locale === 'en' ? option.en : option.ko) : item
+                    return (
+                      <Badge key={item} variant="outline">
+                        {displayText}
+                      </Badge>
+                    )
+                  })}
                 </div>
               )}
             </div>

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { createTourPhotosBucket } from './tourPhotoBucket'
 
 export interface TourAutoCreationResult {
   success: boolean
@@ -167,6 +168,12 @@ export async function autoCreateOrUpdateTour(
           success: false,
           message: '예약의 투어 ID 업데이트 중 오류가 발생했습니다: ' + reservationUpdateError.message
         }
+      }
+
+      // 7. tour-photos 버켓 생성 (새 투어 생성 시에만)
+      const bucketCreated = await createTourPhotosBucket()
+      if (!bucketCreated) {
+        console.warn('Failed to create tour-photos bucket, but tour creation succeeded')
       }
 
       return {

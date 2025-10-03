@@ -275,40 +275,63 @@ export default function ProductScheduleTab({
     try {
       setSaving(true)
       
-      // 기존 일정들을 모두 삭제
-      if (schedules.length > 0) {
+      // 기존 일정들과 새 일정들을 비교하여 업데이트/삭제/추가 처리
+      const existingScheduleIds = schedules.map(s => s.id).filter(Boolean)
+      const newScheduleIds = tableSchedules.map(s => s.id).filter(Boolean)
+      
+      // 삭제할 일정들 (기존에 있지만 새 목록에 없는 것들)
+      const schedulesToDelete = existingScheduleIds.filter(id => !newScheduleIds.includes(id))
+      
+      // 삭제 실행
+      if (schedulesToDelete.length > 0) {
         const { error: deleteError } = await supabase
           .from('product_schedules')
           .delete()
-          .eq('product_id', productId)
+          .in('id', schedulesToDelete)
 
         if (deleteError) {
-          console.error('기존 일정 삭제 오류:', deleteError)
+          console.error('일정 삭제 오류:', deleteError)
           return
         }
       }
       
-      // 새로운 일정들을 모두 추가 (id 필드 제외, product_id 설정)
-      if (tableSchedules.length > 0) {
-        const schedulesToInsert = tableSchedules.map(schedule => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { id, ...scheduleWithoutId } = schedule
-          // is_tour 필드가 없으면 기본값 false로 설정
-          const scheduleData = {
-            ...scheduleWithoutId,
-            product_id: productId, // 올바른 product_id 설정
-            is_tour: schedule.is_tour ?? false // 기본값 설정
-          }
-          return scheduleData
-        })
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error } = await (supabase as any)
+      // 업데이트할 일정들 (기존에 있던 것들)
+      const schedulesToUpdate = tableSchedules.filter(schedule => schedule.id && existingScheduleIds.includes(schedule.id))
+      
+      // 업데이트 실행
+      for (const schedule of schedulesToUpdate) {
+        const { id, ...scheduleData } = schedule
+        const { error: updateError } = await supabase
           .from('product_schedules')
-          .insert(schedulesToInsert)
+          .update({
+            ...scheduleData,
+            product_id: productId,
+            is_tour: schedule.is_tour ?? false
+          })
+          .eq('id', id)
 
-        if (error) {
-          console.error('일정 저장 오류:', error)
+        if (updateError) {
+          console.error('일정 업데이트 오류:', updateError)
+          return
+        }
+      }
+      
+      // 추가할 일정들 (새로 생성된 것들)
+      const schedulesToInsert = tableSchedules.filter(schedule => !schedule.id)
+      
+      if (schedulesToInsert.length > 0) {
+        const insertData = schedulesToInsert.map(schedule => ({
+          ...schedule,
+          product_id: productId,
+          is_tour: schedule.is_tour ?? false
+        }))
+
+        const { error: insertError } = await supabase
+          .from('product_schedules')
+          .insert(insertData)
+
+        if (insertError) {
+          console.error('일정 추가 오류:', insertError)
           return
         }
       }

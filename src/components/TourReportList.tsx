@@ -1,5 +1,3 @@
-'use client'
-
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -29,6 +27,62 @@ import {
   Trash2
 } from 'lucide-react'
 import { toast } from 'sonner'
+
+// 옵션 상수들을 TourReportForm에서 가져옴
+const MAIN_STOPS_OPTIONS = [
+  { ko: '그랜드 캐니언', en: 'Grand Canyon' },
+  { ko: '앤텔로프 캐니언', en: 'Antelope Canyon' },
+  { ko: '브라이스 캐니언', en: 'Bryce Canyon' },
+  { ko: '자이온 국립공원', en: 'Zion National Park' },
+  { ko: '모뉴먼트 밸리', en: 'Monument Valley' },
+  { ko: '아치스 국립공원', en: 'Arches National Park' },
+  { ko: '캐피톨 리프', en: 'Capitol Reef' },
+  { ko: '코랄 핑크 샌듄스', en: 'Coral Pink Sand Dunes' },
+  { ko: '호스슈 벤드', en: 'Horseshoe Bend' },
+  { ko: '글렌 캐니언', en: 'Glen Canyon' },
+  { ko: '페이지', en: 'Page' },
+  { ko: '라스베가스', en: 'Las Vegas' },
+  { ko: '로스앤젤레스', en: 'Los Angeles' }
+]
+
+const ACTIVITIES_OPTIONS = [
+  { ko: '하이킹', en: 'Hiking' },
+  { ko: '사진 촬영', en: 'Photography' },
+  { ko: '관광', en: 'Sightseeing' },
+  { ko: '식사', en: 'Dining' },
+  { ko: '쇼핑', en: 'Shopping' },
+  { ko: '선셋 관람', en: 'Sunset Viewing' },
+  { ko: '선라이즈 관람', en: 'Sunrise Viewing' },
+  { ko: '헬리콥터 투어', en: 'Helicopter Tour' },
+  { ko: '보트 투어', en: 'Boat Tour' },
+  { ko: '버스 투어', en: 'Bus Tour' },
+  { ko: '걷기 투어', en: 'Walking Tour' },
+  { ko: '자전거 투어', en: 'Bike Tour' },
+  { ko: '캠핑', en: 'Camping' },
+  { ko: '피크닉', en: 'Picnic' }
+]
+
+const INCIDENTS_OPTIONS = [
+  { ko: '교통 지연', en: 'Traffic Delay' },
+  { ko: '날씨 문제', en: 'Weather Issue' },
+  { ko: '차량 고장', en: 'Vehicle Breakdown' },
+  { ko: '건강 문제', en: 'Health Issue' },
+  { ko: '사고', en: 'Accident' },
+  { ko: '예약 오류', en: 'Booking Error' },
+  { ko: '가이드 지연', en: 'Guide Delay' },
+  { ko: '고객 불만', en: 'Customer Complaint' },
+  { ko: '기타', en: 'Other' }
+]
+
+const LOST_DAMAGE_OPTIONS = [
+  { ko: '분실물 없음', en: 'No Lost Items' },
+  { ko: '가방 분실', en: 'Bag Lost' },
+  { ko: '휴대폰 분실', en: 'Phone Lost' },
+  { ko: '카메라 분실', en: 'Camera Lost' },
+  { ko: '차량 손상', en: 'Vehicle Damage' },
+  { ko: '시설 손상', en: 'Facility Damage' },
+  { ko: '기타 손상', en: 'Other Damage' }
+]
 
 interface TourReport {
   id: string
@@ -69,6 +123,7 @@ interface TourReportListProps {
   showTourInfo?: boolean
   onEdit?: (report: TourReport) => void
   onDelete?: (reportId: string) => void
+  locale?: string
 }
 
 const WEATHER_LABELS = {
@@ -99,7 +154,8 @@ export default function TourReportList({
   tourId, 
   showTourInfo = true, 
   onEdit, 
-  onDelete 
+  onDelete,
+  locale = 'ko'
 }: TourReportListProps) {
   const { user } = useAuth()
   const [reports, setReports] = useState<TourReport[]>([])
@@ -424,13 +480,18 @@ export default function TourReportList({
                 {/* 분실물/손상 */}
                 {report.lost_items_damage.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-sm font-medium mb-2 text-orange-600">분실물/손상:</p>
+                    <p className="text-sm font-medium mb-2 text-orange-600">{locale === 'en' ? 'Lost Items/Damage:' : '분실물/손상:'}</p>
                     <div className="flex flex-wrap gap-1">
-                      {report.lost_items_damage.map((item) => (
-                        <Badge key={item} variant="outline" className="text-xs text-orange-600">
-                          {item}
-                        </Badge>
-                      ))}
+                      {report.lost_items_damage.map((item) => {
+                        // 선택된 값이 한국어인지 영어인지 확인하고 적절한 표시 텍스트 찾기
+                        const option = LOST_DAMAGE_OPTIONS.find(opt => opt.ko === item || opt.en === item)
+                        const displayText = option ? (locale === 'en' ? option.en : option.ko) : item
+                        return (
+                          <Badge key={item} variant="outline" className="text-xs text-orange-600">
+                            {displayText}
+                          </Badge>
+                        )
+                      })}
                     </div>
                   </div>
                 )}

@@ -26,12 +26,12 @@ export default function LocationPickerModal({
   onClose,
   scheduleId
 }: LocationPickerModalProps) {
-  const [searchQuery, setSearchQuery] = useState('')
   const [suggestions, setSuggestions] = useState<any[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedLat, setSelectedLat] = useState(currentLat || 36.1699) // 라스베가스 위도
   const [selectedLng, setSelectedLng] = useState(currentLng || -115.1398) // 라스베가스 경도
   const [address, setAddress] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [mapLoaded, setMapLoaded] = useState(false)
   const [map, setMap] = useState<any>(null)
   const [marker, setMarker] = useState<any>(null)
@@ -95,6 +95,18 @@ export default function LocationPickerModal({
       checkGoogleMaps()
     }
   }, [])
+
+  // currentLat, currentLng가 변경될 때 지도와 마커 업데이트 (모달 열 때만)
+  useEffect(() => {
+    if (map && marker && currentLat && currentLng) {
+      const newPosition = { lat: currentLat, lng: currentLng }
+      map.setCenter(newPosition)
+      marker.setPosition(newPosition)
+      setSelectedLat(currentLat)
+      setSelectedLng(currentLng)
+      reverseGeocode(currentLat, currentLng)
+    }
+  }, [map, marker]) // currentLat, currentLng 의존성 제거
 
   const initializeMap = () => {
     const mapElement = document.getElementById('map')
@@ -465,19 +477,36 @@ export default function LocationPickerModal({
         </div>
 
         {/* 버튼 */}
-        <div className="flex justify-end gap-2 p-4 border-t border-gray-200">
+        <div className="flex justify-between gap-2 p-4 border-t border-gray-200">
           <button
-            onClick={onClose}
+            onClick={() => {
+              setSelectedLat(36.1699)
+              setSelectedLng(-115.1398)
+              setAddress('')
+              setSearchQuery('')
+              if (map && marker) {
+                map.setCenter(LAS_VEGAS_CENTER)
+                marker.setPosition(LAS_VEGAS_CENTER)
+              }
+            }}
             className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
           >
-            취소
+            위치 초기화
           </button>
-          <button
-            onClick={handleConfirm}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            위치 선택
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleConfirm}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              위치 선택
+            </button>
+          </div>
         </div>
       </div>
     </div>

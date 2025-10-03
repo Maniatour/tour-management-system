@@ -10,6 +10,7 @@ import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
+import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import ReservationCalendar from '@/components/ReservationCalendar'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
@@ -618,6 +619,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       )
 
       if (result.success) {
+        // 투어 생성 성공 시 tour-photos 버켓도 생성
+        const bucketCreated = await createTourPhotosBucket()
+        if (!bucketCreated) {
+          console.warn('Failed to create tour-photos bucket, but tour creation succeeded')
+        }
+        
         alert('투어가 성공적으로 생성되었습니다!')
         // 예약 목록 새로고침
         await refreshReservations()

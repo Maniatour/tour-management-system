@@ -53,6 +53,7 @@
     "supplierSettlement": "Supplier Settlement",
     "teamBoard": "Team Board",
     "tourMaterials": "Tour Materials",
+    "tourPhotoBuckets": "Tour Photo Buckets",
     "dataSync": "Data Sync",
     "dataReview": "Data Review",
     "auditLogs": "Audit Logs",
@@ -1410,7 +1411,7 @@
   },
   "weather": {
     "title": "Weather Information",
-    "subtitle": "Grand Canyon sunrise, Zion Canyon sunset, Page City weather",
+    "subtitle": "",
     "loading": "Loading weather information...",
     "error": "Unable to load weather information",
     "update": "Update Weather",

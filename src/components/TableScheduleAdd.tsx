@@ -1,26 +1,14 @@
 'use client'
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, Languages, MapPin, ExternalLink, GripVertical } from 'lucide-react'
+import { Calendar, Plus, Save, Trash2, Image as ImageIcon, X, Upload, Loader2, Search, FolderOpen, Copy, Languages, MapPin, ExternalLink, GripVertical } from 'lucide-react'
+import Image from 'next/image'
 import LocationPickerModal from './LocationPickerModal'
-import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl, uploadProductMedia } from '@/lib/productMediaUpload'
+import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl } from '@/lib/productMediaUpload'
 import { supabase } from '@/lib/supabase'
 import { translateScheduleFields, type ScheduleTranslationFields } from '@/lib/translationService'
 
-// Google Maps 타입 정의
-declare global {
-  interface Window {
-    google: {
-      maps: {
-        Map: any
-        Marker: any
-        MapTypeId: any
-        Geocoder: any
-        MapMouseEvent: any
-      }
-    }
-  }
-}
+
 
 interface ScheduleItem {
   id?: string
@@ -57,7 +45,6 @@ interface TableScheduleAddProps {
   onSave: () => void
   onClose: () => void
   saving: boolean
-  teamMembers: Array<{email: string, name_ko: string, position: string}>
   productId: string
 }
 
@@ -67,7 +54,6 @@ export default function TableScheduleAdd({
   onSave, 
   onClose, 
   saving, 
-  teamMembers,
   productId
 }: TableScheduleAddProps) {
   const [showLocationPicker, setShowLocationPicker] = useState(false)
@@ -91,7 +77,17 @@ export default function TableScheduleAdd({
   const [selectedGoogleMapLink, setSelectedGoogleMapLink] = useState<string>('')
   const [mapLoaded, setMapLoaded] = useState(false)
   const [mapSearchQuery, setMapSearchQuery] = useState('')
-  const [mapSuggestions, setMapSuggestions] = useState<any[]>([])
+  const [mapSuggestions, setMapSuggestions] = useState<Array<{
+    placeId: string
+    name: string
+    address: string
+    latitude: number
+    longitude: number
+    googleMapsUrl: string
+    rating?: number
+    userRatingsTotal?: number
+    types?: string[]
+  }>>([])
   const [showMapSuggestions, setShowMapSuggestions] = useState(false)
   const [isMapSearchLoading, setIsMapSearchLoading] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
@@ -105,8 +101,6 @@ export default function TableScheduleAdd({
   // 지도 관련 함수들
   const handleMapCoordinateSelect = (lat: number, lng: number, address?: string) => {
     if (mapModalIndex !== null) {
-      const coordinates = `${lat}, ${lng}`
-      const googleMapLink = `https://www.google.com/maps?q=${lat},${lng}`
       
       // 스케줄 업데이트
       updateSchedule(mapModalIndex, 'latitude', lat)
@@ -114,6 +108,9 @@ export default function TableScheduleAdd({
       updateSchedule(mapModalIndex, 'location_ko', address || schedules[mapModalIndex].location_ko)
       
       // Supabase에 즉시 저장 (실시간 동기화)
+      console.log('좌표 저장 시도 - schedule ID:', schedules[mapModalIndex].id)
+      console.log('저장할 좌표:', { lat, lng, address })
+      
       if (schedules[mapModalIndex].id) {
         supabase
           .from('product_schedules')
@@ -121,15 +118,31 @@ export default function TableScheduleAdd({
             latitude: lat,
             longitude: lng,
             location_ko: address || schedules[mapModalIndex].location_ko
-          })
-          .eq('id', schedules[mapModalIndex].id)
-          .then(({ error }) => {
+          } as any)
+          .eq('id', schedules[mapModalIndex].id!)
+          .select()
+          .then(({ error, data, count }) => {
             if (error) {
               console.error('좌표 저장 오류:', error)
+              console.error('오류 상세:', error.message, error.details, error.hint)
             } else {
               console.log('좌표가 성공적으로 저장되었습니다:', { lat, lng, address })
+              console.log('저장된 데이터:', data)
+              console.log('업데이트된 행 수:', count)
+              
+              // 업데이트 후 실제 데이터 확인
+              if (data && data.length > 0) {
+                console.log('실제 저장된 좌표:', { 
+                  latitude: data[0].latitude, 
+                  longitude: data[0].longitude 
+                })
+              } else {
+                console.warn('업데이트된 데이터가 없습니다. RLS 정책을 확인해주세요.')
+              }
             }
           })
+      } else {
+        console.error('스케줄 ID가 없어서 좌표를 저장할 수 없습니다')
       }
       
       setShowMapModal(false)
@@ -137,18 +150,72 @@ export default function TableScheduleAdd({
     }
   }
 
-  const initializeMap = () => {
-    if (typeof window !== 'undefined' && window.google && window.google.maps) {
+  const initializeMap = useCallback(() => {
+    if (typeof window !== 'undefined' && window.google && window.google.maps && window.google.maps.Map) {
       const mapElement = document.getElementById('map')
       if (!mapElement) return
 
-      const map = new window.google.maps.Map(mapElement, {
-        center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
+      // 저장된 좌표가 있으면 해당 위치를 중심으로, 없으면 라스베가스 중심으로
+      const currentSchedule = mapModalIndex !== null ? schedules[mapModalIndex] : null
+      console.log('지도 초기화 - mapModalIndex:', mapModalIndex, 'currentSchedule:', currentSchedule)
+      console.log('좌표 확인 - latitude:', currentSchedule?.latitude, 'longitude:', currentSchedule?.longitude)
+      console.log('전체 스케줄 데이터:', JSON.stringify(currentSchedule, null, 2))
+      
+      const centerLat = currentSchedule?.latitude || 36.1699
+      const centerLng = currentSchedule?.longitude || -115.1398
+      
+      console.log('지도 중심 좌표:', centerLat, centerLng)
+
+      const map = new (window.google as any).maps.Map(mapElement, {
+        center: { lat: centerLat, lng: centerLng },
         zoom: 12,
-        mapTypeId: window.google.maps.MapTypeId.ROADMAP
+        mapTypeId: (window.google as any).maps.MapTypeId?.ROADMAP || 'roadmap'
       })
 
       let marker: any = null
+
+      // 저장된 좌표가 있으면 해당 위치에 마커 표시
+      if (currentSchedule?.latitude && currentSchedule?.longitude) {
+        marker = new (window.google as any).maps.Marker({
+          position: { lat: currentSchedule.latitude, lng: currentSchedule.longitude },
+          map: map,
+          title: '저장된 위치',
+          draggable: true
+        })
+
+        // 좌표 입력 필드에 저장된 값 설정
+        setTimeout(() => {
+          const latInput = document.getElementById('latitude') as HTMLInputElement
+          const lngInput = document.getElementById('longitude') as HTMLInputElement
+          if (latInput && currentSchedule.latitude) latInput.value = currentSchedule.latitude.toString()
+          if (lngInput && currentSchedule.longitude) lngInput.value = currentSchedule.longitude.toString()
+        }, 100)
+
+        // 마커 드래그 이벤트 추가
+        marker.addListener('dragend', () => {
+          const position = marker?.getPosition()
+          if (position) {
+            const newLat = position.lat()
+            const newLng = position.lng()
+            
+            // 좌표 입력 필드 업데이트
+            const latInput = document.getElementById('latitude') as HTMLInputElement
+            const lngInput = document.getElementById('longitude') as HTMLInputElement
+            if (latInput) latInput.value = newLat.toString()
+            if (lngInput) lngInput.value = newLng.toString()
+
+          // 역지오코딩으로 주소 가져오기
+          const geocoder = new (window.google as any).maps.Geocoder()
+          geocoder.geocode({ location: { lat: newLat, lng: newLng } }, (results: any, status: any) => {
+              if (status === 'OK' && results && results[0]) {
+                const address = results[0].formatted_address
+                setSelectedAddress(address)
+                setSelectedGoogleMapLink(`https://www.google.com/maps?q=${newLat},${newLng}`)
+              }
+            })
+          }
+        })
+      }
 
       // 지도 클릭 이벤트
       map.addListener('click', (event: any) => {
@@ -162,7 +229,7 @@ export default function TableScheduleAdd({
           }
 
           // 새 마커 추가 (드래그 가능)
-          marker = new window.google.maps.Marker({
+          marker = new (window.google as any).maps.Marker({
             position: { lat, lng },
             map: map,
             title: '선택된 위치',
@@ -174,7 +241,7 @@ export default function TableScheduleAdd({
             const position = marker.getPosition()
             const newLat = position.lat()
             const newLng = position.lng()
-            
+              
             // 좌표 입력 필드 업데이트
             const latInput = document.getElementById('latitude') as HTMLInputElement
             const lngInput = document.getElementById('longitude') as HTMLInputElement
@@ -182,7 +249,7 @@ export default function TableScheduleAdd({
             if (lngInput) lngInput.value = newLng.toString()
 
             // 역지오코딩으로 주소 가져오기
-            const geocoder = new window.google.maps.Geocoder()
+            const geocoder = new (window.google as any).maps.Geocoder()
             geocoder.geocode({ location: { lat: newLat, lng: newLng } }, (results: any, status: any) => {
               if (status === 'OK' && results && results[0]) {
                 const address = results[0].formatted_address
@@ -199,7 +266,7 @@ export default function TableScheduleAdd({
           if (lngInput) lngInput.value = lng.toString()
 
           // 역지오코딩으로 주소 가져오기
-          const geocoder = new window.google.maps.Geocoder()
+          const geocoder = new (window.google as any).maps.Geocoder()
           geocoder.geocode({ location: { lat, lng } }, (results: any, status: any) => {
             if (status === 'OK' && results && results[0]) {
               const address = results[0].formatted_address
@@ -212,7 +279,7 @@ export default function TableScheduleAdd({
 
       setMapLoaded(true)
     }
-  }
+  }, [mapModalIndex, schedules])
 
   // Plus Code 패턴 감지
   const isPlusCode = (query: string) => {
@@ -224,7 +291,7 @@ export default function TableScheduleAdd({
   // Plus Code를 좌표로 변환
   const decodePlusCode = async (plusCode: string) => {
     try {
-      const geocoder = new window.google.maps.Geocoder()
+      const geocoder = new (window.google as any).maps.Geocoder()
       const result = await new Promise((resolve, reject) => {
         geocoder.geocode({ address: plusCode }, (results: any, status: any) => {
         if (status === 'OK' && results && results[0]) {
@@ -251,19 +318,19 @@ export default function TableScheduleAdd({
       if (isPlusCode(query)) {
         const geocodeResult = await decodePlusCode(query)
         if (geocodeResult) {
-          const location = geocodeResult.geometry.location
+          const location = (geocodeResult as any).geometry.location
           const lat = location.lat()
           const lng = location.lng()
           
           const plusCodeResult = {
             placeId: `plus_code_${Date.now()}`,
             name: `Plus Code 위치 (${query})`,
-            address: geocodeResult.formatted_address,
+            address: (geocodeResult as any)?.formatted_address || '',
             latitude: lat,
             longitude: lng,
             googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
-            rating: null,
-            userRatingsTotal: null,
+            rating: undefined,
+            userRatingsTotal: undefined,
             types: ['plus_code']
           }
           
@@ -275,7 +342,7 @@ export default function TableScheduleAdd({
       }
 
       // 일반 장소 검색
-      const service = new window.google.maps.places.PlacesService(
+      const service = new (window.google as any).maps.places.PlacesService(
         document.createElement('div')
       )
 
@@ -287,11 +354,11 @@ export default function TableScheduleAdd({
       }
 
       service.textSearch(request, (results: any[], status: any) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+        if (status === (window.google as any).maps.places.PlacesServiceStatus.OK && results) {
           // 결과를 평점과 리뷰 수로 정렬하여 더 관련성 높은 결과 우선 표시
           const sortedResults = results
-            .filter(place => place.rating && place.user_ratings_total > 0) // 평점이 있는 장소만
-            .sort((a, b) => {
+            .filter((place: any) => place.rating && place.user_ratings_total > 0) // 평점이 있는 장소만
+            .sort((a: any, b: any) => {
               // 평점과 리뷰 수를 고려한 점수 계산
               const scoreA = (a.rating * Math.log(a.user_ratings_total + 1))
               const scoreB = (b.rating * Math.log(b.user_ratings_total + 1))
@@ -299,7 +366,7 @@ export default function TableScheduleAdd({
             })
             .slice(0, 8) // 상위 8개 결과만 표시
 
-          const formattedResults = sortedResults.map((place) => ({
+          const formattedResults = sortedResults.map((place: any) => ({
             placeId: place.place_id,
             name: place.name,
             address: place.formatted_address,
@@ -315,7 +382,7 @@ export default function TableScheduleAdd({
           setShowMapSuggestions(true)
         } else {
           // Places API 실패 시 Geocoder로 일반 주소 검색 시도
-          const geocoder = new window.google.maps.Geocoder()
+          const geocoder = new (window.google as any).maps.Geocoder()
           geocoder.geocode({ address: query }, (geocodeResults: any[], geocodeStatus: any) => {
             if (geocodeStatus === 'OK' && geocodeResults && geocodeResults[0]) {
               const location = geocodeResults[0].geometry.location
@@ -329,8 +396,8 @@ export default function TableScheduleAdd({
                 latitude: lat,
                 longitude: lng,
                 googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
-                rating: null,
-                userRatingsTotal: null,
+                rating: undefined,
+                userRatingsTotal: undefined,
                 types: ['geocode']
               }
               
@@ -363,7 +430,17 @@ export default function TableScheduleAdd({
   }
 
   // 위치 선택
-  const handleMapLocationSelect = (location: any) => {
+  const handleMapLocationSelect = (location: {
+    placeId: string
+    name: string
+    address: string
+    latitude: number
+    longitude: number
+    googleMapsUrl: string
+    rating?: number
+    userRatingsTotal?: number
+    types?: string[]
+  }) => {
     const lat = location.latitude
     const lng = location.longitude
     
@@ -381,14 +458,14 @@ export default function TableScheduleAdd({
     // 지도 중심 이동 및 마커 업데이트
           const mapElement = document.getElementById('map')
           if (mapElement && window.google && window.google.maps) {
-            const map = new window.google.maps.Map(mapElement, {
+            const map = new (window.google as any).maps.Map(mapElement, {
               center: { lat, lng },
               zoom: 15,
-              mapTypeId: window.google.maps.MapTypeId.ROADMAP
+              mapTypeId: (window.google as any).maps.MapTypeId.ROADMAP
             })
 
       // 마커 추가 (드래그 가능)
-      const marker = new window.google.maps.Marker({
+      const marker = new (window.google as any).maps.Marker({
               position: { lat, lng },
               map: map,
         title: location.name,
@@ -408,7 +485,7 @@ export default function TableScheduleAdd({
         if (lngInput) lngInput.value = newLng.toString()
 
         // 역지오코딩으로 주소 가져오기
-        const geocoder = new window.google.maps.Geocoder()
+        const geocoder = new (window.google as any).maps.Geocoder()
         geocoder.geocode({ location: { lat: newLat, lng: newLng } }, (results: any, status: any) => {
           if (status === 'OK' && results && results[0]) {
             const address = results[0].formatted_address
@@ -437,7 +514,22 @@ export default function TableScheduleAdd({
 
   // 모달이 열릴 때 지도 초기화
   useEffect(() => {
-    if (showMapModal && !mapLoaded) {
+    if (showMapModal && mapModalIndex !== null) {
+      // 현재 스케줄의 위치 정보로 초기화
+      const currentSchedule = schedules[mapModalIndex]
+      console.log('모달 초기화 - mapModalIndex:', mapModalIndex, 'currentSchedule:', currentSchedule)
+      
+      if (currentSchedule?.latitude && currentSchedule?.longitude) {
+        console.log('저장된 좌표 발견:', currentSchedule.latitude, currentSchedule.longitude)
+        setSelectedAddress(currentSchedule.location_ko || '')
+        setSelectedGoogleMapLink(`https://www.google.com/maps?q=${currentSchedule.latitude},${currentSchedule.longitude}`)
+      } else {
+        console.log('저장된 좌표 없음, 기본값으로 초기화')
+        setSelectedAddress('')
+        setSelectedGoogleMapLink('')
+      }
+      setMapSearchQuery('')
+      
       // Google Maps API 스크립트 로드
       if (!window.google) {
         const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
@@ -461,7 +553,7 @@ export default function TableScheduleAdd({
         setTimeout(initializeMap, 100)
       }
     }
-  }, [showMapModal, mapLoaded])
+  }, [showMapModal, mapModalIndex, schedules, initializeMap])
 
   // 시간 계산 유틸리티 함수들
   const timeToMinutes = (timeStr: string | null): number => {
@@ -532,11 +624,11 @@ export default function TableScheduleAdd({
     onSchedulesChange([...schedules, newSchedule])
   }
 
-  const updateSchedule = (index: number, field: keyof ScheduleItem, value: any) => {
+  const updateSchedule = useCallback((index: number, field: keyof ScheduleItem, value: unknown) => {
     const updatedSchedules = [...schedules]
     updatedSchedules[index] = { ...updatedSchedules[index], [field]: value }
     onSchedulesChange(updatedSchedules)
-  }
+  }, [schedules, onSchedulesChange])
 
   // 드래그 앤 드롭 핸들러들
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -594,7 +686,7 @@ export default function TableScheduleAdd({
   }
 
   // 시간 업데이트 함수 (첫 번째 줄부터 모든 행의 시간을 순차적으로 계산, 시간 없음 행은 스킵)
-  const updateTimesBasedOnDuration = (schedules: any[]) => {
+  const updateTimesBasedOnDuration = (schedules: ScheduleItem[]) => {
     const updatedSchedules = [...schedules]
     let currentTime = '09:00' // 기본 시작 시간
     
@@ -740,7 +832,7 @@ export default function TableScheduleAdd({
         return
       }
 
-      const subCategory = currentProduct?.sub_category
+      const subCategory = (currentProduct as any)?.sub_category
       if (!subCategory) {
         console.error('현재 제품의 sub_category를 찾을 수 없습니다.')
         return
@@ -784,7 +876,7 @@ export default function TableScheduleAdd({
       // Supabase에 복사된 일정들 저장
       const { error } = await supabase
         .from('product_schedules')
-        .insert(copiedSchedules)
+        .insert(copiedSchedules as any)
 
       if (error) {
         console.error('일정 복사 오류:', error)
@@ -817,10 +909,10 @@ export default function TableScheduleAdd({
         
         // 번역할 필드들 수집
         const fieldsToTranslate: ScheduleTranslationFields = {
-          title_ko: schedule.title_ko,
-          description_ko: schedule.description_ko,
-          location_ko: schedule.location_ko,
-          guide_notes_ko: schedule.guide_notes_ko
+          title_ko: schedule.title_ko || '',
+          description_ko: schedule.description_ko || '',
+          location_ko: schedule.location_ko || '',
+          guide_notes_ko: schedule.guide_notes_ko || ''
         }
 
         // 번역 실행
@@ -1111,13 +1203,15 @@ export default function TableScheduleAdd({
                   title="썸네일 업로드"
                 >
                   {schedule.thumbnail_url ? (
-                    <img 
+                    <Image 
                       src={schedule.thumbnail_url} 
                       alt="썸네일" 
-                      className="w-6 h-6 object-cover rounded"
+                      width={24}
+                      height={24}
+                      className="object-cover rounded"
                     />
                   ) : (
-                    <Image className="h-4 w-4" />
+                    <ImageIcon className="h-4 w-4" />
                   )}
                 </button>
               </div>
@@ -1479,6 +1573,7 @@ export default function TableScheduleAdd({
                   <button
                     type="button"
                     onClick={() => {
+                      console.log('지도 버튼 클릭 - index:', index, 'schedule:', schedules[index])
                       setMapModalIndex(index)
                       setShowMapModal(true)
                     }}
@@ -1498,8 +1593,8 @@ export default function TableScheduleAdd({
       {/* 지도 위치 선택 모달 */}
       {showLocationPicker && locationPickerIndex !== null && (
         <LocationPickerModal
-          currentLat={schedules[locationPickerIndex]?.latitude}
-          currentLng={schedules[locationPickerIndex]?.longitude}
+          currentLat={schedules[locationPickerIndex]?.latitude ?? undefined}
+          currentLng={schedules[locationPickerIndex]?.longitude ?? undefined}
           scheduleId={schedules[locationPickerIndex]?.id} // 스케줄 ID 전달
           onLocationSelect={(lat, lng, address) => {
             const updatedSchedules = [...schedules]
@@ -1545,9 +1640,11 @@ export default function TableScheduleAdd({
                 {schedules[thumbnailIndex]?.thumbnail_url && (
                   <div className="text-center">
                     <p className="text-sm text-gray-600 mb-2">현재 썸네일:</p>
-                    <img 
+                    <Image 
                       src={schedules[thumbnailIndex].thumbnail_url} 
                       alt="현재 썸네일" 
+                      width={400}
+                      height={192}
                       className="mx-auto max-w-full max-h-48 object-contain rounded-lg border"
                     />
                   </div>
@@ -1560,7 +1657,7 @@ export default function TableScheduleAdd({
                       ? 'border-blue-500 bg-blue-50' 
                       : 'border-gray-300 hover:border-gray-400'
                   }`}
-                  onDragOver={handleDragOver}
+                  onDragOver={(e) => handleDragOver(e, thumbnailIndex)}
                   onDragLeave={handleDragLeave}
                   onDrop={handleFileDrop}
                   onPaste={handlePaste}
@@ -1695,9 +1792,11 @@ export default function TableScheduleAdd({
                               }
                             }}
                           >
-                            <img
+                            <Image
                               src={image.url}
                               alt={image.name}
+                              width={80}
+                              height={80}
                               className="w-full h-20 object-cover rounded border hover:border-blue-500 transition-colors"
                             />
                             <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all rounded flex items-center justify-center">
@@ -1747,15 +1846,13 @@ export default function TableScheduleAdd({
             
             <textarea
               value={(() => {
-                const schedule = schedules[textModalIndex]
                 if (textModalType === 'description') {
-                  return showEnglishFields ? (schedule.description_en || '') : (schedule.description_ko || '')
+                  return showEnglishFields ? (schedules[textModalIndex].description_en || '') : (schedules[textModalIndex].description_ko || '')
                 } else {
-                  return showEnglishFields ? (schedule.guide_notes_en || '') : (schedule.guide_notes_ko || '')
+                  return showEnglishFields ? (schedules[textModalIndex].guide_notes_en || '') : (schedules[textModalIndex].guide_notes_ko || '')
                 }
               })()}
               onChange={(e) => {
-                const schedule = schedules[textModalIndex]
                 if (textModalType === 'description') {
                   if (showEnglishFields) {
                     updateSchedule(textModalIndex, 'description_en', e.target.value)
@@ -1848,7 +1945,7 @@ export default function TableScheduleAdd({
                 {/* 검색 제안 목록 */}
                 {showMapSuggestions && mapSuggestions.length > 0 && (
                   <div className="relative z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {mapSuggestions.map((suggestion, index) => (
+                    {mapSuggestions.map((suggestion) => (
                   <button
                         key={suggestion.placeId}
                         onClick={() => handleMapLocationSelect(suggestion)}
@@ -1896,17 +1993,17 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 선택된 위치 정보 */}
-              {mapSearchQuery && selectedAddress && (
+              {(mapSearchQuery || selectedAddress) && (
                 <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <MapPin className="w-4 h-4 text-blue-600" />
-                        <span className="font-medium text-blue-900">{mapSearchQuery}</span>
+                        <span className="font-medium text-blue-900">{mapSearchQuery || '저장된 위치'}</span>
                       </div>
                       <div className="text-sm text-blue-700 mb-2">{selectedAddress}</div>
                       <div className="text-xs text-blue-600">
-                        좌표: {document.getElementById('latitude')?.value || 'N/A'}, {document.getElementById('longitude')?.value || 'N/A'}
+                        좌표: {(document.getElementById('latitude') as HTMLInputElement)?.value || 'N/A'}, {(document.getElementById('longitude') as HTMLInputElement)?.value || 'N/A'}
                       </div>
                     </div>
                     {selectedGoogleMapLink && (
@@ -1943,6 +2040,7 @@ export default function TableScheduleAdd({
                   type="number"
                   step="any"
                   id="latitude"
+                  defaultValue={mapModalIndex !== null ? (schedules[mapModalIndex]?.latitude?.toString() || '') : ''}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="예: 36.1699"
                 />
@@ -1955,6 +2053,7 @@ export default function TableScheduleAdd({
                   type="number"
                   step="any"
                   id="longitude"
+                  defaultValue={mapModalIndex !== null ? (schedules[mapModalIndex]?.longitude?.toString() || '') : ''}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="예: -115.1398"
                 />
@@ -1975,6 +2074,9 @@ export default function TableScheduleAdd({
                 onClick={() => {
                   const lat = (document.getElementById('latitude') as HTMLInputElement)?.value
                   const lng = (document.getElementById('longitude') as HTMLInputElement)?.value
+                  console.log('좌표 적용 버튼 클릭 - 입력된 좌표:', { lat, lng })
+                  console.log('현재 스케줄 ID:', mapModalIndex !== null ? schedules[mapModalIndex]?.id : 'null')
+                  
                   if (lat && lng) {
                     handleMapCoordinateSelect(
                       parseFloat(lat), 

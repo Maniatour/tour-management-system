@@ -53,6 +53,7 @@
     "supplierSettlement": "공급업체 정산",
     "teamBoard": "팀 보드",
     "tourMaterials": "투어 자료 관리",
+    "tourPhotoBuckets": "투어 포토 버켓 관리",
     "dataSync": "데이터 동기화",
     "dataReview": "데이터 검수",
     "auditLogs": "감사 추적",
@@ -1454,7 +1455,7 @@
   },
   "weather": {
     "title": "날씨 정보",
-    "subtitle": "그랜드캐년 일출, 자이온 캐년 일몰, 페이지 시티 날씨",
+    "subtitle": "",
     "loading": "날씨 정보를 불러오는 중...",
     "error": "날씨 정보를 불러올 수 없습니다",
     "update": "날씨 업데이트",

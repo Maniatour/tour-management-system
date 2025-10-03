@@ -17,6 +17,7 @@ import {
   Search
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useLocale } from 'next-intl'
 
 interface Tour {
   id: string
@@ -34,6 +35,7 @@ interface AdminTourReportsProps {
 
 export default function AdminTourReports({ params }: AdminTourReportsProps) {
   const { user } = useAuth()
+  const locale = useLocale()
   const [tours, setTours] = useState<Tour[]>([])
   const [selectedTourId, setSelectedTourId] = useState<string>('')
   const [showForm, setShowForm] = useState(false)
@@ -121,6 +123,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
           tourId={selectedTourId}
           onSuccess={handleFormSuccess}
           onCancel={handleFormCancel}
+          locale={locale}
         />
       </div>
     )
@@ -182,6 +185,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
       <TourReportList
         onEdit={handleEditReport}
         onDelete={handleDeleteReport}
+        locale={locale}
       />
     </div>
   )

@@ -77,17 +77,75 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [hasData, setHasData] = useState(false)
+
+  // Convert UTC time to Las Vegas time (PST/PDT)
+  const convertToLasVegasTime = (utcTimeString: string): string => {
+    try {
+      const [hours, minutes, seconds] = utcTimeString.split(':').map(Number)
+      const today = new Date()
+      const utcDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes, seconds)
+      
+      // Convert to Las Vegas time (UTC-8 for PST, UTC-7 for PDT)
+      // For simplicity, we'll use PST (UTC-8) as Las Vegas is in Pacific Time
+      const lasVegasTime = new Date(utcDate.getTime() - (8 * 60 * 60 * 1000))
+      
+      return lasVegasTime.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'America/Los_Angeles'
+      })
+    } catch (error) {
+      console.error('Error converting time:', error)
+      return utcTimeString
+    }
+  }
 
   const loadWeatherData = async () => {
     try {
       setLoading(true)
       setError(null)
       
-      const data = await getGoblinTourWeatherData(tourDate || new Date().toISOString().split('T')[0])
+      const targetDate = tourDate || new Date().toISOString().split('T')[0]
+      const data = await getGoblinTourWeatherData(targetDate)
       setWeatherData(data)
+      
+      // Check if we have actual data in Supabase
+      const { createClientSupabase } = await import('@/lib/supabase')
+      const supabase = createClientSupabase()
+      
+      const { data: weatherData, error } = await supabase
+        .from('weather_data')
+        .select('created_at')
+        .eq('date', targetDate)
+        .limit(1)
+      
+      if (error || !weatherData || weatherData.length === 0) {
+        setHasData(false)
+        setLastUpdated(null)
+      } else {
+        setHasData(true)
+        // Convert UTC time to Las Vegas time
+        const createdAt = new Date(weatherData[0].created_at)
+        const lasVegasTime = createdAt.toLocaleString('en-US', {
+          timeZone: 'America/Los_Angeles',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        })
+        setLastUpdated(lasVegasTime)
+      }
+      
     } catch (err) {
       setError(t('error'))
       console.error('날씨 데이터 로딩 실패:', err)
+      setHasData(false)
+      setLastUpdated(null)
     } finally {
       setLoading(false)
     }
@@ -98,21 +156,35 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
       setUpdating(true)
       setError(null)
       
-      // 날씨 데이터만 업데이트 (일출/일몰은 제외)
+      // 오늘 날짜 데이터를 수집 (날씨와 일출/일몰 모두)
+      const today = new Date().toISOString().split('T')[0]
       const response = await fetch('/api/weather-collector', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          date: tourDate || new Date().toISOString().split('T')[0],
-          updateWeatherOnly: true // 날씨만 업데이트
+          date: today
         })
       })
 
       if (response.ok) {
         // 데이터 수집 후 다시 로드
         await loadWeatherData()
+        
+        // 업데이트 성공 메시지 표시
+        const now = new Date()
+        const lasVegasTime = now.toLocaleString('en-US', {
+          timeZone: 'America/Los_Angeles',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        })
+        setLastUpdated(lasVegasTime)
+        setHasData(true)
       } else {
         const errorData = await response.json()
         setError(`${t('update')} 실패: ${errorData.error}`)
@@ -256,22 +328,28 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
           <div className="bg-purple-100 rounded-full p-1.5 mr-2">
             <Cloud className="h-4 w-4 text-purple-600" />
           </div>
-               <div>
-                 <h2 className="text-sm font-semibold text-purple-800">{t('title')}</h2>
-                 <p className="text-xs text-purple-600">{t('subtitle')}</p>
-               </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-purple-800">{t('title')}</h2>
+              <span className="text-xs text-purple-600">
+                {hasData ? `업데이트: ${lastUpdated} (라스베가스 시간)` : 'N/A'}
+              </span>
+            </div>
+            {t('subtitle') && <p className="text-xs text-purple-600">{t('subtitle')}</p>}
+          </div>
         </div>
         <button
           onClick={updateWeatherData}
           disabled={updating || loading}
-          className="p-1.5 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-          title={t('update')}
+          className="px-3 py-1.5 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+          title="오늘 날짜 데이터 수집"
         >
           {updating ? (
             <RefreshCw className="h-3 w-3 animate-spin" />
           ) : (
             <RefreshCw className="h-3 w-3" />
           )}
+          업데이트
         </button>
       </div>
 

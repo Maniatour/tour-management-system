@@ -1032,6 +1032,7 @@ export default function GuideTourDetailPage() {
                 // 리포트 목록 새로고침을 위해 TourReportSection이 자동으로 업데이트됨
               }}
               onCancel={() => setIsReportModalOpen(false)}
+              locale={locale}
             />
           </div>
         </div>

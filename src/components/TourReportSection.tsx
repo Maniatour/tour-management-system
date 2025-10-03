@@ -1,5 +1,3 @@
-'use client'
-
 import React, { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,6 +8,7 @@ import { FileText, Plus, Eye, Edit, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
+import { useLocale } from 'next-intl'
 
 interface TourReportSectionProps {
   tourId: string
@@ -31,6 +30,7 @@ export default function TourReportSection({
   showHeader = true
 }: TourReportSectionProps) {
   const t = useTranslations('tourReport')
+  const locale = useLocale()
   const [showForm, setShowForm] = useState(false)
   const [showList, setShowList] = useState(false)
   const [hasReports, setHasReports] = useState(false)
@@ -109,6 +109,7 @@ export default function TourReportSection({
           tourId={tourId}
           onSuccess={handleFormSuccess}
           onCancel={handleFormCancel}
+          locale={locale}
         />
       </div>
     )
@@ -144,6 +145,7 @@ export default function TourReportSection({
           showTourInfo={false}
           onEdit={canEditReport ? handleEditReport : undefined}
           onDelete={canDeleteReport ? handleDeleteReport : undefined}
+          locale={locale}
         />
       </div>
     )
