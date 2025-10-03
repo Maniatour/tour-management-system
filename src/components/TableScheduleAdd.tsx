@@ -411,7 +411,7 @@ export default function TableScheduleAdd({
           
           const textRequest = {
             query: query,
-            fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url', 'types', 'rating', 'user_ratings_total'],
+            fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url', 'types', 'rating', 'user_ratings_total', 'business_status'], // permanently_closed 대신 business_status 사용
             locationBias: { lat: 36.1699, lng: -115.1398, radius: 200000 }, // 라스베가스 중심 200km 반경 확장
             region: 'US'
           }
@@ -432,7 +432,7 @@ export default function TableScheduleAdd({
           const autocompleteService = new (window.google as any).maps.places.AutocompleteService()
           autocompleteService.getPlacePredictions({
             input: query,
-            types: ['establishment', 'geocode', 'regions'],
+            types: ['establishment', 'geocode'], // regions 제거 (deprecated)
             location: new (window.google as any).maps.LatLng(36.1699, -115.1398),
             radius: 200000
           }, (predictions: any[], status: any) => {
@@ -521,10 +521,19 @@ export default function TableScheduleAdd({
         })
       })
 
-      // 중복 제거 및 결과 정렬
-      const uniqueResults = processedResults.filter((result, index, self) => 
-        index === self.findIndex(r => r.name === result.name && r.address === result.address)
-      )
+      // 중복 제거 및 결과 정렬 - 더 엄격한 중복 제거
+      const uniqueResults = processedResults.filter((result, index, self) => {
+        // place_id가 있다면 그것으로 중복 체크
+        if (result.placeId && result.placeId.startsWith('place_')) {
+          return index === self.findIndex(r => r.placeId === result.placeId)
+        }
+        // place_id가 없거나 특별한 ID라면 이름+주소로 중복 체크
+        return index === self.findIndex(r => 
+          r.name === result.name && 
+          r.address === result.address && 
+          (r.latitude === result.latitude || r.longitude === result.longitude)
+        )
+      })
 
       // 검색 유형별 우선순위 정렬
       const sortedResults = uniqueResults.sort((a, b) => {
@@ -2140,9 +2149,9 @@ export default function TableScheduleAdd({
                 {/* 검색 제안 목록 */}
                 {showMapSuggestions && mapSuggestions.length > 0 && (
                   <div className="relative z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {mapSuggestions.map((suggestion) => (
+                    {mapSuggestions.map((suggestion, index) => (
                   <button
-                        key={suggestion.placeId}
+                        key={`${suggestion.placeId || suggestion.searchType}_${index}`}
                         onClick={() => handleMapLocationSelect(suggestion)}
                         className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                       >
