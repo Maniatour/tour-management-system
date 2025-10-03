@@ -1117,8 +1117,8 @@ export default function TableScheduleAdd({
           <div className="w-[24px]"></div>
           <div className="w-[32px] text-center">삭제</div>
           <div className="w-[64px] text-center">썸네일</div>
-          <div className="w-[40px] text-center">일차</div>
           <div className="w-[40px] text-center">#</div>
+          <div className="w-[40px] text-center">일차</div>
           <div className="w-[120px] text-center">시작</div>
           <div className="w-[120px] text-center">종료</div>
           <div className="w-[50px] text-center">소요(분)</div>
@@ -1225,6 +1225,13 @@ export default function TableScheduleAdd({
                 </button>
               </div>
 
+              {/* 순서 */}
+              <div className="w-[40px] flex justify-center items-center">
+                <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
+                  {schedule.order_index || index + 1}
+                </div>
+              </div>
+
               {/* 일차 */}
               <div className="w-[40px]">
                 <input
@@ -1234,13 +1241,6 @@ export default function TableScheduleAdd({
                   className="w-full h-8 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   min="1"
                 />
-              </div>
-
-              {/* 순서 */}
-              <div className="w-[40px] flex justify-center items-center">
-                <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
-                  {schedule.order_index || index + 1}
-                </div>
               </div>
 
               {/* 시작시간 (선택사항) */}
