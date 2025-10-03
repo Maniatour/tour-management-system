@@ -581,9 +581,7 @@ export default function TableScheduleAdd({
         schedule.order_index = index + 1
       })
       
-      // 시간 자동 업데이트
-      const schedulesWithUpdatedTimes = updateTimesBasedOnDuration(updatedSchedules)
-      onSchedulesChange(schedulesWithUpdatedTimes)
+      onSchedulesChange(updatedSchedules)
     }
     
     setDraggedIndex(null)
@@ -1164,10 +1162,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  disabled={index === 0}
-                  className={`w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                    index === 0 ? 'bg-gray-100 cursor-not-allowed' : ''
-                  }`}
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="선택사항"
                 />
               </div>
@@ -1190,10 +1185,7 @@ export default function TableScheduleAdd({
                     }
                     onSchedulesChange(updatedSchedules)
                   }}
-                  disabled={index === 0}
-                  className={`w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                    index === 0 ? 'bg-gray-100 cursor-not-allowed' : ''
-                  }`}
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="선택사항"
                 />
               </div>
@@ -1287,12 +1279,16 @@ export default function TableScheduleAdd({
                       setTextModalIndex(index)
                       setShowTextModal(true)
                     }}
-                    className="w-[128px] h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between bg-blue-50 border-blue-300"
+                    className={`w-[128px] h-8 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
+                      (showEnglishFields ? !schedule.description_en : !schedule.description_ko) 
+                        ? 'bg-red-50 border-red-300 text-red-700' 
+                        : 'bg-blue-50 border-blue-300 text-blue-700'
+                    }`}
                   >
-                    <span className="truncate text-blue-700 font-medium">
+                    <span className="truncate font-medium">
                       설명
                     </span>
-                    <span className="text-blue-500 text-xs">📝</span>
+                    <span className="text-xs">📝</span>
                   </button>
                 </div>
               </div>
@@ -1306,12 +1302,16 @@ export default function TableScheduleAdd({
                     setTextModalIndex(index)
                     setShowTextModal(true)
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between bg-green-50 border-green-300"
+                  className={`w-full h-8 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between ${
+                    (showEnglishFields ? !schedule.guide_notes_en : !schedule.guide_notes_ko) 
+                      ? 'bg-red-50 border-red-300 text-red-700' 
+                      : 'bg-green-50 border-green-300 text-green-700'
+                  }`}
                 >
-                  <span className="truncate text-green-700 font-medium">
+                  <span className="truncate font-medium">
                     {showEnglishFields ? "English guide memo" : "가이드 메모"}
                   </span>
-                  <span className="text-green-500 text-xs">📝</span>
+                  <span className="text-xs">📝</span>
                 </button>
               </div>
 
