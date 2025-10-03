@@ -922,27 +922,27 @@ export default function TableScheduleAdd({
 
       {/* 테이블 헤더 */}
       <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-        <div className="flex gap-2 text-xs font-medium text-gray-600">
+        <div className="flex gap-2 text-xs font-medium text-gray-600 items-center">
           <div className="w-[24px]"></div>
-          <div className="w-[32px]">삭제</div>
-          <div className="w-[64px]">썸네일</div>
-          <div className="w-[32px]">일차</div>
-          <div className="w-[32px]">순서</div>
-          <div className="w-[120px]">시작</div>
-          <div className="w-[120px]">종료</div>
-          <div className="w-[32px]">소요(분)</div>
-          <div className="w-[32px]">시간없음</div>
-          <div className="w-[160px]">제목</div>
-          <div className="w-[128px]">설명</div>
-          <div className="w-[128px]">가이드메모</div>
-          <div className="w-[120px]">2가이드</div>
-          <div className="w-[120px]">가이드+드라이버</div>
-          <div className="w-[32px]">휴식</div>
-          <div className="w-[32px]">식사</div>
-          <div className="w-[32px]">이동</div>
-          <div className="w-[32px]">관광</div>
-          <div className="w-[48px]">고객표시</div>
-          <div className="w-[160px]">위치</div>
+          <div className="w-[32px] text-center">삭제</div>
+          <div className="w-[64px] text-center">썸네일</div>
+          <div className="w-[32px] text-center">일차</div>
+          <div className="w-[32px] text-center">순서</div>
+          <div className="w-[120px] text-center">시작</div>
+          <div className="w-[120px] text-center">종료</div>
+          <div className="w-[32px] text-center">소요(분)</div>
+          <div className="w-[32px] text-center">시간없음</div>
+          <div className="w-[160px] text-center">제목</div>
+          <div className="w-[128px] text-center">설명</div>
+          <div className="w-[128px] text-center">가이드메모</div>
+          <div className="w-[120px] text-center">2가이드</div>
+          <div className="w-[120px] text-center">가이드+드라이버</div>
+          <div className="w-[32px] text-center">휴식</div>
+          <div className="w-[32px] text-center">식사</div>
+          <div className="w-[32px] text-center">이동</div>
+          <div className="w-[32px] text-center">관광</div>
+          <div className="w-[48px] text-center">고객표시</div>
+          <div className="w-[160px] text-center">위치</div>
         </div>
       </div>
 
@@ -1145,7 +1145,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 시간 없음 체크박스 */}
-              <div className="w-[32px] flex justify-center">
+              <div className="w-[32px] flex justify-center items-center">
                 <input
                   type="checkbox"
                   checked={schedule.no_time || false}
@@ -1165,7 +1165,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 제목 필드 */}
-              <div className="w-[160px]">
+              <div className="w-[160px] mr-2">
                 <div className="flex space-x-1">
                   <input
                     type="text"
@@ -1185,22 +1185,20 @@ export default function TableScheduleAdd({
 
               {/* 설명 필드 */}
               <div className="w-[128px]">
-                <div className="flex space-x-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTextModalType('description')
-                      setTextModalIndex(index)
-                      setShowTextModal(true)
-                    }}
-                    className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between"
-                  >
-                    <span className="truncate">
-                      {showEnglishFields ? "English description" : "한국어 설명"}
-                    </span>
-                    <span className="text-gray-400 text-xs">✏️</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTextModalType('description')
+                    setTextModalIndex(index)
+                    setShowTextModal(true)
+                  }}
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between bg-blue-50 border-blue-300"
+                >
+                  <span className="truncate text-blue-700 font-medium">
+                    설명
+                  </span>
+                  <span className="text-blue-500 text-xs">📝</span>
+                </button>
               </div>
 
               {/* 가이드 메모 */}
@@ -1212,57 +1210,81 @@ export default function TableScheduleAdd({
                     setTextModalIndex(index)
                     setShowTextModal(true)
                   }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between"
+                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between bg-green-50 border-green-300"
                 >
-                  <span className="truncate">
-                    {showEnglishFields ? (schedule.guide_notes_en || '') : (schedule.guide_notes_ko || '') || (showEnglishFields ? "Guide notes (English)" : "가이드 메모 (한국어)")}
+                  <span className="truncate text-green-700 font-medium">
+                    {showEnglishFields ? "English guide memo" : "가이드 메모"}
                   </span>
-                  <span className="text-gray-400 text-xs">✏️</span>
+                  <span className="text-green-500 text-xs">📝</span>
                 </button>
               </div>
 
               {/* 2가이드 담당자 선택 */}
               <div className="w-[120px]">
-                <select
-                  value={schedule.two_guide_schedule || ''}
-                  onChange={(e) => {
-                    const updatedSchedules = [...schedules]
-                    updatedSchedules[index] = {
-                      ...updatedSchedules[index],
-                      two_guide_schedule: e.target.value as 'guide' | 'assistant' | undefined
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentValue = schedule.two_guide_schedule || ''
+                    let nextValue = ''
+                    if (currentValue === '') {
+                      nextValue = 'guide'
+                    } else if (currentValue === 'guide') {
+                      nextValue = 'assistant'
+                    } else {
+                      nextValue = ''
                     }
-                    onSchedulesChange(updatedSchedules)
+                    updateSchedule(index, 'two_guide_schedule', nextValue)
                   }}
-                  className="w-full h-8 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={`w-full h-8 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
+                    schedule.two_guide_schedule === 'guide' 
+                      ? 'bg-blue-100 border-blue-400 text-blue-800' 
+                      : schedule.two_guide_schedule === 'assistant'
+                      ? 'bg-purple-100 border-purple-400 text-purple-800'
+                      : 'bg-gray-100 border-gray-300 text-gray-600'
+                  }`}
                 >
-                  <option value="">선택</option>
-                  <option value="guide">가이드</option>
-                  <option value="assistant">어시스턴트</option>
-                </select>
+                  {schedule.two_guide_schedule === 'guide' 
+                    ? '가이드' 
+                    : schedule.two_guide_schedule === 'assistant'
+                    ? '어시스턴트'
+                    : '선택'}
+                </button>
               </div>
 
               {/* 가이드+드라이버 담당자 선택 */}
               <div className="w-[120px]">
-                <select
-                  value={schedule.guide_driver_schedule || ''}
-                  onChange={(e) => {
-                    const updatedSchedules = [...schedules]
-                    updatedSchedules[index] = {
-                      ...updatedSchedules[index],
-                      guide_driver_schedule: e.target.value as 'guide' | 'assistant' | undefined
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentValue = schedule.guide_driver_schedule || ''
+                    let nextValue = ''
+                    if (currentValue === '') {
+                      nextValue = 'guide'
+                    } else if (currentValue === 'guide') {
+                      nextValue = 'assistant'
+                    } else {
+                      nextValue = ''
                     }
-                    onSchedulesChange(updatedSchedules)
+                    updateSchedule(index, 'guide_driver_schedule', nextValue)
                   }}
-                  className="w-full h-8 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={`w-full h-8 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
+                    schedule.guide_driver_schedule === 'guide' 
+                      ? 'bg-blue-100 border-blue-400 text-blue-800' 
+                      : schedule.guide_driver_schedule === 'assistant'
+                      ? 'bg-orange-100 border-orange-400 text-orange-800'
+                      : 'bg-gray-100 border-gray-300 text-gray-600'
+                  }`}
                 >
-                  <option value="">선택</option>
-                  <option value="guide">가이드</option>
-                  <option value="assistant">드라이버</option>
-                </select>
+                  {schedule.guide_driver_schedule === 'guide' 
+                    ? '가이드' 
+                    : schedule.guide_driver_schedule === 'assistant'
+                    ? '드라이버'
+                    : '선택'}
+                </button>
               </div>
 
               {/* 휴식 체크박스 */}
-              <div className="w-[32px] flex justify-center">
+              <div className="w-[32px] flex justify-center items-center">
                 <input
                   type="checkbox"
                   checked={schedule.is_break || false}
@@ -1279,7 +1301,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 식사 체크박스 */}
-              <div className="w-[32px] flex justify-center">
+              <div className="w-[32px] flex justify-center items-center">
                 <input
                   type="checkbox"
                   checked={schedule.is_meal || false}
@@ -1296,7 +1318,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 이동 체크박스 */}
-              <div className="w-[32px] flex justify-center">
+              <div className="w-[32px] flex justify-center items-center">
                 <input
                   type="checkbox"
                   checked={schedule.is_transport || false}
@@ -1313,7 +1335,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 관광 체크박스 */}
-              <div className="w-[32px] flex justify-center">
+              <div className="w-[32px] flex justify-center items-center">
                 <input
                   type="checkbox"
                   checked={schedule.is_tour || false}
@@ -1330,7 +1352,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 고객표시 체크박스 */}
-              <div className="w-[48px] flex justify-center">
+              <div className="w-[48px] flex justify-center items-center">
                 <input
                   type="checkbox"
                   checked={schedule.show_to_customers || false}
@@ -1364,10 +1386,9 @@ export default function TableScheduleAdd({
                       setMapModalIndex(index)
                       setShowMapModal(true)
                     }}
-                    className="h-8 px-1 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center"
+                    className="h-8 px-1 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center justify-center"
                   >
-                    <MapPin className="h-3 w-3 mr-1" />
-                    지도
+                    <MapPin className="h-3 w-3" />
                   </button>
                 </div>
               </div>
