@@ -78,6 +78,8 @@ export default function TableScheduleAdd({
   const [selectedGoogleMapLink, setSelectedGoogleMapLink] = useState<string>('')
   const [mapLoaded, setMapLoaded] = useState(false)
   const [mapSearchQuery, setMapSearchQuery] = useState('')
+  const [modalLatitude, setModalLatitude] = useState<string>('')
+  const [modalLongitude, setModalLongitude] = useState<string>('')
   const [mapSuggestions, setMapSuggestions] = useState<Array<{
     placeId: string
     name: string
@@ -121,6 +123,11 @@ export default function TableScheduleAdd({
       
       updateSchedule(mapModalIndex!, 'google_maps_link', mapsLink)
       console.log('✅ 구글맵 링크 업데이트 완료:', mapsLink)
+      
+      // 모달 상태도 업데이트
+      setModalLatitude(lat.toString())
+      setModalLongitude(lng.toString())
+      setSelectedGoogleMapLink(mapsLink)
       
       // 업데이트 후 즉시 확인
       setTimeout(() => {
@@ -219,11 +226,9 @@ export default function TableScheduleAdd({
             const newLat = position.lat()
             const newLng = position.lng()
             
-            // 좌표 입력 필드 업데이트
-            const latInput = document.getElementById('latitude') as HTMLInputElement
-            const lngInput = document.getElementById('longitude') as HTMLInputElement
-            if (latInput) latInput.value = newLat.toString()
-            if (lngInput) lngInput.value = newLng.toString()
+            // 모달 상태 업데이트
+            setModalLatitude(newLat.toString())
+            setModalLongitude(newLng.toString())
 
           // 역지오코딩으로 주소 가져오기
           const geocoder = new (window.google as any).maps.Geocoder()
@@ -666,11 +671,15 @@ export default function TableScheduleAdd({
       if (currentSchedule?.latitude && currentSchedule?.longitude) {
         console.log('저장된 좌표 발견:', currentSchedule.latitude, currentSchedule.longitude)
         setSelectedAddress(currentSchedule.location_ko || '')
-        setSelectedGoogleMapLink(`https://www.google.com/maps?q=${currentSchedule.latitude},${currentSchedule.longitude}`)
+        setSelectedGoogleMapLink(currentSchedule.google_maps_link || `https://www.google.com/maps?q=${currentSchedule.latitude},${currentSchedule.longitude}`)
+        setModalLatitude(currentSchedule.latitude.toString())
+        setModalLongitude(currentSchedule.longitude.toString())
       } else {
         console.log('저장된 좌표 없음, 기본값으로 초기화')
         setSelectedAddress('')
         setSelectedGoogleMapLink('')
+        setModalLatitude('')
+        setModalLongitude('')
       }
       setMapSearchQuery('')
       
@@ -769,10 +778,13 @@ export default function TableScheduleAdd({
   }
 
   const updateSchedule = useCallback((index: number, field: keyof ScheduleItem, value: unknown) => {
-    const updatedSchedules = [...schedules]
-    updatedSchedules[index] = { ...updatedSchedules[index], [field]: value }
-    onSchedulesChange(updatedSchedules)
-  }, [schedules, onSchedulesChange])
+    onSchedulesChange((prevSchedules) => {
+      const updatedSchedules = [...prevSchedules]
+      updatedSchedules[index] = { ...updatedSchedules[index], [field]: value }
+      console.log(`🔄 ${field} 업데이트:`, { index, field, value, updatedSchedule: updatedSchedules[index] })
+      return updatedSchedules
+    })
+  }, [onSchedulesChange])
 
   // 드래그 앤 드롭 핸들러들
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -2244,7 +2256,8 @@ export default function TableScheduleAdd({
                   type="number"
                   step="any"
                   id="latitude"
-                  defaultValue={mapModalIndex !== null ? (schedules[mapModalIndex!]?.latitude?.toString() || '') : ''}
+                  value={modalLatitude}
+                  onChange={(e) => setModalLatitude(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="예: 36.1699"
                 />
@@ -2257,7 +2270,8 @@ export default function TableScheduleAdd({
                   type="number"
                   step="any"
                   id="longitude"
-                  defaultValue={mapModalIndex !== null ? (schedules[mapModalIndex!]?.longitude?.toString() || '') : ''}
+                  value={modalLongitude}
+                  onChange={(e) => setModalLongitude(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="예: -115.1398"
                 />
@@ -2276,10 +2290,8 @@ export default function TableScheduleAdd({
               </button>
               <button
                 onClick={() => {
-                  const latInput = document.getElementById('latitude') as HTMLInputElement
-                  const lngInput = document.getElementById('longitude') as HTMLInputElement
-                  const lat = latInput?.value
-                  const lng = lngInput?.value
+                  const lat = modalLatitude.trim()
+                  const lng = modalLongitude.trim()
                   
                   console.log('🔘 좌표 적용 버튼 클릭')
                   console.log('📝 입력 필드에서 읽은 값:', { 
