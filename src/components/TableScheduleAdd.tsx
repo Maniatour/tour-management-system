@@ -96,6 +96,10 @@ export default function TableScheduleAdd({
   const [isMapSearchLoading, setIsMapSearchLoading] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [showCopyModal, setShowCopyModal] = useState(false)
+  const [availableProducts, setAvailableProducts] = useState<Array<{id: string, name: string}>>([])
+  const [selectedProductId, setSelectedProductId] = useState<string>('')
+  const [copying, setCopying] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 지도 관련 함수들
@@ -723,6 +727,84 @@ export default function TableScheduleAdd({
     onSchedulesChange(schedules.filter((_, i) => i !== index))
   }
 
+  // 복사 기능 관련 함수들
+  const fetchAvailableProducts = async () => {
+    try {
+      // 먼저 현재 제품의 sub_category를 가져옴
+      const { data: currentProduct, error: currentError } = await supabase
+        .from('products')
+        .select('sub_category')
+        .eq('id', productId)
+        .single()
+
+      if (currentError) {
+        console.error('현재 제품 정보 가져오기 오류:', currentError)
+        return
+      }
+
+      const subCategory = currentProduct?.sub_category
+      if (!subCategory) {
+        console.error('현재 제품의 sub_category를 찾을 수 없습니다.')
+        return
+      }
+      
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name')
+        .neq('id', productId) // 현재 제품 제외
+        .eq('sub_category', subCategory) // 같은 sub_category만
+        .order('name')
+
+      if (error) {
+        console.error('제품 목록 가져오기 오류:', error)
+        return
+      }
+
+      setAvailableProducts(data || [])
+    } catch (error) {
+      console.error('제품 목록 가져오기 예외:', error)
+    }
+  }
+
+  const handleCopySchedules = async () => {
+    if (!selectedProductId || schedules.length === 0) {
+      alert('복사할 제품을 선택하고 일정이 있는지 확인해주세요.')
+      return
+    }
+
+    setCopying(true)
+    try {
+      // 현재 일정들을 복사하여 새로운 product_id로 설정
+      const copiedSchedules = schedules.map(schedule => ({
+        ...schedule,
+        id: undefined, // 새 ID 생성
+        product_id: selectedProductId,
+        created_at: undefined,
+        updated_at: undefined
+      }))
+
+      // Supabase에 복사된 일정들 저장
+      const { error } = await supabase
+        .from('product_schedules')
+        .insert(copiedSchedules)
+
+      if (error) {
+        console.error('일정 복사 오류:', error)
+        alert('일정 복사 중 오류가 발생했습니다.')
+        return
+      }
+
+      alert('일정이 성공적으로 복사되었습니다.')
+      setShowCopyModal(false)
+      setSelectedProductId('')
+    } catch (error) {
+      console.error('일정 복사 예외:', error)
+      alert('일정 복사 중 오류가 발생했습니다.')
+    } finally {
+      setCopying(false)
+    }
+  }
+
 
   // 모든 스케줄 번역 함수
   const translateAllSchedules = async () => {
@@ -884,6 +966,19 @@ export default function TableScheduleAdd({
           >
             <Calendar className="h-4 w-4 mr-1" />
             시간 계산
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              fetchAvailableProducts()
+              setShowCopyModal(true)
+            }}
+            disabled={schedules.length === 0}
+            className="flex items-center px-3 py-1 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm"
+            title="현재 일정을 다른 제품으로 복사"
+          >
+            <Copy className="h-4 w-4 mr-1" />
+            일정 복사
           </button>
           <button
             type="button"
@@ -1893,6 +1988,77 @@ export default function TableScheduleAdd({
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 좌표 적용
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 일정 복사 모달 */}
+      {showCopyModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">일정 복사</h3>
+              <button
+                onClick={() => {
+                  setShowCopyModal(false)
+                  setSelectedProductId('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-3">
+                현재 일정을 다른 제품으로 복사합니다. ({schedules.length}개 일정)
+              </p>
+              
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                복사할 제품 선택
+              </label>
+              <select
+                value={selectedProductId}
+                onChange={(e) => setSelectedProductId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">제품을 선택하세요</option>
+                {availableProducts.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name || `제품 ${product.id}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowCopyModal(false)
+                  setSelectedProductId('')
+                }}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleCopySchedules}
+                disabled={!selectedProductId || copying}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors flex items-center"
+              >
+                {copying ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    복사 중...
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-2" />
+                    복사하기
+                  </>
+                )}
               </button>
             </div>
           </div>
