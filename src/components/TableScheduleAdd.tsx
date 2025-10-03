@@ -407,46 +407,83 @@ export default function TableScheduleAdd({
       // 3. Places API 검색 (장소명, 주소, 업체명 등)
       const placesPromises = []
       
-      // 텍스트 검색
+      // 텍스트 검색 - 새로운 FindPlaceFromText API 사용
       placesPromises.push(
-        new Promise((resolve) => {
-          const service = new (window.google as any).maps.places.PlacesService(
-            document.createElement('div')
-          )
-          
-          const textRequest = {
-            query: query,
-            fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url', 'types', 'rating', 'user_ratings_total', 'business_status'], // permanently_closed 대신 business_status 사용
-            locationBias: { lat: 36.1699, lng: -115.1398, radius: 200000 }, // 라스베가스 중심 200km 반경 확장
-            region: 'US'
-          }
-          
-          service.textSearch(textRequest, (results: any[], status: any) => {
-            if (status === (window.google as any).maps.places.PlacesServiceStatus.OK && results) {
-              resolve(results.map(place => ({ ...place, searchType: 'text_search' })))
+        new Promise(async (resolve) => {
+          try {
+            const [place] = await (window.google as any).maps.places.Place.findPlaceFromText({
+              textQuery: query,
+              fields: ['id', 'displayName', 'formattedAddress', 'location', 'types', 'rating', 'userRatingCount', 'businessStatus'],
+              locationBias: {
+                lat: 36.1699, 
+                lng: -115.1398,
+                radius: 200000
+              },
+              regionCode: 'US'
+            })
+            
+            if (place) {
+              resolve([{ 
+                ...place, 
+                searchType: 'new_text_search',
+                place_id: place.id,
+                name: place.displayName,
+                formatted_address: place.formattedAddress,
+                geometry: {
+                  location: {
+                    lat: () => place.location?.lat || 0,
+                    lng: () => place.location?.lng || 0
+                  }
+                },
+                types: place.types,
+                rating: place.rating,
+                user_ratings_total: place.userRatingCount
+              }])
             } else {
               resolve([])
             }
-          })
+          } catch (error) {
+            console.log('새로운 Places API 텍스트 검색 실패, 기존 방식 사용:', error)
+            resolve([])
+          }
         })
       )
 
-      // 자동완성 검색 (더 넓은 범위)
+      // 자동완성 검색 - 새로운 AutocompleteSuggestion API 사용
       placesPromises.push(
-        new Promise((resolve) => {
-          const autocompleteService = new (window.google as any).maps.places.AutocompleteService()
-          autocompleteService.getPlacePredictions({
-            input: query,
-            types: ['establishment', 'geocode'], // regions 제거 (deprecated)
-            location: new (window.google as any).maps.LatLng(36.1699, -115.1398),
-            radius: 200000
-          }, (predictions: any[], status: any) => {
-            if (status === (window.google as any).maps.places.PlacesServiceStatus.OK && predictions) {
-              resolve(predictions.slice(0, 5).map(prediction => ({ ...prediction, searchType: 'autocomplete' })))
+        new Promise(async (resolve) => {
+          try {
+            const suggestions = await (window.google as any).maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+              input: query,
+              includedRegionCodes: ['US'],
+              locationBias: {
+                lat: 36.1699, 
+                lng: -115.1398,
+                radius: 200000
+              }
+            })
+            
+            if (suggestions && suggestions.length > 0) {
+              resolve(suggestions.slice(0, 5).map(suggestion => ({
+                ...suggestion,
+                searchType: 'new_autocomplete',
+                place_id: suggestion.placePrediction?.place?.id || `new_autocomplete_${Date.now()}`,
+                name: suggestion.text?.text || suggestion.placePrediction?.place?.displayName || '',
+                formatted_address: suggestion.text?.text || '',
+                geometry: suggestion.placePrediction?.place?.location ? {
+                  location: {
+                    lat: () => suggestion.placePrediction?.place?.location?.lat || 0,
+                    lng: () => suggestion.placePrediction?.place?.location?.lng || 0
+                  }
+                } : null
+              })))
             } else {
               resolve([])
             }
-          })
+          } catch (error) {
+            console.log('새로운 AutocompleteSuggestion API 실패, Geocoder로 대체:', error)
+            resolve([])
+          }
         })
       )
 
@@ -466,7 +503,12 @@ export default function TableScheduleAdd({
           let completed = 0
           
           addressTypes.forEach(({ address, region }, index) => {
-            geocoder.geocode({ address, region }, (geocodeResults: any[], geocodeStatus: any) => {
+                    geocoder.geocode({ 
+                      address, 
+                      region: region as any,
+                      bounds: undefined, // deprecated 제거
+                      location: undefined // deprecated 제거
+                    }, (geocodeResults: any[], geocodeStatus: any) => {
               completed++
               
               if (geocodeStatus === 'OK' && geocodeResults && !foundResults) {
@@ -488,27 +530,57 @@ export default function TableScheduleAdd({
       const searchResults = await Promise.all(placesPromises)
       const processedResults = []
 
-      searchResults.forEach((results: any, index) => {
-        if (!results || results.length === 0) return
-        
-        results.slice(0, index === 0 ? 6 : index === 1 ? 4 : 6).forEach((result: any) => {
-          if (result.searchType === 'autocomplete') {
-            // 자동완성 결과는 추가 검색 필요
-            processedResults.push({
-              placeId: `autocomplete_${result.place_id}`,
-              name: result.description,
-              address: result.structured_formatting?.secondary_text || '',
-              latitude: 0, // 나중에 실제 검색에서 채워짐
-              longitude: 0,
-              googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
-              rating: undefined,
-              ratingDisplay: undefined,
-              userRatingsTotal: undefined,
-              types: [],
-              searchType: 'autocomplete_results',
-              prediction: result
-            })
-          } else if (result.name || result.formatted_address) {
+                searchResults.forEach((results: any, index) => {
+                  if (!results || results.length === 0) return
+                  
+                  results.slice(0, index === 0 ? 6 : index === 1 ? 4 : 6).forEach((result: any) => {
+                    if (result.searchType === 'new_autocomplete') {
+                      // 새로운 자동완성 결과
+                      processedResults.push({
+                        placeId: result.place_id,
+                        name: result.name,
+                        address: result.formatted_address,
+                        latitude: result.geometry?.location?.lat?.() || 0,
+                        longitude: result.geometry?.location?.lng?.() || 0,
+                        googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+                        rating: result.rating || undefined,
+                        ratingDisplay: result.rating ? `⭐ ${result.rating.toFixed(1)}` : undefined,
+                        userRatingsTotal: result.user_ratings_total || undefined,
+                        types: result.types || [],
+                        searchType: 'new_autocomplete_results'
+                      })
+                    } else if (result.searchType === 'new_text_search') {
+                      // 새로운 텍스트 검색 결과
+                      processedResults.push({
+                        placeId: result.place_id,
+                        name: result.name,
+                        address: result.formatted_address,
+                        latitude: result.geometry?.location?.lat?.() || 0,
+                        longitude: result.geometry?.location?.lng?.() || 0,
+                        googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(result.place_id)}`,
+                        rating: result.rating || undefined,
+                        ratingDisplay: result.rating ? `⭐ ${result.rating.toFixed(1)}` : undefined,
+                        userRatingsTotal: result.user_ratings_total || undefined,
+                        types: result.types || [],
+                        searchType: 'new_text_search'
+                      })
+                    } else if (result.searchType === 'autocomplete') {
+                      // 기존 자동완성 결과는 추가 검색 필요
+                      processedResults.push({
+                        placeId: `autocomplete_${result.place_id}`,
+                        name: result.description,
+                        address: result.structured_formatting?.secondary_text || '',
+                        latitude: 0, // 나중에 실제 검색에서 채워줘
+                        longitude: 0,
+                        googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+                        rating: undefined,
+                        ratingDisplay: undefined,
+                        userRatingsTotal: undefined,
+                        types: [],
+                        searchType: 'autocomplete_results',
+                        prediction: result
+                      })
+                    } else if (result.name || result.formatted_address) {
             processedResults.push({
               placeId: result.place_id || `geo_${Date.now()}_${Math.random()}`,
               name: result.name || `📍 ${result.formatted_address}`,
@@ -542,12 +614,16 @@ export default function TableScheduleAdd({
 
       // 검색 유형별 우선순위 정렬
       const sortedResults = uniqueResults.sort((a, b) => {
-        const priorityA = a.searchType === 'coordinate' ? 0 : 
-                         a.searchType === 'plus_code' ? 1 : 
-                         a.searchType !== 'geocoder' ? 2 : 3
-        const priorityB = b.searchType === 'coordinate' ? 0 : 
-                         b.searchType === 'plus_code' ? 1 : 
-                         b.searchType !== 'geocoder' ? 2 : 3
+        const priorityA = a.searchType === 'coordinate' ? 0 :
+                         a.searchType === 'plus_code' ? 1 :
+                         a.searchType === 'new_text_search' ? 2 :
+                         a.searchType === 'new_autocomplete_results' ? 3 :
+                         a.searchType !== 'geocoder' ? 4 : 5
+        const priorityB = b.searchType === 'coordinate' ? 0 :
+                         b.searchType === 'plus_code' ? 1 :
+                         b.searchType === 'new_text_search' ? 2 :
+                         b.searchType === 'new_autocomplete_results' ? 3 :
+                         b.searchType !== 'geocoder' ? 4 : 5
         
         return priorityA - priorityB
       }).slice(0, 10) // 최대 10개 결과
