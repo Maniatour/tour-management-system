@@ -996,6 +996,7 @@ export interface Database {
         updated_at: string | null
         latitude: number | null
         longitude: number | null
+        google_maps_link: string | null
         show_to_customers: boolean | null
         title_ko: string | null
         title_en: string | null
@@ -1025,6 +1026,7 @@ export interface Database {
         updated_at?: string | null
         latitude?: number | null
         longitude?: number | null
+        google_maps_link?: string | null
         show_to_customers?: boolean | null
         title_ko?: string | null
         title_en?: string | null
@@ -1054,6 +1056,7 @@ export interface Database {
         updated_at?: string | null
         latitude?: number | null
         longitude?: number | null
+        google_maps_link?: string | null
         show_to_customers?: boolean | null
         title_ko?: string | null
         title_en?: string | null

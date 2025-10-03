@@ -24,6 +24,7 @@ interface ScheduleItem {
   is_tour: boolean | null
   latitude?: number | null
   longitude?: number | null
+  google_maps_link?: string | null
   show_to_customers: boolean | null
   title_ko?: string | null
   title_en?: string | null
@@ -99,17 +100,21 @@ export default function TableScheduleAdd({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 지도 관련 함수들
-  const handleMapCoordinateSelect = (lat: number, lng: number, address?: string) => {
+  const handleMapCoordinateSelect = (lat: number, lng: number, address?: string, googleMapsLink?: string) => {
     if (mapModalIndex !== null) {
+      
+      // 구글맵 링크 생성 (전달받지 않으면 기본 링크 생성)
+      const mapsLink = googleMapsLink || `https://www.google.com/maps?q=${lat},${lng}`
       
       // 스케줄 업데이트
       updateSchedule(mapModalIndex, 'latitude', lat)
       updateSchedule(mapModalIndex, 'longitude', lng)
       updateSchedule(mapModalIndex, 'location_ko', address || schedules[mapModalIndex].location_ko)
+      updateSchedule(mapModalIndex, 'google_maps_link', mapsLink)
       
       // Supabase에 즉시 저장 (실시간 동기화)
       console.log('좌표 저장 시도 - schedule ID:', schedules[mapModalIndex].id)
-      console.log('저장할 좌표:', { lat, lng, address })
+      console.log('저장할 좌표:', { lat, lng, address, googleMapsLink: mapsLink })
       
       if (schedules[mapModalIndex].id) {
         supabase
@@ -117,7 +122,8 @@ export default function TableScheduleAdd({
           .update({
             latitude: lat,
             longitude: lng,
-            location_ko: address || schedules[mapModalIndex].location_ko
+            location_ko: address || schedules[mapModalIndex].location_ko,
+            google_maps_link: mapsLink
           } as any)
           .eq('id', schedules[mapModalIndex].id!)
           .select()
@@ -1127,7 +1133,10 @@ export default function TableScheduleAdd({
           <div className="w-[32px] text-center">이동</div>
           <div className="w-[32px] text-center">관광</div>
           <div className="w-[48px] text-center">고객표시</div>
-          <div className="w-[160px] text-center">위치</div>
+          <div className="w-[120px] text-center">위치</div>
+          <div className="w-[80px] text-center">위도</div>
+          <div className="w-[80px] text-center">경도</div>
+          <div className="w-[160px] text-center">구글맵</div>
         </div>
       </div>
 
@@ -1559,16 +1568,57 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 위치 필드 */}
+              <div className="w-[120px]">
+                <input
+                  type="text"
+                  value={schedule.location_ko || ''}
+                  onChange={(e) => {
+                    updateSchedule(index, 'location_ko', e.target.value)
+                  }}
+                  className="w-full h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="위치명"
+                />
+              </div>
+
+              {/* 위도 필드 */}
+              <div className="w-[80px]">
+                <input
+                  type="number"
+                  step="0.0000001"
+                  value={schedule.latitude || ''}
+                  onChange={(e) => {
+                    updateSchedule(index, 'latitude', e.target.value ? parseFloat(e.target.value) : null)
+                  }}
+                  className="w-full h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="위도"
+                />
+              </div>
+
+              {/* 경도 필드 */}
+              <div className="w-[80px]">
+                <input
+                  type="number"
+                  step="0.0000001"
+                  value={schedule.longitude || ''}
+                  onChange={(e) => {
+                    updateSchedule(index, 'longitude', e.target.value ? parseFloat(e.target.value) : null)
+                  }}
+                  className="w-full h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="경도"
+                />
+              </div>
+
+              {/* 구글맵 링크 필드 */}
               <div className="w-[160px]">
                 <div className="flex gap-1">
                   <input
                     type="text"
-                    value={schedule.location_ko || ''}
+                    value={schedule.google_maps_link || ''}
                     onChange={(e) => {
-                      updateSchedule(index, 'location_ko', e.target.value)
+                      updateSchedule(index, 'google_maps_link', e.target.value)
                     }}
                     className="flex-1 h-8 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    placeholder="좌표"
+                    placeholder="구글맵 링크"
                   />
                   <button
                     type="button"
@@ -1582,12 +1632,23 @@ export default function TableScheduleAdd({
                     <MapPin className="h-4 w-4" />
                   </button>
                 </div>
+                {schedule.google_maps_link && (
+                  <a
+                    type="button"
+                    href={schedule.google_maps_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800 mt-1"
+                  >
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    링크 열기
+                  </a>
+                )}
               </div>
-
-
             </div>
           ))}
         </div>
+      </div>
       </div>
 
       {/* 지도 위치 선택 모달 */}
@@ -2081,7 +2142,8 @@ export default function TableScheduleAdd({
                     handleMapCoordinateSelect(
                       parseFloat(lat), 
                       parseFloat(lng), 
-                      selectedAddress || undefined
+                      selectedAddress || undefined,
+                      selectedGoogleMapLink || undefined
                     )
                   } else {
                     alert('위도와 경도를 입력해주세요.')
