@@ -926,11 +926,11 @@ export default function TableScheduleAdd({
           <div className="w-[24px]"></div>
           <div className="w-[32px] text-center">삭제</div>
           <div className="w-[64px] text-center">썸네일</div>
-          <div className="w-[32px] text-center">일차</div>
-          <div className="w-[32px] text-center">순서</div>
+          <div className="w-[40px] text-center">일차</div>
+          <div className="w-[40px] text-center">순서</div>
           <div className="w-[120px] text-center">시작</div>
           <div className="w-[120px] text-center">종료</div>
-          <div className="w-[32px] text-center">소요(분)</div>
+          <div className="w-[50px] text-center">소요(분)</div>
           <div className="w-[32px] text-center">시간없음</div>
           <div className="w-[160px] text-center">제목</div>
           <div className="w-[128px] text-center">설명</div>
@@ -976,7 +976,7 @@ export default function TableScheduleAdd({
           {schedules.map((schedule, index) => (
             <div 
               key={index} 
-              className={`flex gap-2 items-end p-2 border rounded-lg transition-all duration-200 ${
+              className={`flex gap-2 items-center p-2 border rounded-lg transition-all duration-200 ${
                 draggedIndex === index ? 'opacity-50 scale-95 shadow-lg' : ''
               } ${
                 dragOverIndex === index ? 'bg-blue-50 border-blue-400 border-2 shadow-md transform scale-105' : 'border-gray-200'
@@ -1030,7 +1030,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 일차 */}
-              <div className="w-[32px]">
+              <div className="w-[40px]">
                 <input
                   type="number"
                   value={schedule.day_number}
@@ -1041,7 +1041,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 순서 */}
-              <div className="w-[32px]">
+              <div className="w-[40px]">
                 <input
                   type="number"
                   value={schedule.order_index || index + 1}
@@ -1104,7 +1104,7 @@ export default function TableScheduleAdd({
               </div>
 
               {/* 소요시간 (선택사항) */}
-              <div className="w-[32px]">
+              <div className="w-[50px]">
                 <input
                   type="number"
                   value={schedule.duration_minutes || ''}
@@ -1164,9 +1164,10 @@ export default function TableScheduleAdd({
                 />
               </div>
 
-              {/* 제목 필드 */}
-              <div className="w-[160px] mr-2">
-                <div className="flex space-x-1">
+              {/* 제목과 설명 필드 */}
+              <div className="flex items-center" style={{ gap: '10px' }}>
+                {/* 제목 필드 */}
+                <div className="flex-1 min-w-0">
                   <input
                     type="text"
                     value={showEnglishFields ? (schedule.title_en || '') : (schedule.title_ko || '')}
@@ -1177,28 +1178,28 @@ export default function TableScheduleAdd({
                         updateSchedule(index, 'title_ko', e.target.value)
                       }
                     }}
-                    className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder={showEnglishFields ? "English title" : "한국어 제목"}
                   />
                 </div>
-              </div>
 
-              {/* 설명 필드 */}
-              <div className="w-[128px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTextModalType('description')
-                    setTextModalIndex(index)
-                    setShowTextModal(true)
-                  }}
-                  className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between bg-blue-50 border-blue-300"
-                >
-                  <span className="truncate text-blue-700 font-medium">
-                    설명
-                  </span>
-                  <span className="text-blue-500 text-xs">📝</span>
-                </button>
+                {/* 설명 필드 */}
+                <div className="flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTextModalType('description')
+                      setTextModalIndex(index)
+                      setShowTextModal(true)
+                    }}
+                    className="w-[128px] h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-left hover:bg-gray-50 cursor-pointer flex items-center justify-between bg-blue-50 border-blue-300"
+                  >
+                    <span className="truncate text-blue-700 font-medium">
+                      설명
+                    </span>
+                    <span className="text-blue-500 text-xs">📝</span>
+                  </button>
+                </div>
               </div>
 
               {/* 가이드 메모 */}
@@ -1386,9 +1387,9 @@ export default function TableScheduleAdd({
                       setMapModalIndex(index)
                       setShowMapModal(true)
                     }}
-                    className="h-8 px-1 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200 flex items-center justify-center"
+                    className="w-8 h-8 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded flex items-center justify-center"
                   >
-                    <MapPin className="h-3 w-3" />
+                    <MapPin className="h-4 w-4" />
                   </button>
                 </div>
               </div>
