@@ -106,11 +106,26 @@ export default function TableScheduleAdd({
       // 구글맵 링크 생성 (전달받지 않으면 기본 링크 생성)
       const mapsLink = googleMapsLink || `https://www.google.com/maps?q=${lat},${lng}`
       
+      console.log('📍 좌표 적용 시작:', { lat, lng, address, mapsLink, mapModalIndex })
+      console.log('📊 적용 전 스케줄 데이터:', schedules[mapModalIndex!])
+      
       // 스케줄 업데이트
       updateSchedule(mapModalIndex!, 'latitude', lat)
+      console.log('✅ 위도 업데이트 완료:', lat)
+      
       updateSchedule(mapModalIndex!, 'longitude', lng)
+      console.log('✅ 경도 업데이트 완료:', lng)
+      
       updateSchedule(mapModalIndex!, 'location_ko', address || schedules[mapModalIndex!].location_ko)
+      console.log('✅ 위치명 업데이트 완료:', address || schedules[mapModalIndex!].location_ko)
+      
       updateSchedule(mapModalIndex!, 'google_maps_link', mapsLink)
+      console.log('✅ 구글맵 링크 업데이트 완료:', mapsLink)
+      
+      // 업데이트 후 즉시 확인
+      setTimeout(() => {
+        console.log('📊 적용 후 스케줄 데이터:', schedules[mapModalIndex!])
+      }, 100)
       
       // Supabase에 즉시 저장 (실시간 동기화)
       console.log('좌표 저장 시도 - schedule ID:', schedules[mapModalIndex!].id)
@@ -2252,20 +2267,43 @@ export default function TableScheduleAdd({
               </button>
               <button
                 onClick={() => {
-                  const lat = (document.getElementById('latitude') as HTMLInputElement)?.value
-                  const lng = (document.getElementById('longitude') as HTMLInputElement)?.value
-                  console.log('좌표 적용 버튼 클릭 - 입력된 좌표:', { lat, lng })
-                  console.log('현재 스케줄 ID:', mapModalIndex !== null ? schedules[mapModalIndex!]?.id : 'null')
+                  const latInput = document.getElementById('latitude') as HTMLInputElement
+                  const lngInput = document.getElementById('longitude') as HTMLInputElement
+                  const lat = latInput?.value
+                  const lng = lngInput?.value
                   
-                  if (lat && lng) {
+                  console.log('🔘 좌표 적용 버튼 클릭')
+                  console.log('📝 입력 필드에서 읽은 값:', { 
+                    lat, 
+                    lng, 
+                    latInput: latInput, 
+                    lngInput: lngInput,
+                    latInputValue: latInput?.value,
+                    lngInputValue: lngInput?.value
+                  })
+                  console.log('📍 모달 상태값:', { 
+                    selectedAddress, 
+                    selectedGoogleMapLink, 
+                    mapModalIndex,
+                    currentScheduleId: mapModalIndex !== null ? schedules[mapModalIndex!]?.id : 'null'
+                  })
+                  console.log('📊 현재 스케줄 데이터:', mapModalIndex !== null ? schedules[mapModalIndex!] : 'null')
+                  
+                  if (lat && lng && lat.trim() !== '' && lng.trim() !== '') {
+                    console.log('✅ 유효한 좌표 감지, 처리 시작')
+                    const parsedLat = parseFloat(lat)
+                    const parsedLng = parseFloat(lng)
+                    console.log('🔄 파싱된 좌표:', { parsedLat, parsedLng })
+                    
                     handleMapCoordinateSelect(
-                      parseFloat(lat), 
-                      parseFloat(lng), 
+                      parsedLat, 
+                      parsedLng, 
                       selectedAddress || undefined,
                       selectedGoogleMapLink || undefined
                     )
                   } else {
-                    alert('위도와 경도를 입력해주세요.')
+                    console.warn('❌ 유효하지 않은 좌표:', { lat, lng })
+                    alert('위도와 경도를 모두 입력해주세요.')
                   }
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
