@@ -34,6 +34,11 @@ interface ScheduleItem {
   updated_at: string | null
 }
 
+interface LabelInfo {
+  text: string
+  color: string
+}
+
 interface TourScheduleSectionProps {
   productId: string
   teamType: 'guide+driver' | '2guide' | null
@@ -52,65 +57,27 @@ export default function TourScheduleSection({
     try {
       setLoading(true)
       
+      // 모든 일정을 가져오되, 담당 정보는 라벨로 표시
+      const { data, error } = await supabase
+        .from('product_schedules')
+        .select(`
+          *,
+          two_guide_schedule,
+          guide_driver_schedule
+        `)
+        .eq('product_id', productId)
+        .order('day_number', { ascending: true })
+        .order('order_index', { ascending: true })
+        .order('start_time', { ascending: true })
       
-      if (teamType === '2guide') {
-        // 2가이드 담당 일정: two_guide_schedule이 설정된 경우
-        const { data, error } = await supabase
-          .from('product_schedules')
-          .select(`
-            *,
-            two_guide_schedule,
-            guide_driver_schedule
-          `)
-          .eq('product_id', productId)
-          .not('two_guide_schedule', 'is', null)
-          .order('day_number', { ascending: true })
-          .order('order_index', { ascending: true })
-          .order('start_time', { ascending: true })
-        
-        if (error) throw error
-        setSchedules(data || [])
-      } else if (teamType === 'guide+driver') {
-        // 가이드+드라이버 담당 일정: guide_driver_schedule이 설정된 경우
-        const { data, error } = await supabase
-          .from('product_schedules')
-          .select(`
-            *,
-            two_guide_schedule,
-            guide_driver_schedule
-          `)
-          .eq('product_id', productId)
-          .not('guide_driver_schedule', 'is', null)
-          .order('day_number', { ascending: true })
-          .order('order_index', { ascending: true })
-          .order('start_time', { ascending: true })
-        
-        if (error) throw error
-        console.log('가이드+드라이버 스케줄 데이터:', data)
-        setSchedules(data || [])
-      } else {
-        // team_type이 없는 경우 모든 일정 표시
-        const { data, error } = await supabase
-          .from('product_schedules')
-          .select(`
-            *,
-            two_guide_schedule,
-            guide_driver_schedule
-          `)
-          .eq('product_id', productId)
-          .order('day_number', { ascending: true })
-          .order('order_index', { ascending: true })
-          .order('start_time', { ascending: true })
-        
-        if (error) throw error
-        setSchedules(data || [])
-      }
+      if (error) throw error
+      setSchedules(data || [])
     } catch (error) {
       console.error('스케줄 로드 오류:', error)
     } finally {
       setLoading(false)
     }
-  }, [productId, teamType])
+  }, [productId])
 
   useEffect(() => {
     fetchSchedules()
@@ -126,6 +93,20 @@ export default function TourScheduleSection({
     if (locale === 'en' && en) return en
     if (ko) return ko
     return fallback || ''
+  }
+
+  // 구글맵 네비게이션 함수
+  const openGoogleMapsNavigation = (schedule: ScheduleItem) => {
+    if (schedule.latitude && schedule.longitude) {
+      // 구글맵 네비게이션 URL 생성
+      const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${schedule.latitude},${schedule.longitude}`
+      window.open(googleMapsUrl, '_blank')
+    } else if (getLocalizedText(schedule.location_ko, schedule.location_en, '')) {
+      // 좌표가 없으면 주소로 검색
+      const address = encodeURIComponent(getLocalizedText(schedule.location_ko, schedule.location_en, ''))
+      const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${address}`
+      window.open(googleMapsUrl, '_blank')
+    }
   }
 
 
@@ -155,31 +136,25 @@ export default function TourScheduleSection({
     return 'bg-gray-50 border-gray-200' // 기본 색상 (담당자 미정)
   }
 
-  const getResponsibleLabel = (schedule: ScheduleItem) => {
-    console.log('담당자 라벨 계산:', {
-      teamType: teamType,
-      two_guide_schedule: schedule.two_guide_schedule,
-      guide_driver_schedule: schedule.guide_driver_schedule
-    })
+  const getResponsibleLabels = (schedule: ScheduleItem): LabelInfo[] => {
+    const labels: LabelInfo[] = []
     
-    // team_type에 따라 다른 필드 참조
-    if (teamType === '2guide') {
-      // 2가이드일 때는 two_guide_schedule 컬럼 값이 담당자
-      if (schedule.two_guide_schedule) {
-        return schedule.two_guide_schedule === 'guide' ? '가이드' : 
-               schedule.two_guide_schedule === 'assistant' ? '어시스턴트' : 
-               schedule.two_guide_schedule
-      }
-    } else if (teamType === 'guide+driver') {
-      // 가이드+드라이버일 때는 guide_driver_schedule 컬럼 값이 담당자
-      if (schedule.guide_driver_schedule) {
-        return schedule.guide_driver_schedule === 'guide' ? '가이드' : 
-               schedule.guide_driver_schedule === 'assistant' ? '드라이버' : 
-               schedule.guide_driver_schedule
-      }
+    // teamType에 따른 라벨 표시
+    if (teamType === '2guide' && schedule.two_guide_schedule) {
+      const label = schedule.two_guide_schedule === 'guide' ? '가이드' : 
+                   schedule.two_guide_schedule === 'assistant' ? '어시스턴트' : 
+                   schedule.two_guide_schedule
+      labels.push({ text: label, color: 'bg-green-100 text-green-800' })
     }
     
-    return '담당자 미정'
+    if (teamType === 'guide+driver' && schedule.guide_driver_schedule) {
+      const label = schedule.guide_driver_schedule === 'guide' ? '가이드' : 
+                   schedule.guide_driver_schedule === 'driver' ? '드라이버' : 
+                   schedule.guide_driver_schedule
+      labels.push({ text: label, color: 'bg-blue-100 text-blue-800' })
+    }
+    
+    return labels
   }
 
   const generateRouteUrl = (dayNumber: number) => {
@@ -258,9 +233,9 @@ export default function TourScheduleSection({
     return (
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          {teamType === '2guide' ? '2가이드 담당 일정' : 
-           teamType === 'guide+driver' ? '가이드+드라이버 담당 일정' : 
-           '투어 일정'}
+          {teamType === '2guide' ? '2가이드 담당 일정 (전체)' : 
+           teamType === 'guide+driver' ? '가이드+드라이버 담당 일정 (전체)' : 
+           '투어 일정 (전체)'}
         </h3>
         <div className="text-center py-8">
           <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
@@ -273,9 +248,9 @@ export default function TourScheduleSection({
   return (
     <div>
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
-        {teamType === '2guide' ? '2가이드 담당 일정' : 
-         teamType === 'guide+driver' ? '가이드+드라이버 담당 일정' : 
-         '투어 일정'}
+        {teamType === '2guide' ? '2가이드 담당 일정 (전체)' : 
+         teamType === 'guide+driver' ? '가이드+드라이버 담당 일정 (전체)' : 
+         '투어 일정 (전체)'}
       </h3>
       
       <div className="space-y-4">
@@ -335,9 +310,13 @@ export default function TourScheduleSection({
                             </span>
                           )}
                         </div>
-                        <span className="text-sm text-gray-600 font-medium">
-                          {getResponsibleLabel(schedule)}
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          {getResponsibleLabels(schedule).map((label, index) => (
+                            <span key={index} className={`px-2 py-1 text-xs rounded ${label.color}`}>
+                              {label.text}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                       
                       {/* 두 번째 줄: 제목 */}
@@ -346,17 +325,15 @@ export default function TourScheduleSection({
                           <h5 className="font-semibold text-gray-900 text-base">
                             {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
                           </h5>
-                          {getLocalizedText(schedule.location_ko, schedule.location_en, '') && (
-                            <a
-                              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(getLocalizedText(schedule.location_ko, schedule.location_en, ''))}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-800 hover:bg-red-200 transition-colors"
-                              title="구글맵에서 길찾기"
+                          {(schedule.latitude && schedule.longitude) || getLocalizedText(schedule.location_ko, schedule.location_en, '') ? (
+                            <button
+                              onClick={() => openGoogleMapsNavigation(schedule)}
+                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                              title="구글맵에서 네비게이션 열기"
                             >
                               <MapPin className="w-4 h-4" />
-                            </a>
-                          )}
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                       

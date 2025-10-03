@@ -10,6 +10,9 @@ interface LocationData {
   longitude: number
   placeId: string
   googleMapsUrl: string
+  rating?: number
+  userRatingsTotal?: number
+  types?: string[]
 }
 
 interface LocationSearchProps {
@@ -92,36 +95,136 @@ export default function LocationSearch({
     loadGoogleMaps()
   }, [])
 
-  // 위치 검색
+  // Plus Code 패턴 감지
+  const isPlusCode = (query: string) => {
+    // Plus Code 패턴: 알파벳+숫자 조합 (예: MGXF+WC, 8FVC9G8F+5W)
+    const plusCodePattern = /^[A-Z0-9]{2,10}\+[A-Z0-9]{2,10}$/i
+    return plusCodePattern.test(query.trim())
+  }
+
+  // Plus Code를 좌표로 변환
+  const decodePlusCode = async (plusCode: string) => {
+    try {
+      const geocoder = new window.google.maps.Geocoder()
+      const result = await new Promise((resolve, reject) => {
+        geocoder.geocode({ address: plusCode }, (results: any, status: any) => {
+          if (status === 'OK' && results && results[0]) {
+            resolve(results[0])
+          } else {
+            reject(new Error('Plus Code 디코딩 실패'))
+          }
+        })
+      })
+      return result
+    } catch (error) {
+      console.error('Plus Code 디코딩 오류:', error)
+      return null
+    }
+  }
+
+  // 위치 검색 (Plus Code 지원 포함)
   const searchPlaces = async (query: string) => {
     if (!query.trim() || !mapLoaded) return
 
     setIsLoading(true)
     try {
+      // Plus Code인 경우 특별 처리
+      if (isPlusCode(query)) {
+        const geocodeResult = await decodePlusCode(query)
+        if (geocodeResult) {
+          const location = geocodeResult.geometry.location
+          const lat = location.lat()
+          const lng = location.lng()
+          
+          const plusCodeResult = {
+            placeId: `plus_code_${Date.now()}`,
+            name: `Plus Code 위치 (${query})`,
+            address: geocodeResult.formatted_address,
+            latitude: lat,
+            longitude: lng,
+            googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+            rating: null,
+            userRatingsTotal: null,
+            types: ['plus_code']
+          }
+          
+          setSuggestions([plusCodeResult])
+          setShowSuggestions(true)
+          setIsLoading(false)
+          return
+        }
+      }
+
+      // 일반 장소 검색
       const service = new window.google.maps.places.PlacesService(
         document.createElement('div')
       )
 
       const request = {
         query: query,
-        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url']
+        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url', 'types', 'rating', 'user_ratings_total'],
+        locationBias: { lat: 36.1699, lng: -115.1398, radius: 100000 }, // 라스베가스 중심 100km 반경
+        region: 'US' // 미국 지역 우선
       }
 
       service.textSearch(request, (results: any[], status: any) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-          const formattedResults = results.slice(0, 5).map((place) => ({
+          // 결과를 평점과 리뷰 수로 정렬하여 더 관련성 높은 결과 우선 표시
+          const sortedResults = results
+            .filter(place => place.rating && place.user_ratings_total > 0) // 평점이 있는 장소만
+            .sort((a, b) => {
+              // 평점과 리뷰 수를 고려한 점수 계산
+              const scoreA = (a.rating * Math.log(a.user_ratings_total + 1))
+              const scoreB = (b.rating * Math.log(b.user_ratings_total + 1))
+              return scoreB - scoreA
+            })
+            .slice(0, 8) // 상위 8개 결과만 표시
+
+          const formattedResults = sortedResults.map((place) => ({
             placeId: place.place_id,
             name: place.name,
             address: place.formatted_address,
             latitude: place.geometry.location.lat(),
             longitude: place.geometry.location.lng(),
-            googleMapsUrl: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`
+            googleMapsUrl: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+            rating: place.rating,
+            userRatingsTotal: place.user_ratings_total,
+            types: place.types
           }))
           
           setSuggestions(formattedResults)
           setShowSuggestions(true)
+        } else {
+          // Places API 실패 시 Geocoder로 일반 주소 검색 시도
+          const geocoder = new window.google.maps.Geocoder()
+          geocoder.geocode({ address: query }, (geocodeResults: any[], geocodeStatus: any) => {
+            if (geocodeStatus === 'OK' && geocodeResults && geocodeResults[0]) {
+              const location = geocodeResults[0].geometry.location
+              const lat = location.lat()
+              const lng = location.lng()
+              
+              const geocodeResult = {
+                placeId: `geocode_${Date.now()}`,
+                name: `검색된 위치`,
+                address: geocodeResults[0].formatted_address,
+                latitude: lat,
+                longitude: lng,
+                googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+                rating: null,
+                userRatingsTotal: null,
+                types: ['geocode']
+              }
+              
+              setSuggestions([geocodeResult])
+              setShowSuggestions(true)
+            } else {
+              // 모든 검색 실패 시 빈 결과 표시
+              setSuggestions([])
+              setShowSuggestions(false)
+            }
+            setIsLoading(false)
+          })
         }
-        setIsLoading(false)
       })
     } catch (error) {
       console.error('위치 검색 오류:', error)
@@ -232,9 +335,30 @@ export default function LocationSearch({
                   <div className="text-sm text-gray-600 truncate">
                     {suggestion.address}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    좌표: {suggestion.latitude.toFixed(6)}, {suggestion.longitude.toFixed(6)}
-                  </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              {suggestion.rating && (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs text-yellow-600">⭐</span>
+                                  <span className="text-xs text-gray-600">{suggestion.rating.toFixed(1)}</span>
+                                  {suggestion.userRatingsTotal && (
+                                    <span className="text-xs text-gray-500">({suggestion.userRatingsTotal.toLocaleString()}개 리뷰)</span>
+                                  )}
+                                </div>
+                              )}
+                              {suggestion.types && suggestion.types.includes('plus_code') && (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">Plus Code</span>
+                                </div>
+                              )}
+                              {suggestion.types && suggestion.types.includes('geocode') && (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs bg-green-100 text-green-700 px-1 rounded">주소 검색</span>
+                                </div>
+                              )}
+                              <div className="text-xs text-gray-500">
+                                좌표: {suggestion.latitude.toFixed(6)}, {suggestion.longitude.toFixed(6)}
+                              </div>
+                            </div>
                 </div>
               </div>
             </button>
@@ -250,6 +374,12 @@ export default function LocationSearch({
               <div className="flex items-center gap-2 mb-1">
                 <MapPin className="w-4 h-4 text-blue-600" />
                 <span className="font-medium text-blue-900">{selectedLocation.name}</span>
+                {selectedLocation.rating && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-yellow-600">⭐</span>
+                    <span className="text-xs text-blue-700">{selectedLocation.rating.toFixed(1)}</span>
+                  </div>
+                )}
               </div>
               <div className="text-sm text-blue-700 mb-2">{selectedLocation.address}</div>
               <div className="text-xs text-blue-600">

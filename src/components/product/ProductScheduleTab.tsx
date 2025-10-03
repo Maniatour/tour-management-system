@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
-import { Calendar, Plus, Eye, Users } from 'lucide-react'
+import { Calendar, Plus, Eye, Users, MapPin } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import TableScheduleAdd from '../TableScheduleAdd'
 
@@ -39,11 +39,13 @@ interface ProductScheduleTabProps {
   isNewProduct: boolean
   formData: unknown
   setFormData: (data: unknown) => void
+  teamType?: 'guide+driver' | '2guide' | null
 }
 
 export default function ProductScheduleTab({
   productId,
-  isNewProduct
+  isNewProduct,
+  teamType
 }: ProductScheduleTabProps) {
   
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
@@ -58,6 +60,20 @@ export default function ProductScheduleTab({
   // 언어별 텍스트 가져오기 함수
   const getText = (koText: string, enText?: string) => {
     return language === 'ko' ? koText : (enText || koText)
+  }
+
+  // 구글맵 네비게이션 함수
+  const openGoogleMapsNavigation = (schedule: ScheduleItem) => {
+    if (schedule.latitude && schedule.longitude) {
+      // 구글맵 네비게이션 URL 생성
+      const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${schedule.latitude},${schedule.longitude}`
+      window.open(googleMapsUrl, '_blank')
+    } else if (getScheduleText(schedule, 'location')) {
+      // 좌표가 없으면 주소로 검색
+      const address = encodeURIComponent(getScheduleText(schedule, 'location'))
+      const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${address}`
+      window.open(googleMapsUrl, '_blank')
+    }
   }
 
   // 일정의 언어별 텍스트 가져오기
@@ -145,21 +161,6 @@ export default function ProductScheduleTab({
     }
     // 가이드뷰: 모든 일정
     return schedules
-  }
-
-  // 가이드 담당별로 일정 분류 (모든 일정 표시)
-  const getTwoGuidesSchedules = () => {
-    return schedules.filter(schedule => 
-      schedule.two_guide_schedule === 'guide' || 
-      schedule.two_guide_schedule === 'assistant'
-    )
-  }
-
-  const getGuideDriverSchedules = () => {
-    return schedules.filter(schedule => 
-      schedule.guide_driver_schedule === 'guide' || 
-      schedule.guide_driver_schedule === 'assistant'
-    )
   }
 
   // 일차별로 그룹화하는 함수
@@ -589,7 +590,7 @@ export default function ProductScheduleTab({
                   {getText('2가이드 담당 일정', '2 Guides Assigned Schedules')}
                 </h4>
       <div className="space-y-4">
-                  {groupSchedulesByDay(getTwoGuidesSchedules()).map(({ day, schedules }) => (
+                  {groupSchedulesByDay(schedules).map(({ day, schedules }) => (
                     <div key={day} className="space-y-2">
                       <h5 className="text-md font-semibold text-gray-800 mb-2">{day}{getText('일차', ' Day')}</h5>
                       <div className="space-y-2">
@@ -631,9 +632,27 @@ export default function ProductScheduleTab({
                                 <span className="font-medium text-gray-900">
                                   {getScheduleText(schedule, 'title')}
                   </span>
-                                <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
-                                  {schedule.two_guide_schedule === 'guide' ? getText('가이드 담당', 'Guide Assigned') : getText('어시스턴트 담당', 'Assistant Assigned')}
-                  </span>
+                                {/* teamType에 따른 라벨 표시 */}
+                                {teamType === '2guide' && schedule.two_guide_schedule && (
+                                  <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
+                                    {schedule.two_guide_schedule === 'guide' ? getText('가이드', 'Guide') : 
+                                     schedule.two_guide_schedule === 'assistant' ? getText('어시스턴트', 'Assistant') : 
+                                     schedule.two_guide_schedule}
+                                  </span>
+                                )}
+                                {teamType === 'guide+driver' && schedule.guide_driver_schedule && (
+                                  <span className={`px-2 py-1 text-xs rounded ${
+                                    schedule.guide_driver_schedule === 'guide' 
+                                      ? 'bg-blue-100 text-blue-800' 
+                                      : schedule.guide_driver_schedule === 'driver'
+                                      ? 'bg-orange-100 text-orange-800'
+                                      : 'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {schedule.guide_driver_schedule === 'guide' ? getText('가이드', 'Guide') : 
+                                     schedule.guide_driver_schedule === 'driver' ? getText('드라이버', 'Driver') : 
+                                     schedule.guide_driver_schedule}
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center space-x-1">
                   {schedule.is_transport && (
@@ -656,6 +675,16 @@ export default function ProductScheduleTab({
                                     {getText('관광시간', 'Tour Time')}
                     </span>
                   )}
+                                {/* 핀 맵 아이콘 버튼 */}
+                                {(schedule.latitude && schedule.longitude) || getScheduleText(schedule, 'location') ? (
+                                  <button
+                                    onClick={() => openGoogleMapsNavigation(schedule)}
+                                    className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                                    title="구글맵에서 네비게이션 열기"
+                                  >
+                                    <MapPin className="w-4 h-4" />
+                                  </button>
+                                ) : null}
                               </div>
                 </div>
                 
@@ -665,12 +694,6 @@ export default function ProductScheduleTab({
                 {getScheduleText(schedule, 'description') ? (
                                   <p className="text-sm text-gray-600 whitespace-pre-line">
                     {getScheduleText(schedule, 'description')}
-                  </p>
-                ) : null}
-                
-                {getScheduleText(schedule, 'location') ? (
-                                  <p className="text-sm text-gray-500 mt-1">
-                    📍 {getScheduleText(schedule, 'location')}
                   </p>
                 ) : null}
                 
@@ -690,9 +713,9 @@ export default function ProductScheduleTab({
                     </div>
                   ))}
                   
-                  {getTwoGuidesSchedules().length === 0 && (
+                  {schedules.length === 0 && (
                     <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-lg">
-                      {getText('2가이드 담당 일정이 없습니다.', 'No 2 guides assigned schedules.')}
+                      {getText('일정이 없습니다.', 'No schedules.')}
                     </div>
                   )}
                 </div>
@@ -705,7 +728,7 @@ export default function ProductScheduleTab({
                   {getText('가이드+드라이버 담당 일정', 'Guide+Driver Assigned Schedules')}
                 </h4>
                 <div className="space-y-4">
-                  {groupSchedulesByDay(getGuideDriverSchedules()).map(({ day, schedules }) => (
+                  {groupSchedulesByDay(schedules).map(({ day, schedules }) => (
                     <div key={day} className="space-y-2">
                       <h5 className="text-md font-semibold text-gray-800 mb-2">{day}{getText('일차', ' Day')}</h5>
                       <div className="space-y-2">
@@ -747,13 +770,27 @@ export default function ProductScheduleTab({
                                 <span className="font-medium text-gray-900">
                                   {getScheduleText(schedule, 'title')}
                   </span>
-                                <span className={`px-2 py-1 text-xs rounded ${
-                                  schedule.guide_driver_schedule === 'guide' 
-                                    ? 'bg-blue-100 text-blue-800' 
-                                    : 'bg-orange-100 text-orange-800'
-                                }`}>
-                                  {schedule.guide_driver_schedule === 'guide' ? getText('가이드 담당', 'Guide Assigned') : getText('드라이버 담당', 'Driver Assigned')}
-                  </span>
+                                {/* teamType에 따른 라벨 표시 */}
+                                {teamType === '2guide' && schedule.two_guide_schedule && (
+                                  <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
+                                    {schedule.two_guide_schedule === 'guide' ? getText('가이드', 'Guide') : 
+                                     schedule.two_guide_schedule === 'assistant' ? getText('어시스턴트', 'Assistant') : 
+                                     schedule.two_guide_schedule}
+                                  </span>
+                                )}
+                                {teamType === 'guide+driver' && schedule.guide_driver_schedule && (
+                                  <span className={`px-2 py-1 text-xs rounded ${
+                                    schedule.guide_driver_schedule === 'guide' 
+                                      ? 'bg-blue-100 text-blue-800' 
+                                      : schedule.guide_driver_schedule === 'driver'
+                                      ? 'bg-orange-100 text-orange-800'
+                                      : 'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {schedule.guide_driver_schedule === 'guide' ? getText('가이드', 'Guide') : 
+                                     schedule.guide_driver_schedule === 'driver' ? getText('드라이버', 'Driver') : 
+                                     schedule.guide_driver_schedule}
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center space-x-1">
                   {schedule.is_transport && (
@@ -776,6 +813,16 @@ export default function ProductScheduleTab({
                       {getText('관광시간', 'Tour Time')}
                     </span>
                   )}
+                                {/* 핀 맵 아이콘 버튼 */}
+                                {(schedule.latitude && schedule.longitude) || getScheduleText(schedule, 'location') ? (
+                                  <button
+                                    onClick={() => openGoogleMapsNavigation(schedule)}
+                                    className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                                    title="구글맵에서 네비게이션 열기"
+                                  >
+                                    <MapPin className="w-4 h-4" />
+                                  </button>
+                                ) : null}
                               </div>
                 </div>
                 
@@ -785,12 +832,6 @@ export default function ProductScheduleTab({
                 {getScheduleText(schedule, 'description') ? (
                                   <p className="text-sm text-gray-600 whitespace-pre-line">
                     {getScheduleText(schedule, 'description')}
-                  </p>
-                ) : null}
-                
-                {getScheduleText(schedule, 'location') ? (
-                                  <p className="text-sm text-gray-500 mt-1">
-                    📍 {getScheduleText(schedule, 'location')}
                   </p>
                 ) : null}
                 
@@ -813,9 +854,9 @@ export default function ProductScheduleTab({
           </div>
         ))}
         
-                  {getGuideDriverSchedules().length === 0 && (
+                  {schedules.length === 0 && (
                     <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-lg">
-                      {getText('가이드+드라이버 담당 일정이 없습니다.', 'No guide+driver assigned schedules.')}
+                      {getText('일정이 없습니다.', 'No schedules.')}
                     </div>
                   )}
                 </div>

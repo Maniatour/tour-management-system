@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { MapPin, Search, X } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 // Google Maps 타입 정의
 declare global {
@@ -15,15 +16,19 @@ interface LocationPickerModalProps {
   currentLng?: number
   onLocationSelect: (lat: number, lng: number, address?: string) => void
   onClose: () => void
+  scheduleId?: string // 스케줄 ID 추가 (선택적)
 }
 
 export default function LocationPickerModal({ 
   currentLat, 
   currentLng, 
   onLocationSelect, 
-  onClose 
+  onClose,
+  scheduleId
 }: LocationPickerModalProps) {
   const [searchQuery, setSearchQuery] = useState('')
+  const [suggestions, setSuggestions] = useState<any[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedLat, setSelectedLat] = useState(currentLat || 36.1699) // 라스베가스 위도
   const [selectedLng, setSelectedLng] = useState(currentLng || -115.1398) // 라스베가스 경도
   const [address, setAddress] = useState('')
@@ -31,6 +36,7 @@ export default function LocationPickerModal({
   const [map, setMap] = useState<any>(null)
   const [marker, setMarker] = useState<any>(null)
   const [apiKeyError, setApiKeyError] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   // 라스베가스 중심 좌표
   const LAS_VEGAS_CENTER = { lat: 36.1699, lng: -115.1398 }
@@ -164,39 +170,147 @@ export default function LocationPickerModal({
     })
   }
 
-  const handleSearch = () => {
-    if (!window.google || !searchQuery.trim()) return
+  // 위치 검색 (LocationSearch와 같은 방식)
+  const searchPlaces = async (query: string) => {
+    if (!query.trim() || !mapLoaded) return
 
-    const geocoder = new window.google.maps.Geocoder()
-    geocoder.geocode({ address: searchQuery }, (results: any[], status: string) => {
-      if (status === 'OK' && results[0]) {
-        const location = results[0].geometry.location
-        const lat = location.lat()
-        const lng = location.lng()
-        
-        setSelectedLat(lat)
-        setSelectedLng(lng)
-        
-        if (map && marker) {
-          map.setCenter({ lat, lng })
-          marker.setPosition({ lat, lng })
-        }
-        
-        setAddress(results[0].formatted_address)
+    setIsLoading(true)
+    try {
+      const service = new window.google.maps.places.PlacesService(
+        document.createElement('div')
+      )
+
+      const request = {
+        query: query,
+        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url', 'types', 'rating', 'user_ratings_total'],
+        locationBias: { lat: 36.1699, lng: -115.1398, radius: 100000 }, // 라스베가스 중심 100km 반경
+        region: 'US' // 미국 지역 우선
       }
-    })
+
+      service.textSearch(request, (results: any[], status: any) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+          // 결과를 평점과 리뷰 수로 정렬하여 더 관련성 높은 결과 우선 표시
+          const sortedResults = results
+            .filter(place => place.rating && place.user_ratings_total > 0) // 평점이 있는 장소만
+            .sort((a, b) => {
+              // 평점과 리뷰 수를 고려한 점수 계산
+              const scoreA = (a.rating * Math.log(a.user_ratings_total + 1))
+              const scoreB = (b.rating * Math.log(b.user_ratings_total + 1))
+              return scoreB - scoreA
+            })
+            .slice(0, 8) // 상위 8개 결과만 표시
+
+          const formattedResults = sortedResults.map((place) => ({
+            placeId: place.place_id,
+            name: place.name,
+            address: place.formatted_address,
+            latitude: place.geometry.location.lat(),
+            longitude: place.geometry.location.lng(),
+            googleMapsUrl: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+            rating: place.rating,
+            userRatingsTotal: place.user_ratings_total,
+            types: place.types
+          }))
+          
+          setSuggestions(formattedResults)
+          setShowSuggestions(true)
+        } else {
+          // Places API 실패 시 빈 결과 표시
+          setSuggestions([])
+          setShowSuggestions(false)
+        }
+        setIsLoading(false)
+      })
+    } catch (error) {
+      console.error('위치 검색 오류:', error)
+      setIsLoading(false)
+    }
   }
 
-  const handleConfirm = () => {
+  // 검색어 변경 처리
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value)
+    if (value.trim()) {
+      searchPlaces(value)
+    } else {
+      setSuggestions([])
+      setShowSuggestions(false)
+    }
+  }
+
+  // 위치 선택
+  const handleLocationSelect = (location: any) => {
+    const lat = location.latitude
+    const lng = location.longitude
+    
+    setSelectedLat(lat)
+    setSelectedLng(lng)
+    setSearchQuery(location.name)
+    setAddress(location.address)
+    setShowSuggestions(false)
+    
+    if (map && marker) {
+      map.setCenter({ lat, lng })
+      marker.setPosition({ lat, lng })
+    }
+  }
+
+  const handleConfirm = async () => {
+    // 스케줄 ID가 있으면 Supabase에 즉시 저장
+    if (scheduleId) {
+      try {
+        const { error } = await supabase
+          .from('product_schedules')
+          .update({
+            latitude: selectedLat,
+            longitude: selectedLng,
+            location_ko: address
+          })
+          .eq('id', scheduleId)
+
+        if (error) {
+          console.error('좌표 저장 오류:', error)
+          alert('좌표 저장 중 오류가 발생했습니다.')
+          return
+        }
+        
+        console.log('좌표가 성공적으로 저장되었습니다:', { 
+          lat: selectedLat, 
+          lng: selectedLng, 
+          address 
+        })
+      } catch (error) {
+        console.error('좌표 저장 중 예외 발생:', error)
+        alert('좌표 저장 중 오류가 발생했습니다.')
+        return
+      }
+    }
+    
     onLocationSelect(selectedLat, selectedLng, address)
     onClose()
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      handleSearch()
+      // Enter 키를 누르면 첫 번째 제안을 선택하거나 검색 실행
+      if (suggestions.length > 0) {
+        handleLocationSelect(suggestions[0])
+      }
     }
   }
+
+  // 외부 클릭 감지
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element
+      if (!target.closest('.search-container')) {
+        setShowSuggestions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -217,25 +331,68 @@ export default function LocationPickerModal({
 
         {/* 검색 바 */}
         <div className="p-4 border-b border-gray-200">
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="라스베가스 지역 검색 (예: Strip, Fremont Street, Red Rock Canyon)"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <div className="relative search-container">
+            <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+              <Search className="w-4 h-4" />
             </div>
-            <button
-              onClick={handleSearch}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              검색
-            </button>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onKeyPress={handleKeyPress}
+              onFocus={() => {
+                if (suggestions.length > 0) {
+                  setShowSuggestions(true)
+                }
+              }}
+              placeholder="라스베가스 지역 검색 (예: Strip, Fremont Street, Red Rock Canyon)"
+              className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {isLoading && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+              </div>
+            )}
           </div>
+
+          {/* 검색 제안 목록 */}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              {suggestions.map((suggestion, index) => (
+                <button
+                  key={suggestion.placeId}
+                  onClick={() => handleLocationSelect(suggestion)}
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                >
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 truncate">
+                        {suggestion.name}
+                      </div>
+                      <div className="text-sm text-gray-600 truncate">
+                        {suggestion.address}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        {suggestion.rating && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-yellow-600">⭐</span>
+                            <span className="text-xs text-gray-600">{suggestion.rating.toFixed(1)}</span>
+                            {suggestion.userRatingsTotal && (
+                              <span className="text-xs text-gray-500">({suggestion.userRatingsTotal.toLocaleString()}개 리뷰)</span>
+                            )}
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-500">
+                          좌표: {suggestion.latitude.toFixed(6)}, {suggestion.longitude.toFixed(6)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 지도 영역 */}
@@ -284,28 +441,27 @@ export default function LocationPickerModal({
 
         {/* 선택된 위치 정보 */}
         <div className="p-4 border-t border-gray-200 bg-gray-50">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                선택된 위치
-              </label>
-              <p className="text-sm text-gray-600">{address || '위치를 선택해주세요'}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  위도
-                </label>
-                <p className="text-sm text-gray-600">{selectedLat.toFixed(6)}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  경도
-                </label>
-                <p className="text-sm text-gray-600">{selectedLng.toFixed(6)}</p>
+          {address ? (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <MapPin className="w-4 h-4 text-blue-600" />
+                    <span className="font-medium text-blue-900">{searchQuery || '선택된 위치'}</span>
+                  </div>
+                  <div className="text-sm text-blue-700 mb-2">{address}</div>
+                  <div className="text-xs text-blue-600">
+                    좌표: {selectedLat.toFixed(6)}, {selectedLng.toFixed(6)}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="text-center py-4 text-gray-500">
+              <MapPin className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p>위치를 검색하거나 지도에서 클릭하여 선택해주세요</p>
+            </div>
+          )}
         </div>
 
         {/* 버튼 */}

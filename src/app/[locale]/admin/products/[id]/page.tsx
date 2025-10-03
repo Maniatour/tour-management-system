@@ -207,6 +207,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     infantAge: number
     // 공통 세부정보 사용 여부
     useCommonDetails: boolean
+    // 팀 타입
+    team_type: 'guide+driver' | '2guide' | null
     // product_details 필드들 (다국어 지원)
     productDetails: {
       [languageCode: string]: {
@@ -296,6 +298,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     infantAge: 2,
     // 공통 세부정보 사용 여부 초기값
     useCommonDetails: false,
+    // 팀 타입 초기값
+    team_type: null,
     // product_details 초기값 (다국어 지원)
     productDetails: {
       ko: {
@@ -585,6 +589,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             childAgeMax: productData.child_age_max || 12,
             infantAge: productData.infant_age || 2,
             useCommonDetails: !!productData.use_common_details,
+            team_type: productData.team_type || null,
             // product_details 데이터 설정 (다국어 지원)
             productDetails: detailsData ? (() => {
               // 다국어 데이터를 언어별로 매핑
@@ -1409,6 +1414,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 isNewProduct={isNewProduct}
                 formData={formData}
                 setFormData={setFormData}
+                teamType={formData?.team_type}
               />
             )}
 

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, ChevronUp, ChevronDown, Languages, MapPin, Sparkles } from 'lucide-react'
+import { Calendar, Plus, Save, Trash2, Image, X, Upload, Loader2, Search, FolderOpen, Copy, ChevronUp, ChevronDown, Languages, MapPin, Sparkles, ExternalLink } from 'lucide-react'
 import LocationPickerModal from './LocationPickerModal'
 import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl, uploadProductMedia } from '@/lib/productMediaUpload'
 import { supabase } from '@/lib/supabase'
@@ -94,6 +94,10 @@ export default function TableScheduleAdd({
   const [selectedAddress, setSelectedAddress] = useState<string>('')
   const [selectedGoogleMapLink, setSelectedGoogleMapLink] = useState<string>('')
   const [mapLoaded, setMapLoaded] = useState(false)
+  const [mapSearchQuery, setMapSearchQuery] = useState('')
+  const [mapSuggestions, setMapSuggestions] = useState<any[]>([])
+  const [showMapSuggestions, setShowMapSuggestions] = useState(false)
+  const [isMapSearchLoading, setIsMapSearchLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 지도 관련 함수들
@@ -102,9 +106,29 @@ export default function TableScheduleAdd({
       const coordinates = `${lat}, ${lng}`
       const googleMapLink = `https://www.google.com/maps?q=${lat},${lng}`
       
+      // 스케줄 업데이트
       updateSchedule(mapModalIndex, 'latitude', lat)
       updateSchedule(mapModalIndex, 'longitude', lng)
       updateSchedule(mapModalIndex, 'location_ko', address || schedules[mapModalIndex].location_ko)
+      
+      // Supabase에 즉시 저장 (실시간 동기화)
+      if (schedules[mapModalIndex].id) {
+        supabase
+          .from('product_schedules')
+          .update({
+            latitude: lat,
+            longitude: lng,
+            location_ko: address || schedules[mapModalIndex].location_ko
+          })
+          .eq('id', schedules[mapModalIndex].id)
+          .then(({ error }) => {
+            if (error) {
+              console.error('좌표 저장 오류:', error)
+            } else {
+              console.log('좌표가 성공적으로 저장되었습니다:', { lat, lng, address })
+            }
+          })
+      }
       
       setShowMapModal(false)
       setMapModalIndex(null)
@@ -135,11 +159,35 @@ export default function TableScheduleAdd({
             marker.setMap(null)
           }
 
-          // 새 마커 추가
+          // 새 마커 추가 (드래그 가능)
           marker = new window.google.maps.Marker({
             position: { lat, lng },
             map: map,
-            title: '선택된 위치'
+            title: '선택된 위치',
+            draggable: true
+          })
+
+          // 마커 드래그 이벤트 추가
+          marker.addListener('dragend', () => {
+            const position = marker.getPosition()
+            const newLat = position.lat()
+            const newLng = position.lng()
+            
+            // 좌표 입력 필드 업데이트
+            const latInput = document.getElementById('latitude') as HTMLInputElement
+            const lngInput = document.getElementById('longitude') as HTMLInputElement
+            if (latInput) latInput.value = newLat.toString()
+            if (lngInput) lngInput.value = newLng.toString()
+
+            // 역지오코딩으로 주소 가져오기
+            const geocoder = new window.google.maps.Geocoder()
+            geocoder.geocode({ location: { lat: newLat, lng: newLng } }, (results: any, status: any) => {
+              if (status === 'OK' && results && results[0]) {
+                const address = results[0].formatted_address
+                setSelectedAddress(address)
+                setSelectedGoogleMapLink(`https://www.google.com/maps?q=${newLat},${newLng}`)
+              }
+            })
           })
 
           // 좌표 입력 필드 업데이트
@@ -164,54 +212,226 @@ export default function TableScheduleAdd({
     }
   }
 
-  const handleMapSearch = async () => {
-    const searchTerm = (document.getElementById('mapSearch') as HTMLInputElement)?.value
-    if (!searchTerm) return
+  // Plus Code 패턴 감지
+  const isPlusCode = (query: string) => {
+    // Plus Code 패턴: 알파벳+숫자 조합 (예: MGXF+WC, 8FVC9G8F+5W)
+    const plusCodePattern = /^[A-Z0-9]{2,10}\+[A-Z0-9]{2,10}$/i
+    return plusCodePattern.test(query.trim())
+  }
 
+  // Plus Code를 좌표로 변환
+  const decodePlusCode = async (plusCode: string) => {
     try {
       const geocoder = new window.google.maps.Geocoder()
-      geocoder.geocode({ address: searchTerm + ' Las Vegas' }, (results: any, status: any) => {
-        if (status === 'OK' && results && results[0]) {
-          const location = results[0].geometry.location
+      const result = await new Promise((resolve, reject) => {
+        geocoder.geocode({ address: plusCode }, (results: any, status: any) => {
+          if (status === 'OK' && results && results[0]) {
+            resolve(results[0])
+          } else {
+            reject(new Error('Plus Code 디코딩 실패'))
+          }
+        })
+      })
+      return result
+    } catch (error) {
+      console.error('Plus Code 디코딩 오류:', error)
+      return null
+    }
+  }
+
+  // 지도 검색 기능 (LocationSearch와 같은 방식 + Plus Code 지원)
+  const searchMapPlaces = async (query: string) => {
+    if (!query.trim() || !mapLoaded) return
+
+    setIsMapSearchLoading(true)
+    try {
+      // Plus Code인 경우 특별 처리
+      if (isPlusCode(query)) {
+        const geocodeResult = await decodePlusCode(query)
+        if (geocodeResult) {
+          const location = geocodeResult.geometry.location
           const lat = location.lat()
           const lng = location.lng()
-          const address = results[0].formatted_address
-
-          // 지도 중심 이동
-          const mapElement = document.getElementById('map')
-          if (mapElement && window.google && window.google.maps) {
-            const map = new window.google.maps.Map(mapElement, {
-              center: { lat, lng },
-              zoom: 15,
-              mapTypeId: window.google.maps.MapTypeId.ROADMAP
-            })
-
-            // 마커 추가
-            new window.google.maps.Marker({
-              position: { lat, lng },
-              map: map,
-              title: searchTerm
-            })
-
-            // 좌표 입력 필드 업데이트
-            const latInput = document.getElementById('latitude') as HTMLInputElement
-            const lngInput = document.getElementById('longitude') as HTMLInputElement
-            if (latInput) latInput.value = lat.toString()
-            if (lngInput) lngInput.value = lng.toString()
-
-            // 주소 정보 업데이트
-            setSelectedAddress(address)
-            setSelectedGoogleMapLink(`https://www.google.com/maps?q=${lat},${lng}`)
+          
+          const plusCodeResult = {
+            placeId: `plus_code_${Date.now()}`,
+            name: `Plus Code 위치 (${query})`,
+            address: geocodeResult.formatted_address,
+            latitude: lat,
+            longitude: lng,
+            googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+            rating: null,
+            userRatingsTotal: null,
+            types: ['plus_code']
           }
+          
+          setMapSuggestions([plusCodeResult])
+          setShowMapSuggestions(true)
+          setIsMapSearchLoading(false)
+          return
+        }
+      }
+
+      // 일반 장소 검색
+      const service = new window.google.maps.places.PlacesService(
+        document.createElement('div')
+      )
+
+      const request = {
+        query: query,
+        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url', 'types', 'rating', 'user_ratings_total'],
+        locationBias: { lat: 36.1699, lng: -115.1398, radius: 100000 }, // 라스베가스 중심 100km 반경
+        region: 'US' // 미국 지역 우선
+      }
+
+      service.textSearch(request, (results: any[], status: any) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+          // 결과를 평점과 리뷰 수로 정렬하여 더 관련성 높은 결과 우선 표시
+          const sortedResults = results
+            .filter(place => place.rating && place.user_ratings_total > 0) // 평점이 있는 장소만
+            .sort((a, b) => {
+              // 평점과 리뷰 수를 고려한 점수 계산
+              const scoreA = (a.rating * Math.log(a.user_ratings_total + 1))
+              const scoreB = (b.rating * Math.log(b.user_ratings_total + 1))
+              return scoreB - scoreA
+            })
+            .slice(0, 8) // 상위 8개 결과만 표시
+
+          const formattedResults = sortedResults.map((place) => ({
+            placeId: place.place_id,
+            name: place.name,
+            address: place.formatted_address,
+            latitude: place.geometry.location.lat(),
+            longitude: place.geometry.location.lng(),
+            googleMapsUrl: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+            rating: place.rating,
+            userRatingsTotal: place.user_ratings_total,
+            types: place.types
+          }))
+          
+          setMapSuggestions(formattedResults)
+          setShowMapSuggestions(true)
         } else {
-          alert('검색 결과를 찾을 수 없습니다.')
+          // Places API 실패 시 Geocoder로 일반 주소 검색 시도
+          const geocoder = new window.google.maps.Geocoder()
+          geocoder.geocode({ address: query }, (geocodeResults: any[], geocodeStatus: any) => {
+            if (geocodeStatus === 'OK' && geocodeResults && geocodeResults[0]) {
+              const location = geocodeResults[0].geometry.location
+              const lat = location.lat()
+              const lng = location.lng()
+              
+              const geocodeResult = {
+                placeId: `geocode_${Date.now()}`,
+                name: `검색된 위치`,
+                address: geocodeResults[0].formatted_address,
+                latitude: lat,
+                longitude: lng,
+                googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+                rating: null,
+                userRatingsTotal: null,
+                types: ['geocode']
+              }
+              
+              setMapSuggestions([geocodeResult])
+              setShowMapSuggestions(true)
+            } else {
+              // 모든 검색 실패 시 빈 결과 표시
+              setMapSuggestions([])
+              setShowMapSuggestions(false)
+            }
+            setIsMapSearchLoading(false)
+          })
         }
       })
     } catch (error) {
-      console.error('검색 오류:', error)
-      alert('검색 중 오류가 발생했습니다.')
+      console.error('위치 검색 오류:', error)
+      setIsMapSearchLoading(false)
     }
   }
+
+  // 검색어 변경 처리
+  const handleMapSearchChange = (value: string) => {
+    setMapSearchQuery(value)
+    if (value.trim()) {
+      searchMapPlaces(value)
+    } else {
+      setMapSuggestions([])
+      setShowMapSuggestions(false)
+    }
+  }
+
+  // 위치 선택
+  const handleMapLocationSelect = (location: any) => {
+    const lat = location.latitude
+    const lng = location.longitude
+    
+    setMapSearchQuery(location.name)
+    setSelectedAddress(location.address)
+    setSelectedGoogleMapLink(location.googleMapsUrl)
+    setShowMapSuggestions(false)
+    
+    // 좌표 입력 필드 업데이트
+    const latInput = document.getElementById('latitude') as HTMLInputElement
+    const lngInput = document.getElementById('longitude') as HTMLInputElement
+    if (latInput) latInput.value = lat.toString()
+    if (lngInput) lngInput.value = lng.toString()
+
+    // 지도 중심 이동 및 마커 업데이트
+    const mapElement = document.getElementById('map')
+    if (mapElement && window.google && window.google.maps) {
+      const map = new window.google.maps.Map(mapElement, {
+        center: { lat, lng },
+        zoom: 15,
+        mapTypeId: window.google.maps.MapTypeId.ROADMAP
+      })
+
+      // 마커 추가 (드래그 가능)
+      const marker = new window.google.maps.Marker({
+        position: { lat, lng },
+        map: map,
+        title: location.name,
+        draggable: true
+      })
+
+      // 마커 드래그 이벤트 추가
+      marker.addListener('dragend', () => {
+        const position = marker.getPosition()
+        const newLat = position.lat()
+        const newLng = position.lng()
+        
+        // 좌표 입력 필드 업데이트
+        const latInput = document.getElementById('latitude') as HTMLInputElement
+        const lngInput = document.getElementById('longitude') as HTMLInputElement
+        if (latInput) latInput.value = newLat.toString()
+        if (lngInput) lngInput.value = newLng.toString()
+
+        // 역지오코딩으로 주소 가져오기
+        const geocoder = new window.google.maps.Geocoder()
+        geocoder.geocode({ location: { lat: newLat, lng: newLng } }, (results: any, status: any) => {
+          if (status === 'OK' && results && results[0]) {
+            const address = results[0].formatted_address
+            setSelectedAddress(address)
+            setSelectedGoogleMapLink(`https://www.google.com/maps?q=${newLat},${newLng}`)
+          }
+        })
+      })
+    }
+  }
+
+  // 외부 클릭 감지
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element
+      if (!target.closest('.map-search-container')) {
+        setShowMapSuggestions(false)
+      }
+    }
+
+    if (showMapModal) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showMapModal])
 
   // 모달이 열릴 때 지도 초기화
   useEffect(() => {
@@ -225,7 +445,7 @@ export default function TableScheduleAdd({
         }
         
         const script = document.createElement('script')
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`
         script.async = true
         script.defer = true
         script.onload = () => {
@@ -1163,6 +1383,7 @@ export default function TableScheduleAdd({
         <LocationPickerModal
           currentLat={schedules[locationPickerIndex]?.latitude}
           currentLng={schedules[locationPickerIndex]?.longitude}
+          scheduleId={schedules[locationPickerIndex]?.id} // 스케줄 ID 전달
           onLocationSelect={(lat, lng, address) => {
             const updatedSchedules = [...schedules]
             updatedSchedules[locationPickerIndex] = {
@@ -1543,47 +1764,111 @@ export default function TableScheduleAdd({
               </p>
               
               {/* 검색 기능 */}
-              <div className="mb-3">
-                <div className="flex space-x-2">
+              <div className="mb-3 map-search-container">
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                    <Search className="w-4 h-4" />
+                  </div>
                   <input
                     type="text"
-                    id="mapSearch"
-                    placeholder="투어 위치를 검색하세요 (예: Bellagio Hotel)"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={mapSearchQuery}
+                    onChange={(e) => handleMapSearchChange(e.target.value)}
                     onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        handleMapSearch()
+                      if (e.key === 'Enter' && mapSuggestions.length > 0) {
+                        handleMapLocationSelect(mapSuggestions[0])
                       }
                     }}
+                    onFocus={() => {
+                      if (mapSuggestions.length > 0) {
+                        setShowMapSuggestions(true)
+                      }
+                    }}
+                    placeholder="투어 위치를 검색하세요 (예: Bellagio Hotel)"
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  <button
-                    type="button"
-                    onClick={handleMapSearch}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    검색
-                  </button>
+                  {isMapSearchLoading && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    </div>
+                  )}
                 </div>
+
+                {/* 검색 제안 목록 */}
+                {showMapSuggestions && mapSuggestions.length > 0 && (
+                  <div className="relative z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {mapSuggestions.map((suggestion, index) => (
+                      <button
+                        key={suggestion.placeId}
+                        onClick={() => handleMapLocationSelect(suggestion)}
+                        className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-start gap-3">
+                          <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-900 truncate">
+                              {suggestion.name}
+                            </div>
+                            <div className="text-sm text-gray-600 truncate">
+                              {suggestion.address}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              {suggestion.rating && (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs text-yellow-600">⭐</span>
+                                  <span className="text-xs text-gray-600">{suggestion.rating.toFixed(1)}</span>
+                                  {suggestion.userRatingsTotal && (
+                                    <span className="text-xs text-gray-500">({suggestion.userRatingsTotal.toLocaleString()}개 리뷰)</span>
+                                  )}
+                                </div>
+                              )}
+                              {suggestion.types && suggestion.types.includes('plus_code') && (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">Plus Code</span>
+                                </div>
+                              )}
+                              {suggestion.types && suggestion.types.includes('geocode') && (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs bg-green-100 text-green-700 px-1 rounded">주소 검색</span>
+                                </div>
+                              )}
+                              <div className="text-xs text-gray-500">
+                                좌표: {suggestion.latitude.toFixed(6)}, {suggestion.longitude.toFixed(6)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* 검색 결과 미리보기 */}
-              {selectedAddress && (
-                <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <h4 className="text-sm font-medium text-green-800 mb-2">검색 결과:</h4>
-                  <p className="text-sm text-green-700 mb-1">
-                    <strong>주소:</strong> {selectedAddress}
-                  </p>
-                  <p className="text-sm text-green-700 mb-1">
-                    <strong>구글 맵 링크:</strong> 
-                    <a 
-                      href={selectedGoogleMapLink} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="ml-1 text-blue-600 hover:text-blue-800 underline"
-                    >
-                      링크 열기
-                    </a>
-                  </p>
+              {/* 선택된 위치 정보 */}
+              {mapSearchQuery && selectedAddress && (
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <MapPin className="w-4 h-4 text-blue-600" />
+                        <span className="font-medium text-blue-900">{mapSearchQuery}</span>
+                      </div>
+                      <div className="text-sm text-blue-700 mb-2">{selectedAddress}</div>
+                      <div className="text-xs text-blue-600">
+                        좌표: {document.getElementById('latitude')?.value || 'N/A'}, {document.getElementById('longitude')?.value || 'N/A'}
+                      </div>
+                    </div>
+                    {selectedGoogleMapLink && (
+                      <a
+                        href={selectedGoogleMapLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        구글 맵
+                      </a>
+                    )}
+                  </div>
                 </div>
               )}
 

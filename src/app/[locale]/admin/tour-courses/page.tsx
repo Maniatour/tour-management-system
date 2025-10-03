@@ -24,6 +24,19 @@ import CategoryManagementModal from '@/components/CategoryManagementModal'
 import TourCoursePhotoUploadModal from '@/components/TourCoursePhotoUploadModal'
 import LocationSearch from '@/components/LocationSearch'
 import LocationPickerModal from '@/components/LocationPickerModal'
+
+// LocationData 타입 정의
+interface LocationData {
+  name: string
+  address: string
+  latitude: number
+  longitude: number
+  placeId: string
+  googleMapsUrl: string
+  rating?: number
+  userRatingsTotal?: number
+  types?: string[]
+}
 // 타입 정의 (실제 데이터베이스 스키마에 맞춤)
 interface TourCourseRow {
   id: string
@@ -426,15 +439,17 @@ export default function TourCoursesPage() {
   }
 
   // 위치 검색 콜백 함수들
-  const handleMainLocationSelect = (location: any) => {
+  const handleMainLocationSelect = (location: LocationData) => {
     setFormData({
       ...formData,
       point_name: location.name,
-      location: location.address
+      location: location.address,
+      start_latitude: location.latitude.toString(),
+      start_longitude: location.longitude.toString()
     })
   }
 
-  const handleStartLocationSelect = (location: any) => {
+  const handleStartLocationSelect = (location: LocationData) => {
     setFormData({
       ...formData,
       start_latitude: location.latitude.toString(),
@@ -442,7 +457,7 @@ export default function TourCoursesPage() {
     })
   }
 
-  const handleEndLocationSelect = (location: any) => {
+  const handleEndLocationSelect = (location: LocationData) => {
     setFormData({
       ...formData,
       end_latitude: location.latitude.toString(),
