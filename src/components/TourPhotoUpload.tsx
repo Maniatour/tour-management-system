@@ -4,7 +4,9 @@ import { useState, useRef, useEffect } from 'react'
 import { Upload, X, Camera, Image as ImageIcon, Download, Share2, Eye } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
-import { createTourPhotosBucket, checkTourPhotosBucket } from '@/lib/tourPhotoBucket'
+import { createTourPhotosBucket, checkTourPhotosBucket, checkTourFolderExists, createTourFolderMarker } from '@/lib/tourPhotoBucket'
+import { useTourPhotoFolder } from '@/hooks/useTourPhotoFolder'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface TourPhoto {
   id: string
@@ -32,6 +34,7 @@ export default function TourPhotoUpload({
   uploadedBy, 
   onPhotosUpdated 
 }: TourPhotoUploadProps) {
+  const { user } = useAuth()
   const t = useTranslations('tourPhoto')
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [uploading, setUploading] = useState(false)
@@ -40,33 +43,67 @@ export default function TourPhotoUpload({
   const [selectedPhoto, setSelectedPhoto] = useState<TourPhoto | null>(null)
   const [showModal, setShowModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Hook으로 폴더 자동 관리
+  const { folderStatus, isReady, retry } = useTourPhotoFolder(tourId)
+  
+  // Bucket 상태 관리
+  const [bucketStatus, setBucketStatus] = useState<'checking' | 'exists' | 'missing' | 'error'>('checking')
+  const [showBucketModal, setShowBucketModal] = useState(false)
 
-  // 사진 목록 로드
+  // 사진 목록 로드 (Storage 기반)
   const loadPhotos = async () => {
     try {
       console.log('Loading photos for tour:', tourId)
-      const { data, error } = await supabase
-        .from('tour_photos')
-        .select('*')
-        .eq('tour_id', tourId)
-        .order('created_at', { ascending: false })
+      
+      // Storage에서 투어별 폴더의 파일 목록 조회
+      const { data: files, error } = await supabase.storage
+        .from('tour-photos')
+        .list(tourId, {
+          sort: { column: 'created_at', order: 'desc' }
+        })
 
       if (error) {
-        console.error('Error loading photos:', error)
-        // 테이블이 존재하지 않는 경우 빈 배열로 설정
-        if (error.code === 'PGRST205') {
-          console.warn('tour_photos table does not exist, returning empty array')
+        console.error('Error loading photos from storage:', error)
+        // 폴더가 없는 경우 생성 후 빈 배열로 설정
+        if (error.message.includes('not found') || error.message.includes('not exist')) {
+          console.warn(`Storage folder for tour ${tourId} not found, creating folder...`)
+          await ensureTourFolderExists()
           setPhotos([])
           return
         }
-        throw error
+        setPhotos([])
+        return
       }
       
-      console.log('Loaded photos:', data)
-      setPhotos(data || [])
+      // 실제 사진 파일만 필터링 (마커 파일 제외)
+      const photoFiles = files?.filter(file => 
+        !file.name.includes('.folder_info.json') && 
+        !file.name.includes('folder.info') &&
+        !file.name.includes('.info') &&
+        !file.name.includes('.README') &&
+        !file.name.startsWith('.') && // 숨김 파일 제외
+        file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+      ) || []
+      
+      // Storage 파일을 TourPhoto 형식으로 변환
+      const photos: TourPhoto[] = photoFiles.map(file => ({
+        id: file.id || file.name,
+        file_name: file.name,
+        file_path: `${tourId}/${file.name}`,
+        file_size: file.metadata?.size || 0,
+        mime_type: file.metadata?.mimetype || 'image/jpeg',
+        description: undefined,
+        is_public: true,
+        share_token: undefined,
+        created_at: file.created_at || new Date().toISOString(),
+        uploaded_by: uploadedBy
+      }))
+      
+      console.log('Loaded photos from storage:', photos)
+      setPhotos(photos)
     } catch (error) {
       console.error('Error loading photos:', error)
-      // 에러 발생 시 빈 배열로 설정하여 앱이 크래시되지 않도록 함
       setPhotos([])
     }
   }
@@ -96,15 +133,121 @@ export default function TourPhotoUpload({
     }
   }
 
-  // 컴포넌트 마운트 시 사진 목록 로드 및 Storage 확인
-  useEffect(() => {
-    const initialize = async () => {
-      console.log('TourPhotoUpload: Initializing...')
-      await ensureStorageBucket()
-      await loadPhotos()
+  // 투어별 폴더 생성 함수 (개선된 자동 생성)
+  const createTourFolder = async () => {
+    try {
+      console.log(`🔨 Creating tour folder for: ${tourId}`)
+      
+      // 1단계: 폴더 존재 확인
+      const folderExists = await checkTourFolderExists(tourId)
+      if (folderExists) {
+        console.log(`✅ Tour folder ${tourId} already exists`)
+        return true
+      }
+      
+      // 2단계: 마커 파일 생성으로 폴더 생성
+      const folderInfo = JSON.stringify({
+        tourId: tourId,
+        createdAt: new Date().toISOString(),
+        folderType: 'tour-photos',
+        notes: `Auto-created folder for tour ${tourId}`,
+        version: '1.0'
+      }, null, 2)
+      
+      const markerFileName = `${tourId}/.folder_info.json`
+      
+      const { error, data } = await supabase.storage
+        .from('tour-photos')
+        .upload(markerFileName, new Blob([folderInfo], { type: 'application/json' }), {
+          upsert: true,
+          cacheControl: '3600'
+        })
+      
+      if (error) {
+        console.error('❌ Error creating tour folder:', error)
+        return false
+      }
+      
+      console.log(`📁 Tour folder ${tourId} created successfully:`, data?.path)
+      
+      // 3단계: 폴더 생성 확인
+      const verifyFolder = await checkTourFolderExists(tourId)
+      if (verifyFolder) {
+        console.log(`✅ Folder verification successful for tour: ${tourId}`)
+        return true
+      } else {
+        console.warn(`⚠️ Folder creation verification failed for tour: ${tourId}`)
+        return false
+      }
+      
+    } catch (error) {
+      console.error('💥 Unexpected error creating tour folder:', error)
+      return false
     }
-    initialize()
-  }, [tourId])
+  }
+
+  // 폴더 존재 여부 확인 및 생성 (개선된 버전)
+  const ensureTourFolderExists = async () => {
+    try {
+      // 새로운 함수로 폴더 존재 여부 확인
+      const folderExists = await checkTourFolderExists(tourId)
+      
+      if (!folderExists) {
+        console.log(`📁 Creating folder for tour: ${tourId}`)
+        await createTourFolderMarker(tourId)
+      } else {
+        console.log(`✅ Folder exists for tour: ${tourId}`)
+      }
+    } catch (error) {
+      console.error('Error ensuring tour folder exists:', error)
+      // 오류가 발생해도 폴더 생성 시도
+      await createTourFolderMarker(tourId)
+    }
+  }
+
+  // Bucket 상태 체크 함수 (개선된 버전)
+  const checkBucketStatus = async () => {
+    try {
+      setBucketStatus('checking')
+      
+      // 1단계: 전체 tour-photos bucket 확인
+      const bucketExists = await checkTourPhotosBucket()
+      if (!bucketExists) {
+        console.warn('⚠️ tour-photos bucket not found')
+        console.warn('🔧 Please run quick_bucket_setup.sql in Supabase SQL Editor')
+        setBucketStatus('missing')
+        return
+      }
+      
+      // 2단계: 투어별 폴더 확인 및 생성
+      const folderExists = await checkTourFolderExists(tourId)
+      if (!folderExists) {
+        console.log(`📁 Creating folder for tour: ${tourId}`)
+        await ensureTourFolderExists()
+      }
+      
+      // 3단계: bucket과 폴더 모두 존재하면 성공
+      console.log(`✅ Bucket and folder ready for tour: ${tourId}`)
+      setBucketStatus('exists')
+      await loadPhotos()
+      
+    } catch (error) {
+      console.error('Error checking bucket status:', error)
+      setBucketStatus('error')
+    }
+  }
+
+  // Hook과 bucket 상태 연동
+  useEffect(() => {
+    if (isReady) {
+      setBucketStatus('exists')
+      loadPhotos()
+    } else if (folderStatus === 'error') {
+      setBucketStatus('error')
+    } else if (folderStatus === 'creating') {
+      setBucketStatus('checking')
+    }
+  }, [isReady, folderStatus, tourId])
 
   // 사진 업로드
   const handleFileUpload = async (files: FileList) => {
@@ -175,7 +318,7 @@ export default function TourPhotoUpload({
             const fileExt = file.name.split('.').pop()
             const timestamp = Date.now() + Math.random().toString(36).substring(2)
             const fileName = `${timestamp}.${fileExt}`
-            const filePath = `${tourId}/${fileName}`
+            const filePath = `${tourId}/${fileName}` // 투어별 폴더 구조
 
             console.log(`Uploading to storage: ${filePath}`)
 
@@ -372,16 +515,72 @@ export default function TourPhotoUpload({
   }
 
   return (
-    <div className="space-y-4">
+    <div className={bucketStatus === 'missing' ? 'bg-red-50 rounded-lg p-6 space-y-4' : 'space-y-4'}>
+      {/* Bucket 상태 표시 */}
+      {bucketStatus === 'missing' && (
+        <div className="bg-yellow-100 border border-yellow-400 rounded-lg p-4">
+          <div className="flex items-center space-x-3">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-yellow-800">Storage Bucket Missing</h3>
+              <p className="text-sm text-yellow-700 mt-1">tour-photos storage bucket이 생성되지 않았습니다.</p>
+            </div>
+            <button
+              onClick={() => setShowBucketModal(true)}
+              className="bg-yellow-600 text-white px-3 py-1 rounded-md text-sm hover:bg-yellow-700 transition-colors"
+            >
+              설정 안내
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {bucketStatus === 'checking' && (
+        <div className="flex items-center space-x-3 p-4 bg-gray-100 rounded-lg">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+          <span className="text-gray-700">Storage bucket 상태 확인 중...</span>
+        </div>
+      )}
+      
+      {bucketStatus === 'error' && (
+        <div className="bg-red-100 border border-red-400 rounded-lg p-4">
+          <div className="flex items-center space-x-3">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-red-800">Storage 접근 오류</h3>
+              <p className="text-sm text-red-700">Storage bucket 상태를 확인할 수 없습니다.</p>
+            </div>
+            <button
+              onClick={retry}
+              className="bg-red-600 text-white px-3 py-1 rounded-md text-sm hover:bg-red-700 transition-colors"
+            >
+              다시 시도
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         <div className="flex space-x-2">
           {/* 갤러리에서 선택 */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
+            disabled={uploading || bucketStatus !== 'exists'}
             className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            title={uploading ? t('uploading') : t('selectFromGallery')}
+            title={
+              bucketStatus !== 'exists' 
+                ? 'Storage bucket이 생성되지 않았습니다' 
+                : uploading ? t('uploading') : t('selectFromGallery')
+            }
           >
             <ImageIcon size={20} />
           </button>
@@ -402,9 +601,13 @@ export default function TourPhotoUpload({
               }
               cameraInput.click()
             }}
-            disabled={uploading}
+            disabled={uploading || bucketStatus !== 'exists'}
             className="flex items-center justify-center w-10 h-10 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-            title={t('takePhoto')}
+            title={
+              bucketStatus !== 'exists' 
+                ? 'Storage bucket이 생성되지 않았습니다' 
+                : t('takePhoto')
+            }
           >
             <Camera size={20} />
           </button>
@@ -414,21 +617,29 @@ export default function TourPhotoUpload({
       {/* 업로드 영역 */}
       <div
         className={`border-2 border-dashed rounded-lg p-4 sm:p-8 text-center transition-colors ${
-          dragOver 
-            ? 'border-blue-500 bg-blue-50' 
-            : 'border-gray-300 hover:border-gray-400'
+          bucketStatus !== 'exists'
+            ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+            : dragOver 
+              ? 'border-blue-500 bg-blue-50' 
+              : 'border-gray-300 hover:border-gray-400'
         }`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onDragOver={bucketStatus === 'exists' ? handleDragOver : undefined}
+        onDragLeave={bucketStatus === 'exists' ? handleDragLeave : undefined}
+        onDrop={bucketStatus === 'exists' ? handleDrop : undefined}
+        onClick={bucketStatus === 'exists' ? () => fileInputRef.current?.click() : undefined}
       >
         <Upload size={32} className="mx-auto text-gray-400 mb-2 sm:mb-4" />
         <p className="text-gray-600 mb-1 sm:mb-2 text-sm sm:text-base">
-          {t('dragOrClick')}
+          {bucketStatus !== 'exists' 
+            ? 'Storage bucket이 생성되지 않았습니다' 
+            : t('dragOrClick')
+          }
         </p>
         <p className="text-xs sm:text-sm text-gray-500">
-          {t('fileFormats')}
+          {bucketStatus !== 'exists' 
+            ? '위의 \"설정 안내\" 버튼을 눌러 bucket을 생성해주세요' 
+            : t('fileFormats')
+          }
         </p>
         <input
           ref={fileInputRef}
@@ -639,6 +850,93 @@ export default function TourPhotoUpload({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      
+      {/* Bucket 설정 안내 모달 */}
+      {showBucketModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-900">Storage Bucket 설정 안내</h2>
+                <button
+                  onClick={() => setShowBucketModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-yellow-800 mb-2">⚠️ Storage Bucket이 생성되지 않았습니다</h3>
+                  <p className="text-yellow-700">
+                    투어 사진을 저장하기 위한 Storage bucket이 필요합니다. 
+                    아래 단계를 따라 Supabase SQL Editor에서 수동으로 생성해주세요.
+                  </p>
+                </div>
+                
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-gray-900">설정 단계:</h3>
+                  <div className="space-y-2 text-sm text-gray-700">
+                    <p>1. <strong>Supabase 대시보드</strong> → <strong>SQL Editor</strong> 탭으로 이동</p>
+                    <p>2. 아래 SQL 코드를 복사해서 붙여넣기</p>
+                    <p>3. <strong>Run</strong> 버튼 클릭하여 실행</p>
+                    <p>4. 이 페이지를 새로고침</p>
+                  </div>
+                </div>
+                
+                <div className="bg-gray-50 border rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-900 mb-2">실행할 SQL 코드:</h4>
+                  <pre className="bg-gray-800 text-green-400 p-3 rounded text-xs overflow-x-auto">
+{`-- Step 1: Clean existing conflicting policies
+DROP POLICY IF EXISTS "Allow authenticated users to upload tour photos" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public access to tour photos" ON storage.objects;
+
+-- Step 2: Create bucket
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'tour-photos',
+  'tour-photos',
+  true,
+  52428800, -- 50MB
+  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+);
+
+-- Step 3: Create essential policies only
+CREATE POLICY "Allow authenticated users to upload tour photos" ON storage.objects
+FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'tour-photos');
+
+CREATE POLICY "Allow public access to tour photos" ON storage.objects
+FOR SELECT TO anon
+USING (bucket_id = 'tour-photos');
+
+-- Step 4: Verify setup
+SELECT 'tour-photos bucket created successfully!' as status;`}
+                  </pre>
+                </div>
+                
+                <div className="flex items-center justify-between pt-4">
+                  <button
+                    onClick={checkBucketStatus}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    설정 완료 후 확인
+                  </button>
+                  <button
+                    onClick={() => setShowBucketModal(false)}
+                    className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+                  >
+                    닫기
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

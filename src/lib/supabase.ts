@@ -34,6 +34,20 @@ export const supabase = (() => {
               autoRefreshToken: true,
               storage: typeof window !== 'undefined' ? window.localStorage : undefined,
             },
+            global: {
+              fetch: (url, options = {}) => {
+                // QUIC 오류 해결을 위한 설정
+                const headers = new Headers(options?.headers)
+                headers.set('Connection', 'close')
+                
+                return fetch(url, {
+                  ...options,
+                  headers: headers,
+                  // HTTP/1.1 사용 강제
+                  cache: 'no-store'
+                })
+              }
+            }
           }
         : undefined
     )

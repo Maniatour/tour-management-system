@@ -17,7 +17,22 @@
 2. **Create Credentials** > **API Key** 클릭
 3. 생성된 API 키를 복사
 
-## 3. API 키 제한 설정 (보안)
+## 3. Advanced Markers를 위한 Map ID 생성 (선택사항)
+
+### Map ID 생성
+1. **Google Cloud Console** > **Maps Platform** > **Map Management**로 이동
+2. **Map ID 및 스타일** 탭에서 **Create Map ID** 클릭
+3. 다음과 같이 설정:
+   - **Map ID name**: 원하는 이름 (예: "my-tour-map")
+   - **Map URL ID**: 자동 생성 또는 수동 입력
+   - **Map type**: **JavaScript** 선택
+   - **Styling**: 기본 스타일 또는 커스텀 스타일 선택
+
+### 생성된 Map ID 확인
+- Map ID는 다음과 같은 형태입니다: `aa1b2c3d4e5f6g7h8i9j0`
+- 이 값은 환경변수에 설정할 때 사용됩니다
+
+## 4. API 키 제한 설정 (보안)
 
 ### HTTP referrers 제한 (권장)
 - **Application restrictions** > **HTTP referrers (web sites)** 선택
@@ -36,16 +51,20 @@
   - Places API
   - Maps JavaScript API (Advanced Markers)
 
-## 4. 환경변수 설정
+## 5. 환경변수 설정
 
 프로젝트 루트에 `.env.local` 파일 생성:
 
 ```bash
 # Google Maps API Key
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_actual_api_key_here
+
+# Google Maps Advanced Markers를 위한 Map ID (선택사항)
+# Advanced Markers를 사용하려면 Google Cloud Console에서 Map ID를 생성하고 여기에 설정하세요
+NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=your_map_id_here
 ```
 
-## 5. API 키 확인
+## 6. API 키 확인
 
 환경변수가 올바르게 설정되었는지 확인:
 
@@ -54,13 +73,13 @@ NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_actual_api_key_here
 npm run dev
 ```
 
-## 6. 비용 관리
+## 7. 비용 관리
 
 - Google Maps API는 사용량에 따라 과금됩니다
 - 무료 할당량이 있지만 초과 시 비용이 발생할 수 있습니다
 - [Google Maps Platform Pricing](https://developers.google.com/maps/billing-and-pricing) 참조
 
-## 7. 문제 해결
+## 8. 문제 해결
 
 ### InvalidKeyMapError
 - API 키가 올바른지 확인
@@ -72,7 +91,13 @@ npm run dev
 - 브라우저 개발자 도구에서 오류 메시지 확인
 - API 키 권한 확인
 
-## 8. 보안 주의사항
+### Advanced Markers 경고 해결
+- "The map is initialized without a valid Map ID" 경고가 나타나는 경우:
+  - Google Cloud Console에서 Map ID를 생성했는지 확인
+  - `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` 환경변수를 올바르게 설정했는지 확인
+  - 개발 서버를 재시작했는지 확인
+
+## 9. 보안 주의사항
 
 - API 키를 절대 공개 저장소에 커밋하지 마세요
 - `.env.local` 파일을 `.gitignore`에 추가하세요

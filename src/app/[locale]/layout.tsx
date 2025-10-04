@@ -5,6 +5,8 @@ import Navigation from "@/components/Navigation";
 import Sidebar from "@/components/Sidebar";
 import UserFooter from "@/components/UserFooter";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { FloatingChatProvider } from "@/contexts/FloatingChatContext";
+import FloatingChatContainer from "@/components/FloatingChatContainer";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { headers } from 'next/headers';
@@ -70,9 +72,12 @@ export default async function LocaleLayout({
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <AuthProvider>
-          <div className="min-h-screen bg-gray-50">
-            {children}
-          </div>
+          <FloatingChatProvider>
+            <div className="min-h-screen bg-gray-50">
+              {children}
+              <FloatingChatContainer />
+            </div>
+          </FloatingChatProvider>
         </AuthProvider>
       </NextIntlClientProvider>
     );
@@ -82,16 +87,19 @@ export default async function LocaleLayout({
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>
       <AuthProvider>
-        <div className="min-h-screen bg-gray-50">
-          <Navigation />
-          <div className="flex flex-col lg:flex-row">
-            <Sidebar />
-            <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">
-              {children}
-            </main>
+        <FloatingChatProvider>
+          <div className="min-h-screen bg-gray-50">
+            <Navigation />
+            <div className="flex flex-col lg:flex-row">
+              <Sidebar />
+              <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">
+                {children}
+              </main>
+            </div>
+            <UserFooter locale={locale} />
+            <FloatingChatContainer />
           </div>
-          <UserFooter locale={locale} />
-        </div>
+        </FloatingChatProvider>
       </AuthProvider>
           </NextIntlClientProvider>
   );

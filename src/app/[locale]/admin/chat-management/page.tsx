@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown } from 'lucide-react'
+import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
+import { useFloatingChat } from '@/contexts/FloatingChatContext'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface ChatRoom {
   id: string
@@ -108,6 +110,8 @@ interface TourInfo {
 
 export default function ChatManagementPage() {
   const router = useRouter()
+  const { openChat } = useFloatingChat()
+  const { user } = useAuth()
   const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
@@ -569,7 +573,7 @@ export default function ChatManagementPage() {
           sender_email: 'admin@kovegas.com',
           message: messageText,
           message_type: 'text'
-        } as any)
+        })
         .select()
         .single()
 
@@ -604,7 +608,7 @@ export default function ChatManagementPage() {
     try {
       await supabase
         .from('chat_messages')
-        .update({ is_read: true } as any)
+        .update({ is_read: true })
         .eq('room_id', room.id)
         .eq('sender_type', 'customer')
         .eq('is_read', false)
@@ -885,8 +889,7 @@ export default function ChatManagementPage() {
             filteredRooms.map((room: any) => (
             <div
               key={room.id}
-              onClick={() => selectRoom(room as ChatRoom)}
-              className={`p-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
+              className={`p-2 border-b overflow-hidden border-gray-100 transition-colors ${
                 selectedRoom?.id === room.id 
                   ? 'bg-blue-50 border-l-2 border-l-blue-500' 
                   : room.unread_count > 0 
@@ -895,7 +898,10 @@ export default function ChatManagementPage() {
               }`}
             >
               <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
+                <div 
+                  className="flex-1 min-w-0 cursor-pointer"
+                  onClick={() => selectRoom(room as ChatRoom)}
+                >
                   {/* 상품 이름과 상태 */}
                   <div className="flex items-center justify-between mb-0.5">
                     <h3 className={`text-xs truncate ${
@@ -903,12 +909,12 @@ export default function ChatManagementPage() {
                         ? 'font-bold text-gray-900' 
                         : 'font-medium text-gray-900'
                     }`}>
-                      {(((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name_ko as string) || (((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name as string) || room.room_name}
+                      {(room.tour as any)?.product?.name_ko || (room.tour as any)?.product?.name || room.room_name}
                       {room.unread_count > 0 && ' • 새 메시지'}
                     </h3>
-                    {(room.tour as Record<string, unknown>)?.status && (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getTourStatus((room.tour as Record<string, unknown>).status as string).color}`}>
-                        {(room.tour as Record<string, unknown>).status as string}
+                    {(room.tour as any)?.status && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getTourStatus((room.tour as any).status).color}`}>
+                        {(room.tour as any).status}
                       </span>
                     )}
                   </div>
@@ -918,11 +924,11 @@ export default function ChatManagementPage() {
                     <div className="flex items-center">
                       <Calendar size={10} className="mr-1" />
                       <span className="truncate">
-                        {(room.tour as Record<string, unknown>)?.tour_date ? formatTourDate((room.tour as Record<string, unknown>).tour_date as string) : '날짜미정'}
+                        {(room.tour as any)?.tour_date ? formatTourDate((room.tour as any).tour_date) : '날짜미정'}
                       </span>
-                      {(room.tour as Record<string, unknown>)?.reservations && (room.tour as Record<string, unknown>).reservations && Array.isArray((room.tour as Record<string, unknown>).reservations) && (room.tour as Record<string, unknown>).reservations.length > 0 && (
+                      {(room.tour as any)?.reservations && Array.isArray((room.tour as any).reservations) && (room.tour as any).reservations.length > 0 && (
                         <span className="ml-2 text-gray-400">
-                          {getTotalParticipants((room.tour as Record<string, unknown>).reservations as Array<{ adults: number; child: number; infant: number }>)}명
+                          {getTotalParticipants(((room.tour as any).reservations) as Array<{ adults: number; child: number; infant: number }>)}명
                         </span>
                       )}
                     </div>
@@ -932,12 +938,32 @@ export default function ChatManagementPage() {
                   </div>
                 </div>
                 
-                {/* 읽지 않은 메시지 수 */}
-                {room.unread_count > 0 && (
-                  <div className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium ml-2">
-                    {room.unread_count}
-                  </div>
-                )}
+                {/* 플로팅 버튼과 읽지 않은 메시지 수 */}
+                <div className="flex items-center gap-1 ml-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if ((room.tour as any)?.tour_date) {
+                        openChat({
+                          id: `chat_mgmt_${room.id}_${Date.now()}`,
+                          tourId: room.tour_id,
+                          tourDate: (room.tour as any).tour_date,
+                          guideEmail: user?.email || "admin@tour.com",
+                          tourName: room.id
+                        })
+                      }
+                    }}
+                    className="p-1 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    title="플로팅 채팅방 열기"
+                  >
+                    <Cast size={14} />
+                  </button>
+                  {room.unread_count > 0 && (
+                    <div className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
+                      {room.unread_count}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             ))

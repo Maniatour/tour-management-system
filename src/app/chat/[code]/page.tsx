@@ -263,7 +263,12 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                 </h1>
                 <div className="flex items-center text-sm text-gray-600 mt-1">
                   <div className="flex items-center">
-                    {new Date(tourInfo.tour_date).toLocaleDateString()}
+                    {(() => {
+                      // YYYY-MM-DD 형식을 안전하게 파싱
+                      const [year, month, day] = tourInfo.tour_date.split('-').map(Number)
+                      const date = new Date(year, month - 1, day)
+                      return date.toLocaleDateString()
+                    })()}
                   </div>
                   {customerName && (
                     <div className="ml-auto flex items-center space-x-2">
@@ -372,6 +377,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                 guideEmail={room.created_by}
                 isPublicView={true}
                 roomCode={room.room_code}
+                tourDate={tourInfo.tour_date}
                 customerName={customerName}
                 customerLanguage={selectedLanguage}
               />

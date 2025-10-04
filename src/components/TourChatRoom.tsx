@@ -1,10 +1,14 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Image as ImageIcon, File, Users, Copy, Share2, MessageCircle, Languages, Calendar, Gift, Megaphone, ChevronDown, Trash2 } from 'lucide-react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { Send, Image as ImageIcon, File, Copy, Share2, Calendar, Gift, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users } from 'lucide-react'
+import ReactCountryFlag from 'react-country-flag'
+import { useRouter } from 'next/navigation'
+import { useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
 import PickupScheduleModal from './PickupScheduleModal'
+import TourPhotoGallery from './TourPhotoGallery'
 import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 
 interface ChatMessage {
@@ -50,6 +54,7 @@ interface TourChatRoomProps {
   tourDate?: string
   customerName?: string
   customerLanguage?: SupportedLanguage
+  isModalView?: boolean
 }
 
 export default function TourChatRoom({ 
@@ -59,18 +64,22 @@ export default function TourChatRoom({
   roomCode,
   tourDate,
   customerName,
-  customerLanguage = 'en'
+  customerLanguage = 'en',
+  isModalView = false
 }: TourChatRoomProps) {
+  const router = useRouter()
+  const locale = useLocale()
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>(customerLanguage)
-  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
   const [participantCount, setParticipantCount] = useState(0)
   const [showShareModal, setShowShareModal] = useState(false)
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState(false)
+  const [showPickupScheduleInline, setShowPickupScheduleInline] = useState(false)
+  const [showPhotoGallery, setShowPhotoGallery] = useState(false)
   const [pickupSchedule, setPickupSchedule] = useState<Array<{
     time: string
     hotel: string
@@ -166,10 +175,10 @@ export default function TourChatRoom({
 
       console.log('Loading pickup schedule for tourId:', tourId)
 
-      // 투어 정보 가져오기
+      // 투어 정보 가져오기 (배정된 예약 포함)
       const { data: tour, error: tourError } = await supabase
         .from('tours')
-        .select('product_id, tour_date')
+        .select('product_id, tour_date, reservation_ids')
         .eq('id', tourId)
         .single()
 
@@ -180,7 +189,14 @@ export default function TourChatRoom({
 
       console.log('Tour data for pickup schedule:', tour)
 
-      // 예약 정보 가져오기 (배정된 예약만)
+      // 투어에 배정된 예약이 있는지 확인
+      if (!tour.reservation_ids || tour.reservation_ids.length === 0) {
+        console.log('No reservations assigned to this tour')
+        setPickupSchedule([])
+        return
+      }
+
+      // 투어에 배정된 예약 정보만 조회
       const { data: reservations, error: reservationsError } = await supabase
         .from('reservations')
         .select(`
@@ -188,11 +204,10 @@ export default function TourChatRoom({
           pickup_hotel,
           pickup_time,
           total_people,
-          customer_id
+          customer_id,
+          status
         `)
-        .eq('product_id', tour.product_id)
-        .eq('tour_date', tour.tour_date)
-        .eq('status', 'confirmed')
+        .in('id', tour.reservation_ids)
         .not('pickup_hotel', 'is', null)
         .not('pickup_time', 'is', null)
 
@@ -200,6 +215,10 @@ export default function TourChatRoom({
         console.error('Error loading reservations for pickup schedule:', reservationsError)
         return
       }
+
+      console.log('Found reservations assigned to tour:', reservations?.length || 0, 'out of', tour.reservation_ids?.length || 0, 'assigned reservation IDs')
+      console.log('Assigned reservation IDs:', tour.reservation_ids)
+      console.log('Found reservation data:', reservations)
 
       // 고객 정보 별도로 가져오기
       let customersData: any[] = []
@@ -251,7 +270,26 @@ export default function TourChatRoom({
       // 픽업 스케줄 데이터 생성 (호텔별로 그룹화)
       const groupedByHotel = reservationsWithCustomers.reduce((acc, reservation) => {
         const hotel = pickupHotels.find(h => h.id === reservation.pickup_hotel)
-        if (!hotel) return acc
+        if (!hotel) {
+          // 호텔 정보가 없으면 기본값 사용
+          console.log('No hotel found for reservation:', reservation.id, 'hotel ID:', reservation.pickup_hotel)
+          const hotelKey = `unknown-${reservation.pickup_hotel}`
+          if (!acc[hotelKey]) {
+            acc[hotelKey] = {
+              time: reservation.pickup_time || '',
+              hotel: `호텔 ID: ${reservation.pickup_hotel}`,
+              location: '위치 미상',
+              people: 0,
+              customers: []
+            }
+          }
+          acc[hotelKey].people += reservation.total_people || 0
+          acc[hotelKey].customers.push({
+            name: reservation.customers?.name || 'Unknown Customer',
+            people: reservation.total_people || 0
+          })
+          return acc
+        }
         
         const hotelKey = `${hotel.hotel}-${hotel.pick_up_location}`
         if (!acc[hotelKey]) {
@@ -275,7 +313,17 @@ export default function TourChatRoom({
         .sort((a, b) => a.time.localeCompare(b.time))
 
       console.log('Generated pickup schedule:', schedule)
+      console.log('Final pickup schedule array length:', schedule.length)
       setPickupSchedule(schedule)
+      
+      // 디버깅을 위한 추가 정보
+      if (schedule.length === 0) {
+        console.log('No pickup schedule generated. Debug info:')
+        console.log('- Reservations:', reservationsWithCustomers.length)
+        console.log('- Pickup hotels:', pickupHotels.length)
+        console.log('- Customers:', customersData.length)
+        console.log('- Grouped by hotel:', Object.keys(groupedByHotel))
+      }
     } catch (error) {
       console.error('Error loading pickup schedule:', error)
       // 오류가 발생해도 빈 배열로 설정하여 무한 로딩 방지
@@ -290,6 +338,25 @@ export default function TourChatRoom({
   const getLanguageDisplayName = (langCode: SupportedLanguage) => {
     const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
     return lang ? lang.name : langCode.toUpperCase()
+  }
+
+  // 언어 전환 함수 (AdminSidebarAndHeader와 동일한 방식)
+  const handleLanguageToggle = () => {
+    const newLanguage = selectedLanguage === 'ko' ? 'en' : 'ko'
+    setSelectedLanguage(newLanguage)
+    setTranslatedMessages({}) // 기존 번역 초기화
+  }
+
+  // 언어 플래그 함수
+  const getLanguageFlag = () => {
+    return selectedLanguage === 'ko' ? 'KR' : 'US'
+  }
+
+  // 투어 상세 페이지로 이동
+  const goToTourDetail = () => {
+    if (tourId) {
+      router.push(`/${locale}/admin/tours/${tourId}`)
+    }
   }
 
   const loadMessages = async (roomId: string) => {
@@ -688,190 +755,27 @@ export default function TourChatRoom({
   return (
     <div className="flex flex-col h-full max-h-screen overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* 채팅방 헤더 */}
-        <div className="p-2 lg:p-4 border-b bg-white/90 backdrop-blur-sm shadow-sm">
+        <div className="p-1 lg:p-2 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm">
           {!isPublicView && (
-          <div className="mb-3">
+          <div className="mb-1">
             <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2 lg:space-x-3 flex-1 min-w-0">
-              <MessageCircle size={18} className="text-blue-600 lg:w-5 lg:h-5" />
-              <h3 className="font-semibold text-gray-900 truncate text-sm lg:text-base">{room.room_name}</h3>
               </div>
-              
-              {/* 관리자용 언어 선택 */}
-              <div className="flex items-center space-x-1 lg:space-x-2">
-                <div className="relative">
-                  <button
-                    onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                    className="flex items-center space-x-1 lg:space-x-2 px-2 lg:px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <span className="text-lg">
-                      {selectedLanguage === 'ko' ? '🇰🇷' : '🇺🇸'}
-                    </span>
-                    <span className="text-sm font-medium hidden lg:inline">
-                      {selectedLanguage === 'ko' ? '한국어' : 'English'}
-                    </span>
-                    <ChevronDown size={16} className="text-gray-500" />
-                  </button>
-                </div>
-                
-                {/* 관리자용 번역 버튼 */}
-                <button
-                  onClick={async () => {
-                    const guideMessages = messages.filter(msg => 
-                      msg.sender_type === 'guide' && 
-                      !msg.message.startsWith('[EN] ') &&
-                      needsTranslation(msg)
-                    )
-                    
-                    console.log('Admin manual translation triggered for', guideMessages.length, 'messages')
-                    
-                    for (const message of guideMessages) {
-                      if (translating[message.id]) continue
-                      
-                      setTranslating(prev => ({ ...prev, [message.id]: true }))
-                      try {
-                        const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
-                        setTranslatedMessages(prev => ({
-                          ...prev,
-                          [message.id]: result.translatedText
-                        }))
-                      } catch (error) {
-                        console.error('Admin translation error:', error)
-                      } finally {
-                        setTranslating(prev => ({ ...prev, [message.id]: false }))
-                      }
-                    }
-                  }}
-                  className="px-2 lg:px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 text-sm"
-                  title="가이드 메시지 번역"
-                >
-                  <Languages size={16} />
-                  <span className="hidden lg:inline">번역</span>
-                </button>
-              </div>
-              
-              {showLanguageDropdown && (
-                <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-                  <div className="py-1">
-                    <button
-                      onClick={() => {
-                        setSelectedLanguage('ko')
-                        setShowLanguageDropdown(false)
-                      }}
-                      className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
-                        selectedLanguage === 'ko' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
-                      }`}
-                    >
-                      <span className="text-base">🇰🇷</span>
-                      <span className="truncate">한국어</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedLanguage('en')
-                        setShowLanguageDropdown(false)
-                      }}
-                      className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
-                        selectedLanguage === 'en' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
-                      }`}
-                    >
-                      <span className="text-base">🇺🇸</span>
-                      <span className="truncate">English</span>
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
         
-        {/* 고객용 언어 선택 */}
+        {/* Customer Language Selection */}
         {isPublicView && (
-          <div className="mb-3">
+          <div className="mb-1">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900 flex items-center">
-                <MessageCircle size={20} className="text-blue-600 mr-2" />
-                {room.room_name}
-              </h3>
-              <div className="flex items-center space-x-2">
-                <div className="relative">
-                  <button
-                    onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                    className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <span className="text-lg">
-                      {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.flag || '🌐'}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.name || 'Language'}
-                    </span>
-                    <ChevronDown size={16} className="text-gray-500" />
-                  </button>
-                </div>
-                
-                {/* 관리자용 번역 버튼 (고객용에서는 제거) */}
-                {!isPublicView && (
-                  <button
-                    onClick={async () => {
-                      const guideMessages = messages.filter(msg => 
-                        msg.sender_type === 'guide' && 
-                        !msg.message.startsWith('[EN] ') &&
-                        needsTranslation(msg)
-                      )
-                      
-                      console.log('Manual translation triggered for', guideMessages.length, 'messages')
-                      
-                      for (const message of guideMessages) {
-                        if (translating[message.id]) continue
-                        
-                        setTranslating(prev => ({ ...prev, [message.id]: true }))
-                        try {
-                          const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
-                          setTranslatedMessages(prev => ({
-                            ...prev,
-                            [message.id]: result.translatedText
-                          }))
-                        } catch (error) {
-                          console.error('Manual translation error:', error)
-                        } finally {
-                          setTranslating(prev => ({ ...prev, [message.id]: false }))
-                        }
-                      }
-                    }}
-                    className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-1 text-sm"
-                    title="모든 가이드 메시지 번역"
-                  >
-                    <Languages size={16} />
-                    <span>번역</span>
-                  </button>
-                )}
+              <div className="flex items-center">
               </div>
-              
-              {showLanguageDropdown && (
-                <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-                  <div className="py-1">
-                    {SUPPORTED_LANGUAGES.map((language) => (
-                      <button
-                        key={language.code}
-                        onClick={() => {
-                          setSelectedLanguage(language.code)
-                          setShowLanguageDropdown(false)
-                        }}
-                        className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-100 ${
-                          selectedLanguage === language.code ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
-                        }`}
-                      >
-                        <span className="text-base">{language.flag}</span>
-                        <span className="truncate">{language.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
         
-          <div className="mt-2 flex items-center gap-1 lg:gap-2 justify-between">
+          <div className="mt-1 flex items-center gap-1 lg:gap-2 justify-between">
             <div className="flex items-center gap-1 lg:gap-2 flex-wrap">
               {/* 방 활성/비활성 스위치 - 가장 왼쪽, 관리자 전용 */}
               {!isPublicView && (
@@ -900,13 +804,28 @@ export default function TourChatRoom({
               <Megaphone size={12} className="lg:w-3.5 lg:h-3.5" />
             </button>
             <button
-              onClick={() => setShowPickupScheduleModal(true)}
-              className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200 flex items-center justify-center"
+              onClick={() => setShowPickupScheduleInline(!showPickupScheduleInline)}
+              className={`px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs rounded border flex items-center justify-center ${
+                showPickupScheduleInline 
+                  ? 'bg-blue-600 text-white border-blue-600' 
+                  : 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200'
+              }`}
               title="픽업 스케쥴"
               aria-label="픽업 스케쥴"
             >
               <Calendar size={12} className="lg:w-3.5 lg:h-3.5" />
             </button>
+            {/* 투어 상세 페이지 이동 버튼 - 팀원 전용 */}
+            {!isPublicView && (
+              <button
+                onClick={goToTourDetail}
+                className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-purple-100 text-purple-800 rounded border border-purple-200 hover:bg-purple-200 flex items-center justify-center"
+                title="투어 상세 페이지"
+                aria-label="투어 상세 페이지"
+              >
+                <ExternalLink size={12} className="lg:w-3.5 lg:h-3.5" />
+              </button>
+            )}
             <a
               href="#options"
               className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-emerald-100 text-emerald-800 rounded border border-emerald-200 hover:bg-emerald-200 flex items-center justify-center"
@@ -943,12 +862,61 @@ export default function TourChatRoom({
               >
                 <Share2 size={14} className="lg:w-4 lg:h-4" />
               </button>
+              {/* 언어 전환 버튼 */}
+              <button
+                onClick={handleLanguageToggle}
+                className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
+                title={selectedLanguage === 'ko' ? 'Switch to English' : '한국어로 전환'}
+              >
+                <ReactCountryFlag
+                  countryCode={getLanguageFlag()}
+                  svg
+                  style={{
+                    width: '16px',
+                    height: '12px',
+                    borderRadius: '2px'
+                  }}
+                />
+              </button>
             </div>
           </div>
         </div>
 
+      {/* 픽업 스케줄 영역 */}
+      {showPickupScheduleInline && (
+        <div className="bg-blue-50 border-t border-blue-200 p-2 lg:p-3">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-semibold text-blue-900">
+              📅 픽업 스케줄 {pickupSchedule.length > 0 && `(${pickupSchedule.length}건)`}
+            </h4>
+            <button
+              onClick={() => setShowPickupScheduleInline(false)}
+              className="p-1 hover:bg-blue-200 rounded text-blue-700 text-xs"
+              title="닫기"
+            >
+              ✕
+            </button>
+          </div>
+          {pickupSchedule.length > 0 ? (
+            <div className="space-y-1 text-xs lg:text-sm">
+              {pickupSchedule.map((schedule, index) => (
+                <PickupScheduleAccordion
+                  key={index}
+                  schedule={schedule}
+                  onPhotoClick={() => setShowPhotoGallery(true)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center text-blue-600 py-2">
+              픽업 스케줄이 없습니다.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 메시지 목록 */}
-      <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50/20">
+      <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20">
         {messages.map((message) => {
           const needsTrans = needsTranslation(message)
           const hasTranslation = translatedMessages[message.id]
@@ -962,10 +930,10 @@ export default function TourChatRoom({
               <div
                 className={`max-w-xs lg:max-w-md px-3 lg:px-4 py-2 rounded-lg border shadow-sm ${
                   message.sender_type === 'system'
-                    ? 'bg-gray-200/80 backdrop-blur-sm text-gray-700 text-center'
+                    ? 'bg-gray-200 bg-opacity-80 backdrop-blur-sm text-gray-700 text-center'
                     : message.sender_type === 'guide'
                     ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
-                    : 'bg-white/90 backdrop-blur-sm text-gray-900 border-gray-200/50'
+                    : 'bg-white bg-opacity-90 backdrop-blur-sm text-gray-900 border-gray-200'
                 }`}
               >
                 {message.sender_type !== 'system' && (
@@ -989,40 +957,17 @@ export default function TourChatRoom({
                       {/* 가이드 메시지 자동 번역 (고객용/관리자용) */}
                       {message.sender_type === 'guide' && needsTrans && (
                         <div className="mt-2 pt-2 border-t border-gray-200">
-                    {isTranslating ? (
-                            <div className="text-xs text-gray-500 flex items-center">
-                        <Languages size={12} className="mr-1 animate-spin" />
-                              번역 중...
-                      </div>
-                    ) : hasTranslation ? (
+                          {hasTranslation ? (
                             <div className="text-xs text-white">
                               <span className="font-medium">{getLanguageDisplayName(selectedLanguage)}:</span> {hasTranslation}
-                      </div>
-                    ) : (
-                      <button
-                              onClick={async () => {
-                                if (translating[message.id]) return
-                                setTranslating(prev => ({ ...prev, [message.id]: true }))
-                                try {
-                                  const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
-                                  setTranslatedMessages(prev => ({
-                                    ...prev,
-                                    [message.id]: result.translatedText
-                                  }))
-                                } catch (error) {
-                                  console.error('Translation error:', error)
-                                } finally {
-                                  setTranslating(prev => ({ ...prev, [message.id]: false }))
-                                }
-                              }}
-                              className="text-xs text-blue-600 hover:text-blue-800 flex items-center"
-                      >
-                        <Languages size={12} className="mr-1" />
-                              번역하기
-                      </button>
-                    )}
-                  </div>
-                )}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-gray-400">
+                              {getLanguageDisplayName(selectedLanguage)}으로 번역 사용 가능
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1058,7 +1003,7 @@ export default function TourChatRoom({
 
       {/* 메시지 입력 */}
       {room.is_active && (
-        <div className={`${isPublicView ? 'p-2 lg:p-4' : 'p-2 lg:p-4 border-t bg-white/90 backdrop-blur-sm shadow-lg'} flex-shrink-0`}>
+        <div className={`${isPublicView ? 'p-2 lg:p-4' : 'p-2 lg:p-4 border-t bg-white bg-opacity-90 backdrop-blur-sm shadow-lg'} flex-shrink-0`}>
           <div className="flex items-center space-x-2 w-full">
             <input
               type="text"
@@ -1098,7 +1043,7 @@ export default function TourChatRoom({
 
       {/* 공지사항 모달 */}
       {!isPublicView && (
-        <div className={`${isAnnouncementsOpen ? 'fixed' : 'hidden'} inset-0 bg-black/50 z-50 flex items-center justify-center p-4`}>
+        <div className={`${isAnnouncementsOpen ? 'fixed' : 'hidden'} inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4`}>
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b">
               <h4 className="text-lg font-semibold text-gray-900">공지사항</h4>
@@ -1129,6 +1074,90 @@ export default function TourChatRoom({
         onClose={() => setShowPickupScheduleModal(false)}
         pickupSchedule={pickupSchedule}
       />
+
+      {/* 투어 사진 갤러리 */}
+      <TourPhotoGallery
+        isOpen={showPhotoGallery}
+        onClose={() => setShowPhotoGallery(false)}
+        tourId={tourId || ''}
+      />
+    </div>
+  )
+}
+
+// 픽업 스케줄 아코디언 컴포넌트
+function PickupScheduleAccordion({ 
+  schedule, 
+  onPhotoClick 
+}: { 
+  schedule: any
+  onPhotoClick: () => void
+}) {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  return (
+    <div className="bg-white border border-blue-200 rounded-lg overflow-hidden">
+      {/* 아코디언 헤더 */}
+      <div 
+        className="p-2 flex items-center justify-between cursor-pointer hover:bg-blue-50 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+          <div className="flex items-center space-x-2 flex-1">
+            <div className="flex items-center space-x-2">
+              <span className="font-medium text-blue-900 text-xs">{schedule.time}</span>
+              <span className="text-gray-400">•</span>
+              <span className="text-gray-700 text-xs">{schedule.hotel}</span>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1">
+              <Users className="h-3 w-3 text-blue-600" />
+              <span className="text-blue-600 font-medium text-xs">{schedule.people}</span>
+            </div>
+            {isExpanded ? 
+              <ChevronUp className="h-4 w-4 text-gray-500" /> : 
+              <ChevronDown className="h-4 w-4 text-gray-500" />
+            }
+          </div>
+      </div>
+
+      {/* 아코디언 컨텐츠 */}
+      {isExpanded && (
+        <div className="border-t border-blue-100 p-3 bg-blue-25">
+          <div className="flex items-center justify-between">
+            {/* 위치 정보 */}
+            <div className="flex items-center space-x-1">
+              <span className="text-gray-500 text-xs">📍</span>
+              <span className="text-gray-700 text-sm">{schedule.location}</span>
+            </div>
+
+            {/* 액션 버튼들 */}
+            <div className="flex items-center space-x-2">
+              {/* 사진 버튼 */}
+              <button 
+                onClick={onPhotoClick}
+                className="flex items-center space-x-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              >
+                <Camera className="h-3 w-3" />
+                <span className="text-xs text-gray-600">사진</span>
+              </button>
+
+              {/* 맵 아이콘 */}
+              <button 
+                className="flex items-center space-x-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // TODO: 맵 연결 로직 구현
+                  console.log('Open map for:', schedule.hotel, schedule.location)
+                }}
+              >
+                <MapPin className="h-3 w-3" />
+                <span className="text-xs text-gray-600">맵</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

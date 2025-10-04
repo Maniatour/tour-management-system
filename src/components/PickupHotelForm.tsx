@@ -16,6 +16,13 @@ interface GoogleMapsMarker {
   setMap: (map: GoogleMapsMap | null) => void
 }
 
+interface GoogleMapsAdvancedMarker {
+  position: { lat: () => number; lng: () => number }
+  setPosition: (position: { lat: number; lng: number }) => void
+  addListener: (event: string, callback: () => void) => void
+  setMap: (map: GoogleMapsMap | null) => void
+}
+
 interface GoogleMapsMapMouseEvent {
   latLng?: {
     lat: () => number
@@ -50,6 +57,9 @@ declare global {
         MapTypeId: GoogleMapsMapTypeId
         Geocoder: new () => GoogleMapsGeocoder
         MapMouseEvent: GoogleMapsMapMouseEvent
+        marker: {
+          AdvancedMarkerElement: new (options: { position: { lat: number; lng: number }; map: GoogleMapsMap; title: string; draggable?: boolean }) => GoogleMapsAdvancedMarker
+        }
       }
     }
   }
@@ -150,13 +160,27 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
       const mapElement = document.getElementById('map')
       if (!mapElement) return
 
-      const map = new window.google.maps.Map(mapElement, {
+      // Map ID 설정
+      const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+      console.log('PickupHotelForm Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
+      
+      const mapOptions: any = {
         center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
         zoom: 12,
         mapTypeId: window.google.maps.MapTypeId.ROADMAP
-      })
+      }
+      
+      // Map ID가 있으면 Advanced Markers를 위한 맵 ID 설정
+      if (mapId) {
+        mapOptions.mapId = mapId
+        console.log('PickupHotelForm - Advanced Markers Map ID 설정:', mapId)
+      } else {
+        console.warn('PickupHotelForm - Map ID 없음, 기본 마커 사용')
+      }
 
-      let marker: GoogleMapsMarker | null = null
+      const map = new window.google.maps.Map(mapElement, mapOptions)
+
+      let marker: GoogleMapsAdvancedMarker | null = null
 
       // 지도 클릭 이벤트
       map.addListener('click', (event: GoogleMapsMapMouseEvent) => {
@@ -169,12 +193,22 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
             marker.setMap(null)
           }
 
-          // 새 마커 추가
-          marker = new window.google.maps.Marker({
-            position: { lat, lng },
-            map: map,
-            title: '선택된 위치'
-          })
+          // 새로운 Advanced Marker 추가
+          if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
+            marker = new window.google.maps.marker.AdvancedMarkerElement({
+              position: { lat, lng },
+              map: map,
+              title: '선택된 위치'
+            })
+            console.log('PickupHotelForm 클릭 - Advanced Marker 생성 성공')
+          } else {
+            marker = new window.google.maps.Marker({
+              position: { lat, lng },
+              map: map,
+              title: '선택된 위치'
+            }) as any
+            console.log('PickupHotelForm 클릭 - 기본 Marker 사용')
+          }
 
           // 좌표 입력 필드 업데이트
           const latInput = document.getElementById('latitude') as HTMLInputElement
@@ -215,18 +249,42 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
           // 지도 중심 이동
           const mapElement = document.getElementById('map')
           if (mapElement && window.google && window.google.maps) {
-            const map = new window.google.maps.Map(mapElement, {
+            // Map ID 설정
+            const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+            console.log('PickupHotelForm Search Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
+            
+            const mapOptions: any = {
               center: { lat, lng },
               zoom: 15,
               mapTypeId: window.google.maps.MapTypeId.ROADMAP
-            })
+            }
+            
+            // Map ID가 있으면 Advanced Markers를 위한 맵 ID 설정
+            if (mapId) {
+              mapOptions.mapId = mapId
+              console.log('PickupHotelForm Search - Advanced Markers Map ID 설정:', mapId)
+            } else {
+              console.warn('PickupHotelForm Search - Map ID 없음, 기본 마커 사용')
+            }
 
-            // 마커 추가
-            new window.google.maps.Marker({
-              position: { lat, lng },
-              map: map,
-              title: searchTerm
-            })
+            const map = new window.google.maps.Map(mapElement, mapOptions)
+
+            // 새로운 Advanced Marker 추가
+            if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
+              new window.google.maps.marker.AdvancedMarkerElement({
+                position: { lat, lng },
+                map: map,
+                title: searchTerm
+              })
+              console.log('PickupHotelForm 검색 - Advanced Marker 생성 성공')
+            } else {
+              new window.google.maps.Marker({
+                position: { lat, lng },
+                map: map,
+                title: searchTerm
+              })
+              console.log('PickupHotelForm 검색 - 기본 Marker 사용')
+            }
 
             // 좌표 입력 필드 업데이트
             const latInput = document.getElementById('latitude') as HTMLInputElement

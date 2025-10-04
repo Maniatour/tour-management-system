@@ -119,7 +119,11 @@ export default function LocationPickerModal({
       return
     }
 
-    const newMap = new window.google.maps.Map(mapElement, {
+    // Map ID 설정
+    const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+    console.log('LocationPickerModal Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
+    
+    const mapOptions: any = {
       center: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
       zoom: 13,
       mapTypeId: window.google.maps.MapTypeId.ROADMAP,
@@ -130,14 +134,37 @@ export default function LocationPickerModal({
           stylers: [{ visibility: 'off' }]
         }
       ]
-    })
+    }
+    
+    // Map ID가 있으면 Advanced Markers를 위한 맵 ID 설정
+    if (mapId) {
+      mapOptions.mapId = mapId
+      console.log('LocationPickerModal - Advanced Markers Map ID 설정:', mapId)
+    } else {
+      console.warn('LocationPickerModal - Map ID 없음, 기본 마커 사용')
+    }
 
-    const newMarker = new window.google.maps.Marker({
-      position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
-      map: newMap,
-      draggable: true,
-      title: '선택된 위치'
-    })
+    const newMap = new window.google.maps.Map(mapElement, mapOptions)
+
+    // Advanced Marker 또는 기본 Marker 생성
+    let newMarker: any
+    if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
+      newMarker = new window.google.maps.marker.AdvancedMarkerElement({
+        position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
+        map: newMap,
+        draggable: true,
+        title: '선택된 위치'
+      })
+      console.log('LocationPickerModal - Advanced Marker 생성 성공')
+    } else {
+      newMarker = new window.google.maps.Marker({
+        position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
+        map: newMap,
+        draggable: true,
+        title: '선택된 위치'
+      })
+      console.log('LocationPickerModal - 기본 Marker 사용')
+    }
 
     // 지도 클릭 이벤트
     newMap.addListener('click', (event: any) => {

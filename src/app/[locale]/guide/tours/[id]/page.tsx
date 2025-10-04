@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
-import TourChatRoom from '@/components/TourChatRoom'
+import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import TourExpenseManager from '@/components/TourExpenseManager'
 import TourReportSection from '@/components/TourReportSection'
 import TourReportForm from '@/components/TourReportForm'
@@ -37,6 +37,7 @@ export default function GuideTourDetailPage() {
   const router = useRouter()
   const locale = useLocale()
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
+  const { openChat } = useFloatingChat()
   const t = useTranslations('guideTour')
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
@@ -974,9 +975,28 @@ export default function GuideTourDetailPage() {
         {/* 채팅 - 채팅 탭에만 표시 */}
         <div className={`${activeTab === 'chat' ? 'block' : 'hidden'} lg:block`}>
           <AccordionSection id="chat" title={t('chat')} icon={MessageSquare}>
-          <div style={{ height: '600px' }}>
-            <TourChatRoom tourId={tour.id} guideEmail={currentUserEmail || ''} />
-          </div>
+            <div className="flex flex-col items-center justify-center py-8">
+              <MessageSquare className="h-16 w-16 text-gray-300 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">투어 채팅방</h3>
+              <p className="text-sm text-gray-500 mb-4">투어 관련 소통을 위한 채팅방입니다.</p>
+              <button
+                onClick={() => {
+                  if (tour) {
+                    openChat({
+                      id: `chat_${tour.id}_${Date.now()}`, // 고유한 ID 생성
+                      tourId: tour.id,
+                      tourDate: tour.tour_date,
+                      guideEmail: currentUserEmail || "",
+                      tourName: tour.id
+                    })
+                  }
+                }}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                <MessageSquare className="h-4 w-4" />
+                채팅방 플로팅
+              </button>
+            </div>
           </AccordionSection>
         </div>
 
@@ -1037,6 +1057,7 @@ export default function GuideTourDetailPage() {
           </div>
         </div>
       )}
+
     </div>
   )
 }
