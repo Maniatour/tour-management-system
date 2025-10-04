@@ -1115,7 +1115,7 @@ export default function TourDetailPage() {
 
   const getCustomerName = (customerId: string) => {
     const customer = customers.find((c: any) => c.id === customerId)
-    return formatCustomerNameEnhanced(customer, locale)
+    return formatCustomerNameEnhanced(customer as any, locale)
   }
 
   const getCustomerLanguage = (customerId: string) => {
