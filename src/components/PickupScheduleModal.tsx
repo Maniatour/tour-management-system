@@ -14,16 +14,38 @@ interface PickupScheduleModalProps {
       people: number
     }>
   }>
+  language?: 'ko' | 'en'
 }
 
 export default function PickupScheduleModal({ 
   isOpen, 
   onClose, 
-  pickupSchedule 
+  pickupSchedule,
+  language = 'ko'
 }: PickupScheduleModalProps) {
   console.log('PickupScheduleModal props:', { isOpen, pickupSchedule })
   console.log('픽업 스케줄 데이터:', pickupSchedule)
   console.log('픽업 스케줄 개수:', pickupSchedule?.length || 0)
+  
+  // 다국어 텍스트
+  const texts = {
+    ko: {
+      title: '픽업 스케줄',
+      people: '명',
+      customers: '예약자:',
+      noSchedule: '픽업 스케줄이 없습니다.',
+      close: '닫기'
+    },
+    en: {
+      title: 'Pickup Schedule',
+      people: ' people',
+      customers: 'Customers:',
+      noSchedule: 'No pickup schedule available.',
+      close: 'Close'
+    }
+  }
+  
+  const t = texts[language]
   
   if (!isOpen) return null
 
@@ -32,7 +54,7 @@ export default function PickupScheduleModal({
       <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
-            픽업 스케줄
+            {t.title}
           </h3>
           <button
             onClick={onClose}
@@ -51,7 +73,7 @@ export default function PickupScheduleModal({
                     {schedule.time}
                   </div>
                   <div className="text-xs text-gray-500">
-                    {schedule.people}명
+                    {schedule.people}{t.people}
                   </div>
                 </div>
                 <div className="text-sm text-gray-700 font-medium">
@@ -62,10 +84,10 @@ export default function PickupScheduleModal({
                 </div>
                 {schedule.customers && schedule.customers.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-gray-100">
-                    <div className="text-xs text-gray-600 mb-1">예약자:</div>
+                    <div className="text-xs text-gray-600 mb-1">{t.customers}</div>
                     {schedule.customers.map((customer, customerIndex) => (
                       <div key={customerIndex} className="text-xs text-gray-500">
-                        {customer.name} ({customer.people}명)
+                        {customer.name} ({customer.people}{t.people})
                       </div>
                     ))}
                   </div>
@@ -74,7 +96,7 @@ export default function PickupScheduleModal({
             ))
           ) : (
             <div className="text-center text-gray-500 py-4">
-              픽업 스케줄이 없습니다.
+              {t.noSchedule}
             </div>
           )}
         </div>
@@ -84,7 +106,7 @@ export default function PickupScheduleModal({
             onClick={onClose}
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
           >
-            닫기
+            {t.close}
           </button>
         </div>
       </div>

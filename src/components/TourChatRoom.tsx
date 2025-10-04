@@ -1121,6 +1121,7 @@ export default function TourChatRoom({
         isOpen={showPickupScheduleModal}
         onClose={() => setShowPickupScheduleModal(false)}
         pickupSchedule={pickupSchedule}
+        language={locale}
       />
 
       {/* 투어 사진 갤러리 */}
