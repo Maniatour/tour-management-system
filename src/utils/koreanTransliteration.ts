@@ -167,6 +167,117 @@ export function formatCustomerName(customer: CustomerWithNames | null | undefine
 }
 
 /**
+ * 한국어 이름을 성과 이름으로 분리해서 영어식 순서로 변환
+ * 예: "허유림" -> "Yurim Heo"
+ */
+export function getKoreanNameInEnglishOrder(fullName: string): string {
+  if (!fullName || fullName.length < 2) return transliterateKorean(fullName)
+  
+  // 1글자 성인지 판단 (일반적으로 한국 이름은 성 1글자 + 이름)
+  let surname = ''
+  let givenName = ''
+  
+  if (fullName.length >= 3) {
+    // 3글자 이상이면 일반적으로 성 1글자, 이름 나머지
+    surname = fullName.substring(0, 1)
+    givenName = fullName.substring(1)
+  } else if (fullName.length === 2) {
+    // 2글자면 성 1글자, 이름 1글자
+    surname = fullName.substring(0, 1)
+    givenName = fullName.substring(1)
+  }
+  
+  // 성씨 변환
+  const surnameEnglish = surnameMap[surname] || transliterateKorean(surname)
+  const givenNameEnglish = transliterateKorean(givenName)
+  
+  // 영어식 순서: 이름 성씨로 반환
+  return `${givenNameEnglish} ${surnameEnglish}`.trim()
+ }
+
+/**
+ * 한국 성씨의 영어 표기 맵
+ */
+const surnameMap: Record<string, string> = {
+  '김': 'Kim',
+  '이': 'Lee', 
+  '박': 'Park',
+  '최': 'Choi',
+  '정': 'Jeong',
+  '강': 'Kang',
+  '조': 'Jo',
+  '윤': 'Yoon',
+  '장': 'Jang',
+  '임': 'Im',
+  '한': 'Han',
+  '오': 'Oh',
+  '서': 'Seo',
+  '신': 'Shin',
+  '권': 'Kwon',
+  '황': 'Hwang',
+  '안': 'An',
+  '송': 'Song',
+  '전': 'Jeon',
+  '류': 'Ryu',
+  '유': 'Yoo',
+  '고': 'Ko',
+  '문': 'Moon',
+  '양': 'Yang',
+  '백': 'Beak',
+  '남': 'Nam',
+  '심': 'Shim',
+  '노': 'No',
+  '구': 'Gu',
+  '함': 'Ham',
+  '배': 'Bae',
+  '부': 'Boo',
+  '표': 'Pyo',
+  '마': 'Ma',
+  '왕': 'Wang',
+  '도': 'Do',
+  '주': 'Joo',
+  '하': 'Ha',
+  '모': 'Mo',
+  '변': 'Byun',
+  '염': 'Yeom',
+  '차': 'Cha',
+  '위': 'Wee',
+  '소': 'So',
+  '선': 'Seon',
+  '민': 'Min',
+  '허': 'Heo', // 허유림의 허
+  '현': 'Hyeon'
+}
+
+/**
+ * 고객 이름을 다국어로 표시하는 헬퍼 함수 (향상된 버전)
+ */
+export function formatCustomerNameEnhanced(customer: CustomerWithNames | null | undefined, locale: string): string {
+  if (!customer) return locale === 'ko' ? '정보 없음' : '정보 없음'
+  
+  const customerData = customer as CustomerWithNames & { name?: string }
+  const customerName = customerData.name_ko || customerData.name || ''
+  const englishName = customerData.name_en || ''
+  
+  if (locale === 'ko') {
+    // 한국어 페이지: 한국어 이름만 표시
+    return customerName || '정보 없음'
+  } else {
+    // 영어 페이지: 음성학적 변환된 이름 표시 (영어식 순서)
+    if (englishName && englishName !== customerName) {
+      return englishName
+    }
+    
+    if (customerName) {
+      const englishOrderName = getKoreanNameInEnglishOrder(customerName)
+      return englishOrderName ? `${englishOrderName} (${customerName})` : customerName
+    }
+    
+    return locale === 'ko' ? '정보 없음' : '정보 없음'
+  }
+}
+
+/**
  * 일반적인 한국인 이름들에 대한 특별 변환 규칙
  */
 export function getEnhancedKoreanTransliteration(name: string): string {

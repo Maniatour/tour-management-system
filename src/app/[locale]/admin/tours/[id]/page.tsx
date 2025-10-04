@@ -18,7 +18,7 @@ import {
   calculateUnassignedPeople,
   getPendingReservations
 } from '@/utils/tourUtils'
-import { formatCustomerName } from '@/utils/koreanTransliteration'
+import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
@@ -1113,7 +1113,7 @@ export default function TourDetailPage() {
 
   const getCustomerName = (customerId: string) => {
     const customer = customers.find((c: any) => c.id === customerId)
-    return formatCustomerName(customer, locale)
+    return formatCustomerNameEnhanced(customer, locale)
   }
 
   const getCustomerLanguage = (customerId: string) => {

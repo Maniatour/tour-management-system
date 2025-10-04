@@ -15,7 +15,7 @@ import TourReportSection from '@/components/TourReportSection'
 import TourReportForm from '@/components/TourReportForm'
 import TourWeather from '@/components/TourWeather'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
-import { formatCustomerName } from '@/utils/koreanTransliteration'
+import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -857,7 +857,7 @@ export default function GuideTourDetailPage() {
                                     return null;
                                   })()}
                                   <div className="font-medium text-gray-900">
-                                    {formatCustomerName(customer, locale)}
+                                    {formatCustomerNameEnhanced(customer, locale)}
                                   </div>
                                   <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                     <Users className="w-3 h-3 mr-1" />

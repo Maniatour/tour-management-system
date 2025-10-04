@@ -1,15 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { getEnhancedKoreanTransliteration, transliterateKorean } from '@/utils/koreanTransliteration'
+import { getEnhancedKoreanTransliteration, transliterateKorean, getKoreanNameInEnglishOrder } from '@/utils/koreanTransliteration'
 
 export default function KoreanNameTest() {
   const [inputName, setInputName] = useState('')
   const [result, setResult] = useState('')
 
   const handleTest = () => {
-    const transliteration = getEnhancedKoreanTransliteration(inputName)
-    setResult(transliteration)
+    const englishOrderName = getKoreanNameInEnglishOrder(inputName)
+    const basicTransliteration = transliterateKorean(inputName)
+    const enhancedTransliteration = getEnhancedKoreanTransliteration(inputName)
+    
+    setResult(`${englishOrderName}\n기본 변환: ${basicTransliteration}\n향상된 변환: ${enhancedTransliteration}`)
   }
 
   return (
@@ -25,7 +28,7 @@ export default function KoreanNameTest() {
             value={inputName}
             onChange={(e) => setInputName(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            placeholder="예: 김민수, 이지혜"
+            placeholder="예: 허유림, 김민수, 이지혜"
           />
         </div>
         <button
@@ -36,11 +39,8 @@ export default function KoreanNameTest() {
         </button>
         {result && (
           <div className="mt-4 p-3 bg-gray-100 rounded-md">
-            <p className="text-sm text-gray-600">
-              <strong>변환 결과:</strong> {result}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              이 이름을 미국인 가이드가 읽을 때: {transliterateKorean(inputName)}
+            <p className="text-sm text-gray-600 whitespace-pre-line">
+              <strong>변환 결과:</strong><br/>{result}
             </p>
           </div>
         )}
