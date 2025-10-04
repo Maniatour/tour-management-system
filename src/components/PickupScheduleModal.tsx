@@ -22,6 +22,8 @@ export default function PickupScheduleModal({
   pickupSchedule 
 }: PickupScheduleModalProps) {
   console.log('PickupScheduleModal props:', { isOpen, pickupSchedule })
+  console.log('픽업 스케줄 데이터:', pickupSchedule)
+  console.log('픽업 스케줄 개수:', pickupSchedule?.length || 0)
   
   if (!isOpen) return null
 

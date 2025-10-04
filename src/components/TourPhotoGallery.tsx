@@ -30,13 +30,19 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId }: TourPhotoG
     try {
       setLoading(true)
       
+      console.log('=== 투어 사진 갤러리 디버깅 ===')
+      console.log('투어 ID:', tourId)
+      
       // 투어 사진 폴더 경로
       const folderPath = `tours/${tourId}/photos`
+      console.log('폴더 경로:', folderPath)
       
       // Storage에서 파일 목록 가져오기
       const { data: files, error } = await supabase.storage
         .from('tour-photos')
         .list(folderPath)
+        
+      console.log('Storage 응답:', { files, error })
 
       if (error) {
         console.error('Storage listing error:', error)

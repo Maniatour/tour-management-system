@@ -228,6 +228,15 @@ export default function TourChatRoom({
       console.log('Found reservations assigned to tour:', reservations?.length || 0, 'out of', tour.reservation_ids?.length || 0, 'assigned reservation IDs')
       console.log('Assigned reservation IDs:', tour.reservation_ids)
       console.log('Found reservation data:', reservations)
+      
+      // 고객용 채팅에서 디버깅 정보 추가
+      if (isPublicView) {
+        console.log('=== 고객용 채팅 픽업 스케줄 디버깅 ===')
+        console.log('투어 ID:', tourId)
+        console.log('투어 데이터:', tour)
+        console.log('예약 데이터:', reservations)
+        console.log('=====================================')
+      }
 
       // 고객 정보 별도로 가져오기
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
