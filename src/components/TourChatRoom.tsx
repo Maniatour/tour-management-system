@@ -78,6 +78,16 @@ export default function TourChatRoom({
     console.warn('next-intl context not found, using customer language:', customerLanguage)
     locale = customerLanguage
   }
+  
+  // 고객용 채팅에서 초기 props 디버깅
+  if (isPublicView) {
+    console.log('=== TourChatRoom 초기 props 디버깅 ===')
+    console.log('tourId:', tourId)
+    console.log('guideEmail:', guideEmail)
+    console.log('isPublicView:', isPublicView)
+    console.log('customerLanguage:', customerLanguage)
+    console.log('=====================================')
+  }
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
@@ -468,6 +478,12 @@ export default function TourChatRoom({
         }
         await loadMessages(room.id)
         console.log('Messages loaded successfully')
+        
+        // 고객용 채팅에서 픽업 스케줄 로드
+        if (isPublicView && room.tour_id) {
+          console.log('Loading pickup schedule for public view, tourId:', room.tour_id)
+          loadPickupSchedule()
+        }
       } else {
         console.log('No room found for code:', code)
       }
