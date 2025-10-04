@@ -327,9 +327,9 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                     ? 'bg-blue-500 text-white' 
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
-              >
-                {bulkDownloadMode ? '완료' : '선택'}
-              </button>
+                >
+                  {bulkDownloadMode ? 'Done' : 'Select'}
+                </button>
 
               {/* 선택 관리 (일괄 다운로드 모드에서만 표시) */}
               {bulkDownloadMode && (
@@ -338,13 +338,13 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                   <button
                     onClick={handleSelectAll}
                     className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 transition-colors"
-                  >
-                    {selectedPhotos.size === photos.length ? '해제' : '전체'}
-                  </button>
+                    >
+                      {selectedPhotos.size === photos.length ? 'None' : 'All'}
+                    </button>
 
                   {/* 선택된 사진 수 */}
                   <span className="text-xs text-gray-600 px-2">
-                    {selectedPhotos.size}개
+                    {selectedPhotos.size} selected
                   </span>
 
                   {/* 다운로드 실행 버튼 */}
@@ -353,9 +353,9 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                       onClick={handleBulkDownload}
                       disabled={downloading}
                       className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors disabled:opacity-50"
-                    >
-                      {downloading ? '다운로드중...' : `다운로드(${selectedPhotos.size})`}
-                    </button>
+                      >
+                        {downloading ? 'Downloading...' : `Download(${selectedPhotos.size})`}
+                      </button>
                   )}
                 </>
               )}
