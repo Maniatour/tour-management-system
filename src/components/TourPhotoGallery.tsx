@@ -55,10 +55,35 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       
       console.log('=== 투어 사진 갤러리 디버깅 ===')
       console.log('투어 ID:', tourId)
+      console.log('투어 ID 타입:', typeof tourId)
+      console.log('투어 ID 길이:', tourId?.length)
+      
+      if (!tourId || tourId.trim() === '') {
+        console.error('투어 ID가 비어있습니다!')
+        setPhotos([])
+        return
+      }
       
       // 투어 사진 폴더 경로
       const folderPath = `tours/${tourId}/photos`
       console.log('폴더 경로:', folderPath)
+      
+      // 먼저 버켓 존재 여부 확인
+      const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
+      console.log('사용 가능한 버켓 목록:', buckets)
+      console.log('버켓 목록 오류:', bucketError)
+      
+      // tour-photos 버켓이 있는지 확인
+      const tourPhotosBucket = buckets?.find(bucket => bucket.name === 'tour-photos')
+      console.log('tour-photos 버켓 존재 여부:', !!tourPhotosBucket)
+      
+      // 먼저 루트 레벨에서 폴더 목록 확인
+      const { data: rootFolders, error: rootError } = await supabase.storage
+        .from('tour-photos')
+        .list('')
+        
+      console.log('루트 폴더 목록:', rootFolders)
+      console.log('루트 폴더 오류:', rootError)
       
       // Storage에서 파일 목록 가져오기
       const { data: files, error } = await supabase.storage
@@ -66,6 +91,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
         .list(folderPath)
         
       console.log('Storage 응답:', { files, error })
+      console.log('파일 개수:', files?.length || 0)
 
       if (error) {
         console.error('Storage listing error:', error)

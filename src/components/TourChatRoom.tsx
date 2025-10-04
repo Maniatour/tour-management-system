@@ -911,7 +911,12 @@ export default function TourChatRoom({
             </a>
             {isPublicView && (
               <button
-                onClick={() => setShowPhotoGallery(true)}
+                onClick={() => {
+                  console.log('=== 헤더 사진 아이콘 클릭 ===')
+                  console.log('현재 tourId:', tourId)
+                  console.log('투어 사진 갤러리 열기')
+                  setShowPhotoGallery(true)
+                }}
                 className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200 flex items-center justify-center"
                 title="투어 사진"
                 aria-label="투어 사진"
