@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, Image as ImageIcon, Copy, Share2, Calendar, Gift, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users } from 'lucide-react'
+import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
 // @ts-ignore - react-country-flag 타입 정의 문제 방지
 import ReactCountryFlag from 'react-country-flag'
 import { useRouter } from 'next/navigation'
@@ -99,6 +100,8 @@ export default function TourChatRoom({
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState(false)
   const [showPickupScheduleInline, setShowPickupScheduleInline] = useState(false)
   const [showPhotoGallery, setShowPhotoGallery] = useState(false)
+  const [showPickupHotelPhotoGallery, setShowPickupHotelPhotoGallery] = useState(false)
+  const [selectedPickupHotel, setSelectedPickupHotel] = useState<{name: string, mediaUrls: string[]} | null>(null)
   const [pickupSchedule, setPickupSchedule] = useState<Array<{
     time: string
     hotel: string
@@ -988,7 +991,10 @@ export default function TourChatRoom({
                 <PickupScheduleAccordion
                   key={index}
                   schedule={schedule}
-                  onPhotoClick={() => setShowPhotoGallery(true)}
+                  onPhotoClick={(hotelName, mediaUrls) => {
+                    setSelectedPickupHotel({name: hotelName, mediaUrls})
+                    setShowPickupHotelPhotoGallery(true)
+                  }}
                 />
               ))}
             </div>
@@ -1168,6 +1174,20 @@ export default function TourChatRoom({
         tourId={tourId || ''}
         language={locale}
       />
+
+      {/* 픽업 호텔 사진 갤러리 */}
+      {selectedPickupHotel && (
+        <PickupHotelPhotoGallery
+          isOpen={showPickupHotelPhotoGallery}
+          onClose={() => {
+            setShowPickupHotelPhotoGallery(false)
+            setSelectedPickupHotel(null)
+          }}
+          hotelName={selectedPickupHotel.name}
+          mediaUrls={selectedPickupHotel.mediaUrls}
+          language={locale}
+        />
+      )}
     </div>
   )
 }
@@ -1184,9 +1204,41 @@ function PickupScheduleAccordion({
     people: number;
     customers?: Array<{ name: string; people: number }>;
   }
-  onPhotoClick: () => void
+  onPhotoClick: (hotelName: string, mediaUrls: string[]) => void
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [hotelMediaUrls, setHotelMediaUrls] = useState<string[]>([])
+
+  // 픽업 호텔 미디어 데이터 가져오기
+  useEffect(() => {
+    const fetchHotelMedia = async () => {
+      try {
+        const { data: hotelData, error } = await supabase
+          .from('pickup_hotels')
+          .select('media')
+          .eq('hotel', schedule.hotel)
+          .eq('pick_up_location', schedule.location)
+          .single()
+
+        if (error) {
+          console.error('Error fetching hotel media:', error)
+          return
+        }
+
+        if (hotelData?.media) {
+          setHotelMediaUrls(hotelData.media)
+        }
+      } catch (error) {
+        console.error('Error fetching hotel media:', error)
+      }
+    }
+
+    fetchHotelMedia()
+  }, [schedule.hotel, schedule.location])
+
+  const handlePhotoClick = () => {
+    onPhotoClick(schedule.hotel, hotelMediaUrls)
+  }
 
   return (
     <div className="bg-white border border-blue-200 rounded-lg overflow-hidden">
@@ -1228,7 +1280,7 @@ function PickupScheduleAccordion({
             <div className="flex items-center space-x-2">
               {/* 사진 버튼 */}
               <button 
-                onClick={onPhotoClick}
+                onClick={handlePhotoClick}
                 className="flex items-center space-x-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
               >
                 <Camera className="h-3 w-3" />
