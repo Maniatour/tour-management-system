@@ -69,7 +69,15 @@ export default function TourChatRoom({
   // isModalView = false // 사용되지 않음
 }: TourChatRoomProps) {
   const router = useRouter()
-  const locale = useLocale()
+  
+  // next-intl 컨텍스트가 없을 수 있으므로 안전하게 처리
+  let locale = customerLanguage // 고객 언어를 기본값으로 사용
+  try {
+    locale = useLocale()
+  } catch (error) {
+    console.warn('next-intl context not found, using customer language:', customerLanguage)
+    locale = customerLanguage
+  }
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
