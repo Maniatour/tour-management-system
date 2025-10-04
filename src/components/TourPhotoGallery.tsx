@@ -275,10 +275,10 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       {/* 메인 갤러리 */}
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] flex flex-col">
-          {/* 헤더 - 컴팩트 1줄 레이아웃 */}
+          {/* 헤더 - 2줄 레이아웃 */}
           <div className="p-3 border-b">
-            <div className="flex items-center justify-between">
-              {/* 왼쪽: 제목과 뷰 모드 */}
+            {/* 첫 번째 줄: 제목과 뷰 모드 */}
+            <div className="flex items-center justify-between mb-2">
               <div className="flex items-center space-x-3">
                 <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                   <ImageIcon className="w-4 h-4 mr-2" />
@@ -303,63 +303,62 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                   </button>
                 </div>
               </div>
-
-              {/* 중간: 기능 버튼들 */}
-              <div className="flex items-center space-x-2">
-                {/* 일괄 다운로드 모드 토글 */}
-                <button
-                  onClick={() => {
-                    setBulkDownloadMode(!bulkDownloadMode)
-                    if (bulkDownloadMode) {
-                      setSelectedPhotos(new Set())
-                    }
-                  }}
-                  className={`px-2 py-1 rounded text-xs transition-colors ${
-                    bulkDownloadMode 
-                      ? 'bg-blue-500 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {bulkDownloadMode ? '완료' : '선택'}
-                </button>
-
-                {/* 선택 관리 (일괄 다운로드 모드에서만 표시) */}
-                {bulkDownloadMode && (
-                  <>
-                    {/* 전체 선택/해제 버튼 */}
-                    <button
-                      onClick={handleSelectAll}
-                      className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 transition-colors"
-                    >
-                      {selectedPhotos.size === photos.length ? '해제' : '전체'}
-                    </button>
-
-                    {/* 선택된 사진 수 */}
-                    <span className="text-xs text-gray-600 px-2">
-                      {selectedPhotos.size}개
-                    </span>
-
-                    {/* 다운로드 실행 버튼 */}
-                    {selectedPhotos.size > 0 && (
-                      <button
-                        onClick={handleBulkDownload}
-                        disabled={downloading}
-                        className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors disabled:opacity-50"
-                      >
-                        {downloading ? '다운로드중...' : `다운로드(${selectedPhotos.size})`}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* 오른쪽: 닫기 버튼 */}
+              
               <button
                 onClick={onClose}
                 className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* 두 번째줄: 기능 버튼들 */}
+            <div className="flex items-center space-x-2">
+              {/* 일괄 다운로드 모드 토글 */}
+              <button
+                onClick={() => {
+                  setBulkDownloadMode(!bulkDownloadMode)
+                  if (bulkDownloadMode) {
+                    setSelectedPhotos(new Set())
+                  }
+                }}
+                className={`px-2 py-1 rounded text-xs transition-colors ${
+                  bulkDownloadMode 
+                    ? 'bg-blue-500 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {bulkDownloadMode ? '완료' : '선택'}
+              </button>
+
+              {/* 선택 관리 (일괄 다운로드 모드에서만 표시) */}
+              {bulkDownloadMode && (
+                <>
+                  {/* 전체 선택/해제 버튼 */}
+                  <button
+                    onClick={handleSelectAll}
+                    className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 transition-colors"
+                  >
+                    {selectedPhotos.size === photos.length ? '해제' : '전체'}
+                  </button>
+
+                  {/* 선택된 사진 수 */}
+                  <span className="text-xs text-gray-600 px-2">
+                    {selectedPhotos.size}개
+                  </span>
+
+                  {/* 다운로드 실행 버튼 */}
+                  {selectedPhotos.size > 0 && (
+                    <button
+                      onClick={handleBulkDownload}
+                      disabled={downloading}
+                      className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors disabled:opacity-50"
+                    >
+                      {downloading ? '다운로드중...' : `다운로드(${selectedPhotos.size})`}
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           </div>
 
