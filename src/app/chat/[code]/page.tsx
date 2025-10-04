@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, use } from 'react'
+import React, { useState, useEffect } from 'react'
 import { ArrowLeft, Home as HomeIcon, ChevronDown, SquarePen } from 'lucide-react'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
@@ -31,7 +31,7 @@ interface ProductNames {
   name_en?: string | null
 }
 
-export default function PublicChatPage({ params }: { params: Promise<{ code: string }> }) {
+export default function PublicChatPage({ params }: { params: { code: string } }) {
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -43,7 +43,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   const [showNameEdit, setShowNameEdit] = useState(false)
   const [productNames, setProductNames] = useState<ProductNames | null>(null)
 
-  const { code } = use(params)
+  const { code } = params
 
   useEffect(() => {
     console.log('PublicChatPage useEffect triggered with code:', code)
@@ -71,18 +71,22 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
 
   // 저장된 사용자 데이터 불러오기
   const loadSavedUserData = () => {
-    if (typeof window !== 'undefined') {
-      const savedName = localStorage.getItem('tour_chat_customer_name')
-      const savedLanguage = localStorage.getItem('tour_chat_language') as 'ko' | 'en' | null
-      
-      if (savedName) {
-        setCustomerName(savedName)
-        // 저장된 이름이 있으면 임시 이름도 설정
-        setTempName(savedName)
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const savedName = localStorage.getItem('tour_chat_customer_name')
+        const savedLanguage = localStorage.getItem('tour_chat_language') as 'ko' | 'en' | null
+        
+        if (savedName) {
+          setCustomerName(savedName)
+          // 저장된 이름이 있으면 임시 이름도 설정
+          setTempName(savedName)
+        }
+        if (savedLanguage && ['ko', 'en'].includes(savedLanguage)) {
+          setSelectedLanguage(savedLanguage)
+        }
       }
-      if (savedLanguage && ['ko', 'en'].includes(savedLanguage)) {
-        setSelectedLanguage(savedLanguage)
-      }
+    } catch (error) {
+      console.error('Error loading saved user data:', error)
     }
   }
 
@@ -93,6 +97,9 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
       setError(null)
       
       // Supabase 인스턴스 확인
+      if (!supabase) {
+        throw new Error('Supabase client not initialized')
+      }
       console.log('Supabase instance:', supabase)
 
       // 채팅방 정보 조회

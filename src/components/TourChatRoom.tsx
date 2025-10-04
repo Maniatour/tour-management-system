@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Image as ImageIcon, File, Copy, Share2, Calendar, Gift, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users } from 'lucide-react'
+import { Send, Image as ImageIcon, Copy, Share2, Calendar, Gift, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users } from 'lucide-react'
+// @ts-ignore - react-country-flag 타입 정의 문제 방지
 import ReactCountryFlag from 'react-country-flag'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
@@ -54,7 +55,7 @@ interface TourChatRoomProps {
   tourDate?: string
   customerName?: string
   customerLanguage?: SupportedLanguage
-  isModalView?: boolean
+  // isModalView?: boolean // 사용되지 않음
 }
 
 export default function TourChatRoom({ 
@@ -64,8 +65,8 @@ export default function TourChatRoom({
   roomCode,
   tourDate,
   customerName,
-  customerLanguage = 'en',
-  isModalView = false
+  customerLanguage = 'en'
+  // isModalView = false // 사용되지 않음
 }: TourChatRoomProps) {
   const router = useRouter()
   const locale = useLocale()
@@ -75,7 +76,7 @@ export default function TourChatRoom({
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>(customerLanguage)
-  const [participantCount, setParticipantCount] = useState(0)
+  // const [participantCount, setParticipantCount] = useState(0) // 사용되지 않음
   const [showShareModal, setShowShareModal] = useState(false)
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState(false)
   const [showPickupScheduleInline, setShowPickupScheduleInline] = useState(false)
@@ -134,36 +135,36 @@ export default function TourChatRoom({
   const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(false)
   const [togglingActive, setTogglingActive] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  // const fileInputRef = useRef<HTMLInputElement>(null) // 사용되지 않음
 
-  // 사용자별 채팅 색상 팔레트
-  const chatColors = [
-    'bg-blue-100 text-blue-900 border-blue-200',
-    'bg-green-100 text-green-900 border-green-200',
-    'bg-purple-100 text-purple-900 border-purple-200',
-    'bg-pink-100 text-pink-900 border-pink-200',
-    'bg-yellow-100 text-yellow-900 border-yellow-200',
-    'bg-indigo-100 text-indigo-900 border-indigo-200',
-    'bg-red-100 text-red-900 border-red-200',
-    'bg-teal-100 text-teal-900 border-teal-200',
-    'bg-orange-100 text-orange-900 border-orange-200',
-    'bg-cyan-100 text-cyan-900 border-cyan-200'
-  ]
+  // 사용자별 채팅 색상 팔레트 (현재 사용되지 않음)
+  // const chatColors = [
+  //   'bg-blue-100 text-blue-900 border-blue-200',
+  //   'bg-green-100 text-green-900 border-green-200',
+  //   'bg-purple-100 text-purple-900 border-purple-200',
+  //   'bg-pink-100 text-pink-900 border-pink-200',
+  //   'bg-yellow-100 text-yellow-900 border-yellow-200',
+  //   'bg-indigo-100 text-indigo-900 border-indigo-200',
+  //   'bg-red-100 text-red-900 border-red-200',
+  //   'bg-teal-100 text-teal-900 border-teal-200',
+  //   'bg-orange-100 text-orange-900 border-orange-200',
+  //   'bg-cyan-100 text-cyan-900 border-cyan-200'
+  // ]
 
-  // 사용자별 색상 할당 함수
-  const getUserColor = (senderName: string) => {
-    if (senderName === '가이드' || senderName === 'Guide') {
-      return 'bg-blue-600 text-white border-blue-700'
-    }
-    
-    // 고객 이름을 기반으로 일관된 색상 할당
-    let hash = 0
-    for (let i = 0; i < senderName.length; i++) {
-      hash = senderName.charCodeAt(i) + ((hash << 5) - hash)
-    }
-    const colorIndex = Math.abs(hash) % chatColors.length
-    return chatColors[colorIndex]
-  }
+  // 사용자별 색상 할당 함수 (현재 사용되지 않음)
+  // const getUserColor = (senderName: string) => {
+  //   if (senderName === '가이드' || senderName === 'Guide') {
+  //     return 'bg-blue-600 text-white border-blue-700'
+  //   }
+  //   
+  //   // 고객 이름을 기반으로 일관된 색상 할당
+  //   let hash = 0
+  //   for (let i = 0; i < senderName.length; i++) {
+  //     hash = senderName.charCodeAt(i) + ((hash << 5) - hash)
+  //   }
+  //   const colorIndex = Math.abs(hash) % chatColors.length
+  //   return chatColors[colorIndex]
+  // }
 
   // 픽업 스케줄 로드
   const loadPickupSchedule = async () => {
@@ -221,9 +222,10 @@ export default function TourChatRoom({
       console.log('Found reservation data:', reservations)
 
       // 고객 정보 별도로 가져오기
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let customersData: any[] = []
       if (reservations && reservations.length > 0) {
-        const customerIds = reservations.map(r => r.customer_id).filter(Boolean)
+        const customerIds = reservations.map((r: { customer_id: string }) => r.customer_id).filter(Boolean)
         if (customerIds.length > 0) {
           const { data: customers, error: customersError } = await supabase
             .from('customers')
@@ -239,17 +241,21 @@ export default function TourChatRoom({
       }
 
       // 예약 데이터에 고객 정보 병합
-      const reservationsWithCustomers = reservations?.map(reservation => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reservationsWithCustomers = reservations?.map((reservation: any) => ({
         ...reservation,
-        customers: customersData.find(customer => customer.id === reservation.customer_id)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        customers: customersData.find((customer: any) => customer.id === reservation.customer_id)
       })) || []
 
       console.log('Reservations for pickup schedule:', reservationsWithCustomers)
 
       // 픽업 호텔 정보 별도로 가져오기
-      const pickupHotelIds = [...new Set(reservationsWithCustomers.map(r => r.pickup_hotel).filter(Boolean))]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pickupHotelIds = [...new Set(reservationsWithCustomers.map((r: any) => r.pickup_hotel).filter(Boolean))]
       console.log('Pickup hotel IDs:', pickupHotelIds)
       
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let pickupHotels: any[] = []
       
       if (pickupHotelIds.length > 0) {
@@ -268,7 +274,9 @@ export default function TourChatRoom({
       }
 
       // 픽업 스케줄 데이터 생성 (호텔별로 그룹화)
-      const groupedByHotel = reservationsWithCustomers.reduce((acc, reservation) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const groupedByHotel = reservationsWithCustomers.reduce((acc: Record<string, any>, // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        reservation: any) => {
         const hotel = pickupHotels.find(h => h.id === reservation.pickup_hotel)
         if (!hotel) {
           // 호텔 정보가 없으면 기본값 사용
@@ -307,10 +315,18 @@ export default function TourChatRoom({
           people: reservation.total_people || 0
         })
         return acc
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       }, {} as Record<string, any>)
 
       const schedule = Object.values(groupedByHotel)
-        .sort((a, b) => a.time.localeCompare(b.time))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .sort((a: any, // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        b: any) => (a.time as string).localeCompare(b.time as string)) as Array<{
+          time: string;
+          hotel: string;
+          location: string;
+          people: number;
+        }>
 
       console.log('Generated pickup schedule:', schedule)
       console.log('Final pickup schedule array length:', schedule.length)
@@ -476,6 +492,7 @@ export default function TourChatRoom({
     }
 
     initializeChat()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // 의존성 배열을 비워서 한 번만 실행
 
   // 실시간 메시지 구독
@@ -492,7 +509,8 @@ export default function TourChatRoom({
           table: 'chat_messages',
           filter: `room_id=eq.${room.id}`
         },
-        (payload) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (payload: { new: any }) => {
           const newMessage = payload.new as ChatMessage
           setMessages(prev => [...prev, newMessage])
       scrollToBottom()
@@ -675,13 +693,13 @@ export default function TourChatRoom({
   }
 
   // 메시지가 번역이 필요한지 확인
-  const needsTranslation = (message: ChatMessage) => {
+  const needsTranslation = useCallback((message: ChatMessage) => {
     if (message.sender_type === 'guide') {
       const messageLanguage = detectLanguage(message.message)
       return messageLanguage !== selectedLanguage
     }
     return false
-  }
+  }, [selectedLanguage])
 
   // 언어 설정이 변경될 때 기존 메시지들 다시 번역
   useEffect(() => {
@@ -718,23 +736,23 @@ export default function TourChatRoom({
     }
 
     translateExistingMessages()
-  }, [selectedLanguage, messages, room])
+  }, [selectedLanguage, messages, room, needsTranslation, translating])
 
-  // 가이드 메시지 자동 번역 함수
-  const translateGuideMessage = async (message: ChatMessage) => {
-    if (message.sender_type !== 'guide') return null
-    
-    try {
-      const messageLanguage = detectLanguage(message.message)
-      if (messageLanguage === selectedLanguage) return null
-      
-      const result = await translateText(message.message, messageLanguage, selectedLanguage)
-      return result.translatedText
-    } catch (error) {
-      console.error('Auto translation error:', error)
-      return null
-    }
-  }
+  // 가이드 메시지 자동 번역 함수 (현재 사용되지 않음)
+  // const translateGuideMessage = async (message: ChatMessage) => {
+  //   if (message.sender_type !== 'guide') return null
+  //   
+  //   try {
+  //     const messageLanguage = detectLanguage(message.message)
+  //     if (messageLanguage === selectedLanguage) return null
+  //     
+  //     const result = await translateText(message.message, messageLanguage, selectedLanguage)
+  //     return result.translatedText
+  //   } catch (error) {
+  //     console.error('Auto translation error:', error)
+  //     return null
+  //   }
+  // }
 
   if (loading) {
     return (
@@ -868,15 +886,28 @@ export default function TourChatRoom({
                 className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
                 title={selectedLanguage === 'ko' ? 'Switch to English' : '한국어로 전환'}
               >
-                <ReactCountryFlag
-                  countryCode={getLanguageFlag()}
-                  svg
-                  style={{
-                    width: '16px',
-                    height: '12px',
-                    borderRadius: '2px'
-                  }}
-                />
+{(() => {
+                  try {
+                    const flagCountry = getLanguageFlag()
+                    if (flagCountry) {
+                      return (
+                        <ReactCountryFlag
+                          countryCode={flagCountry}
+                          svg
+                          style={{
+                            width: '16px',
+                            height: '12px',
+                            borderRadius: '2px'
+                          }}
+                        />
+                      )
+                    }
+                    return null
+                  } catch (error) {
+                    console.error('Country flag rendering error:', error)
+                    return null
+                  }
+                })()}
               </button>
             </div>
           </div>
@@ -920,7 +951,7 @@ export default function TourChatRoom({
         {messages.map((message) => {
           const needsTrans = needsTranslation(message)
           const hasTranslation = translatedMessages[message.id]
-          const isTranslating = translating[message.id]
+          // const isTranslating = translating[message.id] // 사용되지 않음
           
           return (
             <div
@@ -1037,7 +1068,7 @@ export default function TourChatRoom({
           roomName={room.room_name}
           tourDate={tourDate}
           isPublicView={isPublicView}
-          language={customerLanguage}
+          language={customerLanguage as 'en' | 'ko' | undefined}
         />
       )}
 
@@ -1090,7 +1121,13 @@ function PickupScheduleAccordion({
   schedule, 
   onPhotoClick 
 }: { 
-  schedule: any
+  schedule: {
+    time: string;
+    hotel: string;
+    location: string;
+    people: number;
+    customers?: Array<{ name: string; people: number }>;
+  }
   onPhotoClick: () => void
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
