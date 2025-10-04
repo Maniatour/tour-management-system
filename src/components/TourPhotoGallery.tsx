@@ -17,13 +17,36 @@ interface TourPhotoGalleryProps {
   isOpen: boolean
   onClose: () => void
   tourId: string
+  language?: 'ko' | 'en'
 }
 
-export default function TourPhotoGallery({ isOpen, onClose, tourId }: TourPhotoGalleryProps) {
+export default function TourPhotoGallery({ isOpen, onClose, tourId, language = 'ko' }: TourPhotoGalleryProps) {
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPhoto, setSelectedPhoto] = useState<TourPhoto | null>(null)
   const [showModal, setShowModal] = useState(false)
+
+  // 다국어 텍스트
+  const texts = {
+    ko: {
+      title: '투어 사진',
+      noPhotos: '업로드된 사진이 없습니다.',
+      close: '닫기',
+      download: '다운로드',
+      uploadedBy: '업로드:',
+      uploadedAt: '업로드 시간:'
+    },
+    en: {
+      title: 'Tour Photos',
+      noPhotos: 'No photos uploaded yet.',
+      close: 'Close',
+      download: 'Download',
+      uploadedBy: 'Uploaded by:',
+      uploadedAt: 'Uploaded at:'
+    }
+  }
+  
+  const t = texts[language]
 
   // 사진 목록 로드
   const loadPhotos = async () => {
@@ -158,7 +181,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId }: TourPhotoG
           <div className="flex items-center justify-between p-4 border-b">
             <h2 className="text-xl font-semibold text-gray-900 flex items-center">
               <ImageIcon className="w-5 h-5 mr-2" />
-              투어 사진 갤러리
+              {t.title}
             </h2>
             <button
               onClick={onClose}
@@ -205,7 +228,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId }: TourPhotoG
             ) : (
               <div className="text-center py-12">
                 <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500">아직 업로드된 사진이 없습니다.</p>
+                <p className="text-gray-500">{t.noPhotos}</p>
               </div>
             )}
           </div>
@@ -290,7 +313,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId }: TourPhotoG
                   className="flex items-center px-3 py-1 bg-white bg-opacity-20 rounded hover:bg-opacity-30 transition-colors"
                 >
                   <Download className="w-4 h-4 mr-1" />
-                  다운로드
+                  {t.download}
                 </button>
               </div>
             </div>

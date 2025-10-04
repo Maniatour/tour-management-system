@@ -907,14 +907,14 @@ export default function TourChatRoom({
               <Gift size={12} className="lg:w-3.5 lg:h-3.5" />
             </a>
             {isPublicView && (
-              <a
-                href="#tour-photos"
+              <button
+                onClick={() => setShowPhotoGallery(true)}
                 className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200 flex items-center justify-center"
                 title="투어 사진"
                 aria-label="투어 사진"
               >
                 <ImageIcon size={12} className="lg:w-3.5 lg:h-3.5" />
-              </a>
+              </button>
             )}
             </div>
             <div className="flex items-center space-x-1 lg:space-x-2">
@@ -1166,6 +1166,7 @@ export default function TourChatRoom({
         isOpen={showPhotoGallery}
         onClose={() => setShowPhotoGallery(false)}
         tourId={tourId || ''}
+        language={locale}
       />
     </div>
   )
