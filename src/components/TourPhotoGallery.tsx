@@ -275,14 +275,24 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       {/* 메인 갤러리 */}
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] flex flex-col">
-          {/* 헤더 */}
-          <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="text-xl font-semibold text-gray-900 flex items-center">
-              <ImageIcon className="w-5 h-5 mr-2" />
-              {t.title} ({photos.length})
-            </h2>
-            
-            <div className="flex items-center space-x-2">
+          {/* 헤더 - 2줄 레이아웃 */}
+          <div className="p-4 border-b">
+            {/* 첫 번째 줄: 제목과 닫기 버튼 */}
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+                <ImageIcon className="w-5 h-5 mr-2" />
+                {t.title} ({photos.length})
+              </h2>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* 두 번째 줄: 기능 버튼들 */}
+            <div className="flex flex-wrap items-center gap-2">
               {/* 일괄 다운로드 모드 토글 */}
               <button
                 onClick={() => {
@@ -345,13 +355,6 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                   <List className="w-4 h-4" />
                 </button>
               </div>
-
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
           </div>
 
