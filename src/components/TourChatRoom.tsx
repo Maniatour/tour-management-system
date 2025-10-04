@@ -235,6 +235,8 @@ export default function TourChatRoom({
         console.log('투어 ID:', tourId)
         console.log('투어 데이터:', tour)
         console.log('예약 데이터:', reservations)
+        console.log('예약 개수:', reservations?.length || 0)
+        console.log('배정된 예약 ID들:', tour.reservation_ids)
         console.log('=====================================')
       }
 
@@ -347,6 +349,16 @@ export default function TourChatRoom({
 
       console.log('Generated pickup schedule:', schedule)
       console.log('Final pickup schedule array length:', schedule.length)
+      
+      // 고객용 채팅에서 최종 픽업 스케줄 디버깅
+      if (isPublicView) {
+        console.log('=== 고객용 채팅 최종 픽업 스케줄 ===')
+        console.log('생성된 스케줄:', schedule)
+        console.log('스케줄 개수:', schedule.length)
+        console.log('호텔별 그룹화 데이터:', groupedByHotel)
+        console.log('=====================================')
+      }
+      
       setPickupSchedule(schedule)
       
       // 디버깅을 위한 추가 정보
@@ -359,6 +371,15 @@ export default function TourChatRoom({
       }
     } catch (error) {
       console.error('Error loading pickup schedule:', error)
+      
+      // 고객용 채팅에서 오류 디버깅
+      if (isPublicView) {
+        console.log('=== 고객용 채팅 픽업 스케줄 오류 ===')
+        console.log('오류 내용:', error)
+        console.log('투어 ID:', tourId)
+        console.log('=====================================')
+      }
+      
       // 오류가 발생해도 빈 배열로 설정하여 무한 로딩 방지
       setPickupSchedule([])
     }
