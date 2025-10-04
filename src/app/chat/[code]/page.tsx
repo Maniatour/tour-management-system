@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, use } from 'react'
 import { ArrowLeft, Home as HomeIcon, ChevronDown, SquarePen } from 'lucide-react'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
@@ -43,7 +43,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   const [showNameEdit, setShowNameEdit] = useState(false)
   const [productNames, setProductNames] = useState<ProductNames | null>(null)
 
-  const { code } = React.use(params)
+  const { code } = use(params)
 
   useEffect(() => {
     loadRoomInfo()
