@@ -381,22 +381,24 @@ export default function TourMaterialsManagementPage() {
                   /* 그리드 뷰 - 5열 */
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                     {filteredMaterials.map(material => (
-                      <div key={material.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
-                        {material.file_type === 'audio' ? (
-                          /* 오디오 파일인 경우 플레이어만 표시 */
-                          <AudioPlayer
-                            src={getFileUrl(material.file_path)}
-                            title={material.title}
-                            audioDuration={material.duration || undefined}
-                            language={material.language}
-                            attraction={(material as any).tour_attractions?.name_ko || '관광지 없음'}
-                            category={(material as any).tour_material_categories?.name_ko || '카테고리 없음'}
-                            fileSize={formatFileSize(material.file_size)}
-                            className="w-full"
-                            isExpanded={expandedAudio.has(material.id)}
-                            onToggleExpanded={() => toggleAudioAccordion(material.id)}
-                          />
-                        ) : (
+                      material.file_type === 'audio' ? (
+                        /* 오디오 파일인 경우 플레이어만 표시 (외부 박스 없음) */
+                        <AudioPlayer
+                          key={material.id}
+                          src={getFileUrl(material.file_path)}
+                          title={material.title}
+                          audioDuration={material.duration || undefined}
+                          language={material.language}
+                          attraction={(material as any).tour_attractions?.name_ko || '관광지 없음'}
+                          category={(material as any).tour_material_categories?.name_ko || '카테고리 없음'}
+                          fileSize={formatFileSize(material.file_size)}
+                          className="w-full"
+                          isExpanded={expandedAudio.has(material.id)}
+                          onToggleExpanded={() => toggleAudioAccordion(material.id)}
+                        />
+                      ) : (
+                        /* 비오디오 파일인 경우 기존 카드 형태 */
+                        <div key={material.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
                           /* 비오디오 파일인 경우 기존 카드 형태 */
                           <>
                             {/* 파일 아이콘과 제목 */}
@@ -475,30 +477,32 @@ export default function TourMaterialsManagementPage() {
                               </div>
                             </div>
                           </>
-                        )}
-                      </div>
+                        </div>
+                      )
                     ))}
                   </div>
                 ) : (
                   /* 리스트 뷰 */
                   <div className="space-y-4">
                     {filteredMaterials.map(material => (
-                      <div key={material.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                        {material.file_type === 'audio' ? (
-                          /* 오디오 파일인 경우 플레이어만 표시 */
-                          <AudioPlayer
-                            src={getFileUrl(material.file_path)}
-                            title={material.title}
-                            audioDuration={material.duration || undefined}
-                            language={material.language}
-                            attraction={(material as any).tour_attractions?.name_ko || '관광지 없음'}
-                            category={(material as any).tour_material_categories?.name_ko || '카테고리 없음'}
-                            fileSize={formatFileSize(material.file_size)}
-                            className="w-full"
-                            isExpanded={expandedAudio.has(material.id)}
-                            onToggleExpanded={() => toggleAudioAccordion(material.id)}
-                          />
-                        ) : (
+                      material.file_type === 'audio' ? (
+                        /* 오디오 파일인 경우 플레이어만 표시 (외부 박스 없음) */
+                        <AudioPlayer
+                          key={material.id}
+                          src={getFileUrl(material.file_path)}
+                          title={material.title}
+                          audioDuration={material.duration || undefined}
+                          language={material.language}
+                          attraction={(material as any).tour_attractions?.name_ko || '관광지 없음'}
+                          category={(material as any).tour_material_categories?.name_ko || '카테고리 없음'}
+                          fileSize={formatFileSize(material.file_size)}
+                          className="w-full"
+                          isExpanded={expandedAudio.has(material.id)}
+                          onToggleExpanded={() => toggleAudioAccordion(material.id)}
+                        />
+                      ) : (
+                        /* 비오디오 파일인 경우 기존 리스트 형태 */
+                        <div key={material.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                           /* 비오디오 파일인 경우 기존 리스트 형태 */
                           <div className="flex items-start justify-between">
                             <div className="flex items-start space-x-3 flex-1">
@@ -552,8 +556,8 @@ export default function TourMaterialsManagementPage() {
                               </button>
                             </div>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )
                     ))}
                   </div>
                 )
