@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, use } from 'react'
 import { ArrowLeft, Home as HomeIcon, ChevronDown, SquarePen } from 'lucide-react'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
@@ -31,7 +31,7 @@ interface ProductNames {
   name_en?: string | null
 }
 
-export default function PublicChatPage({ params }: { params: { code: string } }) {
+export default function PublicChatPage({ params }: { params: Promise<{ code: string }> }) {
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -43,7 +43,7 @@ export default function PublicChatPage({ params }: { params: { code: string } })
   const [showNameEdit, setShowNameEdit] = useState(false)
   const [productNames, setProductNames] = useState<ProductNames | null>(null)
 
-  const { code } = params
+  const { code } = use(params)
 
   useEffect(() => {
     console.log('PublicChatPage useEffect triggered with code:', code)
