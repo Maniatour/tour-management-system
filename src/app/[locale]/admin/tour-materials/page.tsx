@@ -18,6 +18,8 @@ import {
   Eye,
   Download,
   Search,
+  Grid3X3,
+  List,
   Filter,
   MapPin,
   Clock,
@@ -56,6 +58,7 @@ export default function TourMaterialsManagementPage() {
   const [showAttractionModal, setShowAttractionModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [selectedMaterial, setSelectedMaterial] = useState<TourMaterial | null>(null)
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid')
 
   useEffect(() => {
     loadData()
@@ -296,6 +299,25 @@ export default function TourMaterialsManagementPage() {
                 />
               </div>
             </div>
+            <div className="flex items-center gap-4">
+              {/* 뷰 모드 토글 */}
+              <div className="flex border rounded">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 ${viewMode === 'grid' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+                  title="그리드 보기"
+                >
+                  <Grid3X3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 ${viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}
+                  title="리스트 보기"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
             <div className="flex gap-4">
               <select
                 value={selectedAttraction}
@@ -344,76 +366,174 @@ export default function TourMaterialsManagementPage() {
                   </button>
                 </div>
               ) : (
-                <div className="grid gap-4">
-                  {filteredMaterials.map(material => (
-                    <div key={material.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start space-x-3 flex-1">
-                          {getFileIcon(material.file_type)}
-                          <div className="flex-1">
-                            <h3 className="font-medium text-gray-900">{material.title}</h3>
+                viewMode === 'grid' ? (
+                  /* 그리드 뷰 - 5열 */
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {filteredMaterials.map(material => (
+                      <div key={material.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
+                        {/* 파일 아이콘과 제목 */}
+                        <div className="flex items-start space-x-3 mb-3">
+                          <div className="flex-shrink-0">
+                            {getFileIcon(material.file_type)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-gray-900 text-sm truncate" title={material.title}>
+                              {material.title}
+                            </h3>
                             {material.description && (
-                              <p className="text-sm text-gray-600 mt-1">{material.description}</p>
-                            )}
-                            <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                              <span className="flex items-center space-x-1">
-                                <MapPin className="w-3 h-3" />
-                                <span>{(material as any).tour_attractions?.name_ko || '관광지 없음'}</span>
-                              </span>
-                              <span className="flex items-center space-x-1">
-                                <Tag className="w-3 h-3" />
-                                <span>{(material as any).tour_material_categories?.name_ko || '카테고리 없음'}</span>
-                              </span>
-                              <span>{formatFileSize(material.file_size)}</span>
-                              {material.duration && (
-                                <span className="flex items-center space-x-1">
-                                  <Clock className="w-3 h-3" />
-                                  <span>{formatDuration(material.duration)}</span>
-                                </span>
-                              )}
-                              <span className="flex items-center space-x-1">
-                                <Globe className="w-3 h-3" />
-                                <span>{material.language?.toUpperCase() || 'KO'}</span>
-                              </span>
-                            </div>
-                            
-                            {/* 오디오 파일인 경우 플레이어 표시 */}
-                            {material.file_type === 'audio' && (
-                              <div className="mt-3">
-                                <AudioPlayer
-                                  src={getFileUrl(material.file_path)}
-                                  title={material.title}
-                                  audioDuration={material.duration || undefined}
-                                  className="max-w-md"
-                                />
-                              </div>
+                              <p className="text-xs text-gray-600 mt-1 line-clamp-2" title={material.description}>
+                                {material.description}
+                              </p>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <button className="p-2 text-gray-400 hover:text-blue-600">
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleDownload(material)}
-                            className="p-2 text-gray-400 hover:text-green-600"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleEdit(material)}
-                            className="p-2 text-gray-400 hover:text-blue-600"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button className="p-2 text-gray-400 hover:text-red-600">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+
+                        {/* 메타 정보 */}
+                        <div className="space-y-2 text-xs text-gray-500">
+                          <div className="flex items-center space-x-1">
+                            <MapPin className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{(material as any).tour_attractions?.name_ko || '관광지 없음'}</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <Tag className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{(material as any).tour_material_categories?.name_ko || '카테고리 없음'}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>{formatFileSize(material.file_size)}</span>
+                            <span className="flex items-center space-x-1">
+                              <Globe className="w-3 h-3" />
+                              <span>{material.language?.toUpperCase() || 'KO'}</span>
+                            </span>
+                          </div>
+                          {material.duration && (
+                            <div className="flex items-center space-x-1">
+                              <Clock className="w-3 h-3" />
+                              <span>{formatDuration(material.duration)}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 오디오 파일인 경우 플레이어 */}
+                        {material.file_type === 'audio' && (
+                          <div className="mt-3">
+                            <AudioPlayer
+                              src={getFileUrl(material.file_path)}
+                              title={material.title}
+                              audioDuration={material.duration || undefined}
+                              className="w-full"
+                            />
+                          </div>
+                        )}
+
+                        {/* 액션 버튼들 */}
+                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+                          <div className="flex items-center space-x-1">
+                            <button 
+                              className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
+                              title="보기"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              onClick={() => handleDownload(material)}
+                              className="p-1.5 text-gray-400 hover:text-green-600 transition-colors"
+                              title="다운로드"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <button 
+                              onClick={() => handleEdit(material)}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
+                              title="편집"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
+                              title="삭제"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* 리스트 뷰 */
+                  <div className="space-y-4">
+                    {filteredMaterials.map(material => (
+                      <div key={material.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start space-x-3 flex-1">
+                            {getFileIcon(material.file_type)}
+                            <div className="flex-1">
+                              <h3 className="font-medium text-gray-900">{material.title}</h3>
+                              {material.description && (
+                                <p className="text-sm text-gray-600 mt-1">{material.description}</p>
+                              )}
+                              <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                                <span className="flex items-center space-x-1">
+                                  <MapPin className="w-3 h-3" />
+                                  <span>{(material as any).tour_attractions?.name_ko || '관광지 없음'}</span>
+                                </span>
+                                <span className="flex items-center space-x-1">
+                                  <Tag className="w-3 h-3" />
+                                  <span>{(material as any).tour_material_categories?.name_ko || '카테고리 없음'}</span>
+                                </span>
+                                <span>{formatFileSize(material.file_size)}</span>
+                                {material.duration && (
+                                  <span className="flex items-center space-x-1">
+                                    <Clock className="w-3 h-3" />
+                                    <span>{formatDuration(material.duration)}</span>
+                                  </span>
+                                )}
+                                <span className="flex items-center space-x-1">
+                                  <Globe className="w-3 h-3" />
+                                  <span>{material.language?.toUpperCase() || 'KO'}</span>
+                                </span>
+                              </div>
+                              
+                              {/* 오디오 파일인 경우 플레이어 표시 */}
+                              {material.file_type === 'audio' && (
+                                <div className="mt-3">
+                                  <AudioPlayer
+                                    src={getFileUrl(material.file_path)}
+                                    title={material.title}
+                                    audioDuration={material.duration || undefined}
+                                    className="max-w-md"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button className="p-2 text-gray-400 hover:text-blue-600">
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleDownload(material)}
+                              className="p-2 text-gray-400 hover:text-green-600"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleEdit(material)}
+                              className="p-2 text-gray-400 hover:text-blue-600"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button className="p-2 text-gray-400 hover:text-red-600">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
             </div>
           )}
