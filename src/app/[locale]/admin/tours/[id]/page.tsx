@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Map, MapPin, Clock, User, Users, Eye } from 'lucide-react'
+// @ts-ignore
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -17,6 +18,7 @@ import {
   calculateUnassignedPeople,
   getPendingReservations
 } from '@/utils/tourUtils'
+import { formatCustomerName } from '@/utils/koreanTransliteration'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
@@ -153,7 +155,7 @@ export default function TourDetailPage() {
       const productOptionsCacheKey = cacheKeys.productOptions(productId)
       cache.set(productOptionsCacheKey, optionsMap, 15 * 60 * 1000) // 15분 캐시
       
-      setProductOptions(prev => ({
+      setProductOptions((prev: any) => ({
         ...prev,
         [productId]: optionsMap
       }))
@@ -469,7 +471,7 @@ export default function TourDetailPage() {
   const fetchTourData = useCallback(async (tourId: string) => {
     try {
       setLoading(true)
-      setLoadingStates(prev => ({ ...prev, tour: true }))
+        setLoadingStates((prev: any) => ({ ...prev, tour: true }))
       
       // 1단계: 핵심 투어 데이터만 먼저 로드 (캐시 확인)
       let tourData = cache.get(cacheKeys.tour(tourId))
@@ -504,7 +506,7 @@ export default function TourDetailPage() {
         // 기본 투어 정보 즉시 설정
         setTour(processedTourData)
         setIsPrivateTour(!!processedTourData.is_private_tour)
-        setLoadingStates(prev => ({ ...prev, tour: false }))
+        setLoadingStates((prev: any) => ({ ...prev, tour: false }))
         
         // 팀 구성 정보 설정
         if (td?.tour_guide_id) {
@@ -528,7 +530,7 @@ export default function TourDetailPage() {
         if (td?.tour_note) setTourNote(td.tour_note as string)
 
         // 2단계: 병렬로 핵심 데이터 로드 (상품, 예약, 고객)
-        setLoadingStates(prev => ({ ...prev, reservations: true }))
+        setLoadingStates((prev: any) => ({ ...prev, reservations: true }))
         const coreDataPromises = []
         
         // 상품 정보 (캐시 확인)
@@ -546,11 +548,11 @@ export default function TourDetailPage() {
             .select('*')
                 .eq('id', td.product_id)
             .single()
-                .then(({ data: productData }) => {
+                .then(({ data: productData }: { data: any }) => {
                   if (productData) {
                     cache.set(productCacheKey, productData, 15 * 60 * 1000) // 15분 캐시
                   }
-          setProduct(productData)
+                  setProduct(productData)
                   return productData
                 })
             )
@@ -579,7 +581,7 @@ export default function TourDetailPage() {
             .select('*')
                 .eq('product_id', td.product_id)
                 .eq('tour_date', td.tour_date)
-                .then(({ data: allReservations, error: reservationError }) => {
+                .then(({ data: allReservations, error: reservationError }: { data: any, error: any }) => {
           if (reservationError) {
             console.error('Error fetching reservations:', reservationError)
                     return []
@@ -610,7 +612,7 @@ export default function TourDetailPage() {
           .select('*')
               .eq('product_id', td.product_id)
               .eq('tour_date', td.tour_date)
-              .then(({ data: allToursData, error: toursError }) => {
+              .then(({ data: allToursData, error: toursError }: { data: any, error: any }) => {
         if (toursError) {
           console.error('Error fetching all tours:', toursError)
                   return []
@@ -624,11 +626,11 @@ export default function TourDetailPage() {
         // 핵심 데이터 병렬 로드 완료 대기
         const coreResults = await Promise.all(coreDataPromises)
         const reservations = (coreResults[1] as ReservationRow[]) || []
-        setLoadingStates(prev => ({ ...prev, reservations: false }))
+        setLoadingStates((prev: any) => ({ ...prev, reservations: false }))
         
         // 3단계: 고객 정보 로드 (예약이 있는 경우에만, 캐시 확인)
         if (reservations.length > 0) {
-          setLoadingStates(prev => ({ ...prev, customers: true }))
+          setLoadingStates((prev: any) => ({ ...prev, customers: true }))
         const customerIds = reservations.map(r => (r as any).customer_id).filter(Boolean) as string[]
         if (customerIds.length > 0) {
             const customersCacheKey = cacheKeys.customers(customerIds)
@@ -648,7 +650,7 @@ export default function TourDetailPage() {
               }
             }
           }
-          setLoadingStates(prev => ({ ...prev, customers: false }))
+          setLoadingStates((prev: any) => ({ ...prev, customers: false }))
         }
 
         // 4단계: 배정된 예약들 처리
@@ -714,7 +716,7 @@ export default function TourDetailPage() {
           let productOptionsData = cache.get(productOptionsCacheKey)
           
           if (productOptionsData) {
-            setProductOptions(prev => ({
+            setProductOptions((prev: any) => ({
               ...prev,
               [td.product_id]: productOptionsData
             }))
@@ -741,7 +743,7 @@ export default function TourDetailPage() {
                 })
                 
                 cache.set(productOptionsCacheKey, optionsMap, 15 * 60 * 1000) // 15분 캐시
-                setProductOptions(prev => ({
+                setProductOptions((prev: any) => ({
                   ...prev,
                   [td.product_id]: optionsMap
                 }))
@@ -787,9 +789,9 @@ export default function TourDetailPage() {
         }
 
         // 9단계: 부킹 데이터 (백그라운드에서 로드)
-        setLoadingStates(prev => ({ ...prev, bookings: true }))
+        setLoadingStates((prev: any) => ({ ...prev, bookings: true }))
         fetchBookings(tourId).finally(() => {
-          setLoadingStates(prev => ({ ...prev, bookings: false }))
+          setLoadingStates((prev: any) => ({ ...prev, bookings: false }))
         }).catch(console.error)
       }
     } catch (error) {
@@ -829,7 +831,7 @@ export default function TourDetailPage() {
     }
 
     try {
-      setLoadingStates(prev => ({ ...prev, modal: true }))
+      setLoadingStates((prev: any) => ({ ...prev, modal: true }))
       const promises = []
       
       // 전체 상품 목록 (모달용, 캐시 확인)
@@ -846,7 +848,7 @@ export default function TourDetailPage() {
               .from('products')
               .select('*')
               .order('name')
-              .then(({ data }) => {
+              .then(({ data }: { data: any }) => {
                 const products = data || []
                 cache.set(productsCacheKey, products, 30 * 60 * 1000) // 30분 캐시
                 setAllProducts(products)
@@ -870,7 +872,7 @@ export default function TourDetailPage() {
               .from('channels')
               .select('*')
               .order('name')
-              .then(({ data }) => {
+              .then(({ data }: { data: any }) => {
                 const channels = (data as any[]) || []
                 cache.set(channelsCacheKey, channels, 30 * 60 * 1000) // 30분 캐시
                 setChannels(channels)
@@ -895,7 +897,7 @@ export default function TourDetailPage() {
               .select('email, name_ko, name_en')
               .eq('position', 'Tour Guide')
               .eq('is_active', true)
-              .then(({ data }) => {
+              .then(({ data }: { data: any }) => {
                 const team = (data as TeamMember[]) || []
                 cache.set(teamCacheKey, team, 15 * 60 * 1000) // 15분 캐시
                 setTeamMembers(team)
@@ -919,7 +921,7 @@ export default function TourDetailPage() {
               .from('pickup_hotels')
               .select('*')
               .eq('is_active', true)
-              .then(({ data }) => {
+              .then(({ data }: { data: any }) => {
                 const hotels = (data as PickupHotel[]) || []
                 cache.set(hotelsCacheKey, hotels, 30 * 60 * 1000) // 30분 캐시
                 setPickupHotels(hotels)
@@ -933,7 +935,7 @@ export default function TourDetailPage() {
     } catch (error) {
       console.error('Error loading modal data:', error)
     } finally {
-      setLoadingStates(prev => ({ ...prev, modal: false }))
+      setLoadingStates((prev: any) => ({ ...prev, modal: false }))
     }
   }, [allProducts.length, channels.length, teamMembers.length, pickupHotels.length])
 
@@ -1034,7 +1036,7 @@ export default function TourDetailPage() {
 
       // 배정된 차량 정보 업데이트
       if (vehicleId) {
-        const selectedVehicle = vehicles.find(v => v.id === vehicleId)
+        const selectedVehicle = vehicles.find((v: any) => v.id === vehicleId)
         setAssignedVehicle(selectedVehicle || null)
       } else {
         setAssignedVehicle(null)
@@ -1065,10 +1067,10 @@ export default function TourDetailPage() {
       }
 
       // 로컬 상태 업데이트
-      const reservation = pendingReservations.find(r => r.id === reservationId)
+      const reservation = pendingReservations.find((r: any) => r.id === reservationId)
       if (reservation) {
         setAssignedReservations([...assignedReservations, reservation])
-        setPendingReservations(pendingReservations.filter(r => r.id !== reservationId))
+        setPendingReservations(pendingReservations.filter((r: any) => r.id !== reservationId))
         
         // 투어 상태 업데이트
         setTour({ ...tour, reservation_ids: updatedReservationIds })
@@ -1096,10 +1098,10 @@ export default function TourDetailPage() {
       }
 
       // 로컬 상태 업데이트
-      const reservation = assignedReservations.find(r => r.id === reservationId)
+      const reservation = assignedReservations.find((r: any) => r.id === reservationId)
       if (reservation) {
         setPendingReservations([...pendingReservations, reservation])
-        setAssignedReservations(assignedReservations.filter(r => r.id !== reservationId))
+        setAssignedReservations(assignedReservations.filter((r: any) => r.id !== reservationId))
         
         // 투어 상태 업데이트
         setTour({ ...tour, reservation_ids: updatedReservationIds })
@@ -1110,12 +1112,12 @@ export default function TourDetailPage() {
   }
 
   const getCustomerName = (customerId: string) => {
-    const customer = customers.find(c => c.id === customerId)
-    return customer ? customer.name : 'Unknown Customer'
+    const customer = customers.find((c: any) => c.id === customerId)
+    return formatCustomerName(customer, locale)
   }
 
   const getCustomerLanguage = (customerId: string) => {
-    const customer = customers.find(c => c.id === customerId)
+    const customer = customers.find((c: any) => c.id === customerId)
     return customer ? customer.language : 'Unknown'
   }
 
@@ -1124,7 +1126,7 @@ export default function TourDetailPage() {
       console.log('getPickupHotelName called:', { pickupHotelId, pickupHotelsCount: pickupHotels.length })
     }
     
-    const hotel = pickupHotels.find(h => h.id === pickupHotelId)
+    const hotel = pickupHotels.find((h: any) => h.id === pickupHotelId)
     if (hotel) {
       const result = `${hotel.hotel} - ${hotel.pick_up_location}`
       if (process.env.NODE_ENV === 'development') {
@@ -1140,7 +1142,7 @@ export default function TourDetailPage() {
   }
 
   const getPickupHotelNameOnly = (pickupHotelId: string) => {
-    const hotel = pickupHotels.find(h => h.id === pickupHotelId)
+    const hotel = pickupHotels.find((h: any) => h.id === pickupHotelId)
     return hotel ? hotel.hotel : pickupHotelId || '픽업 호텔 미지정'
   }
 
@@ -1196,7 +1198,7 @@ export default function TourDetailPage() {
 
     try {
       const currentReservationIds = (tour as any).reservation_ids || []
-      const newReservationIds = pendingReservations.map(r => r.id)
+      const newReservationIds = pendingReservations.map((r: any) => r.id)
       const updatedReservationIds = [...currentReservationIds, ...newReservationIds]
 
       const { error } = await (supabase as any)
@@ -1285,15 +1287,15 @@ export default function TourDetailPage() {
       }
 
       // 3. 로컬 상태 업데이트
-      const reservation = otherToursAssignedReservations.find(r => r.id === reservationId)
+      const reservation = otherToursAssignedReservations.find((r: any) => r.id === reservationId)
       if (reservation) {
         // 다른 투어 배정 목록에서 제거
-        setOtherToursAssignedReservations(prev => 
-          prev.filter(r => r.id !== reservationId)
+        setOtherToursAssignedReservations((prev: any) => 
+          prev.filter((r: any) => r.id !== reservationId)
         )
         
         // 현재 투어 배정 목록에 추가
-        setAssignedReservations(prev => [...prev, reservation])
+        setAssignedReservations((prev: any) => [...prev, reservation])
         
         // 투어 상태 업데이트
         setTour({ ...tour, reservation_ids: updatedCurrentTourReservations })
@@ -1331,15 +1333,15 @@ export default function TourDetailPage() {
       }
 
       // Update local state
-      setAssignedReservations(prev => 
-        prev.map(res => 
+      setAssignedReservations((prev: any) => 
+        prev.map((res: any) => 
           res.id === selectedReservation.id 
             ? { ...res, pickup_time: pickupTimeValue }
             : res
         )
       )
-      setPendingReservations(prev => 
-        prev.map(res => 
+      setPendingReservations((prev: any) => 
+        prev.map((res: any) => 
           res.id === selectedReservation.id 
             ? { ...res, pickup_time: pickupTimeValue }
             : res
@@ -1438,7 +1440,7 @@ export default function TourDetailPage() {
   }
 
   const getTeamMemberName = (email: string) => {
-    const member = teamMembers.find(member => member.email === email)
+    const member = teamMembers.find((member: any) => member.email === email)
     return member ? (member.name_ko || member.name_en || email) : '직원 미선택'
   }
 
@@ -1792,7 +1794,7 @@ export default function TourDetailPage() {
             <TourScheduleSection 
               productId={tour.product_id} 
               teamType={tour.team_type as 'guide+driver' | '2guide' | null}
-              locale="ko"
+              locale={params.locale as string}
             />
           </div>
         )}
@@ -1813,7 +1815,7 @@ export default function TourDetailPage() {
                   {assignedReservations.length > 0 ? (
                     (() => {
                       // 호텔별로 그룹화
-                      const groupedByHotel = assignedReservations.reduce((acc, reservation) => {
+                      const groupedByHotel = assignedReservations.reduce((acc: any, reservation: any) => {
                         const hotelName = getPickupHotelNameOnly(reservation.pickup_hotel || '')
                         if (!acc[hotelName]) {
                           acc[hotelName] = []
@@ -1823,11 +1825,11 @@ export default function TourDetailPage() {
                       }, {} as Record<string, any[]>)
 
                       return Object.entries(groupedByHotel).map(([hotelName, reservations]) => {
-                        const totalPeople = reservations.reduce((sum: number, res: any) => sum + (res.total_people || 0), 0)
-                        const hotelInfo = pickupHotels.find(h => h.hotel === hotelName)
+                        const totalPeople = (reservations as any[]).reduce((sum: number, res: any) => sum + (res.total_people || 0), 0)
+                        const hotelInfo = pickupHotels.find((h: any) => h.hotel === hotelName)
                         
                         // 가장 빠른 픽업 시간 찾기
-                        const pickupTimes = reservations.map(r => r.pickup_time).filter(Boolean)
+                        const pickupTimes = (reservations as any[]).map((r: any) => r.pickup_time).filter(Boolean)
                         const earliestTime = pickupTimes.length > 0 ? 
                           (pickupTimes.sort()[0] || '').substring(0, 5) : '08:00'
                         
@@ -1855,7 +1857,7 @@ export default function TourDetailPage() {
                               </div>
                             )}
                             <div className="space-y-1">
-                              {reservations.map((reservation: any) => (
+                              {(reservations as any[]).map((reservation: any) => (
                                 <div key={reservation.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                                   <div className="text-xs text-gray-600">
                                     {getCustomerName(reservation.customer_id || '')}
@@ -1957,7 +1959,7 @@ export default function TourDetailPage() {
                         className="text-xs border rounded px-2 py-1 min-w-32"
                       >
                         <option value="">가이드 선택</option>
-                        {teamMembers.map(member => (
+                        {teamMembers.map((member: any) => (
                           <option key={member.email} value={member.email}>
                             {member.name_ko || member.name_en || member.email}
                           </option>
@@ -1978,8 +1980,8 @@ export default function TourDetailPage() {
                         >
                           <option value="">선택</option>
                           {teamMembers
-                            .filter(member => member.email !== selectedGuide)
-                            .map(member => (
+                            .filter((member: any) => member.email !== selectedGuide)
+                            .map((member: any) => (
                               <option key={member.email} value={member.email}>
                                 {member.name_ko || member.name_en || member.email}
                               </option>
@@ -2047,7 +2049,7 @@ export default function TourDetailPage() {
                             : `차량을 선택하세요 (${vehicles.length}대 사용 가능)`
                           }
                         </option>
-                        {vehicles.map((vehicle) => (
+                        {vehicles.map((vehicle: any) => (
                           <option key={vehicle.id} value={vehicle.id}>
                             {vehicle.vehicle_category === 'company' 
                               ? `${vehicle.vehicle_number} - ${vehicle.vehicle_type} (${vehicle.capacity}인승)`
@@ -2129,7 +2131,7 @@ export default function TourDetailPage() {
                     )}
                   </h3>
                   <div className="space-y-2">
-                    {assignedReservations.map((reservation) => (
+                    {assignedReservations.map((reservation: any) => (
                       <div 
                         key={reservation.id} 
                         className={`p-3 rounded-lg border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
@@ -2139,6 +2141,7 @@ export default function TourDetailPage() {
                         <div className="flex items-center justify-between mb-2">
                           {/* 왼쪽 상단: 국기, 이름 */}
                           <div className="flex items-center space-x-2">
+                            {/* @ts-ignore */}
                             <ReactCountryFlag
                               countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
                               svg
@@ -2241,7 +2244,7 @@ export default function TourDetailPage() {
                       <span className="ml-2 text-xs text-gray-500">같은 날 같은 투어명</span>
                     </h3>
                     <div className="space-y-2">
-                      {otherToursAssignedReservations.map((reservation) => (
+                      {otherToursAssignedReservations.map((reservation: any) => (
                         <div 
                           key={reservation.id} 
                           className={`p-3 rounded-lg border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
@@ -2251,6 +2254,7 @@ export default function TourDetailPage() {
                           <div className="flex items-center justify-between mb-2">
                             {/* 왼쪽 상단: 국기, 이름 */}
                             <div className="flex items-center space-x-2">
+                              {/* @ts-ignore */}
                               <ReactCountryFlag
                                 countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
                                 svg
@@ -2343,7 +2347,7 @@ export default function TourDetailPage() {
                 <div className="mb-3">
                   <h3 className="text-sm font-medium text-gray-700 mb-2">3. 어느 투어에도 배정되지 않은 예약 ({pendingReservations.length})</h3>
                   <div className="space-y-2">
-                    {pendingReservations.map((reservation) => (
+                    {pendingReservations.map((reservation: any) => (
                       <div 
                         key={reservation.id} 
                         className={`p-3 rounded-lg border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
@@ -2353,6 +2357,7 @@ export default function TourDetailPage() {
                         <div className="flex items-center justify-between mb-2">
                           {/* 왼쪽 상단: 국기, 이름 */}
                           <div className="flex items-center space-x-2">
+                            {/* @ts-ignore */}
                             <ReactCountryFlag
                               countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
                               svg
@@ -2446,7 +2451,7 @@ export default function TourDetailPage() {
                 <div className="mb-3">
                   <h3 className="text-sm font-medium text-gray-700 mb-2">4. 취소/기타 상태 예약 ({inactiveReservations.length})</h3>
                   <div className="space-y-2">
-                    {inactiveReservations.map((reservation) => (
+                    {inactiveReservations.map((reservation: any) => (
                       <div 
                         key={reservation.id} 
                         className={`p-3 rounded-lg border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
@@ -2456,6 +2461,7 @@ export default function TourDetailPage() {
                         <div className="flex items-center justify-between mb-2">
                           {/* 왼쪽 상단: 국기, 이름 */}
                           <div className="flex items-center space-x-2">
+                            {/* @ts-ignore */}
                             <ReactCountryFlag
                               countryCode={getCountryCode(getCustomerLanguage(reservation.customer_id || '') || '')}
                               svg
@@ -2585,7 +2591,7 @@ export default function TourDetailPage() {
                         </button>
                       </div>
                       <div className="space-y-1">
-                        {filteredTicketBookings.map((booking) => (
+                        {filteredTicketBookings.map((booking: LocalTicketBooking) => (
                           <div 
                             key={booking.id} 
                             className={`p-2 border rounded cursor-pointer hover:bg-gray-50 transition-colors ${isStaff ? '' : 'cursor-not-allowed'}`}
@@ -2642,7 +2648,7 @@ export default function TourDetailPage() {
                     <div>
                       <h3 className="text-sm font-medium text-gray-700 mb-2">투어 호텔 부킹 ({tourHotelBookings.length})</h3>
                       <div className="space-y-2">
-                        {tourHotelBookings.map((booking) => (
+                        {tourHotelBookings.map((booking: LocalTourHotelBooking) => (
                           <div 
                             key={booking.id} 
                             className={`border rounded p-3 cursor-pointer hover:bg-gray-50 ${isStaff ? '' : 'cursor-not-allowed'}`}
@@ -2718,7 +2724,7 @@ export default function TourDetailPage() {
                   <Button 
                     onClick={() => {
                       if (tour) {
-                        openChat({
+                        (openChat as any)({
                           id: `chat_${tour.id}_${Date.now()}`, // 고유한 ID 생성
                           tourId: tour.id,
                           tourDate: tour.tour_date,
@@ -2727,8 +2733,6 @@ export default function TourDetailPage() {
                         })
                       }
                     }}
-                    variant="default"
-                    size="sm"
                     className="flex items-center gap-2"
                   >
                     <Users className="h-4 w-4" />
@@ -2752,10 +2756,10 @@ export default function TourDetailPage() {
                 <TourPhotoUpload
                   tourId={tour.id}
                   uploadedBy="guide@tour.com" // 실제로는 현재 로그인한 가이드의 이메일
-                  onPhotosUpdated={() => {
+                  onPhotosUpdated={(() => {
                     // 사진 업데이트 시 필요한 로직
                     console.log('Photos updated')
-                  }}
+                  }) as any}
                 />
               </div>
             </div>
@@ -2795,8 +2799,6 @@ export default function TourDetailPage() {
                    </h2>
                    <div className="flex gap-2">
                      <Button
-                       size="sm"
-                       variant="outline"
                        onClick={() => {
                          // 투어 리포트 작성 모드로 전환
                          const reportSection = document.querySelector('[data-tour-report-section]')
@@ -2811,8 +2813,6 @@ export default function TourDetailPage() {
                        <span className="hidden sm:inline">작성</span>
                      </Button>
                      <Button
-                       size="sm"
-                       variant="outline"
                        onClick={() => {
                          // 투어 리포트 목록 모드로 전환
                          const reportSection = document.querySelector('[data-tour-report-section]')
@@ -2862,6 +2862,7 @@ export default function TourDetailPage() {
             
             <div className="mb-4">
                 <div className="flex items-center space-x-2 mb-2">
+                {/* @ts-ignore */}
                 <ReactCountryFlag
                   countryCode={getCountryCode(getCustomerLanguage(selectedReservation.customer_id || '') || '')}
                   svg

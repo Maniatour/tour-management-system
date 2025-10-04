@@ -15,6 +15,7 @@ import TourReportSection from '@/components/TourReportSection'
 import TourReportForm from '@/components/TourReportForm'
 import TourWeather from '@/components/TourWeather'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
+import { formatCustomerName } from '@/utils/koreanTransliteration'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -59,6 +60,11 @@ export default function GuideTourDetailPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'bookings' | 'photos' | 'chat' | 'expenses' | 'report'>('overview')
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tour-info', 'pickup-schedule']))
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+  const [calculatedTourTimes, setCalculatedTourTimes] = useState<{
+    startTime: string;
+    endTime: string;
+    sunriseTime: string;
+  } | null>(null)
   
   // 탭별 섹션 매핑
   const tabSections = {
@@ -201,15 +207,33 @@ export default function GuideTourDetailPage() {
 
     } catch (err) {
       console.error('Error loading tour data:', err)
-      setError('데이터를 불러오는 중 오류가 발생했습니다.')
+      setError(locale === 'ko' ? '데이터를 불러오는 중 오류가 발생했습니다.' : 'An error occurred while loading data.')
     } finally {
       setLoading(false)
     }
-  }, [params.id, currentUserEmail, userRole, t])
+  }, [params.id, currentUserEmail, userRole, t, locale])
 
   useEffect(() => {
     loadTourData()
   }, [loadTourData])
+
+  // 투어 시간 계산 (MDGCSUNRISE 상품의 경우 일출 시간 기반)
+  useEffect(() => {
+    const calcTourTimes = async () => {
+      if (tour?.tour_date && product) {
+        if (tour.product_id === 'MDGCSUNRISE') {
+          // MDGCSUNRISE 상품의 경우 일출 시간 기반으로 계산
+          const durationHours = 8 // MDGCSUNRISE는 기본 8시간 투어
+          const tourTimes = await calculateSunriseTourTimes(tour.tour_date, durationHours)
+          setCalculatedTourTimes(tourTimes)
+        } else {
+          // 다른 상품의 경우 기본값으로 설정
+          setCalculatedTourTimes(null)
+        }
+      }
+    }
+    calcTourTimes()
+  }, [tour?.tour_date, tour?.product_id, product])
 
   // 고객 정보 조회 함수
   const getCustomerInfo = (customerId: string) => {
@@ -311,6 +335,61 @@ export default function GuideTourDetailPage() {
       return dateTimeString
     }
   }
+
+  // MDGCSUNRISE 상품의 일출 시간 기반 투어 시간 계산 함수
+  const calculateSunriseTourTimes = async (tourDate: string, durationHours: number = 8) => {
+    try {
+      const { getSunriseSunsetData } = await import('@/lib/weatherApi')
+      const data = await getSunriseSunsetData('Grand Canyon South Rim', tourDate)
+      
+      if (data && data.sunrise) {
+        const sunriseTime = data.sunrise
+        const [sunriseHours, sunriseMinutes] = sunriseTime.split(':').map(Number)
+        
+        // 투어 시작 시간: 일출 시간에서 8시간 빼기 (전날 밤)
+        const tourStartHours = (sunriseHours - 8 + 24) % 24
+        const tourStartMinutes = sunriseMinutes
+        
+        // 투어 종료 시간: 일출 시간에서 duration 시간 더하기
+        const tourEndHours = (sunriseHours + durationHours) % 24
+        const tourEndMinutes = sunriseMinutes
+        
+        // 날짜 계산
+        const tourDateObj = new Date(tourDate + 'T00:00:00')
+        const startDate = new Date(tourDateObj)
+        const endDate = new Date(tourDateObj)
+        
+        // 시작 시간이 전날이면 날짜를 하루 빼기
+        if (sunriseHours - 8 < 0) {
+          startDate.setDate(startDate.getDate() - 1)
+        }
+        
+        // 종료 시간이 다음날이면 날짜를 하루 더하기
+        if (sunriseHours + durationHours >= 24) {
+          endDate.setDate(endDate.getDate() + 1)
+        }
+        
+        return {
+          startTime: `${startDate.toISOString().split('T')[0]} ${String(tourStartHours).padStart(2, '0')}:${String(tourStartMinutes).padStart(2, '0')}`,
+          endTime: `${endDate.toISOString().split('T')[0]} ${String(tourEndHours).padStart(2, '0')}:${String(tourEndMinutes).padStart(2, '0')}`,
+          sunriseTime: sunriseTime
+        }
+      }
+      
+      return {
+        startTime: `${tourDate} 22:00`,
+        endTime: `${tourDate} 06:00`,
+        sunriseTime: '06:00'
+      }
+    } catch (error) {
+      console.error(locale === 'ko' ? '일출 투어 시간 계산 실패:' : 'Failed to calculate sunrise tour time:', error)
+      return {
+        startTime: `${tourDate} 22:00`,
+        endTime: `${tourDate} 06:00`,
+        sunriseTime: '06:00'
+      }
+    }
+  }
   
   // 탭 변경 함수
   const handleTabChange = (tab: typeof activeTab) => {
@@ -376,7 +455,7 @@ export default function GuideTourDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">오류</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">{locale === 'ko' ? '오류' : 'Error'}</h1>
           <p className="text-gray-600 mb-4">{error}</p>
           <button 
             onClick={() => router.push('/${locale}/guide/tours')}
@@ -393,7 +472,7 @@ export default function GuideTourDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">투어를 찾을 수 없습니다</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">{locale === 'ko' ? '투어를 찾을 수 없습니다' : 'Tour not found'}</h1>
           <button 
             onClick={() => router.push('/${locale}/guide/tours')}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
@@ -626,7 +705,7 @@ export default function GuideTourDetailPage() {
                           👥 {booking.ea || 0}
                         </span>
                         <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-                          # {booking.rn_number || '번호 없음'}
+# {booking.rn_number || (locale === 'ko' ? '번호 없음' : 'No number')}
                         </span>
                 </div>
                     )
@@ -636,7 +715,16 @@ export default function GuideTourDetailPage() {
             
                   {/* 출발 - 종료 시간 */}
                   <div className="text-gray-700">
-                    {formatDateTime(tour.tour_start_datetime)} - {formatDateTime(tour.tour_end_datetime)}
+                    {calculatedTourTimes ? (
+                      <>
+                        {formatDateTime(calculatedTourTimes.startTime)} - {formatDateTime(calculatedTourTimes.endTime)}
+                        <div className="text-xs text-gray-500 mt-1">
+{locale === 'ko' ? '일출 시간' : 'Sunrise time'}: {calculatedTourTimes.sunriseTime}
+                        </div>
+                      </>
+                    ) : (
+                      `${formatDateTime(tour.tour_start_datetime)} - ${formatDateTime(tour.tour_end_datetime)}`
+                    )}
                   </div>
                 </div>
               </div>
@@ -727,7 +815,7 @@ export default function GuideTourDetailPage() {
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-600 hover:text-blue-700 transition-colors"
-                              title="지도에서 보기"
+                              title={locale === 'ko' ? '지도에서 보기' : 'View on map'}
                             >
                               <MapPin className="w-4 h-4" />
                             </a>
@@ -769,7 +857,7 @@ export default function GuideTourDetailPage() {
                                     return null;
                                   })()}
                                   <div className="font-medium text-gray-900">
-                                    {customer?.name || '정보 없음'}
+                                    {formatCustomerName(customer, locale)}
                                   </div>
                                   <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                     <Users className="w-3 h-3 mr-1" />
@@ -977,8 +1065,8 @@ export default function GuideTourDetailPage() {
           <AccordionSection id="chat" title={t('chat')} icon={MessageSquare}>
             <div className="flex flex-col items-center justify-center py-8">
               <MessageSquare className="h-16 w-16 text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">투어 채팅방</h3>
-              <p className="text-sm text-gray-500 mb-4">투어 관련 소통을 위한 채팅방입니다.</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">{locale === 'ko' ? '투어 채팅방' : 'Tour Chat Room'}</h3>
+              <p className="text-sm text-gray-500 mb-4">{locale === 'ko' ? '투어 관련 소통을 위한 채팅방입니다.' : 'Chat room for tour-related communication.'}</p>
               <button
                 onClick={() => {
                   if (tour) {
@@ -994,7 +1082,7 @@ export default function GuideTourDetailPage() {
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
               >
                 <MessageSquare className="h-4 w-4" />
-                채팅방 플로팅
+{locale === 'ko' ? '채팅방 플로팅' : 'Open Chat'}
               </button>
             </div>
           </AccordionSection>
