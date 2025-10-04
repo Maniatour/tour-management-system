@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { useLocale } from 'next-intl'
 import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Map, MapPin, Clock, User, Users, Eye } from 'lucide-react'
 // @ts-ignore
 import ReactCountryFlag from 'react-country-flag'
@@ -77,6 +78,7 @@ const TourHotelBookingFormAny = TourHotelBookingForm as any
 export default function TourDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const locale = useLocale()
   const { hasPermission, userRole, user } = useAuth()
   const { openChat } = useFloatingChat()
   const isStaff = hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager')
