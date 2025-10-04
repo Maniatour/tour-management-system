@@ -347,21 +347,6 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
     setIsMinimized(!isMinimized)
   }
 
-  // 상태 표시 함수
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'Recruiting':
-        return '모집중'
-      case 'Confirmed':
-        return '확정'
-      case 'Completed':
-        return '완료'
-      case 'Cancelled':
-        return '취소'
-      default:
-        return status
-    }
-  }
 
   // 상태 스타일 함수
   const getStatusColor = (status: string) => {
@@ -420,7 +405,7 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
                     
                     return (
                       <>
-                        {formattedDate} [{productName}] 👥{tourInfo.assigned_people} [{getStatusLabel(tourInfo.tour_status)}]
+                        {formattedDate} [{productName}] 👥{tourInfo.assigned_people} [{tourInfo.tour_status}]
                       </>
                     )
                   })()}
@@ -494,7 +479,7 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
                   
                   return (
                     <>
-                      {formattedDate} [{productName}] 👥{tourInfo.assigned_people} [{getStatusLabel(tourInfo.tour_status)}]
+                      {formattedDate} [{productName}] 👥{tourInfo.assigned_people} [{tourInfo.tour_status}]
                     </>
                   )
                 })()}
