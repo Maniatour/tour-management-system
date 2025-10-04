@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, RotateCcw, ChevronDown, ChevronUp, Edit, Trash2, Download } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 
 interface AudioPlayerProps {
@@ -15,6 +15,9 @@ interface AudioPlayerProps {
   className?: string
   isExpanded?: boolean
   onToggleExpanded?: () => void
+  onEdit?: () => void
+  onDelete?: () => void
+  onDownload?: () => void
 }
 
 export default function AudioPlayer({ 
@@ -27,7 +30,10 @@ export default function AudioPlayer({
   fileSize,
   className = '',
   isExpanded = false,
-  onToggleExpanded
+  onToggleExpanded,
+  onEdit,
+  onDelete,
+  onDownload
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -269,10 +275,44 @@ export default function AudioPlayer({
 
             {/* 진행 바 */}
             <div>
-              <div className="flex items-center space-x-2 text-xs text-gray-500 mb-1">
-                <span>{formatTime(currentTime)}</span>
-                <span>/</span>
-                <span>{formatTime(duration)}</span>
+              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                <div className="flex items-center space-x-2">
+                  <span>{formatTime(currentTime)}</span>
+                  <span>/</span>
+                  <span>{formatTime(duration)}</span>
+                </div>
+                {/* 액션 버튼들 */}
+                {(onEdit || onDelete || onDownload) && (
+                  <div className="flex items-center space-x-1">
+                    {onDownload && (
+                      <button
+                        onClick={onDownload}
+                        className="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                        title="다운로드"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onEdit && (
+                      <button
+                        onClick={onEdit}
+                        className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                        title="편집"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onDelete && (
+                      <button
+                        onClick={onDelete}
+                        className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                        title="삭제"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <input
                 type="range"

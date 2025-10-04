@@ -395,6 +395,12 @@ export default function TourMaterialsManagementPage() {
                           className="w-full"
                           isExpanded={expandedAudio.has(material.id)}
                           onToggleExpanded={() => toggleAudioAccordion(material.id)}
+                          onEdit={() => handleEdit(material)}
+                          onDelete={() => {
+                            // 삭제 기능 구현 필요
+                            console.log('Delete material:', material.id)
+                          }}
+                          onDownload={() => handleDownload(material)}
                         />
                       ) : (
                         /* 비오디오 파일인 경우 기존 카드 형태 */
@@ -499,6 +505,12 @@ export default function TourMaterialsManagementPage() {
                           className="w-full"
                           isExpanded={expandedAudio.has(material.id)}
                           onToggleExpanded={() => toggleAudioAccordion(material.id)}
+                          onEdit={() => handleEdit(material)}
+                          onDelete={() => {
+                            // 삭제 기능 구현 필요
+                            console.log('Delete material:', material.id)
+                          }}
+                          onDownload={() => handleDownload(material)}
                         />
                       ) : (
                         /* 비오디오 파일인 경우 기존 리스트 형태 */
