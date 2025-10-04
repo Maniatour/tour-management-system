@@ -59,6 +59,7 @@ export default function TourMaterialsManagementPage() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [selectedMaterial, setSelectedMaterial] = useState<TourMaterial | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid')
+  const [expandedAudio, setExpandedAudio] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     loadData()
@@ -179,6 +180,16 @@ export default function TourMaterialsManagementPage() {
   const handleEdit = (material: TourMaterial) => {
     setSelectedMaterial(material)
     setShowEditModal(true)
+  }
+
+  const toggleAudioAccordion = (materialId: string) => {
+    const newExpanded = new Set(expandedAudio)
+    if (newExpanded.has(materialId)) {
+      newExpanded.delete(materialId)
+    } else {
+      newExpanded.add(materialId)
+    }
+    setExpandedAudio(newExpanded)
   }
 
   // 수정 완료 후 데이터 새로고침
@@ -420,7 +431,13 @@ export default function TourMaterialsManagementPage() {
                               src={getFileUrl(material.file_path)}
                               title={material.title}
                               audioDuration={material.duration || undefined}
+                              language={material.language}
+                              attraction={(material as any).tour_attractions?.name_ko || '관광지 없음'}
+                              category={(material as any).tour_material_categories?.name_ko || '카테고리 없음'}
+                              fileSize={formatFileSize(material.file_size)}
                               className="w-full"
+                              isExpanded={expandedAudio.has(material.id)}
+                              onToggleExpanded={() => toggleAudioAccordion(material.id)}
                             />
                           </div>
                         )}
@@ -503,7 +520,13 @@ export default function TourMaterialsManagementPage() {
                                     src={getFileUrl(material.file_path)}
                                     title={material.title}
                                     audioDuration={material.duration || undefined}
+                                    language={material.language}
+                                    attraction={(material as any).tour_attractions?.name_ko || '관광지 없음'}
+                                    category={(material as any).tour_material_categories?.name_ko || '카테고리 없음'}
+                                    fileSize={formatFileSize(material.file_size)}
                                     className="max-w-md"
+                                    isExpanded={expandedAudio.has(material.id)}
+                                    onToggleExpanded={() => toggleAudioAccordion(material.id)}
                                   />
                                 </div>
                               )}
