@@ -257,9 +257,9 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
     }
   }, [showModal, handleKeyDown])
 
-  // 포맷된 날짜 문자열
+  // 포맷된 날짜 문자열 (항상 영어로 표시)
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ko-KR', {
+    return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
