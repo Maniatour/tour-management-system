@@ -46,6 +46,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   const { code } = use(params)
 
   useEffect(() => {
+    console.log('PublicChatPage useEffect triggered with code:', code)
     loadRoomInfo()
     loadSavedUserData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,8 +88,12 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
 
   const loadRoomInfo = async () => {
     try {
+      console.log('loadRoomInfo called with code:', code)
       setLoading(true)
       setError(null)
+      
+      // Supabase 인스턴스 확인
+      console.log('Supabase instance:', supabase)
 
       // 채팅방 정보 조회
       const { data: roomData, error: roomError } = await supabase
@@ -113,28 +118,47 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
         return
       }
 
-      setRoom(roomData as unknown as ChatRoom)
-      setTourInfo((roomData as unknown as { tours: TourInfo }).tours)
+      // 안전한 타입 변환
+      const roomResult = roomData as any
+      setRoom(roomResult)
+      
+      if (roomResult?.tours) {
+        setTourInfo(roomResult.tours as TourInfo)
+      } else {
+        console.error('No tours data found in room:', roomData)
+        setError('Tour information not found.')
+        return
+      }
 
       // 상품 명칭 로드 (영/한)
-      if ((roomData as unknown as { tours?: TourInfo }).tours?.product_id) {
-        const { data: productData } = await supabase
-          .from('products')
-          .select('name, name_ko, name_en')
-          .eq('id', (roomData as unknown as { tours: TourInfo }).tours.product_id)
-          .single()
-        if (productData) {
-          const pd = productData as { name?: string | null; name_ko?: string | null; name_en?: string | null }
-          setProductNames({
-            name: pd.name ?? null,
-            name_ko: pd.name_ko ?? null,
-            name_en: pd.name_en ?? null,
-          })
+      if (roomResult?.tours?.product_id) {
+        try {
+          const { data: productData } = await supabase
+            .from('products')
+            .select('name, name_ko, name_en')
+            .eq('id', roomResult.tours.product_id)
+            .single()
+          
+          if (productData) {
+            setProductNames({
+              name: productData.name ?? null,
+              name_ko: productData.name_ko ?? null,
+              name_en: productData.name_en ?? null,
+            })
+          }
+        } catch (productError) {
+          console.error('Error loading product data:', productError)
+          // 상품 정보 로딩 실패는 치명적이지 않으므로 계속 진행
         }
       }
     } catch (error) {
       console.error('Error loading room info:', error)
-      setError('An error occurred while loading the chat room.')
+      console.error('Error details:', {
+        code,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      })
+      setError(`An error occurred while loading the chat room: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setLoading(false)
     }
@@ -369,7 +393,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
         )}
 
         {/* 채팅방 */}
-        {customerName && room && tourInfo && (
+        {customerName && room && tourInfo && room.tour_id && room.created_by && room.room_code && tourInfo.tour_date && (
           <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden" style={{ height: '70vh' }}>
             <div className="flex-1 overflow-hidden">
               <TourChatRoom
