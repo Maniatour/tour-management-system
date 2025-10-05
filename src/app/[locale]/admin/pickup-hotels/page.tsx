@@ -340,21 +340,37 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
   // 지도 초기화 함수
   const initializeMap = useCallback(() => {
-    if (typeof window !== 'undefined' && (window as any).google && (window as any).google.maps && (window as any).google.maps.MapTypeId) {
-      const mapElement = document.getElementById('hotelMap')
-      if (!mapElement) return
+    try {
+      if (typeof window !== 'undefined' && (window as any).google && (window as any).google.maps) {
+        const mapElement = document.getElementById('hotelMap')
+        if (!mapElement) {
+          console.warn('지도 컨테이너 요소를 찾을 수 없습니다.')
+          return
+        }
 
-      const mapOptions = {
-        center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
-        zoom: 12,
-        mapTypeId: (window as any).google.maps.MapTypeId.ROADMAP
+        // MapTypeId가 없어도 기본값으로 처리
+        const mapOptions: any = {
+          center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
+          zoom: 12
+        }
+
+        // MapTypeId가 있으면 사용, 없으면 기본값 사용
+        if ((window as any).google.maps.MapTypeId && (window as any).google.maps.MapTypeId.ROADMAP) {
+          mapOptions.mapTypeId = (window as any).google.maps.MapTypeId.ROADMAP
+        } else {
+          console.warn('MapTypeId를 사용할 수 없어 기본 지도 타입을 사용합니다.')
+          mapOptions.mapTypeId = 'roadmap' // 문자열로 직접 지정
+        }
+
+        const map = new (window as any).google.maps.Map(mapElement, mapOptions)
+        setMapInstance(map)
+        setMapLoaded(true)
+        console.log('지도가 성공적으로 초기화되었습니다.')
+      } else {
+        console.warn('Google Maps API가 아직 로드되지 않았습니다.')
       }
-
-      const map = new (window as any).google.maps.Map(mapElement, mapOptions)
-      setMapInstance(map)
-      setMapLoaded(true)
-    } else {
-      console.warn('Google Maps API가 아직 로드되지 않았습니다.')
+    } catch (error) {
+      console.error('지도 초기화 중 오류 발생:', error)
     }
   }, [])
 
@@ -421,18 +437,20 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         }
         
         const script = document.createElement('script')
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initGoogleMaps`
         script.async = true
         script.defer = true
-        script.onload = () => {
-          // Google Maps API가 완전히 로드될 때까지 더 긴 지연 시간
+        
+        // 전역 콜백 함수 설정
+        ;(window as any).initGoogleMaps = () => {
+          console.log('Google Maps API 콜백이 호출되었습니다.')
           setTimeout(() => {
-            if ((window as any).google && (window as any).google.maps && (window as any).google.maps.MapTypeId) {
+            if ((window as any).google && (window as any).google.maps) {
               initializeMap()
             } else {
-              console.warn('Google Maps API 로드 후에도 MapTypeId를 찾을 수 없습니다.')
+              console.warn('콜백에서도 Google Maps API에 접근할 수 없습니다.')
             }
-          }, 500)
+          }, 100)
         }
         script.onerror = () => {
           alert('Google Maps API 로드 중 오류가 발생했습니다.')
@@ -441,10 +459,10 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       } else {
         // 이미 로드된 경우에도 안전하게 처리
         setTimeout(() => {
-          if (window.google && window.google.maps && window.google.maps.MapTypeId) {
+          if ((window as any).google && (window as any).google.maps) {
             initializeMap()
           } else {
-            console.warn('Google Maps API가 이미 로드되어 있지만 MapTypeId를 찾을 수 없습니다.')
+            console.warn('Google Maps API가 이미 로드되어 있지만 접근할 수 없습니다.')
           }
         }, 100)
       }
