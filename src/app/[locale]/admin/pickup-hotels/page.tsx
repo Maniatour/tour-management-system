@@ -399,7 +399,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     }
   }, [])
 
-  // 호텔 마커 추가 함수
+  // 호텔 마커 추가 함수 (최적화된 버전)
   const addHotelMarkers = useCallback((map: GoogleMapsMap) => {
     // Google Maps API가 로드되었는지 확인
     if (!(window as any).google || !(window as any).google.maps || !(window as any).google.maps.Marker || !(window as any).google.maps.InfoWindow) {
@@ -411,13 +411,24 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     mapMarkers.forEach(marker => (marker as any).setMap(null))
     const newMarkers: GoogleMapsMarker[] = []
 
+    // 안전한 HTML 이스케이프 함수
+    const escapeHtml = (text: string | null | undefined): string => {
+      if (!text) return ''
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+    }
+
     filteredHotels.forEach((hotel, index) => {
       try {
         if (hotel && hotel.pin) {
           const [lat, lng] = hotel.pin.split(',').map(Number)
           if (!isNaN(lat) && !isNaN(lng)) {
             // 마커 생성
-            const markerTitle = hotel.hotel || '호텔명 없음'
+            const markerTitle = escapeHtml(hotel.hotel) || '호텔명 없음'
             let markerLabel = '?'
             if (hotel.group_number !== null && hotel.group_number !== undefined) {
               markerLabel = hotel.group_number.toString()
@@ -430,37 +441,39 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
               label: markerLabel
             })
 
-            // InfoWindow 생성
-            const hotelName = hotel.hotel || '호텔명 없음'
-            const pickupLocation = hotel.pick_up_location || '픽업 위치 없음'
-            const address = hotel.address || '주소 없음'
-            const hotelId = hotel.id || ''
+            // InfoWindow 생성 - 더 안전한 방법
+            const hotelName = escapeHtml(hotel.hotel) || '호텔명 없음'
+            const pickupLocation = escapeHtml(hotel.pick_up_location) || '픽업 위치 없음'
+            const address = escapeHtml(hotel.address) || '주소 없음'
+            const hotelId = escapeHtml(hotel.id) || ''
             const hotelLink = hotel.link || ''
             const groupNumber = hotel.group_number
             
             // 안전한 문자열 생성
             let groupInfoHtml = ''
             if (groupNumber !== null && groupNumber !== undefined) {
-              groupInfoHtml = `<p class="text-sm text-blue-600">그룹: ${groupNumber}</p>`
+              groupInfoHtml = `<p class="text-sm text-blue-600">그룹: ${escapeHtml(groupNumber.toString())}</p>`
             }
             
             let googleMapButtonHtml = ''
             if (hotelLink && hotelLink.trim() !== '') {
-              googleMapButtonHtml = `<button onclick="window.open('${hotelLink}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>`
+              const escapedLink = escapeHtml(hotelLink)
+              googleMapButtonHtml = `<button onclick="window.open('${escapedLink}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>`
             }
             
-            const content = `
-              <div class="p-2">
-                <h3 class="font-semibold text-gray-900">${hotelName}</h3>
-                <p class="text-sm text-gray-600">${pickupLocation}</p>
-                <p class="text-sm text-gray-500">${address}</p>
-                ${groupInfoHtml}
-                <div class="mt-2 flex space-x-2">
-                  ${googleMapButtonHtml}
-                  <button onclick="editHotel('${hotelId}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>
-                </div>
-              </div>
-            `
+            // 더 안전한 content 생성
+            const content = [
+              '<div class="p-2">',
+              `<h3 class="font-semibold text-gray-900">${hotelName}</h3>`,
+              `<p class="text-sm text-gray-600">${pickupLocation}</p>`,
+              `<p class="text-sm text-gray-500">${address}</p>`,
+              groupInfoHtml,
+              '<div class="mt-2 flex space-x-2">',
+              googleMapButtonHtml,
+              `<button onclick="editHotel('${hotelId}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>`,
+              '</div>',
+              '</div>'
+            ].join('')
             
             const infoWindow = new (window as any).google.maps.InfoWindow({
               content: content
@@ -482,35 +495,36 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     setMapMarkers(newMarkers)
   }, [filteredHotels, mapMarkers])
 
-  // 지도 뷰가 활성화될 때 지도 초기화
+  // 지도 뷰가 활성화될 때 지도 초기화 (최적화된 버전)
   useEffect(() => {
     if (viewMode === 'map' && !mapLoaded) {
       // Google Maps API 스크립트 로드
-      if (!window.google) {
+      if (!(window as any).google) {
         const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
         if (!apiKey) {
-          alert('Google Maps API 키가 설정되지 않았습니다.')
+          console.error('Google Maps API 키가 설정되지 않았습니다.')
           return
         }
         
         const script = document.createElement('script')
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initGoogleMaps`
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initGoogleMaps&loading=async`
         script.async = true
         script.defer = true
         
         // 전역 콜백 함수 설정
         ;(window as any).initGoogleMaps = () => {
           console.log('Google Maps API 콜백이 호출되었습니다.')
+          // 더 긴 지연 시간으로 안정성 확보
           setTimeout(() => {
             if ((window as any).google && (window as any).google.maps) {
               initializeMap()
             } else {
               console.warn('콜백에서도 Google Maps API에 접근할 수 없습니다.')
             }
-          }, 100)
+          }, 300)
         }
         script.onerror = () => {
-          alert('Google Maps API 로드 중 오류가 발생했습니다.')
+          console.error('Google Maps API 로드 중 오류가 발생했습니다.')
         }
         document.head.appendChild(script)
       } else {
@@ -521,15 +535,20 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
           } else {
             console.warn('Google Maps API가 이미 로드되어 있지만 접근할 수 없습니다.')
           }
-        }, 100)
+        }, 200)
       }
     }
   }, [viewMode, mapLoaded, initializeMap])
 
-  // 호텔 데이터가 변경될 때 마커 업데이트
+  // 호텔 데이터가 변경될 때 마커 업데이트 (최적화된 버전)
   useEffect(() => {
     if (mapInstance && mapLoaded && viewMode === 'map') {
-      addHotelMarkers(mapInstance)
+      // 지연 실행으로 성능 최적화
+      const timeoutId = setTimeout(() => {
+        addHotelMarkers(mapInstance)
+      }, 100)
+      
+      return () => clearTimeout(timeoutId)
     }
   }, [filteredHotels, mapInstance, mapLoaded, viewMode, addHotelMarkers])
 
@@ -1592,6 +1611,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                     총 {filteredHotels.length}개 호텔 중 {filteredHotels.filter(h => h.pin).length}개 위치 표시
                     {groupFilter === 'integer' && ' (정수 그룹만)'}
                     {statusFilter !== 'all' && ` (${statusFilter === 'active' ? '활성' : '비활성'}만)`}
+                    {mapMarkers.length > 0 && ` • ${mapMarkers.length}개 마커 활성`}
                   </div>
                   <div className="flex space-x-2">
                     <button
