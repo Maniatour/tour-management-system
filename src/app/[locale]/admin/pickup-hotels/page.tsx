@@ -314,7 +314,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
-  const [selectedHotelInfo, setSelectedHotelInfo] = useState<{ name: string; pickup: string; address: string; group: number | null } | null>(null)
+  const [selectedHotelInfo, setSelectedHotelInfo] = useState<{ name: string; pickup: string; address: string; group: number | null; id: string } | null>(null)
   
   // 지도 필터링 상태
   const [groupFilter, setGroupFilter] = useState<'all' | 'integer'>('all') // 기본값: 모두 보기
@@ -876,7 +876,8 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
               name: escapeHtml(`${hotel.hotel ?? ''}`) || '호텔명 없음',
               pickup: escapeHtml(`${hotel.pick_up_location ?? ''}`) || '픽업 위치 없음',
               address: escapeHtml(`${hotel.address ?? ''}`) || '주소 없음',
-              group: hotel.group_number ?? null
+              group: hotel.group_number ?? null,
+              id: hotel.id
             })
           })
           existingMarkers[id] = marker
@@ -3041,7 +3042,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                 <h3 className="text-lg font-semibold text-gray-900">호텔 위치 지도</h3>
 
                 <p className="text-sm text-gray-600">
-                  마커를 클릭하면 호텔 정보를 확인할 수 있습니다. 마커 라벨은 그룹 번호를 표시합니다. 정수 그룹 번호를 가진 호텔 주변에는 1000m 반투명 원이 표시되며, 각 그룹마다 다른 색상으로 구분됩니다.
+                  마커를 클릭하면 호텔 정보를 확인할 수 있습니다. 마커 라벨은 그룹 번호를 표시합니다. 정수 그룹 번호를 가진 호텔 주변에는 1000m 반투명 원이 표시되며, 각 그룹마다 다른 색상으로 구분됩니다. 호텔 정보 창에서 편집 버튼을 클릭하여 호텔 정보를 수정할 수 있습니다.
 
                 </p>
 
@@ -3086,14 +3087,48 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                 {selectedHotelInfo && (
                   <div className="absolute top-4 left-4 bg-white shadow-lg rounded-lg border border-gray-200 p-4 max-w-sm z-10">
                     <div className="flex items-start justify-between space-x-4">
-                      <div>
+                      <div className="flex-1">
                         <div className="text-base font-semibold text-gray-900">{selectedHotelInfo.name}</div>
                         <div className="text-sm text-gray-700 mt-1">{selectedHotelInfo.pickup}</div>
                         <div className="text-xs text-gray-500 mt-1">{selectedHotelInfo.address}</div>
                         {selectedHotelInfo.group != null && (
                           <div className="text-xs text-blue-700 mt-2">그룹: {selectedHotelInfo.group}</div>
                         )}
+                        
+                        {/* 편집 버튼들 */}
+                        <div className="flex space-x-2 mt-3">
+                          <button
+                            onClick={() => {
+                              const hotel = hotels.find(h => h.id === selectedHotelInfo.id)
+                              if (hotel) {
+                                setEditingHotel(hotel)
+                                setSelectedHotelInfo(null)
+                              }
+                            }}
+                            className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 flex items-center space-x-1"
+                            title="호텔 편집"
+                          >
+                            <Edit2 size={12} />
+                            <span>편집</span>
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              const hotel = hotels.find(h => h.id === selectedHotelInfo.id)
+                              if (hotel) {
+                                startEdit(hotel)
+                                setSelectedHotelInfo(null)
+                              }
+                            }}
+                            className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 flex items-center space-x-1"
+                            title="빠른 편집"
+                          >
+                            <Save size={12} />
+                            <span>빠른 편집</span>
+                          </button>
+                        </div>
                       </div>
+                      
                       <button
                         onClick={() => setSelectedHotelInfo(null)}
                         className="text-gray-400 hover:text-gray-600"
