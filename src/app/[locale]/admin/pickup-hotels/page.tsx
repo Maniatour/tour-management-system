@@ -416,47 +416,60 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         if (hotel && hotel.pin) {
           const [lat, lng] = hotel.pin.split(',').map(Number)
           if (!isNaN(lat) && !isNaN(lng)) {
-          const markerTitle = hotel.hotel || '호텔명 없음'
-          const markerLabel = hotel.group_number ? hotel.group_number.toString() : '?'
-          
-          const marker = new (window as any).google.maps.Marker({
-            position: { lat, lng },
-            map: map,
-            title: markerTitle,
-            label: markerLabel
-          })
+            // 마커 생성
+            const markerTitle = hotel.hotel || '호텔명 없음'
+            let markerLabel = '?'
+            if (hotel.group_number !== null && hotel.group_number !== undefined) {
+              markerLabel = hotel.group_number.toString()
+            }
+            
+            const marker = new (window as any).google.maps.Marker({
+              position: { lat, lng },
+              map: map,
+              title: markerTitle,
+              label: markerLabel
+            })
 
-          // 마커 클릭 시 정보창 표시
-          const hotelName = hotel.hotel || '호텔명 없음'
-          const pickupLocation = hotel.pick_up_location || '픽업 위치 없음'
-          const address = hotel.address || '주소 없음'
-          const hotelId = hotel.id || ''
-          const hotelLink = hotel.link || ''
-          const groupNumber = hotel.group_number || null
-          
-          const groupInfo = groupNumber ? `<p class="text-sm text-blue-600">그룹: ${groupNumber}</p>` : ''
-          const googleMapButton = hotelLink ? `<button onclick="window.open('${hotelLink}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>` : ''
-          
-          const content = `
-            <div class="p-2">
-              <h3 class="font-semibold text-gray-900">${hotelName}</h3>
-              <p class="text-sm text-gray-600">${pickupLocation}</p>
-              <p class="text-sm text-gray-500">${address}</p>
-              ${groupInfo}
-              <div class="mt-2 flex space-x-2">
-                ${googleMapButton}
-                <button onclick="editHotel('${hotelId}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>
+            // InfoWindow 생성
+            const hotelName = hotel.hotel || '호텔명 없음'
+            const pickupLocation = hotel.pick_up_location || '픽업 위치 없음'
+            const address = hotel.address || '주소 없음'
+            const hotelId = hotel.id || ''
+            const hotelLink = hotel.link || ''
+            const groupNumber = hotel.group_number
+            
+            // 안전한 문자열 생성
+            let groupInfoHtml = ''
+            if (groupNumber !== null && groupNumber !== undefined) {
+              groupInfoHtml = `<p class="text-sm text-blue-600">그룹: ${groupNumber}</p>`
+            }
+            
+            let googleMapButtonHtml = ''
+            if (hotelLink && hotelLink.trim() !== '') {
+              googleMapButtonHtml = `<button onclick="window.open('${hotelLink}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>`
+            }
+            
+            const content = `
+              <div class="p-2">
+                <h3 class="font-semibold text-gray-900">${hotelName}</h3>
+                <p class="text-sm text-gray-600">${pickupLocation}</p>
+                <p class="text-sm text-gray-500">${address}</p>
+                ${groupInfoHtml}
+                <div class="mt-2 flex space-x-2">
+                  ${googleMapButtonHtml}
+                  <button onclick="editHotel('${hotelId}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>
+                </div>
               </div>
-            </div>
-          `
-          
-          const infoWindow = new (window as any).google.maps.InfoWindow({
-            content: content
-          })
+            `
+            
+            const infoWindow = new (window as any).google.maps.InfoWindow({
+              content: content
+            })
 
-          (marker as any).addListener('click', () => {
-            (infoWindow as any).open(map, marker)
-          })
+            // 마커 클릭 이벤트
+            (marker as any).addListener('click', () => {
+              (infoWindow as any).open(map, marker)
+            })
 
             newMarkers.push(marker)
           }
