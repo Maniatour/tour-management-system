@@ -391,27 +391,42 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         if (hotel && hotel.pin) {
           const [lat, lng] = hotel.pin.split(',').map(Number)
           if (!isNaN(lat) && !isNaN(lng)) {
+          const markerTitle = hotel.hotel || '호텔명 없음'
+          const markerLabel = hotel.group_number ? hotel.group_number.toString() : '?'
+          
           const marker = new (window as any).google.maps.Marker({
             position: { lat, lng },
             map: map,
-            title: hotel.hotel,
-            label: hotel.group_number ? hotel.group_number.toString() : '?'
+            title: markerTitle,
+            label: markerLabel
           })
 
           // 마커 클릭 시 정보창 표시
-          const infoWindow = new (window as any).google.maps.InfoWindow({
-            content: `
-              <div class="p-2">
-                <h3 class="font-semibold text-gray-900">${hotel.hotel || '호텔명 없음'}</h3>
-                <p class="text-sm text-gray-600">${hotel.pick_up_location || '픽업 위치 없음'}</p>
-                <p class="text-sm text-gray-500">${hotel.address || '주소 없음'}</p>
-                ${hotel.group_number ? `<p class="text-sm text-blue-600">그룹: ${hotel.group_number}</p>` : ''}
-                <div class="mt-2 flex space-x-2">
-                  ${hotel.link ? `<button onclick="window.open('${hotel.link}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>` : ''}
-                  <button onclick="editHotel('${hotel.id || ''}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>
-                </div>
+          const hotelName = hotel.hotel || '호텔명 없음'
+          const pickupLocation = hotel.pick_up_location || '픽업 위치 없음'
+          const address = hotel.address || '주소 없음'
+          const hotelId = hotel.id || ''
+          const hotelLink = hotel.link || ''
+          const groupNumber = hotel.group_number || null
+          
+          const groupInfo = groupNumber ? `<p class="text-sm text-blue-600">그룹: ${groupNumber}</p>` : ''
+          const googleMapButton = hotelLink ? `<button onclick="window.open('${hotelLink}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>` : ''
+          
+          const content = `
+            <div class="p-2">
+              <h3 class="font-semibold text-gray-900">${hotelName}</h3>
+              <p class="text-sm text-gray-600">${pickupLocation}</p>
+              <p class="text-sm text-gray-500">${address}</p>
+              ${groupInfo}
+              <div class="mt-2 flex space-x-2">
+                ${googleMapButton}
+                <button onclick="editHotel('${hotelId}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>
               </div>
-            `
+            </div>
+          `
+          
+          const infoWindow = new (window as any).google.maps.InfoWindow({
+            content: content
           })
 
           (marker as any).addListener('click', () => {
