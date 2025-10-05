@@ -386,10 +386,11 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     mapMarkers.forEach(marker => (marker as any).setMap(null))
     const newMarkers: GoogleMapsMarker[] = []
 
-    filteredHotels.forEach(hotel => {
-      if (hotel.pin) {
-        const [lat, lng] = hotel.pin.split(',').map(Number)
-        if (!isNaN(lat) && !isNaN(lng)) {
+    filteredHotels.forEach((hotel, index) => {
+      try {
+        if (hotel && hotel.pin) {
+          const [lat, lng] = hotel.pin.split(',').map(Number)
+          if (!isNaN(lat) && !isNaN(lng)) {
           const marker = new (window as any).google.maps.Marker({
             position: { lat, lng },
             map: map,
@@ -401,13 +402,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
           const infoWindow = new (window as any).google.maps.InfoWindow({
             content: `
               <div class="p-2">
-                <h3 class="font-semibold text-gray-900">${hotel.hotel}</h3>
-                <p class="text-sm text-gray-600">${hotel.pick_up_location}</p>
-                <p class="text-sm text-gray-500">${hotel.address}</p>
+                <h3 class="font-semibold text-gray-900">${hotel.hotel || '호텔명 없음'}</h3>
+                <p class="text-sm text-gray-600">${hotel.pick_up_location || '픽업 위치 없음'}</p>
+                <p class="text-sm text-gray-500">${hotel.address || '주소 없음'}</p>
                 ${hotel.group_number ? `<p class="text-sm text-blue-600">그룹: ${hotel.group_number}</p>` : ''}
                 <div class="mt-2 flex space-x-2">
-                  <button onclick="window.open('${hotel.link}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>
-                  <button onclick="editHotel('${hotel.id}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>
+                  ${hotel.link ? `<button onclick="window.open('${hotel.link}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>` : ''}
+                  <button onclick="editHotel('${hotel.id || ''}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>
                 </div>
               </div>
             `
@@ -417,8 +418,11 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
             (infoWindow as any).open(map, marker)
           })
 
-          newMarkers.push(marker)
+            newMarkers.push(marker)
+          }
         }
+      } catch (error) {
+        console.error(`호텔 ${index} 마커 생성 중 오류:`, error, hotel)
       }
     })
 
