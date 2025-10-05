@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, Image as ImageIcon, Copy, Share2, Calendar, Gift, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users } from 'lucide-react'
 import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
-// @ts-ignore - react-country-flag 타입 정의 문제 방지
+// @ts-expect-error - react-country-flag 타입 정의 문제 방지
 import ReactCountryFlag from 'react-country-flag'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
@@ -72,12 +72,13 @@ export default function TourChatRoom({
   const router = useRouter()
   
   // next-intl 컨텍스트가 없을 수 있으므로 안전하게 처리
-  let locale = customerLanguage // 고객 언어를 기본값으로 사용
+  let locale: 'ko' | 'en' = customerLanguage === 'ko' ? 'ko' : 'en' // 고객 언어를 기본값으로 사용
   try {
-    locale = useLocale()
-  } catch (error) {
+    const nextIntlLocale = useLocale()
+    locale = nextIntlLocale === 'ko' ? 'ko' : 'en'
+  } catch {
     console.warn('next-intl context not found, using customer language:', customerLanguage)
-    locale = customerLanguage
+    locale = customerLanguage === 'ko' ? 'ko' : 'en'
   }
   
   // 고객용 채팅에서 초기 props 디버깅
@@ -122,6 +123,11 @@ export default function TourChatRoom({
   }
 
   const clientId = getClientId()
+
+  // 언어 타입 변환 함수
+  const convertToSupportedLanguage = (lang: string): 'ko' | 'en' => {
+    return lang === 'ko' ? 'ko' : 'en'
+  }
 
   const checkBanned = async (roomId: string) => {
     try {
@@ -911,12 +917,7 @@ export default function TourChatRoom({
             </a>
             {isPublicView && (
               <button
-                onClick={() => {
-                  console.log('=== 헤더 사진 아이콘 클릭 ===')
-                  console.log('현재 tourId:', tourId)
-                  console.log('투어 사진 갤러리 열기')
-                  setShowPhotoGallery(true)
-                }}
+                onClick={() => setShowPhotoGallery(true)}
                 className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200 flex items-center justify-center"
                 title="투어 사진"
                 aria-label="투어 사진"
@@ -1169,7 +1170,7 @@ export default function TourChatRoom({
         isOpen={showPickupScheduleModal}
         onClose={() => setShowPickupScheduleModal(false)}
         pickupSchedule={pickupSchedule}
-        language={locale}
+        language={convertToSupportedLanguage(locale)}
       />
 
       {/* 투어 사진 갤러리 */}
@@ -1177,7 +1178,7 @@ export default function TourChatRoom({
         isOpen={showPhotoGallery}
         onClose={() => setShowPhotoGallery(false)}
         tourId={tourId || ''}
-        language={locale}
+        language={convertToSupportedLanguage(locale)}
       />
 
       {/* 픽업 호텔 사진 갤러리 */}
@@ -1190,7 +1191,7 @@ export default function TourChatRoom({
           }}
           hotelName={selectedPickupHotel.name}
           mediaUrls={selectedPickupHotel.mediaUrls}
-          language={locale}
+          language={convertToSupportedLanguage(locale)}
         />
       )}
     </div>

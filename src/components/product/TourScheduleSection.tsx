@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Clock, Calendar, MapPin, Car } from 'lucide-react'
+import { Clock, Calendar, MapPin, Car, Camera, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ScheduleItem {
@@ -52,6 +52,25 @@ export default function TourScheduleSection({
 }: TourScheduleSectionProps) {
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedSchedules, setExpandedSchedules] = useState<Set<string>>(new Set())
+
+  // 아코디언 토글 함수
+  const toggleScheduleExpansion = (scheduleId: string) => {
+    setExpandedSchedules(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(scheduleId)) {
+        newSet.delete(scheduleId)
+      } else {
+        newSet.add(scheduleId)
+      }
+      return newSet
+    })
+  }
+
+  // 언어별 텍스트 가져오기 함수
+  const getText = (koText: string, enText?: string) => {
+    return locale === 'ko' ? koText : (enText || koText)
+  }
 
   const fetchSchedules = useCallback(async () => {
     try {
@@ -111,29 +130,36 @@ export default function TourScheduleSection({
 
 
   const getScheduleBackgroundColor = (schedule: ScheduleItem) => {
-    // 교통편 일정인 경우 눈에 띄는 색상 사용
-    if (schedule.is_transport) {
-      return 'bg-purple-50 border-purple-300 border-2' // 교통편 - 보라색 테두리 강조
-    }
-    
-    // team_type에 따라 다른 필드로 배경 색깔 결정
+    // 담당자 색상만 적용 (교통편 특별 색상 제거)
     if (teamType === '2guide') {
       // 2가이드일 때는 two_guide_schedule 컬럼 값에 따라 색깔 결정
       if (schedule.two_guide_schedule) {
-        return schedule.two_guide_schedule === 'guide' ? 'bg-green-50 border-green-200' : 
-               schedule.two_guide_schedule === 'assistant' ? 'bg-blue-50 border-blue-200' : 
+        return schedule.two_guide_schedule === 'guide' ? 'bg-red-50 border-red-300 border-2' : 
+               schedule.two_guide_schedule === 'assistant' ? 'bg-blue-50 border-blue-300 border-2' : 
                'bg-gray-50 border-gray-200'
       }
     } else if (teamType === 'guide+driver') {
       // 가이드+드라이버일 때는 guide_driver_schedule 컬럼 값에 따라 색깔 결정
+      // assistant = 파란색, guide = 빨간색
       if (schedule.guide_driver_schedule) {
-        return schedule.guide_driver_schedule === 'guide' ? 'bg-green-50 border-green-200' : 
-               schedule.guide_driver_schedule === 'assistant' ? 'bg-orange-50 border-orange-200' : 
+        return schedule.guide_driver_schedule === 'guide' ? 'bg-red-50 border-red-300 border-2' : 
+               schedule.guide_driver_schedule === 'assistant' ? 'bg-blue-50 border-blue-300 border-2' : 
                'bg-gray-50 border-gray-200'
       }
     }
     
-    return 'bg-gray-50 border-gray-200' // 기본 색상 (담당자 미정)
+    return 'bg-gray-50 border-gray-200' // 기본 색상
+  }
+
+  // 아이콘 선택 함수
+  const getTimeIcon = (schedule: ScheduleItem) => {
+    if (schedule.is_tour) {
+      return <Camera className="h-4 w-4 text-purple-600" />
+    } else if (schedule.is_transport) {
+      return <Car className="h-4 w-4 text-green-600" />
+    } else {
+      return <Clock className="h-4 w-4 text-blue-600" />
+    }
   }
 
   const getResponsibleLabels = (schedule: ScheduleItem): LabelInfo[] => {
@@ -141,17 +167,25 @@ export default function TourScheduleSection({
     
     // teamType에 따른 라벨 표시
     if (teamType === '2guide' && schedule.two_guide_schedule) {
-      const label = schedule.two_guide_schedule === 'guide' ? '가이드' : 
-                   schedule.two_guide_schedule === 'assistant' ? '어시스턴트' : 
+      const label = schedule.two_guide_schedule === 'guide' ? getText('가이드', 'Guide') : 
+                   schedule.two_guide_schedule === 'assistant' ? getText('어시스턴트', 'Assistant') : 
                    schedule.two_guide_schedule
-      labels.push({ text: label, color: 'bg-green-100 text-green-800' })
+      // guide = 빨간색, assistant = 파란색
+      const color = schedule.two_guide_schedule === 'guide' ? 'bg-red-100 text-red-800' : 
+                   schedule.two_guide_schedule === 'assistant' ? 'bg-blue-100 text-blue-800' : 
+                   'bg-gray-100 text-gray-800'
+      labels.push({ text: label, color })
     }
     
     if (teamType === 'guide+driver' && schedule.guide_driver_schedule) {
-      const label = schedule.guide_driver_schedule === 'guide' ? '가이드' : 
-                   schedule.guide_driver_schedule === 'driver' ? '드라이버' : 
+      const label = schedule.guide_driver_schedule === 'guide' ? getText('가이드', 'Guide') : 
+                   schedule.guide_driver_schedule === 'assistant' ? getText('어시스턴트', 'Assistant') : 
                    schedule.guide_driver_schedule
-      labels.push({ text: label, color: 'bg-blue-100 text-blue-800' })
+      // guide = 빨간색, assistant = 파란색
+      const color = schedule.guide_driver_schedule === 'guide' ? 'bg-red-100 text-red-800' : 
+                   schedule.guide_driver_schedule === 'assistant' ? 'bg-blue-100 text-blue-800' : 
+                   'bg-gray-100 text-gray-800'
+      labels.push({ text: label, color })
     }
     
     return labels
@@ -233,13 +267,13 @@ export default function TourScheduleSection({
     return (
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          {teamType === '2guide' ? '2가이드 담당 일정 (전체)' : 
-           teamType === 'guide+driver' ? '가이드+드라이버 담당 일정 (전체)' : 
-           '투어 일정 (전체)'}
+          {teamType === '2guide' ? getText('2가이드 담당 일정 (전체)', '2-Guide Assigned Schedules (All)') : 
+           teamType === 'guide+driver' ? getText('가이드+드라이버 담당 일정 (전체)', 'Guide+Driver Assigned Schedules (All)') : 
+           getText('투어 일정 (전체)', 'Tour Schedules (All)')}
         </h3>
         <div className="text-center py-8">
           <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-          <p className="text-gray-500">등록된 일정이 없습니다.</p>
+          <p className="text-gray-500">{getText('등록된 일정이 없습니다.', 'No schedules registered.')}</p>
         </div>
       </div>
     )
@@ -248,9 +282,9 @@ export default function TourScheduleSection({
   return (
     <div>
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
-        {teamType === '2guide' ? '2가이드 담당 일정 (전체)' : 
-         teamType === 'guide+driver' ? '가이드+드라이버 담당 일정 (전체)' : 
-         '투어 일정 (전체)'}
+        {teamType === '2guide' ? getText('2가이드 담당 일정 (전체)', '2-Guide Assigned Schedules (All)') : 
+         teamType === 'guide+driver' ? getText('가이드+드라이버 담당 일정 (전체)', 'Guide+Driver Assigned Schedules (All)') : 
+         getText('투어 일정 (전체)', 'Tour Schedules (All)')}
       </h3>
       
       <div className="space-y-4">
@@ -269,10 +303,10 @@ export default function TourScheduleSection({
                     </div>
                     <div>
                       <h4 className="font-medium text-gray-900">
-                        {dayNum}일차
+                        {getText(`${dayNum}일차`, `Day ${dayNum}`)}
                       </h4>
                       <p className="text-sm text-gray-500">
-                        {daySchedules.length}개 일정
+                        {getText(`${daySchedules.length}개 일정`, `${daySchedules.length} schedules`)}
                       </p>
                     </div>
                   </div>
@@ -291,62 +325,86 @@ export default function TourScheduleSection({
                 
                 {/* 일정 목록 - 항상 표시 */}
                 <div className="space-y-3">
-                  {daySchedules.map((schedule) => (
-                    <div key={schedule.id} className={`p-3 rounded-lg border ${getScheduleBackgroundColor(schedule)}`}>
-                      {/* 첫 번째 줄: 시간, 소요시간, 담당자 */}
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex items-center space-x-2 text-lg text-gray-700">
-                            <Clock className="h-5 w-5" />
-                            <span className="font-bold">
-                              {schedule.start_time ? formatTime(schedule.start_time) : ''}
-                              {schedule.end_time ? `-${formatTime(schedule.end_time)}` : ''}
-                            </span>
+                  {daySchedules.map((schedule) => {
+                    const isExpanded = expandedSchedules.has(schedule.id)
+                    const hasDescription = getLocalizedText(schedule.description_ko, schedule.description_en, '')
+                    
+                    return (
+                      <div key={schedule.id} className={`p-2 rounded-lg border ${getScheduleBackgroundColor(schedule)}`}>
+                        {/* 클릭 가능한 헤더 영역 */}
+                        <div 
+                          className={`${hasDescription ? 'cursor-pointer' : ''}`}
+                          onClick={() => hasDescription && toggleScheduleExpansion(schedule.id)}
+                        >
+                          {/* 첫 번째 줄: 시작 종료시간, 소요시간 */}
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center space-x-3">
+                              <div className="flex items-center space-x-2 text-sm text-gray-700">
+                                {getTimeIcon(schedule)}
+                                <span className="font-medium">
+                                  {schedule.start_time ? formatTime(schedule.start_time) : ''}
+                                  {schedule.end_time ? `-${formatTime(schedule.end_time)}` : ''}
+                                </span>
+                              </div>
+                              {schedule.duration_minutes && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  {schedule.duration_minutes}
+                                </span>
+                              )}
+                            </div>
+                            {hasDescription && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleScheduleExpansion(schedule.id)
+                                }}
+                                className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                                title={isExpanded ? '접기' : '펼치기'}
+                              >
+                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                              </button>
+                            )}
                           </div>
-                          {schedule.duration_minutes && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                              <Clock className="w-3 h-3 mr-1" />
-                              {schedule.duration_minutes}
-                            </span>
-                          )}
+                          
+                          {/* 두 번째 줄: 제목, 담당자 라벨, 맵 버튼 */}
+                          <div className="flex items-center justify-between">
+                            <h5 className="font-medium text-gray-900 text-sm flex-1">
+                              {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
+                            </h5>
+                            <div className="flex items-center space-x-2">
+                              {getResponsibleLabels(schedule).map((label, index) => (
+                                <span key={index} className={`px-2 py-1 text-xs rounded ${label.color}`}>
+                                  {label.text}
+                                </span>
+                              ))}
+                              {(schedule.latitude && schedule.longitude) || getLocalizedText(schedule.location_ko, schedule.location_en, '') ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    openGoogleMapsNavigation(schedule)
+                                  }}
+                                  className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                                  title="구글맵에서 네비게이션 열기"
+                                >
+                                  <MapPin className="w-4 h-4" />
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          {getResponsibleLabels(schedule).map((label, index) => (
-                            <span key={index} className={`px-2 py-1 text-xs rounded ${label.color}`}>
-                              {label.text}
-                            </span>
-                          ))}
-                        </div>
+                        
+                        {/* 설명 영역 (아코디언) */}
+                        {hasDescription && isExpanded && (
+                          <div className="mt-2 pt-2 border-t border-gray-200">
+                            <p className="text-sm text-gray-600 leading-relaxed">
+                              {getLocalizedText(schedule.description_ko, schedule.description_en, '')}
+                            </p>
+                          </div>
+                        )}
                       </div>
-                      
-                      {/* 두 번째 줄: 제목 */}
-                      <div className="mb-2">
-                        <div className="flex items-center justify-between">
-                          <h5 className="font-semibold text-gray-900 text-base">
-                            {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
-                          </h5>
-                          {(schedule.latitude && schedule.longitude) || getLocalizedText(schedule.location_ko, schedule.location_en, '') ? (
-                            <button
-                              onClick={() => openGoogleMapsNavigation(schedule)}
-                              className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                              title="구글맵에서 네비게이션 열기"
-                            >
-                              <MapPin className="w-4 h-4" />
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                      
-                      {/* 세 번째 줄: 설명 */}
-                      {getLocalizedText(schedule.description_ko, schedule.description_en, '') && (
-                        <div>
-                          <p className="text-sm text-gray-600 leading-relaxed">
-                            {getLocalizedText(schedule.description_ko, schedule.description_en, '')}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )

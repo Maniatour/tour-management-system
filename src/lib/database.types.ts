@@ -641,6 +641,7 @@ export interface Database {
           link: string | null
           media: string[] | null
           is_active: boolean | null
+          group_number: number | null
           created_at: string | null
           updated_at: string | null
         }
@@ -655,6 +656,7 @@ export interface Database {
           link?: string | null
           media?: string[] | null
           is_active?: boolean | null
+          group_number?: number | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -669,6 +671,7 @@ export interface Database {
           link?: string | null
           media?: string[] | null
           is_active?: boolean | null
+          group_number?: number | null
           created_at?: string | null
           updated_at?: string | null
         }

@@ -1,9 +1,72 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
-import { Plus, Search, MapPin, Image, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle } from 'lucide-react'
+import { useState, useEffect, use, useCallback } from 'react'
+import { Plus, Search, MapPin, Image, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle, ChevronDown, ChevronUp, Info, Map, Table, Grid3X3, Edit2, Save, XCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import PickupHotelForm from '@/components/PickupHotelForm'
+import { groupHotelsByGroupNumber, processPickupRequest } from '@/utils/pickupHotelUtils'
+
+// Google Maps 타입 정의
+interface GoogleMapsMap {
+  addListener: (event: string, callback: (event: GoogleMapsMapMouseEvent) => void) => void
+  setCenter: (center: { lat: number; lng: number }) => void
+  setZoom: (zoom: number) => void
+}
+
+interface GoogleMapsMarker {
+  setMap: (map: GoogleMapsMap | null) => void
+  addListener: (event: string, callback: () => void) => void
+  getPosition: () => { lat: () => number; lng: () => number }
+}
+
+interface GoogleMapsMapMouseEvent {
+  latLng?: {
+    lat: () => number
+    lng: () => number
+  }
+}
+
+interface GoogleMapsMapTypeId {
+  ROADMAP: string
+}
+
+interface GoogleMapsGeocoder {
+  geocode: (request: { location?: { lat: number; lng: number }; address?: string }, callback: (results: GoogleMapsGeocoderResult[] | null, status: string) => void) => void
+}
+
+interface GoogleMapsGeocoderResult {
+  formatted_address: string
+  geometry: {
+    location: {
+      lat: () => number
+      lng: () => number
+    }
+  }
+}
+
+interface GoogleMapsInfoWindow {
+  open: (map: GoogleMapsMap, marker: GoogleMapsMarker) => void
+}
+
+interface GoogleMapsLatLngBounds {
+  extend: (position: { lat: () => number; lng: () => number }) => void
+}
+
+declare global {
+  interface Window {
+    google: {
+      maps: {
+        Map: new (element: HTMLElement, options: { center: { lat: number; lng: number }; zoom: number; mapTypeId: string }) => GoogleMapsMap
+        Marker: new (options: { position: { lat: number; lng: number }; map: GoogleMapsMap; title: string; label?: string }) => GoogleMapsMarker
+        MapTypeId: GoogleMapsMapTypeId
+        Geocoder: new () => GoogleMapsGeocoder
+        InfoWindow: new (options: { content: string }) => GoogleMapsInfoWindow
+        LatLngBounds: new () => GoogleMapsLatLngBounds
+        MapMouseEvent: GoogleMapsMapMouseEvent
+      }
+    }
+  }
+}
 
 interface PickupHotel {
   id: string
@@ -16,6 +79,7 @@ interface PickupHotel {
   link: string | null
   media: string[] | null
   is_active: boolean | null
+  group_number: number | null
   created_at: string | null
   updated_at: string | null
 }
@@ -67,6 +131,24 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     isOpen: false,
     hotel: null
   })
+  const [expandedGroups, setExpandedGroups] = useState<{ [key: string]: boolean }>({})
+  const [testRequest, setTestRequest] = useState('')
+  const [testResult, setTestResult] = useState<{
+    success: boolean
+    message: string
+    targetHotel: PickupHotel | null
+    requestedHotel: PickupHotel | null
+  } | null>(null)
+  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'map'>('grid')
+  const [editingHotelId, setEditingHotelId] = useState<string | null>(null)
+  const [editFormData, setEditFormData] = useState<Partial<PickupHotel>>({})
+  const [mapLoaded, setMapLoaded] = useState(false)
+  const [mapInstance, setMapInstance] = useState<GoogleMapsMap | null>(null)
+  const [mapMarkers, setMapMarkers] = useState<GoogleMapsMarker[]>([])
+  const [bulkEditMode, setBulkEditMode] = useState(false)
+  const [bulkEditData, setBulkEditData] = useState<{ [hotelId: string]: Partial<PickupHotel> }>({})
+  const [sortField, setSortField] = useState<keyof PickupHotel | null>(null)
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
   // Supabase에서 픽업 호텔 데이터 가져오기
   const fetchHotels = async () => {
@@ -127,6 +209,259 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       hotel.address?.toLowerCase().includes(searchLower)
     )
   })
+
+  const groupedHotels = groupHotelsByGroupNumber(filteredHotels)
+  const sortedGroupKeys = Object.keys(groupedHotels).sort((a, b) => {
+    // 그룹 번호 순으로 정렬 (그룹 미설정은 마지막)
+    if (a === '그룹 미설정') return 1
+    if (b === '그룹 미설정') return -1
+    
+    const aNum = parseInt(a.replace('그룹 ', ''))
+    const bNum = parseInt(b.replace('그룹 ', ''))
+    return aNum - bNum
+  })
+
+  // 정렬 함수
+  const handleSort = (field: keyof PickupHotel) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+
+  const getSortIcon = (field: keyof PickupHotel) => {
+    if (sortField !== field) {
+      return <ArrowUpDown size={14} className="text-gray-400" />
+    }
+    return sortDirection === 'asc' 
+      ? <ArrowUp size={14} className="text-blue-600" />
+      : <ArrowDown size={14} className="text-blue-600" />
+  }
+
+  // 정렬된 호텔 목록
+  const sortedHotels = [...filteredHotels].sort((a, b) => {
+    if (!sortField) return 0
+    
+    let aValue = a[sortField]
+    let bValue = b[sortField]
+    
+    // null/undefined 처리
+    if (aValue === null || aValue === undefined) aValue = ''
+    if (bValue === null || bValue === undefined) bValue = ''
+    
+    // 숫자 비교 (그룹 번호)
+    if (sortField === 'group_number') {
+      const aNum = typeof aValue === 'number' ? aValue : 999
+      const bNum = typeof bValue === 'number' ? bValue : 999
+      return sortDirection === 'asc' ? aNum - bNum : bNum - aNum
+    }
+    
+    // 문자열 비교
+    const aStr = String(aValue).toLowerCase()
+    const bStr = String(bValue).toLowerCase()
+    
+    if (aStr < bStr) return sortDirection === 'asc' ? -1 : 1
+    if (aStr > bStr) return sortDirection === 'asc' ? 1 : -1
+    return 0
+  })
+
+  // 그룹 토글 함수
+  const toggleGroup = (groupKey: string) => {
+    setExpandedGroups(prev => ({
+      ...prev,
+      [groupKey]: !prev[groupKey]
+    }))
+  }
+
+  // 초기 로드 시 모든 그룹을 확장
+  useEffect(() => {
+    if (sortedGroupKeys.length > 0 && Object.keys(expandedGroups).length === 0) {
+      const initialExpanded: { [key: string]: boolean } = {}
+      sortedGroupKeys.forEach(key => {
+        initialExpanded[key] = true
+      })
+      setExpandedGroups(initialExpanded)
+    }
+  }, [sortedGroupKeys, expandedGroups])
+
+  // 모든 그룹 토글 함수
+  const toggleAllGroups = () => {
+    const allExpanded = Object.values(expandedGroups).every(expanded => expanded)
+    const newExpanded: { [key: string]: boolean } = {}
+    sortedGroupKeys.forEach(key => {
+      newExpanded[key] = !allExpanded
+    })
+    setExpandedGroups(newExpanded)
+  }
+
+  // 픽업 요청 테스트 함수
+  const testPickupRequest = () => {
+    if (!testRequest.trim()) {
+      alert('테스트할 호텔명을 입력해주세요.')
+      return
+    }
+    
+    const result = processPickupRequest(testRequest, hotels)
+    setTestResult(result)
+  }
+
+  // 인라인 편집 함수들
+  const startEdit = (hotel: PickupHotel) => {
+    setEditingHotelId(hotel.id)
+    setEditFormData({
+      hotel: hotel.hotel,
+      pick_up_location: hotel.pick_up_location,
+      description_ko: hotel.description_ko,
+      description_en: hotel.description_en,
+      address: hotel.address,
+      pin: hotel.pin,
+      link: hotel.link,
+      group_number: hotel.group_number,
+      is_active: hotel.is_active
+    })
+  }
+
+  const cancelEdit = () => {
+    setEditingHotelId(null)
+    setEditFormData({})
+  }
+
+  const saveEdit = async (hotelId: string) => {
+    try {
+      const { error } = await supabase
+        .from('pickup_hotels')
+        .update(editFormData as never)
+        .eq('id', hotelId)
+
+      if (error) {
+        console.error('Error updating hotel:', error)
+        alert('호텔 수정 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+
+      await fetchHotels()
+      setEditingHotelId(null)
+      setEditFormData({})
+      alert('호텔이 성공적으로 수정되었습니다!')
+    } catch (error) {
+      console.error('Error updating hotel:', error)
+      alert('호텔 수정 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 지도 초기화 함수
+  const initializeMap = useCallback(() => {
+    if (typeof window !== 'undefined' && window.google && window.google.maps) {
+      const mapElement = document.getElementById('hotelMap')
+      if (!mapElement) return
+
+      const mapOptions = {
+        center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
+        zoom: 12,
+        mapTypeId: window.google.maps.MapTypeId.ROADMAP
+      }
+
+      const map = new window.google.maps.Map(mapElement, mapOptions)
+      setMapInstance(map)
+      setMapLoaded(true)
+    }
+  }, [])
+
+  // 호텔 마커 추가 함수
+  const addHotelMarkers = useCallback((map: GoogleMapsMap) => {
+    // 기존 마커 제거
+    mapMarkers.forEach(marker => marker.setMap(null))
+    const newMarkers: GoogleMapsMarker[] = []
+
+    filteredHotels.forEach(hotel => {
+      if (hotel.pin) {
+        const [lat, lng] = hotel.pin.split(',').map(Number)
+        if (!isNaN(lat) && !isNaN(lng)) {
+          const marker = new window.google.maps.Marker({
+            position: { lat, lng },
+            map: map,
+            title: hotel.hotel,
+            label: hotel.group_number ? hotel.group_number.toString() : '?'
+          })
+
+          // 마커 클릭 시 정보창 표시
+          const infoWindow = new window.google.maps.InfoWindow({
+            content: `
+              <div class="p-2">
+                <h3 class="font-semibold text-gray-900">${hotel.hotel}</h3>
+                <p class="text-sm text-gray-600">${hotel.pick_up_location}</p>
+                <p class="text-sm text-gray-500">${hotel.address}</p>
+                ${hotel.group_number ? `<p class="text-sm text-blue-600">그룹: ${hotel.group_number}</p>` : ''}
+                <div class="mt-2 flex space-x-2">
+                  <button onclick="window.open('${hotel.link}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>
+                  <button onclick="editHotel('${hotel.id}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>
+                </div>
+              </div>
+            `
+          })
+
+          marker.addListener('click', () => {
+            infoWindow.open(map, marker)
+          })
+
+          newMarkers.push(marker)
+        }
+      }
+    })
+
+    setMapMarkers(newMarkers)
+  }, [filteredHotels, mapMarkers])
+
+  // 지도 뷰가 활성화될 때 지도 초기화
+  useEffect(() => {
+    if (viewMode === 'map' && !mapLoaded) {
+      // Google Maps API 스크립트 로드
+      if (!window.google) {
+        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+        if (!apiKey) {
+          alert('Google Maps API 키가 설정되지 않았습니다.')
+          return
+        }
+        
+        const script = document.createElement('script')
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`
+        script.async = true
+        script.defer = true
+        script.onload = () => {
+          setTimeout(initializeMap, 100)
+        }
+        script.onerror = () => {
+          alert('Google Maps API 로드 중 오류가 발생했습니다.')
+        }
+        document.head.appendChild(script)
+      } else {
+        setTimeout(initializeMap, 100)
+      }
+    }
+  }, [viewMode, mapLoaded, initializeMap])
+
+  // 호텔 데이터가 변경될 때 마커 업데이트
+  useEffect(() => {
+    if (mapInstance && mapLoaded && viewMode === 'map') {
+      addHotelMarkers(mapInstance)
+    }
+  }, [filteredHotels, mapInstance, mapLoaded, viewMode, addHotelMarkers])
+
+  // 지도에서 호텔 편집을 위한 전역 함수
+  useEffect(() => {
+    (window as unknown as { editHotel: (hotelId: string) => void }).editHotel = (hotelId: string) => {
+      const hotel = hotels.find(h => h.id === hotelId)
+      if (hotel) {
+        setEditingHotel(hotel)
+      }
+    }
+    
+    return () => {
+      delete (window as unknown as { editHotel?: (hotelId: string) => void }).editHotel
+    }
+  }, [hotels])
 
   const handleAddHotel = async (hotelData: Omit<PickupHotel, 'id' | 'created_at' | 'updated_at'>) => {
     try {
@@ -298,13 +633,70 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">픽업 호텔 관리</h1>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-        >
-          <Plus size={20} />
-          <span>호텔 추가</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          {/* 뷰 모드 전환 버튼 */}
+          <div className="flex items-center bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`px-3 py-2 rounded-md flex items-center space-x-2 transition-colors ${
+                viewMode === 'grid' 
+                  ? 'bg-white text-blue-600 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Grid3X3 size={16} />
+              <span>그리드</span>
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-2 rounded-md flex items-center space-x-2 transition-colors ${
+                viewMode === 'table' 
+                  ? 'bg-white text-blue-600 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Table size={16} />
+              <span>테이블</span>
+            </button>
+            <button
+              onClick={() => setViewMode('map')}
+              className={`px-3 py-2 rounded-md flex items-center space-x-2 transition-colors ${
+                viewMode === 'map' 
+                  ? 'bg-white text-blue-600 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Map size={16} />
+              <span>지도</span>
+            </button>
+          </div>
+
+          {sortedGroupKeys.length > 0 && viewMode === 'grid' && (
+            <button
+              onClick={toggleAllGroups}
+              className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2"
+            >
+              {Object.values(expandedGroups).every(expanded => expanded) ? (
+                <>
+                  <ChevronUp size={20} />
+                  <span>모두 접기</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={20} />
+                  <span>모두 펼치기</span>
+                </>
+              )}
+            </button>
+          )}
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+          >
+            <Plus size={20} />
+            <span>호텔 추가</span>
+          </button>
+        </div>
       </div>
 
       {/* 검색 */}
@@ -319,9 +711,93 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         />
       </div>
 
-      {/* 호텔 목록 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredHotels.map((hotel) => (
+      {/* 픽업 요청 테스트 */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-center space-x-2 mb-3">
+          <Info size={20} className="text-blue-600" />
+          <h3 className="text-lg font-semibold text-blue-900">픽업 요청 테스트</h3>
+        </div>
+        <p className="text-sm text-blue-700 mb-4">
+          호텔명을 입력하면 그룹 번호에 따라 반올림된 호텔로 안내되는지 테스트할 수 있습니다.
+        </p>
+        
+        <div className="flex space-x-3">
+          <input
+            type="text"
+            placeholder="예: 플래닛 헐리우드"
+            value={testRequest}
+            onChange={(e) => setTestRequest(e.target.value)}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                testPickupRequest()
+              }
+            }}
+          />
+          <button
+            onClick={testPickupRequest}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            테스트
+          </button>
+        </div>
+
+        {/* 테스트 결과 */}
+        {testResult && (
+          <div className={`mt-4 p-3 rounded-lg border ${
+            testResult.success 
+              ? 'bg-green-50 border-green-200' 
+              : 'bg-red-50 border-red-200'
+          }`}>
+            <div className={`text-sm font-medium ${
+              testResult.success ? 'text-green-800' : 'text-red-800'
+            }`}>
+              {testResult.message}
+            </div>
+            {testResult.targetHotel && (
+              <div className="mt-2 text-xs text-gray-600">
+                <div><strong>요청 호텔:</strong> {testResult.requestedHotel?.hotel} (그룹 {testResult.requestedHotel?.group_number})</div>
+                <div><strong>안내 호텔:</strong> {testResult.targetHotel.hotel} (그룹 {testResult.targetHotel.group_number})</div>
+                <div><strong>픽업 위치:</strong> {testResult.targetHotel.pick_up_location}</div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 호텔 목록 - 뷰 모드별 렌더링 */}
+      {sortedGroupKeys.length > 0 ? (
+        <>
+          {/* 그리드 뷰 */}
+          {viewMode === 'grid' && (
+            <div className="space-y-6">
+              {sortedGroupKeys.map((groupKey) => (
+              <div key={groupKey} className="bg-white rounded-lg shadow-md border border-gray-200">
+                {/* 그룹 헤더 */}
+                <div 
+                  className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={() => toggleGroup(groupKey)}
+                >
+                  <div className="flex items-center space-x-3">
+                    <h2 className="text-lg font-semibold text-gray-900">{groupKey}</h2>
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                      {groupedHotels[groupKey].length}개 호텔
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {expandedGroups[groupKey] ? (
+                      <ChevronUp size={20} className="text-gray-500" />
+                    ) : (
+                      <ChevronDown size={20} className="text-gray-500" />
+                    )}
+                  </div>
+                </div>
+
+                {/* 그룹 내용 */}
+                {expandedGroups[groupKey] && (
+                  <div className="p-4 pt-0">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {groupedHotels[groupKey].map((hotel) => (
           <div 
             key={hotel.id} 
             className="bg-white rounded-lg shadow-md p-6 border border-gray-200 cursor-pointer hover:shadow-lg transition-shadow"
@@ -332,6 +808,11 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <h3 className="text-base font-semibold text-gray-900">{hotel.hotel}</h3>
+                  {hotel.group_number && (
+                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                      그룹 {hotel.group_number}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center space-x-2">
                   {hotel.link && (
@@ -522,9 +1003,486 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
             )}
 
             
+                  </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ))}
-      </div>
+            </div>
+          )}
+
+          {/* 테이블 뷰 */}
+          {viewMode === 'table' && (
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+              {/* 전체 수정 버튼 */}
+              <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">픽업 호텔 목록</h3>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={async () => {
+                        if (bulkEditMode) {
+                          // 전체 수정 완료 - 저장 후 종료
+                          console.log('Bulk edit data:', bulkEditData)
+                          const updatedHotels = Object.keys(bulkEditData)
+                          console.log('Updated hotels:', updatedHotels)
+                          if (updatedHotels.length === 0) {
+                            alert('변경된 내용이 없습니다.')
+                            setBulkEditMode(false)
+                            setBulkEditData({})
+                            return
+                          }
+                          
+                          const confirmMessage = `${updatedHotels.length}개 호텔의 변경사항을 저장하시겠습니까?`
+                          if (!confirm(confirmMessage)) return
+                          
+                          try {
+                            let successCount = 0
+                            let errorCount = 0
+                            
+                            for (const hotelId of updatedHotels) {
+                              const updateData = bulkEditData[hotelId]
+                              if (updateData && Object.keys(updateData).length > 0) {
+                                const { error } = await supabase
+                                  .from('pickup_hotels')
+                                  .update(updateData as never)
+                                  .eq('id', hotelId)
+                                
+                                if (error) {
+                                  console.error(`Error updating hotel ${hotelId}:`, error)
+                                  errorCount++
+                                } else {
+                                  successCount++
+                                }
+                              }
+                            }
+                            
+                            await fetchHotels()
+                            setBulkEditData({})
+                            setBulkEditMode(false)
+                            
+                            if (errorCount === 0) {
+                              alert(`${successCount}개 호텔이 성공적으로 저장되었습니다!`)
+                            } else {
+                              alert(`${successCount}개 호텔 저장 완료, ${errorCount}개 호텔 저장 실패`)
+                            }
+                          } catch (error) {
+                            console.error('Error bulk saving hotels:', error)
+                            alert('호텔 일괄 저장 중 오류가 발생했습니다.')
+                          }
+                        } else {
+                          // 전체 수정 시작
+                          setBulkEditMode(true)
+                        }
+                      }}
+                      className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
+                        bulkEditMode 
+                          ? 'bg-green-600 text-white hover:bg-green-700' 
+                          : 'bg-gray-600 text-white hover:bg-gray-700'
+                      }`}
+                    >
+                      <Edit2 size={16} />
+                      <span>{bulkEditMode ? '전체 수정 완료' : '전체 수정'}</span>
+                    </button>
+                    {bulkEditMode && (
+                      <button
+                        onClick={() => {
+                          setBulkEditMode(false)
+                          setBulkEditData({})
+                        }}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2"
+                      >
+                        <XCircle size={16} />
+                        <span>취소</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => handleSort('group_number')}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>그룹 번호</span>
+                          {getSortIcon('group_number')}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => handleSort('hotel')}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>호텔명</span>
+                          {getSortIcon('hotel')}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => handleSort('pick_up_location')}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>픽업 위치</span>
+                          {getSortIcon('pick_up_location')}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => handleSort('address')}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>주소</span>
+                          {getSortIcon('address')}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => handleSort('is_active')}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>상태</span>
+                          {getSortIcon('is_active')}
+                        </div>
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">미디어</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {sortedHotels.map((hotel) => (
+                      <tr key={hotel.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {bulkEditMode ? (
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={bulkEditData[hotel.id]?.group_number ?? hotel.group_number ?? ''}
+                              onChange={(e) => {
+                                const newData = {
+                                  ...bulkEditData,
+                                  [hotel.id]: {
+                                    ...bulkEditData[hotel.id],
+                                    group_number: e.target.value ? parseFloat(e.target.value) : null
+                                  }
+                                }
+                                console.log('Group number updated:', hotel.id, e.target.value, newData)
+                                setBulkEditData(newData)
+                              }}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          ) : editingHotelId === hotel.id ? (
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={editFormData.group_number || ''}
+                              onChange={(e) => setEditFormData({...editFormData, group_number: e.target.value ? parseFloat(e.target.value) : null})}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          ) : (
+                            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                              {hotel.group_number || '미설정'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {bulkEditMode ? (
+                            <input
+                              type="text"
+                              value={bulkEditData[hotel.id]?.hotel ?? hotel.hotel ?? ''}
+                              onChange={(e) => setBulkEditData({
+                                ...bulkEditData,
+                                [hotel.id]: {
+                                  ...bulkEditData[hotel.id],
+                                  hotel: e.target.value
+                                }
+                              })}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          ) : editingHotelId === hotel.id ? (
+                            <input
+                              type="text"
+                              value={editFormData.hotel || ''}
+                              onChange={(e) => setEditFormData({...editFormData, hotel: e.target.value})}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          ) : (
+                            <div className="text-sm font-medium text-gray-900">{hotel.hotel}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {bulkEditMode ? (
+                            <input
+                              type="text"
+                              value={bulkEditData[hotel.id]?.pick_up_location ?? hotel.pick_up_location ?? ''}
+                              onChange={(e) => setBulkEditData({
+                                ...bulkEditData,
+                                [hotel.id]: {
+                                  ...bulkEditData[hotel.id],
+                                  pick_up_location: e.target.value
+                                }
+                              })}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          ) : editingHotelId === hotel.id ? (
+                            <input
+                              type="text"
+                              value={editFormData.pick_up_location || ''}
+                              onChange={(e) => setEditFormData({...editFormData, pick_up_location: e.target.value})}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          ) : (
+                            <div className="text-sm text-gray-900">{hotel.pick_up_location}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {bulkEditMode ? (
+                            <input
+                              type="text"
+                              value={bulkEditData[hotel.id]?.address ?? hotel.address ?? ''}
+                              onChange={(e) => setBulkEditData({
+                                ...bulkEditData,
+                                [hotel.id]: {
+                                  ...bulkEditData[hotel.id],
+                                  address: e.target.value
+                                }
+                              })}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          ) : editingHotelId === hotel.id ? (
+                            <input
+                              type="text"
+                              value={editFormData.address || ''}
+                              onChange={(e) => setEditFormData({...editFormData, address: e.target.value})}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          ) : (
+                            <div className="text-sm text-gray-900 max-w-xs truncate">{hotel.address}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {bulkEditMode ? (
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={bulkEditData[hotel.id]?.is_active ?? hotel.is_active ?? false}
+                                onChange={(e) => setBulkEditData({
+                                  ...bulkEditData,
+                                  [hotel.id]: {
+                                    ...bulkEditData[hotel.id],
+                                    is_active: e.target.checked
+                                  }
+                                })}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                            </label>
+                          ) : editingHotelId === hotel.id ? (
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={editFormData.is_active || false}
+                                onChange={(e) => setEditFormData({...editFormData, is_active: e.target.checked})}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                            </label>
+                          ) : (
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              hotel.is_active 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {hotel.is_active ? '활성' : '비활성'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {hotel.media && hotel.media.length > 0 ? (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                              {hotel.media.length}개
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">없음</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          {bulkEditMode ? (
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => setEditingHotel(hotel)}
+                                className="text-gray-600 hover:text-gray-900"
+                                title="상세 편집"
+                              >
+                                <MapPin size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleCopyHotel(hotel)}
+                                className="text-blue-600 hover:text-blue-900"
+                                title="복사"
+                              >
+                                <Copy size={16} />
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirm({ isOpen: true, hotel })}
+                                className="text-red-600 hover:text-red-900"
+                                title="삭제"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ) : editingHotelId === hotel.id ? (
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => saveEdit(hotel.id)}
+                                className="text-green-600 hover:text-green-900"
+                                title="저장"
+                              >
+                                <Save size={16} />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="text-red-600 hover:text-red-900"
+                                title="취소"
+                              >
+                                <XCircle size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => startEdit(hotel)}
+                                className="text-blue-600 hover:text-blue-900"
+                                title="인라인 편집"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                              <button
+                                onClick={() => setEditingHotel(hotel)}
+                                className="text-gray-600 hover:text-gray-900"
+                                title="상세 편집"
+                              >
+                                <MapPin size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleCopyHotel(hotel)}
+                                className="text-blue-600 hover:text-blue-900"
+                                title="복사"
+                              >
+                                <Copy size={16} />
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirm({ isOpen: true, hotel })}
+                                className="text-red-600 hover:text-red-900"
+                                title="삭제"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* 전체 수정 모드 컨트롤 패널 */}
+              {bulkEditMode && (
+                <div className="px-6 py-4 bg-blue-50 border-t border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      <span className="text-sm text-gray-700">
+                        전체 편집 모드 - 모든 호텔을 동시에 편집할 수 있습니다
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      <span className="text-sm text-gray-500">
+                        상단의 "전체 수정 완료" 버튼을 눌러 저장하세요
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 지도 뷰 */}
+          {viewMode === 'map' && (
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+              <div className="p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">호텔 위치 지도</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  마커를 클릭하면 호텔 정보를 확인할 수 있습니다. 마커 라벨은 그룹 번호를 표시합니다.
+                </p>
+              </div>
+              <div className="relative">
+                <div 
+                  id="hotelMap" 
+                  style={{ width: '100%', height: '600px' }}
+                  className="bg-gray-100"
+                />
+                {!mapLoaded && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                      <p className="text-gray-600">지도를 로딩 중...</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="p-4 bg-gray-50 border-t border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    총 {filteredHotels.length}개 호텔 중 {filteredHotels.filter(h => h.pin).length}개 위치 표시
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => {
+                        if (mapInstance) {
+                          const bounds = new window.google.maps.LatLngBounds()
+                          mapMarkers.forEach(marker => {
+                            bounds.extend(marker.getPosition())
+                          })
+                          mapInstance.fitBounds(bounds)
+                        }
+                      }}
+                      className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                    >
+                      모든 호텔 보기
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (mapInstance) {
+                          mapInstance.setCenter({ lat: 36.1699, lng: -115.1398 })
+                          mapInstance.setZoom(12)
+                        }
+                      }}
+                      className="px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700"
+                    >
+                      라스베가스 중심
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="text-center py-12">
+          <div className="text-gray-500 text-lg">
+            {searchTerm ? '검색 결과가 없습니다.' : '등록된 호텔이 없습니다.'}
+          </div>
+          <div className="text-gray-400 text-sm mt-2">
+            {searchTerm ? '다른 검색어를 시도해보세요.' : '새 호텔을 추가해보세요.'}
+          </div>
+        </div>
+      )}
 
       {/* 호텔 추가/편집 모달 */}
       {showAddForm && (

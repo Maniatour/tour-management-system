@@ -48,6 +48,7 @@ export default function AttendancePage() {
   const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [currentSessionForSelectedEmployee, setCurrentSessionForSelectedEmployee] = useState<AttendanceRecord | null>(null)
+  const [employeeNotFound, setEmployeeNotFound] = useState(false)
   
   // 어드민 권한 체크
   const checkAdminPermission = async () => {
@@ -67,7 +68,7 @@ export default function AttendancePage() {
         return
       }
       
-      const position = teamData.position?.toLowerCase()
+      const position = (teamData as any).position?.toLowerCase()
       const isAdminUser = position === 'super' || position === 'admin' || position === 'op'
       
       setIsAdmin(isAdminUser)
@@ -79,14 +80,14 @@ export default function AttendancePage() {
     }
   }
 
-  // 팀 멤버 목록 조회 (OP와 Office Manager만)
+  // 팀 멤버 목록 조회 (OP와 Office Manager만 - 대소문자 구별 없음)
   const fetchTeamMembers = async () => {
     try {
       const { data, error } = await supabase
         .from('team')
         .select('email, name_ko, position')
         .eq('is_active', true)
-        .in('position', ['OP', 'Office Manager'])
+        .or('position.ilike.op,position.ilike.office manager')
         .order('name_ko')
       
       if (error) {
@@ -98,11 +99,11 @@ export default function AttendancePage() {
       
       // 기본값을 현재 사용자로 설정 (OP 또는 Office Manager인 경우)
       if (authUser?.email && data?.length) {
-        const currentUser = data.find(member => member.email === authUser.email)
+        const currentUser = data.find((member: any) => member.email === authUser.email)
         if (currentUser) {
           setSelectedEmployee(authUser.email)
         } else {
-          setSelectedEmployee(data[0].email)
+          setSelectedEmployee((data[0] as any).email)
         }
       }
     } catch (error) {
@@ -114,7 +115,6 @@ export default function AttendancePage() {
   const {
     currentSession,
     isCheckingIn,
-    employeeNotFound,
     elapsedTime,
     handleCheckIn,
     handleCheckOut,
@@ -145,7 +145,7 @@ export default function AttendancePage() {
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
-        .eq('employee_email', employeeData.email)
+        .eq('employee_email', (employeeData as any).email)
         .eq('date', today)
         .order('session_number', { ascending: true })
 
@@ -156,10 +156,10 @@ export default function AttendancePage() {
         return
       }
 
-      const records = data?.map(record => ({
+      const records = data?.map((record: any) => ({
         ...record,
-        employee_name: employeeData.name_ko,
-        employee_email: employeeData.email
+        employee_name: (employeeData as any).name_ko,
+        employee_email: (employeeData as any).email
       })) || []
       
       setTodayRecords(records)
@@ -216,12 +216,12 @@ export default function AttendancePage() {
       const month = parseInt(selectedMonth.split('-')[1]) - 1 // JavaScript 월은 0부터 시작
       const monthEnd = new Date(year, month + 1, 0).toISOString().split('T')[0]
       
-      console.log('출퇴근 기록 조회 시작...', { monthStart, monthEnd, employeeEmail: employeeData.email })
+      console.log('출퇴근 기록 조회 시작...', { monthStart, monthEnd, employeeEmail: (employeeData as any).email })
       
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
-        .eq('employee_email', employeeData.email)
+        .eq('employee_email', (employeeData as any).email)
         .gte('date', monthStart)
         .lte('date', monthEnd)
         .order('date', { ascending: false })
@@ -234,10 +234,10 @@ export default function AttendancePage() {
         return
       }
 
-      const records = data?.map(record => ({
+      const records = data?.map((record: any) => ({
         ...record,
-        employee_name: employeeData.name_ko,
-        employee_email: employeeData.email
+        employee_name: (employeeData as any).name_ko,
+        employee_email: (employeeData as any).email
       })) || []
       
       console.log('처리된 출퇴근 기록:', records)
@@ -272,23 +272,29 @@ export default function AttendancePage() {
         return
       }
 
+      console.log('월별 통계 조회 시작...', { employeeEmail: (employeeData as any).email, selectedMonth })
+
       // 월별 통계 조회 (테이블이 없을 수도 있으므로 에러 무시)
       const { data, error } = await supabase
         .from('monthly_attendance_stats')
         .select('*')
-        .eq('employee_email', employeeData.email)
+        .eq('employee_email', (employeeData as any).email)
         .eq('month', selectedMonth + '-01')
         .single()
 
+      console.log('월별 통계 조회 결과:', { data, error })
+
       if (error && error.code !== 'PGRST116') {
-        console.log('월별 통계 테이블이 아직 생성되지 않았습니다.')
+        console.log('월별 통계 조회 오류:', error)
         setMonthlyStats([])
         return
       }
 
       if (data) {
+        console.log('월별 통계 데이터:', data)
         setMonthlyStats([data])
       } else {
+        console.log('월별 통계 데이터가 없습니다.')
         setMonthlyStats([])
       }
     } catch (error) {
@@ -556,10 +562,10 @@ export default function AttendancePage() {
                     {(isAdmin ? currentSessionForSelectedEmployee : currentSession)?.session_number}번째 세션
                   </div>
                   <div className="text-sm text-gray-900">
-                    출근: {formatTime((isAdmin ? currentSessionForSelectedEmployee : currentSession)?.check_in_time)} (라스베가스 현지시간)
+                    출근: {formatTime((isAdmin ? currentSessionForSelectedEmployee?.check_in_time : currentSession?.check_in_time) || null)} (라스베가스 현지시간)
                   </div>
                   <div className="text-sm text-gray-900">
-                    날짜: {(isAdmin ? currentSessionForSelectedEmployee : currentSession)?.date}
+                    날짜: {(isAdmin ? currentSessionForSelectedEmployee : currentSession)?.date || ''}
                   </div>
                 </div>
                 <div className="px-3 py-1 text-sm bg-yellow-100 text-yellow-800 rounded-full">
@@ -629,13 +635,13 @@ export default function AttendancePage() {
       </div>
 
       {/* 월별 통계 */}
-      {monthlyStats.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <BarChart3 className="w-5 h-5 mr-2 text-blue-600" />
-            {isAdmin ? `${teamMembers.find(m => m.email === selectedEmployee)?.name_ko || '선택된 직원'}의 ${selectedMonth} 월별 근무 통계` : `${selectedMonth} 월별 근무 통계`}
-          </h2>
-          
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <BarChart3 className="w-5 h-5 mr-2 text-blue-600" />
+          {isAdmin ? `${teamMembers.find(m => m.email === selectedEmployee)?.name_ko || '선택된 직원'}의 ${selectedMonth} 월별 근무 통계` : `${selectedMonth} 월별 근무 통계`}
+        </h2>
+        
+        {monthlyStats.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-blue-50 rounded-lg">
               <div className="text-2xl font-bold text-blue-600">
@@ -662,8 +668,19 @@ export default function AttendancePage() {
               <div className="text-sm text-orange-800">하반기 (16일~말일)</div>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <BarChart3 className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+            <p className="text-lg font-medium mb-2">월별 통계가 없습니다</p>
+            <p className="text-sm">
+              {selectedMonth}월의 출퇴근 기록이 없거나 아직 통계가 생성되지 않았습니다.
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              출근 체크인을 하시면 자동으로 통계가 생성됩니다.
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* 월 선택 */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -683,7 +700,13 @@ export default function AttendancePage() {
         {attendanceRecords.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p>선택한 월의 출퇴근 기록이 없습니다.</p>
+            <p className="text-lg font-medium mb-2">출퇴근 기록이 없습니다</p>
+            <p className="text-sm mb-2">
+              {selectedMonth}월의 출퇴근 기록이 없습니다.
+            </p>
+            <p className="text-xs text-gray-400">
+              출근 체크인을 하시면 기록이 생성됩니다.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">

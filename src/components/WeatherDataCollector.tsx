@@ -80,6 +80,11 @@ export default function WeatherDataCollector({ className = '' }: WeatherDataColl
       if (response.ok) {
         const result = await response.json()
         setMessage(`✅ 다음 7일간 데이터 수집 완료: ${result.message}`)
+        if (result.results) {
+          const successCount = result.results.filter((r: any) => r.status === 'success').length
+          const errorCount = result.results.filter((r: any) => r.status === 'error').length
+          setMessage(`✅ 다음 7일간 데이터 수집 완료: 성공 ${successCount}일, 실패 ${errorCount}일`)
+        }
       } else {
         const errorData = await response.json()
         setError(`❌ 오류: ${errorData.error}`)

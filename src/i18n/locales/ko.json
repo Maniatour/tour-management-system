@@ -71,7 +71,15 @@
     "all": "전체",
     "choices": "초이스",
     "requiredChoices": "필수 초이스",
-    "optionalChoices": "선택 초이스"
+    "optionalChoices": "선택 초이스",
+    "tourDepartureTime": "투어 출발 시간",
+    "tourDepartureTimes": "투어 출발 시간들",
+    "addDepartureTime": "출발 시간 추가",
+    "removeDepartureTime": "출발 시간 제거",
+    "internalNameKo": "내부명 (한국어)",
+    "internalNameEn": "내부명 (영어)",
+    "customerNameKo": "고객명 (한국어)",
+    "customerNameEn": "고객명 (영어)"
   },
   "home": {
     "title": "투어 관리 시스템에 오신 것을 환영합니다",
@@ -1036,6 +1044,7 @@
   "guide": {
     "title": "가이드 대시보드",
     "greeting": "안녕하세요",
+    "loadingDashboard": "대시보드를 불러오는 중...",
     "welcome": "투어 가이드 대시보드에 오신 것을 환영합니다.",
     "welcomeAdmin": "투어 가이드 페이지를 확인하고 있습니다. (관리자 모드)",
     "tours": {

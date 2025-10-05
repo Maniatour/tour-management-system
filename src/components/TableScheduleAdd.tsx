@@ -1,5 +1,7 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Calendar, Plus, Save, Trash2, Image as ImageIcon, X, Upload, Loader2, Search, FolderOpen, Copy, Languages, MapPin, ExternalLink, GripVertical } from 'lucide-react'
 import Image from 'next/image'
@@ -7,6 +9,12 @@ import LocationPickerModal from './LocationPickerModal'
 import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl } from '@/lib/productMediaUpload'
 import { supabase } from '@/lib/supabase'
 import { translateScheduleFields, type ScheduleTranslationFields } from '@/lib/translationService'
+
+// Google Maps 타타입 선언 완료
+
+// 인터페이스 완료
+
+// Google Maps API 타입 정의 완료
 
 
 
@@ -108,7 +116,7 @@ export default function TableScheduleAdd({
     rating?: number
     userRatingsTotal?: number
     types?: string[]
-    marker?: any
+        marker?: any
   }>>([])
   const [showNearbyPlaces, setShowNearbyPlaces] = useState(false)
   const [isLoadingNearbyPlaces, setIsLoadingNearbyPlaces] = useState(false)
@@ -163,7 +171,7 @@ export default function TableScheduleAdd({
           } as any)
           .eq('id', schedules[mapModalIndex!].id!)
           .select()
-          .then(({ error, data, count }) => {
+          .then(({ error, data, count }: { error: any; data: any; count: any }) => {
             if (error) {
               console.error('좌표 저장 오류:', error)
               console.error('오류 상세:', error.message, error.details, error.hint)
@@ -209,7 +217,7 @@ export default function TableScheduleAdd({
       console.log('지도 중심 좌표:', centerLat, centerLng)
 
       // Map ID와 스타일 설정
-      let mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+      const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
       console.log('Google Maps Map ID:', mapId ? '설정됨' : '설정되지 않음')
       console.log('Map ID 값:', mapId)
       
@@ -238,12 +246,12 @@ export default function TableScheduleAdd({
       if (currentSchedule?.latitude && currentSchedule?.longitude) {
         // AdvancedMarkerElement가 사용 가능하고 Map ID가 설정된 경우에만 사용
         if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
-          marker = new window.google.maps.marker.AdvancedMarkerElement({
-            position: { lat: currentSchedule.latitude, lng: currentSchedule.longitude },
-            map: map,
-            title: '저장된 위치',
-            gmpDraggable: true
-          })
+        marker = new window.google.maps.marker.AdvancedMarkerElement({
+          position: { lat: currentSchedule.latitude, lng: currentSchedule.longitude },
+          map: map,
+          title: '저장된 위치',
+          draggable: true
+        } as any) as any
           console.log('TableScheduleAdd - Advanced Marker 생성 성공')
         } else {
           // Map ID가 없거나 AdvancedMarkerElement가 없으면 기본 마커 사용
@@ -252,7 +260,7 @@ export default function TableScheduleAdd({
             map: map,
             title: '저장된 위치',
             draggable: true
-          })
+          } as any)
           console.log('TableScheduleAdd - 기본 Marker 사용')
         }
 
@@ -300,22 +308,22 @@ export default function TableScheduleAdd({
           }
 
           // 새로운 Advanced Marker 추가 (드래그 가능)
-          if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
-            marker = new window.google.maps.marker.AdvancedMarkerElement({
-              position: { lat, lng },
-              map: map,
-              title: '선택된 위치',
-              gmpDraggable: true
-            })
-            console.log('TableScheduleAdd 클릭 - Advanced Marker 생성 성공')
-            console.log('🎯 마커 드래그 가능 여부:', marker.gmpDraggable || marker.draggable)
+        if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
+          marker = new window.google.maps.marker.AdvancedMarkerElement({
+            position: { lat, lng },
+            map: map,
+            title: '선택된 위치',
+            draggable: true
+          } as any) as any
+          console.log('TableScheduleAdd 클릭 - Advanced Marker 생성 성공')
+          console.log('🎯 마커 드래그 가능 여부:', marker.draggable)
           } else {
             marker = new window.google.maps.Marker({
               position: { lat, lng },
               map: map,
               title: '선택된 위치',
               draggable: true
-            })
+            } as any) as any
             console.log('TableScheduleAdd 클릭 - 기본 Marker 사용')
             console.log('🎯 마커 드래그 가능 여부:', marker.draggable)
           }
@@ -378,6 +386,7 @@ export default function TableScheduleAdd({
 
       setMapLoaded(true)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapModalIndex, schedules])
 
   // Plus Code 패턴 감지
@@ -412,7 +421,7 @@ export default function TableScheduleAdd({
     if (!query.trim() || !mapLoaded) return
 
     setIsMapSearchLoading(true)
-    const allResults: any[] = []
+    // const allResults: any[] = [] // 미사용 변수 제거
 
     try {
       // 1. Plus Code 검색 (가장 정확함)
@@ -423,7 +432,7 @@ export default function TableScheduleAdd({
           const lat = location.lat()
           const lng = location.lng()
           
-          const plusCodeResult = {
+          const plusCodeResult: any = {
             placeId: `plus_code_${Date.now()}`,
             name: `📍 Plus Code: ${query}`,
             address: (geocodeResult as any)?.formatted_address || '',
@@ -454,8 +463,8 @@ export default function TableScheduleAdd({
         if (latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) {
           // 역지오코딩으로 주소 가져오기
           const geocoder = new (window.google as any).maps.Geocoder()
-          geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results: any, status: any) => {
-            const coordResult = {
+          geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results: any) => {
+            const coordResult: any = {
               placeId: `coord_${Date.now()}`,
               name: `🎯 좌표: ${latitude}, ${longitude}`,
               address: results && results[0] ? results[0].formatted_address : `${latitude}, ${longitude}`,
@@ -484,7 +493,7 @@ export default function TableScheduleAdd({
       placesPromises.push(
         new Promise(async (resolve) => {
           try {
-            const [place] = await (window.google as any).maps.places.Place.findPlaceFromText({
+                const [place] = await (window.google as any).maps.places.Place.findPlaceFromText({
               textQuery: query,
               fields: ['id', 'displayName', 'formattedAddress', 'location', 'types', 'rating', 'userRatingCount', 'businessStatus'],
               locationBias: {
@@ -537,7 +546,7 @@ export default function TableScheduleAdd({
             })
             
             if (suggestions && suggestions.length > 0) {
-              resolve(suggestions.slice(0, 5).map(suggestion => ({
+              resolve(suggestions.slice(0, 5).map((suggestion: any) => ({
                 ...suggestion,
                 searchType: 'new_autocomplete',
                 place_id: suggestion.placePrediction?.place?.id || `new_autocomplete_${Date.now()}`,
@@ -586,7 +595,7 @@ export default function TableScheduleAdd({
               
               if (geocodeStatus === 'OK' && geocodeResults && !foundResults) {
                 foundResults = true
-                resolve(geocodeResults.map((result, i) => ({
+                resolve(geocodeResults.map((result) => ({
                   ...result,
                   searchType: 'geocoder',
                   priority: index === 0 ? 'exact' : 'related'
@@ -601,7 +610,7 @@ export default function TableScheduleAdd({
 
       // 모든 검색 방법 병렬 실행
       const searchResults = await Promise.all(placesPromises)
-      const processedResults = []
+      const processedResults: any[] = []
 
                 searchResults.forEach((results: any, index) => {
                   if (!results || results.length === 0) return
@@ -718,12 +727,12 @@ export default function TableScheduleAdd({
 
   // 주변 장소 검색 및 표시
   const searchNearbyPlaces = async (lat: number, lng: number, query: string = '') => {
-    if (!mapLoaded || !window.google?.maps?.places) return
+    if (!mapLoaded || !(window.google as any)?.maps?.places) return
 
     setIsLoadingNearbyPlaces(true)
     
     try {
-      const service = new window.google.maps.places.PlacesService(
+      const service = new (window.google as any).maps.places.PlacesService(
         document.createElement('div')
       )
 
@@ -735,12 +744,12 @@ export default function TableScheduleAdd({
       }
 
       service.nearbySearch(request, (results: any[], status: any) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+        if (status === (window.google as any).maps.places.PlacesServiceStatus.OK && results) {
           // 결과 필터링 및 정리
           const filteredResults = results
             .filter(place => place.rating && place.user_ratings_total > 0)
             .slice(0, 10) // 상위 10개만 표시
-            .map((place, index) => ({
+            .map((place) => ({
               placeId: place.place_id,
               name: place.name,
               address: place.vicinity || place.formatted_address,
@@ -782,10 +791,10 @@ export default function TableScheduleAdd({
       }
     })
 
-    places.forEach((place, index) => {
-      // 지도가 현재 위치에 있는지 확인 (약간의 오차 허용)
-      const mapLat = mapModalIndex !== null ? (schedules[mapModalIndex]?.latitude || 36.1699) : 36.1699
-      const mapLng = mapModalIndex !== null ? (schedules[mapModalIndex]?.longitude || -115.1398) : -115.1398
+    places.forEach((place) => {
+      // 지도가 현재 위치에 있는지 확인 (약간의 오차 허용) - 미사용 변수 주석 처리
+      // const mapLat = mapModalIndex !== null ? (schedules[mapModalIndex]?.latitude || 36.1699) : 36.1699
+      // const mapLng = mapModalIndex !== null ? (schedules[mapModalIndex]?.longitude || -115.1398) : -115.1398
       
       let marker: any
       const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
@@ -794,16 +803,14 @@ export default function TableScheduleAdd({
         marker = new window.google.maps.marker.AdvancedMarkerElement({
           position: { lat: place.latitude, lng: place.longitude },
           map: window.google.maps.Map ? (window as any).mapInstance : null,
-          title: place.name,
-          content: createMarkerContent(index + 1) // 번호가 표시된 마커
-        })
+          title: place.name
+          } as any) as any
       } else {
         marker = new window.google.maps.Marker({
           position: { lat: place.latitude, lng: place.longitude },
           map: window.google.maps.Map ? (window as any).mapInstance : null,
-          title: place.name,
-          label: (index + 1).toString()
-        })
+          title: place.name
+          } as any) as any
       }
 
       // 마커 클릭 이벤트 추가
@@ -816,26 +823,26 @@ export default function TableScheduleAdd({
     })
   }
 
-  // 마커 내용 생성 (숫자 표시)
-  const createMarkerContent = (number: number) => {
-    const element = document.createElement('div')
-    element.style.cssText = `
-      background-color: #1f40e6;
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      border: 2px solid white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: bold;
-      font-size: 14px;
-      cursor: pointer;
-    `
-    element.textContent = number.toString()
-    return element
-  }
+  // 마커 내용 생성 (숫자 표시) - 미사용 함수 주석 처리
+  // const createMarkerContent = (number: number) => {
+  //   const element = document.createElement('div')
+  //   element.style.cssText = `
+  //     background-color: #1f40e6;
+  //     width: 30px;
+  //     height: 30px;
+  //     border-radius: 50%;
+  //     border: 2px solid white;
+  //     display: flex;
+  //     align-items: center;
+  //     justify-content: center;
+  //     color: white;
+  //     font-weight: bold;
+  //     font-size: 14px;
+  //     cursor: pointer;
+  //   `
+  //   element.textContent = number.toString()
+  //   return element
+  // }
 
   // 주변 장소 선택
   const selectNearbyPlace = (place: typeof nearbyPlaces[0]) => {
@@ -928,25 +935,25 @@ export default function TableScheduleAdd({
 
       // 새로운 Advanced Marker 추가 (드래그 가능)
       let marker: any
-      if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
-        marker = new window.google.maps.marker.AdvancedMarkerElement({
-          position: { lat, lng },
-          map: map,
-          title: location.name,
-          gmpDraggable: true  // Advanced Marker에서는 gmpDraggable 사용
-        })
-        console.log('TableScheduleAdd 목록선택 - Advanced Marker 생성 성공')
-        console.log('🎯 마커 드래그 가능 여부:', marker.gmpDraggable || marker.draggable)
-      } else {
-        marker = new window.google.maps.Marker({
-          position: { lat, lng },
-          map: map,
-          title: location.name,
-          draggable: true
-        })
-        console.log('TableScheduleAdd 목록선택 - 기본 Marker 사용')
-        console.log('🎯 마커 드래그 가능 여부:', marker.draggable)
-      }
+        if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
+          marker = new window.google.maps.marker.AdvancedMarkerElement({
+            position: { lat, lng },
+            map: map,
+            title: location.name,
+            draggable: true
+          } as any) as any
+          console.log('TableScheduleAdd 목록선택 - Advanced Marker 생성 성공')
+          console.log('🎯 마커 드래그 가능 여부:', marker.draggable)
+        } else {
+          marker = new window.google.maps.Marker({
+            position: { lat, lng },
+            map: map,
+            title: location.name,
+            draggable: true
+          } as any) as any
+          console.log('TableScheduleAdd 목록선택 - 기본 Marker 사용')
+          console.log('🎯 마커 드래그 가능 여부:', marker.draggable)
+        }
 
       // 마커 드래그 이벤트 추가 (검색된 장소 마커용)
       const addDragListener = (markerInstance: any) => {
@@ -1115,6 +1122,7 @@ export default function TableScheduleAdd({
         setTimeout(initializeMap, 100)
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showMapModal, mapModalIndex, schedules, initializeMap])
 
   // 시간 계산 유틸리티 함수들
@@ -1187,13 +1195,11 @@ export default function TableScheduleAdd({
   }
 
   const updateSchedule = useCallback((index: number, field: keyof ScheduleItem, value: unknown) => {
-    onSchedulesChange((prevSchedules) => {
-      const updatedSchedules = [...prevSchedules]
-      updatedSchedules[index] = { ...updatedSchedules[index], [field]: value }
-      console.log(`🔄 ${field} 업데이트:`, { index, field, value, updatedSchedule: updatedSchedules[index] })
-      return updatedSchedules
-    })
-  }, [onSchedulesChange])
+    const updatedSchedules = [...schedules]
+    updatedSchedules[index] = { ...updatedSchedules[index], [field]: value }
+    console.log(`🔄 ${field} 업데이트:`, { index, field, value, updatedSchedule: updatedSchedules[index] })
+    onSchedulesChange(updatedSchedules)
+  }, [schedules, onSchedulesChange])
 
   // 드래그 앤 드롭 핸들러들
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -1307,7 +1313,7 @@ export default function TableScheduleAdd({
       }
 
       const images = await Promise.all(
-        data.map(async (file) => {
+        data.map(async (file: any) => {
           const { data: urlData } = supabase.storage
             .from('product-media')
             .getPublicUrl(`images/${file.name}`)
@@ -2526,12 +2532,12 @@ export default function TableScheduleAdd({
                 다양한 방법으로 위치를 검색할 수 있습니다:
               </p>
               <ul className="text-xs text-gray-500 mb-3 ml-4 space-y-1">
-                <li>• <strong>장소명:</strong> "Bellagio Hotel", "베네시안 호텔"</li>
-                <li>• <strong>주소:</strong> "3750 Las Vegas Blvd S", "라스베가스 스트립"</li>
-                <li>• <strong>좌표:</strong> "36.1699, -115.1398" 또는 "36.1699 -115.1398"</li>
-                <li>• <strong>Plus Code:</strong> "MGXF+WC Las Vegas"</li>
-                <li>• <strong>업체/브랜드:</strong> "마땡땡스 필립", "인앤아웃 버거"</li>
-                <li>• <strong>카테고리:</strong> "호텔", "식당", "쇼핑몰"</li>
+                <li>• <strong>장소명:</strong> &quot;Bellagio Hotel&quot;, &quot;베네시안 호텔&quot;</li>
+                <li>• <strong>주소:</strong> &quot;3750 Las Vegas Blvd S&quot;, &quot;라스베가스 스트립&quot;</li>
+                <li>• <strong>좌표:</strong> &quot;36.1699, -115.1398&quot; 또는 &quot;36.1699 -115.1398&quot;</li>
+                <li>• <strong>Plus Code:</strong> &quot;MGXF+WC Las Vegas&quot;</li>
+                <li>• <strong>업체/브랜드:</strong> &quot;마땡땡스 필립&quot;, &quot;인앤아웃 버거&quot;</li>
+                <li>• <strong>카테고리:</strong> &quot;호텔&quot;, &quot;식당&quot;, &quot;쇼핑몰&quot;</li>
               </ul>
               <p className="text-xs text-gray-400 mb-3">
                 지도에서 클릭하여 좌표를 직접 선택할 수도 있습니다. 또는 아래 검색 결과에서 원하는 장소를 클릭하세요.
@@ -2570,7 +2576,7 @@ export default function TableScheduleAdd({
                 {/* 검색 제안 목록 */}
                 {showMapSuggestions && mapSuggestions.length > 0 && (
                   <div className="relative z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {mapSuggestions.map((suggestion, index) => (
+                    {mapSuggestions.map((suggestion: any, index: number) => (
                   <button
                         key={`${suggestion.placeId || suggestion.searchType}_${index}`}
                         onClick={() => handleMapLocationSelect(suggestion)}

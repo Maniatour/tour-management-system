@@ -71,7 +71,15 @@
     "all": "All",
     "choices": "Choices",
     "requiredChoices": "Required Choices",
-    "optionalChoices": "Optional Choices"
+    "optionalChoices": "Optional Choices",
+    "tourDepartureTime": "Tour Departure Time",
+    "tourDepartureTimes": "Tour Departure Times",
+    "addDepartureTime": "Add Departure Time",
+    "removeDepartureTime": "Remove Departure Time",
+    "internalNameKo": "Internal Name (Korean)",
+    "internalNameEn": "Internal Name (English)",
+    "customerNameKo": "Customer Name (Korean)",
+    "customerNameEn": "Customer Name (English)"
   },
   "home": {
     "title": "Welcome to Tour Management System",
@@ -961,6 +969,7 @@
   "guide": {
     "title": "Guide Dashboard",
     "greeting": "Hello",
+    "loadingDashboard": "Loading dashboard...",
     "welcome": "Welcome to the Tour Guide Dashboard",
     "welcomeAdmin": "Checking the Tour Guide page. (Admin Mode)",
     "tours": {
@@ -1016,7 +1025,7 @@
       "home": "Home",
       "tours": "Tours",
       "manual": "Manual",
-      "tourMaterials": "Materials"
+      "tourMaterials": "Data"
     },
     "tourMaterialsTitle": "Tour Materials",
     "searchPlaceholder": "Search by title or description...",

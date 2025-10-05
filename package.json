@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@formatjs/intl": "^3.1.6",
+    "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^5.2.1",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-label": "^2.1.7",
@@ -42,8 +43,9 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@types/estree": "^1.0.8",
     "@types/node": "^20.19.18",
-    "@types/react": "^18.3.24",
+    "@types/react": "^18.3.25",
     "@types/react-dom": "^18.3.7",
     "autoprefixer": "^10.4.21",
     "eslint": "^9",

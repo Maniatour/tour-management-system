@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Upload, X, Camera, Image as ImageIcon, Download, Share2, Eye } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import Image from 'next/image'
+import { Upload, X, Camera, Image as ImageIcon, Share2, Eye } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import { createTourPhotosBucket, checkTourPhotosBucket, checkTourFolderExists, createTourFolderMarker } from '@/lib/tourPhotoBucket'
@@ -14,6 +15,7 @@ interface TourPhoto {
   file_path: string
   file_size: number
   mime_type: string
+  file_type?: string
   description?: string
   is_public: boolean
   share_token?: string
@@ -30,7 +32,6 @@ interface TourPhotoUploadProps {
 
 export default function TourPhotoUpload({ 
   tourId, 
-  reservationId, 
   uploadedBy, 
   onPhotosUpdated 
 }: TourPhotoUploadProps) {
@@ -52,7 +53,7 @@ export default function TourPhotoUpload({
   const [showBucketModal, setShowBucketModal] = useState(false)
 
   // 사진 목록 로드 (Storage 기반)
-  const loadPhotos = async () => {
+  const loadPhotos = useCallback(async () => {
     try {
       console.log('Loading photos for tour:', tourId)
       
@@ -68,7 +69,11 @@ export default function TourPhotoUpload({
         // 폴더가 없는 경우 생성 후 빈 배열로 설정
         if (error.message.includes('not found') || error.message.includes('not exist')) {
           console.warn(`Storage folder for tour ${tourId} not found, creating folder...`)
-          await ensureTourFolderExists()
+          try {
+            await checkTourFolderExists(tourId)
+          } catch (folderError) {
+            console.error('Error creating folder:', folderError)
+          }
           setPhotos([])
           return
         }
@@ -77,7 +82,7 @@ export default function TourPhotoUpload({
       }
       
       // 실제 사진 파일만 필터링 (마커 파일 제외)
-      const photoFiles = files?.filter(file => 
+      const photoFiles = files?.filter((file: { name: string }) => 
         !file.name.includes('.folder_info.json') && 
         !file.name.includes('folder.info') &&
         !file.name.includes('.info') &&
@@ -87,12 +92,13 @@ export default function TourPhotoUpload({
       ) || []
       
       // Storage 파일을 TourPhoto 형식으로 변환
-      const photos: TourPhoto[] = photoFiles.map(file => ({
+      const photos: TourPhoto[] = photoFiles.map((file: { id?: string; name: string; metadata?: { size?: number; mimetype?: string }; created_at?: string }) => ({
         id: file.id || file.name,
         file_name: file.name,
         file_path: `${tourId}/${file.name}`,
         file_size: file.metadata?.size || 0,
         mime_type: file.metadata?.mimetype || 'image/jpeg',
+        file_type: file.metadata?.mimetype || 'image/jpeg',
         description: undefined,
         is_public: true,
         share_token: undefined,
@@ -106,7 +112,7 @@ export default function TourPhotoUpload({
       console.error('Error loading photos:', error)
       setPhotos([])
     }
-  }
+  }, [tourId, uploadedBy])
 
   // Storage 버킷 확인 및 생성
   const ensureStorageBucket = async () => {
@@ -133,7 +139,7 @@ export default function TourPhotoUpload({
     }
   }
 
-  // 투어별 폴더 생성 함수 (개선된 자동 생성)
+  /* 투어별 폴더 생성 함수 (개선된 자동 생성) - 현재 사용하지 않음
   const createTourFolder = async () => {
     try {
       console.log(`🔨 Creating tour folder for: ${tourId}`)
@@ -184,7 +190,7 @@ export default function TourPhotoUpload({
       console.error('💥 Unexpected error creating tour folder:', error)
       return false
     }
-  }
+  } */
 
   // 폴더 존재 여부 확인 및 생성 (개선된 버전)
   const ensureTourFolderExists = async () => {
@@ -239,15 +245,19 @@ export default function TourPhotoUpload({
 
   // Hook과 bucket 상태 연동
   useEffect(() => {
-    if (isReady) {
-      setBucketStatus('exists')
-      loadPhotos()
-    } else if (folderStatus === 'error') {
-      setBucketStatus('error')
-    } else if (folderStatus === 'creating') {
-      setBucketStatus('checking')
+    const checkStatusAndLoadPhotos = async () => {
+      if (isReady) {
+        setBucketStatus('exists')
+        await loadPhotos()
+      } else if (folderStatus === 'error') {
+        setBucketStatus('error')
+      } else if (folderStatus === 'creating') {
+        setBucketStatus('checking')
+      }
     }
-  }, [isReady, folderStatus, tourId])
+    
+    checkStatusAndLoadPhotos()
+  }, [isReady, folderStatus, tourId, loadPhotos])
 
   // 사진 업로드
   const handleFileUpload = async (files: FileList) => {
@@ -294,7 +304,7 @@ export default function TourPhotoUpload({
         console.log(`배치 ${batchIndex + 1}/${batches.length} 업로드 중... (${batch.length}개 파일)`)
         
         // 진행 상황 업데이트
-        setUploadProgress(prev => ({ 
+        setUploadProgress((prev: { current: number; total: number; batch: number; totalBatches: number }) => ({ 
           ...prev, 
           batch: batchIndex + 1,
           current: batchIndex * batchSize
@@ -368,7 +378,7 @@ export default function TourPhotoUpload({
             return photoData
           } catch (error) {
             console.error(`Error uploading ${file.name}:`, error)
-            failedFiles.push(`${file.name}: ${error.message || error}`)
+            failedFiles.push(`${file.name}: ${error instanceof Error ? error.message : String(error)}`)
             return null
           }
         })
@@ -383,7 +393,7 @@ export default function TourPhotoUpload({
         console.log(`배치 ${batchIndex + 1} 완료: ${batchSuccessful}개 성공, ${batchFailed}개 실패`)
         
         // 진행 상황 업데이트
-        setUploadProgress(prev => ({ 
+        setUploadProgress((prev: { current: number; total: number; batch: number; totalBatches: number }) => ({ 
           ...prev, 
           current: Math.min((batchIndex + 1) * batchSize, files.length)
         }))
@@ -416,7 +426,7 @@ export default function TourPhotoUpload({
       }
     } catch (error) {
       console.error('Error uploading photos:', error)
-      alert(`❌ 업로드 중 오류가 발생했습니다: ${error.message}`)
+      alert(`❌ 업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setUploading(false)
     }
@@ -474,7 +484,7 @@ export default function TourPhotoUpload({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!showModal || !selectedPhoto) return
 
-    const currentIndex = photos.findIndex(p => p.id === selectedPhoto.id)
+    const currentIndex = photos.findIndex((p: TourPhoto) => p.id === selectedPhoto.id)
     
     if (e.key === 'ArrowLeft' && currentIndex > 0) {
       setSelectedPhoto(photos[currentIndex - 1])
@@ -660,9 +670,11 @@ export default function TourPhotoUpload({
                 className="aspect-square bg-gray-100 rounded-lg overflow-hidden"
                 onClick={() => openPhotoModal(photo)}
               >
-                <img
+                <Image
                   src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photo.file_path}`}
                   alt={photo.file_name}
+                  width={200}
+                  height={200}
                   className="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
                 />
               </div>
@@ -764,10 +776,10 @@ export default function TourPhotoUpload({
             </button>
 
             {/* 이전 버튼 */}
-            {photos.findIndex(p => p.id === selectedPhoto.id) > 0 && (
+            {photos.findIndex((p: TourPhoto) => p.id === selectedPhoto.id) > 0 && (
               <button
                 onClick={() => {
-                  const currentIndex = photos.findIndex(p => p.id === selectedPhoto.id)
+                  const currentIndex = photos.findIndex((p: TourPhoto) => p.id === selectedPhoto.id)
                   setSelectedPhoto(photos[currentIndex - 1])
                 }}
                 className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 p-3 bg-black bg-opacity-50 text-white rounded-full hover:bg-opacity-70 transition-colors"
@@ -779,10 +791,10 @@ export default function TourPhotoUpload({
             )}
 
             {/* 다음 버튼 */}
-            {photos.findIndex(p => p.id === selectedPhoto.id) < photos.length - 1 && (
+            {photos.findIndex((p: TourPhoto) => p.id === selectedPhoto.id) < photos.length - 1 && (
               <button
                 onClick={() => {
-                  const currentIndex = photos.findIndex(p => p.id === selectedPhoto.id)
+                  const currentIndex = photos.findIndex((p: TourPhoto) => p.id === selectedPhoto.id)
                   setSelectedPhoto(photos[currentIndex + 1])
                 }}
                 className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 p-3 bg-black bg-opacity-50 text-white rounded-full hover:bg-opacity-70 transition-colors"
@@ -795,9 +807,11 @@ export default function TourPhotoUpload({
 
             {/* 메인 이미지 */}
             <div className="flex items-center justify-center w-full h-full">
-              <img
+              <Image
                 src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${selectedPhoto.file_path}`}
                 alt={selectedPhoto.file_name}
+                width={1200}
+                height={800}
                 className="max-w-full max-h-full object-contain"
               />
             </div>
@@ -832,7 +846,7 @@ export default function TourPhotoUpload({
             {photos.length > 1 && (
               <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2">
                 <div className="flex space-x-2 bg-black bg-opacity-50 p-2 rounded-lg">
-                  {photos.map((photo, index) => (
+                  {photos.map((photo) => (
                     <button
                       key={photo.id}
                       onClick={() => setSelectedPhoto(photo)}
@@ -840,9 +854,11 @@ export default function TourPhotoUpload({
                         photo.id === selectedPhoto.id ? 'ring-2 ring-blue-500' : ''
                       }`}
                     >
-                      <img
+                      <Image
                         src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photo.file_path}`}
                         alt={photo.file_name}
+                        width={48}
+                        height={48}
                         className="w-full h-full object-cover"
                       />
                     </button>

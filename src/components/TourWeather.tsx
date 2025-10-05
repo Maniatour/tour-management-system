@@ -332,7 +332,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold text-purple-800">{t('title')}</h2>
               <span className="text-xs text-purple-600">
-                {hasData ? `업데이트: ${lastUpdated} (라스베가스 시간)` : 'N/A'}
+                {hasData ? lastUpdated : 'N/A'}
               </span>
             </div>
             {t('subtitle') && <p className="text-xs text-purple-600">{t('subtitle')}</p>}
@@ -341,15 +341,14 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
         <button
           onClick={updateWeatherData}
           disabled={updating || loading}
-          className="px-3 py-1.5 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+          className="p-1.5 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
           title="오늘 날짜 데이터 수집"
         >
           {updating ? (
-            <RefreshCw className="h-3 w-3 animate-spin" />
+            <RefreshCw className="h-4 w-4 animate-spin" />
           ) : (
-            <RefreshCw className="h-3 w-3" />
+            <RefreshCw className="h-4 w-4" />
           )}
-          업데이트
         </button>
       </div>
 

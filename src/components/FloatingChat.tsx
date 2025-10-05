@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Minimize2, Maximize2, Palette } from 'lucide-react'
 import TourChatRoom from './TourChatRoom'
-import { useFloatingChat } from '@/contexts/FloatingChatContext'
+// import { useFloatingChat } from '@/contexts/FloatingChatContext' // 사용되지 않음
 import { supabase } from '@/lib/supabase'
 
 // 색상 옵션
@@ -104,7 +104,8 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
 
   // 외부 클릭 감지로 드롭다운 닫기
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const handleClickOutside = (_event: MouseEvent) => {
       if (showColorPicker) {
         setShowColorPicker(false)
       }
@@ -132,19 +133,13 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
     }
   }
 
-  const handleResizeStart = (e: React.MouseEvent) => {
+  const handleEdgeResizeStart = (e: React.MouseEvent, _direction: 'right' | 'bottom' | 'corner') => { // eslint-disable-line @typescript-eslint/no-unused-vars
     setIsResizing(true)
     e.preventDefault()
     e.stopPropagation()
   }
 
-  const handleEdgeResizeStart = (e: React.MouseEvent, direction: 'right' | 'bottom' | 'corner') => {
-    setIsResizing(true)
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
-  const handleMouseMove = (e: MouseEvent) => {
+  const handleMouseMove = useCallback((e: MouseEvent) => {
     if (typeof window === 'undefined') return
     
     const now = performance.now()
@@ -165,12 +160,12 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
 
       setSize({ width: newWidth, height: newHeight })
     }
-  }
+  }, [isDragging, isResizing, position.x, position.y, size.width])
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     setIsDragging(false)
     setIsResizing(false)
-  }
+  }, [])
 
   useEffect(() => {
     if (isDragging || isResizing) {
@@ -182,12 +177,12 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDragging, isResizing])
+  }, [isDragging, isResizing, handleMouseMove, handleMouseUp])
 
   useEffect(() => {
     const handleResize = () => {
       if (typeof window === 'undefined') return
-      setPosition(prev => ({
+      setPosition((prev: { x: number; y: number }) => ({
         x: Math.min(prev.x, window.innerWidth - size.width),
         y: Math.min(prev.y, window.innerHeight - size.height),
       }))
@@ -258,7 +253,7 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
           if (reservationsError) {
             console.error('Error fetching reservations:', reservationsError)
           } else if (reservationsData) {
-            assignedPeople = reservationsData.reduce((total, reservation) => {
+            assignedPeople = reservationsData.reduce((total: number, reservation: { adults?: number; child?: number; infant?: number }) => {
               return total + 
                 (reservation.adults || 0) + 
                 (reservation.child || 0) + 
@@ -268,8 +263,11 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
         }
 
 
-        const product = tourData.product as any
-        const finalTourDate = chatInfo.tourDate || tourData.tour_date
+        const product = tourData.product as {
+          name_ko?: string;
+          name_en?: string;
+          internal_name_ko?: string;
+        } | null
         setTourInfo({
           tour_date: chatInfo.tourDate || tourData.tour_date, // 전달된 tourDate 우선 사용
           product_name: product?.internal_name_ko || product?.name_ko || product?.name_en || '상품명 없음',
@@ -282,7 +280,7 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
     }
 
     fetchTourInfo()
-  }, [chatInfo?.tourId])
+  }, [chatInfo?.tourId, chatInfo?.tourDate])
 
   // 안읽은 메시지 수 가져오기
   useEffect(() => {
@@ -348,21 +346,7 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
   }
 
 
-  // 상태 스타일 함수
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Recruiting':
-        return 'bg-yellow-100 text-yellow-800'
-      case 'Confirmed':
-        return 'bg-green-100 text-green-800'
-      case 'Completed':
-        return 'bg-blue-100 text-blue-800'
-      case 'Cancelled':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
+  // 상태 스타일 함수는 실제로 사용되지 않아서 제거함
 
   if (isMinimized) {
     return (
@@ -551,7 +535,6 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
             tourId={chatInfo.tourId}
             guideEmail={chatInfo.guideEmail}
             tourDate={chatInfo.tourDate}
-            isModalView={true}
           />
           
           {/* 리사이즈 핸들들 */}

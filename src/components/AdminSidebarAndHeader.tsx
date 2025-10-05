@@ -27,7 +27,8 @@ import {
   FileSpreadsheet,
   Globe,
   User,
-  Camera
+  Camera,
+  MapPin
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'

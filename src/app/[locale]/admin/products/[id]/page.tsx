@@ -182,6 +182,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   } | null>(null)
   const [formData, setFormData] = useState<{
     name: string
+    nameEn?: string
     productCode: string
     category: string
     subCategory: string
@@ -205,6 +206,13 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     childAgeMin: number
     childAgeMax: number
     infantAge: number
+    // 새로운 필드들
+    tourDepartureTime?: string
+    tourDepartureTimes?: string[]
+    internalNameKo?: string
+    internalNameEn?: string
+    customerNameKo?: string
+    customerNameEn?: string
     // 공통 세부정보 사용 여부
     useCommonDetails: boolean
     // 팀 타입
@@ -296,6 +304,13 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     childAgeMin: 3,
     childAgeMax: 12,
     infantAge: 2,
+    // 새로운 필드들 초기값
+    tourDepartureTime: '',
+    tourDepartureTimes: [],
+    internalNameKo: '',
+    internalNameEn: '',
+    customerNameKo: '',
+    customerNameEn: '',
     // 공통 세부정보 사용 여부 초기값
     useCommonDetails: false,
     // 팀 타입 초기값
@@ -451,7 +466,13 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         adultAge: 13,
         childAgeMin: 3,
         childAgeMax: 12,
-        infantAge: 2
+        infantAge: 2,
+        tourDepartureTime: '',
+        tourDepartureTimes: [],
+        internalNameKo: '',
+        internalNameEn: '',
+        customerNameKo: '',
+        customerNameEn: ''
       }))
     }
   }, [isNewProduct])
@@ -588,6 +609,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             childAgeMin: productData.child_age_min || 3,
             childAgeMax: productData.child_age_max || 12,
             infantAge: productData.infant_age || 2,
+            tourDepartureTime: productData.tour_departure_time || '',
+            tourDepartureTimes: productData.tour_departure_times ? JSON.parse(productData.tour_departure_times) : [],
+            internalNameKo: productData.internal_name_ko || '',
+            internalNameEn: productData.internal_name_en || '',
+            customerNameKo: productData.customer_name_ko || '',
+            customerNameEn: productData.customer_name_en || '',
             useCommonDetails: !!productData.use_common_details,
             team_type: productData.team_type || null,
             // product_details 데이터 설정 (다국어 지원)
@@ -811,6 +838,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           .from('products')
           .insert({
             name: formData.name.trim(),
+            name_en: formData.nameEn?.trim() || null,
             product_code: formData.productCode.trim(),
             category: formData.category,
             sub_category: formData.subCategory.trim(),
@@ -829,6 +857,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             child_age_min: formData.childAgeMin,
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
+            tour_departure_time: formData.tourDepartureTime?.trim() || null,
+            tour_departure_times: formData.tourDepartureTimes ? JSON.stringify(formData.tourDepartureTimes) : null,
+            internal_name_ko: formData.internalNameKo?.trim() || null,
+            internal_name_en: formData.internalNameEn?.trim() || null,
+            customer_name_ko: formData.customerNameKo?.trim() || null,
+            customer_name_en: formData.customerNameEn?.trim() || null,
             use_common_details: formData.useCommonDetails
           })
           .select()
@@ -847,6 +881,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           .from('products')
           .update({
             name: formData.name.trim(),
+            name_en: formData.nameEn?.trim() || null,
             product_code: formData.productCode.trim(),
             category: formData.category,
             sub_category: formData.subCategory.trim(),
@@ -865,6 +900,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             child_age_min: formData.childAgeMin,
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
+            tour_departure_time: formData.tourDepartureTime?.trim() || null,
+            tour_departure_times: formData.tourDepartureTimes ? JSON.stringify(formData.tourDepartureTimes) : null,
+            internal_name_ko: formData.internalNameKo?.trim() || null,
+            internal_name_en: formData.internalNameEn?.trim() || null,
+            customer_name_ko: formData.customerNameKo?.trim() || null,
+            customer_name_en: formData.customerNameEn?.trim() || null,
             use_common_details: formData.useCommonDetails
           })
           .eq('id', productId)

@@ -400,9 +400,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user?.email && userRole && userRole !== 'customer') {
       refreshTeamChatUnreadCount()
       
-      // 30초마다 안읽은 메시지 수 새로고침
-      const interval = setInterval(refreshTeamChatUnreadCount, 30000)
-      return () => clearInterval(interval)
+      // 실시간 구독으로 새 메시지 감지
+      const subscription = supabase
+        .channel('team-chat-unread')
+        .on('postgres_changes', 
+          { 
+            event: 'INSERT', 
+            schema: 'public', 
+            table: 'team_chat_messages'
+          }, 
+          () => {
+            // 새 메시지가 올 때만 카운트 새로고침
+            refreshTeamChatUnreadCount()
+          }
+        )
+        .subscribe()
+      
+      // 5분마다 안읽은 메시지 수 새로고침 (폴백용)
+      const interval = setInterval(refreshTeamChatUnreadCount, 300000)
+      
+      return () => {
+        subscription.unsubscribe()
+        clearInterval(interval)
+      }
     } else {
       setTeamChatUnreadCount(0)
     }

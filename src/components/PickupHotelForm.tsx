@@ -76,6 +76,7 @@ interface PickupHotel {
   link: string | null
   media: string[] | null
   is_active: boolean | null
+  group_number: number | null
   created_at: string | null
   updated_at: string | null
 }
@@ -112,7 +113,8 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     pin: hotel?.pin || '',
     link: hotel?.link || '',
     media: hotel?.media || [],
-    is_active: hotel?.is_active ?? true
+    is_active: hotel?.is_active ?? true,
+    group_number: hotel?.group_number || null
   })
 
   const [uploading, setUploading] = useState(false)
@@ -725,19 +727,44 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
             </div>
           </div>
 
-          {/* 활성화 상태 */}
-          <div>
-            <label className="flex items-center space-x-3">
-              <input
-                type="checkbox"
-                checked={formData.is_active}
-                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <span className="text-sm font-medium text-gray-700">
-                픽업 호텔로 사용 (체크 해제 시 예약 폼에서 선택할 수 없음)
-              </span>
-            </label>
+          {/* 그룹 번호와 활성화 상태 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                그룹 번호
+              </label>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={formData.group_number || ''}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    group_number: e.target.value ? parseFloat(e.target.value) : null 
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="예: 1.0, 1.1, 2.0"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                소숫점 지원 (예: 1.0, 1.1, 2.0). 픽업 요청 시 반올림된 번호의 호텔로 안내됩니다.
+              </p>
+            </div>
+
+            <div>
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={formData.is_active}
+                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  픽업 호텔로 사용 (체크 해제 시 예약 폼에서 선택할 수 없음)
+                </span>
+              </label>
+            </div>
           </div>
 
           {/* 미디어 파일 */}

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { ArrowLeft, Hotel, MapPin, Clock, Users, Camera, MessageSquare, FileText, Calculator, ChevronDown, ChevronUp, Calendar, Phone, Mail } from 'lucide-react'
-import ReactCountryFlag from 'react-country-flag'
+// import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -217,24 +217,6 @@ export default function GuideTourDetailPage() {
     loadTourData()
   }, [loadTourData])
 
-  // 투어 시간 계산 (MDGCSUNRISE 상품의 경우 일출 시간 기반)
-  useEffect(() => {
-    const calcTourTimes = async () => {
-      if (tour?.tour_date && product) {
-        if (tour.product_id === 'MDGCSUNRISE') {
-          // MDGCSUNRISE 상품의 경우 일출 시간 기반으로 계산
-          const durationHours = 8 // MDGCSUNRISE는 기본 8시간 투어
-          const tourTimes = await calculateSunriseTourTimes(tour.tour_date, durationHours)
-          setCalculatedTourTimes(tourTimes)
-        } else {
-          // 다른 상품의 경우 기본값으로 설정
-          setCalculatedTourTimes(null)
-        }
-      }
-    }
-    calcTourTimes()
-  }, [tour?.tour_date, tour?.product_id, product])
-
   // 고객 정보 조회 함수
   const getCustomerInfo = (customerId: string) => {
     return customers.find(c => c.id === customerId)
@@ -295,11 +277,11 @@ export default function GuideTourDetailPage() {
   const getProductName = () => {
     if (!product) return tour?.product_id || t('noProductInfo')
     
-    // 한국어 페이지에서는 name_ko, 영어 페이지에서는 name_en 표시
+    // 한국어 페이지에서는 name, 영어 페이지에서는 name_en 표시
     if (locale === 'ko') {
-      return product.name_ko || product.name_en || product.id
+      return product.name || product.name_en || product.id
     } else {
-      return product.name_en || product.name_ko || product.id
+      return product.name_en || product.name || product.id
     }
   }
   
@@ -337,7 +319,7 @@ export default function GuideTourDetailPage() {
   }
 
   // MDGCSUNRISE 상품의 일출 시간 기반 투어 시간 계산 함수
-  const calculateSunriseTourTimes = async (tourDate: string, durationHours: number = 8) => {
+  const calculateSunriseTourTimes = useCallback(async (tourDate: string, durationHours: number = 8) => {
     try {
       const { getSunriseSunsetData } = await import('@/lib/weatherApi')
       const data = await getSunriseSunsetData('Grand Canyon South Rim', tourDate)
@@ -389,7 +371,25 @@ export default function GuideTourDetailPage() {
         sunriseTime: '06:00'
       }
     }
-  }
+  }, [locale])
+
+  // 투어 시간 계산 (MDGCSUNRISE 상품의 경우 일출 시간 기반)
+  useEffect(() => {
+    const calcTourTimes = async () => {
+      if (tour?.tour_date && product) {
+        if (tour.product_id === 'MDGCSUNRISE') {
+          // MDGCSUNRISE 상품의 경우 일출 시간 기반으로 계산
+          const durationHours = 8 // MDGCSUNRISE는 기본 8시간 투어
+          const tourTimes = await calculateSunriseTourTimes(tour.tour_date, durationHours)
+          setCalculatedTourTimes(tourTimes)
+        } else {
+          // 다른 상품의 경우 기본값으로 설정
+          setCalculatedTourTimes(null)
+        }
+      }
+    }
+    calcTourTimes()
+  }, [tour?.tour_date, tour?.product_id, product, calculateSunriseTourTimes])
   
   // 탭 변경 함수
   const handleTabChange = (tab: typeof activeTab) => {
@@ -603,13 +603,13 @@ export default function GuideTourDetailPage() {
               </div>
               <div className="flex items-center space-x-2">
                 <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
-                  (tour as any).assignment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                  (tour as any).assignment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                  (tour as any).assignment_status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                  (tour as any).assignment_status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
+                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
                   'bg-gray-100 text-gray-800'
                 }`}>
-                  {(tour as any).assignment_status || t('assignmentStatus')}
+                  {(tour as TourRow & { assignment_status?: string }).assignment_status || t('assignmentStatus')}
                 </span>
                 {expandedSections.has('tour-info') ? (
                   <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -846,13 +846,13 @@ export default function GuideTourDetailPage() {
                                     
                                     const language = customer.language.toLowerCase();
                                     if (language === 'kr' || language === 'ko' || language === '한국어') {
-                                      return <ReactCountryFlag countryCode="KR" svg className="mr-1" style={{ width: '16px', height: '12px' }} />;
+                                      return <span className="mr-1 text-sm">🇰🇷</span>;
                                     } else if (language === 'en' || language === '영어') {
-                                      return <ReactCountryFlag countryCode="US" svg className="mr-1" style={{ width: '16px', height: '12px' }} />;
+                                      return <span className="mr-1 text-sm">🇺🇸</span>;
                                     } else if (language === 'jp' || language === '일본어') {
-                                      return <ReactCountryFlag countryCode="JP" svg className="mr-1" style={{ width: '16px', height: '12px' }} />;
+                                      return <span className="mr-1 text-sm">🇯🇵</span>;
                                     } else if (language === 'cn' || language === '중국어') {
-                                      return <ReactCountryFlag countryCode="CN" svg className="mr-1" style={{ width: '16px', height: '12px' }} />;
+                                      return <span className="mr-1 text-sm">🇨🇳</span>;
                                     }
                                     return null;
                                   })()}

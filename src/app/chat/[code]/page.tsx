@@ -126,7 +126,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
       }
 
       // 안전한 타입 변환
-      const roomResult = roomData as any
+      const roomResult = roomData as ChatRoom & { tours: TourInfo }
       setRoom(roomResult)
       
       if (roomResult?.tours) {

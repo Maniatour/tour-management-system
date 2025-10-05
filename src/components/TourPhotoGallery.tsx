@@ -1,8 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import { X, ChevronLeft, ChevronRight, Download, Calendar, ImageIcon, Grid3X3, List, Check, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+
+interface SupabaseFile {
+  id?: string
+  name: string
+  updated_at?: string
+  created_at?: string
+}
 
 interface TourPhoto {
   id: string
@@ -72,7 +80,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
   const t = texts[language]
 
   // 사진 목록 로드
-  const loadPhotos = async () => {
+  const loadPhotos = useCallback(async () => {
     try {
       setLoading(true)
       
@@ -102,7 +110,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       }
 
       // 파일 정보를 Photo 객체로 변환
-      const photoData: TourPhoto[] = files.map(file => ({
+      const photoData: TourPhoto[] = files.map((file: SupabaseFile) => ({
         id: file.id || file.name,
         file_url: '', // URL은 개별적으로 생성
         file_name: file.name,
@@ -131,14 +139,14 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
     } finally {
       setLoading(false)
     }
-  }
+  }, [tourId])
 
   // 컴포넌트 마운트 시 사진 로드
   useEffect(() => {
     if (isOpen && tourId) {
       loadPhotos()
     }
-  }, [isOpen, tourId])
+  }, [isOpen, tourId, loadPhotos])
 
   // 사진 모달 열기
   const openPhotoModal = (photo: TourPhoto, index: number) => {
@@ -409,11 +417,12 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
 
                     {viewMode === 'grid' ? (
                       <>
-                        <img
+                        <Image
                           src={photo.file_url}
                           alt={photo.file_name}
+                          width={200}
+                          height={128}
                           className="w-full h-24 sm:h-28 md:h-32 object-cover rounded-lg hover:opacity-90 transition-opacity"
-                          loading="lazy"
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white bg-opacity-20 rounded-full p-2">
@@ -426,11 +435,12 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                       </>
                     ) : (
                       <>
-                        <img
+                        <Image
                           src={photo.file_url}
                           alt={photo.file_name}
+                          width={64}
+                          height={64}
                           className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
-                          loading="lazy"
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{photo.file_name}</p>
@@ -458,7 +468,6 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       {showModal && selectedPhoto && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-90 z-[60] flex items-center justify-center p-4"
-          onKeyDown={handleKeyDown}
           tabIndex={-1}
         >
           {/* 모달 배경 클릭으로 닫기 */}
@@ -498,9 +507,11 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
             )}
 
             {/* 메인 이미지 */}
-            <img
+            <Image
               src={selectedPhoto.file_url}
               alt={selectedPhoto.file_name}
+              width={1200}
+              height={800}
               className="max-w-full max-h-full object-contain"
             />
 

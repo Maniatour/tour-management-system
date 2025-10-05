@@ -16,7 +16,9 @@ type ExtendedTour = Tour & {
   internal_name_en?: string | null;
   assigned_people?: number;
   guide_name?: string | null;
+  guide_name_en?: string | null;
   assistant_name?: string | null;
+  assistant_name_en?: string | null;
   assignment_status?: string | null;
   vehicle_number?: string | null;
 }
@@ -114,13 +116,15 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
         const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
         
         let teamMap = new Map()
+        let teamEnMap = new Map()
         if (allEmails.length > 0) {
           const { data: teamData } = await supabase
             .from('team')
-            .select('email, name_ko')
-            .in('email', allEmails) as { data: { email: string; name_ko: string }[] | null }
+            .select('email, name_ko, name_en')
+            .in('email', allEmails) as { data: { email: string; name_ko: string; name_en: string }[] | null }
           
           teamMap = new Map((teamData || []).map(member => [member.email, member.name_ko]))
+          teamEnMap = new Map((teamData || []).map(member => [member.email, member.name_en]))
         }
 
         // 차량 정보 가져오기
@@ -173,7 +177,9 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
             internal_name_en: tour.product_id ? productInternalEnMap.get(tour.product_id) : null,
             assigned_people: assignedPeople,
             guide_name: tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null,
+            guide_name_en: tour.tour_guide_id ? teamEnMap.get(tour.tour_guide_id) : null,
             assistant_name: tour.assistant_id ? teamMap.get(tour.assistant_id) : null,
+            assistant_name_en: tour.assistant_id ? teamEnMap.get(tour.assistant_id) : null,
             vehicle_number: tour.tour_car_id ? vehicleMap.get(tour.tour_car_id) : null,
           }
         })
@@ -330,7 +336,7 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">대시보드를 불러오는 중...</p>
+          <p className="text-gray-600">{t('loadingDashboard')}</p>
         </div>
       </div>
     )
@@ -680,13 +686,13 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
           {/* 가이드 배지 */}
           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
             <User className="w-3 h-3 mr-1" />
-            {tour.guide_name || t('tourCard.unassigned')}
+            {locale === 'en' ? (tour.guide_name_en || tour.guide_name || t('tourCard.unassigned')) : (tour.guide_name || t('tourCard.unassigned'))}
           </span>
 
           {/* 어시스턴트 배지 */}
           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
             <User className="w-3 h-3 mr-1" />
-            {tour.assistant_name || t('tourCard.unassigned')}
+            {locale === 'en' ? (tour.assistant_name_en || tour.assistant_name || t('tourCard.unassigned')) : (tour.assistant_name || t('tourCard.unassigned'))}
           </span>
 
           {/* 차량 배지 */}

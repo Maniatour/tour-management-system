@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
     
     for (const date of dates) {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/weather-collector`, {
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        const response = await fetch(`${baseUrl}/api/weather-collector`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { Info, Calendar, MessageCircle, Image, Clock, Save } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 
   interface BasicInfoTabProps {
@@ -25,6 +26,12 @@ import { supabase } from '@/lib/supabase'
       childAgeMax: number
       infantAge: number
       status: 'active' | 'inactive' | 'draft'
+      tourDepartureTime?: string
+      tourDepartureTimes?: string[]
+      internalNameKo?: string
+      internalNameEn?: string
+      customerNameKo?: string
+      customerNameEn?: string
     }
   setFormData: React.Dispatch<React.SetStateAction<any>>
   productId: string
@@ -37,11 +44,31 @@ export default function BasicInfoTab({
   productId,
   isNewProduct
 }: BasicInfoTabProps) {
+  const t = useTranslations('common')
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
   const [categories, setCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
+  const [newDepartureTime, setNewDepartureTime] = useState('')
+
+  // 출발 시간 관리 함수들
+  const addDepartureTime = () => {
+    if (newDepartureTime && !formData.tourDepartureTimes?.includes(newDepartureTime)) {
+      setFormData({
+        ...formData,
+        tourDepartureTimes: [...(formData.tourDepartureTimes || []), newDepartureTime]
+      })
+      setNewDepartureTime('')
+    }
+  }
+
+  const removeDepartureTime = (index: number) => {
+    setFormData({
+      ...formData,
+      tourDepartureTimes: formData.tourDepartureTimes?.filter((_, i) => i !== index) || []
+    })
+  }
 
   // 기본 정보 저장 함수
   const handleSave = async () => {
@@ -95,7 +122,13 @@ export default function BasicInfoTab({
             adult_age: formData.adultAge,
             child_age_min: formData.childAgeMin,
             child_age_max: formData.childAgeMax,
-            infant_age: formData.infantAge
+            infant_age: formData.infantAge,
+            tour_departure_time: formData.tourDepartureTime?.trim() || null,
+            tour_departure_times: formData.tourDepartureTimes ? JSON.stringify(formData.tourDepartureTimes) : null,
+            internal_name_ko: formData.internalNameKo?.trim() || null,
+            internal_name_en: formData.internalNameEn?.trim() || null,
+            customer_name_ko: formData.customerNameKo?.trim() || null,
+            customer_name_en: formData.customerNameEn?.trim() || null
           }])
           .select()
           .single()
@@ -136,7 +169,13 @@ export default function BasicInfoTab({
             adult_age: formData.adultAge,
             child_age_min: formData.childAgeMin,
             child_age_max: formData.childAgeMax,
-            infant_age: formData.infantAge
+            infant_age: formData.infantAge,
+            tour_departure_time: formData.tourDepartureTime?.trim() || null,
+            tour_departure_times: formData.tourDepartureTimes ? JSON.stringify(formData.tourDepartureTimes) : null,
+            internal_name_ko: formData.internalNameKo?.trim() || null,
+            internal_name_en: formData.internalNameEn?.trim() || null,
+            customer_name_ko: formData.customerNameKo?.trim() || null,
+            customer_name_en: formData.customerNameEn?.trim() || null
           })
           .eq('id', productId)
 
@@ -568,6 +607,62 @@ export default function BasicInfoTab({
         />
       </div>
 
+      {/* 추가 정보 섹션 */}
+      <div className="border-t pt-6 mt-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+          <Info className="h-5 w-5 mr-2" />
+          추가 정보
+        </h3>
+        
+        {/* 내부명 필드들 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('internalNameKo')}</label>
+            <input
+              type="text"
+              value={formData.internalNameKo || ''}
+              onChange={(e) => setFormData({ ...formData, internalNameKo: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="내부용 한국어 상품명"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('internalNameEn')}</label>
+            <input
+              type="text"
+              value={formData.internalNameEn || ''}
+              onChange={(e) => setFormData({ ...formData, internalNameEn: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Internal English product name"
+            />
+          </div>
+        </div>
+
+        {/* 고객명 필드들 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('customerNameKo')}</label>
+            <input
+              type="text"
+              value={formData.customerNameKo || ''}
+              onChange={(e) => setFormData({ ...formData, customerNameKo: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="고객용 한국어 상품명"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('customerNameEn')}</label>
+            <input
+              type="text"
+              value={formData.customerNameEn || ''}
+              onChange={(e) => setFormData({ ...formData, customerNameEn: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Customer English product name"
+            />
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">총 투어 시간 (시간) *</label>
@@ -600,6 +695,57 @@ export default function BasicInfoTab({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             required
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('tourDepartureTimes')}</label>
+          
+          {/* 시간 추가 입력 */}
+          <div className="flex gap-2 mb-3">
+            <input
+              type="time"
+              value={newDepartureTime}
+              onChange={(e) => setNewDepartureTime(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-1"
+              placeholder="출발 시간 선택"
+            />
+            <button
+              type="button"
+              onClick={addDepartureTime}
+              disabled={!newDepartureTime || (formData.tourDepartureTimes?.includes(newDepartureTime) ?? false)}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                newDepartureTime && !(formData.tourDepartureTimes?.includes(newDepartureTime) ?? false)
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              {t('addDepartureTime')}
+            </button>
+          </div>
+          
+          {/* 선택된 시간 목록 */}
+          {formData.tourDepartureTimes && formData.tourDepartureTimes.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-600">선택된 출발 시간들:</p>
+              <div className="flex flex-wrap gap-2">
+                {formData.tourDepartureTimes.map((time, index) => (
+                  <div key={index} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                    <span>{time}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeDepartureTime(index)}
+                      className="ml-2 text-red-600 hover:text-red-800 font-medium"
+                      title={t('removeDepartureTime')}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <p className="text-xs text-gray-500 mt-1">여러 출발 시간을 추가할 수 있습니다</p>
         </div>
       </div>
 

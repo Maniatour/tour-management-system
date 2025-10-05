@@ -62,7 +62,8 @@ async function getSunriseSunsetData(lat: number, lng: number, date: string) {
 async function getWeatherData(lat: number, lng: number, date?: string) {
   const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY
   if (!apiKey) {
-    throw new Error('OpenWeatherMap API key not found')
+    console.error('OpenWeatherMap API key not found')
+    throw new Error('OpenWeatherMap API key not found. Please set NEXT_PUBLIC_OPENWEATHER_API_KEY in your environment variables.')
   }
 
   try {

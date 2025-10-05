@@ -5,7 +5,7 @@ import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, use, useState } from 'react'
-import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home } from 'lucide-react'
+import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home, MapPin } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourReportModal from '@/components/TourReportModal'
@@ -269,7 +269,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
 
         {/* 모바일 푸터 네비게이션 */}
         <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-50">
-        <div className="grid grid-cols-5 py-2">
+        <div className="grid grid-cols-6 py-2">
           <button
             onClick={() => router.push(`/${locale}/guide`)}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
@@ -333,6 +333,18 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
           >
             <FileText className="w-5 h-5 mb-1" />
             <span className="text-xs">{t('footer.tourMaterials')}</span>
+          </button>
+
+          <button
+            onClick={() => router.push(`/${locale}/guide/tour-courses`)}
+            className={`flex flex-col items-center py-1 px-1 transition-colors ${
+              pathname.includes('/guide/tour-courses')
+                ? 'text-green-600'
+                : 'text-gray-600 hover:text-green-600'
+            }`}
+          >
+            <MapPin className="w-5 h-5 mb-1" />
+            <span className="text-xs">투어코스</span>
           </button>
         </div>
       </footer>
