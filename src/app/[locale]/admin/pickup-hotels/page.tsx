@@ -138,7 +138,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   
   // 지도 필터링 상태
-  const [groupFilter, setGroupFilter] = useState<'all' | 'integer'>('integer') // 기본값: 정수만
+  const [groupFilter, setGroupFilter] = useState<'all' | 'integer'>('all') // 기본값: 모두 보기
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
 
   // Supabase에서 픽업 호텔 데이터 가져오기
@@ -771,15 +771,81 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       </div>
 
       {/* 검색 */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-        <input
-          type="text"
-          placeholder="호텔명, 위치, 주소로 검색..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
+      {/* 검색창 및 필터 */}
+      <div className="flex items-center space-x-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+          <input
+            type="text"
+            placeholder="호텔명, 위치, 주소로 검색..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+        
+        {/* 필터 버튼들 */}
+        <div className="flex items-center space-x-2">
+          {/* 그룹 필터 */}
+          <div className="flex items-center space-x-1">
+            <span className="text-sm text-gray-600 font-medium">그룹:</span>
+            <button
+              onClick={() => setGroupFilter('integer')}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                groupFilter === 'integer'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              정수만
+            </button>
+            <button
+              onClick={() => setGroupFilter('all')}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                groupFilter === 'all'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              모두
+            </button>
+          </div>
+          
+          {/* 상태 필터 */}
+          <div className="flex items-center space-x-1">
+            <span className="text-sm text-gray-600 font-medium">상태:</span>
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                statusFilter === 'all'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              전체
+            </button>
+            <button
+              onClick={() => setStatusFilter('active')}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                statusFilter === 'active'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              활성
+            </button>
+            <button
+              onClick={() => setStatusFilter('inactive')}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                statusFilter === 'inactive'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              비활성
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* 픽업 요청 테스트 */}
@@ -1487,68 +1553,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
           {viewMode === 'map' && (
             <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
               <div className="p-4 border-b border-gray-200">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900">호텔 위치 지도</h3>
-                  <div className="flex items-center space-x-2">
-                    {/* 그룹 필터 버튼 */}
-                    <div className="flex items-center space-x-1">
-                      <button
-                        onClick={() => setGroupFilter('integer')}
-                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                          groupFilter === 'integer'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                      >
-                        정수 그룹만
-                      </button>
-                      <button
-                        onClick={() => setGroupFilter('all')}
-                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                          groupFilter === 'all'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                      >
-                        모두 보기
-                      </button>
-                    </div>
-                    
-                    {/* 상태 필터 버튼 */}
-                    <div className="flex items-center space-x-1">
-                      <button
-                        onClick={() => setStatusFilter('all')}
-                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                          statusFilter === 'all'
-                            ? 'bg-green-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                      >
-                        전체
-                      </button>
-                      <button
-                        onClick={() => setStatusFilter('active')}
-                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                          statusFilter === 'active'
-                            ? 'bg-green-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                      >
-                        활성
-                      </button>
-                      <button
-                        onClick={() => setStatusFilter('inactive')}
-                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                          statusFilter === 'inactive'
-                            ? 'bg-green-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                      >
-                        비활성
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <h3 className="text-lg font-semibold text-gray-900">호텔 위치 지도</h3>
                 <p className="text-sm text-gray-600">
                   마커를 클릭하면 호텔 정보를 확인할 수 있습니다. 마커 라벨은 그룹 번호를 표시합니다.
                 </p>
