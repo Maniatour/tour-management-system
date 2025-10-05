@@ -38,7 +38,7 @@ interface GoogleMapsAPI {
   maps: {
     Map: new (element: HTMLElement, options: GoogleMapsMapOptions) => GoogleMapsMap
     Marker: new (options: GoogleMapsMarkerOptions) => GoogleMapsMarker
-    InfoWindow: new (options: GoogleMapsInfoWindowOptions) => GoogleMapsInfoWindow
+    InfoWindow: GoogleMapsInfoWindowConstructor
     LatLngBounds: new () => GoogleMapsLatLngBounds
     MapTypeId?: {
       ROADMAP: string
@@ -65,6 +65,10 @@ interface GoogleMapsInfoWindowOptions {
 
 interface GoogleMapsInfoWindow {
   open: (map: GoogleMapsMap, marker: GoogleMapsMarker) => void
+}
+
+interface GoogleMapsInfoWindowConstructor {
+  new (options: GoogleMapsInfoWindowOptions): GoogleMapsInfoWindow
 }
 
 // Google Maps API는 동적으로 로드되므로 any 타입으로 처리
@@ -1178,6 +1182,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                             src={url}
                             alt={`${hotel.hotel} 이미지 ${index + 1}`}
                             fill
+                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                             className="object-cover rounded-lg"
                             onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
                               const target = e.target as HTMLImageElement
@@ -1825,6 +1830,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                       src={url}
                       alt={`썸네일 ${index + 1}`}
                       fill
+                      sizes="48px"
                       className="object-cover"
                     />
                   </button>
