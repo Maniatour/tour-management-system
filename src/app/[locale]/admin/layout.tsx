@@ -4,6 +4,8 @@ import { getMessages } from 'next-intl/server'
 import AdminSidebarAndHeader from '@/components/AdminSidebarAndHeader'
 import MobileFooter from '@/components/MobileFooter'
 import AdminAuthGuard from '@/components/auth/AdminAuthGuard'
+import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
+import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 
 interface AdminLayoutProps {
   children: React.ReactNode
@@ -16,14 +18,19 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
 
   return (
     <NextIntlClientProvider messages={messages} locale={locale}>
-      <AdminAuthGuard locale={locale}>
-        <div className="min-h-screen bg-gray-50">
-          <AdminSidebarAndHeader locale={locale}>
-            {children}
-          </AdminSidebarAndHeader>
-          <MobileFooter locale={locale} />
-        </div>
-      </AdminAuthGuard>
+      <AudioPlayerProvider>
+        <AdminAuthGuard locale={locale}>
+          <div className="min-h-screen bg-gray-50">
+            <AdminSidebarAndHeader locale={locale}>
+              {children}
+            </AdminSidebarAndHeader>
+            <MobileFooter locale={locale} />
+            
+            {/* 전역 오디오 플레이어 */}
+            <GlobalAudioPlayer />
+          </div>
+        </AdminAuthGuard>
+      </AudioPlayerProvider>
     </NextIntlClientProvider>
   )
 }

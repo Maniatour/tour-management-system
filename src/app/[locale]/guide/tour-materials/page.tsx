@@ -7,11 +7,9 @@ import {
   Search,
   MapPin,
   Tag,
-  Volume2,
   FileText,
   ChevronDown,
   ChevronUp,
-  Music,
   Play,
   Pause
 } from 'lucide-react'
@@ -51,7 +49,6 @@ export default function GuideTourMaterialsPage() {
   const [materials, setMaterials] = useState<TourMaterial[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [activeTab, setActiveTab] = useState<'script' | 'audio'>('audio')
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
 
   const loadData = useCallback(async () => {
@@ -66,7 +63,7 @@ export default function GuideTourMaterialsPage() {
           tour_attractions(name_ko, name_en),
           tour_material_categories(name_ko, name_en, icon, color)
         `)
-        .in('file_type', ['script', 'audio'])
+        .eq('file_type', 'audio')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
 
@@ -85,13 +82,6 @@ export default function GuideTourMaterialsPage() {
     loadData()
   }, [loadData])
 
-  const getFileIcon = (fileType: string) => {
-    switch (fileType) {
-      case 'script': return <FileText className="w-5 h-5 text-blue-500" />
-      case 'audio': return <Volume2 className="w-5 h-5 text-green-500" />
-      default: return <FileText className="w-5 h-5 text-gray-500" />
-    }
-  }
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes'
@@ -142,15 +132,8 @@ export default function GuideTourMaterialsPage() {
     const matchesSearch = material.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          material.description?.toLowerCase().includes(searchTerm.toLowerCase())
     
-    // 탭 필터링
-    let matchesTab = true
-    if (activeTab === 'script') {
-      matchesTab = material.file_type === 'script'
-    } else if (activeTab === 'audio') {
-      matchesTab = material.file_type === 'audio'
-    }
-    
-    return matchesSearch && matchesTab
+    // 오디오 파일만 표시
+    return matchesSearch && material.file_type === 'audio'
   })
 
   if (loading) {
@@ -183,34 +166,8 @@ export default function GuideTourMaterialsPage() {
         </div>
       </div>
 
-      {/* 탭 네비게이션 */}
+      {/* 오디오 자료만 표시 */}
       <div className="bg-white rounded-lg shadow">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            <button
-              onClick={() => setActiveTab('audio')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'audio'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              title={`${t('narrationAudio')} (${materials.filter(m => m.file_type === 'audio').length})`}
-            >
-              <Music className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setActiveTab('script')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'script'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              title={`${t('guideScript')} (${materials.filter(m => m.file_type === 'script').length})`}
-            >
-              <FileText className="w-4 h-4" />
-            </button>
-          </nav>
-        </div>
 
         {/* 컨텐츠 */}
         <div className="px-3 py-6">
@@ -222,125 +179,19 @@ export default function GuideTourMaterialsPage() {
                 <p className="text-gray-600">{t('noTourMaterials')}</p>
               </div>
             ) : (
-              <div className="grid gap-3">
+              <div className="space-y-3">
                 {filteredMaterials.map(material => (
                   <div key={material.id}>
-                    {/* 스크립트 파일인 경우 카드 표시 */}
-                    {material.file_type === 'script' && (
-                      <div className="border border-gray-200 rounded-lg hover:shadow-sm transition-shadow">
-                        {/* 아코디언 헤더 */}
-                        <div 
-                          className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
-                          onClick={() => toggleAccordion(material.id)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3 flex-1 min-w-0">
-                              {getFileIcon(material.file_type)}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center space-x-2">
-                                  <h3 className="font-medium text-gray-900 text-sm truncate">{material.title}</h3>
-                                  <ReactCountryFlag
-                                    countryCode={getLanguageFlag(material.language)}
-                                    svg
-                                    style={{
-                                      width: '20px',
-                                      height: '15px',
-                                      borderRadius: '2px'
-                                    }}
-                                  />
-                                </div>
-                                <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500">
-                                  <span className="flex items-center space-x-1">
-                                    <MapPin className="w-3 h-3" />
-                                    <span className="truncate">{material.tour_attractions?.name_ko || t('noAttraction')}</span>
-                                  </span>
-                                  <span className="flex items-center space-x-1">
-                                    <Tag className="w-3 h-3" />
-                                    <span className="truncate">{material.tour_material_categories?.name_ko || t('noCategory')}</span>
-                                  </span>
-                                  <span>{formatFileSize(material.file_size)}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="ml-2">
-                              {expandedCards.has(material.id) ? (
-                                <ChevronUp className="w-4 h-4 text-gray-400" />
-                              ) : (
-                                <ChevronDown className="w-4 h-4 text-gray-400" />
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* 아코디언 콘텐츠 */}
-                        {expandedCards.has(material.id) && (
-                          <div className="px-3 pb-3 border-t border-gray-100">
-                            <div className="pt-3 space-y-2">
-                              {material.description && (
-                                <div>
-                                  <h4 className="text-xs font-medium text-gray-700 mb-1">설명</h4>
-                                  <p className="text-xs text-gray-600 leading-relaxed">{material.description}</p>
-                                </div>
-                              )}
-                              <div className="grid grid-cols-2 gap-2 text-xs">
-                                <div>
-                                  <span className="font-medium text-gray-700">파일명:</span>
-                                  <span className="ml-1 text-gray-600">{material.file_name}</span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">파일 타입:</span>
-                                  <span className="ml-1 text-gray-600">{material.file_type}</span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">언어:</span>
-                                  <span className="ml-1">
-                                    <ReactCountryFlag
-                                      countryCode={getLanguageFlag(material.language)}
-                                      svg
-                                      style={{
-                                        width: '16px',
-                                        height: '12px',
-                                        borderRadius: '2px'
-                                      }}
-                                    />
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">크기:</span>
-                                  <span className="ml-1 text-gray-600">{formatFileSize(material.file_size)}</span>
-                                </div>
-                              </div>
-                              {material.tags && material.tags.length > 0 && (
-                                <div>
-                                  <h4 className="text-xs font-medium text-gray-700 mb-1">태그</h4>
-                                  <div className="flex flex-wrap gap-1">
-                                    {material.tags.map((tag, index) => (
-                                      <span 
-                                        key={index}
-                                        className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
-                                      >
-                                        {tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    {/* 오디오 파일인 경우 카드 표시 */}
+                    {/* 오디오 파일만 표시 */}
                     {material.file_type === 'audio' && (
-                      <div className="border border-gray-200 rounded-lg hover:shadow-sm transition-shadow">
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
                         {/* 아코디언 헤더 */}
                         <div 
                           className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
                           onClick={() => toggleAccordion(material.id)}
                         >
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3 flex-1 min-w-0">
+                            <div className="flex items-center space-x-2 flex-1 min-w-0">
                               {/* 플레이 버튼 */}
                               <button
                                 onClick={(e) => {
@@ -371,8 +222,8 @@ export default function GuideTourMaterialsPage() {
                                     countryCode={getLanguageFlag(material.language)}
                                     svg
                                     style={{
-                                      width: '20px',
-                                      height: '15px',
+                                      width: '16px',
+                                      height: '12px',
                                       borderRadius: '2px'
                                     }}
                                   />
@@ -399,61 +250,35 @@ export default function GuideTourMaterialsPage() {
                         {expandedCards.has(material.id) && (
                           <div className="px-3 pb-3 border-t border-gray-100">
                             <div className="pt-3 space-y-2">
+                              {/* 기본 정보 */}
+                              <div className="flex items-center space-x-3 text-xs text-gray-500">
+                                <span className="flex items-center space-x-1">
+                                  <MapPin className="w-3 h-3" />
+                                  <span className="truncate">{material.tour_attractions?.name_ko || t('noAttraction')}</span>
+                                </span>
+                                <span className="flex items-center space-x-1">
+                                  <Tag className="w-3 h-3" />
+                                  <span className="truncate">{material.tour_material_categories?.name_ko || t('noCategory')}</span>
+                                </span>
+                                <span>{formatFileSize(material.file_size)}</span>
+                              </div>
+                              
                               {material.description && (
                                 <div>
-                                  <h4 className="text-xs font-medium text-gray-700 mb-1">설명</h4>
                                   <p className="text-xs text-gray-600 leading-relaxed">{material.description}</p>
                                 </div>
                               )}
-                              <div className="grid grid-cols-2 gap-2 text-xs">
-                                <div>
-                                  <span className="font-medium text-gray-700">파일명:</span>
-                                  <span className="ml-1 text-gray-600">{material.file_name}</span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">파일 타입:</span>
-                                  <span className="ml-1 text-gray-600">{material.file_type}</span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">언어:</span>
-                                  <span className="ml-1">
-                                    <ReactCountryFlag
-                                      countryCode={getLanguageFlag(material.language)}
-                                      svg
-                                      style={{
-                                        width: '16px',
-                                        height: '12px',
-                                        borderRadius: '2px'
-                                      }}
-                                    />
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-700">크기:</span>
-                                  <span className="ml-1 text-gray-600">{formatFileSize(material.file_size)}</span>
-                                </div>
-                                {material.duration && (
-                                  <div>
-                                    <span className="font-medium text-gray-700">재생 시간:</span>
-                                    <span className="ml-1 text-gray-600">
-                                      {Math.floor(material.duration / 60)}:{(material.duration % 60).toString().padStart(2, '0')}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
+                              
                               {material.tags && material.tags.length > 0 && (
-                                <div>
-                                  <h4 className="text-xs font-medium text-gray-700 mb-1">태그</h4>
-                                  <div className="flex flex-wrap gap-1">
-                                    {material.tags.map((tag, index) => (
-                                      <span 
-                                        key={index}
-                                        className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
-                                      >
-                                        {tag}
-                                      </span>
-                                    ))}
-                                  </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {material.tags.map((tag, index) => (
+                                    <span 
+                                      key={index}
+                                      className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                                    >
+                                      {tag}
+                                    </span>
+                                  ))}
                                 </div>
                               )}
                             </div>

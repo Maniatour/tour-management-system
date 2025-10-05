@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 interface Product {
   id: string
@@ -43,6 +44,7 @@ interface ProductSelectionSectionProps {
   loadProductChoices: (productId: string) => Promise<void>
   getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
   t: (key: string) => string
+  layout?: 'modal' | 'page'
 }
 
 export default function ProductSelectionSection({
@@ -51,8 +53,10 @@ export default function ProductSelectionSection({
   products,
   loadProductChoices,
   getDynamicPricingForOption,
-  t
+  t,
+  layout = 'modal'
 }: ProductSelectionSectionProps) {
+  const [isExpanded, setIsExpanded] = useState(layout === 'modal')
   
   // 상품이 변경될 때 choice 데이터 로드
   useEffect(() => {
@@ -63,19 +67,36 @@ export default function ProductSelectionSection({
   
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.product')}</label>
-      
-      {/* 상품명 검색 */}
-      <div className="mb-3">
-        <input
-          type="text"
-          placeholder="상품명 검색..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-          onChange={(e) => setFormData((prev: any) => ({ ...prev, productSearch: e.target.value }))} // eslint-disable-line @typescript-eslint/no-explicit-any
-        />
+      <div className="flex items-center justify-between mb-1">
+        <label className="block text-sm font-medium text-gray-700">{t('form.product')}</label>
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center text-gray-500 hover:text-gray-700"
+        >
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4" />
+          ) : (
+            <ChevronRight className="w-4 h-4" />
+          )}
+        </button>
       </div>
       
-      <div className="border border-gray-300 rounded-lg overflow-hidden">
+      {/* 상품명 검색 - 아코디언이 펼쳐졌을 때만 표시 */}
+      {isExpanded && (
+        <div className="mb-3">
+          <input
+            type="text"
+            placeholder="상품명 검색..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            onChange={(e) => setFormData((prev: any) => ({ ...prev, productSearch: e.target.value }))} // eslint-disable-line @typescript-eslint/no-explicit-any
+          />
+        </div>
+      )}
+      
+      {/* 상품 선택 리스트 - 아코디언이 펼쳐졌을 때만 표시 */}
+      {isExpanded && (
+        <div className="border border-gray-300 rounded-lg overflow-hidden">
         {/* 상품 카테고리별 탭 */}
         <div className="flex bg-gray-50">
           {Array.from(new Set(products.map(p => p.category))).filter(Boolean).map((category) => (
@@ -175,7 +196,8 @@ export default function ProductSelectionSection({
               </div>
             ))}
         </div>
-      </div>
+        </div>
+      )}
       
       {/* 선택된 상품 정보 표시 */}
       {formData.productId && (

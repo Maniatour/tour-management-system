@@ -14,6 +14,7 @@ import ParticipantsSection from '@/components/reservation/ParticipantsSection'
 import PricingSection from '@/components/reservation/PricingSection'
 import ProductSelectionSection from '@/components/reservation/ProductSelectionSection'
 import ChannelSection from '@/components/reservation/ChannelSection'
+import TourConnectionSection from '@/components/reservation/TourConnectionSection'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import { getRequiredOptionsForProduct, getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import type { 
@@ -95,6 +96,7 @@ export default function ReservationForm({
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
   const [showRawDetails, setShowRawDetails] = useState(false)
+  const [channelAccordionExpanded, setChannelAccordionExpanded] = useState(layout === 'modal')
   
   const [formData, setFormData] = useState<{
     customerId: string
@@ -1020,17 +1022,32 @@ export default function ReservationForm({
                 loadProductChoices={(productId) => loadProductChoices(productId)}
                 getDynamicPricingForOption={getDynamicPricingForOption}
                 t={t}
+                layout={layout}
               />
             </div>
 
             {/* 3열: 채널 선택 - 모바일에서는 전체 너비, 데스크톱에서는 25% */}
-            <div className="col-span-1 lg:col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-full">
+            <div className={`col-span-1 lg:col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 ${channelAccordionExpanded ? 'lg:h-full' : 'lg:h-auto'}`}>
               <ChannelSection
                 formData={formData}
                 setFormData={setFormData}
                 channels={channels}
                 t={t}
+                layout={layout}
+                onAccordionToggle={setChannelAccordionExpanded}
               />
+              
+              {/* 연결된 투어 섹션 - 채널 섹션 아래에 배치 */}
+              {layout === 'page' && reservation && (
+                <div className="mt-4">
+                  <TourConnectionSection 
+                    reservation={reservation}
+                    onTourCreated={() => {
+                      // 투어 생성 후 필요한 새로고침 로직
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </div>
 

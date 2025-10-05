@@ -1,5 +1,8 @@
 'use client'
 
+import { useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
+
 interface Channel {
   id: string
   name: string
@@ -16,29 +19,60 @@ interface ChannelSectionProps {
   setFormData: (data: any) => void
   channels: Channel[]
   t: (key: string) => string
+  layout?: 'modal' | 'page'
+  onAccordionToggle?: (isExpanded: boolean) => void
 }
 
 export default function ChannelSection({
   formData,
   setFormData,
   channels,
-  t
+  t,
+  layout = 'modal',
+  onAccordionToggle
 }: ChannelSectionProps) {
+  const [isExpanded, setIsExpanded] = useState(layout === 'modal')
+  
+  const handleToggle = () => {
+    const newExpanded = !isExpanded
+    setIsExpanded(newExpanded)
+    if (onAccordionToggle) {
+      onAccordionToggle(newExpanded)
+    }
+  }
+  
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.channel')}</label>
-      
-      {/* 채널명 검색 */}
-      <div className="mb-3">
-        <input
-          type="text"
-          placeholder="채널명 검색..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-          onChange={(e) => setFormData((prev: any) => ({ ...prev, channelSearch: e.target.value }))} // eslint-disable-line @typescript-eslint/no-explicit-any
-        />
+      <div className="flex items-center justify-between mb-1">
+        <label className="block text-sm font-medium text-gray-700">{t('form.channel')}</label>
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="flex items-center text-gray-500 hover:text-gray-700"
+        >
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4" />
+          ) : (
+            <ChevronRight className="w-4 h-4" />
+          )}
+        </button>
       </div>
       
-      <div className="border border-gray-300 rounded-lg overflow-hidden">
+      {/* 채널명 검색 - 아코디언이 펼쳐졌을 때만 표시 */}
+      {isExpanded && (
+        <div className="mb-3">
+          <input
+            type="text"
+            placeholder="채널명 검색..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            onChange={(e) => setFormData((prev: any) => ({ ...prev, channelSearch: e.target.value }))} // eslint-disable-line @typescript-eslint/no-explicit-any
+          />
+        </div>
+      )}
+      
+      {/* 채널 선택 리스트 - 아코디언이 펼쳐졌을 때만 표시 */}
+      {isExpanded && (
+        <div className="border border-gray-300 rounded-lg overflow-hidden">
         {/* 채널 타입별 탭 */}
         <div className="flex bg-gray-50">
           {['self', 'ota', 'partner'].map((type) => (
@@ -81,7 +115,27 @@ export default function ChannelSection({
               </div>
             ))}
         </div>
-      </div>
+        </div>
+      )}
+      
+      {/* 선택된 채널 정보 표시 */}
+      {formData.channelId && (
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h4 className="text-sm font-semibold text-blue-800 mb-2">선택된 채널</h4>
+          {(() => {
+            const selectedChannel = channels.find(c => c.id === formData.channelId)
+            return selectedChannel ? (
+              <div className="space-y-2">
+                <div className="font-medium text-gray-900">{selectedChannel.name}</div>
+                <div className="text-sm text-gray-600">
+                  {selectedChannel.type === 'self' ? '자체채널' : 
+                   selectedChannel.type === 'ota' ? 'OTA' : '제휴사'}
+                </div>
+              </div>
+            ) : null
+          })()}
+        </div>
+      )}
     </div>
   )
 }

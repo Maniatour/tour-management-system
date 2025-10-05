@@ -23,8 +23,13 @@ import {
   Clock,
   Tag,
   Globe,
-  Play
+  Play,
+  ChevronDown,
+  ChevronUp,
+  Pause
 } from 'lucide-react'
+import ReactCountryFlag from 'react-country-flag'
+import { useAudioPlayer } from '@/contexts/AudioPlayerContext'
 // @ts-expect-error - sonner module type declarations not found
 import { toast } from 'sonner'
 import TourMaterialUploadModal from '@/components/TourMaterialUploadModal'
@@ -91,6 +96,7 @@ export default function TourMaterialsManagementPage() {
   const t = useTranslations('admin')
   const { user } = useAuth()
   const supabase = createClientSupabase()
+  const { playTrack, currentTrack, isPlaying } = useAudioPlayer()
   
   const [activeTab, setActiveTab] = useState<'materials' | 'quizzes' | 'attractions'>('materials')
   const [materials, setMaterials] = useState<TourMaterial[]>([])
@@ -106,6 +112,7 @@ export default function TourMaterialsManagementPage() {
   const [showAttractionModal, setShowAttractionModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [selectedMaterial, setSelectedMaterial] = useState<TourMaterial | null>(null)
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     loadData()
@@ -115,7 +122,7 @@ export default function TourMaterialsManagementPage() {
     try {
       setLoading(true)
       
-      // 투어 자료 로드
+      // 투어 자료 로드 (오디오만)
       const { data: materialsData, error: materialsError } = await supabase
         .from('tour_materials')
         .select(`
@@ -123,6 +130,7 @@ export default function TourMaterialsManagementPage() {
           tour_attractions(name_ko, name_en),
           tour_material_categories(name_ko, name_en, icon, color)
         `)
+        .eq('file_type', 'audio')
         .order('created_at', { ascending: false })
 
       if (materialsError) throw materialsError
@@ -191,6 +199,22 @@ export default function TourMaterialsManagementPage() {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
   }
 
+  // 언어를 국기 아이콘으로 표시
+  const getLanguageFlag = (language: string | null) => {
+    switch (language?.toLowerCase()) {
+      case 'ko':
+        return 'KR'
+      case 'en':
+        return 'US'
+      case 'ja':
+        return 'JP'
+      case 'zh':
+        return 'CN'
+      default:
+        return 'KR'
+    }
+  }
+
   // 파일 URL 가져오기
   const getFileUrl = (filePath: string) => {
     const { data } = supabase.storage
@@ -233,12 +257,26 @@ export default function TourMaterialsManagementPage() {
     loadData()
   }
 
+  // 아코디언 토글
+  const toggleAccordion = (materialId: string) => {
+    setExpandedCards(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(materialId)) {
+        newSet.delete(materialId)
+      } else {
+        newSet.add(materialId)
+      }
+      return newSet
+    })
+  }
+
   const filteredMaterials = materials.filter(material => {
     const matchesSearch = material.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          material.description?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesAttraction = !selectedAttraction || material.attraction_id === selectedAttraction
     const matchesCategory = !selectedCategory || material.category_id === selectedCategory
-    return matchesSearch && matchesAttraction && matchesCategory
+    // 오디오 파일만 표시
+    return matchesSearch && matchesAttraction && matchesCategory && material.file_type === 'audio'
   })
 
   const filteredQuizzes = quizzes.filter(quiz => {
@@ -294,42 +332,8 @@ export default function TourMaterialsManagementPage() {
         </div>
       </div>
 
-      {/* 탭 네비게이션 */}
+      {/* 오디오 자료만 표시 */}
       <div className="bg-white rounded-lg shadow">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            <button
-              onClick={() => setActiveTab('materials')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'materials'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              투어 자료 ({materials.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('quizzes')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'quizzes'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              가이드 퀴즈 ({quizzes.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('attractions')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'attractions'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              관광지 관리 ({attractions.length})
-            </button>
-          </nav>
-        </div>
 
         {/* 검색 및 필터 */}
         <div className="p-6 border-b border-gray-200">
@@ -394,73 +398,135 @@ export default function TourMaterialsManagementPage() {
                   </button>
                 </div>
               ) : (
-                <div className="grid gap-4">
+                <div className="space-y-3">
                   {filteredMaterials.map(material => (
-                    <div key={material.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start space-x-3 flex-1">
-                          {getFileIcon(material.file_type)}
-                          <div className="flex-1">
-                            <h3 className="font-medium text-gray-900">{material.title}</h3>
-                            {material.description && (
-                              <p className="text-sm text-gray-600 mt-1">{material.description}</p>
-                            )}
-                            <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                              <span className="flex items-center space-x-1">
-                                <MapPin className="w-3 h-3" />
-                                <span>{(material as TourMaterial & { tour_attractions?: { name_ko: string } }).tour_attractions?.name_ko || '관광지 없음'}</span>
-                              </span>
-                              <span className="flex items-center space-x-1">
-                                <Tag className="w-3 h-3" />
-                                <span>{(material as TourMaterial & { tour_material_categories?: { name_ko: string } }).tour_material_categories?.name_ko || '카테고리 없음'}</span>
-                              </span>
-                              <span>{formatFileSize(material.file_size)}</span>
-                              {material.duration && (
-                                <span className="flex items-center space-x-1">
-                                  <Clock className="w-3 h-3" />
-                                  <span>{formatDuration(material.duration)}</span>
-                                </span>
-                              )}
-                              <span className="flex items-center space-x-1">
-                                <Globe className="w-3 h-3" />
-                                <span>{material.language?.toUpperCase() || 'KO'}</span>
-                              </span>
-                            </div>
-                            
-                            {/* 오디오 파일인 경우 플레이어 표시 */}
-                            {material.file_type === 'audio' && (
-                              <div className="mt-3">
-                                <AudioPlayer
-                                  src={getFileUrl(material.file_path)}
-                                  title={material.title}
-                                  audioDuration={material.duration || undefined}
-                                  className="max-w-md"
-                                />
+                    <div key={material.id}>
+                      {/* 오디오 파일만 표시 */}
+                      {material.file_type === 'audio' && (
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+                          {/* 아코디언 헤더 */}
+                          <div 
+                            className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                            onClick={() => toggleAccordion(material.id)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2 flex-1 min-w-0">
+                                {/* 플레이 버튼 */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    playTrack({
+                                      src: getFileUrl(material.file_path),
+                                      title: material.title,
+                                      duration: material.duration || undefined
+                                    })
+                                  }}
+                                  className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                                    currentTrack?.src === getFileUrl(material.file_path) && isPlaying
+                                      ? 'bg-red-600 text-white hover:bg-red-700'
+                                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                                  }`}
+                                  title={currentTrack?.src === getFileUrl(material.file_path) && isPlaying ? '재생 중' : '재생'}
+                                >
+                                  {currentTrack?.src === getFileUrl(material.file_path) && isPlaying ? (
+                                    <Pause className="w-4 h-4" />
+                                  ) : (
+                                    <Play className="w-4 h-4" />
+                                  )}
+                                </button>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center space-x-2">
+                                    <h3 className="font-medium text-gray-900 text-sm truncate">{material.title}</h3>
+                                    <ReactCountryFlag
+                                      countryCode={getLanguageFlag(material.language)}
+                                      svg
+                                      style={{
+                                        width: '16px',
+                                        height: '12px',
+                                        borderRadius: '2px'
+                                      }}
+                                    />
+                                    {material.duration && (
+                                      <span className="text-xs text-gray-500">
+                                        {Math.floor(material.duration / 60)}:{(material.duration % 60).toString().padStart(2, '0')}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                            )}
+                              <div className="ml-2">
+                                {/* 펼쳐보기 버튼 */}
+                                {expandedCards.has(material.id) ? (
+                                  <ChevronUp className="w-4 h-4 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                                )}
+                              </div>
+                            </div>
                           </div>
+                          
+                          {/* 아코디언 콘텐츠 */}
+                          {expandedCards.has(material.id) && (
+                            <div className="px-3 pb-3 border-t border-gray-100">
+                              <div className="pt-3 space-y-2">
+                                {/* 기본 정보 */}
+                                <div className="flex items-center space-x-3 text-xs text-gray-500">
+                                  <span className="flex items-center space-x-1">
+                                    <MapPin className="w-3 h-3" />
+                                    <span className="truncate">{(material as TourMaterial & { tour_attractions?: { name_ko: string } }).tour_attractions?.name_ko || '관광지 없음'}</span>
+                                  </span>
+                                  <span className="flex items-center space-x-1">
+                                    <Tag className="w-3 h-3" />
+                                    <span className="truncate">{(material as TourMaterial & { tour_material_categories?: { name_ko: string } }).tour_material_categories?.name_ko || '카테고리 없음'}</span>
+                                  </span>
+                                  <span>{formatFileSize(material.file_size)}</span>
+                                </div>
+                                
+                                {material.description && (
+                                  <div>
+                                    <p className="text-xs text-gray-600 leading-relaxed">{material.description}</p>
+                                  </div>
+                                )}
+                                
+                                {material.tags && material.tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {material.tags.map((tag, index) => (
+                                      <span 
+                                        key={index}
+                                        className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                
+                                {/* 관리 버튼들 */}
+                                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-gray-100">
+                                  <button 
+                                    onClick={() => handleDownload(material)}
+                                    className="flex items-center space-x-1 px-2 py-1 text-xs text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    <span>다운로드</span>
+                                  </button>
+                                  <button 
+                                    onClick={() => handleEdit(material)}
+                                    className="flex items-center space-x-1 px-2 py-1 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                    <span>수정</span>
+                                  </button>
+                                  <button className="flex items-center space-x-1 px-2 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors">
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>삭제</span>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <button className="p-2 text-gray-400 hover:text-blue-600">
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleDownload(material)}
-                            className="p-2 text-gray-400 hover:text-green-600"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleEdit(material)}
-                            className="p-2 text-gray-400 hover:text-blue-600"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button className="p-2 text-gray-400 hover:text-red-600">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>

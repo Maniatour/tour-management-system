@@ -193,6 +193,27 @@ const buildHierarchy = (courses: TourCourse[]): TourCourse[] => {
   // 모든 루트 코스에 대해 레벨 계산
   rootCourses.forEach(course => calculateLevels(course, 0))
 
+  // 각 레벨에서 자식들을 정렬하는 함수
+  const sortChildren = (course: TourCourse) => {
+    if (course.children && course.children.length > 0) {
+      course.children.sort((a, b) => {
+        const nameA = a.team_name_ko || a.name_ko || ''
+        const nameB = b.team_name_ko || b.name_ko || ''
+        return nameA.localeCompare(nameB, 'ko', { numeric: true })
+      })
+      // 재귀적으로 하위 자식들도 정렬
+      course.children.forEach(child => sortChildren(child))
+    }
+  }
+
+  // 모든 루트 코스와 그 하위 자식들을 정렬
+  rootCourses.forEach(course => sortChildren(course))
+  rootCourses.sort((a, b) => {
+    const nameA = a.team_name_ko || a.name_ko || ''
+    const nameB = b.team_name_ko || b.name_ko || ''
+    return nameA.localeCompare(nameB, 'ko', { numeric: true })
+  })
+
   return rootCourses
 }
 
@@ -489,17 +510,37 @@ const TreeItem = ({
   )
 }
 
+// 부모 관광지들을 찾는 함수
+const findParentHierarchy = (course: TourCourse, allCourses: TourCourse[]): TourCourse[] => {
+  const parents: TourCourse[] = []
+  let currentCourse = course
+  
+  while (currentCourse.parent_id) {
+    const parent = allCourses.find(c => c.id === currentCourse.parent_id)
+    if (parent) {
+      parents.unshift(parent) // 맨 앞에 추가하여 순서 유지
+      currentCourse = parent
+    } else {
+      break
+    }
+  }
+  
+  return parents
+}
+
 // 상세 정보 패널 컴포넌트
 const DetailPanel = ({ 
   course, 
   onEdit, 
   onDelete, 
-  onPhotoModal 
+  onPhotoModal,
+  allCourses = []
 }: { 
   course: TourCourse | null
   onEdit: (course: TourCourse) => void
   onDelete: (id: string) => void
   onPhotoModal: (course: TourCourse) => void
+  allCourses?: TourCourse[]
 }) => {
   if (!course) {
     return (
@@ -527,6 +568,31 @@ const DetailPanel = ({
                 {course.team_name_en}
               </p>
             )}
+            
+            {/* 부모 관광지 계층 */}
+            {(() => {
+              const parentHierarchy = findParentHierarchy(course, allCourses)
+              if (parentHierarchy.length > 0) {
+                return (
+                  <div className="mt-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      {parentHierarchy.map((parent, index) => (
+                        <React.Fragment key={parent.id}>
+                          <span className="font-medium">
+                            {parent.team_name_ko || parent.name_ko}
+                          </span>
+                          <ChevronRight className="w-4 h-4 text-gray-400" />
+                        </React.Fragment>
+                      ))}
+                      <span className="font-bold text-gray-800">
+                        {course.team_name_ko || course.name_ko}
+                      </span>
+                    </div>
+                  </div>
+                )
+              }
+              return null
+            })()}
             
           </div>
           
@@ -878,6 +944,24 @@ export default function TourCoursesPage() {
   // 계층적 구조로 변환
   const hierarchicalCourses = buildHierarchy(tourCourses || [])
   
+  // 모든 노드를 기본적으로 확장하도록 설정 (한 번만 실행)
+  React.useEffect(() => {
+    if (tourCourses && tourCourses.length > 0 && expandedNodes.size === 0) {
+      const courses = buildHierarchy(tourCourses)
+      const allNodeIds = new Set<string>()
+      const collectAllNodeIds = (courseList: TourCourse[]) => {
+        courseList.forEach(course => {
+          allNodeIds.add(course.id)
+          if (course.children && course.children.length > 0) {
+            collectAllNodeIds(course.children)
+          }
+        })
+      }
+      collectAllNodeIds(courses)
+      setExpandedNodes(allNodeIds)
+    }
+  }, [tourCourses, expandedNodes.size])
+  
   // 트리 노드 토글 함수
   const toggleNode = (nodeId: string) => {
     const newExpanded = new Set(expandedNodes)
@@ -936,6 +1020,11 @@ export default function TourCoursesPage() {
     const matchesDifficulty = difficultyFilter === 'all' || course.difficulty_level === difficultyFilter
 
     return matchesSearch && matchesCategory && matchesDifficulty
+  }).sort((a, b) => {
+    // 한국어 이름으로 정렬 (한글 우선, 그 다음 영어)
+    const nameA = a.team_name_ko || a.name_ko || ''
+    const nameB = b.team_name_ko || b.name_ko || ''
+    return nameA.localeCompare(nameB, 'ko', { numeric: true })
   })
 
 
@@ -1344,7 +1433,7 @@ export default function TourCoursesPage() {
                       <TreeItem
                         key={course.id}
                         course={course}
-                        level={index}
+                        level={0}
                         expandedNodes={expandedNodes}
                         selectedCourseId={selectedCourse?.id}
                         onToggle={toggleNode}
@@ -1375,6 +1464,7 @@ export default function TourCoursesPage() {
           onEdit={startEdit}
           onDelete={deleteCourse}
           onPhotoModal={openPhotoModal}
+          allCourses={tourCourses}
         />
       </div>
 

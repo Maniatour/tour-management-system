@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Play, Pause, SkipBack, SkipForward, RotateCcw, Volume2, VolumeX, GripVertical } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, RotateCcw, Volume2, VolumeX, GripVertical, X } from 'lucide-react'
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext'
 import ReactCountryFlag from 'react-country-flag'
 
@@ -110,8 +110,8 @@ export default function GlobalAudioPlayer() {
       style={{
         left: position.x,
         bottom: Math.abs(position.y),
-        width: '100vw',
-        maxWidth: '100vw'
+        width: '400px',
+        maxWidth: '90vw'
       }}
     >
       <div className="px-3 py-2">
@@ -123,20 +123,29 @@ export default function GlobalAudioPlayer() {
           <GripVertical className="w-3 h-3 text-gray-400" />
         </div>
 
-        {/* 첫 번째 줄: 제목과 국기 아이콘 */}
-        <div className="flex items-center space-x-2 mb-2">
-          <h3 className="text-sm font-medium text-gray-900 truncate flex-1">
-            {currentTrack.title}
-          </h3>
-          <ReactCountryFlag
-            countryCode={getLanguageFlag(null)} // 기본값으로 KR 사용
-            svg
-            style={{
-              width: '20px',
-              height: '15px',
-              borderRadius: '2px'
-            }}
-          />
+        {/* 첫 번째 줄: 제목, 국기 아이콘, 닫기 버튼 */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center space-x-2 flex-1 min-w-0">
+            <h3 className="text-sm font-medium text-gray-900 truncate">
+              {currentTrack.title}
+            </h3>
+            <ReactCountryFlag
+              countryCode={getLanguageFlag(null)} // 기본값으로 KR 사용
+              svg
+              style={{
+                width: '16px',
+                height: '12px',
+                borderRadius: '2px'
+              }}
+            />
+          </div>
+          <button
+            onClick={stopTrack}
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+            title="닫기"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* 두 번째 줄: 플레이어 컨트롤 */}
@@ -173,14 +182,6 @@ export default function GlobalAudioPlayer() {
               title="10초 앞으로"
             >
               <SkipForward size={14} />
-            </button>
-            
-            <button
-              onClick={stopTrack}
-              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
-              title="정지"
-            >
-              <div className="w-3 h-3 bg-gray-600 rounded-sm" />
             </button>
           </div>
 

@@ -34,6 +34,7 @@ export default function ReservationDetailsPage() {
   const [reservation, setReservation] = useState<Reservation | null>(null)
   const reservationId = params?.id || ''
   const [previewDoc, setPreviewDoc] = useState<null | 'confirmation' | 'pickup' | 'receipt'>(null)
+  const [tourCreated, setTourCreated] = useState(false)
 
   // Try to use already-loaded list; if not found, fetch just this reservation
   useEffect(() => {
@@ -133,7 +134,10 @@ export default function ReservationDetailsPage() {
 
       await refreshReservations()
       alert('예약이 수정되었습니다.')
-      router.push(`/${params?.locale || 'ko'}/admin/reservations`)
+      // 투어가 생성되었다면 투어 섹션도 새로고침
+      if (tourCreated) {
+        setTourCreated(false)
+      }
     } catch (e) {
       console.error(e)
       alert('예약 수정 중 오류가 발생했습니다.')
@@ -185,22 +189,24 @@ export default function ReservationDetailsPage() {
     }
 
     return (
-      <ReservationForm
-        reservation={reservation}
-        customers={customers as Customer[]}
-        products={products}
-        channels={channels}
-        productOptions={productOptions}
-        optionChoices={optionChoices}
-        options={options}
-        pickupHotels={pickupHotels}
-        coupons={coupons}
-        onSubmit={handleSubmit}
-        onCancel={() => router.push(`/${params?.locale || 'ko'}/admin/reservations`)}
-        onRefreshCustomers={refreshCustomers}
-        onDelete={handleDelete}
-        layout="page"
-      />
+      <div className="space-y-6">
+        <ReservationForm
+          reservation={reservation}
+          customers={customers as Customer[]}
+          products={products}
+          channels={channels}
+          productOptions={productOptions}
+          optionChoices={optionChoices}
+          options={options}
+          pickupHotels={pickupHotels}
+          coupons={coupons}
+          onSubmit={handleSubmit}
+          onCancel={() => router.push(`/${params?.locale || 'ko'}/admin/reservations`)}
+          onRefreshCustomers={refreshCustomers}
+          onDelete={handleDelete}
+          layout="page"
+        />
+      </div>
     )
   }, [loading, loadingReservation, reservation, customers, products, channels, productOptions, optionChoices, options, pickupHotels, coupons])
 
