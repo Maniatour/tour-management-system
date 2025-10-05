@@ -315,6 +315,8 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
   const [selectedHotelInfo, setSelectedHotelInfo] = useState<{ name: string; pickup: string; address: string; group: number | null; id: string } | null>(null)
+  const [quickEditMode, setQuickEditMode] = useState(false)
+  const [quickEditGroupNumber, setQuickEditGroupNumber] = useState<number | null>(null)
   
   // 지도 필터링 상태
   const [groupFilter, setGroupFilter] = useState<'all' | 'integer'>('all') // 기본값: 모두 보기
@@ -737,6 +739,36 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
     }
 
+  }
+
+  // 빠른 편집 저장 함수
+  const saveQuickEdit = async () => {
+    if (!selectedHotelInfo) return
+
+    try {
+      const { error } = await supabase
+        .from('pickup_hotels')
+        .update({ group_number: quickEditGroupNumber } as never)
+        .eq('id', selectedHotelInfo.id)
+
+      if (error) {
+        console.error('Error updating hotel group number:', error)
+        alert('그룹 번호 수정 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+
+      await fetchHotels()
+      setQuickEditMode(false)
+      setQuickEditGroupNumber(null)
+      
+      // 선택된 호텔 정보 업데이트
+      setSelectedHotelInfo(prev => prev ? { ...prev, group: quickEditGroupNumber } : null)
+      
+      alert('그룹 번호가 성공적으로 수정되었습니다!')
+    } catch (error) {
+      console.error('Error updating hotel group number:', error)
+      alert('그룹 번호 수정 중 오류가 발생했습니다.')
+    }
   }
 
 
@@ -3091,46 +3123,85 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                         <div className="text-base font-semibold text-gray-900">{selectedHotelInfo.name}</div>
                         <div className="text-sm text-gray-700 mt-1">{selectedHotelInfo.pickup}</div>
                         <div className="text-xs text-gray-500 mt-1">{selectedHotelInfo.address}</div>
-                        {selectedHotelInfo.group != null && (
-                          <div className="text-xs text-blue-700 mt-2">그룹: {selectedHotelInfo.group}</div>
-                        )}
+                        
+                        {/* 그룹 번호 표시/편집 */}
+                        <div className="mt-2">
+                          {quickEditMode ? (
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs text-gray-600">그룹:</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={quickEditGroupNumber || ''}
+                                onChange={(e) => setQuickEditGroupNumber(e.target.value ? parseFloat(e.target.value) : null)}
+                                className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                placeholder="그룹 번호"
+                                autoFocus
+                              />
+                              <button
+                                onClick={saveQuickEdit}
+                                className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                                title="저장"
+                              >
+                                저장
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setQuickEditMode(false)
+                                  setQuickEditGroupNumber(null)
+                                }}
+                                className="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600"
+                                title="취소"
+                              >
+                                취소
+                              </button>
+                            </div>
+                          ) : (
+                            selectedHotelInfo.group != null && (
+                              <div className="text-xs text-blue-700">그룹: {selectedHotelInfo.group}</div>
+                            )
+                          )}
+                        </div>
                         
                         {/* 편집 버튼들 */}
-                        <div className="flex space-x-2 mt-3">
-                          <button
-                            onClick={() => {
-                              const hotel = hotels.find(h => h.id === selectedHotelInfo.id)
-                              if (hotel) {
-                                setEditingHotel(hotel)
-                                setSelectedHotelInfo(null)
-                              }
-                            }}
-                            className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 flex items-center space-x-1"
-                            title="호텔 편집"
-                          >
-                            <Edit2 size={12} />
-                            <span>편집</span>
-                          </button>
-                          
-                          <button
-                            onClick={() => {
-                              const hotel = hotels.find(h => h.id === selectedHotelInfo.id)
-                              if (hotel) {
-                                startEdit(hotel)
-                                setSelectedHotelInfo(null)
-                              }
-                            }}
-                            className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 flex items-center space-x-1"
-                            title="빠른 편집"
-                          >
-                            <Save size={12} />
-                            <span>빠른 편집</span>
-                          </button>
-                        </div>
+                        {!quickEditMode && (
+                          <div className="flex space-x-2 mt-3">
+                            <button
+                              onClick={() => {
+                                const hotel = hotels.find(h => h.id === selectedHotelInfo.id)
+                                if (hotel) {
+                                  setEditingHotel(hotel)
+                                  setSelectedHotelInfo(null)
+                                }
+                              }}
+                              className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 flex items-center space-x-1"
+                              title="호텔 편집"
+                            >
+                              <Edit2 size={12} />
+                              <span>편집</span>
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                setQuickEditMode(true)
+                                setQuickEditGroupNumber(selectedHotelInfo.group)
+                              }}
+                              className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 flex items-center space-x-1"
+                              title="빠른 편집"
+                            >
+                              <Save size={12} />
+                              <span>빠른 편집</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                       
                       <button
-                        onClick={() => setSelectedHotelInfo(null)}
+                        onClick={() => {
+                          setSelectedHotelInfo(null)
+                          setQuickEditMode(false)
+                          setQuickEditGroupNumber(null)
+                        }}
                         className="text-gray-400 hover:text-gray-600"
                         aria-label="닫기"
                         title="닫기"
