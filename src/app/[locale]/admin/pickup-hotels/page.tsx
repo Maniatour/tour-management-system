@@ -399,7 +399,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     }
   }, [])
 
-  // 호텔 마커 추가 함수 (최적화된 버전)
+  // 호텔 마커 추가 함수 (완전히 안전한 버전)
   const addHotelMarkers = useCallback((map: GoogleMapsMap) => {
     // Google Maps API가 로드되었는지 확인
     if (!(window as any).google || !(window as any).google.maps || !(window as any).google.maps.Marker || !(window as any).google.maps.InfoWindow) {
@@ -408,13 +408,19 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     }
 
     // 기존 마커 제거
-    mapMarkers.forEach(marker => (marker as any).setMap(null))
+    mapMarkers.forEach(marker => {
+      try {
+        (marker as any).setMap(null)
+      } catch (e) {
+        console.warn('마커 제거 중 오류:', e)
+      }
+    })
     const newMarkers: GoogleMapsMarker[] = []
 
     // 안전한 HTML 이스케이프 함수
     const escapeHtml = (text: string | null | undefined): string => {
       if (!text) return ''
-      return text
+      return String(text)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -422,71 +428,99 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         .replace(/'/g, '&#39;')
     }
 
+    // 안전한 문자열 생성 함수
+    const createSafeString = (value: any): string => {
+      if (value === null || value === undefined) return ''
+      return String(value)
+    }
+
     filteredHotels.forEach((hotel, index) => {
       try {
-        if (hotel && hotel.pin) {
-          const [lat, lng] = hotel.pin.split(',').map(Number)
-          if (!isNaN(lat) && !isNaN(lng)) {
-            // 마커 생성
-            const markerTitle = escapeHtml(hotel.hotel) || '호텔명 없음'
-            let markerLabel = '?'
-            if (hotel.group_number !== null && hotel.group_number !== undefined) {
-              markerLabel = hotel.group_number.toString()
-            }
-            
-            const marker = new (window as any).google.maps.Marker({
-              position: { lat, lng },
-              map: map,
-              title: markerTitle,
-              label: markerLabel
-            })
-
-            // InfoWindow 생성 - 더 안전한 방법
-            const hotelName = escapeHtml(hotel.hotel) || '호텔명 없음'
-            const pickupLocation = escapeHtml(hotel.pick_up_location) || '픽업 위치 없음'
-            const address = escapeHtml(hotel.address) || '주소 없음'
-            const hotelId = escapeHtml(hotel.id) || ''
-            const hotelLink = hotel.link || ''
-            const groupNumber = hotel.group_number
-            
-            // 안전한 문자열 생성
-            let groupInfoHtml = ''
-            if (groupNumber !== null && groupNumber !== undefined) {
-              groupInfoHtml = `<p class="text-sm text-blue-600">그룹: ${escapeHtml(groupNumber.toString())}</p>`
-            }
-            
-            let googleMapButtonHtml = ''
-            if (hotelLink && hotelLink.trim() !== '') {
-              const escapedLink = escapeHtml(hotelLink)
-              googleMapButtonHtml = `<button onclick="window.open('${escapedLink}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>`
-            }
-            
-            // 더 안전한 content 생성
-            const content = [
-              '<div class="p-2">',
-              `<h3 class="font-semibold text-gray-900">${hotelName}</h3>`,
-              `<p class="text-sm text-gray-600">${pickupLocation}</p>`,
-              `<p class="text-sm text-gray-500">${address}</p>`,
-              groupInfoHtml,
-              '<div class="mt-2 flex space-x-2">',
-              googleMapButtonHtml,
-              `<button onclick="editHotel('${hotelId}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>`,
-              '</div>',
-              '</div>'
-            ].join('')
-            
-            const infoWindow = new (window as any).google.maps.InfoWindow({
-              content: content
-            })
-
-            // 마커 클릭 이벤트
-            (marker as any).addListener('click', () => {
-              (infoWindow as any).open(map, marker)
-            })
-
-            newMarkers.push(marker)
-          }
+        if (!hotel || !hotel.pin) {
+          console.warn(`호텔 ${index}: pin 정보가 없습니다.`, hotel)
+          return
         }
+
+        const pinParts = hotel.pin.split(',')
+        if (pinParts.length !== 2) {
+          console.warn(`호텔 ${index}: pin 형식이 잘못되었습니다.`, hotel.pin)
+          return
+        }
+
+        const lat = parseFloat(pinParts[0])
+        const lng = parseFloat(pinParts[1])
+        
+        if (isNaN(lat) || isNaN(lng)) {
+          console.warn(`호텔 ${index}: 좌표 변환 실패`, hotel.pin)
+          return
+        }
+
+        // 마커 생성
+        const markerTitle = escapeHtml(createSafeString(hotel.hotel)) || '호텔명 없음'
+        let markerLabel = '?'
+        if (hotel.group_number !== null && hotel.group_number !== undefined) {
+          markerLabel = createSafeString(hotel.group_number)
+        }
+        
+        const marker = new (window as any).google.maps.Marker({
+          position: { lat, lng },
+          map: map,
+          title: markerTitle,
+          label: markerLabel
+        })
+
+        // InfoWindow 생성 - 단계별 안전한 생성
+        const hotelName = escapeHtml(createSafeString(hotel.hotel)) || '호텔명 없음'
+        const pickupLocation = escapeHtml(createSafeString(hotel.pick_up_location)) || '픽업 위치 없음'
+        const address = escapeHtml(createSafeString(hotel.address)) || '주소 없음'
+        const hotelId = escapeHtml(createSafeString(hotel.id)) || ''
+        const hotelLink = createSafeString(hotel.link) || ''
+        const groupNumber = hotel.group_number
+        
+        // 그룹 정보 HTML 생성
+        let groupInfoHtml = ''
+        if (groupNumber !== null && groupNumber !== undefined) {
+          const groupStr = createSafeString(groupNumber)
+          groupInfoHtml = `<p class="text-sm text-blue-600">그룹: ${escapeHtml(groupStr)}</p>`
+        }
+        
+        // 구글맵 버튼 HTML 생성
+        let googleMapButtonHtml = ''
+        if (hotelLink && hotelLink.trim() !== '') {
+          const escapedLink = escapeHtml(hotelLink)
+          googleMapButtonHtml = `<button onclick="window.open('${escapedLink}', '_blank')" class="text-blue-600 hover:text-blue-800 text-sm">구글맵</button>`
+        }
+        
+        // 편집 버튼 HTML 생성
+        const editButtonHtml = `<button onclick="editHotel('${hotelId}')" class="text-green-600 hover:text-green-800 text-sm">편집</button>`
+        
+        // 최종 content 생성 - 단계별 조합
+        const contentParts = [
+          '<div class="p-2">',
+          `<h3 class="font-semibold text-gray-900">${hotelName}</h3>`,
+          `<p class="text-sm text-gray-600">${pickupLocation}</p>`,
+          `<p class="text-sm text-gray-500">${address}</p>`,
+          groupInfoHtml,
+          '<div class="mt-2 flex space-x-2">',
+          googleMapButtonHtml,
+          editButtonHtml,
+          '</div>',
+          '</div>'
+        ]
+        
+        const content = contentParts.join('')
+        
+        const infoWindow = new (window as any).google.maps.InfoWindow({
+          content: content
+        })
+
+        // 마커 클릭 이벤트
+        (marker as any).addListener('click', () => {
+          (infoWindow as any).open(map, marker)
+        })
+
+        newMarkers.push(marker)
+        
       } catch (error) {
         console.error(`호텔 ${index} 마커 생성 중 오류:`, error, hotel)
       }
