@@ -2,7 +2,7 @@
 
 
 
-import { useState, useEffect, use, useCallback, useRef } from 'react'
+import { useState, useEffect, use, useCallback, useRef, useMemo } from 'react'
 import { Plus, Search, MapPin, Image as ImageIcon, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle, ChevronDown, ChevronUp, Info, Map, Table, Grid3X3, Edit2, Save, XCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import NextImage from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -280,6 +280,32 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
   const markerMapRef = useRef<{ [id: string]: GoogleMapsMarker }>({})
   const circleMapRef = useRef<{ [id: string]: GoogleMapsCircle }>({})
+  
+  // 그룹 번호별 색상 배열 (정수 그룹 번호에 따라 다른 색상 적용)
+  const groupColors = useMemo(() => [
+    '#ff0000', // 그룹 1: 빨간색
+    '#00ff00', // 그룹 2: 초록색
+    '#0000ff', // 그룹 3: 파란색
+    '#ffff00', // 그룹 4: 노란색
+    '#ff00ff', // 그룹 5: 마젠타
+    '#00ffff', // 그룹 6: 시안
+    '#ff8000', // 그룹 7: 주황색
+    '#8000ff', // 그룹 8: 보라색
+    '#ff0080', // 그룹 9: 핑크
+    '#80ff00', // 그룹 10: 라임
+    '#0080ff', // 그룹 11: 하늘색
+    '#ff8080', // 그룹 12: 연한 빨강
+    '#80ff80', // 그룹 13: 연한 초록
+    '#8080ff', // 그룹 14: 연한 파랑
+    '#ffff80', // 그룹 15: 연한 노랑
+  ], [])
+
+  // 그룹 번호에 따른 색상 반환 함수
+  const getGroupColor = useCallback((groupNumber: number): string => {
+    const index = (groupNumber - 1) % groupColors.length
+    return groupColors[index]
+  }, [groupColors])
+
   const [bulkEditMode, setBulkEditMode] = useState(false)
 
   const [bulkEditData, setBulkEditData] = useState<{ [hotelId: string]: Partial<PickupHotel> }>({})
@@ -858,6 +884,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
         // 정수 그룹 번호인 경우 원 추가
         if (hotel.group_number !== null && hotel.group_number !== undefined && Number.isInteger(hotel.group_number)) {
+          const groupColor = getGroupColor(hotel.group_number)
           const existingCircle = existingCircles[id]
           if (existingCircle) {
             // 기존 원 업데이트 (위치 변경 시)
@@ -868,6 +895,11 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
               if (currLat !== lat || currLng !== lng) {
                 (existingCircle as unknown as { setCenter: (c: { lat: number; lng: number }) => void }).setCenter({ lat, lng })
               }
+              // 색상도 업데이트 (그룹 번호가 변경된 경우)
+              (existingCircle as unknown as { setOptions: (options: { fillColor: string; strokeColor: string }) => void }).setOptions({
+                fillColor: groupColor,
+                strokeColor: groupColor
+              })
             } catch {}
           } else {
             // 새 원 생성
@@ -875,9 +907,9 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
               center: { lat, lng },
               radius: 1000, // 1000미터
               map: map,
-              fillColor: '#ff0000', // 붉은색
+              fillColor: groupColor, // 그룹 번호에 따른 색상
               fillOpacity: 0.2, // 반투명
-              strokeColor: '#ff0000', // 붉은색 테두리
+              strokeColor: groupColor, // 그룹 번호에 따른 테두리 색상
               strokeOpacity: 0.5,
               strokeWeight: 2
             })
@@ -920,7 +952,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
     setMapMarkers(Object.values(existingMarkers))
     setMapCircles(Object.values(existingCircles))
-  }, [filteredHotels])
+  }, [filteredHotels, getGroupColor])
 
 
 
@@ -3009,9 +3041,33 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                 <h3 className="text-lg font-semibold text-gray-900">호텔 위치 지도</h3>
 
                 <p className="text-sm text-gray-600">
-                  마커를 클릭하면 호텔 정보를 확인할 수 있습니다. 마커 라벨은 그룹 번호를 표시합니다. 정수 그룹 번호를 가진 호텔 주변에는 1000m 반투명 붉은색 원이 표시됩니다.
+                  마커를 클릭하면 호텔 정보를 확인할 수 있습니다. 마커 라벨은 그룹 번호를 표시합니다. 정수 그룹 번호를 가진 호텔 주변에는 1000m 반투명 원이 표시되며, 각 그룹마다 다른 색상으로 구분됩니다.
 
                 </p>
+
+                {/* 색상 범례 */}
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">그룹별 색상 범례:</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from({ length: 15 }, (_, i) => i + 1).map(groupNum => {
+                      const color = getGroupColor(groupNum)
+                      const hasGroup = filteredHotels.some(hotel => 
+                        hotel.group_number === groupNum && Number.isInteger(hotel.group_number)
+                      )
+                      if (!hasGroup) return null
+                      
+                      return (
+                        <div key={groupNum} className="flex items-center space-x-1 text-xs">
+                          <div 
+                            className="w-3 h-3 rounded-full border border-gray-300"
+                            style={{ backgroundColor: color }}
+                          />
+                          <span className="text-gray-600">그룹 {groupNum}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
 
               </div>
 
