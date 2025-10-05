@@ -60,4 +60,7 @@ export const createClientSupabase = () => {
   return supabase
 }
 
+// createClient 함수도 export (기존 코드 호환성을 위해)
+export { createClient }
+
 export type { Database }

@@ -378,88 +378,89 @@ const TreeItem = ({
             <div {...provided.dragHandleProps} className="cursor-grab active:cursor-grabbing">
               <GripVertical className="w-4 h-4 text-gray-400 hover:text-gray-600" />
             </div>
-        {/* 확장/축소 버튼 */}
-        {hasChildren ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggle(course.id)
-            }}
-            className="w-4 h-4 flex items-center justify-center text-gray-500 hover:text-gray-700"
-          >
-            {isExpanded ? (
-              <ChevronDown className="w-3 h-3" />
+            
+            {/* 확장/축소 버튼 */}
+            {hasChildren ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggle(course.id)
+                }}
+                className="w-4 h-4 flex items-center justify-center text-gray-500 hover:text-gray-700"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="w-3 h-3" />
+                ) : (
+                  <ChevronRight className="w-3 h-3" />
+                )}
+              </button>
             ) : (
-              <ChevronRight className="w-3 h-3" />
+              <div className="w-4 h-4"></div>
             )}
-          </button>
-        ) : (
-          <div className="w-4 h-4"></div>
-        )}
-        
-        {/* 폴더/파일 아이콘 */}
-        <div className="flex items-center gap-1">
-          {hasChildren ? (
-            <Folder className="w-4 h-4 text-blue-500" />
-          ) : (
-            <MapPin className="w-4 h-4 text-gray-400" />
-          )}
-        </div>
-        
-        {/* 이름 */}
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-gray-900 truncate">
-            {course.team_name_ko || course.name_ko}
-          </div>
-          {course.team_name_en && course.team_name_en !== course.team_name_ko && (
-            <div className="text-xs text-gray-500 truncate">
-              {course.team_name_en}
+            
+            {/* 폴더/파일 아이콘 */}
+            <div className="flex items-center gap-1">
+              {hasChildren ? (
+                <Folder className="w-4 h-4 text-blue-500" />
+              ) : (
+                <MapPin className="w-4 h-4 text-gray-400" />
+              )}
             </div>
-          )}
-        </div>
-        
-        {/* 상태 표시 */}
-        <div className="flex items-center gap-1">
-          {!course.is_active && (
-            <div className="w-2 h-2 bg-red-400 rounded-full" title="비활성"></div>
-          )}
-          
-          {/* 액션 버튼들 */}
-          <div className="flex items-center gap-1 opacity-0 hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onPhotoModal(course)
-              }}
-              className="p-1 hover:bg-gray-200 rounded"
-              title="사진 관리"
-            >
-              <ImageIcon className="w-3 h-3 text-gray-500" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onEdit(course)
-              }}
-              className="p-1 hover:bg-gray-200 rounded"
-              title="편집"
-            >
-              <Edit className="w-3 h-3 text-gray-500" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete(course.id)
-              }}
-              className="p-1 hover:bg-gray-200 rounded"
-              title="삭제"
-            >
-              <Trash2 className="w-3 h-3 text-red-500" />
-            </button>
+            
+            {/* 이름 */}
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-gray-900 truncate">
+                {course.team_name_ko || course.name_ko}
+              </div>
+              {course.team_name_en && course.team_name_en !== course.team_name_ko && (
+                <div className="text-xs text-gray-500 truncate">
+                  {course.team_name_en}
+                </div>
+              )}
+            </div>
+            
+            {/* 상태 표시 */}
+            <div className="flex items-center gap-1">
+              {!course.is_active && (
+                <div className="w-2 h-2 bg-red-400 rounded-full" title="비활성"></div>
+              )}
+              
+              {/* 액션 버튼들 */}
+              <div className="flex items-center gap-1 opacity-0 hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onPhotoModal(course)
+                  }}
+                  className="p-1 hover:bg-gray-200 rounded"
+                  title="사진 관리"
+                >
+                  <ImageIcon className="w-3 h-3 text-gray-500" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEdit(course)
+                  }}
+                  className="p-1 hover:bg-gray-200 rounded"
+                  title="편집"
+                >
+                  <Edit className="w-3 h-3 text-gray-500" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete(course.id)
+                  }}
+                  className="p-1 hover:bg-gray-200 rounded"
+                  title="삭제"
+                >
+                  <Trash2 className="w-3 h-3 text-red-500" />
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-      
+          
           {/* 하위 항목들 */}
           {hasChildren && isExpanded && (
             <div className="ml-4">
@@ -480,9 +481,9 @@ const TreeItem = ({
               ))}
             </div>
           )}
+          
+          {provided.placeholder}
         </div>
-        {provided.placeholder}
-      </div>
       )}
     </Draggable>
   )

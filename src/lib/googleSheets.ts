@@ -359,3 +359,15 @@ export const clearSheetCache = (spreadsheetId?: string) => {
     console.log('Cleared all sheet cache')
   }
 }
+
+// googleSheets 객체 export (기존 코드 호환성을 위해)
+export const googleSheets = {
+  readGoogleSheet,
+  readSheetData,
+  readSheetRange,
+  getSheetNames,
+  getSheetUsedRange,
+  readSheetDataDynamic,
+  getSheetSampleData,
+  clearSheetCache
+}
