@@ -11,6 +11,7 @@ interface GoogleMapsMap {
   addListener: (event: string, callback: (event: GoogleMapsMapMouseEvent) => void) => void
   setCenter: (center: { lat: number; lng: number }) => void
   setZoom: (zoom: number) => void
+  fitBounds: (bounds: GoogleMapsLatLngBounds) => void
 }
 
 interface GoogleMapsMarker {
@@ -52,21 +53,7 @@ interface GoogleMapsLatLngBounds {
   extend: (position: { lat: () => number; lng: () => number }) => void
 }
 
-declare global {
-  interface Window {
-    google: {
-      maps: {
-        Map: new (element: HTMLElement, options: { center: { lat: number; lng: number }; zoom: number; mapTypeId: string }) => GoogleMapsMap
-        Marker: new (options: { position: { lat: number; lng: number }; map: GoogleMapsMap; title: string; label?: string }) => GoogleMapsMarker
-        MapTypeId: GoogleMapsMapTypeId
-        Geocoder: new () => GoogleMapsGeocoder
-        InfoWindow: new (options: { content: string }) => GoogleMapsInfoWindow
-        LatLngBounds: new () => GoogleMapsLatLngBounds
-        MapMouseEvent: GoogleMapsMapMouseEvent
-      }
-    }
-  }
-}
+// Google Maps API는 동적으로 로드되므로 any 타입으로 처리
 
 interface PickupHotel {
   id: string
@@ -353,33 +340,41 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
   // 지도 초기화 함수
   const initializeMap = useCallback(() => {
-    if (typeof window !== 'undefined' && window.google && window.google.maps) {
+    if (typeof window !== 'undefined' && (window as any).google && (window as any).google.maps && (window as any).google.maps.MapTypeId) {
       const mapElement = document.getElementById('hotelMap')
       if (!mapElement) return
 
       const mapOptions = {
         center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
         zoom: 12,
-        mapTypeId: window.google.maps.MapTypeId.ROADMAP
+        mapTypeId: (window as any).google.maps.MapTypeId.ROADMAP
       }
 
-      const map = new window.google.maps.Map(mapElement, mapOptions)
+      const map = new (window as any).google.maps.Map(mapElement, mapOptions)
       setMapInstance(map)
       setMapLoaded(true)
+    } else {
+      console.warn('Google Maps API가 아직 로드되지 않았습니다.')
     }
   }, [])
 
   // 호텔 마커 추가 함수
   const addHotelMarkers = useCallback((map: GoogleMapsMap) => {
+    // Google Maps API가 로드되었는지 확인
+    if (!(window as any).google || !(window as any).google.maps || !(window as any).google.maps.Marker || !(window as any).google.maps.InfoWindow) {
+      console.warn('Google Maps API가 아직 완전히 로드되지 않았습니다.')
+      return
+    }
+
     // 기존 마커 제거
-    mapMarkers.forEach(marker => marker.setMap(null))
+    mapMarkers.forEach(marker => (marker as any).setMap(null))
     const newMarkers: GoogleMapsMarker[] = []
 
     filteredHotels.forEach(hotel => {
       if (hotel.pin) {
         const [lat, lng] = hotel.pin.split(',').map(Number)
         if (!isNaN(lat) && !isNaN(lng)) {
-          const marker = new window.google.maps.Marker({
+          const marker = new (window as any).google.maps.Marker({
             position: { lat, lng },
             map: map,
             title: hotel.hotel,
@@ -387,7 +382,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
           })
 
           // 마커 클릭 시 정보창 표시
-          const infoWindow = new window.google.maps.InfoWindow({
+          const infoWindow = new (window as any).google.maps.InfoWindow({
             content: `
               <div class="p-2">
                 <h3 class="font-semibold text-gray-900">${hotel.hotel}</h3>
@@ -402,8 +397,8 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
             `
           })
 
-          marker.addListener('click', () => {
-            infoWindow.open(map, marker)
+          (marker as any).addListener('click', () => {
+            (infoWindow as any).open(map, marker)
           })
 
           newMarkers.push(marker)
@@ -430,14 +425,28 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         script.async = true
         script.defer = true
         script.onload = () => {
-          setTimeout(initializeMap, 100)
+          // Google Maps API가 완전히 로드될 때까지 더 긴 지연 시간
+          setTimeout(() => {
+            if ((window as any).google && (window as any).google.maps && (window as any).google.maps.MapTypeId) {
+              initializeMap()
+            } else {
+              console.warn('Google Maps API 로드 후에도 MapTypeId를 찾을 수 없습니다.')
+            }
+          }, 500)
         }
         script.onerror = () => {
           alert('Google Maps API 로드 중 오류가 발생했습니다.')
         }
         document.head.appendChild(script)
       } else {
-        setTimeout(initializeMap, 100)
+        // 이미 로드된 경우에도 안전하게 처리
+        setTimeout(() => {
+          if (window.google && window.google.maps && window.google.maps.MapTypeId) {
+            initializeMap()
+          } else {
+            console.warn('Google Maps API가 이미 로드되어 있지만 MapTypeId를 찾을 수 없습니다.')
+          }
+        }, 100)
       }
     }
   }, [viewMode, mapLoaded, initializeMap])
@@ -1403,7 +1412,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                     
                     <div className="flex items-center space-x-3">
                       <span className="text-sm text-gray-500">
-                        상단의 "전체 수정 완료" 버튼을 눌러 저장하세요
+                        상단의 &quot;전체 수정 완료&quot; 버튼을 눌러 저장하세요
                       </span>
                     </div>
                   </div>
@@ -1445,11 +1454,14 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                     <button
                       onClick={() => {
                         if (mapInstance) {
-                          const bounds = new window.google.maps.LatLngBounds()
-                          mapMarkers.forEach(marker => {
-                            bounds.extend(marker.getPosition())
-                          })
-                          mapInstance.fitBounds(bounds)
+                          const bounds = new (window as any).google.maps.LatLngBounds()
+                          for (const marker of mapMarkers) {
+                            const position = (marker as any).getPosition()
+                            if (position) {
+                              bounds.extend(position)
+                            }
+                          }
+                          (mapInstance as any).fitBounds(bounds)
                         }
                       }}
                       className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
