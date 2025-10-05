@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use, useCallback } from 'react'
 import { Plus, Search, MapPin, Image, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle, ChevronDown, ChevronUp, Info, Map, Table, Grid3X3, Edit2, Save, XCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import NextImage from 'next/image'
 import { supabase } from '@/lib/supabase'
 import PickupHotelForm from '@/components/PickupHotelForm'
 import { groupHotelsByGroupNumber, processPickupRequest } from '@/utils/pickupHotelUtils'
@@ -27,30 +28,43 @@ interface GoogleMapsMapMouseEvent {
   }
 }
 
-interface GoogleMapsMapTypeId {
-  ROADMAP: string
+// Google Maps API는 동적으로 로드되므로 필요한 타입만 정의
+interface GoogleMapsLatLngBounds {
+  extend: (position: { lat: () => number; lng: () => number }) => void
 }
 
-interface GoogleMapsGeocoder {
-  geocode: (request: { location?: { lat: number; lng: number }; address?: string }, callback: (results: GoogleMapsGeocoderResult[] | null, status: string) => void) => void
-}
-
-interface GoogleMapsGeocoderResult {
-  formatted_address: string
-  geometry: {
-    location: {
-      lat: () => number
-      lng: () => number
+// Google Maps API 타입 정의
+interface GoogleMapsAPI {
+  maps: {
+    Map: new (element: HTMLElement, options: GoogleMapsMapOptions) => GoogleMapsMap
+    Marker: new (options: GoogleMapsMarkerOptions) => GoogleMapsMarker
+    InfoWindow: new (options: GoogleMapsInfoWindowOptions) => GoogleMapsInfoWindow
+    LatLngBounds: new () => GoogleMapsLatLngBounds
+    MapTypeId?: {
+      ROADMAP: string
     }
   }
 }
 
-interface GoogleMapsInfoWindow {
-  open: (map: GoogleMapsMap, marker: GoogleMapsMarker) => void
+interface GoogleMapsMapOptions {
+  center: { lat: number; lng: number }
+  zoom: number
+  mapTypeId?: string
 }
 
-interface GoogleMapsLatLngBounds {
-  extend: (position: { lat: () => number; lng: () => number }) => void
+interface GoogleMapsMarkerOptions {
+  position: { lat: number; lng: number }
+  map: GoogleMapsMap
+  title: string
+  label: string
+}
+
+interface GoogleMapsInfoWindowOptions {
+  content: string
+}
+
+interface GoogleMapsInfoWindow {
+  open: (map: GoogleMapsMap, marker: GoogleMapsMarker) => void
 }
 
 // Google Maps API는 동적으로 로드되므로 any 타입으로 처리
@@ -366,7 +380,8 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
   // 지도 초기화 함수
   const initializeMap = useCallback(() => {
     try {
-      if (typeof window !== 'undefined' && (window as any).google && (window as any).google.maps) {
+      const google = (window as unknown as { google?: GoogleMapsAPI }).google
+      if (typeof window !== 'undefined' && google && google.maps) {
         const mapElement = document.getElementById('hotelMap')
         if (!mapElement) {
           console.warn('지도 컨테이너 요소를 찾을 수 없습니다.')
@@ -374,20 +389,20 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         }
 
         // MapTypeId가 없어도 기본값으로 처리
-        const mapOptions: any = {
+        const mapOptions: GoogleMapsMapOptions = {
           center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
           zoom: 12
         }
 
         // MapTypeId가 있으면 사용, 없으면 기본값 사용
-        if ((window as any).google.maps.MapTypeId && (window as any).google.maps.MapTypeId.ROADMAP) {
-          mapOptions.mapTypeId = (window as any).google.maps.MapTypeId.ROADMAP
+        if (google.maps.MapTypeId && google.maps.MapTypeId.ROADMAP) {
+          mapOptions.mapTypeId = google.maps.MapTypeId.ROADMAP
         } else {
           console.warn('MapTypeId를 사용할 수 없어 기본 지도 타입을 사용합니다.')
           mapOptions.mapTypeId = 'roadmap' // 문자열로 직접 지정
         }
 
-        const map = new (window as any).google.maps.Map(mapElement, mapOptions)
+        const map = new google.maps.Map(mapElement, mapOptions)
         setMapInstance(map)
         setMapLoaded(true)
         console.log('지도가 성공적으로 초기화되었습니다.')
@@ -401,8 +416,9 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
   // 호텔 마커 추가 함수 (완전히 안전한 버전)
   const addHotelMarkers = useCallback((map: GoogleMapsMap) => {
+    const google = (window as unknown as { google?: GoogleMapsAPI }).google
     // Google Maps API가 로드되었는지 확인
-    if (!(window as any).google || !(window as any).google.maps || !(window as any).google.maps.Marker || !(window as any).google.maps.InfoWindow) {
+    if (!google || !google.maps || !google.maps.Marker || !google.maps.InfoWindow) {
       console.warn('Google Maps API가 아직 완전히 로드되지 않았습니다.')
       return
     }
@@ -410,7 +426,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     // 기존 마커 제거
     mapMarkers.forEach(marker => {
       try {
-        (marker as any).setMap(null)
+        (marker as unknown as { setMap: (map: GoogleMapsMap | null) => void }).setMap(null)
       } catch (e) {
         console.warn('마커 제거 중 오류:', e)
       }
@@ -429,7 +445,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
     }
 
     // 안전한 문자열 생성 함수
-    const createSafeString = (value: any): string => {
+    const createSafeString = (value: unknown): string => {
       if (value === null || value === undefined) return ''
       return String(value)
     }
@@ -462,7 +478,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
           markerLabel = createSafeString(hotel.group_number)
         }
         
-        const marker = new (window as any).google.maps.Marker({
+        const marker = new google.maps.Marker({
           position: { lat, lng },
           map: map,
           title: markerTitle,
@@ -510,13 +526,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         
         const content = contentParts.join('')
         
-        const infoWindow = new (window as any).google.maps.InfoWindow({
+        const infoWindow = new google.maps.InfoWindow({
           content: content
         })
 
         // 마커 클릭 이벤트
-        (marker as any).addListener('click', () => {
-          (infoWindow as any).open(map, marker)
+        (marker as unknown as { addListener: (event: string, callback: () => void) => void }).addListener('click', () => {
+          (infoWindow as unknown as { open: (map: GoogleMapsMap, marker: GoogleMapsMarker) => void }).open(map, marker)
         })
 
         newMarkers.push(marker)
@@ -532,8 +548,9 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
   // 지도 뷰가 활성화될 때 지도 초기화 (최적화된 버전)
   useEffect(() => {
     if (viewMode === 'map' && !mapLoaded) {
+      const google = (window as unknown as { google?: GoogleMapsAPI }).google
       // Google Maps API 스크립트 로드
-      if (!(window as any).google) {
+      if (!google) {
         const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
         if (!apiKey) {
           console.error('Google Maps API 키가 설정되지 않았습니다.')
@@ -546,11 +563,12 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         script.defer = true
         
         // 전역 콜백 함수 설정
-        ;(window as any).initGoogleMaps = () => {
+        ;(window as unknown as { initGoogleMaps: () => void }).initGoogleMaps = () => {
           console.log('Google Maps API 콜백이 호출되었습니다.')
           // 더 긴 지연 시간으로 안정성 확보
           setTimeout(() => {
-            if ((window as any).google && (window as any).google.maps) {
+            const googleAfterLoad = (window as unknown as { google?: GoogleMapsAPI }).google
+            if (googleAfterLoad && googleAfterLoad.maps) {
               initializeMap()
             } else {
               console.warn('콜백에서도 Google Maps API에 접근할 수 없습니다.')
@@ -564,7 +582,8 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       } else {
         // 이미 로드된 경우에도 안전하게 처리
         setTimeout(() => {
-          if ((window as any).google && (window as any).google.maps) {
+          const googleAfterLoad = (window as unknown as { google?: GoogleMapsAPI }).google
+          if (googleAfterLoad && googleAfterLoad.maps) {
             initializeMap()
           } else {
             console.warn('Google Maps API가 이미 로드되어 있지만 접근할 수 없습니다.')
@@ -1155,11 +1174,12 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                         }}
                       >
                         {isImage ? (
-                          <img
+                          <NextImage
                             src={url}
                             alt={`${hotel.hotel} 이미지 ${index + 1}`}
-                            className="w-full h-full object-cover rounded-lg"
-                            onError={(e) => {
+                            fill
+                            className="object-cover rounded-lg"
+                            onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
                               const target = e.target as HTMLImageElement
                               target.style.display = 'none'
                               const parent = target.parentElement
@@ -1651,14 +1671,17 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                     <button
                       onClick={() => {
                         if (mapInstance) {
-                          const bounds = new (window as any).google.maps.LatLngBounds()
-                          for (const marker of mapMarkers) {
-                            const position = (marker as any).getPosition()
-                            if (position) {
-                              bounds.extend(position)
+                          const google = (window as unknown as { google?: GoogleMapsAPI }).google
+                          if (google && google.maps) {
+                            const bounds = new google.maps.LatLngBounds()
+                            for (const marker of mapMarkers) {
+                              const position = (marker as unknown as { getPosition: () => { lat: () => number; lng: () => number } | null }).getPosition()
+                              if (position) {
+                                bounds.extend(position)
+                              }
                             }
+                            (mapInstance as unknown as { fitBounds: (bounds: GoogleMapsLatLngBounds) => void }).fitBounds(bounds)
                           }
-                          (mapInstance as any).fitBounds(bounds)
                         }
                       }}
                       className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
@@ -1760,12 +1783,14 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
             )}
 
             {/* 메인 이미지 */}
-            <div className="max-w-4xl max-h-4xl mx-auto">
-              <img
+            <div className="max-w-4xl max-h-4xl mx-auto relative">
+              <NextImage
                 src={imageViewer.images[imageViewer.currentIndex]}
                 alt={`${imageViewer.hotelName} 이미지 ${imageViewer.currentIndex + 1}`}
+                width={800}
+                height={600}
                 className="max-w-full max-h-full object-contain"
-                onError={(e) => {
+                onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
                   const target = e.target as HTMLImageElement
                   target.style.display = 'none'
                   const parent = target.parentElement
@@ -1796,10 +1821,11 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                         : 'border-transparent hover:border-gray-400'
                     }`}
                   >
-                    <img
+                    <NextImage
                       src={url}
                       alt={`썸네일 ${index + 1}`}
-                      className="w-full h-full object-cover"
+                      fill
+                      className="object-cover"
                     />
                   </button>
                 ))}
