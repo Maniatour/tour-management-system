@@ -1610,6 +1610,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   {/* 상품 정보 */}
                   <div>
                     <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products)}</div>
+                    
                     {/* 필수 선택된 옵션들만 표시 */}
                     {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
                       <div className="mt-1 space-y-1">
@@ -1630,6 +1631,117 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                             </div>
                           );
                         })}
+                      </div>
+                    )}
+
+                    {/* Choices 값 표시 */}
+                    {(() => {
+                      // choices 데이터가 있으면 표시
+                      if (reservation.choices && Object.keys(reservation.choices).length > 0) {
+                        return true;
+                      }
+                      
+                      // choices 데이터가 없지만 특정 상품인 경우 기본 선택사항 표시
+                      const productId = reservation.productId;
+                      if (productId === 'MDGCSUNRISE' || productId === 'MDGC1D') {
+                        return true;
+                      }
+                      
+                      return false;
+                    })() && (
+                      <div className="mt-1 space-y-1">
+                        {/* 디버깅을 위한 choices 데이터 로그 */}
+                        {process.env.NODE_ENV === 'development' && reservation.choices && (
+                          <div className="text-xs text-gray-400">
+                            Debug: {(() => {
+                              try {
+                                const jsonStr = JSON.stringify(reservation.choices);
+                                return jsonStr.substring(0, 100) + '...';
+                              } catch (error) {
+                                return 'Invalid JSON data';
+                              }
+                            })()}
+                          </div>
+                        )}
+                        
+                        {/* choices.required 배열 형태 처리 - 선택된 옵션만 표시 */}
+                        {reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required) && (
+                          <>
+                            {reservation.choices.required.map((choice: Record<string, unknown>, index: number) => {
+                              if (!choice || typeof choice !== 'object') return null;
+                              
+                              // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                              const selectedOption = choice.options && Array.isArray(choice.options) 
+                                ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
+                                : null;
+                              
+                              // 선택된 옵션이 있으면 해당 옵션 이름만 표시
+                              if (selectedOption) {
+                                return (
+                                  <div key={`required-${index}`} className="text-xs text-green-600">
+                                    <span className="font-medium">✓ {String(selectedOption.name_ko || selectedOption.name || selectedOption.id)}</span>
+                                  </div>
+                                );
+                              }
+                              
+                              // 선택된 옵션이 없으면 첫 번째 옵션 표시
+                              if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                const firstOption = choice.options[0] as Record<string, unknown>;
+                                return (
+                                  <div key={`required-${index}`} className="text-xs text-green-600">
+                                    <span className="font-medium">✓ {String(firstOption.name_ko || firstOption.name || firstOption.id)}</span>
+                                  </div>
+                                );
+                              }
+                              
+                              return null;
+                            })}
+                          </>
+                        )}
+                        
+                        {/* choices가 객체이지만 required가 없는 경우 처리 */}
+                        {reservation.choices && !reservation.choices.required && typeof reservation.choices === 'object' && (
+                          <div className="text-xs text-blue-600">
+                            <span className="font-medium">Choices:</span>
+                            <div className="ml-2 text-xs text-gray-500">
+                              {JSON.stringify(reservation.choices).substring(0, 200)}...
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* choices 객체의 다른 속성들 처리 */}
+                        {reservation.choices && typeof reservation.choices === 'object' && (
+                          <>
+                            {Object.entries(reservation.choices).map(([key, value]) => {
+                              if (key === 'required') return null; // 이미 처리됨
+                              if (!value || typeof value !== 'object') return null;
+                              
+                              return (
+                                <div key={key} className="text-xs text-blue-600">
+                                  <span className="font-medium">{key}</span>
+                                  {Array.isArray(value) && value.length > 0 && (
+                                    <div className="ml-2 space-y-0.5">
+                                      {value.map((item: unknown, index: number) => (
+                                        <div key={index} className="text-xs text-gray-500">
+                                          • {typeof item === 'string' ? item : (typeof item === 'object' && item ? 
+                                            String((item as Record<string, unknown>).name_ko || (item as Record<string, unknown>).name || (item as Record<string, unknown>).id || JSON.stringify(item)) : 
+                                            String(item))}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </>
+                        )}
+                        
+                        {/* choices 데이터가 없는 경우 fallback 표시 */}
+                        {(!reservation.choices || Object.keys(reservation.choices).length === 0) && (
+                          <div className="text-xs text-green-600">
+                            <span className="font-medium">✓ Lower Antelope Canyon</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

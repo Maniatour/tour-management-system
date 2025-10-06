@@ -26,6 +26,11 @@ interface SyncResult {
     mdgcSunriseUpdated?: number
     mdgc1DUpdated?: number
     totalUpdated?: number
+    totalProcessed?: number
+    productIds?: string[]
+    updatedReservations?: number
+    lowerAntelopeCount?: number
+    antelopeXCount?: number
   }
   syncTime?: string
 }
@@ -76,6 +81,15 @@ export default function DataSyncPage() {
   const [showFullLogs, setShowFullLogs] = useState(false)
   const [cleanupLoading, setCleanupLoading] = useState(false)
   const [cleanupResult, setCleanupResult] = useState<SyncResult | null>(null)
+  const [cleanupStatus, setCleanupStatus] = useState<{
+    reservations: Array<{ product_id: string; choices?: Record<string, unknown>; created_at: string }>
+    products: Array<{ id: string; choices?: Record<string, unknown> }>
+    summary: {
+      totalReservations: number
+      reservationsWithChoices: number
+      productsWithChoices: number
+    }
+  } | null>(null)
 
   // 컬럼 매핑을 localStorage에 저장
   const saveColumnMapping = (tableName: string, mapping: ColumnMapping) => {
@@ -261,6 +275,11 @@ export default function DataSyncPage() {
       console.error('Error getting available tables:', error)
     }
   }, [availableTables.length])
+
+  // 예약 데이터 정리 상태 확인
+  useEffect(() => {
+    checkCleanupStatus()
+  }, [])
 
   // 테이블 스키마 가져오기 (재시도 + 장시간 타임아웃)
   const getTableSchema = async (tableName: string) => {
@@ -588,6 +607,57 @@ export default function DataSyncPage() {
   // 구글 시트 열기
   const openGoogleSheets = () => {
     window.open(getGoogleSheetsUrl(), '_blank')
+  }
+
+  // 예약 데이터 정리 상태 확인
+  const checkCleanupStatus = async () => {
+    try {
+      const response = await fetch('/api/sync/reservation-cleanup')
+      const result = await response.json()
+      
+      if (result.success) {
+        setCleanupStatus(result.data)
+      } else {
+        console.error('Failed to check cleanup status:', result.message)
+      }
+    } catch (error) {
+      console.error('Error checking cleanup status:', error)
+    }
+  }
+
+  // 예약 데이터 정리 실행
+  const handleReservationCleanup = async () => {
+    if (!confirm('예약 데이터를 정리하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+      return
+    }
+
+    setCleanupLoading(true)
+    setCleanupResult(null)
+
+    try {
+      const response = await fetch('/api/sync/reservation-cleanup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const result = await response.json()
+      setCleanupResult(result)
+      
+      if (result.success) {
+        // 정리 후 상태 다시 확인
+        await checkCleanupStatus()
+      }
+    } catch (error) {
+      console.error('Error during cleanup:', error)
+      setCleanupResult({
+        success: false,
+        message: '예약 데이터 정리 중 오류가 발생했습니다.'
+      })
+    } finally {
+      setCleanupLoading(false)
+    }
   }
 
   // 구글 시트 정보 가져오기
@@ -930,35 +1000,6 @@ export default function DataSyncPage() {
     }
   }
 
-  // 예약 데이터 정리 함수
-  const handleReservationCleanup = async () => {
-    if (!confirm('예약 데이터를 정리하시겠습니까?\n\n- MDGCSUNRISE_X → MDGCSUNRISE (Antelope X Canyon 옵션 추가)\n- MDGC1D_X → MDGC1D (Antelope X Canyon 옵션 추가)\n- MDGCSUNRISE → Lower Antelope Canyon 옵션 추가\n- MDGC1D → Lower Antelope Canyon 옵션 추가')) {
-      return
-    }
-
-    setCleanupLoading(true)
-    setCleanupResult(null)
-
-    try {
-      const response = await fetch('/api/reservations/cleanup', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      const result = await response.json()
-      setCleanupResult(result)
-    } catch (error) {
-      console.error('예약 데이터 정리 오류:', error)
-      setCleanupResult({
-        success: false,
-        message: `예약 데이터 정리 중 오류가 발생했습니다: ${error}`
-      })
-    } finally {
-      setCleanupLoading(false)
-    }
-  }
 
   // 컴포넌트 마운트 시 사용 가능한 테이블만 가져오기
   useEffect(() => {
@@ -1047,6 +1088,33 @@ export default function DataSyncPage() {
           </ul>
         </div>
 
+        {/* 현재 상태 표시 */}
+        {cleanupStatus && (
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 className="text-sm font-medium text-blue-800 mb-2">현재 상태:</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div className="bg-white p-2 rounded text-center">
+                <div className="font-bold text-blue-600">{cleanupStatus.summary?.totalReservations || 0}</div>
+                <div className="text-blue-800">총 예약</div>
+              </div>
+              <div className="bg-white p-2 rounded text-center">
+                <div className="font-bold text-green-600">{cleanupStatus.summary?.reservationsWithChoices || 0}</div>
+                <div className="text-green-800">선택사항 있음</div>
+              </div>
+              <div className="bg-white p-2 rounded text-center">
+                <div className="font-bold text-purple-600">{cleanupStatus.summary?.productsWithChoices || 0}</div>
+                <div className="text-purple-800">상품 선택사항</div>
+              </div>
+              <div className="bg-white p-2 rounded text-center">
+                <div className="font-bold text-orange-600">
+                  {cleanupStatus.reservations?.filter((r) => r.product_id?.includes('_X')).length || 0}
+                </div>
+                <div className="text-orange-800">_X 상품</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex space-x-3">
           <button
             onClick={handleReservationCleanup}
@@ -1055,6 +1123,14 @@ export default function DataSyncPage() {
           >
             <Database className="h-4 w-4 mr-2" />
             {cleanupLoading ? '정리 중...' : '예약 데이터 정리 실행'}
+          </button>
+          <button
+            onClick={checkCleanupStatus}
+            disabled={cleanupLoading}
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            상태 새로고침
           </button>
         </div>
 
@@ -1088,22 +1164,40 @@ export default function DataSyncPage() {
               </p>
               
               {cleanupResult.data && (
-                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                  <div className="bg-blue-50 p-2 rounded text-center">
-                    <div className="font-bold text-blue-600">{cleanupResult.data.mdgcSunriseXUpdated || 0}</div>
-                    <div className="text-blue-800">MDGCSUNRISE_X</div>
+                <div className="mt-3">
+                  <div className="text-sm text-gray-700 mb-2">
+                    <strong>처리된 데이터:</strong> {cleanupResult.data.totalProcessed || 0}개 예약
                   </div>
-                  <div className="bg-purple-50 p-2 rounded text-center">
-                    <div className="font-bold text-purple-600">{cleanupResult.data.mdgc1DXUpdated || 0}</div>
-                    <div className="text-purple-800">MDGC1D_X</div>
+                  <div className="text-sm text-gray-700 mb-2">
+                    <strong>상품 ID:</strong> {cleanupResult.data.productIds?.join(', ') || '없음'}
                   </div>
-                  <div className="bg-green-50 p-2 rounded text-center">
-                    <div className="font-bold text-green-600">{cleanupResult.data.mdgcSunriseUpdated || 0}</div>
-                    <div className="text-green-800">MDGCSUNRISE</div>
+                  <div className="text-sm text-gray-700 mb-2">
+                    <strong>업데이트된 예약:</strong> {cleanupResult.data.updatedReservations || 0}개
                   </div>
-                  <div className="bg-yellow-50 p-2 rounded text-center">
-                    <div className="font-bold text-yellow-600">{cleanupResult.data.mdgc1DUpdated || 0}</div>
-                    <div className="text-yellow-800">MDGC1D</div>
+                  
+                  <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                    <div className="bg-blue-50 p-2 rounded text-center">
+                      <div className="font-bold text-blue-600">{cleanupResult.data.mdgcSunriseXUpdated || 0}</div>
+                      <div className="text-blue-800">MDGCSUNRISE_X → X</div>
+                    </div>
+                    <div className="bg-purple-50 p-2 rounded text-center">
+                      <div className="font-bold text-purple-600">{cleanupResult.data.mdgc1DXUpdated || 0}</div>
+                      <div className="text-purple-800">MDGC1D_X → X</div>
+                    </div>
+                    <div className="bg-green-50 p-2 rounded text-center">
+                      <div className="font-bold text-green-600">
+                        {cleanupResult.data && 'lowerAntelopeCount' in cleanupResult.data ? 
+                          (cleanupResult.data as { lowerAntelopeCount: number }).lowerAntelopeCount : 0}
+                      </div>
+                      <div className="text-green-800">Lower Antelope</div>
+                    </div>
+                    <div className="bg-orange-50 p-2 rounded text-center">
+                      <div className="font-bold text-orange-600">
+                        {cleanupResult.data && 'antelopeXCount' in cleanupResult.data ? 
+                          (cleanupResult.data as { antelopeXCount: number }).antelopeXCount : 0}
+                      </div>
+                      <div className="text-orange-800">Antelope X</div>
+                    </div>
                   </div>
                 </div>
               )}
