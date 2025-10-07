@@ -1791,6 +1791,17 @@ export default function TourDetailPage() {
     }
   };
 
+  // 전역 JSON.parse 오버라이드 (디버깅용)
+  const originalJsonParse = JSON.parse;
+  JSON.parse = function(text: string, reviver?: (this: any, key: string, value: any) => any) {
+    try {
+      return originalJsonParse.call(this, text, reviver);
+    } catch (error) {
+      console.error('전역 JSON.parse 에러:', error, '입력값:', text);
+      throw error;
+    }
+  };
+
   // 투어 상태 변경 함수
   const updateTourStatus = async (newStatus: string) => {
     try {
@@ -2912,14 +2923,7 @@ export default function TourDetailPage() {
                           <div className="mb-2">
                             {(() => {
                               // choices 데이터 파싱
-                              let parsedChoices = reservation.choices;
-                              if (typeof reservation.choices === 'string') {
-                                try {
-                                  parsedChoices = JSON.parse(reservation.choices);
-                                } catch (error) {
-                                  console.error('Error parsing choices:', error);
-                                }
-                              }
+                              let parsedChoices = safeJsonParse(reservation.choices, null);
                               
                               // choices 데이터에서 선택된 옵션 찾기
                               if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
