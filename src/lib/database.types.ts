@@ -353,6 +353,8 @@ export interface Database {
           product_price_total: number
           required_options: Record<string, unknown>
           required_option_total: number
+          choices: Record<string, unknown>
+          choices_total: number
           subtotal: number
           coupon_code: string | null
           coupon_discount: number
@@ -379,6 +381,8 @@ export interface Database {
           product_price_total?: number
           required_options?: Record<string, unknown>
           required_option_total?: number
+          choices?: Record<string, unknown>
+          choices_total?: number
           subtotal?: number
           coupon_code?: string | null
           coupon_discount?: number
@@ -405,6 +409,8 @@ export interface Database {
           product_price_total?: number
           required_options?: Record<string, unknown>
           required_option_total?: number
+          choices?: Record<string, unknown>
+          choices_total?: number
           subtotal?: number
           coupon_code?: string | null
           coupon_discount?: number
@@ -430,6 +436,7 @@ export interface Database {
           tour_date: string
           reservation_ids: string[] | null
           tour_status: string | null
+          assignment_status: string | null
           is_private_tour: boolean
           tour_guide_id: string | null
           assistant_id: string | null
@@ -449,6 +456,7 @@ export interface Database {
           tour_date: string
           reservation_ids?: string[] | null
           tour_status?: string | null
+          assignment_status?: string | null
           is_private_tour?: boolean
           tour_guide_id?: string | null
           assistant_id?: string | null
@@ -468,6 +476,7 @@ export interface Database {
           tour_date?: string
           reservation_ids?: string[] | null
           tour_status?: string | null
+          assignment_status?: string | null
           is_private_tour?: boolean
           tour_guide_id?: string | null
           assistant_id?: string | null
@@ -639,6 +648,7 @@ export interface Database {
           address: string
           pin: string | null
           link: string | null
+          youtube_link: string | null
           media: string[] | null
           is_active: boolean | null
           group_number: number | null
@@ -654,6 +664,7 @@ export interface Database {
           address: string
           pin?: string | null
           link?: string | null
+          youtube_link?: string | null
           media?: string[] | null
           is_active?: boolean | null
           group_number?: number | null
@@ -669,6 +680,7 @@ export interface Database {
           address?: string
           pin?: string | null
           link?: string | null
+          youtube_link?: string | null
           media?: string[] | null
           is_active?: boolean | null
           group_number?: number | null

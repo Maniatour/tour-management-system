@@ -20,6 +20,7 @@ import {
   getPendingReservations
 } from '@/utils/tourUtils'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
+import { formatTimeWithAMPM } from '@/lib/utils'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
@@ -89,6 +90,41 @@ export default function TourDetailPage() {
   const [pendingPrivateTourValue, setPendingPrivateTourValue] = useState<boolean>(false)
   const [connectionStatus, setConnectionStatus] = useState<{[key: string]: boolean}>({})
   const [productOptions, setProductOptions] = useState<{[productId: string]: {[optionId: string]: {id: string, name: string}}}>({})
+  
+  // 드롭다운 상태 관리
+  const [showTourStatusDropdown, setShowTourStatusDropdown] = useState(false)
+  const [showAssignmentStatusDropdown, setShowAssignmentStatusDropdown] = useState(false)
+  
+  // 아코디언 상태 관리
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['team-composition']))
+
+  // 아코디언 토글 함수
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId)
+      } else {
+        newSet.add(sectionId)
+      }
+      return newSet
+    })
+  }
+
+  // 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showTourStatusDropdown || showAssignmentStatusDropdown) {
+        setShowTourStatusDropdown(false)
+        setShowAssignmentStatusDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showTourStatusDropdown, showAssignmentStatusDropdown])
 
   // 연결 상태 라벨 컴포넌트
   const ConnectionStatusLabel = ({ status, section }: { status: boolean, section: string }) => (
@@ -691,21 +727,45 @@ export default function TourDetailPage() {
         
         if (teamData) {
           setTeamMembers(teamData as TeamMember[])
+          console.log('Team members loaded from cache:', (teamData as TeamMember[]).length, 'members')
+          console.log('Cached team data:', teamData)
         } else {
           try {
-            const { data } = await supabase
-              .from('team')
-              .select('email, name_ko, name_en')
-              .eq('position', 'Tour Guide')
-              .eq('is_active', true)
+            console.log('Loading team members from database...')
             
-            if (data) {
-              const team = (data as TeamMember[]) || []
-              cache.set(teamCacheKey, team, 15 * 60 * 1000) // 15분 캐시
-              setTeamMembers(team)
-              if (process.env.NODE_ENV === 'development') {
-                console.log('Team members loaded:', team.length, 'members')
+            // 먼저 모든 팀 멤버를 조회 (is_active 조건 없이)
+            const { data: allTeamData, error: allTeamError } = await supabase
+              .from('team')
+              .select('email, name_ko, name_en, position, is_active')
+              .order('name_ko')
+            
+            if (allTeamError) {
+              console.error('Error loading all team members:', allTeamError)
+            } else {
+              console.log('All team members loaded:', allTeamData?.length || 0, 'members')
+              console.log('All team data:', allTeamData)
+              
+              // 활성 멤버만 필터링
+              const activeMembers = (allTeamData || []).filter((member: any) => member.is_active !== false)
+              console.log('Active team members:', activeMembers.length, 'members')
+              console.log('Active team data:', activeMembers)
+              
+              // 현재 투어의 가이드와 어시스턴트가 포함되어 있는지 확인
+              const currentGuide = td?.tour_guide_id
+              const currentAssistant = td?.assistant_id
+              
+              if (currentGuide) {
+                const guideInTeam = activeMembers.find((m: any) => m.email === currentGuide)
+                console.log('Current guide in team:', guideInTeam)
               }
+              
+              if (currentAssistant) {
+                const assistantInTeam = activeMembers.find((m: any) => m.email === currentAssistant)
+                console.log('Current assistant in team:', assistantInTeam)
+              }
+              
+              cache.set(teamCacheKey, activeMembers, 15 * 60 * 1000)
+              setTeamMembers(activeMembers as TeamMember[])
             }
           } catch (error) {
             console.error('Error loading team members:', error)
@@ -800,6 +860,33 @@ export default function TourDetailPage() {
       console.error('Error fetching tour data:', error)
     } finally {
       setLoading(false)
+      
+      // 팀 멤버가 로드되지 않은 경우 fallback 시도
+      console.log('Checking if team members need fallback loading...')
+      setTimeout(async () => {
+        try {
+          // 현재 팀 멤버 상태 확인
+          const currentTeamMembers = teamMembers
+          if (currentTeamMembers.length === 0) {
+            console.log('No team members loaded after tour data fetch, trying fallback...')
+            const { data: allData, error: allError } = await supabase
+              .from('team')
+              .select('email, name_ko, name_en, position, is_active')
+              .order('name_ko')
+            
+            if (!allError && allData) {
+              console.log('Fallback team loading successful:', allData.length, 'members')
+              const activeMembers = allData.filter((member: any) => member.is_active !== false)
+              setTeamMembers(activeMembers as TeamMember[])
+              console.log('Fallback active members:', activeMembers)
+            }
+          } else {
+            console.log('Team members already loaded:', currentTeamMembers.length, 'members')
+          }
+        } catch (fallbackError) {
+          console.error('Fallback team loading failed:', fallbackError)
+        }
+      }, 1000) // 1초 후 실행
     }
   }, [fetchBookings])
 
@@ -896,11 +983,31 @@ export default function TourDetailPage() {
           promises.push(
             supabase
               .from('team')
-              .select('email, name_ko, name_en')
-              .eq('position', 'Tour Guide')
+              .select('email, name_ko, name_en, position, is_active')
               .eq('is_active', true)
-              .then(({ data }: { data: any }) => {
+              .then(({ data, error }: { data: any, error: any }) => {
+                if (error) {
+                  console.error('Error loading team members:', error)
+                  // 대안: 모든 팀 멤버 조회 후 클라이언트에서 필터링
+                  return supabase
+                    .from('team')
+                    .select('email, name_ko, name_en, position, is_active')
+                    .then(({ data: allData, error: allError }: { data: any, error: any }) => {
+                      if (allError) {
+                        console.error('All team query also failed:', allError)
+                        return []
+                      }
+                      const activeMembers = (allData || []).filter((member: any) => member.is_active !== false)
+                      console.log('Team members loaded (fallback):', activeMembers.length, 'members')
+                      console.log('Team members data (fallback):', activeMembers)
+                      cache.set(teamCacheKey, activeMembers, 15 * 60 * 1000) // 15분 캐시
+                      setTeamMembers(activeMembers as TeamMember[])
+                      return activeMembers
+                    })
+                }
                 const team = (data as TeamMember[]) || []
+                console.log('Team members loaded:', team.length, 'members')
+                console.log('Team members data:', team)
                 cache.set(teamCacheKey, team, 15 * 60 * 1000) // 15분 캐시
                 setTeamMembers(team)
                 return team
@@ -934,12 +1041,81 @@ export default function TourDetailPage() {
       }
 
       await Promise.all(promises)
+      
+      // 팀 멤버가 여전히 로드되지 않은 경우 강제 로딩 시도
+      if (teamMembers.length === 0) {
+        console.log('No team members loaded, trying fallback...')
+        try {
+          const { data: allData, error: allError } = await supabase
+            .from('team')
+            .select('email, name_ko, name_en, position, is_active')
+            .order('name_ko')
+          
+          if (!allError && allData) {
+            console.log('Fallback team loading successful:', allData.length, 'members')
+            const activeMembers = allData.filter((member: any) => member.is_active !== false)
+            setTeamMembers(activeMembers as TeamMember[])
+            console.log('Fallback active members:', activeMembers)
+          }
+        } catch (fallbackError) {
+          console.error('Fallback team loading failed:', fallbackError)
+        }
+      }
     } catch (error) {
       console.error('Error loading modal data:', error)
     } finally {
       setLoadingStates((prev: any) => ({ ...prev, modal: false }))
     }
   }, [allProducts.length, channels.length, teamMembers.length, pickupHotels.length])
+
+  // 팀 멤버 강제 로딩 함수 (fallback) - loadModalData보다 먼저 정의
+  const loadTeamMembersFallback = useCallback(async () => {
+    try {
+      console.log('Loading team members with fallback...')
+      
+      // 모든 팀 멤버 조회 (is_active 조건 없이)
+      const { data: allData, error: allError } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en, position, is_active')
+        .order('name_ko')
+      
+      if (allError) {
+        console.error('Error loading all team members:', allError)
+        return []
+      }
+      
+      console.log('All team members loaded (fallback):', allData?.length || 0, 'members')
+      console.log('All team data (fallback):', allData)
+      
+      // 활성 멤버만 필터링
+      const activeMembers = (allData || []).filter((member: any) => member.is_active !== false)
+      console.log('Active team members (fallback):', activeMembers.length, 'members')
+      console.log('Active team data (fallback):', activeMembers)
+      
+      // 현재 투어의 가이드와 어시스턴트가 포함되어 있는지 확인
+      if (tour) {
+        const currentGuide = tour.tour_guide_id
+        const currentAssistant = tour.assistant_id
+        
+        if (currentGuide) {
+          const guideInTeam = activeMembers.find((m: any) => m.email === currentGuide)
+          console.log('Current guide in team (fallback):', guideInTeam)
+        }
+        
+        if (currentAssistant) {
+          const assistantInTeam = activeMembers.find((m: any) => m.email === currentAssistant)
+          console.log('Current assistant in team (fallback):', assistantInTeam)
+        }
+      }
+      
+      setTeamMembers(activeMembers as TeamMember[])
+      return activeMembers
+      
+    } catch (error) {
+      console.error('Error in loadTeamMembersFallback:', error)
+      return []
+    }
+  }, [tour])
 
   const fetchVehicles = useCallback(async () => {
     try {
@@ -1442,8 +1618,21 @@ export default function TourDetailPage() {
   }
 
   const getTeamMemberName = (email: string) => {
+    if (!email) return '직원 미선택'
+    
     const member = teamMembers.find((member: any) => member.email === email)
-    return member ? (member.name_ko || member.name_en || email) : '직원 미선택'
+    if (!member) {
+      // 멤버를 찾을 수 없는 경우 이메일을 표시
+      return email
+    }
+    
+    // locale에 따라 적절한 이름 반환
+    const locale = window.location.pathname.split('/')[1] || 'ko'
+    if (locale === 'ko') {
+      return member.name_ko || member.name_en || email
+    } else {
+      return member.name_en || member.name_ko || email
+    }
   }
 
   const handleTourNoteChange = async (note: string) => {
@@ -1523,26 +1712,178 @@ export default function TourDetailPage() {
     : ticketBookings.filter(booking => booking.status?.toLowerCase() === 'confirmed')
 
   const getStatusColor = (status: string | null) => {
-    switch (status) {
-      case 'scheduled': return 'bg-blue-100 text-blue-800'
-      case 'inProgress': return 'bg-yellow-100 text-yellow-800'
-      case 'completed': return 'bg-green-100 text-green-800'
+    if (!status) return 'bg-gray-100 text-gray-800'
+    
+    const normalizedStatus = status.toLowerCase()
+    switch (normalizedStatus) {
+      case 'recruiting': return 'bg-blue-100 text-blue-800'
+      case 'confirm':
+      case 'confirmed': return 'bg-green-100 text-green-800'
+      case 'cancel':
       case 'cancelled': return 'bg-red-100 text-red-800'
-      case 'delayed': return 'bg-orange-100 text-orange-800'
+      case 'complete':
+      case 'completed': return 'bg-gray-100 text-gray-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
 
   const getStatusText = (status: string | null) => {
-    switch (status) {
-      case 'scheduled': return '예정'
-      case 'inProgress': return '진행중'
-      case 'completed': return '완료'
+    if (!status) return '미정'
+    
+    const normalizedStatus = status.toLowerCase()
+    switch (normalizedStatus) {
+      case 'recruiting': return '모집중'
+      case 'confirm':
+      case 'confirmed': return '확정'
+      case 'cancel':
       case 'cancelled': return '취소'
-      case 'delayed': return '지연'
+      case 'complete':
+      case 'completed': return '완료'
       default: return '미정'
     }
   }
+
+  // 투어 배정 상태 관련 함수들
+  const getAssignmentStatusColor = () => {
+    if (!tour.assignment_status) {
+      return 'bg-gray-100 text-gray-800'
+    }
+    
+    const normalizedStatus = tour.assignment_status.toLowerCase()
+    switch (normalizedStatus) {
+      case 'confirm':
+      case 'confirmed': 
+        return 'bg-green-100 text-green-800'
+      case 'pending': 
+        return 'bg-yellow-100 text-yellow-800'
+      default: 
+        return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getAssignmentStatusText = () => {
+    if (!tour.assignment_status) {
+      return '미정'
+    }
+    
+    const normalizedStatus = tour.assignment_status.toLowerCase()
+    switch (normalizedStatus) {
+      case 'confirm':
+      case 'confirmed': 
+        return '확정'
+      case 'pending': 
+        return '대기'
+      default: 
+        return '미정'
+    }
+  }
+
+  // 투어 상태 변경 함수
+  const updateTourStatus = async (newStatus: string) => {
+    try {
+      // tour 객체 확인
+      if (!tour || !tour.id) {
+        alert('투어 정보를 찾을 수 없습니다.')
+        return
+      }
+      
+      // 권한 확인
+      if (!isStaff) {
+        alert('투어 상태를 변경할 권한이 없습니다.')
+        return
+      }
+      
+      const { error } = await supabase
+        .from('tours')
+        .update({ tour_status: newStatus })
+        .eq('id', tour.id)
+
+      if (error) {
+        throw error
+      }
+
+      // 로컬 상태 업데이트
+      setTour(prev => ({ ...prev, tour_status: newStatus }))
+      
+      // 캐시 무효화 (에러 방지)
+      try {
+        cache.invalidate(cacheKeys.tours)
+      } catch (error) {
+        // 캐시 무효화 실패는 무시
+      }
+      
+    } catch (error) {
+      console.error('투어 상태 업데이트 실패:', error)
+      alert(`투어 상태 업데이트에 실패했습니다: ${error.message}`)
+    }
+  }
+
+  // 투어 상태 옵션들
+  const tourStatusOptions = [
+    { value: 'recruiting', label: '모집중', color: 'bg-blue-100 text-blue-800' },
+    { value: 'Confirmed', label: '확정', color: 'bg-green-100 text-green-800' },
+    { value: 'cancelled', label: '취소', color: 'bg-red-100 text-red-800' },
+    { value: 'completed', label: '완료', color: 'bg-gray-100 text-gray-800' }
+  ]
+
+  // 배정 상태 변경 함수
+  const updateAssignmentStatus = async (newStatus: string) => {
+    try {
+      // tour 객체 확인
+      if (!tour || !tour.id) {
+        alert('투어 정보를 찾을 수 없습니다.')
+        return
+      }
+      
+      // 권한 확인
+      if (!isStaff) {
+        alert('배정 상태를 변경할 권한이 없습니다.')
+        return
+      }
+      
+      // assignment_status 컬럼이 없을 수 있으므로 먼저 확인
+      const { error } = await supabase
+        .from('tours')
+        .update({ assignment_status: newStatus })
+        .eq('id', tour.id)
+
+      if (error) {
+        // 컬럼이 없으면 tour_note에 저장 (임시 해결책)
+        if (error.message.includes('column "assignment_status" does not exist')) {
+          const { error: noteError } = await supabase
+            .from('tours')
+            .update({ tour_note: `assignment_status: ${newStatus}` })
+            .eq('id', tour.id)
+          
+          if (noteError) {
+            throw noteError
+          }
+        } else {
+          throw error
+        }
+      }
+
+      // 로컬 상태 업데이트
+      setTour(prev => ({ ...prev, assignment_status: newStatus }))
+      
+      // 캐시 무효화 (에러 방지)
+      try {
+        cache.invalidate(cacheKeys.tours)
+      } catch (error) {
+        // 캐시 무효화 실패는 무시
+      }
+      
+    } catch (error) {
+      console.error('배정 상태 업데이트 실패:', error)
+      alert(`배정 상태 업데이트에 실패했습니다: ${error.message}`)
+    }
+  }
+
+  // 배정 상태 옵션들
+  const assignmentStatusOptions = [
+    { value: 'confirm', label: '확정', color: 'bg-green-100 text-green-800' },
+    { value: 'pending', label: '대기', color: 'bg-yellow-100 text-yellow-800' }
+  ]
 
   if (loading) {
     return (
@@ -1684,15 +2025,93 @@ export default function TourDetailPage() {
 
             {/* 데스크톱 요약/액션 */}
             <div className="hidden sm:flex items-center space-x-6">
+              {/* 투어 상태 버튼들 - 왼쪽 배치 */}
+              <div className="flex space-x-3">
+                {/* 투어 Status 드롭다운 */}
+                <div className="relative">
+                  <button 
+                    onClick={() => {
+                      setShowTourStatusDropdown(!showTourStatusDropdown)
+                    }}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center min-w-[120px] ${getStatusColor(tour.tour_status)} hover:opacity-80 transition-opacity`}
+                  >
+                    투어: {getStatusText(tour.tour_status)}
+                    <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  
+                  {showTourStatusDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                      {tourStatusOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            updateTourStatus(option.value)
+                            setShowTourStatusDropdown(false)
+                          }}
+                          className={`w-full px-4 py-2 text-sm text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${option.color}`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                {/* 투어 배정 Status 드롭다운 */}
+                <div className="relative">
+                  <button 
+                    onClick={() => {
+                      setShowAssignmentStatusDropdown(!showAssignmentStatusDropdown)
+                    }}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center min-w-[120px] ${getAssignmentStatusColor()} hover:opacity-80 transition-opacity`}
+                  >
+                    배정: {getAssignmentStatusText()}
+                    <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  
+                  {showAssignmentStatusDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                      {assignmentStatusOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            updateAssignmentStatus(option.value)
+                            setShowAssignmentStatusDropdown(false)
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            updateAssignmentStatus(option.value)
+                            setShowAssignmentStatusDropdown(false)
+                          }}
+                          className={`w-full px-4 py-2 text-sm text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${option.color}`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
               {/* 총 배정 인원 표시 */}
               <div className="text-center bg-blue-50 rounded-lg px-4 py-3 border border-blue-200">
-                <div className="text-3xl font-bold text-blue-600">
+                <div className="text-xl font-bold text-blue-600">
                   {getTotalAssignedPeople}명 / {getTotalPeopleFiltered}명 ({Math.max(getTotalPeopleAll - getTotalPeopleFiltered, 0)}명)
                 </div>
                 <div className="text-xs text-blue-600 mt-1">
-                  이 투어 배정 / 해당일 같은 상품의 Recruiting·Confirmed 합계 (상태무관 차이)
+                  배정 / 전체 / 취소및 대기
                 </div>
               </div>
+              
               <div className="flex space-x-2">
                 <button className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center space-x-2">
                   <Copy size={16} />
@@ -1905,224 +2324,348 @@ export default function TourDetailPage() {
             {/* 팀 구성 */}
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
-                <h2 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
-                  팀 구성
-                  <ConnectionStatusLabel status={connectionStatus.team} section="팀" />
-                </h2>
-          <div className="space-y-3">
-                  {/* 팀 타입 선택 */}
-                  <div className="flex space-x-2">
-                    <button 
-                      onClick={() => handleTeamTypeChange('1guide')}
-                      className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
-                        teamType === '1guide' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      <User size={12} />
-                      <span>1가이드</span>
-                    </button>
-                    
-                    {/* 2가이드 버튼 */}
-                    <button 
-                      onClick={() => handleTeamTypeChange('2guide')}
-                      className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
-                        teamType === '2guide' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      <Users size={12} />
-                      <span>2가이드</span>
-                    </button>
-                    
-                    {/* 가이드+드라이버 버튼 */}
-                    <button 
-                      onClick={() => handleTeamTypeChange('guide+driver')}
-                      className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
-                        teamType === 'guide+driver' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      <Car size={12} />
-                      <span>가이드+드라이버</span>
-                    </button>
-            </div>
-
-                  {/* 가이드 선택 */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600 text-sm">가이드:</span>
-                      <select
-                        value={selectedGuide}
-                        onChange={(e) => handleGuideSelect(e.target.value)}
-                        className="text-xs border rounded px-2 py-1 min-w-32"
+                <div 
+                  className="flex items-center justify-between cursor-pointer"
+                  onClick={() => toggleSection('team-composition')}
+                >
+                  <h2 className="text-md font-semibold text-gray-900 flex items-center">
+                    팀 구성
+                    <ConnectionStatusLabel status={connectionStatus.team} section="팀" />
+                    <span className="ml-2 text-xs text-gray-500">
+                      ({teamMembers.length}명 로드됨, 가이드/드라이버 {teamMembers.filter((m: any) => {
+                        if (!m.position) return true
+                        const position = m.position.toLowerCase()
+                        return position.includes('tour') && position.includes('guide') ||
+                               position.includes('guide') ||
+                               position.includes('가이드') ||
+                               position.includes('driver') ||
+                               position.includes('드라이버') ||
+                               position.includes('운전')
+                      }).length}명)
+                    </span>
+                    {teamMembers.length === 0 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          loadTeamMembersFallback()
+                        }}
+                        className="ml-2 px-2 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200"
                       >
-                        <option value="">가이드 선택</option>
-                        {teamMembers.map((member: any) => (
-                          <option key={member.email} value={member.email}>
-                            {member.name_ko || member.name_en || member.email}
-                          </option>
-                        ))}
-                      </select>
-            </div>
+                        팀 멤버 다시 로드
+                      </button>
+                    )}
+                  </h2>
+                  <svg 
+                    className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${
+                      expandedSections.has('team-composition') ? 'rotate-180' : ''
+                    }`}
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+                
+                {expandedSections.has('team-composition') && (
+                  <div className="mt-4 space-y-3">
+                    {/* 팀 타입 선택 */}
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => handleTeamTypeChange('1guide')}
+                        className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
+                          teamType === '1guide' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        <User size={12} />
+                        <span>1가이드</span>
+                      </button>
+                      
+                      {/* 2가이드 버튼 */}
+                      <button 
+                        onClick={() => handleTeamTypeChange('2guide')}
+                        className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
+                          teamType === '2guide' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        <Users size={12} />
+                        <span>2가이드</span>
+                      </button>
+                      
+                      {/* 가이드+드라이버 버튼 */}
+                      <button 
+                        onClick={() => handleTeamTypeChange('guide+driver')}
+                        className={`px-2 py-1 text-xs rounded flex items-center space-x-1 ${
+                          teamType === 'guide+driver' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        <Car size={12} />
+                        <span>가이드+드라이버</span>
+                      </button>
+                    </div>
 
-                    {/* 2가이드 또는 가이드+드라이버일 때 어시스턴트 선택 */}
-                    {(teamType === '2guide' || teamType === 'guide+driver') && (
+                    {/* 가이드 선택 */}
+                    <div className="space-y-2">
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-600 text-sm">
-                          {teamType === '2guide' ? '2차 가이드:' : '드라이버:'}
-                        </span>
+                        <span className="text-gray-600 text-sm">가이드:</span>
                         <select
-                          value={selectedAssistant}
-                          onChange={(e) => handleAssistantSelect(e.target.value)}
+                          value={selectedGuide}
+                          onChange={(e) => handleGuideSelect(e.target.value)}
                           className="text-xs border rounded px-2 py-1 min-w-32"
                         >
-                          <option value="">선택</option>
+                          <option value="">가이드 선택</option>
                           {teamMembers
-                            .filter((member: any) => member.email !== selectedGuide)
-                            .map((member: any) => (
-                              <option key={member.email} value={member.email}>
-                                {member.name_ko || member.name_en || member.email}
-                              </option>
-                            ))
-                          }
+                            .filter((member: any) => {
+                              if (!member.position) return true // position이 없으면 포함
+                              const position = member.position.toLowerCase()
+                              return position.includes('tour') && position.includes('guide') ||
+                                     position.includes('guide') ||
+                                     position.includes('가이드') ||
+                                     position.includes('driver') ||
+                                     position.includes('드라이버') ||
+                                     position.includes('운전')
+                            })
+                            .map((member: any) => {
+                              const locale = window.location.pathname.split('/')[1] || 'ko'
+                              const displayName = locale === 'ko' 
+                                ? (member.name_ko || member.name_en || member.email)
+                                : (member.name_en || member.name_ko || member.email)
+                              
+                              return (
+                                <option key={member.email} value={member.email}>
+                                  {displayName} ({member.position || 'No position'})
+                                </option>
+                              )
+                            })}
                         </select>
-            </div>
-                    )}
-            </div>
+                      </div>
 
-                  {/* 현재 배정된 팀원 표시 */}
-                  {(selectedGuide || selectedAssistant) && (
-                    <div className="p-2 bg-gray-50 rounded text-xs">
-                      <div className="font-medium text-gray-700 mb-1">현재 배정된 팀원:</div>
-                      {selectedGuide && (
-                        <div className="text-gray-600">가이드: {getTeamMemberName(selectedGuide)}</div>
-                      )}
-                      {selectedAssistant && (
-                        <div className="text-gray-600">
-                          {teamType === '2guide' ? '2차 가이드' : '드라이버'}: {getTeamMemberName(selectedAssistant)}
-          </div>
+                      {/* 2가이드 또는 가이드+드라이버일 때 어시스턴트 선택 */}
+                      {(teamType === '2guide' || teamType === 'guide+driver') && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600 text-sm">
+                            {teamType === '2guide' ? '2차 가이드:' : '드라이버:'}
+                          </span>
+                          <select
+                            value={selectedAssistant}
+                            onChange={(e) => handleAssistantSelect(e.target.value)}
+                            className="text-xs border rounded px-2 py-1 min-w-32"
+                          >
+                            <option value="">선택</option>
+                            {teamMembers
+                              .filter((member: any) => {
+                                // 이미 선택된 가이드는 제외
+                                if (member.email === selectedGuide) return false
+                                
+                                // tour guide와 driver 모두 선택 가능
+                                if (!member.position) return true // position이 없으면 포함
+                                const position = member.position.toLowerCase()
+                                return position.includes('tour') && position.includes('guide') ||
+                                       position.includes('guide') ||
+                                       position.includes('가이드') ||
+                                       position.includes('driver') ||
+                                       position.includes('드라이버') ||
+                                       position.includes('운전')
+                              })
+                              .map((member: any) => {
+                                const locale = window.location.pathname.split('/')[1] || 'ko'
+                                const displayName = locale === 'ko' 
+                                  ? (member.name_ko || member.name_en || member.email)
+                                  : (member.name_en || member.name_ko || member.email)
+                                
+                                return (
+                                  <option key={member.email} value={member.email}>
+                                    {displayName} ({member.position || 'No position'})
+                                  </option>
+                                )
+                              })
+                            }
+                          </select>
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-        </div>
-      </div>
+
+                    {/* 현재 배정된 팀원 표시 */}
+                    {(selectedGuide || selectedAssistant) && (
+                      <div className="p-2 bg-gray-50 rounded text-xs">
+                        <div className="font-medium text-gray-700 mb-1">현재 배정된 팀원:</div>
+                        {selectedGuide && (
+                          <div className="text-gray-600">가이드: {getTeamMemberName(selectedGuide)}</div>
+                        )}
+                        {selectedAssistant && (
+                          <div className="text-gray-600">
+                            {teamType === '2guide' ? '2차 가이드' : '드라이버'}: {getTeamMemberName(selectedAssistant)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* 차량 배정 */}
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
-                <h2 className="text-md font-semibold text-gray-900 mb-3">
-                  차량 배정
-                  <ConnectionStatusLabel status={connectionStatus.vehicles} section="차량" />
-                </h2>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600 text-sm">차량 선택:</span>
-                    {vehiclesLoading ? (
-                      <div className="text-xs text-gray-500 flex items-center space-x-2">
-                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-500"></div>
-                        <span>Loading vehicle data...</span>
-                      </div>
-                    ) : vehiclesError ? (
-                      <div className="text-xs text-red-500 flex items-center space-x-2">
-                        <span>❌</span>
-                        <span>{vehiclesError}</span>
-                        <button 
-                          onClick={() => fetchVehicles()}
-                          className="text-blue-500 hover:text-blue-700 underline"
-                        >
-                          다시 시도
-                        </button>
-                      </div>
-                    ) : (
-                      <select
-                        value={selectedVehicleId}
-                        onChange={(e) => handleVehicleSelect(e.target.value)}
-                        className="text-xs border rounded px-2 py-1 min-w-48"
-                        disabled={vehiclesLoading}
-                      >
-                        <option value="">
-                          {vehicles.length === 0 
-                            ? "사용 가능한 차량이 없습니다" 
-                            : `차량을 선택하세요 (${vehicles.length}대 사용 가능)`
-                          }
-                        </option>
-                        {vehicles.map((vehicle: any) => (
-                          <option key={vehicle.id} value={vehicle.id}>
-                            {vehicle.vehicle_category === 'company' 
-                              ? `${vehicle.vehicle_number} - ${vehicle.vehicle_type} (${vehicle.capacity}인승)`
-                              : `${vehicle.rental_company} - ${vehicle.vehicle_type} (${vehicle.capacity}인승) - ${vehicle.rental_start_date} ~ ${vehicle.rental_end_date}`
-                            }
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-
-                  {/* 현재 배정된 차량 정보 표시 */}
-                  {assignedVehicle && (
-                    <div className="p-2 bg-blue-50 rounded text-xs">
-                      <div className="font-medium text-blue-700 mb-1">현재 배정된 차량:</div>
-                      <div className="text-blue-600">
-                        {assignedVehicle.vehicle_category === 'company' 
-                          ? `${assignedVehicle.vehicle_number} - ${assignedVehicle.vehicle_type} (${assignedVehicle.capacity}인승)`
-                          : `${assignedVehicle.rental_company} - ${assignedVehicle.vehicle_type} (${assignedVehicle.capacity}인승)`
-                        }
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 차량 데이터 상태 정보 */}
-                  {!vehiclesLoading && !vehiclesError && (
-                    <div className="text-xs text-gray-500">
-                      {vehicles.length === 0 ? (
-                        <div className="p-2 bg-yellow-50 rounded border border-yellow-200">
-                          <div className="font-medium text-yellow-700 mb-1">⚠️ 사용 가능한 차량이 없습니다</div>
-                          <div className="text-yellow-600">
-                            • 같은 날짜의 다른 투어에서 이미 배정된 차량들이 있습니다<br/>
-                            • 렌터카의 경우 투어 날짜가 렌탈 기간에 포함되지 않을 수 있습니다<br/>
-                            • 차량 데이터를 새로고침하려면 페이지를 다시 로드해주세요
-                          </div>
+                <div 
+                  className="flex items-center justify-between cursor-pointer"
+                  onClick={() => toggleSection('vehicle-assignment')}
+                >
+                  <h2 className="text-md font-semibold text-gray-900 flex items-center">
+                    차량 배정
+                    <ConnectionStatusLabel status={connectionStatus.vehicles} section="차량" />
+                  </h2>
+                  <svg 
+                    className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${
+                      expandedSections.has('vehicle-assignment') ? 'rotate-180' : ''
+                    }`}
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+                
+                {expandedSections.has('vehicle-assignment') && (
+                  <div className="mt-4 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600 text-sm">차량 선택:</span>
+                      {vehiclesLoading ? (
+                        <div className="text-xs text-gray-500 flex items-center space-x-2">
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-500"></div>
+                          <span>Loading vehicle data...</span>
+                        </div>
+                      ) : vehiclesError ? (
+                        <div className="text-xs text-red-500 flex items-center space-x-2">
+                          <span>❌</span>
+                          <span>{vehiclesError}</span>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              fetchVehicles()
+                            }}
+                            className="text-blue-500 hover:text-blue-700 underline"
+                          >
+                            다시 시도
+                          </button>
                         </div>
                       ) : (
-                        <div className="text-gray-600">
-                          총 {vehicles.length}대의 차량이 사용 가능합니다
-                        </div>
+                        <select
+                          value={selectedVehicleId}
+                          onChange={(e) => handleVehicleSelect(e.target.value)}
+                          className="text-xs border rounded px-2 py-1 min-w-48"
+                          disabled={vehiclesLoading}
+                        >
+                          <option value="">
+                            {vehicles.length === 0 
+                              ? "사용 가능한 차량이 없습니다" 
+                              : `차량을 선택하세요 (${vehicles.length}대 사용 가능)`
+                            }
+                          </option>
+                          {vehicles.map((vehicle: any) => (
+                            <option key={vehicle.id} value={vehicle.id}>
+                              {vehicle.vehicle_category === 'company' 
+                                ? `${vehicle.vehicle_number} - ${vehicle.vehicle_type} (${vehicle.capacity}인승)`
+                                : `${vehicle.rental_company} - ${vehicle.vehicle_type} (${vehicle.capacity}인승) - ${vehicle.rental_start_date} ~ ${vehicle.rental_end_date}`
+                              }
+                            </option>
+                          ))}
+                        </select>
                       )}
                     </div>
-                  )}
-                </div>
+
+                    {/* 현재 배정된 차량 정보 표시 */}
+                    {assignedVehicle && (
+                      <div className="p-2 bg-blue-50 rounded text-xs">
+                        <div className="font-medium text-blue-700 mb-1">현재 배정된 차량:</div>
+                        <div className="text-blue-600">
+                          {assignedVehicle.vehicle_category === 'company' 
+                            ? `${assignedVehicle.vehicle_number} - ${assignedVehicle.vehicle_type} (${assignedVehicle.capacity}인승)`
+                            : `${assignedVehicle.rental_company} - ${assignedVehicle.vehicle_type} (${assignedVehicle.capacity}인승)`
+                          }
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 차량 데이터 상태 정보 */}
+                    {!vehiclesLoading && !vehiclesError && (
+                      <div className="text-xs text-gray-500">
+                        {vehicles.length === 0 ? (
+                          <div className="p-2 bg-yellow-50 rounded border border-yellow-200">
+                            <div className="font-medium text-yellow-700 mb-1">⚠️ 사용 가능한 차량이 없습니다</div>
+                            <div className="text-yellow-600">
+                              • 같은 날짜의 다른 투어에서 이미 배정된 차량들이 있습니다<br/>
+                              • 렌터카의 경우 투어 날짜가 렌탈 기간에 포함되지 않을 수 있습니다<br/>
+                              • 차량 데이터를 새로고침하려면 페이지를 다시 로드해주세요
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-gray-600">
+                            총 {vehicles.length}대의 차량이 사용 가능합니다
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
             {/* 배정 관리 */}
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div 
+                  className="flex items-center justify-between cursor-pointer"
+                  onClick={() => toggleSection('assignment-management')}
+                >
                   <h2 className="text-md font-semibold text-gray-900">배정 관리</h2>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={handleAssignAllReservations}
-                      disabled={pendingReservations.length === 0}
-                      className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-1"
+                  <div className="flex items-center space-x-2">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleAssignAllReservations()
+                        }}
+                        disabled={pendingReservations.length === 0}
+                        className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-1"
+                      >
+                        <Check size={12} />
+                        <span>모두 배정</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleUnassignAllReservations()
+                        }}
+                        disabled={assignedReservations.length === 0}
+                        className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-1"
+                      >
+                        <X size={12} />
+                        <span>모두 배정 취소</span>
+                      </button>
+                    </div>
+                    <svg 
+                      className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${
+                        expandedSections.has('assignment-management') ? 'rotate-180' : ''
+                      }`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
                     >
-                      <Check size={12} />
-                      <span>모두 배정</span>
-                    </button>
-                    <button
-                      onClick={handleUnassignAllReservations}
-                      disabled={assignedReservations.length === 0}
-                      className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-1"
-                    >
-                      <X size={12} />
-                      <span>모두 배정 취소</span>
-                    </button>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </div>
                 </div>
+                
+                {expandedSections.has('assignment-management') && (
+                  <div className="mt-4">
                 
                 {/* 1. 이 투어에 배정된 예약 */}
                 <div className="mb-4">
@@ -2187,26 +2730,70 @@ export default function TourDetailPage() {
                           </div>
                         </div>
                         
-                        {/* 중단: 필수 선택 옵션 */}
+                        {/* 중단: Choices 표시 */}
                         <div className="mb-2">
-                          {reservation.selected_options && Object.entries(reservation.selected_options).some(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0) ? (
-                            <div className="flex flex-wrap gap-1">
-                              {Object.entries(reservation.selected_options)
-                                .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
-                                .map(([optionId, choices]) => {
-                                  if (process.env.NODE_ENV === 'development') {
-                                    console.log('Rendering assigned reservation option:', { optionId, choices, productId: tour?.product_id })
+                          {(() => {
+                            // choices 데이터 파싱
+                            let parsedChoices = reservation.choices;
+                            if (typeof reservation.choices === 'string') {
+                              try {
+                                parsedChoices = JSON.parse(reservation.choices);
+                              } catch (error) {
+                                console.error('Error parsing choices:', error);
+                              }
+                            }
+                            
+                            // choices 데이터에서 선택된 옵션 찾기
+                            if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                              const selectedOptions = parsedChoices.required
+                                .map((choice: Record<string, unknown>) => {
+                                  if (!choice || typeof choice !== 'object') return null;
+                                  
+                                  // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                                  const selectedOption = choice.options && Array.isArray(choice.options) 
+                                    ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
+                                    : null;
+                                  
+                                  if (selectedOption) {
+                                    const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                                    return optionName;
                                   }
-                                  return (
-                                    <span key={optionId} className={`text-xs px-2 py-1 rounded ${getOptionBadgeColor(optionId)}`}>
-                                    {getOptionName(optionId, tour?.product_id || '')}
-                                  </span>
-                                  )
-                                })}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-400">선택된 옵션 없음</span>
-                          )}
+                                  
+                                  // 선택된 옵션이 없으면 첫 번째 옵션
+                                  if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                    const firstOption = choice.options[0] as Record<string, unknown>;
+                                    const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                                    return optionName;
+                                  }
+                                  
+                                  return null;
+                                })
+                                .filter(Boolean);
+                              
+                              if (selectedOptions.length > 0) {
+                                return (
+                                  <div className="flex flex-wrap gap-1">
+                                    {selectedOptions.map((optionName: string, index: number) => {
+                                      // 옵션 이름에 따라 다른 색상 적용
+                                      const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
+                                      const badgeClass = isAntelopeX 
+                                        ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
+                                        : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                                      
+                                      return (
+                                        <span key={index} className={badgeClass}>
+                                          ✓ {String(optionName)}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              }
+                            }
+                            
+                            // choices 데이터가 없는 경우
+                            return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
+                          })()}
                         </div>
                         
                         {/* 하단: 픽업 시간 | 픽업 정보 */}
@@ -2215,7 +2802,20 @@ export default function TourDetailPage() {
                           <div className="flex items-center space-x-1">
                             <Clock size={12} className="text-gray-400" />
                             <span className="text-sm text-gray-700">
-                              {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
+                              {(() => {
+                                const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'
+                                const timeHour = parseInt(pickupTime.split(':')[0])
+                                
+                                // 오후 9시(21:00) 이후면 날짜를 하루 빼기
+                                let displayDate = tour.tour_date || ''
+                                if (timeHour >= 21 && tour.tour_date) {
+                                  const date = new Date(tour.tour_date)
+                                  date.setDate(date.getDate() - 1)
+                                  displayDate = date.toISOString().split('T')[0]
+                                }
+                                
+                                return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
+                              })()}
                             </span>
                             <button
                               onClick={(e) => {
@@ -2302,21 +2902,70 @@ export default function TourDetailPage() {
                             </div>
                           </div>
                           
-                          {/* 중단: 필수 선택 옵션 */}
+                          {/* 중단: Choices 표시 */}
                           <div className="mb-2">
-                            {reservation.selected_options && Object.entries(reservation.selected_options).some(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0) ? (
-                              <div className="flex flex-wrap gap-1">
-                                {Object.entries(reservation.selected_options)
-                                  .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
-                                  .map(([optionId, choices]) => (
-                                    <span key={optionId} className={`text-xs px-2 py-1 rounded ${getOptionBadgeColor(optionId)}`}>
-                                      {getOptionName(optionId, (reservation as any).product_id || '')}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-gray-400">선택된 옵션 없음</span>
-                            )}
+                            {(() => {
+                              // choices 데이터 파싱
+                              let parsedChoices = reservation.choices;
+                              if (typeof reservation.choices === 'string') {
+                                try {
+                                  parsedChoices = JSON.parse(reservation.choices);
+                                } catch (error) {
+                                  console.error('Error parsing choices:', error);
+                                }
+                              }
+                              
+                              // choices 데이터에서 선택된 옵션 찾기
+                              if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                                const selectedOptions = parsedChoices.required
+                                  .map((choice: Record<string, unknown>) => {
+                                    if (!choice || typeof choice !== 'object') return null;
+                                    
+                                    // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                                    const selectedOption = choice.options && Array.isArray(choice.options) 
+                                      ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
+                                      : null;
+                                    
+                                    if (selectedOption) {
+                                      const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                                      return optionName;
+                                    }
+                                    
+                                    // 선택된 옵션이 없으면 첫 번째 옵션
+                                    if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                      const firstOption = choice.options[0] as Record<string, unknown>;
+                                      const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                                      return optionName;
+                                    }
+                                    
+                                    return null;
+                                  })
+                                  .filter(Boolean);
+                                
+                                if (selectedOptions.length > 0) {
+                                  return (
+                                    <div className="flex flex-wrap gap-1">
+                                      {selectedOptions.map((optionName: string, index: number) => {
+                                        // 옵션 이름에 따라 다른 색상 적용
+                                        const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
+                                        const badgeClass = isAntelopeX 
+                                          ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
+                                          : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                                        
+                                        return (
+                                          <span key={index} className={badgeClass}>
+                                            ✓ {String(optionName)}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                }
+                              }
+                              
+                              // choices 데이터가 없는 경우
+                              return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
+                            })()}
                           </div>
                           
                           {/* 하단: 픽업 시간 | 픽업 정보 */}
@@ -2325,7 +2974,20 @@ export default function TourDetailPage() {
                             <div className="flex items-center space-x-1">
                               <Clock size={12} className="text-gray-400" />
                               <span className="text-sm text-gray-700">
-                                {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
+                                {(() => {
+                                const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'
+                                const timeHour = parseInt(pickupTime.split(':')[0])
+                                
+                                // 오후 9시(21:00) 이후면 날짜를 하루 빼기
+                                let displayDate = tour.tour_date || ''
+                                if (timeHour >= 21 && tour.tour_date) {
+                                  const date = new Date(tour.tour_date)
+                                  date.setDate(date.getDate() - 1)
+                                  displayDate = date.toISOString().split('T')[0]
+                                }
+                                
+                                return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
+                              })()}
                               </span>
                             </div>
                             
@@ -2426,7 +3088,20 @@ export default function TourDetailPage() {
                           <div className="flex items-center space-x-1">
                             <Clock size={12} className="text-gray-400" />
                             <span className="text-sm text-gray-700">
-                              {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
+                              {(() => {
+                                const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'
+                                const timeHour = parseInt(pickupTime.split(':')[0])
+                                
+                                // 오후 9시(21:00) 이후면 날짜를 하루 빼기
+                                let displayDate = tour.tour_date || ''
+                                if (timeHour >= 21 && tour.tour_date) {
+                                  const date = new Date(tour.tour_date)
+                                  date.setDate(date.getDate() - 1)
+                                  displayDate = date.toISOString().split('T')[0]
+                                }
+                                
+                                return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
+                              })()}
                             </span>
                             <button
                               onClick={(e) => {
@@ -2494,21 +3169,70 @@ export default function TourDetailPage() {
                           </div>
                         </div>
                         
-                        {/* 중단: 필수 선택 옵션 */}
+                        {/* 중단: Choices 표시 */}
                         <div className="mb-2">
-                          {reservation.selected_options && Object.entries(reservation.selected_options).some(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0) ? (
-                            <div className="flex flex-wrap gap-1">
-                              {Object.entries(reservation.selected_options)
-                                .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
-                                .map(([optionId, choices]) => (
-                                  <span key={optionId} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                    {getOptionName(optionId, (reservation as any).product_id || '')}
-                                  </span>
-                                ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-400">선택된 옵션 없음</span>
-                          )}
+                          {(() => {
+                            // choices 데이터 파싱
+                            let parsedChoices = reservation.choices;
+                            if (typeof reservation.choices === 'string') {
+                              try {
+                                parsedChoices = JSON.parse(reservation.choices);
+                              } catch (error) {
+                                console.error('Error parsing choices:', error);
+                              }
+                            }
+                            
+                            // choices 데이터에서 선택된 옵션 찾기
+                            if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                              const selectedOptions = parsedChoices.required
+                                .map((choice: Record<string, unknown>) => {
+                                  if (!choice || typeof choice !== 'object') return null;
+                                  
+                                  // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                                  const selectedOption = choice.options && Array.isArray(choice.options) 
+                                    ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
+                                    : null;
+                                  
+                                  if (selectedOption) {
+                                    const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                                    return optionName;
+                                  }
+                                  
+                                  // 선택된 옵션이 없으면 첫 번째 옵션
+                                  if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                    const firstOption = choice.options[0] as Record<string, unknown>;
+                                    const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                                    return optionName;
+                                  }
+                                  
+                                  return null;
+                                })
+                                .filter(Boolean);
+                              
+                              if (selectedOptions.length > 0) {
+                                return (
+                                  <div className="flex flex-wrap gap-1">
+                                    {selectedOptions.map((optionName: string, index: number) => {
+                                      // 옵션 이름에 따라 다른 색상 적용
+                                      const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
+                                      const badgeClass = isAntelopeX 
+                                        ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
+                                        : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                                      
+                                      return (
+                                        <span key={index} className={badgeClass}>
+                                          ✓ {String(optionName)}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              }
+                            }
+                            
+                            // choices 데이터가 없는 경우
+                            return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
+                          })()}
                         </div>
                         
                         {/* 하단: 픽업 시간 | 픽업 정보 */}
@@ -2517,7 +3241,20 @@ export default function TourDetailPage() {
                           <div className="flex items-center space-x-1">
                             <Clock size={12} className="text-gray-400" />
                             <span className="text-sm text-gray-700">
-                              {reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'}
+                              {(() => {
+                                const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'
+                                const timeHour = parseInt(pickupTime.split(':')[0])
+                                
+                                // 오후 9시(21:00) 이후면 날짜를 하루 빼기
+                                let displayDate = tour.tour_date || ''
+                                if (timeHour >= 21 && tour.tour_date) {
+                                  const date = new Date(tour.tour_date)
+                                  date.setDate(date.getDate() - 1)
+                                  displayDate = date.toISOString().split('T')[0]
+                                }
+                                
+                                return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
+                              })()}
                             </span>
                           </div>
                           
@@ -2540,6 +3277,8 @@ export default function TourDetailPage() {
                     </span>
                   )}
                 </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -3093,4 +3832,5 @@ export default function TourDetailPage() {
     </div>
   )
 }
+
 
