@@ -1778,6 +1778,19 @@ export default function TourDetailPage() {
     }
   }
 
+  // 안전한 JSON 파싱 유틸리티 함수
+  const safeJsonParse = (str: string | null | undefined, fallback: any = null) => {
+    if (!str || typeof str !== 'string' || str.trim() === '') {
+      return fallback;
+    }
+    try {
+      return JSON.parse(str);
+    } catch (error) {
+      console.error('JSON 파싱 에러:', error, '입력값:', str);
+      return fallback;
+    }
+  };
+
   // 투어 상태 변경 함수
   const updateTourStatus = async (newStatus: string) => {
     try {
@@ -2734,14 +2747,7 @@ export default function TourDetailPage() {
                         <div className="mb-2">
                           {(() => {
                             // choices 데이터 파싱
-                            let parsedChoices = reservation.choices;
-                            if (typeof reservation.choices === 'string') {
-                              try {
-                                parsedChoices = JSON.parse(reservation.choices);
-                              } catch (error) {
-                                console.error('Error parsing choices:', error);
-                              }
-                            }
+                            let parsedChoices = safeJsonParse(reservation.choices, null);
                             
                             // choices 데이터에서 선택된 옵션 찾기
                             if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
@@ -3173,14 +3179,7 @@ export default function TourDetailPage() {
                         <div className="mb-2">
                           {(() => {
                             // choices 데이터 파싱
-                            let parsedChoices = reservation.choices;
-                            if (typeof reservation.choices === 'string') {
-                              try {
-                                parsedChoices = JSON.parse(reservation.choices);
-                              } catch (error) {
-                                console.error('Error parsing choices:', error);
-                              }
-                            }
+                            let parsedChoices = safeJsonParse(reservation.choices, null);
                             
                             // choices 데이터에서 선택된 옵션 찾기
                             if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
