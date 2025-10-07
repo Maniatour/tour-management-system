@@ -160,6 +160,19 @@ interface AdminProductEditProps {
 export default function AdminProductEdit({ params }: AdminProductEditProps) {
   console.log('AdminProductEdit: Component initializing...')
   
+  // 안전한 JSON 파싱 유틸리티 함수
+  const safeJsonParse = (str: string | null | undefined, fallback: any = null) => {
+    if (!str || typeof str !== 'string' || str.trim() === '') {
+      return fallback;
+    }
+    try {
+      return JSON.parse(str);
+    } catch (error) {
+      console.error('JSON 파싱 에러:', error, '입력값:', str);
+      return fallback;
+    }
+  };
+  
   const { locale, id } = use(params)
   const t = useTranslations('common')
   const router = useRouter()
@@ -610,7 +623,10 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             childAgeMax: productData.child_age_max || 12,
             infantAge: productData.infant_age || 2,
             tourDepartureTime: productData.tour_departure_time || '',
-            tourDepartureTimes: productData.tour_departure_times ? JSON.parse(productData.tour_departure_times) : [],
+            tourDepartureTimes: (() => {
+              const parsed = safeJsonParse(productData.tour_departure_times, []);
+              return Array.isArray(parsed) ? parsed : [];
+            })(),
             internalNameKo: productData.internal_name_ko || '',
             internalNameEn: productData.internal_name_en || '',
             customerNameKo: productData.customer_name_ko || '',
