@@ -261,6 +261,91 @@ export async function getWeatherData(locationName: string, date: string) {
   }
 }
 
+// Get 7-day weather forecast for a location
+export async function get7DayWeatherForecast(locationName: string): Promise<LocationWeather[]> {
+  const location = GOBLIN_TOUR_LOCATIONS.find(loc => loc.name === locationName)
+  if (!location) {
+    return []
+  }
+
+  const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY
+  if (!apiKey) {
+    console.warn('OpenWeatherMap API key not found')
+    return []
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.openweathermap.org/data/2.5/forecast?lat=${location.lat}&lon=${location.lng}&appid=${apiKey}&units=metric`
+    )
+    const data = await response.json()
+    
+    if (data.cod === '200') {
+      const forecasts: LocationWeather[] = []
+      const today = new Date()
+      
+      // Group forecasts by date
+      const forecastsByDate: { [key: string]: any[] } = {}
+      
+      data.list.forEach((item: any) => {
+        const date = item.dt_txt.split(' ')[0]
+        if (!forecastsByDate[date]) {
+          forecastsByDate[date] = []
+        }
+        forecastsByDate[date].push(item)
+      })
+      
+      // Get 7 days of forecasts
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(today)
+        date.setDate(today.getDate() + i)
+        const dateString = date.toISOString().split('T')[0]
+        
+        if (forecastsByDate[dateString]) {
+          const dayForecasts = forecastsByDate[dateString]
+          
+          // Calculate min/max temperatures for the day
+          const temperatures = dayForecasts.map((item: any) => item.main.temp)
+          const temp_max = Math.max(...temperatures)
+          const temp_min = Math.min(...temperatures)
+          
+          // Use midday forecast for current conditions
+          const middayForecast = dayForecasts.find((item: any) => {
+            const hour = new Date(item.dt_txt).getHours()
+            return hour >= 12 && hour <= 14
+          }) || dayForecasts[Math.floor(dayForecasts.length / 2)]
+          
+          // Get sunrise/sunset data
+          const sunriseSunsetData = await getSunriseSunsetData(locationName, dateString)
+          
+          forecasts.push({
+            location: locationName,
+            sunrise: sunriseSunsetData?.sunrise || '06:00',
+            sunset: sunriseSunsetData?.sunset || '18:00',
+            weather: {
+              temperature: middayForecast.main.temp,
+              temp_max: temp_max,
+              temp_min: temp_min,
+              humidity: middayForecast.main.humidity,
+              weather_main: middayForecast.weather[0].main,
+              weather_description: middayForecast.weather[0].description,
+              wind_speed: middayForecast.wind.speed,
+              visibility: middayForecast.visibility
+            }
+          })
+        }
+      }
+      
+      return forecasts
+    }
+    
+    return []
+  } catch (error) {
+    console.error('Error fetching 7-day weather forecast:', error)
+    return []
+  }
+}
+
 // Get all goblin tour weather data for a specific date
 export async function getGoblinTourWeatherData(tourDate: string): Promise<{
   grandCanyon: LocationWeather

@@ -16,7 +16,7 @@ import {
   ChevronUp,
   RefreshCw
 } from 'lucide-react'
-import { getGoblinTourWeatherData, type LocationWeather } from '@/lib/weatherApi'
+import { getGoblinTourWeatherData, get7DayWeatherForecast, type LocationWeather } from '@/lib/weatherApi'
 
 interface AdminWeatherWidgetProps {
   className?: string
@@ -100,6 +100,7 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
     zionCanyon: LocationWeather
     pageCity: LocationWeather
   } | null>(null)
+  const [sevenDayForecast, setSevenDayForecast] = useState<LocationWeather[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
@@ -115,6 +116,16 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
       const today = new Date().toISOString().split('T')[0]
       const data = await getGoblinTourWeatherData(today)
       setWeatherData(data)
+      
+      // 7일간 날씨 예보 로드
+      const locationNames = {
+        grandCanyon: 'Grand Canyon South Rim',
+        zionCanyon: 'Zion Canyon',
+        pageCity: 'Page City'
+      }
+      
+      const forecast = await get7DayWeatherForecast(locationNames[currentLocation])
+      setSevenDayForecast(forecast)
       
       // 마지막 업데이트 시간 설정
       const now = new Date()
@@ -134,7 +145,7 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [currentLocation])
 
   const updateWeatherData = async () => {
     try {
@@ -168,6 +179,26 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
   useEffect(() => {
     loadWeatherData()
   }, [loadWeatherData])
+
+  // 지역 변경 시 7일간 예보 다시 로드
+  useEffect(() => {
+    const loadForecastForLocation = async () => {
+      const locationNames = {
+        grandCanyon: 'Grand Canyon South Rim',
+        zionCanyon: 'Zion Canyon',
+        pageCity: 'Page City'
+      }
+      
+      try {
+        const forecast = await get7DayWeatherForecast(locationNames[currentLocation])
+        setSevenDayForecast(forecast)
+      } catch (err) {
+        console.error('7일간 예보 로딩 실패:', err)
+      }
+    }
+    
+    loadForecastForLocation()
+  }, [currentLocation])
 
   if (loading) {
     return (
@@ -267,53 +298,85 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
             </div>
           </div>
 
-          {/* 현재 날씨 상세 정보 */}
+          {/* 7일간 날씨 예보 */}
           <div className="p-3">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-2">
-                {getWeatherIcon(currentWeather.weather.weather_main || '', currentWeather.weather.weather_description || '')}
-                <div>
-                  <div className="text-sm font-medium text-gray-800">
-                    {getSimpleLocationName(currentWeather.location)}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {currentWeather.weather.weather_description || 'N/A'}
-                  </div>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-lg font-bold text-gray-800">
-                  {tempF ? `${tempF}°F` : 'N/A'}
-                </div>
-                <div className="text-xs text-gray-500">
-                  {currentWeather.weather.temperature ? `${Math.round(currentWeather.weather.temperature)}°C` : 'N/A'}
-                </div>
-              </div>
+            <div className="mb-3">
+              <h4 className="text-sm font-semibold text-gray-800 mb-2">
+                {getSimpleLocationName(currentWeather.location)} 7일간 예보
+              </h4>
             </div>
 
-            {/* 추가 정보 */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="flex items-center space-x-1">
-                <span className="text-gray-500">습도:</span>
-                <span className="font-medium">{currentWeather.weather.humidity ? `${currentWeather.weather.humidity}%` : 'N/A'}</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <span className="text-gray-500">풍속:</span>
-                <span className="font-medium">{currentWeather.weather.wind_speed ? `${currentWeather.weather.wind_speed}m/s` : 'N/A'}</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <span className="text-gray-500">최고:</span>
-                <span className="font-medium">
-                  {currentWeather.weather.temp_max ? `${convertToFahrenheit(currentWeather.weather.temp_max)}°F` : 'N/A'}
-                </span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <span className="text-gray-500">최저:</span>
-                <span className="font-medium">
-                  {currentWeather.weather.temp_min ? `${convertToFahrenheit(currentWeather.weather.temp_min)}°F` : 'N/A'}
-                </span>
-              </div>
+            {/* 7일간 날씨 카드들 */}
+            <div className="space-y-2">
+              {sevenDayForecast.map((dayWeather, index) => {
+                const date = new Date()
+                date.setDate(date.getDate() + index)
+                const dayName = index === 0 ? '오늘' : 
+                               index === 1 ? '내일' : 
+                               date.toLocaleDateString('ko-KR', { weekday: 'short' })
+                const dayDate = date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+                const dayTempF = dayWeather.weather.temperature ? convertToFahrenheit(dayWeather.weather.temperature) : null
+                const dayMaxF = dayWeather.weather.temp_max ? convertToFahrenheit(dayWeather.weather.temp_max) : null
+                const dayMinF = dayWeather.weather.temp_min ? convertToFahrenheit(dayWeather.weather.temp_min) : null
+
+                return (
+                  <div key={index} className={`flex items-center justify-between p-2 rounded-lg ${
+                    index === 0 ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
+                  }`}>
+                    <div className="flex items-center space-x-3">
+                      {/* 날짜 정보 */}
+                      <div className="text-left">
+                        <div className="text-xs font-medium text-gray-800">{dayName}</div>
+                        <div className="text-xs text-gray-500">{dayDate}</div>
+                      </div>
+                      
+                      {/* 날씨 아이콘 */}
+                      {getWeatherIcon(dayWeather.weather.weather_main || '', dayWeather.weather.weather_description || '')}
+                      
+                      {/* 날씨 설명 */}
+                      <div className="text-xs text-gray-600 max-w-20 truncate">
+                        {dayWeather.weather.weather_description || 'N/A'}
+                      </div>
+                    </div>
+                    
+                    {/* 온도 정보 */}
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-gray-800">
+                        {dayTempF ? `${dayTempF}°F` : 'N/A'}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {dayMaxF && dayMinF ? `${dayMinF}°/${dayMaxF}°` : 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
+
+            {/* 현재 날씨 상세 정보 (첫 번째 날) */}
+            {sevenDayForecast.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-gray-200">
+                <div className="text-xs font-semibold text-gray-700 mb-2">오늘 상세 정보</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center space-x-1">
+                    <span className="text-gray-500">습도:</span>
+                    <span className="font-medium">{sevenDayForecast[0].weather.humidity ? `${sevenDayForecast[0].weather.humidity}%` : 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <span className="text-gray-500">풍속:</span>
+                    <span className="font-medium">{sevenDayForecast[0].weather.wind_speed ? `${sevenDayForecast[0].weather.wind_speed}m/s` : 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <span className="text-gray-500">일출:</span>
+                    <span className="font-medium">{sevenDayForecast[0].sunrise || 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <span className="text-gray-500">일몰:</span>
+                    <span className="font-medium">{sevenDayForecast[0].sunset || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
