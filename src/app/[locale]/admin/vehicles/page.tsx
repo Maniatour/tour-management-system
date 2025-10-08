@@ -1,10 +1,22 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Search, Calendar, Car, Wrench, DollarSign, Edit, Trash2, Eye } from 'lucide-react'
+import { Plus, Search, Calendar, Car, Wrench, DollarSign, Edit, Trash2, Eye, Copy } from 'lucide-react'
 import VehicleEditModal from '@/components/VehicleEditModal'
 // 렌터카 관리 모달은 더 이상 필요하지 않음
 import { supabase } from '@/lib/supabase'
+
+interface VehiclePhoto {
+  id: string
+  vehicle_id: string
+  photo_url: string
+  photo_name?: string
+  description?: string
+  is_primary: boolean
+  display_order: number
+  created_at: string
+  updated_at: string
+}
 
 interface Vehicle {
   id: string
@@ -37,6 +49,7 @@ interface Vehicle {
   vehicle_image_url?: string
   created_at: string
   updated_at: string
+  photos?: VehiclePhoto[]
   // 렌터카 관련 필드 (간소화)
   vehicle_category?: string
   rental_company?: string
@@ -70,7 +83,10 @@ export default function VehiclesPage() {
       setLoading(true)
       const { data, error } = await supabase
         .from('vehicles')
-        .select('*')
+        .select(`
+          *,
+          photos:vehicle_photos(*)
+        `)
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -89,6 +105,58 @@ export default function VehiclesPage() {
 
   const handleAddVehicle = () => {
     setSelectedVehicle(null)
+    setIsEditModalOpen(true)
+  }
+
+  const handleCopyVehicle = (vehicle: Vehicle) => {
+    // 차량 번호 중복 방지를 위한 타임스탬프 추가
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_')
+    
+    // 기존 차량 정보를 복사하되, ID와 생성일시는 제외
+    const copiedVehicle = {
+      ...vehicle,
+      id: undefined,
+      vehicle_number: `${vehicle.vehicle_number}_copy_${timestamp}`,
+      created_at: undefined,
+      updated_at: undefined,
+      // 렌터카 관련 필드들만 유지하고 나머지는 초기화
+      vehicle_category: 'rental',
+      rental_company: vehicle.rental_company || '',
+      daily_rate: vehicle.daily_rate || 0,
+      rental_start_date: '',
+      rental_end_date: '',
+      rental_pickup_location: vehicle.rental_pickup_location || '',
+      rental_return_location: vehicle.rental_return_location || '',
+      rental_total_cost: 0,
+      rental_status: 'available',
+      rental_notes: vehicle.rental_notes || '',
+      // 회사 차량 관련 필드들은 초기화
+      year: new Date().getFullYear(),
+      mileage_at_purchase: 0,
+      purchase_amount: 0,
+      purchase_date: '',
+      engine_oil_change_cycle: 10000,
+      current_mileage: 0,
+      recent_engine_oil_change_mileage: 0,
+      vehicle_status: '운행 가능',
+      front_tire_size: '',
+      rear_tire_size: '',
+      windshield_wiper_size: '',
+      headlight_model: '',
+      headlight_model_name: '',
+      is_installment: false,
+      installment_amount: 0,
+      interest_rate: 0,
+      monthly_payment: 0,
+      additional_payment: 0,
+      payment_due_date: '',
+      installment_start_date: '',
+      installment_end_date: '',
+      vehicle_image_url: '',
+      memo: vehicle.memo || '',
+      photos: undefined
+    }
+    setSelectedVehicle(copiedVehicle as Vehicle)
     setIsEditModalOpen(true)
   }
 
@@ -201,10 +269,29 @@ export default function VehiclesPage() {
         'rental_total_cost', 'rental_status', 'rental_notes'
       ]
       
-      const filteredData = Object.keys(vehicleData)
+      // 날짜 필드 정리
+      const cleanedData = { ...vehicleData }
+      const dateFields = [
+        'purchase_date', 
+        'insurance_start_date', 
+        'insurance_end_date', 
+        'rental_start_date', 
+        'rental_end_date'
+      ]
+      
+      dateFields.forEach(field => {
+        if (cleanedData[field as keyof Vehicle] === '' || 
+            cleanedData[field as keyof Vehicle] === null) {
+          cleanedData[field as keyof Vehicle] = null
+        }
+      })
+
+      const filteredData = Object.keys(cleanedData)
         .filter(key => allowedFields.includes(key))
         .reduce((obj, key) => {
-          obj[key] = vehicleData[key as keyof Vehicle]
+          const value = cleanedData[key as keyof Vehicle]
+          // 빈 문자열을 null로 변환
+          obj[key] = value === '' ? null : value
           return obj
         }, {} as Partial<Vehicle>)
 
@@ -379,16 +466,38 @@ export default function VehiclesPage() {
       </div>
 
       {/* 차량 목록 */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {filteredVehicles.map((vehicle) => (
-          <div key={vehicle.id} className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3">
-                  <Car className="w-6 h-6 text-blue-600" />
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {vehicle.vehicle_number}
-                  </h3>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {filteredVehicles.map((vehicle) => {
+          // 대표사진 찾기
+          const primaryPhoto = vehicle.photos?.find(photo => photo.is_primary)
+          const firstPhoto = vehicle.photos?.[0]
+          const displayPhoto = primaryPhoto || firstPhoto || vehicle.vehicle_image_url
+          
+          return (
+            <div key={vehicle.id} className="bg-white rounded-lg shadow overflow-hidden">
+              {/* 차량 사진 */}
+              <div className="aspect-[4/3] bg-gray-200 flex items-center justify-center">
+                {displayPhoto ? (
+                  <img
+                    src={displayPhoto.photo_url || displayPhoto}
+                    alt={vehicle.vehicle_number}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center text-gray-400">
+                    <Car className="w-12 h-12 mb-2" />
+                    <span className="text-sm">사진 없음</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <h3 className="text-base font-semibold text-gray-900 truncate">
+                        {vehicle.vehicle_number}
+                      </h3>
                   <div className="flex items-center space-x-2">
                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(vehicle.vehicle_status || '운행 가능')}`}>
                       {vehicle.vehicle_status || '운행 가능'}
@@ -427,7 +536,7 @@ export default function VehiclesPage() {
                   </div>
                 </div>
                 
-                <div className="mt-2 space-y-1 text-sm text-gray-600">
+                <div className="mt-2 space-y-1 text-xs text-gray-600">
                   <p><span className="font-medium">차종:</span> {vehicle.vehicle_type}</p>
                   <p><span className="font-medium">연식:</span> {vehicle.year}년식</p>
                   <p><span className="font-medium">탑승인원:</span> {vehicle.capacity}인승</p>
@@ -464,28 +573,40 @@ export default function VehiclesPage() {
                       )}
                     </>
                   )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex space-x-1">
+                    <button
+                      onClick={() => handleEditVehicle(vehicle)}
+                      className="p-1.5 text-gray-400 hover:text-blue-600"
+                      title="수정"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                    </button>
+                    {/* 렌터카일 때만 복사 버튼 표시 */}
+                    {vehicle.vehicle_category === 'rental' && (
+                      <button
+                        onClick={() => handleCopyVehicle(vehicle)}
+                        className="p-1.5 text-gray-400 hover:text-green-600"
+                        title="복사"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDeleteVehicle(vehicle.id)}
+                      className="p-1.5 text-gray-400 hover:text-red-600"
+                      title="삭제"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
-              
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => handleEditVehicle(vehicle)}
-                  className="p-2 text-gray-400 hover:text-blue-600"
-                  title="수정"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDeleteVehicle(vehicle.id)}
-                  className="p-2 text-gray-400 hover:text-red-600"
-                  title="삭제"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {filteredVehicles.length === 0 && (

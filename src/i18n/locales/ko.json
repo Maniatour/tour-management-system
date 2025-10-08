@@ -76,10 +76,10 @@
     "tourDepartureTimes": "투어 출발 시간들",
     "addDepartureTime": "출발 시간 추가",
     "removeDepartureTime": "출발 시간 제거",
-    "internalNameKo": "내부명 (한국어)",
-    "internalNameEn": "내부명 (영어)",
-    "customerNameKo": "고객명 (한국어)",
-    "customerNameEn": "고객명 (영어)"
+    "internalNameKo": "상품명 (내부 한국어)",
+    "internalNameEn": "상품명 (내부 영어)",
+    "customerNameKo": "상품명 (고객용 한국어)",
+    "customerNameEn": "상품명 (고객용 영어)"
   },
   "home": {
     "title": "투어 관리 시스템에 오신 것을 환영합니다",

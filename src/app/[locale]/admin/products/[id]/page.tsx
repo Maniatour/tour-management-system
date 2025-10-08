@@ -179,8 +179,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     // 새로운 필드들
     tourDepartureTime?: string
     tourDepartureTimes?: string[]
-    internalNameKo?: string
-    internalNameEn?: string
     customerNameKo?: string
     customerNameEn?: string
     // 공통 세부정보 사용 여부
@@ -277,8 +275,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     // 새로운 필드들 초기값
     tourDepartureTime: '',
     tourDepartureTimes: [],
-    internalNameKo: '',
-    internalNameEn: '',
     customerNameKo: '',
     customerNameEn: '',
     // 공통 세부정보 사용 여부 초기값
@@ -439,8 +435,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         infantAge: 2,
         tourDepartureTime: '',
         tourDepartureTimes: [],
-        internalNameKo: '',
-        internalNameEn: '',
         customerNameKo: '',
         customerNameEn: ''
       }))
@@ -587,8 +581,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
               const parsed = safeJsonParse(productData.tour_departure_times, []);
               return Array.isArray(parsed) ? parsed : [];
             })(),
-            internalNameKo: productData.internal_name_ko || '',
-            internalNameEn: productData.internal_name_en || '',
             customerNameKo: productData.customer_name_ko || '',
             customerNameEn: productData.customer_name_en || '',
             useCommonDetails: !!productData.use_common_details,

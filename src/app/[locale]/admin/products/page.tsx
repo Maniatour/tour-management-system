@@ -24,9 +24,11 @@ export default function AdminProducts({ params }: AdminProductsProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('all')
+  const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [categories, setCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
+  const [statusCounts, setStatusCounts] = useState<{ value: string; label: string; count: number }[]>([])
 
   // Supabase에서 상품 데이터 가져오기
   useEffect(() => {
@@ -68,6 +70,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
       if (data && data.length > 0) {
         const categoryCounts: { [key: string]: number } = {}
         const subCategoryCounts: { [key: string]: number } = {}
+        const statusCounts: { [key: string]: number } = {}
         
         data.forEach(product => {
           if ((product as any).category) {
@@ -75,6 +78,9 @@ export default function AdminProducts({ params }: AdminProductsProps) {
           }
           if ((product as any).sub_category) {
             subCategoryCounts[(product as any).sub_category] = (subCategoryCounts[(product as any).sub_category] || 0) + 1
+          }
+          if ((product as any).status) {
+            statusCounts[(product as any).status] = (statusCounts[(product as any).status] || 0) + 1
           }
         })
         
@@ -102,9 +108,25 @@ export default function AdminProducts({ params }: AdminProductsProps) {
             subCategoryList.push({ value: subCategory, label: subCategory, count })
           })
         
+        // 상태 목록 생성 (전체 + 실제 존재하는 상태들)
+        const statusList = [
+          { value: 'all', label: '전체', count: data.length }
+        ]
+        
+        // 실제 존재하는 상태들을 상품 수 순으로 정렬하여 추가
+        Object.entries(statusCounts)
+          .sort(([,a], [,b]) => b - a) // 상품 수 내림차순 정렬
+          .forEach(([status, count]) => {
+            const statusLabel = status === 'active' ? '활성' : 
+                              status === 'inactive' ? '비활성' : 
+                              status === 'draft' ? '초안' : status
+            statusList.push({ value: status, label: statusLabel, count })
+          })
+        
         setCategories(categoryList)
         setAllSubCategories(subCategoryList)
         setSubCategories(subCategoryList)
+        setStatusCounts(statusList)
       }
     } catch (error) {
       console.error('Products 조회 중 예상치 못한 오류:', error)
@@ -153,21 +175,23 @@ export default function AdminProducts({ params }: AdminProductsProps) {
   const filteredProducts = products.filter(product => {
     const matchesSearch = 
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (product.category && product.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (product.sub_category && product.sub_category.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      ((product as any).category && (product as any).category.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      ((product as any).sub_category && (product as any).sub_category.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (product.description && product.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (product.tags && product.tags.some((tag: string) => tag.toLowerCase().includes(searchTerm.toLowerCase())))
     
-    const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory
-    const matchesSubCategory = selectedSubCategory === 'all' || product.sub_category === selectedSubCategory
+    const matchesCategory = selectedCategory === 'all' || (product as any).category === selectedCategory
+    const matchesSubCategory = selectedSubCategory === 'all' || (product as any).sub_category === selectedSubCategory
+    const matchesStatus = selectedStatus === 'all' || (product as any).status === selectedStatus
     
-    return matchesSearch && matchesCategory && matchesSubCategory
+    return matchesSearch && matchesCategory && matchesSubCategory && matchesStatus
   })
 
   const clearFilters = () => {
     setSearchTerm('')
     setSelectedCategory('all')
     setSelectedSubCategory('all')
+    setSelectedStatus('all')
     setSubCategories(allSubCategories) // 서브카테고리를 전체 목록으로 복원
   }
 
@@ -312,7 +336,35 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                   </button>
                 ))}
               </nav>
-                        </div>
+            </div>
+          )}
+
+          {/* 상태 탭 */}
+          {statusCounts.length > 1 && (
+            <div className="border-b border-gray-200">
+              <nav className="flex space-x-4 overflow-x-auto px-3">
+                {statusCounts.map((status) => (
+                  <button
+                    key={status.value}
+                    onClick={() => setSelectedStatus(status.value)}
+                    className={`flex items-center space-x-1 py-2 px-2 border-b-2 font-medium text-xs whitespace-nowrap transition-colors ${
+                      selectedStatus === status.value
+                        ? 'border-green-500 text-green-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <span>{status.label}</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-xs ${
+                      selectedStatus === status.value
+                        ? 'bg-green-100 text-green-600'
+                        : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {status.count}
+                    </span>
+                  </button>
+                ))}
+              </nav>
+            </div>
           )}
                       </div>
                     </div>
@@ -323,11 +375,12 @@ export default function AdminProducts({ params }: AdminProductsProps) {
           총 {filteredProducts.length}개의 상품
           {selectedCategory !== 'all' && ` (${categories.find(c => c.value === selectedCategory)?.label})`}
           {selectedSubCategory !== 'all' && ` (${subCategories.find(c => c.value === selectedSubCategory)?.label})`}
-                    </span>
+          {selectedStatus !== 'all' && ` (${statusCounts.find(s => s.value === selectedStatus)?.label})`}
+        </span>
         {searchTerm && (
           <span>&ldquo;<strong>{searchTerm}</strong>&rdquo; 검색 결과</span>
         )}
-        {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all') && (
+        {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all' || selectedStatus !== 'all') && (
           <button
             onClick={clearFilters}
             className="text-blue-600 hover:text-blue-800 underline"
@@ -335,7 +388,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
             필터 초기화
           </button>
         )}
-                    </div>
+      </div>
 
       {/* 상품 목록 */}
       {filteredProducts.length === 0 ? (

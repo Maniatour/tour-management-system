@@ -1,7 +1,9 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2 } from 'lucide-react'
+import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import VehicleTypeManagementModal from './VehicleTypeManagementModal'
 
 interface Vehicle {
   id?: string
@@ -80,8 +82,8 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
     installment_start_date: '',
     installment_end_date: '',
     vehicle_image_url: '',
-    // 렌터카 관련 필드 초기화 (간소화)
-    vehicle_category: 'company',
+    // 렌터카를 기본값으로 설정
+    vehicle_category: 'rental',
     rental_company: '',
     daily_rate: 0,
     rental_start_date: '',
@@ -93,11 +95,92 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
     rental_notes: ''
   })
 
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string>('')
+  const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
+  const [vehiclePhotos, setVehiclePhotos] = useState<any[]>([])
+  const [showPhotoGallery, setShowPhotoGallery] = useState(false)
+  const [vehiclePhotoTemplates, setVehiclePhotoTemplates] = useState<any[]>([])
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
+  const [primaryPhotoId, setPrimaryPhotoId] = useState<string | null>(null)
+  const [vehicleTypes, setVehicleTypes] = useState<any[]>([])
+  const [showVehicleTypeManagement, setShowVehicleTypeManagement] = useState(false)
+
+  // 차량 사진 가져오기
+  const fetchVehiclePhotos = async (vehicleId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('vehicle_photos')
+        .select('*')
+        .eq('vehicle_id', vehicleId)
+        .order('display_order', { ascending: true })
+
+      if (error) throw error
+      setVehiclePhotos(data || [])
+      
+      // 기본 사진 찾기
+      const primaryPhoto = data?.find(photo => photo.is_primary)
+      if (primaryPhoto) {
+        setPrimaryPhotoId(primaryPhoto.id)
+      }
+    } catch (error) {
+      console.error('차량 사진 조회 오류:', error)
+    }
+  }
+
+  // 차종 목록 가져오기
+  const fetchVehicleTypes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('vehicle_types')
+        .select(`
+          *,
+          photos:vehicle_type_photos(*)
+        `)
+        .eq('is_active', true)
+        .order('display_order', { ascending: true })
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setVehicleTypes(data || [])
+    } catch (error) {
+      console.error('차종 목록 조회 오류:', error)
+    }
+  }
+
+  // 차량 타입별 사진 템플릿 가져오기
+  const fetchVehiclePhotoTemplates = async (vehicleType: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('vehicle_photo_templates')
+        .select('*')
+        .eq('vehicle_type', vehicleType)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setVehiclePhotoTemplates(data || [])
+    } catch (error) {
+      console.error('차량 사진 템플릿 조회 오류:', error)
+    }
+  }
+
+  // 차종 목록 가져오기
+  useEffect(() => {
+    fetchVehicleTypes()
+  }, [])
+
+  // 차량 타입이 변경될 때마다 사진 템플릿 가져오기
+  useEffect(() => {
+    if (formData.vehicle_type) {
+      fetchVehiclePhotoTemplates(formData.vehicle_type)
+    }
+  }, [formData.vehicle_type])
 
   useEffect(() => {
     if (vehicle) {
+      // 차량 사진 가져오기
+      fetchVehiclePhotos(vehicle.id!)
+      
       // null 값들을 기본값으로 변환
       setFormData({
         ...vehicle,
@@ -146,7 +229,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         setImagePreview(vehicle.vehicle_image_url)
       }
     } else {
-      // 새 차량인 경우 기본값 설정
+      // 새 차량인 경우 기본값 설정 (렌터카를 기본값으로)
       setFormData({
         vehicle_number: '',
         vin: '',
@@ -175,8 +258,8 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         installment_start_date: '',
         installment_end_date: '',
         vehicle_image_url: '',
-        // 렌터카 관련 필드 초기화
-        vehicle_category: 'company',
+        // 렌터카를 기본값으로 설정
+        vehicle_category: 'rental',
         rental_company: '',
         daily_rate: 0,
         rental_start_date: '',
@@ -198,20 +281,192 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
       setFormData(prev => ({ ...prev, [name]: checked }))
     } else if (type === 'number') {
       setFormData(prev => ({ ...prev, [name]: parseFloat(value) || 0 }))
+    } else if (name === 'vehicle_type') {
+      // 차종 선택 시 자동으로 탑승 인원 설정 및 이미지 가져오기
+      const selectedType = vehicleTypes.find(type => type.name === value)
+      setFormData(prev => ({
+        ...prev,
+        [name]: value,
+        capacity: selectedType ? selectedType.passenger_capacity : prev.capacity,
+        vehicle_category: selectedType ? selectedType.vehicle_category : prev.vehicle_category
+      }))
+      
+      // 차종의 모든 이미지 가져오기
+      if (selectedType && selectedType.photos && selectedType.photos.length > 0) {
+        const primaryPhoto = selectedType.photos.find((photo: any) => photo.is_primary)
+        const firstPhoto = selectedType.photos[0]
+        const imageUrl = primaryPhoto?.photo_url || firstPhoto.photo_url
+        
+        if (imageUrl) {
+          setFormData(prev => ({
+            ...prev,
+            vehicle_image_url: imageUrl
+          }))
+        }
+        
+        // 모든 사진을 미리보기에 추가
+        const allPhotoUrls = selectedType.photos.map((photo: any) => photo.photo_url)
+        setImagePreviews(allPhotoUrls)
+        
+        // vehiclePhotos 상태에도 저장
+        setVehiclePhotos(selectedType.photos)
+      }
     } else {
       setFormData(prev => ({ ...prev, [name]: value }))
     }
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setImageFile(file)
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string)
+  // 차종 선택 핸들러 (차종 관리 모달에서)
+  const handleVehicleTypeSelect = (vehicleType: any) => {
+    setFormData(prev => ({
+      ...prev,
+      vehicle_type: vehicleType.name,
+      vehicle_category: vehicleType.vehicle_category,
+      capacity: vehicleType.passenger_capacity
+    }))
+    
+    // 차종의 모든 이미지 가져오기
+    if (vehicleType.photos && vehicleType.photos.length > 0) {
+      const primaryPhoto = vehicleType.photos.find((photo: any) => photo.is_primary)
+      const firstPhoto = vehicleType.photos[0]
+      const imageUrl = primaryPhoto?.photo_url || firstPhoto.photo_url
+      
+      if (imageUrl) {
+        setFormData(prev => ({
+          ...prev,
+          vehicle_image_url: imageUrl
+        }))
       }
-      reader.readAsDataURL(file)
+      
+      // 모든 사진을 미리보기에 추가
+      const allPhotoUrls = vehicleType.photos.map((photo: any) => photo.photo_url)
+      setImagePreviews(allPhotoUrls)
+      
+      // vehiclePhotos 상태에도 저장
+      setVehiclePhotos(vehicleType.photos)
+    }
+    
+    setShowVehicleTypeManagement(false)
+  }
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length > 0) {
+      const newFiles = [...imageFiles, ...files]
+      setImageFiles(newFiles)
+      
+      // 미리보기 생성
+      const newPreviews: string[] = []
+      files.forEach(file => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          newPreviews.push(e.target?.result as string)
+          if (newPreviews.length === files.length) {
+            setImagePreviews(prev => [...prev, ...newPreviews])
+          }
+        }
+        reader.readAsDataURL(file)
+      })
+    }
+  }
+
+  const removeImage = (index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index))
+    setImagePreviews(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const removeVehiclePhoto = async (photoId: string) => {
+    try {
+      const { error } = await supabase
+        .from('vehicle_photos')
+        .delete()
+        .eq('id', photoId)
+
+      if (error) throw error
+      
+      // 로컬 상태 업데이트
+      setVehiclePhotos(prev => prev.filter(photo => photo.id !== photoId))
+      
+      // 기본 사진이 삭제된 경우 다른 사진을 기본으로 설정
+      if (primaryPhotoId === photoId) {
+        const remainingPhotos = vehiclePhotos.filter(photo => photo.id !== photoId)
+        if (remainingPhotos.length > 0) {
+          await setPrimaryPhoto(remainingPhotos[0].id)
+        } else {
+          setPrimaryPhotoId(null)
+        }
+      }
+    } catch (error) {
+      console.error('사진 삭제 오류:', error)
+      alert('사진 삭제에 실패했습니다.')
+    }
+  }
+
+  const setPrimaryPhoto = async (photoId: string) => {
+    try {
+      // 모든 사진의 기본 상태 해제
+      await supabase
+        .from('vehicle_photos')
+        .update({ is_primary: false })
+        .eq('vehicle_id', vehicle?.id)
+
+      // 선택된 사진을 기본으로 설정
+      const { error } = await supabase
+        .from('vehicle_photos')
+        .update({ is_primary: true })
+        .eq('id', photoId)
+
+      if (error) throw error
+      
+      setPrimaryPhotoId(photoId)
+      
+      // 로컬 상태 업데이트
+      setVehiclePhotos(prev => 
+        prev.map(photo => ({
+          ...photo,
+          is_primary: photo.id === photoId
+        }))
+      )
+    } catch (error) {
+      console.error('기본 사진 설정 오류:', error)
+      alert('기본 사진 설정에 실패했습니다.')
+    }
+  }
+
+  // 사진 템플릿 선택
+  const handleTemplateSelect = (template: any) => {
+    setSelectedTemplate(template)
+    // 템플릿 사진을 새 사진으로 추가
+    setImagePreviews(prev => [...prev, template.photo_url])
+    setShowPhotoGallery(false)
+  }
+
+  // 사진 템플릿 저장
+  const handleSaveTemplate = async () => {
+    if (imagePreviews.length === 0 || !formData.vehicle_type) return
+
+    try {
+      const templates = imagePreviews.map((preview, index) => ({
+        vehicle_type: formData.vehicle_type,
+        vehicle_model: formData.vehicle_number,
+        photo_url: preview,
+        photo_name: `${formData.vehicle_type} - ${formData.vehicle_number} (${index + 1})`,
+        description: `차량 번호: ${formData.vehicle_number}`,
+        is_default: false
+      }))
+
+      const { error } = await supabase
+        .from('vehicle_photo_templates')
+        .insert(templates)
+
+      if (error) throw error
+      
+      // 템플릿 목록 새로고침
+      fetchVehiclePhotoTemplates(formData.vehicle_type)
+      alert(`${templates.length}장의 사진이 템플릿으로 저장되었습니다.`)
+    } catch (error) {
+      console.error('사진 템플릿 저장 오류:', error)
+      alert('사진 템플릿 저장에 실패했습니다.')
     }
   }
 
@@ -233,10 +488,80 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData)
+    
+    try {
+      // 날짜 필드 정리 및 유효성 검사
+      const cleanedData = { ...formData }
+      
+      // 빈 문자열인 날짜 필드들을 null로 변환
+      const dateFields = [
+        'purchase_date', 
+        'insurance_start_date', 
+        'insurance_end_date', 
+        'rental_start_date', 
+        'rental_end_date'
+      ]
+      
+      dateFields.forEach(field => {
+        if (cleanedData[field as keyof typeof cleanedData] === '' || 
+            cleanedData[field as keyof typeof cleanedData] === null) {
+          cleanedData[field as keyof typeof cleanedData] = null
+        }
+      })
+
+      // 숫자 필드 정리
+      const numberFields = [
+        'year', 'capacity', 'mileage_at_purchase', 'purchase_amount',
+        'monthly_payment', 'rental_total_cost'
+      ]
+      
+      numberFields.forEach(field => {
+        const value = cleanedData[field as keyof typeof cleanedData]
+        if (value === '' || value === null || value === undefined) {
+          cleanedData[field as keyof typeof cleanedData] = 0
+        } else if (typeof value === 'string') {
+          const numValue = parseFloat(value)
+          cleanedData[field as keyof typeof cleanedData] = isNaN(numValue) ? 0 : numValue
+        }
+      })
+
+      // 차량 데이터 저장 (이미지는 별도로 처리)
+      const vehicleData = {
+        ...cleanedData,
+        vehicle_image_url: null // 단일 이미지 URL 제거
+      }
+
+      console.log('정리된 차량 데이터:', vehicleData)
+
+      onSave(vehicleData)
+      
+      // 새로 추가된 사진들을 vehicle_photos 테이블에 저장
+      if (imagePreviews.length > 0 && vehicle?.id) {
+        const photosData = imagePreviews.map((preview, index) => ({
+          vehicle_id: vehicle.id,
+          photo_url: preview,
+          photo_name: `${formData.vehicle_number} - 사진 ${index + 1}`,
+          display_order: index,
+          is_primary: index === 0 // 첫 번째 사진을 기본으로 설정
+        }))
+
+        const { error } = await supabase
+          .from('vehicle_photos')
+          .insert(photosData)
+
+        if (error) throw error
+        
+        // 사진 목록 새로고침
+        fetchVehiclePhotos(vehicle.id)
+      }
+    } catch (error) {
+      console.error('차량 저장 오류:', error)
+      alert('차량 저장 중 오류가 발생했습니다.')
+    }
   }
+
 
   const calculateTotalPayment = () => {
     if (!formData.is_installment) return 0
@@ -263,7 +588,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-medium text-gray-900 flex items-center">
                   <Car className="w-5 h-5 mr-2" />
-                  {vehicle ? '차량 정보 수정' : '새 차량 추가'}
+                  {vehicle ? (vehicle.id ? '차량 정보 수정' : '새 차량 추가 (복사)') : '새 차량 추가'}
                 </h3>
                 <button
                   type="button"
@@ -274,7 +599,8 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* 렌터카일 때는 1열 레이아웃, 회사 차량일 때는 2열 레이아웃 */}
+              <div className={`grid gap-6 ${formData.vehicle_category === 'rental' ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}>
                 {/* 기본 정보 */}
                 <div className="space-y-4">
                   <h4 className="text-md font-medium text-gray-900 flex items-center">
@@ -336,81 +662,106 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">차종 *</label>
-                    <input
-                      type="text"
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-medium text-gray-700">차종 *</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowVehicleTypeManagement(true)}
+                        className="inline-flex items-center px-2 py-1 border border-gray-300 rounded-md shadow-sm text-xs font-medium text-gray-700 bg-white hover:bg-gray-50"
+                      >
+                        <Settings className="w-3 h-3 mr-1" />
+                        차종 관리
+                      </button>
+                    </div>
+                    <select
                       name="vehicle_type"
                       value={formData.vehicle_type}
                       onChange={handleInputChange}
                       required
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">탑승 인원 *</label>
-                      <input
-                        type="number"
-                        name="capacity"
-                        value={formData.capacity}
-                        onChange={handleInputChange}
-                        required
-                        min="1"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">연식 *</label>
-                      <input
-                        type="number"
-                        name="year"
-                        value={formData.year}
-                        onChange={handleInputChange}
-                        required
-                        min="1900"
-                        max={new Date().getFullYear() + 1}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">구매시 마일리지 (miles)</label>
-                      <input
-                        type="number"
-                        name="mileage_at_purchase"
-                        value={formData.mileage_at_purchase}
-                        onChange={handleInputChange}
-                        min="0"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">구매 금액 ($)</label>
-                      <input
-                        type="number"
-                        name="purchase_amount"
-                        value={formData.purchase_amount}
-                        onChange={handleInputChange}
-                        min="0"
-                        step="0.01"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
+                    >
+                      <option value="">차종을 선택하세요</option>
+                      {vehicleTypes.map((type) => (
+                        <option key={type.id} value={type.name}>
+                          {type.name} ({type.passenger_capacity}인승)
+                        </option>
+                      ))}
+                    </select>
+                    {vehicleTypes.length === 0 && (
+                      <p className="mt-1 text-sm text-gray-500">
+                        차종이 없습니다. 위의 "차종 관리" 버튼을 클릭하여 차종을 추가해주세요.
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">구매일</label>
+                    <label className="block text-sm font-medium text-gray-700">탑승 인원 *</label>
                     <input
-                      type="date"
-                      name="purchase_date"
-                      value={formData.purchase_date}
+                      type="number"
+                      name="capacity"
+                      value={formData.capacity}
                       onChange={handleInputChange}
+                      required
+                      min="1"
                       className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
+
+                  {/* 회사 차량일 때만 표시되는 필드들 */}
+                  {formData.vehicle_category === 'company' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">연식 *</label>
+                        <input
+                          type="number"
+                          name="year"
+                          value={formData.year}
+                          onChange={handleInputChange}
+                          required
+                          min="1900"
+                          max={new Date().getFullYear() + 1}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">구매시 마일리지 (miles)</label>
+                          <input
+                            type="number"
+                            name="mileage_at_purchase"
+                            value={formData.mileage_at_purchase}
+                            onChange={handleInputChange}
+                            min="0"
+                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">구매 금액 ($)</label>
+                          <input
+                            type="number"
+                            name="purchase_amount"
+                            value={formData.purchase_amount}
+                            onChange={handleInputChange}
+                            min="0"
+                            step="0.01"
+                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">구매일</label>
+                        <input
+                          type="date"
+                          name="purchase_date"
+                          value={formData.purchase_date}
+                          onChange={handleInputChange}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700">메모</label>
@@ -432,33 +783,36 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       렌터카 정보
                     </h4>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">렌터카 회사 *</label>
-                      <input
-                        type="text"
-                        name="rental_company"
-                        value={formData.rental_company}
-                        onChange={handleInputChange}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="예: Hertz, Enterprise, Budget"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">렌터카 회사 *</label>
+                        <input
+                          type="text"
+                          name="rental_company"
+                          value={formData.rental_company}
+                          onChange={handleInputChange}
+                          required
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="예: Hertz, Enterprise, Budget"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">일일 요금 ($)</label>
+                        <input
+                          type="number"
+                          name="daily_rate"
+                          value={formData.daily_rate}
+                          onChange={handleInputChange}
+                          min="0"
+                          step="0.01"
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="0.00"
+                        />
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">일일 요금 ($)</label>
-                      <input
-                        type="number"
-                        name="daily_rate"
-                        value={formData.daily_rate}
-                        onChange={handleInputChange}
-                        min="0"
-                        step="0.01"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">렌탈 시작일</label>
                         <input
@@ -481,7 +835,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">픽업 장소</label>
                         <input
@@ -504,35 +858,36 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">총 비용 ($)</label>
-                      <input
-                        type="number"
-                        name="rental_total_cost"
-                        value={formData.rental_total_cost}
-                        onChange={handleInputChange}
-                        min="0"
-                        step="0.01"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">렌터카 상태</label>
-                      <select
-                        name="rental_status"
-                        value={formData.rental_status}
-                        onChange={handleInputChange}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="available">사용가능</option>
-                        <option value="reserved">예약됨</option>
-                        <option value="picked_up">픽업완료</option>
-                        <option value="in_use">사용중</option>
-                        <option value="returned">반납완료</option>
-                        <option value="cancelled">취소됨</option>
-                      </select>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">총 비용 ($)</label>
+                        <input
+                          type="number"
+                          name="rental_total_cost"
+                          value={formData.rental_total_cost}
+                          onChange={handleInputChange}
+                          min="0"
+                          step="0.01"
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">렌터카 상태</label>
+                        <select
+                          name="rental_status"
+                          value={formData.rental_status}
+                          onChange={handleInputChange}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="available">사용가능</option>
+                          <option value="reserved">예약됨</option>
+                          <option value="picked_up">픽업완료</option>
+                          <option value="in_use">사용중</option>
+                          <option value="returned">반납완료</option>
+                          <option value="cancelled">취소됨</option>
+                        </select>
+                      </div>
                     </div>
 
                     <div>
@@ -788,31 +1143,117 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                 </div>
               )}
 
-              {/* 차량 이미지 */}
+              {/* 차량 이미지 - 모든 차량 타입에 대해 표시 */}
               <div className="mt-6 space-y-4">
-                <h4 className="text-md font-medium text-gray-900 flex items-center">
-                  <Upload className="w-4 h-4 mr-2" />
-                  차량 이미지
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-md font-medium text-gray-900 flex items-center">
+                    <Upload className="w-4 h-4 mr-2" />
+                    차량 이미지 ({vehiclePhotos.length + imagePreviews.length}장)
+                  </h4>
+                  {formData.vehicle_type && (
+                    <div className="flex space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowPhotoGallery(true)}
+                        className="inline-flex items-center px-3 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50"
+                      >
+                        <Images className="w-4 h-4 mr-2" />
+                        사진 갤러리
+                      </button>
+                      {imagePreviews.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleSaveTemplate}
+                          className="inline-flex items-center px-3 py-2 border border-green-300 rounded-md shadow-sm text-sm font-medium text-green-700 bg-white hover:bg-green-50"
+                        >
+                          <Image className="w-4 h-4 mr-2" />
+                          템플릿 저장
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
 
+                {/* 기존 사진들 */}
+                {vehiclePhotos.length > 0 && (
+                  <div className="space-y-2">
+                    <h5 className="text-sm font-medium text-gray-700">기존 사진</h5>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {vehiclePhotos.map((photo) => (
+                        <div key={photo.id} className="relative group">
+                          <img
+                            src={photo.photo_url}
+                            alt={photo.photo_name || '차량 사진'}
+                            className="w-full h-24 object-cover rounded-lg"
+                          />
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
+                            <div className="opacity-0 group-hover:opacity-100 flex space-x-1">
+                              <button
+                                type="button"
+                                onClick={() => setPrimaryPhoto(photo.id)}
+                                className={`p-1 rounded-full ${
+                                  photo.is_primary 
+                                    ? 'bg-yellow-500 text-white' 
+                                    : 'bg-white text-gray-700 hover:bg-yellow-100'
+                                }`}
+                                title={photo.is_primary ? '기본 사진' : '기본 사진으로 설정'}
+                              >
+                                ⭐
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeVehiclePhoto(photo.id)}
+                                className="p-1 rounded-full bg-white text-red-600 hover:bg-red-100"
+                                title="삭제"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                          {photo.is_primary && (
+                            <div className="absolute top-1 left-1 bg-yellow-500 text-white text-xs px-1 py-0.5 rounded">
+                              기본
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 새로 추가할 사진들 */}
                 <div
                   className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center"
                   onPaste={handlePasteImage}
                 >
-                  {imagePreview ? (
+                  {imagePreviews.length > 0 ? (
                     <div className="space-y-4">
-                      <img
-                        src={imagePreview}
-                        alt="차량 이미지 미리보기"
-                        className="mx-auto h-32 w-auto rounded-lg object-cover"
-                      />
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {imagePreviews.map((preview, index) => (
+                          <div key={index} className="relative group">
+                            <img
+                              src={preview}
+                              alt={`새 사진 ${index + 1}`}
+                              className="w-full h-24 object-cover rounded-lg"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeImage(index)}
+                              className="absolute -top-2 -right-2 p-1 rounded-full bg-red-500 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                       <div className="flex justify-center space-x-2">
                         <label className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer">
                           <Upload className="w-4 h-4 mr-2" />
-                          이미지 변경
+                          사진 추가
                           <input
                             type="file"
                             accept="image/*"
+                            multiple
                             onChange={handleImageUpload}
                             className="hidden"
                           />
@@ -820,13 +1261,13 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         <button
                           type="button"
                           onClick={() => {
-                            setImagePreview('')
-                            setImageFile(null)
+                            setImagePreviews([])
+                            setImageFiles([])
                           }}
                           className="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50"
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
-                          삭제
+                          모두 삭제
                         </button>
                       </div>
                     </div>
@@ -836,10 +1277,11 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       <div>
                         <label className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer">
                           <Upload className="w-4 h-4 mr-2" />
-                          이미지 추가
+                          사진 추가 (여러 장 선택 가능)
                           <input
                             type="file"
                             accept="image/*"
+                            multiple
                             onChange={handleImageUpload}
                             className="hidden"
                           />
@@ -871,6 +1313,85 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
           </form>
         </div>
       </div>
+
+      {/* 사진 갤러리 모달 */}
+      {showPhotoGallery && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-4xl max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                {formData.vehicle_type} 사진 갤러리
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowPhotoGallery(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {vehiclePhotoTemplates.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {vehiclePhotoTemplates.map((template) => (
+                  <div
+                    key={template.id}
+                    className={`relative cursor-pointer rounded-lg overflow-hidden border-2 ${
+                      selectedTemplate?.id === template.id
+                        ? 'border-blue-500'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    onClick={() => handleTemplateSelect(template)}
+                  >
+                    <img
+                      src={template.photo_url}
+                      alt={template.photo_name || '차량 사진'}
+                      className="w-full h-24 object-cover"
+                    />
+                    <div className="p-2">
+                      <p className="text-xs text-gray-600 truncate">
+                        {template.photo_name || template.vehicle_model}
+                      </p>
+                      {template.is_default && (
+                        <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full mt-1">
+                          기본
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Image className="mx-auto h-12 w-12 text-gray-400" />
+                <p className="mt-2 text-sm text-gray-500">
+                  {formData.vehicle_type} 타입의 사진이 없습니다.
+                </p>
+                <p className="text-xs text-gray-400">
+                  먼저 차량 사진을 업로드하고 '템플릿 저장'을 클릭하세요.
+                </p>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowPhotoGallery(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 차종 관리 모달 */}
+      <VehicleTypeManagementModal
+        isOpen={showVehicleTypeManagement}
+        onClose={() => setShowVehicleTypeManagement(false)}
+        onVehicleTypeSelect={handleVehicleTypeSelect}
+      />
     </div>
   )
 }

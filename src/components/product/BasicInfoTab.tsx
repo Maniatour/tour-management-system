@@ -28,8 +28,6 @@ import { supabase } from '@/lib/supabase'
       status: 'active' | 'inactive' | 'draft'
       tourDepartureTime?: string
       tourDepartureTimes?: string[]
-      internalNameKo?: string
-      internalNameEn?: string
       customerNameKo?: string
       customerNameEn?: string
     }
@@ -124,8 +122,6 @@ export default function BasicInfoTab({
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
-            internal_name_ko: formData.internalNameKo?.trim() || null,
-            internal_name_en: formData.internalNameEn?.trim() || null,
             customer_name_ko: formData.customerNameKo?.trim() || null,
             customer_name_en: formData.customerNameEn?.trim() || null
           }])
@@ -170,8 +166,6 @@ export default function BasicInfoTab({
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
-            internal_name_ko: formData.internalNameKo?.trim() || null,
-            internal_name_en: formData.internalNameEn?.trim() || null,
             customer_name_ko: formData.customerNameKo?.trim() || null,
             customer_name_en: formData.customerNameEn?.trim() || null
           })
@@ -267,107 +261,133 @@ export default function BasicInfoTab({
     <>
       {/* 상품 기본 정보 */}
       <div className="space-y-4">
-        {/* 상품명 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* 상품명 필드들 - 2x2 그리드로 배치 */}
+        <div className="space-y-4">
+          {/* 내부 한국어, 내부 영어 - 한 줄에 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (내부 한국어) *</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="내부용 한국어 상품명을 입력하세요"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (내부 영어)</label>
+              <input
+                type="text"
+                value={formData.nameEn || ''}
+                onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Internal English product name"
+              />
+            </div>
+          </div>
+          
+          {/* 고객용 한국어, 고객용 영어 - 한 줄에 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (고객용 한국어)</label>
+              <input
+                type="text"
+                value={formData.customerNameKo || ''}
+                onChange={(e) => setFormData({ ...formData, customerNameKo: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="고객용 한국어 상품명을 입력하세요"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (고객용 영어)</label>
+              <input
+                type="text"
+                value={formData.customerNameEn || ''}
+                onChange={(e) => setFormData({ ...formData, customerNameEn: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Customer English product name"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 상품 코드, 판매 상태, 카테고리, 서브카테고리 - 한 줄에 배치 */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (한국어) *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">상품 코드 *</label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              value={formData.productCode || ''}
+              onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="한국어 상품명을 입력하세요"
+              placeholder="예: ANT-001"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (영어)</label>
-            <input
-              type="text"
-              value={formData.nameEn || ''}
-              onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
+            <label className="block text-sm font-medium text-gray-700 mb-1">판매 상태 *</label>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'draft' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="English product name"
-            />
+              required
+            >
+              <option value="draft">초안</option>
+              <option value="active">활성</option>
+              <option value="inactive">비활성</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">카테고리 *</label>
+            <select
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value, subCategory: '' })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            >
+              <option value="">카테고리 선택</option>
+              {categories.map((category) => (
+                <option key={category.value} value={category.value}>
+                  {category.label} ({category.count})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">서브카테고리 *</label>
+            <select
+              value={formData.subCategory}
+              onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            >
+              <option value="">서브카테고리 선택</option>
+              {subCategories.map((subCategory) => (
+                <option key={subCategory.value} value={subCategory.value}>
+                  {subCategory.label} ({subCategory.count})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {/* 상품 코드 */}
+        {/* 상품 설명 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">상품 코드 *</label>
-          <input
-            type="text"
-            value={formData.productCode || ''}
-            onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
+          <label className="block text-sm font-medium text-gray-700 mb-1">상품 설명</label>
+          <textarea
+            value={formData.description || ''}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: ANT-001"
-            required
+            placeholder="상품에 대한 간단한 설명을 입력하세요"
+            rows={3}
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">판매 상태 *</label>
-          <select
-            value={formData.status}
-            onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'draft' })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            required
-          >
-            <option value="active">판매 중</option>
-            <option value="inactive">판매 중단</option>
-            <option value="draft">임시 저장</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">카테고리 *</label>
-          <select
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            required
-          >
-            <option value="">카테고리 선택</option>
-            {categories.map((category) => (
-              <option key={category.value} value={category.value}>
-                {category.label} ({category.count})
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-              <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">서브 카테고리</label>
-          {/* 디버깅: 현재 값들 확인 */}
-          <div className="text-xs text-gray-500 mb-1">
-            Debug: formData.subCategory = &quot;{formData.subCategory}&quot;, 
-            subCategories.length = {subCategories.length}
-          </div>
-          <select
-            value={formData.subCategory || ''}
-            onChange={(e) => {
-              console.log('서브카테고리 변경:', e.target.value)
-              setFormData({ ...formData, subCategory: e.target.value })
-            }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            disabled={!formData.category}
-          >
-            <option value="">서브 카테고리 선택</option>
-            {subCategories.map((subCategory) => (
-              <option key={subCategory.value} value={subCategory.value}>
-                {subCategory.label} ({subCategory.count})
-              </option>
-            ))}
-          </select>
-          {!formData.category && (
-            <p className="text-xs text-gray-500 mt-1">먼저 카테고리를 선택해주세요</p>
-          )}
-        </div>
-
-      {/* 출발/도착 정보 */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* 출발/도착 정보 - 한 줄에 배치 */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">출발 도시 *</label>
           <input
@@ -390,9 +410,6 @@ export default function BasicInfoTab({
             required
           />
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">출발 국가 *</label>
           <select
@@ -533,8 +550,8 @@ export default function BasicInfoTab({
         </div>
       </div>
       
-      {/* 연령 기준 */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* 연령 기준 - 한 줄에 배치 */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">성인 기준 (이상) *</label>
           <input
@@ -561,9 +578,6 @@ export default function BasicInfoTab({
           />
           <p className="text-xs text-gray-500 mt-1">세 이상</p>
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">아동 기준 (이하) *</label>
           <input
@@ -611,55 +625,6 @@ export default function BasicInfoTab({
           <Info className="h-5 w-5 mr-2" />
           추가 정보
         </h3>
-        
-        {/* 내부명 필드들 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('internalNameKo')}</label>
-            <input
-              type="text"
-              value={formData.internalNameKo || ''}
-              onChange={(e) => setFormData({ ...formData, internalNameKo: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="내부용 한국어 상품명"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('internalNameEn')}</label>
-            <input
-              type="text"
-              value={formData.internalNameEn || ''}
-              onChange={(e) => setFormData({ ...formData, internalNameEn: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Internal English product name"
-            />
-          </div>
-        </div>
-
-        {/* 고객명 필드들 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('customerNameKo')}</label>
-            <input
-              type="text"
-              value={formData.customerNameKo || ''}
-              onChange={(e) => setFormData({ ...formData, customerNameKo: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="고객용 한국어 상품명"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('customerNameEn')}</label>
-            <input
-              type="text"
-              value={formData.customerNameEn || ''}
-              onChange={(e) => setFormData({ ...formData, customerNameEn: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Customer English product name"
-            />
-          </div>
-        </div>
-      </div>
 
       <div className="grid grid-cols-3 gap-4">
         <div>
@@ -792,6 +757,7 @@ export default function BasicInfoTab({
             새 상품은 전체 저장을 사용해주세요.
           </p>
         )}
+      </div>
       </div>
 
       {/* 저장 버튼 */}
