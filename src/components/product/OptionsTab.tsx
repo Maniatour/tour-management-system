@@ -12,6 +12,9 @@ interface ProductOption {
   isMultiple: boolean
   choices: unknown[]
   linkedOptionId?: string
+  adultPrice?: number
+  childPrice?: number
+  infantPrice?: number
 }
 
 interface OptionsTabProps {
@@ -67,9 +70,9 @@ export default function OptionsTab({
             linked_option_id: option.linkedOptionId || null,
             choice_name: null,
             choice_description: null,
-            adult_price_adjustment: 0,
-            child_price_adjustment: 0,
-            infant_price_adjustment: 0,
+            adult_price_adjustment: option.adultPrice || 0,
+            child_price_adjustment: option.childPrice || 0,
+            infant_price_adjustment: option.infantPrice || 0,
             is_default: true
           })
           .select()
@@ -147,6 +150,36 @@ export default function OptionsTab({
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
+                </div>
+
+                {/* 옵션 설명 */}
+                {option.description && (
+                  <p className="text-sm text-gray-600 mb-3">{option.description}</p>
+                )}
+
+                {/* 가격 정보 */}
+                <div className="mb-3 p-3 bg-gray-50 rounded-lg">
+                  <div className="text-sm font-medium text-gray-700 mb-2">가격 정보</div>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">성인:</span>
+                      <span className="font-medium text-gray-900">
+                        {option.adultPrice !== undefined ? `$${option.adultPrice.toFixed(2)}` : '미설정'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">아동:</span>
+                      <span className="font-medium text-gray-900">
+                        {option.childPrice !== undefined ? `$${option.childPrice.toFixed(2)}` : '미설정'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">유아:</span>
+                      <span className="font-medium text-gray-900">
+                        {option.infantPrice !== undefined ? `$${option.infantPrice.toFixed(2)}` : '미설정'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* 옵션 설정 - 필수/다중 선택만 */}

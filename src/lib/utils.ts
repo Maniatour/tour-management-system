@@ -22,3 +22,16 @@ export function sanitizeTimeInput(value: string): string {
   // 4자리 이상인 경우 앞의 4자리만 사용
   return `${numbers.slice(0, 2)}:${numbers.slice(2, 4)}`
 }
+
+export function formatTimeWithAMPM(timeString: string): string {
+  // HH:MM 형식의 시간을 AM/PM 형식으로 변환
+  if (!timeString) return ''
+  
+  const [hours, minutes] = timeString.split(':').map(Number)
+  if (isNaN(hours) || isNaN(minutes)) return timeString
+  
+  const period = hours >= 12 ? 'PM' : 'AM'
+  const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+  
+  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`
+}

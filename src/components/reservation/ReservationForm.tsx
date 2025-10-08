@@ -1,7 +1,7 @@
 'use client'
 /* eslint-disable */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { sanitizeTimeInput } from '@/lib/utils'
@@ -138,6 +138,8 @@ export default function ReservationForm({
     productPriceTotal: number
     requiredOptions: { [optionId: string]: { choiceId: string; adult: number; child: number; infant: number } }
     requiredOptionTotal: number
+    choices: { [key: string]: unknown }
+    choicesTotal: number
     subtotal: number
     couponCode: string
     couponDiscount: number
@@ -209,6 +211,8 @@ export default function ReservationForm({
     productPriceTotal: 0,
     requiredOptions: {},
     requiredOptionTotal: 0,
+    choices: {},
+    choicesTotal: 0,
     subtotal: 0,
     couponCode: '',
     couponDiscount: 0,
@@ -275,6 +279,81 @@ export default function ReservationForm({
     }
     
     getCurrentUser()
+  }, [reservation])
+
+  // 예약 데이터에서 choices 선택 복원
+  useEffect(() => {
+    console.log('ReservationForm: choices 복원 useEffect 실행:', {
+      hasReservation: !!reservation,
+      hasChoices: !!(reservation && reservation.choices),
+      reservationId: reservation?.id,
+      choices: reservation?.choices
+    })
+    
+    if (reservation && reservation.choices) {
+      console.log('ReservationForm: 복원할 choices 데이터:', reservation.choices)
+      
+      // choices.required에서 선택된 옵션 찾기
+      if (reservation.choices.required && Array.isArray(reservation.choices.required)) {
+        const selectedChoices: Record<string, { selected: string; timestamp: string }> = {}
+        const choicesData: Record<string, any> = {}
+        
+        // productChoices도 복원
+        const productChoices: any[] = []
+        
+        reservation.choices.required.forEach((choice: any) => {
+          console.log('ReservationForm: choice 처리 중:', choice)
+          
+          if (choice.options && Array.isArray(choice.options)) {
+            // productChoices에 모든 옵션 추가
+            choice.options.forEach((option: any) => {
+              productChoices.push({
+                id: option.id,
+                name: option.name,
+                name_ko: option.name_ko,
+                description: choice.description,
+                adult_price: option.adult_price || 0,
+                child_price: option.child_price || 0,
+                infant_price: option.infant_price || 0,
+                is_default: option.is_default || false
+              })
+            })
+            
+            // is_default가 true인 옵션 찾기
+            const selectedOption = choice.options.find((option: any) => option.is_default === true)
+            console.log('ReservationForm: 선택된 옵션:', selectedOption)
+            
+            if (selectedOption) {
+              // choiceGroupId를 키로 사용 (ProductSelectionSection과 일치)
+              selectedChoices[choice.id] = {
+                selected: selectedOption.id,
+                timestamp: new Date().toISOString()
+              }
+              
+              // choices 데이터도 복원 (가격 계산을 위해)
+              choicesData[selectedOption.id] = {
+                adult_price: selectedOption.adult_price || 0,
+                child_price: selectedOption.child_price || 0,
+                infant_price: selectedOption.infant_price || 0
+              }
+              
+              console.log('ReservationForm: selectedChoices에 추가:', choice.id, selectedOption.id)
+            }
+          }
+        })
+        
+        console.log('ReservationForm: 복원된 selectedChoices:', selectedChoices)
+        console.log('ReservationForm: 복원된 choices:', choicesData)
+        console.log('ReservationForm: 복원된 productChoices:', productChoices)
+        
+        setFormData(prev => ({ 
+          ...prev, 
+          selectedChoices,
+          choices: choicesData,
+          productChoices: productChoices
+        }))
+      }
+    }
   }, [reservation])
 
   // 상품 선택 시 choice 데이터 로드 함수
@@ -501,9 +580,57 @@ export default function ReservationForm({
     return total
   }, [formData.requiredOptions, formData.selectedOptions, formData.adults, formData.child, formData.infant])
 
+  // choices 기반 가격 계산 함수 (새로운 방식)
+  const calculateChoicesTotal = useCallback(() => {
+    let total = 0
+    
+    console.log('calculateChoicesTotal 호출:', {
+      selectedChoices: formData.selectedChoices,
+      productChoices: formData.productChoices,
+      adults: formData.adults,
+      child: formData.child,
+      infant: formData.infant
+    })
+    
+    // selectedChoices에서 선택된 choice를 찾아서 가격 계산
+    Object.entries(formData.selectedChoices).forEach(([choiceGroupId, choiceData]) => {
+      if (choiceData && choiceData.selected) {
+        // productChoices에서 해당 choice 찾기
+        const selectedChoice = formData.productChoices.find(choice => choice.id === choiceData.selected)
+        
+        if (selectedChoice) {
+          const adultPrice = (selectedChoice.adult_price || 0) * formData.adults
+          const childPrice = (selectedChoice.child_price || 0) * formData.child
+          const infantPrice = (selectedChoice.infant_price || 0) * formData.infant
+          
+          const choiceTotal = adultPrice + childPrice + infantPrice
+          total += choiceTotal
+          
+          console.log(`Choice ${choiceData.selected} 계산:`, {
+            adultPrice,
+            childPrice,
+            infantPrice,
+            choiceTotal,
+            currentTotal: total
+          })
+        }
+      }
+    })
+    
+    console.log('최종 choicesTotal:', total)
+    return total
+  }, [formData.selectedChoices, formData.productChoices, formData.adults, formData.child, formData.infant])
+
   const calculateSubtotal = useCallback(() => {
-    return calculateProductPriceTotal() + calculateRequiredOptionTotal()
-  }, [calculateProductPriceTotal, calculateRequiredOptionTotal])
+    // choices가 있으면 choices 기반으로 계산, 없으면 기존 방식 사용
+    const choicesTotal = calculateChoicesTotal()
+    const requiredOptionTotal = calculateRequiredOptionTotal()
+    
+    // choices가 있으면 choices를 우선 사용, 없으면 기존 requiredOptions 사용
+    const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal
+    
+    return calculateProductPriceTotal() + optionTotal
+  }, [calculateProductPriceTotal, calculateChoicesTotal, calculateRequiredOptionTotal])
 
   const calculateOptionTotal = useCallback(() => {
     let total = 0
@@ -623,7 +750,7 @@ export default function ReservationForm({
         couponDiscount: 0
       }))
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, coupons, calculateProductPriceTotal, calculateRequiredOptionTotal, calculateCouponDiscount])
+  }, [formData.productId, formData.tourDate, formData.channelId, coupons, calculateProductPriceTotal, calculateRequiredOptionTotal, calculateCouponDiscount, formData.adults, formData.child, formData.infant])
 
   // 상품이 변경될 때 choice 데이터 로드
   useEffect(() => {
@@ -646,13 +773,16 @@ export default function ReservationForm({
 
   // 상품, 날짜, 채널이 변경될 때 쿠폰 자동 선택
   useEffect(() => {
-    autoSelectCoupon()
-  }, [autoSelectCoupon])
+    if (formData.productId && formData.tourDate && formData.channelId) {
+      autoSelectCoupon()
+    }
+  }, [formData.productId, formData.tourDate, formData.channelId, autoSelectCoupon])
 
-  // 가격 정보 자동 업데이트
-  useEffect(() => {
+  // 가격 정보 자동 업데이트 (무한 렌더링 방지를 위해 useEffect 완전 제거)
+  const updatePrices = useCallback(() => {
     const newProductPriceTotal = calculateProductPriceTotal()
     const newRequiredOptionTotal = calculateRequiredOptionTotal()
+    const newChoicesTotal = calculateChoicesTotal()
     const newSubtotal = calculateSubtotal()
     const newTotalPrice = calculateTotalPrice()
     const newBalance = calculateBalance()
@@ -661,19 +791,12 @@ export default function ReservationForm({
       ...prev,
       productPriceTotal: newProductPriceTotal,
       requiredOptionTotal: newRequiredOptionTotal,
+      choicesTotal: newChoicesTotal,
       subtotal: newSubtotal,
       totalPrice: newTotalPrice,
       balanceAmount: prev.onSiteBalanceAmount > 0 ? prev.onSiteBalanceAmount : newBalance
     }))
-  }, [
-    formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice,
-    formData.requiredOptions, formData.selectedOptions,
-    formData.adults, formData.child, formData.infant,
-    formData.couponDiscount, formData.additionalDiscount, formData.additionalCost,
-    formData.cardFee, formData.tax, formData.prepaymentCost, formData.prepaymentTip,
-    formData.isPrivateTour, formData.privateTourAdditionalCost,
-    calculateProductPriceTotal, calculateRequiredOptionTotal, calculateSubtotal, calculateTotalPrice, calculateBalance
-  ])
+  }, [calculateProductPriceTotal, calculateRequiredOptionTotal, calculateChoicesTotal, calculateSubtotal, calculateTotalPrice, calculateBalance])
 
   // dynamic_pricing에서 특정 choice의 가격 정보를 가져오는 함수
   const getDynamicPricingForOption = useCallback(async (choiceId: string) => {
@@ -742,6 +865,8 @@ export default function ReservationForm({
         product_price_total: formData.productPriceTotal,
         required_options: formData.requiredOptions,
         required_option_total: formData.requiredOptionTotal,
+        choices: formData.choices,
+        choices_total: calculateChoicesTotal(),
         subtotal: formData.subtotal,
         coupon_code: formData.couponCode,
         coupon_discount: formData.couponDiscount,
@@ -793,7 +918,7 @@ export default function ReservationForm({
       console.error('가격 정보 저장 중 오류:', error)
       throw error
     }
-  }, [formData])
+  }, [formData, calculateChoicesTotal])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -827,6 +952,8 @@ export default function ReservationForm({
           productPriceTotal: formData.productPriceTotal,
           requiredOptions: formData.requiredOptions,
           requiredOptionTotal: formData.requiredOptionTotal,
+          choices: formData.choices,
+          choicesTotal: formData.choicesTotal,
           subtotal: formData.subtotal,
           couponCode: formData.couponCode,
           couponDiscount: formData.couponDiscount,

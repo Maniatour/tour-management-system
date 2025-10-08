@@ -378,6 +378,8 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'product_price_total', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'required_options', type: 'jsonb', nullable: true, default: "'{}'" },
       { name: 'required_option_total', type: 'numeric', nullable: true, default: '0.00' },
+      { name: 'choices', type: 'jsonb', nullable: true, default: "'{}'" },
+      { name: 'choices_total', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'subtotal', type: 'numeric', nullable: true, default: '0.00' },
       { name: 'coupon_code', type: 'text', nullable: true, default: null },
       { name: 'coupon_discount', type: 'numeric', nullable: true, default: '0.00' },

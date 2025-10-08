@@ -53,6 +53,7 @@ export default function TourScheduleSection({
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedSchedules, setExpandedSchedules] = useState<Set<string>>(new Set())
+  const [isExpanded, setIsExpanded] = useState(true)
 
   // 아코디언 토글 함수
   const toggleScheduleExpansion = (scheduleId: string) => {
@@ -281,13 +282,25 @@ export default function TourScheduleSection({
 
   return (
     <div>
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">
-        {teamType === '2guide' ? getText('2가이드 담당 일정 (전체)', '2-Guide Assigned Schedules (All)') : 
-         teamType === 'guide+driver' ? getText('가이드+드라이버 담당 일정 (전체)', 'Guide+Driver Assigned Schedules (All)') : 
-         getText('투어 일정 (전체)', 'Tour Schedules (All)')}
-      </h3>
+      {/* 아코디언 헤더 */}
+      <div 
+        className="flex items-center justify-between cursor-pointer mb-4 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <h3 className="text-lg font-semibold text-gray-900">
+          {teamType === '2guide' ? getText('2가이드 담당 일정 (전체)', '2-Guide Assigned Schedules (All)') : 
+           teamType === 'guide+driver' ? getText('가이드+드라이버 담당 일정 (전체)', 'Guide+Driver Assigned Schedules (All)') : 
+           getText('투어 일정 (전체)', 'Tour Schedules (All)')}
+        </h3>
+        {isExpanded ? (
+          <ChevronUp className="w-5 h-5 text-gray-500" />
+        ) : (
+          <ChevronDown className="w-5 h-5 text-gray-500" />
+        )}
+      </div>
       
-      <div className="space-y-4">
+      {isExpanded && (
+        <div className="space-y-4">
         {Object.entries(schedulesByDay)
           .sort(([a], [b]) => Number(a) - Number(b))
           .map(([dayNumber, daySchedules]) => {
@@ -409,7 +422,8 @@ export default function TourScheduleSection({
               </div>
             )
           })}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

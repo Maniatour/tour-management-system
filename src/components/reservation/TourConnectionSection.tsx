@@ -47,23 +47,35 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
   const [creatingTour, setCreatingTour] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // 가이드 정보를 별도로 가져오는 함수
+  // 가이드 정보를 별도로 가져오는 함수 (안전한 방식)
   const fetchGuideInfo = async (guideEmail: string | null) => {
     if (!guideEmail) return null
     
     try {
-      const { data, error } = await supabase
+      // 먼저 직접 조회 시도 (더 안전한 방식)
+      const { data: directData, error: directError } = await supabase
         .from('team')
         .select('name_ko, name_en')
         .eq('email', guideEmail)
         .single()
       
-      if (error) {
-        console.error('Error fetching guide info:', error)
-        return null
+      if (!directError && directData) {
+        return directData
       }
       
-      return data
+      // 직접 조회 실패 시 RPC 함수 시도 (fallback)
+      console.log('Direct query failed, trying RPC function...', directError)
+      
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('get_team_member_info', { p_email: guideEmail })
+      
+      if (!rpcError && rpcData && rpcData.length > 0) {
+        return rpcData[0]
+      }
+      
+      console.error('Both direct query and RPC failed:', { directError, rpcError })
+      return null
+      
     } catch (error) {
       console.error('Error fetching guide info:', error)
       return null
@@ -337,7 +349,10 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
             return (
                 <div
                 key={tour.id}
-                onClick={() => window.open(`/${window.location.pathname.split('/')[1]}/admin/tours/${tour.id}`, '_blank')}
+                onClick={() => {
+                  const locale = window.location.pathname.split('/')[1]
+                  window.location.href = `/${locale}/admin/tours/${tour.id}`
+                }}
                 className={`border rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow ${
                   isAssignedToThisTour 
                     ? 'border-green-500 bg-green-50 hover:bg-green-100' 

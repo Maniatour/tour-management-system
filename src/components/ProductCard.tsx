@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Package, Users, DollarSign, Star, Clock, FileText } from 'lucide-react'
+import { Package, Users, DollarSign, Clock, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -10,11 +10,13 @@ interface ProductCardProps {
   product: Product
   locale: string
   onStatusChange?: (productId: string, newStatus: string) => void
+  onProductCopied?: (newProductId: string) => void
 }
 
-export default function ProductCard({ product, locale, onStatusChange }: ProductCardProps) {
+export default function ProductCard({ product, locale, onStatusChange, onProductCopied }: ProductCardProps) {
   const [isUpdating, setIsUpdating] = useState(false)
   const [localStatus, setLocalStatus] = useState(product.status || 'inactive')
+  const [isCopying, setIsCopying] = useState(false)
 
   const handleStatusToggle = async (e: React.MouseEvent) => {
     e.preventDefault() // Link 클릭 방지
@@ -33,7 +35,7 @@ export default function ProductCard({ product, locale, onStatusChange }: Product
       // 데이터베이스에 상태 업데이트
       const { error } = await supabase
         .from('products')
-        .update({ status: newStatus })
+        .update({ status: newStatus as any })
         .eq('id', product.id)
       
       if (error) {
@@ -54,6 +56,72 @@ export default function ProductCard({ product, locale, onStatusChange }: Product
       setLocalStatus(product.status || 'inactive')
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  const handleCopyProduct = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (isCopying) return
+    
+    try {
+      setIsCopying(true)
+      
+      // 간단한 복사 데이터 준비 (기본 필드만)
+      const copyData = {
+        name: `${product.name} (복사본)`,
+        name_en: product.name_en ? `${product.name_en} (Copy)` : null,
+        product_code: product.product_code ? `${product.product_code}_COPY` : null,
+        category: product.category,
+        sub_category: product.sub_category,
+        description: product.description,
+        duration: product.duration,
+        base_price: product.base_price,
+        max_participants: product.max_participants,
+        status: 'draft' as const, // 복사본은 초안 상태로 생성
+        departure_city: product.departure_city,
+        arrival_city: product.arrival_city,
+        departure_country: product.departure_country,
+        arrival_country: product.arrival_country,
+        languages: product.languages,
+        group_size: product.group_size,
+        adult_age: product.adult_age,
+        child_age_min: product.child_age_min,
+        child_age_max: product.child_age_max,
+        infant_age: product.infant_age,
+        tags: product.tags
+      }
+      
+      // 새 상품 생성
+      const { data: newProduct, error: productError } = await supabase
+        .from('products')
+        .insert(copyData as any)
+        .select()
+        .single()
+      
+      if (productError) {
+        console.error('상품 복사 오류:', productError)
+        alert('상품 복사 중 오류가 발생했습니다.')
+        return
+      }
+      
+      // 성공 메시지
+      alert(`상품이 성공적으로 복사되었습니다! 새 상품 ID: ${newProduct.id}`)
+      
+      // 부모 컴포넌트에 알림
+      if (onProductCopied) {
+        onProductCopied(newProduct.id)
+      }
+      
+      // 새 상품 편집 페이지로 이동
+      window.location.href = `/${locale}/admin/products/${newProduct.id}`
+      
+    } catch (error) {
+      console.error('상품 복사 중 예상치 못한 오류:', error)
+      alert('상품 복사 중 오류가 발생했습니다.')
+    } finally {
+      setIsCopying(false)
     }
   }
   const getCategoryLabel = (category: string) => {
@@ -215,7 +283,7 @@ export default function ProductCard({ product, locale, onStatusChange }: Product
               </div>
               <div>
                 <h3 className="text-base font-semibold text-gray-900 line-clamp-2 group-hover:text-blue-600 transition-colors">
-                  {product.name_ko}
+                  {product.name}
                 </h3>
                 <div className="flex items-center space-x-1 mt-1">
                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(localStatus)}`}>
@@ -232,20 +300,36 @@ export default function ProductCard({ product, locale, onStatusChange }: Product
                 </div>
               </div>
             </div>
-                         {/* 상태 토글 스위치 */}
-             <button
-               onClick={handleStatusToggle}
-               disabled={isUpdating}
-               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                 localStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
-               } ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-             >
-               <span
-                 className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                   localStatus === 'active' ? 'translate-x-5' : 'translate-x-1'
-                 }`}
-               />
-             </button>
+            <div className="flex items-center space-x-2">
+              {/* 복사 버튼 */}
+              <button
+                onClick={handleCopyProduct}
+                disabled={isCopying}
+                className={`p-1 rounded-full transition-colors ${
+                  isCopying 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : 'text-green-600 hover:text-green-800 hover:bg-green-50'
+                }`}
+                title="상품 복사"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+              
+              {/* 상태 토글 스위치 */}
+              <button
+                onClick={handleStatusToggle}
+                disabled={isUpdating}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  localStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
+                } ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                    localStatus === 'active' ? 'translate-x-5' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -304,33 +388,6 @@ export default function ProductCard({ product, locale, onStatusChange }: Product
           </div>
         </div>
 
-        {/* 카드 푸터 */}
-        <div className="px-6 py-4 bg-gray-50 rounded-b-lg">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Star className="h-4 w-4 text-yellow-400" />
-              <span className="text-sm text-gray-500">
-                {product.duration || '시간 미정'}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  window.location.href = `/${locale}/admin/products/${product.id}/details`
-                }}
-                className="flex items-center text-sm text-blue-600 hover:text-blue-800 transition-colors"
-              >
-                <FileText className="h-4 w-4 mr-1" />
-                세부정보
-              </button>
-              <div className="text-sm text-gray-500 group-hover:text-blue-600 transition-colors">
-                편집하려면 클릭하세요
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </Link>
   )

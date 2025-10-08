@@ -90,7 +90,7 @@ export function useReservationData() {
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('channels')
-        .select('*')
+        .select('id, name, type, favicon_url')
         .order('name', { ascending: true })
 
       if (error) {
@@ -98,10 +98,11 @@ export function useReservationData() {
         return []
       }
 
+      console.log('Fetched channels with favicon_url:', data?.map(ch => ({ name: ch.name, favicon_url: ch.favicon_url })))
       return data || []
     },
     cacheKey: 'reservation-channels',
-    cacheTime: 10 * 60 * 1000 // 10분 캐시
+    cacheTime: 0 // 캐시 비활성화로 최신 데이터 가져오기
   })
 
   const { data: productOptions = [], loading: productOptionsLoading, refetch: refetchProductOptions } = useOptimizedData({
@@ -253,7 +254,7 @@ export function useReservationData() {
         
         const { data, error } = await supabase
           .from('reservations')
-          .select('*')
+          .select('*, choices')
           .order('created_at', { ascending: false })
           .range(from, from + pageSize - 1)
 
@@ -263,6 +264,16 @@ export function useReservationData() {
         }
 
         if (data && data.length > 0) {
+          // choices 데이터가 있는 예약들 로그
+          const reservationsWithChoices = data.filter((res: any) => res.choices && Object.keys(res.choices).length > 0)
+          if (reservationsWithChoices.length > 0) {
+            console.log(`Found ${reservationsWithChoices.length} reservations with choices:`, reservationsWithChoices.map((r: any) => ({
+              id: r.id,
+              product_id: r.product_id,
+              choices: r.choices
+            })))
+          }
+          
           allReservations = [...allReservations, ...data]
           console.log(`예약 데이터 로딩 완료: ${data.length}개 추가, 총 ${allReservations.length}개`)
           
@@ -355,6 +366,7 @@ export function useReservationData() {
           selectedOptionPrices: (typeof item.selected_option_prices === 'string'
             ? (() => { try { return JSON.parse(item.selected_option_prices as unknown as string) } catch { return {} } })()
             : (item.selected_option_prices as { [key: string]: number }) || {}),
+          choices: item.choices || null,
           hasExistingTour
         }
       })

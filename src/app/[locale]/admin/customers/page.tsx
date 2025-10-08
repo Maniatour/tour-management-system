@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import ReactCountryFlag from 'react-country-flag'
 import { 
@@ -146,7 +147,7 @@ export default function AdminCustomers() {
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('channels')
-        .select('id, name, type')
+        .select('id, name, type, favicon_url')
         .order('name', { ascending: true })
 
       if (error) {
@@ -281,15 +282,15 @@ export default function AdminCustomers() {
   }
 
   // 예약 저장 함수
-  const handleSaveReservation = async (reservationData: any) => {
+  const handleSaveReservation = async (reservationData: Omit<Reservation, 'id'>) => {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as unknown as { from: (table: string) => { insert: (data: unknown[]) => Promise<{ error: unknown }> } })
         .from('reservations')
         .insert([reservationData])
 
       if (error) {
         console.error('Error saving reservation:', error)
-        alert('예약 저장 중 오류가 발생했습니다: ' + error.message)
+        alert('예약 저장 중 오류가 발생했습니다: ' + (error as Error).message)
         return
       }
 
@@ -997,7 +998,48 @@ export default function AdminCustomers() {
                             
                             {/* 채널 정보 - 오른쪽 정렬 */}
                             <div className="flex items-center text-xs text-gray-600 flex-shrink-0 ml-2">
-                              <Globe className="h-3 w-3 text-gray-400 mr-1" />
+                              {(() => {
+                                const customerWithChannels = customer as Customer & { channels?: { name: string } }
+                                let channelName = ''
+                                
+                                // channels 관계가 있고 name이 있으면 조인된 채널 이름 사용
+                                if (customerWithChannels.channels?.name) {
+                                  channelName = customerWithChannels.channels.name
+                                } else if (customer.channel_id) {
+                                  // 그렇지 않으면 channel_id를 직접 사용 (Homepage 등의 직접 값)
+                                  channelName = customer.channel_id
+                                } else {
+                                  channelName = '채널 없음'
+                                }
+                                
+                                // 채널 이름으로 실제 채널 객체 찾기
+                                const channel = channels?.find((c: { name: string; id: string }) => c.name === channelName || c.id === customer.channel_id)
+                                const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
+                                
+                                return channelWithFavicon?.favicon_url ? (
+                                  <Image 
+                                    src={channelWithFavicon.favicon_url} 
+                                    alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
+                                    width={12}
+                                    height={12}
+                                    className="rounded mr-1 flex-shrink-0"
+                                    onError={(e) => {
+                                      // 파비콘 로드 실패 시 기본 아이콘으로 대체
+                                      const target = e.target as HTMLImageElement
+                                      target.style.display = 'none'
+                                      const parent = target.parentElement
+                                      if (parent) {
+                                        const fallback = document.createElement('div')
+                                        fallback.className = 'h-3 w-3 text-gray-400 mr-1 flex-shrink-0'
+                                        fallback.innerHTML = '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9"></path></svg>'
+                                        parent.appendChild(fallback)
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <Globe className="h-3 w-3 text-gray-400 mr-1 flex-shrink-0" />
+                                )
+                              })()}
                               <span className="text-xs text-gray-900 truncate">
                                 {(() => {
                                   const customerWithChannels = customer as Customer & { channels?: { name: string } }

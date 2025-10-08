@@ -38,9 +38,20 @@ interface PricingSectionProps {
     child: number
     infant: number
     productPriceTotal: number
-    productChoices: any[]
+    productChoices: Array<{
+      id: string
+      name: string
+      options?: Array<{
+        id: string
+        name: string
+        adult_price?: number
+        child_price?: number
+        infant_price?: number
+      }>
+    }>
     selectedChoices: Record<string, { selected: string; timestamp: string }>
     choiceTotal: number
+    choicesTotal?: number
     subtotal: number
     couponCode: string
     couponDiscount: number
@@ -74,7 +85,6 @@ interface PricingSectionProps {
     fixed_value?: number | null
   }>
   getOptionalOptionsForProduct: (productId: string) => ProductOption[]
-  getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
   options: Option[]
   t: (key: string) => string
   autoSelectCoupon: () => void
@@ -89,7 +99,6 @@ export default function PricingSection({
   calculateCouponDiscount,
   coupons,
   getOptionalOptionsForProduct,
-  getDynamicPricingForOption,
   options,
   autoSelectCoupon
 }: PricingSectionProps) {
@@ -283,7 +292,7 @@ export default function PricingSection({
                 const selectedChoiceId = formData.selectedChoices[choice.id]?.selected
                 if (!selectedChoiceId) return null
                 
-                const selectedOption = choice.options?.find(opt => opt.id === selectedChoiceId)
+                const selectedOption = choice.options?.find((opt: any) => opt.id === selectedChoiceId)
                 if (!selectedOption) return null
                 
                 return (
@@ -347,7 +356,7 @@ export default function PricingSection({
               
               <div className="border-t pt-1 flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-900">총합</span>
-                <span className="text-sm font-bold text-green-600">+${(formData.choiceTotal || 0).toFixed(2)}</span>
+                <span className="text-sm font-bold text-green-600">+${(formData.choiceTotal || formData.choicesTotal || 0).toFixed(2)}</span>
               </div>
             </div>
           </div>

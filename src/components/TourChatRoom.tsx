@@ -1,9 +1,8 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Image as ImageIcon, Copy, Share2, Calendar, Gift, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users } from 'lucide-react'
+import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users, Play } from 'lucide-react'
 import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
-// @ts-expect-error - react-country-flag 타입 정의 문제 방지
 import ReactCountryFlag from 'react-country-flag'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
@@ -12,6 +11,7 @@ import ChatRoomShareModal from './ChatRoomShareModal'
 import PickupScheduleModal from './PickupScheduleModal'
 import TourPhotoGallery from './TourPhotoGallery'
 import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
+import { formatTimeWithAMPM } from '@/lib/utils'
 
 interface ChatMessage {
   id: string
@@ -46,6 +46,65 @@ interface ChatAnnouncement {
   language: string
   is_active: boolean
   created_at: string
+}
+
+interface ChatBan {
+  id: string
+  room_id: string
+  client_id?: string
+  customer_name?: string
+  banned_until?: string
+}
+
+interface Tour {
+  id: string
+  product_id: string
+  tour_date: string
+  reservation_ids: string[]
+}
+
+interface Reservation {
+  id: string
+  pickup_hotel: string
+  pickup_time: string
+  total_people: number
+  customer_id: string
+  status: string
+}
+
+interface Customer {
+  id: string
+  name: string
+}
+
+interface PickupHotel {
+  id: string
+  hotel: string
+  pick_up_location: string
+  media?: string[]
+  link?: string
+  youtube_link?: string
+}
+
+interface SupabaseInsertBuilder {
+  insert: (values: {
+    room_id: string;
+    sender_type: 'guide' | 'customer';
+    sender_name: string;
+    sender_email?: string;
+    message: string;
+    message_type: 'text';
+  }) => {
+    select: () => {
+      single: () => Promise<{ data: ChatMessage | null; error: Error | null }>;
+    };
+  };
+}
+
+interface SupabaseUpdateBuilder {
+  update: (values: { is_active: boolean }) => {
+    eq: (column: string, value: string) => Promise<{ error: Error | null }>;
+  };
 }
 
 interface TourChatRoomProps {
@@ -105,6 +164,7 @@ export default function TourChatRoom({
   const [selectedPickupHotel, setSelectedPickupHotel] = useState<{name: string, mediaUrls: string[]} | null>(null)
   const [pickupSchedule, setPickupSchedule] = useState<Array<{
     time: string
+    date: string
     hotel: string
     location: string
     people: number
@@ -145,7 +205,8 @@ export default function TourChatRoom({
       }
       
       if (!data || data.length === 0) return false
-      const bannedUntil = data[0].banned_until ? new Date(data[0].banned_until) : null
+      const banData = data[0] as ChatBan
+      const bannedUntil = banData.banned_until ? new Date(banData.banned_until) : null
       if (!bannedUntil) return true
       return bannedUntil.getTime() > Date.now()
     } catch (error) {
@@ -215,10 +276,11 @@ export default function TourChatRoom({
         return
       }
 
-      console.log('Tour data for pickup schedule:', tour)
+      const tourData = tour as Tour
+      console.log('Tour data for pickup schedule:', tourData)
 
       // 투어에 배정된 예약이 있는지 확인
-      if (!tour.reservation_ids || tour.reservation_ids.length === 0) {
+      if (!tourData.reservation_ids || tourData.reservation_ids.length === 0) {
         console.log('No reservations assigned to this tour')
         setPickupSchedule([])
         return
@@ -235,7 +297,7 @@ export default function TourChatRoom({
           customer_id,
           status
         `)
-        .in('id', tour.reservation_ids)
+        .in('id', tourData.reservation_ids)
         .not('pickup_hotel', 'is', null)
         .not('pickup_time', 'is', null)
 
@@ -244,26 +306,26 @@ export default function TourChatRoom({
         return
       }
 
-      console.log('Found reservations assigned to tour:', reservations?.length || 0, 'out of', tour.reservation_ids?.length || 0, 'assigned reservation IDs')
-      console.log('Assigned reservation IDs:', tour.reservation_ids)
-      console.log('Found reservation data:', reservations)
+      const reservationsData = reservations as Reservation[]
+      console.log('Found reservations assigned to tour:', reservationsData?.length || 0, 'out of', tourData.reservation_ids?.length || 0, 'assigned reservation IDs')
+      console.log('Assigned reservation IDs:', tourData.reservation_ids)
+      console.log('Found reservation data:', reservationsData)
       
       // 고객용 채팅에서 디버깅 정보 추가
       if (isPublicView) {
         console.log('=== 고객용 채팅 픽업 스케줄 디버깅 ===')
         console.log('투어 ID:', tourId)
-        console.log('투어 데이터:', tour)
-        console.log('예약 데이터:', reservations)
-        console.log('예약 개수:', reservations?.length || 0)
-        console.log('배정된 예약 ID들:', tour.reservation_ids)
+        console.log('투어 데이터:', tourData)
+        console.log('예약 데이터:', reservationsData)
+        console.log('예약 개수:', reservationsData?.length || 0)
+        console.log('배정된 예약 ID들:', tourData.reservation_ids)
         console.log('=====================================')
       }
 
       // 고객 정보 별도로 가져오기
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let customersData: any[] = []
-      if (reservations && reservations.length > 0) {
-        const customerIds = reservations.map((r: { customer_id: string }) => r.customer_id).filter(Boolean)
+      let customersData: Customer[] = []
+      if (reservationsData && reservationsData.length > 0) {
+        const customerIds = reservationsData.map((r: Reservation) => r.customer_id).filter(Boolean)
         if (customerIds.length > 0) {
           const { data: customers, error: customersError } = await supabase
             .from('customers')
@@ -273,28 +335,24 @@ export default function TourChatRoom({
           if (customersError) {
             console.error('Error loading customers:', customersError)
           } else {
-            customersData = customers || []
+            customersData = customers as Customer[] || []
           }
         }
       }
 
       // 예약 데이터에 고객 정보 병합
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const reservationsWithCustomers = reservations?.map((reservation: any) => ({
+      const reservationsWithCustomers = reservationsData?.map((reservation: Reservation) => ({
         ...reservation,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        customers: customersData.find((customer: any) => customer.id === reservation.customer_id)
+        customers: customersData.find((customer: Customer) => customer.id === reservation.customer_id)
       })) || []
 
       console.log('Reservations for pickup schedule:', reservationsWithCustomers)
 
       // 픽업 호텔 정보 별도로 가져오기
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pickupHotelIds = [...new Set(reservationsWithCustomers.map((r: any) => r.pickup_hotel).filter(Boolean))]
+      const pickupHotelIds = [...new Set(reservationsWithCustomers.map((r: Reservation & { customers?: Customer }) => r.pickup_hotel).filter(Boolean))]
       console.log('Pickup hotel IDs:', pickupHotelIds)
       
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let pickupHotels: any[] = []
+      let pickupHotels: PickupHotel[] = []
       
       if (pickupHotelIds.length > 0) {
         const { data: hotelsData, error: hotelsError } = await supabase
@@ -306,23 +364,40 @@ export default function TourChatRoom({
         if (hotelsError) {
           console.error('Error loading pickup hotels:', hotelsError)
         } else {
-          pickupHotels = hotelsData || []
+          pickupHotels = hotelsData as PickupHotel[] || []
           console.log('Pickup hotels data:', pickupHotels)
         }
       }
 
       // 픽업 스케줄 데이터 생성 (호텔별로 그룹화)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const groupedByHotel = reservationsWithCustomers.reduce((acc: Record<string, any>, // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        reservation: any) => {
+      const groupedByHotel = reservationsWithCustomers.reduce((acc: Record<string, {
+        time: string;
+        date: string;
+        hotel: string;
+        location: string;
+        people: number;
+        customers: Array<{ name: string; people: number }>;
+      }>, reservation: Reservation & { customers?: Customer }) => {
         const hotel = pickupHotels.find(h => h.id === reservation.pickup_hotel)
         if (!hotel) {
           // 호텔 정보가 없으면 기본값 사용
           console.log('No hotel found for reservation:', reservation.id, 'hotel ID:', reservation.pickup_hotel)
           const hotelKey = `unknown-${reservation.pickup_hotel}`
           if (!acc[hotelKey]) {
+            const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : ''
+            const timeHour = pickupTime ? parseInt(pickupTime.split(':')[0]) : 0
+            
+            // 오후 9시(21:00) 이후면 날짜를 하루 빼기
+            let displayDate = tourDate || ''
+            if (timeHour >= 21 && tourDate) {
+              const date = new Date(tourDate)
+              date.setDate(date.getDate() - 1)
+              displayDate = date.toISOString().split('T')[0]
+            }
+            
             acc[hotelKey] = {
-              time: reservation.pickup_time || '',
+              time: formatTimeWithAMPM(pickupTime),
+              date: displayDate,
               hotel: `호텔 ID: ${reservation.pickup_hotel}`,
               location: '위치 미상',
               people: 0,
@@ -339,8 +414,20 @@ export default function TourChatRoom({
         
         const hotelKey = `${hotel.hotel}-${hotel.pick_up_location}`
         if (!acc[hotelKey]) {
+          const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : ''
+          const timeHour = pickupTime ? parseInt(pickupTime.split(':')[0]) : 0
+          
+          // 오후 9시(21:00) 이후면 날짜를 하루 빼기
+          let displayDate = tourDate || ''
+          if (timeHour >= 21 && tourDate) {
+            const date = new Date(tourDate)
+            date.setDate(date.getDate() - 1)
+            displayDate = date.toISOString().split('T')[0]
+          }
+          
           acc[hotelKey] = {
-            time: reservation.pickup_time || '',
+            time: formatTimeWithAMPM(pickupTime),
+            date: displayDate,
             hotel: hotel.hotel || '',
             location: hotel.pick_up_location || '',
             people: 0,
@@ -353,14 +440,19 @@ export default function TourChatRoom({
           people: reservation.total_people || 0
         })
         return acc
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      }, {} as Record<string, any>)
+      }, {} as Record<string, {
+        time: string;
+        date: string;
+        hotel: string;
+        location: string;
+        people: number;
+        customers: Array<{ name: string; people: number }>;
+      }>)
 
       const schedule = Object.values(groupedByHotel)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .sort((a: any, // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        b: any) => (a.time as string).localeCompare(b.time as string)) as Array<{
+        .sort((a, b) => a.time.localeCompare(b.time)) as Array<{
           time: string;
+          date: string;
           hotel: string;
           location: string;
           people: number;
@@ -471,8 +563,8 @@ export default function TourChatRoom({
       }
       
       console.log('Found rooms:', rooms)
-      const room = rooms?.[0]
-      setRoom(room)
+      const room = rooms?.[0] as ChatRoom | undefined
+      setRoom(room || null)
       if (room) {
         console.log('Room found, loading messages...')
         // soft-ban check on mount (오류가 발생해도 계속 진행)
@@ -516,7 +608,7 @@ export default function TourChatRoom({
 
       if (findError) throw findError
 
-      const existingRoom = existingRooms?.[0]
+      const existingRoom = existingRooms?.[0] as ChatRoom | undefined
 
       if (existingRoom) {
         setRoom(existingRoom)
@@ -672,8 +764,8 @@ export default function TourChatRoom({
     scrollToBottom()
 
     try {
-      const { data, error } = await supabase
-        .from('chat_messages')
+      const { data, error } = await (supabase
+        .from('chat_messages') as unknown as SupabaseInsertBuilder)
         .insert({
           room_id: room.id,
           sender_type: isPublicView ? 'customer' : 'guide',
@@ -688,11 +780,13 @@ export default function TourChatRoom({
       if (error) throw error
       
       // 실제 메시지로 교체
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === tempMessage.id ? data : msg
+      if (data) {
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === tempMessage.id ? data : msg
+          )
         )
-      )
+      }
     } catch (error) {
       console.error('Error sending message:', error)
       alert('An error occurred while sending the message.')
@@ -728,8 +822,8 @@ export default function TourChatRoom({
     try {
       setTogglingActive(true)
       const next = !room.is_active
-      const { error } = await supabase
-        .from('chat_rooms')
+      const { error } = await (supabase
+        .from('chat_rooms') as unknown as SupabaseUpdateBuilder)
         .update({ is_active: next })
         .eq('id', room.id)
       if (error) {
@@ -834,9 +928,9 @@ export default function TourChatRoom({
   }
 
   return (
-    <div className="flex flex-col h-full max-h-screen overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <div className="flex flex-col h-full overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* 채팅방 헤더 */}
-        <div className="p-1 lg:p-2 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm">
+        <div className="px-2 lg:px-3 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm">
           {!isPublicView && (
           <div className="mb-1">
             <div className="flex items-center justify-between">
@@ -907,14 +1001,15 @@ export default function TourChatRoom({
                 <ExternalLink size={12} className="lg:w-3.5 lg:h-3.5" />
               </button>
             )}
-            <a
+            {/* 옵션 상품 버튼 숨김 */}
+            {/* <a
               href="#options"
               className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-emerald-100 text-emerald-800 rounded border border-emerald-200 hover:bg-emerald-200 flex items-center justify-center"
               title="옵션 상품"
               aria-label="옵션 상품"
             >
               <Gift size={12} className="lg:w-3.5 lg:h-3.5" />
-            </a>
+            </a> */}
             {isPublicView && (
               <button
                 onClick={() => setShowPhotoGallery(true)}
@@ -981,12 +1076,12 @@ export default function TourChatRoom({
         <div className="bg-blue-50 border-t border-blue-200 p-2 lg:p-3">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-blue-900">
-              📅 픽업 스케줄 {pickupSchedule.length > 0 && `(${pickupSchedule.length}건)`}
+              📅 Pickup Schedule {pickupSchedule.length > 0 && `(${pickupSchedule.length})`}
             </h4>
             <button
               onClick={() => setShowPickupScheduleInline(false)}
               className="p-1 hover:bg-blue-200 rounded text-blue-700 text-xs"
-              title="닫기"
+              title="Close"
             >
               ✕
             </button>
@@ -1006,7 +1101,7 @@ export default function TourChatRoom({
             </div>
           ) : (
             <div className="text-center text-blue-600 py-2">
-              픽업 스케줄이 없습니다.
+              No pickup schedule available.
             </div>
           )}
         </div>
@@ -1205,6 +1300,7 @@ function PickupScheduleAccordion({
 }: { 
   schedule: {
     time: string;
+    date: string;
     hotel: string;
     location: string;
     people: number;
@@ -1214,36 +1310,63 @@ function PickupScheduleAccordion({
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [hotelMediaUrls, setHotelMediaUrls] = useState<string[]>([])
+  const [googleMapsLink, setGoogleMapsLink] = useState<string | null>(null)
+  const [youtubeLink, setYoutubeLink] = useState<string | null>(null)
 
-  // 픽업 호텔 미디어 데이터 가져오기
+  // 픽업 호텔 미디어 데이터, 구글맵 링크, 유튜브 링크 가져오기
   useEffect(() => {
-    const fetchHotelMedia = async () => {
+    const fetchHotelData = async () => {
       try {
         const { data: hotelData, error } = await supabase
           .from('pickup_hotels')
-          .select('media')
+          .select('media, link, youtube_link')
           .eq('hotel', schedule.hotel)
           .eq('pick_up_location', schedule.location)
           .single()
 
         if (error) {
-          console.error('Error fetching hotel media:', error)
+          console.error('Error fetching hotel data:', error)
           return
         }
 
-        if (hotelData?.media) {
-          setHotelMediaUrls(hotelData.media)
+        const hotel = hotelData as PickupHotel
+        if (hotel?.media) {
+          setHotelMediaUrls(hotel.media)
+        }
+        
+        if (hotel?.link) {
+          setGoogleMapsLink(hotel.link)
+        }
+
+        if (hotel?.youtube_link) {
+          setYoutubeLink(hotel.youtube_link)
         }
       } catch (error) {
-        console.error('Error fetching hotel media:', error)
+        console.error('Error fetching hotel data:', error)
       }
     }
 
-    fetchHotelMedia()
+    fetchHotelData()
   }, [schedule.hotel, schedule.location])
 
   const handlePhotoClick = () => {
     onPhotoClick(schedule.hotel, hotelMediaUrls)
+  }
+
+  const handleMapClick = () => {
+    if (googleMapsLink) {
+      window.open(googleMapsLink, '_blank')
+    } else {
+      console.log('No Google Maps link available for:', schedule.hotel, schedule.location)
+    }
+  }
+
+  const handleYoutubeClick = () => {
+    if (youtubeLink) {
+      window.open(youtubeLink, '_blank')
+    } else {
+      console.log('No YouTube link available for:', schedule.hotel, schedule.location)
+    }
   }
 
   return (
@@ -1255,7 +1378,7 @@ function PickupScheduleAccordion({
       >
           <div className="flex items-center space-x-2 flex-1">
             <div className="flex items-center space-x-2">
-              <span className="font-medium text-blue-900 text-xs">{schedule.time}</span>
+              <span className="font-medium text-blue-900 text-xs">{schedule.time} {schedule.date}</span>
               <span className="text-gray-400">•</span>
               <span className="text-gray-700 text-xs">{schedule.hotel}</span>
             </div>
@@ -1279,7 +1402,7 @@ function PickupScheduleAccordion({
             {/* 위치 정보 */}
             <div className="flex items-center space-x-1">
               <span className="text-gray-500 text-xs">📍</span>
-              <span className="text-gray-700 text-sm">{schedule.location}</span>
+              <span className="text-gray-700 text-xs">{schedule.location}</span>
             </div>
 
             {/* 액션 버튼들 */}
@@ -1287,24 +1410,37 @@ function PickupScheduleAccordion({
               {/* 사진 버튼 */}
               <button 
                 onClick={handlePhotoClick}
-                className="flex items-center space-x-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                className="flex items-center justify-center p-2 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                title="Photos"
               >
-                <Camera className="h-3 w-3" />
-                <span className="text-xs text-gray-600">사진</span>
+                <Camera className="h-4 w-4 text-gray-600" />
               </button>
 
-              {/* 맵 아이콘 */}
+              {/* 맵 버튼 */}
               <button 
-                className="flex items-center space-x-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                className="flex items-center justify-center p-2 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
                 onClick={(e) => {
                   e.stopPropagation()
-                  // TODO: 맵 연결 로직 구현
-                  console.log('Open map for:', schedule.hotel, schedule.location)
+                  handleMapClick()
                 }}
+                title="Open in Google Maps"
               >
-                <MapPin className="h-3 w-3" />
-                <span className="text-xs text-gray-600">맵</span>
+                <MapPin className="h-4 w-4 text-gray-600" />
               </button>
+
+              {/* 유튜브 버튼 */}
+              {youtubeLink && (
+                <button 
+                  className="flex items-center justify-center p-2 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleYoutubeClick()
+                  }}
+                  title="Watch Video"
+                >
+                  <Play className="h-4 w-4 text-gray-600" />
+                </button>
+              )}
             </div>
           </div>
         </div>

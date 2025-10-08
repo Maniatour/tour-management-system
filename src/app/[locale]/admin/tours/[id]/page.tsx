@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
-import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Map, MapPin, Clock, User, Users, Eye } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Plus, X, Check, Car, Settings, Hotel, Map, MapPin, Clock, User, Users, Eye, ChevronDown, ChevronUp } from 'lucide-react'
 // @ts-ignore
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
@@ -88,6 +88,9 @@ export default function TourDetailPage() {
   const [isPrivateTour, setIsPrivateTour] = useState<boolean>(false)
   const [showPrivateTourModal, setShowPrivateTourModal] = useState(false)
   const [pendingPrivateTourValue, setPendingPrivateTourValue] = useState<boolean>(false)
+  const [showPickupHotelModal, setShowPickupHotelModal] = useState(false)
+  const [selectedReservationForHotelChange, setSelectedReservationForHotelChange] = useState<any>(null)
+  const [hotelSearchTerm, setHotelSearchTerm] = useState('')
   const [connectionStatus, setConnectionStatus] = useState<{[key: string]: boolean}>({})
   const [productOptions, setProductOptions] = useState<{[productId: string]: {[optionId: string]: {id: string, name: string}}}>({})
   
@@ -1493,6 +1496,11 @@ export default function TourDetailPage() {
     setShowTimeModal(true)
   }
 
+  const handleEditPickupHotel = (reservation: any) => {
+    setSelectedReservationForHotelChange(reservation)
+    setShowPickupHotelModal(true)
+  }
+
   const handleSavePickupTime = async () => {
     if (!selectedReservation) return
 
@@ -1539,6 +1547,56 @@ export default function TourDetailPage() {
     setSelectedReservation(null)
     setPickupTimeValue('')
   }
+
+  const handleSavePickupHotel = async (newHotelId: string) => {
+    if (!selectedReservationForHotelChange) return
+
+    try {
+      const { error } = await (supabase as any)
+        .from('reservations')
+        .update({ pickup_hotel: newHotelId } as Database['public']['Tables']['reservations']['Update'])
+        .eq('id', selectedReservationForHotelChange.id)
+
+      if (error) throw error
+
+      // Update local state
+      setAssignedReservations((prev: any) => 
+        prev.map((res: any) => 
+          res.id === selectedReservationForHotelChange.id 
+            ? { ...res, pickup_hotel: newHotelId }
+            : res
+        )
+      )
+      setPendingReservations((prev: any) => 
+        prev.map((res: any) => 
+          res.id === selectedReservationForHotelChange.id 
+            ? { ...res, pickup_hotel: newHotelId }
+            : res
+        )
+      )
+
+      setShowPickupHotelModal(false)
+      setSelectedReservationForHotelChange(null)
+    } catch (error) {
+      console.error('Error saving pickup hotel:', error)
+    }
+  }
+
+  const handleCancelEditPickupHotel = () => {
+    setShowPickupHotelModal(false)
+    setSelectedReservationForHotelChange(null)
+    setHotelSearchTerm('')
+  }
+
+  // 검색어에 따라 호텔 목록 필터링
+  const filteredHotels = pickupHotels.filter((hotel: any) => {
+    if (!hotelSearchTerm) return true
+    const searchLower = hotelSearchTerm.toLowerCase()
+    return (
+      hotel.hotel?.toLowerCase().includes(searchLower) ||
+      hotel.pick_up_location?.toLowerCase().includes(searchLower)
+    )
+  })
 
   const openGoogleMaps = (link: string) => {
     if (link) {
@@ -1745,7 +1803,7 @@ export default function TourDetailPage() {
 
   // 투어 배정 상태 관련 함수들
   const getAssignmentStatusColor = () => {
-    if (!tour.assignment_status) {
+    if (!tour?.assignment_status) {
       return 'bg-gray-100 text-gray-800'
     }
     
@@ -1762,7 +1820,7 @@ export default function TourDetailPage() {
   }
 
   const getAssignmentStatusText = () => {
-    if (!tour.assignment_status) {
+    if (!tour?.assignment_status) {
       return '미정'
     }
     
@@ -1779,16 +1837,23 @@ export default function TourDetailPage() {
   }
 
   // 안전한 JSON 파싱 유틸리티 함수
-  const safeJsonParse = (str: string | null | undefined, fallback: any = null) => {
-    if (!str || typeof str !== 'string' || str.trim() === '') {
-      return fallback;
+  const safeJsonParse = (data: string | object | null | undefined, fallback: any = null) => {
+    // 이미 객체인 경우 그대로 반환
+    if (data && typeof data === 'object') {
+      return data;
     }
-    try {
-      return JSON.parse(str);
-    } catch (error) {
-      console.error('JSON 파싱 에러:', error, '입력값:', str);
-      return fallback;
+    
+    // 문자열인 경우 JSON 파싱 시도
+    if (data && typeof data === 'string' && data.trim() !== '') {
+      try {
+        return JSON.parse(data);
+      } catch (error) {
+        console.error('JSON 파싱 에러:', error, '입력값:', data);
+        return fallback;
+      }
     }
+    
+    return fallback;
   };
 
   // 전역 JSON.parse 오버라이드 (디버깅용)
@@ -1817,7 +1882,7 @@ export default function TourDetailPage() {
         return
       }
       
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('tours')
         .update({ tour_status: newStatus })
         .eq('id', tour.id)
@@ -1827,18 +1892,18 @@ export default function TourDetailPage() {
       }
 
       // 로컬 상태 업데이트
-      setTour(prev => ({ ...prev, tour_status: newStatus }))
+      setTour(prev => prev ? { ...prev, tour_status: newStatus } : null)
       
       // 캐시 무효화 (에러 방지)
       try {
-        cache.invalidate(cacheKeys.tours)
+        cache.delete(cacheKeys.tour(tour.id))
       } catch (error) {
         // 캐시 무효화 실패는 무시
       }
       
     } catch (error) {
       console.error('투어 상태 업데이트 실패:', error)
-      alert(`투어 상태 업데이트에 실패했습니다: ${error.message}`)
+      alert(`투어 상태 업데이트에 실패했습니다: ${(error as Error).message}`)
     }
   }
 
@@ -1866,7 +1931,7 @@ export default function TourDetailPage() {
       }
       
       // assignment_status 컬럼이 없을 수 있으므로 먼저 확인
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('tours')
         .update({ assignment_status: newStatus })
         .eq('id', tour.id)
@@ -1874,7 +1939,7 @@ export default function TourDetailPage() {
       if (error) {
         // 컬럼이 없으면 tour_note에 저장 (임시 해결책)
         if (error.message.includes('column "assignment_status" does not exist')) {
-          const { error: noteError } = await supabase
+          const { error: noteError } = await (supabase as any)
             .from('tours')
             .update({ tour_note: `assignment_status: ${newStatus}` })
             .eq('id', tour.id)
@@ -1888,18 +1953,18 @@ export default function TourDetailPage() {
       }
 
       // 로컬 상태 업데이트
-      setTour(prev => ({ ...prev, assignment_status: newStatus }))
+      setTour(prev => prev ? { ...prev, assignment_status: newStatus } : null)
       
       // 캐시 무효화 (에러 방지)
       try {
-        cache.invalidate(cacheKeys.tours)
+        cache.delete(cacheKeys.tour(tour.id))
       } catch (error) {
         // 캐시 무효화 실패는 무시
       }
       
     } catch (error) {
       console.error('배정 상태 업데이트 실패:', error)
-      alert(`배정 상태 업데이트에 실패했습니다: ${error.message}`)
+      alert(`배정 상태 업데이트에 실패했습니다: ${(error as Error).message}`)
     }
   }
 
@@ -2247,16 +2312,34 @@ export default function TourDetailPage() {
             {/* 픽업 스케줄 */}
             <div className="bg-white rounded-lg shadow-sm border">
               <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div 
+                  className="flex items-center justify-between cursor-pointer mb-3 p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  onClick={() => toggleSection('pickup-schedule')}
+                >
                   <h2 className="text-md font-semibold text-gray-900 flex items-center">
                     픽업 스케줄
                     <ConnectionStatusLabel status={connectionStatus.reservations} section="예약" />
                   </h2>
-                  <button className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
-                    자동생성
-                  </button>
-            </div>
-                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        // 자동생성 로직
+                      }}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                    >
+                      자동생성
+                    </button>
+                    {expandedSections.has('pickup-schedule') ? (
+                      <ChevronUp className="w-5 h-5 text-gray-500" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-gray-500" />
+                    )}
+                  </div>
+                </div>
+                
+                {expandedSections.has('pickup-schedule') && (
+                  <div className="space-y-2">
                   {assignedReservations.length > 0 ? (
                     (() => {
                       // 호텔별로 그룹화
@@ -2325,8 +2408,9 @@ export default function TourDetailPage() {
                     </div>
                   )}
                 </div>
-          </div>
-        </div>
+                )}
+              </div>
+            </div>
 
             {/* 옵션 관리 */}
             <div className="bg-white rounded-lg shadow-sm border">
@@ -2821,17 +2905,7 @@ export default function TourDetailPage() {
                             <span className="text-sm text-gray-700">
                               {(() => {
                                 const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'
-                                const timeHour = parseInt(pickupTime.split(':')[0])
-                                
-                                // 오후 9시(21:00) 이후면 날짜를 하루 빼기
-                                let displayDate = tour.tour_date || ''
-                                if (timeHour >= 21 && tour.tour_date) {
-                                  const date = new Date(tour.tour_date)
-                                  date.setDate(date.getDate() - 1)
-                                  displayDate = date.toISOString().split('T')[0]
-                                }
-                                
-                                return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
+                                return formatTimeWithAMPM(pickupTime)
                               })()}
                             </span>
                             <button
@@ -2846,9 +2920,21 @@ export default function TourDetailPage() {
                           </div>
                           
                           {/* 오른쪽 하단: 픽업 정보 */}
-                          <span className="text-sm text-gray-600 text-right">
-                            {getPickupHotelName(reservation.pickup_hotel || '')}
-                          </span>
+                          <div className="flex items-center space-x-1">
+                            <span className="text-sm text-gray-600">
+                              {getPickupHotelName(reservation.pickup_hotel || '')}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditPickupHotel(reservation)
+                              }}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="픽업 호텔 변경"
+                            >
+                              <Edit size={12} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -3075,21 +3161,63 @@ export default function TourDetailPage() {
                           </div>
                         </div>
                         
-                        {/* 중단: 필수 선택 옵션 */}
+                        {/* 중단: Choices 표시 */}
                         <div className="mb-2">
-                          {reservation.selected_options && Object.entries(reservation.selected_options).some(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0) ? (
-                            <div className="flex flex-wrap gap-1">
-                              {Object.entries(reservation.selected_options)
-                                .filter(([optionId, choices]) => choices && Array.isArray(choices) && (choices as any[]).length > 0)
-                                .map(([optionId, choices]) => (
-                                  <span key={optionId} className={`text-xs px-2 py-1 rounded ${getOptionBadgeColor(optionId)}`}>
-                                    {getOptionName(optionId, (reservation as any).product_id || '')}
-                                  </span>
-                                ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-400">선택된 옵션 없음</span>
-                          )}
+                          {(() => {
+                            // choices 데이터 파싱
+                            let parsedChoices = safeJsonParse(reservation.choices, null);
+                            
+                            // choices 데이터에서 선택된 옵션 찾기
+                            if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                              const selectedOptions = parsedChoices.required
+                                .map((choice: Record<string, unknown>) => {
+                                  if (!choice || typeof choice !== 'object') return null;
+                                  
+                                  // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                                  const selectedOption = choice.options && Array.isArray(choice.options) 
+                                    ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
+                                    : null;
+                                  
+                                  if (selectedOption) {
+                                    const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                                    return optionName;
+                                  }
+                                  
+                                  // 선택된 옵션이 없으면 첫 번째 옵션
+                                  if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                    const firstOption = choice.options[0] as Record<string, unknown>;
+                                    const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                                    return optionName;
+                                  }
+                                  
+                                  return null;
+                                })
+                                .filter(Boolean);
+                              
+                              if (selectedOptions.length > 0) {
+                                return (
+                                  <div className="flex flex-wrap gap-1">
+                                    {selectedOptions.map((optionName: string, index: number) => {
+                                      // 옵션 이름에 따라 다른 색상 적용
+                                      const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
+                                      const badgeClass = isAntelopeX 
+                                        ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
+                                        : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                                      
+                                      return (
+                                        <span key={index} className={badgeClass}>
+                                          ✓ {String(optionName)}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              }
+                            }
+                            
+                            // choices 데이터가 없는 경우
+                            return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
+                          })()}
                         </div>
                         
                         {/* 하단: 픽업 시간 | 픽업 정보 */}
@@ -3100,17 +3228,7 @@ export default function TourDetailPage() {
                             <span className="text-sm text-gray-700">
                               {(() => {
                                 const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'
-                                const timeHour = parseInt(pickupTime.split(':')[0])
-                                
-                                // 오후 9시(21:00) 이후면 날짜를 하루 빼기
-                                let displayDate = tour.tour_date || ''
-                                if (timeHour >= 21 && tour.tour_date) {
-                                  const date = new Date(tour.tour_date)
-                                  date.setDate(date.getDate() - 1)
-                                  displayDate = date.toISOString().split('T')[0]
-                                }
-                                
-                                return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
+                                return formatTimeWithAMPM(pickupTime)
                               })()}
                             </span>
                             <button
@@ -3125,9 +3243,21 @@ export default function TourDetailPage() {
                           </div>
                           
                           {/* 오른쪽 하단: 픽업 정보 */}
-                          <span className="text-sm text-gray-600 text-right">
-                            {getPickupHotelName(reservation.pickup_hotel || '')}
-                          </span>
+                          <div className="flex items-center space-x-1">
+                            <span className="text-sm text-gray-600">
+                              {getPickupHotelName(reservation.pickup_hotel || '')}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditPickupHotel(reservation)
+                              }}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="픽업 호텔 변경"
+                            >
+                              <Edit size={12} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -3246,25 +3376,27 @@ export default function TourDetailPage() {
                             <span className="text-sm text-gray-700">
                               {(() => {
                                 const pickupTime = reservation.pickup_time ? reservation.pickup_time.substring(0, 5) : '08:00'
-                                const timeHour = parseInt(pickupTime.split(':')[0])
-                                
-                                // 오후 9시(21:00) 이후면 날짜를 하루 빼기
-                                let displayDate = tour.tour_date || ''
-                                if (timeHour >= 21 && tour.tour_date) {
-                                  const date = new Date(tour.tour_date)
-                                  date.setDate(date.getDate() - 1)
-                                  displayDate = date.toISOString().split('T')[0]
-                                }
-                                
-                                return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
+                                return formatTimeWithAMPM(pickupTime)
                               })()}
                             </span>
                           </div>
                           
                           {/* 오른쪽 하단: 픽업 정보 */}
-                          <span className="text-sm text-gray-600 text-right">
-                            {getPickupHotelName(reservation.pickup_hotel || '')}
-                          </span>
+                          <div className="flex items-center space-x-1">
+                            <span className="text-sm text-gray-600">
+                              {getPickupHotelName(reservation.pickup_hotel || '')}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditPickupHotel(reservation)
+                              }}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="픽업 호텔 변경"
+                            >
+                              <Edit size={12} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -3738,6 +3870,68 @@ export default function TourDetailPage() {
                 onSave={(b: any) => handleBookingSubmit(b as unknown as LocalTourHotelBooking)}
                 onCancel={handleCloseTourHotelBookingForm}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 픽업 호텔 변경 모달 */}
+      {showPickupHotelModal && selectedReservationForHotelChange && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-md mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                픽업 호텔 변경
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                {getCustomerName(selectedReservationForHotelChange.customer_id || '')}님의 픽업 호텔을 선택해주세요.
+              </p>
+              
+              {/* 검색 입력 필드 */}
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="호텔명 또는 픽업 위치로 검색..."
+                  value={hotelSearchTerm}
+                  onChange={(e) => setHotelSearchTerm(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {filteredHotels.length > 0 ? (
+                  filteredHotels.map((hotel: any) => (
+                    <button
+                      key={hotel.id}
+                      onClick={() => handleSavePickupHotel(hotel.id)}
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                        selectedReservationForHotelChange.pickup_hotel === hotel.id
+                          ? 'border-blue-500 bg-blue-50 text-blue-900'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="font-medium text-sm">{hotel.hotel}</div>
+                      {hotel.pick_up_location && (
+                        <div className="text-xs text-gray-500 mt-1">{hotel.pick_up_location}</div>
+                      )}
+                    </button>
+                  ))
+                ) : (
+                  <div className="text-center py-4 text-gray-500">
+                    <p className="text-sm">검색 결과가 없습니다.</p>
+                    <p className="text-xs mt-1">다른 검색어를 시도해보세요.</p>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  onClick={handleCancelEditPickupHotel}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  취소
+                </button>
+              </div>
             </div>
           </div>
         </div>

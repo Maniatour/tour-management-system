@@ -49,7 +49,7 @@ export default function ReservationDetailsPage() {
       try {
         const { data, error } = await supabase
           .from('reservations')
-          .select('*')
+          .select('*, choices')
           .eq('id', reservationId)
           .single()
 
@@ -85,6 +85,9 @@ export default function ReservationDetailsPage() {
             selectedOptionPrices: (typeof data.selected_option_prices === 'string'
               ? (() => { try { return JSON.parse(data.selected_option_prices as unknown as string) } catch { return {} } })()
               : (data.selected_option_prices as { [key: string]: number }) || {}),
+            choices: (typeof data.choices === 'string'
+              ? (() => { try { return JSON.parse(data.choices as unknown as string) } catch { return {} } })()
+              : (data.choices as { [key: string]: unknown }) || {}),
             hasExistingTour: false
           }
           setReservation(mapped)

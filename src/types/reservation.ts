@@ -16,6 +16,7 @@ export interface PickupHotel {
   address: string
   pin: string | null
   link: string | null
+  youtube_link: string | null
   media: string[] | null
   is_active: boolean | null
   group_number: number | null
@@ -30,6 +31,8 @@ export interface PricingInfo {
   productPriceTotal: number
   requiredOptions: { [key: string]: unknown }
   requiredOptionTotal: number
+  choices: { [key: string]: unknown }
+  choicesTotal: number
   subtotal: number
   couponCode: string
   couponDiscount: number
@@ -81,6 +84,8 @@ export interface Reservation {
   productPriceTotal?: number
   requiredOptions?: { [key: string]: unknown }
   requiredOptionTotal?: number
+  choices?: { [key: string]: unknown }
+  choicesTotal?: number
   selectedChoices?: { [key: string]: { selected: string; timestamp: string } }
   choiceTotal?: number
   subtotal?: number

@@ -70,11 +70,11 @@ export default function AdminProducts({ params }: AdminProductsProps) {
         const subCategoryCounts: { [key: string]: number } = {}
         
         data.forEach(product => {
-          if (product.category) {
-            categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1
+          if ((product as any).category) {
+            categoryCounts[(product as any).category] = (categoryCounts[(product as any).category] || 0) + 1
           }
-          if (product.sub_category) {
-            subCategoryCounts[product.sub_category] = (subCategoryCounts[product.sub_category] || 0) + 1
+          if ((product as any).sub_category) {
+            subCategoryCounts[(product as any).sub_category] = (subCategoryCounts[(product as any).sub_category] || 0) + 1
           }
         })
         
@@ -368,6 +368,10 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                      p.id === productId ? { ...p, status: newStatus } : p
                    )
                  )
+               }}
+               onProductCopied={() => {
+                 // 상품 복사 후 목록 새로고침
+                 fetchProducts()
                }}
              />
            ))}

@@ -35,53 +35,7 @@ import OptionsManualModal from '@/components/product/OptionsManualModal'
 // 타입 정의는 필요에 따라 추가
 
 // 기존 인터페이스들은 폼에서 사용하기 위해 유지
-type ProductDetailsFields = {
-  slogan1: string
-  slogan2: string
-  slogan3: string
-  description: string
-  included: string
-  not_included: string
-  pickup_drop_info: string
-  luggage_info: string
-  tour_operation_info: string
-  preparation_info: string
-  small_group_info: string
-  companion_info: string
-  exclusive_booking_info: string
-  cancellation_policy: string
-  chat_announcement: string
-}
 
-type ProductDetailsFormData = {
-  useCommonDetails: boolean
-  productDetails: {
-    [languageCode: string]: ProductDetailsFields
-  }
-  currentLanguage: string
-  // 각 언어별 공통 정보 사용 여부
-  useCommonForField: {
-    [languageCode: string]: {
-      slogan1: boolean
-      slogan2: boolean
-      slogan3: boolean
-      description: boolean
-      included: boolean
-      not_included: boolean
-      pickup_drop_info: boolean
-      luggage_info: boolean
-      tour_operation_info: boolean
-      preparation_info: boolean
-      small_group_info: boolean
-      companion_info: boolean
-      exclusive_booking_info: boolean
-      cancellation_policy: boolean
-      chat_announcement: boolean
-    }
-  }
-}
-
-type DetailsRow = Partial<ProductDetailsFields>
 interface ProductOptionChoice {
   id: string // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
   name: string
@@ -102,6 +56,9 @@ interface ProductOption {
   isMultiple: boolean
   choices: ProductOptionChoice[]
   linkedOptionId?: string // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
+  adultPrice?: number
+  childPrice?: number
+  infantPrice?: number
   priceAdjustment?: {
     adult: number
     child: number
@@ -161,12 +118,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   console.log('AdminProductEdit: Component initializing...')
   
   // 안전한 JSON 파싱 유틸리티 함수
-  const safeJsonParse = (str: string | null | undefined, fallback: any = null) => {
+  const safeJsonParse = <T = unknown>(str: string | null | undefined, fallback: T | null = null): T | null => {
     if (!str || typeof str !== 'string' || str.trim() === '') {
       return fallback;
     }
     try {
-      return JSON.parse(str);
+      return JSON.parse(str) as T;
     } catch (error) {
       console.error('JSON 파싱 에러:', error, '입력값:', str);
       return fallback;
@@ -513,11 +470,12 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       if (!isNewProduct && id !== 'new') {
         try {
           // 1. 상품 기본 정보 로드
-        const { data: productData, error: productError } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: productData, error: productError } = await (supabase as any)
           .from('products')
           .select('*')
           .eq('id', id)
-          .single() as any
+          .single()
 
           if (productError) throw productError
 
@@ -531,6 +489,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           console.log('arrival_city:', productData.arrival_city)
 
           // 2. 상품 옵션 정보 로드
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: optionsData, error: optionsError } = await (supabase as any)
             .from('product_options')
             .select('*')
@@ -548,7 +507,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           }
 
           // 3. 상품 세부정보 로드 (공통 여부 반영)
-          let detailsData: any = null
+          let detailsData: unknown = null
           let detailsError: { code?: string } | null = null
           if (productData?.use_common_details) {
             const { data: commonData, error: commonError } = await supabase
@@ -560,10 +519,11 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             detailsError = commonError
           } else {
             // 다국어 데이터를 모두 가져와서 언어별로 매핑
-            const { data: ownData, error: ownError } = await supabase
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: ownData, error: ownError } = await (supabase as any)
               .from('product_details_multilingual')
               .select('*')
-              .eq('product_id', id) as any
+              .eq('product_id', id)
             detailsData = ownData
             detailsError = ownError
           }
@@ -596,7 +556,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           })
 
           // 5. 폼 데이터 설정
-          setFormData((prevData: any) => ({
+          setFormData((prevData) => ({
             ...prevData,
             name: productData.name || '',
             nameEn: productData.name_en || '',
@@ -636,48 +596,84 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             // product_details 데이터 설정 (다국어 지원)
             productDetails: detailsData ? (() => {
               // 다국어 데이터를 언어별로 매핑
-              const multilingualDetails: any = {}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const multilingualDetails: Record<string, any> = {}
               if (Array.isArray(detailsData) && detailsData.length > 0) {
                 // 여러 언어 데이터가 있는 경우
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 detailsData.forEach((item: any) => {
-                  multilingualDetails[item.language_code || 'ko'] = {
-                    slogan1: item.slogan1 || '',
-                    slogan2: item.slogan2 || '',
-                    slogan3: item.slogan3 || '',
-                    description: item.description || '',
-                    included: item.included || '',
-                    not_included: item.not_included || '',
-                    pickup_drop_info: item.pickup_drop_info || '',
-                    luggage_info: item.luggage_info || '',
-                    tour_operation_info: item.tour_operation_info || '',
-                    preparation_info: item.preparation_info || '',
-                    small_group_info: item.small_group_info || '',
-                    notice_info: item.notice_info || '',
-                    private_tour_info: item.private_tour_info || '',
-                    cancellation_policy: item.cancellation_policy || '',
-                    chat_announcement: item.chat_announcement || '',
-                    tags: item.tags || []
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  multilingualDetails[(item as any).language_code || 'ko'] = {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    slogan1: (item as any).slogan1 || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    slogan2: (item as any).slogan2 || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    slogan3: (item as any).slogan3 || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    description: (item as any).description || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    included: (item as any).included || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    not_included: (item as any).not_included || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    pickup_drop_info: (item as any).pickup_drop_info || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    luggage_info: (item as any).luggage_info || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    tour_operation_info: (item as any).tour_operation_info || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    preparation_info: (item as any).preparation_info || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    small_group_info: (item as any).small_group_info || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    notice_info: (item as any).notice_info || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    private_tour_info: (item as any).private_tour_info || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    cancellation_policy: (item as any).cancellation_policy || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    chat_announcement: (item as any).chat_announcement || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    tags: (item as any).tags || []
                   }
                 })
               } else if (detailsData) {
                 // 단일 언어 데이터가 있는 경우
-                multilingualDetails[detailsData.language_code || 'ko'] = {
-                  slogan1: detailsData.slogan1 || '',
-                  slogan2: detailsData.slogan2 || '',
-                  slogan3: detailsData.slogan3 || '',
-                  description: detailsData.description || '',
-                  included: detailsData.included || '',
-                  not_included: detailsData.not_included || '',
-                  pickup_drop_info: detailsData.pickup_drop_info || '',
-                  luggage_info: detailsData.luggage_info || '',
-                  tour_operation_info: detailsData.tour_operation_info || '',
-                  preparation_info: detailsData.preparation_info || '',
-                  small_group_info: detailsData.small_group_info || '',
-                  notice_info: detailsData.notice_info || '',
-                  private_tour_info: detailsData.private_tour_info || '',
-                  cancellation_policy: detailsData.cancellation_policy || '',
-                  chat_announcement: detailsData.chat_announcement || '',
-                  tags: detailsData.tags || []
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                multilingualDetails[(detailsData as any).language_code || 'ko'] = {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  slogan1: (detailsData as any).slogan1 || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  slogan2: (detailsData as any).slogan2 || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  slogan3: (detailsData as any).slogan3 || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  description: (detailsData as any).description || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  included: (detailsData as any).included || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  not_included: (detailsData as any).not_included || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  pickup_drop_info: (detailsData as any).pickup_drop_info || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  luggage_info: (detailsData as any).luggage_info || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  tour_operation_info: (detailsData as any).tour_operation_info || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  preparation_info: (detailsData as any).preparation_info || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  small_group_info: (detailsData as any).small_group_info || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  notice_info: (detailsData as any).notice_info || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  private_tour_info: (detailsData as any).private_tour_info || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  cancellation_policy: (detailsData as any).cancellation_policy || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  chat_announcement: (detailsData as any).chat_announcement || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  tags: (detailsData as any).tags || []
                 }
               }
               
@@ -726,7 +722,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             },
             // 각 필드별 공통 정보 사용 여부 초기값
             useCommonForField: (() => {
-              const useCommonForField: any = {}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const useCommonForField: Record<string, any> = {}
               const availableLanguages = ['ko', 'en', 'ja', 'zh']
               
               // 모든 언어에 대해 초기값 설정
@@ -760,8 +757,10 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 }
 
                 // 간단한 그룹화 로직
-                const groupedOptions: any = {}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const groupedOptions: Record<string, any> = {}
                 
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 optionsData.forEach((option: any) => {
                   const optionKey = option.name || 'unnamed'
                   
@@ -773,6 +772,9 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                       isRequired: option.is_required || false,
                       isMultiple: option.is_multiple || false,
                       linkedOptionId: option.linked_option_id || undefined,
+                      adultPrice: option.adult_price_adjustment || 0,
+                      childPrice: option.child_price_adjustment || 0,
+                      infantPrice: option.infant_price_adjustment || 0,
                       choices: []
                     }
                   }
@@ -809,311 +811,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     fetchProductData()
   }, [id, isNewProduct, supabase])
 
-  // handleSubmit 함수 제거됨 - 각 탭별로 개별 저장
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    try {
-      // 폼 데이터 검증
-      if (!formData.name || !formData.name.trim()) {
-        alert('상품명을 입력해주세요.')
-        return
-      }
-
-      if (!formData.category) {
-        alert('카테고리를 선택해주세요.')
-        return
-      }
-
-      // 옵션 데이터 검증
-      if (formData.productOptions && formData.productOptions.length > 0) {
-        for (const option of formData.productOptions) {
-          if (!option.name || !option.name.trim()) {
-            alert('모든 옵션의 이름을 입력해주세요.')
-            return
-          }
-          
-          if (option.choices && option.choices.length > 0) {
-            for (const choice of option.choices) {
-              if (!choice.name || !choice.name.trim()) {
-                alert('모든 선택 항목의 이름을 입력해주세요.')
-                return
-              }
-            }
-          }
-        }
-      }
-
-      console.log('폼 제출 시작 - 데이터:', formData)
-      
-      // 1. 상품 기본 정보 저장
-      let productId = id
-      if (isNewProduct) {
-        // 새 상품 생성
-        const { data: productData, error: productError } = await (supabase as any)
-          .from('products')
-          .insert({
-            name: formData.name.trim(),
-            name_en: formData.nameEn?.trim() || null,
-            product_code: formData.productCode.trim(),
-            category: formData.category,
-            sub_category: formData.subCategory.trim(),
-            description: formData.description.trim(),
-            duration: formData.duration.toString(),
-            base_price: formData.basePrice.adult,
-            max_participants: formData.maxParticipants,
-            status: formData.status,
-            departure_city: formData.departureCity.trim(),
-            arrival_city: formData.arrivalCity.trim(),
-            departure_country: formData.departureCountry,
-            arrival_country: formData.arrivalCountry,
-            languages: formData.languages,
-            group_size: formData.groupSize.toString(),
-            adult_age: formData.adultAge,
-            child_age_min: formData.childAgeMin,
-            child_age_max: formData.childAgeMax,
-            infant_age: formData.infantAge,
-            tour_departure_time: formData.tourDepartureTime?.trim() || null,
-            tour_departure_times: formData.tourDepartureTimes ? JSON.stringify(formData.tourDepartureTimes) : null,
-            internal_name_ko: formData.internalNameKo?.trim() || null,
-            internal_name_en: formData.internalNameEn?.trim() || null,
-            customer_name_ko: formData.customerNameKo?.trim() || null,
-            customer_name_en: formData.customerNameEn?.trim() || null,
-            use_common_details: formData.useCommonDetails
-          })
-          .select()
-          .single()
-
-        if (productError) {
-          console.error('상품 생성 오류:', productError)
-          throw new Error(`상품 생성 실패: ${productError.message}`)
-        }
-        
-        productId = productData.id
-        console.log('새 상품 생성됨:', productId)
-      } else {
-        // 기존 상품 업데이트
-        const { error: productError } = await (supabase as any)
-          .from('products')
-          .update({
-            name: formData.name.trim(),
-            name_en: formData.nameEn?.trim() || null,
-            product_code: formData.productCode.trim(),
-            category: formData.category,
-            sub_category: formData.subCategory.trim(),
-            description: formData.description.trim(),
-            duration: formData.duration.toString(),
-            base_price: formData.basePrice.adult,
-            max_participants: formData.maxParticipants,
-            status: formData.status,
-            departure_city: formData.departureCity.trim(),
-            arrival_city: formData.arrivalCity.trim(),
-            departure_country: formData.departureCountry,
-            arrival_country: formData.arrivalCountry,
-            languages: formData.languages,
-            group_size: formData.groupSize.toString(),
-            adult_age: formData.adultAge,
-            child_age_min: formData.childAgeMin,
-            child_age_max: formData.childAgeMax,
-            infant_age: formData.infantAge,
-            tour_departure_time: formData.tourDepartureTime?.trim() || null,
-            tour_departure_times: formData.tourDepartureTimes ? JSON.stringify(formData.tourDepartureTimes) : null,
-            internal_name_ko: formData.internalNameKo?.trim() || null,
-            internal_name_en: formData.internalNameEn?.trim() || null,
-            customer_name_ko: formData.customerNameKo?.trim() || null,
-            customer_name_en: formData.customerNameEn?.trim() || null,
-            use_common_details: formData.useCommonDetails
-          })
-          .eq('id', productId)
-          .select()
-          .single()
-
-        if (productError) {
-          console.error('상품 업데이트 오류:', productError)
-          throw new Error(`상품 업데이트 실패: ${productError.message}`)
-        }
-        
-        console.log('기존 상품 업데이트됨:', productId)
-      }
-
-      // 2. 기존 product_options 삭제 (업데이트 시)
-      if (!isNewProduct && formData.productOptions && formData.productOptions.length > 0) {
-        console.log('기존 옵션 삭제 시작')
-        const { error: deleteError } = await (supabase as any)
-          .from('product_options')
-          .delete()
-          .eq('product_id', productId)
-        
-        if (deleteError) {
-          console.error('기존 옵션 삭제 오류:', deleteError)
-          throw new Error(`기존 옵션 삭제 실패: ${deleteError.message}`)
-        }
-        console.log('기존 옵션 삭제 완료')
-      }
-
-      // 3. 새로운 product_options 저장
-      if (formData.productOptions && formData.productOptions.length > 0) {
-        console.log('새 옵션 저장 시작:', formData.productOptions.length, '개')
-        
-        for (const option of formData.productOptions) {
-          // 새로운 통합 구조: choices가 있는 경우, 각 choice를 별도의 product_options 행으로 저장
-          if (option.choices && option.choices.length > 0) {
-            for (const choice of option.choices) {
-              const { data: optionData, error: optionError } = await (supabase as any)
-                .from('product_options')
-                .insert({
-                  product_id: productId,
-                  name: option.name.trim(),
-                  description: option.description.trim(),
-                  is_required: option.isRequired,
-                  is_multiple: option.isMultiple,
-                  linked_option_id: option.linkedOptionId || null,
-                  choice_name: choice.name.trim(),
-                  choice_description: choice.description.trim(),
-                  adult_price_adjustment: choice.priceAdjustment.adult,
-                  child_price_adjustment: choice.priceAdjustment.child,
-                  infant_price_adjustment: choice.priceAdjustment.infant,
-                  is_default: choice.isDefault || false
-                })
-                .select()
-                .single()
-
-              if (optionError) {
-                console.error('옵션 저장 오류:', optionError)
-                throw new Error(`옵션 저장 실패: ${optionError.message}`)
-              }
-
-              console.log('옵션 저장됨:', optionData.id, 'choice:', choice.name)
-            }
-          } else {
-            // choices가 없는 경우, 기본 옵션만 저장
-            const { data: optionData, error: optionError } = await (supabase as any)
-              .from('product_options')
-              .insert({
-                product_id: productId,
-                name: option.name.trim(),
-                description: option.description.trim(),
-                is_required: option.isRequired,
-                is_multiple: option.isMultiple,
-                linked_option_id: option.linkedOptionId || null,
-                choice_name: null,
-                choice_description: null,
-                adult_price_adjustment: 0,
-                child_price_adjustment: 0,
-                infant_price_adjustment: 0,
-                is_default: true
-              })
-              .select()
-              .single()
-
-            if (optionError) {
-              console.error('옵션 저장 오류:', optionError)
-              throw new Error(`옵션 저장 실패: ${optionError.message}`)
-            }
-
-            console.log('옵션 저장됨:', optionData.id)
-          }
-        }
-      }
-
-      // 4. product_details 저장 (공통 미사용 시에만)
-      console.log('product_details 저장 시작')
-      if (!formData.useCommonDetails) {
-        // 다국어 지원을 위한 데이터 변환
-        const currentLang = formData.currentLanguage || 'ko'
-        
-        const { data: existingDetails, error: selectDetailsError } = await supabase
-          .from('product_details_multilingual')
-          .select('id')
-          .eq('product_id', productId)
-          .eq('language_code', currentLang)
-          .maybeSingle() as any
-
-        if (selectDetailsError) {
-          console.error('product_details 존재 여부 확인 오류:', selectDetailsError)
-          throw new Error(`상품 세부정보 조회 실패: ${selectDetailsError.message}`)
-        }
-
-        const currentDetails = formData.productDetails[currentLang] || {
-          slogan1: '',
-          slogan2: '',
-          slogan3: '',
-          description: '',
-          included: '',
-          not_included: '',
-          pickup_drop_info: '',
-          luggage_info: '',
-          tour_operation_info: '',
-          preparation_info: '',
-          small_group_info: '',
-          notice_info: '',
-          private_tour_info: '',
-          cancellation_policy: '',
-          chat_announcement: '',
-          tags: []
-        }
-
-        const detailsData = {
-          product_id: productId,
-          language_code: currentLang,
-          slogan1: currentDetails.slogan1,
-          slogan2: currentDetails.slogan2,
-          slogan3: currentDetails.slogan3,
-          description: currentDetails.description,
-          included: currentDetails.included,
-          not_included: currentDetails.not_included,
-          pickup_drop_info: currentDetails.pickup_drop_info,
-          luggage_info: currentDetails.luggage_info,
-          tour_operation_info: currentDetails.tour_operation_info,
-          preparation_info: currentDetails.preparation_info,
-          small_group_info: currentDetails.small_group_info,
-          notice_info: currentDetails.notice_info,
-          private_tour_info: currentDetails.private_tour_info,
-          cancellation_policy: currentDetails.cancellation_policy,
-          chat_announcement: currentDetails.chat_announcement,
-          tags: currentDetails.tags
-        } as any
-
-        if (existingDetails) {
-          // 업데이트
-          const { error: detailsError } = await (supabase as any)
-            .from('product_details_multilingual')
-            .update({
-              ...detailsData,
-              updated_at: new Date().toISOString()
-            })
-            .eq('product_id', productId)
-            .eq('language_code', currentLang)
-
-          if (detailsError) {
-            console.error('product_details 업데이트 오류:', detailsError)
-            throw new Error(`상품 세부정보 업데이트 실패: ${detailsError.message}`)
-          }
-          console.log('product_details 업데이트 완료')
-        } else {
-          // 새로 생성
-          const { error: detailsError } = await (supabase as any)
-            .from('product_details_multilingual')
-            .insert([detailsData])
-
-          if (detailsError) {
-            console.error('product_details 생성 오류:', detailsError)
-            throw new Error(`상품 세부정보 생성 실패: ${detailsError.message}`)
-          }
-          console.log('product_details 생성 완료')
-        }
-      }
-
-      console.log('상품 저장 완료!')
-      alert('상품이 성공적으로 저장되었습니다!')
-    router.push(`/${locale}/admin/products`)
-      
-    } catch (error) {
-      console.error('상품 저장 중 오류 발생:', error)
-      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
-      alert(`상품 저장 중 오류가 발생했습니다.\n\n오류 내용: ${errorMessage}\n\n다시 시도해주세요.`)
-    }
-  }
 
   // 상품 삭제 함수
   const handleDeleteProduct = async () => {
@@ -1123,6 +820,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       setDeleting(true)
       
       // 1. 상품 옵션 삭제
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: optionsError } = await (supabase as any)
         .from('product_options')
         .delete()
@@ -1134,6 +832,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       }
 
       // 2. 상품 삭제
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: productError } = await (supabase as any)
         .from('products')
         .delete()
@@ -1174,6 +873,9 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         description: globalOption.description || '',
         isRequired: false,
         isMultiple: false,
+        adultPrice: Number(globalOption.adultPrice) || 0,
+        childPrice: Number(globalOption.childPrice) || 0,
+        infantPrice: Number(globalOption.infantPrice) || 0,
         choices: [{
           id: `choice-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: globalOption.name || '새 선택 항목',
@@ -1441,9 +1143,9 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                   currentLanguage: formData.currentLanguage,
                   useCommonForField: formData.useCommonForField
                 }}
-                setFormData={(updater: any) => {
-                  setFormData((prev: any) => {
-                    const current: any = {
+                setFormData={(updater: unknown) => {
+                  setFormData((prev) => {
+                    const current = {
                       useCommonDetails: prev.useCommonDetails,
                       productDetails: prev.productDetails,
                       currentLanguage: prev.currentLanguage,
@@ -1470,7 +1172,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 productId={id}
                 isNewProduct={isNewProduct}
                 formData={formData}
-                setFormData={setFormData}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                setFormData={(data: unknown) => setFormData(data as any)}
                 teamType={formData?.team_type}
               />
             )}

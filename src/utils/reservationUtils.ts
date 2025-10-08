@@ -31,6 +31,15 @@ export const getChannelName = (channelId: string, channels: Channel[] | null) =>
   return channels?.find(c => c.id === channelId)?.name || 'Unknown'
 }
 
+// 채널 정보 가져오기 (이름과 파비콘)
+export const getChannelInfo = (channelId: string, channels: Channel[] | null) => {
+  const channel = channels?.find(c => c.id === channelId)
+  return {
+    name: channel?.name || 'Unknown',
+    favicon_url: (channel as any)?.favicon_url || null
+  }
+}
+
 // 상태 라벨 가져오기
 export const getStatusLabel = (status: string, t: (key: string) => string) => {
   return t(`status.${status}`)

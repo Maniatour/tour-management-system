@@ -16,6 +16,7 @@ import TourReportForm from '@/components/TourReportForm'
 import TourWeather from '@/components/TourWeather'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
+import { formatTimeWithAMPM } from '@/lib/utils'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -793,7 +794,7 @@ export default function GuideTourDetailPage() {
                               displayDate = date.toISOString().split('T')[0]
                             }
                             
-                            return `${pickupTime} ${displayDate}`
+                            return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
                           })()}
                         </div>
                         
@@ -826,7 +827,7 @@ export default function GuideTourDetailPage() {
                         {hotel?.pick_up_location && (
                           <div className="flex items-center space-x-2">
                             <MapPin className="w-4 h-4 text-red-500" />
-                            <span className="text-sm text-gray-600">{hotel.pick_up_location}</span>
+                            <span className="text-xs text-gray-600">{hotel.pick_up_location}</span>
                           </div>
                         )}
                       </div>

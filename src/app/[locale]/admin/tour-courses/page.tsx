@@ -831,7 +831,7 @@ const DetailPanel = ({
 
 export default function TourCoursesPage() {
   // 최적화된 투어 코스 데이터 로딩
-  const { data: tourCourses = [], loading: coursesLoading, refetch: refetchCourses } = useOptimizedData({
+  const { data: tourCourses = [], loading: coursesLoading, refetch: refetchCourses, invalidateCache: invalidateCoursesCache } = useOptimizedData({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('tour_courses')
@@ -1077,6 +1077,8 @@ export default function TourCoursesPage() {
 
       if (error) throw error
 
+      // 캐시 무효화 후 데이터 다시 로드
+      invalidateCoursesCache()
       await refetchCourses()
       resetForm()
       setShowEditModal(false)
@@ -1112,12 +1114,15 @@ export default function TourCoursesPage() {
           price_adult: formData.price_adult || null,
           price_child: formData.price_child || null,
           price_infant: formData.price_infant || null,
-          is_active: formData.is_active
+          is_active: formData.is_active,
+          parent_id: formData.parent_id || null
         })
         .eq('id', editingCourse.id)
 
       if (error) throw error
 
+      // 캐시 무효화 후 데이터 다시 로드
+      invalidateCoursesCache()
       await refetchCourses()
       resetForm()
       setShowEditModal(false)
@@ -1140,6 +1145,8 @@ export default function TourCoursesPage() {
 
       if (error) throw error
 
+      // 캐시 무효화 후 데이터 다시 로드
+      invalidateCoursesCache()
       await refetchCourses()
     } catch (error) {
       console.error('투어 코스 삭제 오류:', error)

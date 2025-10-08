@@ -74,6 +74,7 @@ interface PickupHotel {
   address: string
   pin: string | null
   link: string | null
+  youtube_link: string | null
   media: string[] | null
   is_active: boolean | null
   group_number: number | null
@@ -103,6 +104,12 @@ interface PickupHotelFormProps {
   }
 }
 
+// YouTube URL 유효성 검사 함수
+const isValidYouTubeUrl = (url: string): boolean => {
+  const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/)|youtu\.be\/)[\w-]+/
+  return youtubeRegex.test(url)
+}
+
 export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, translations }: PickupHotelFormProps) {
   const [formData, setFormData] = useState({
     hotel: hotel?.hotel || '',
@@ -112,6 +119,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
     address: hotel?.address || '',
     pin: hotel?.pin || '',
     link: hotel?.link || '',
+    youtube_link: hotel?.youtube_link || '',
     media: hotel?.media || [],
     is_active: hotel?.is_active ?? true,
     group_number: hotel?.group_number || null
@@ -166,7 +174,12 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
       const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
       console.log('PickupHotelForm Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
       
-      const mapOptions: any = {
+      const mapOptions: {
+        center: { lat: number; lng: number }
+        zoom: number
+        mapTypeId: string
+        mapId?: string
+      } = {
         center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스 중심
         zoom: 12,
         mapTypeId: window.google.maps.MapTypeId.ROADMAP
@@ -208,7 +221,7 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
               position: { lat, lng },
               map: map,
               title: '선택된 위치'
-            }) as any
+            }) as GoogleMapsAdvancedMarker
             console.log('PickupHotelForm 클릭 - 기본 Marker 사용')
           }
 
@@ -255,7 +268,12 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
             const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
             console.log('PickupHotelForm Search Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
             
-            const mapOptions: any = {
+            const mapOptions: {
+              center: { lat: number; lng: number }
+              zoom: number
+              mapTypeId: string
+              mapId?: string
+            } = {
               center: { lat, lng },
               zoom: 15,
               mapTypeId: window.google.maps.MapTypeId.ROADMAP
@@ -376,6 +394,12 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
 
     if (!formData.address.trim()) {
       alert('주소를 입력해주세요.')
+      return
+    }
+
+    // YouTube 링크 유효성 검사
+    if (formData.youtube_link && !isValidYouTubeUrl(formData.youtube_link)) {
+      alert('올바른 YouTube 링크를 입력해주세요. (예: https://www.youtube.com/watch?v=...)')
       return
     }
 
@@ -525,7 +549,26 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
               </span>
             )}
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-6">
+            {/* 픽업 호텔로 사용 온오프 스위치 */}
+            <div className="flex items-center space-x-2">
+              <span className="text-sm font-medium text-gray-700">픽업 호텔로 사용</span>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  formData.is_active ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    formData.is_active ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            
+            <div className="flex items-center space-x-3">
             <button
               type="button"
               onClick={translateHotelData}
@@ -554,12 +597,13 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
               )}
               {suggesting ? '추천 중...' : 'AI 추천'}
             </button>
-            <button
-              onClick={onCancel}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <X size={24} />
-            </button>
+              <button
+                onClick={onCancel}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={24} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -610,8 +654,8 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* 호텔명과 픽업 위치 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 호텔명, 픽업 위치, 그룹 번호 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {translations.hotel} *
@@ -638,6 +682,27 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
                 placeholder={translations.pickUpLocation}
                 required
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                그룹 번호
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={formData.group_number || ''}
+                onChange={(e) => setFormData({ 
+                  ...formData, 
+                  group_number: e.target.value ? parseFloat(e.target.value) : null 
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="예: 1.0, 1.1, 2.0"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                소숫점 지원 (예: 1.0, 1.1, 2.0)
+              </p>
             </div>
           </div>
 
@@ -727,45 +792,26 @@ export default function PickupHotelForm({ hotel, onSubmit, onCancel, onDelete, t
             </div>
           </div>
 
-          {/* 그룹 번호와 활성화 상태 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                그룹 번호
-              </label>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={formData.group_number || ''}
-                  onChange={(e) => setFormData({ 
-                    ...formData, 
-                    group_number: e.target.value ? parseFloat(e.target.value) : null 
-                  })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="예: 1.0, 1.1, 2.0"
-                />
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                소숫점 지원 (예: 1.0, 1.1, 2.0). 픽업 요청 시 반올림된 번호의 호텔로 안내됩니다.
-              </p>
+          {/* YouTube 링크 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              YouTube 링크
+            </label>
+            <div className="flex items-center space-x-2">
+              <Video size={20} className="text-gray-400" />
+              <input
+                type="url"
+                value={formData.youtube_link}
+                onChange={(e) => setFormData({ ...formData, youtube_link: e.target.value })}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="https://www.youtube.com/watch?v=..."
+              />
             </div>
-
-            <div>
-              <label className="flex items-center space-x-3">
-                <input
-                  type="checkbox"
-                  checked={formData.is_active}
-                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <span className="text-sm font-medium text-gray-700">
-                  픽업 호텔로 사용 (체크 해제 시 예약 폼에서 선택할 수 없음)
-                </span>
-              </label>
-            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              호텔 소개 영상이나 픽업 장소 안내 영상의 YouTube 링크를 입력하세요.
+            </p>
           </div>
+
 
           {/* 미디어 파일 */}
           <div>

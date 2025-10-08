@@ -131,9 +131,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       const matchesSearch = !searchTerm || 
       reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.channelRN.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getCustomerName(reservation.customerId, customers as Customer[] || []).toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getProductName(reservation.productId, products).toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getChannelName(reservation.channelId, channels).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getCustomerName(reservation.customerId, (customers as Customer[]) || []).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getProductName(reservation.productId, products || []).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getChannelName(reservation.channelId, channels || []).toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.tourDate.toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.tourTime.toLowerCase().includes(searchTerm.toLowerCase()) ||
       reservation.pickUpHotel.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -175,12 +175,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           bValue = new Date(b.tourDate)
           break
         case 'customer_name':
-          aValue = getCustomerName(a.customerId, customers as Customer[])
-          bValue = getCustomerName(b.customerId, customers as Customer[])
+          aValue = getCustomerName(a.customerId, (customers as Customer[]) || [])
+          bValue = getCustomerName(b.customerId, (customers as Customer[]) || [])
           break
         case 'product_name':
-          aValue = getProductName(a.productId, products)
-          bValue = getProductName(b.productId, products)
+          aValue = getProductName(a.productId, products || [])
+          bValue = getProductName(b.productId, products || [])
           break
         default:
           aValue = new Date(a.addedTime)
@@ -295,7 +295,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     
     // 상품별 인원 통계
     const productStats = allReservations.reduce((groups, reservation) => {
-      const productName = getProductName(reservation.productId, products)
+      const productName = getProductName(reservation.productId, products || [])
       if (!groups[productName]) {
         groups[productName] = 0
       }
@@ -303,15 +303,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       return groups
     }, {} as Record<string, number>)
 
-    // 채널별 인원 통계
+    // 채널별 인원 통계 (파비콘 정보 포함)
     const channelStats = allReservations.reduce((groups, reservation) => {
-      const channelName = getChannelName(reservation.channelId, channels)
-      if (!groups[channelName]) {
-        groups[channelName] = 0
+      const channel = channels?.find(c => c.id === reservation.channelId)
+      const channelName = getChannelName(reservation.channelId, channels || [])
+      const channelKey = `${channelName}|${reservation.channelId}`
+      
+      if (!groups[channelKey]) {
+        groups[channelKey] = {
+          name: channelName,
+          count: 0,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          favicon_url: (channel as any)?.favicon_url || null,
+          channelId: reservation.channelId
+        }
       }
-      groups[channelName] += reservation.totalPeople
+      groups[channelKey].count += reservation.totalPeople
       return groups
-    }, {} as Record<string, number>)
+    }, {} as Record<string, { name: string; count: number; favicon_url: string | null; channelId: string }>)
 
     // 상태별 인원 통계
     const statusStats = allReservations.reduce((groups, reservation) => {
@@ -325,7 +334,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
     return {
       productStats: Object.entries(productStats).sort(([,a], [,b]) => b - a),
-      channelStats: Object.entries(channelStats).sort(([,a], [,b]) => b - a),
+      channelStats: Object.values(channelStats).sort((a, b) => b.count - a.count),
       statusStats: Object.entries(statusStats).sort(([,a], [,b]) => b - a),
       totalReservations: allReservations.length,
       totalPeople: allReservations.reduce((total, reservation) => total + reservation.totalPeople, 0)
@@ -343,7 +352,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return filteredReservations.map(reservation => ({
       id: reservation.id,
       product_id: reservation.productId,
-      product_name: getProductName(reservation.productId, products),
+      product_name: getProductName(reservation.productId, products || []),
       tour_date: reservation.tourDate,
       tour_status: reservation.status,
       tour_time: reservation.tourTime,
@@ -353,10 +362,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       child: reservation.child,
       infant: reservation.infant,
       total_people: reservation.totalPeople,
-      customer_name: getCustomerName(reservation.customerId, customers as Customer[]),
-      channel_name: getChannelName(reservation.channelId, channels),
+      customer_name: getCustomerName(reservation.customerId, (customers as Customer[]) || []),
+      channel_name: getChannelName(reservation.channelId, channels || []),
       created_at: reservation.addedTime,
-      total_price: calculateTotalPrice(reservation, products, optionChoices)
+      total_price: calculateTotalPrice(reservation, products || [], optionChoices || [])
     }))
   }, [filteredReservations, products, customers, channels, optionChoices])
 
@@ -761,7 +770,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   <span>{t('title')}</span>
                   <span className="text-lg text-gray-500">-</span>
                   <span className="text-lg text-blue-600">
-                    {getCustomerName(customerIdFromUrl, customers as Customer[])}
+                    {getCustomerName(customerIdFromUrl, (customers as Customer[]) || [])}
                   </span>
                 </div>
               ) : (
@@ -858,7 +867,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
             >
               <option value="all">모든 채널</option>
-              {channels.map(channel => (
+              {channels?.map(channel => (
                 <option key={channel.id} value={channel.id}>{channel.name}</option>
               ))}
             </select>
@@ -1073,11 +1082,35 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       채널별
                     </h5>
                     <div className="space-y-0.5">
-                      {weeklyStats.channelStats.slice(0, 3).map(([channelName, count]) => (
-                        <div key={channelName} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
-                          <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{channelName}</span>
+                      {weeklyStats.channelStats.slice(0, 3).map((channelInfo) => (
+                        <div key={channelInfo.channelId} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
+                          <div className="flex items-center space-x-1 flex-1 mr-1">
+                            {channelInfo.favicon_url ? (
+                              <img 
+                                src={channelInfo.favicon_url} 
+                                alt={`${channelInfo.name} favicon`} 
+                                className="h-3 w-3 rounded flex-shrink-0"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement
+                                  target.style.display = 'none'
+                                  const parent = target.parentElement
+                                  if (parent) {
+                                    const fallback = document.createElement('div')
+                                    fallback.className = 'h-3 w-3 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
+                                    fallback.innerHTML = '🌐'
+                                    parent.appendChild(fallback)
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div className="h-3 w-3 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                                🌐
+                              </div>
+                            )}
+                            <span className="text-gray-700 truncate text-xs">{channelInfo.name}</span>
+                          </div>
                           <span className="font-semibold bg-green-100 text-green-800 px-1 py-0.5 rounded text-xs">
-                            {count}명
+                            {channelInfo.count}명
                           </span>
                         </div>
                       ))}
@@ -1239,7 +1272,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         <div className="space-y-2">
                           {(() => {
                             const productGroups = reservations.reduce((groups, reservation) => {
-                              const productName = getProductName(reservation.productId, products)
+                              const productName = getProductName(reservation.productId, products || [])
                               if (!groups[productName]) {
                                 groups[productName] = 0
                               }
@@ -1272,7 +1305,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         <div className="space-y-2">
                           {(() => {
                             const channelGroups = reservations.reduce((groups, reservation) => {
-                              const channelName = getChannelName(reservation.channelId, channels)
+                              const channelName = getChannelName(reservation.channelId, channels || [])
                               if (!groups[channelName]) {
                                 groups[channelName] = 0
                               }
@@ -1282,14 +1315,44 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                             
                             return Object.entries(channelGroups)
                               .sort(([,a], [,b]) => b - a)
-                              .map(([channelName, count]) => (
-                                <div key={channelName} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
-                                  <span className="text-gray-700 text-sm truncate flex-1 mr-2">{channelName}</span>
-                                  <span className="font-semibold text-sm bg-green-100 text-green-800 px-2 py-1 rounded-full min-w-0">
-                                    {count}명
-                                  </span>
-                                </div>
-                              ))
+                              .map(([channelName, count]) => {
+                      const channel = channels?.find(c => c.name === channelName)
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
+                                return (
+                                  <div key={channelName} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
+                                    <div className="flex items-center space-x-2 flex-1 mr-2 min-w-0">
+                                      {channelWithFavicon?.favicon_url ? (
+                                        <img 
+                                          src={channelWithFavicon.favicon_url} 
+                                          alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
+                                          className="h-4 w-4 rounded flex-shrink-0"
+                                          onError={(e) => {
+                                            // 파비콘 로드 실패 시 기본 아이콘으로 대체
+                                            const target = e.target as HTMLImageElement
+                                            target.style.display = 'none'
+                                            const parent = target.parentElement
+                                            if (parent) {
+                                              const fallback = document.createElement('div')
+                                              fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
+                                              fallback.innerHTML = '🌐'
+                                              parent.appendChild(fallback)
+                                            }
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                                          🌐
+                                        </div>
+                                      )}
+                                      <span className="text-gray-700 text-sm truncate">{channelName}</span>
+                                    </div>
+                                    <span className="font-semibold text-sm bg-green-100 text-green-800 px-2 py-1 rounded-full min-w-0">
+                                      {count}명
+                                    </span>
+                                  </div>
+                                )
+                              })
                           })()}
                         </div>
                       </div>
@@ -1376,7 +1439,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       }
                       return null;
                     })()}
-                    <span>{getCustomerName(reservation.customerId, customers as Customer[])}</span>
+                    <span>{getCustomerName(reservation.customerId, (customers as Customer[]) || [])}</span>
                   </div>
                   <div className="text-xs text-gray-500">{(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}</div>
                 </div>
@@ -1386,14 +1449,98 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               <div className="p-4 space-y-3">
                 {/* 상품 정보 */}
                 <div>
-                  <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products)}</div>
-                  {/* 필수 선택된 옵션들만 표시 */}
+                  <div className="flex items-center space-x-2 mb-2">
+                    <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products || [])}</div>
+                    
+                    {/* Choices 뱃지 표시 */}
+                    {(() => {
+                      // 디버깅을 위한 choices 데이터 로그
+                      console.log('Group Card - Reservation choices data:', reservation.choices);
+                      console.log('Group Card - Reservation choices type:', typeof reservation.choices);
+                      
+                      // choices 데이터 파싱 (문자열인 경우 JSON 파싱)
+                      let parsedChoices = reservation.choices;
+                      if (typeof reservation.choices === 'string') {
+                        try {
+                          parsedChoices = JSON.parse(reservation.choices);
+                          console.log('Group Card - Parsed choices:', parsedChoices);
+                        } catch (error) {
+                          console.error('Group Card - Error parsing choices:', error);
+                        }
+                      }
+                      
+                      // choices 데이터에서 선택된 옵션 찾기
+                      if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                        console.log('Group Card - Choices required array:', parsedChoices.required);
+                        
+                        const selectedOptions = parsedChoices.required
+                          .map((choice: Record<string, unknown>) => {
+                            console.log('Group Card - Processing choice:', choice);
+                            if (!choice || typeof choice !== 'object') return null;
+                            
+                            // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                            const selectedOption = choice.options && Array.isArray(choice.options) 
+                              ? choice.options.find((option: Record<string, unknown>) => {
+                                  console.log('Group Card - Checking option:', option, 'is_default:', option.is_default);
+                                  return option.is_default === true;
+                                })
+                              : null;
+                            
+                            console.log('Group Card - Selected option:', selectedOption);
+                            
+                            if (selectedOption) {
+                              const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                              console.log('Group Card - Selected option name:', optionName);
+                              return optionName;
+                            }
+                            
+                            // 선택된 옵션이 없으면 첫 번째 옵션
+                            if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                              const firstOption = choice.options[0] as Record<string, unknown>;
+                              const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                              console.log('Group Card - First option name:', optionName);
+                              return optionName;
+                            }
+                            
+                            return null;
+                          })
+                          .filter(Boolean);
+                        
+                        console.log('Group Card - Selected options:', selectedOptions);
+                        
+                        return selectedOptions.map((optionName: string, index: number) => {
+                          // 옵션 이름에 따라 다른 색상 적용
+                          const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
+                          const badgeClass = isAntelopeX 
+                            ? "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200"
+                            : "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200";
+                          
+                          return (
+                            <span key={index} className={badgeClass}>
+                              ✓ {String(optionName)}
+                            </span>
+                          );
+                        });
+                      }
+                      
+                      // choices 데이터가 없는 경우 뱃지 표시 안함
+                      if (!parsedChoices || Object.keys(parsedChoices).length === 0) {
+                        console.log('Group Card - No choices data, no badge shown');
+                        return null;
+                      }
+                      
+                      console.log('Group Card - Choices data exists but no required array');
+                      return null;
+                    })()}
+                  </div>
+                  
+                  {/* 기존 selectedOptions 표시 (필요한 경우) */}
                   {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
                     <div className="mt-1 space-y-1">
                       {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
                         if (!choiceIds || choiceIds.length === 0) return null;
                         
-                        const option = productOptions.find(opt => opt.id === optionId);
+                        const option = productOptions?.find(opt => opt.id === optionId);
                         
                         if (!option) return null;
                         
@@ -1429,24 +1576,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 {reservation.pickUpHotel && (
                   <div className="flex items-center space-x-2">
                     <MapPin className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-900">{getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels)}</span>
+                    <span className="text-sm text-gray-900">{getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])}</span>
                   </div>
                 )}
 
                 {/* 채널 정보 */}
                 <div className="flex items-center space-x-2">
-                  <div className="h-4 w-4 rounded-full bg-blue-100 flex items-center justify-center">
-                    <div className="h-2 w-2 rounded-full bg-blue-500"></div>
+                  <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center">
+                    <span className="text-gray-400 text-xs">🌐</span>
                   </div>
-                  <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels)}</div>
-                  <div className="text-xs text-gray-500">({channels.find(c => c.id === reservation.channelId)?.type})</div>
+                  <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels || [])}</div>
+                    <div className="text-xs text-gray-500">({channels?.find(c => c.id === reservation.channelId)?.type})</div>
                 </div>
 
                 {/* 가격 정보 */}
                 <div className="pt-2 border-t border-gray-100">
                   <div className="flex items-center justify-between">
                     <div className="text-lg font-bold text-blue-600">
-                      ${calculateTotalPrice(reservation, products, optionChoices).toLocaleString()}
+                      ${calculateTotalPrice(reservation, products || [], optionChoices || []).toLocaleString()}
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
@@ -1599,7 +1746,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         }
                         return null;
                       })()}
-                      <span>{getCustomerName(reservation.customerId, customers as Customer[])}</span>
+                      <span>{getCustomerName(reservation.customerId, (customers as Customer[]) || [])}</span>
                     </div>
                     <div className="text-xs text-gray-500">{(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}</div>
                   </div>
@@ -1609,15 +1756,98 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 <div className="p-4 space-y-3">
                   {/* 상품 정보 */}
                   <div>
-                    <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products)}</div>
+                    <div className="flex items-center space-x-2 mb-2">
+                      <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products || [])}</div>
+                      
+                      {/* Choices 뱃지 표시 */}
+                      {(() => {
+                        // 디버깅을 위한 choices 데이터 로그
+                        console.log('Reservation choices data:', reservation.choices);
+                        console.log('Reservation choices type:', typeof reservation.choices);
+                        
+                        // choices 데이터 파싱 (문자열인 경우 JSON 파싱)
+                        let parsedChoices = reservation.choices;
+                        if (typeof reservation.choices === 'string') {
+                          try {
+                            parsedChoices = JSON.parse(reservation.choices);
+                            console.log('Parsed choices:', parsedChoices);
+                          } catch (error) {
+                            console.error('Error parsing choices:', error);
+                          }
+                        }
+                        
+                        // choices 데이터에서 선택된 옵션 찾기
+                        if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                          console.log('Choices required array:', parsedChoices.required);
+                          
+                          const selectedOptions = parsedChoices.required
+                            .map((choice: Record<string, unknown>) => {
+                              console.log('Processing choice:', choice);
+                              if (!choice || typeof choice !== 'object') return null;
+                              
+                              // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                              const selectedOption = choice.options && Array.isArray(choice.options) 
+                                ? choice.options.find((option: Record<string, unknown>) => {
+                                    console.log('Checking option:', option, 'is_default:', option.is_default);
+                                    return option.is_default === true;
+                                  })
+                                : null;
+                              
+                              console.log('Selected option:', selectedOption);
+                              
+                              if (selectedOption) {
+                                const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                                console.log('Selected option name:', optionName);
+                                return optionName;
+                              }
+                              
+                              // 선택된 옵션이 없으면 첫 번째 옵션
+                              if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                const firstOption = choice.options[0] as Record<string, unknown>;
+                                const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                                console.log('First option name:', optionName);
+                                return optionName;
+                              }
+                              
+                              return null;
+                            })
+                            .filter(Boolean);
+                          
+                          console.log('Selected options:', selectedOptions);
+                          
+                          return selectedOptions.map((optionName: string, index: number) => {
+                            // 옵션 이름에 따라 다른 색상 적용
+                            const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
+                            const badgeClass = isAntelopeX 
+                              ? "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200"
+                              : "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200";
+                            
+                            return (
+                              <span key={index} className={badgeClass}>
+                                ✓ {String(optionName)}
+                              </span>
+                            );
+                          });
+                        }
+                        
+                        // choices 데이터가 없는 경우 뱃지 표시 안함
+                        if (!parsedChoices || Object.keys(parsedChoices).length === 0) {
+                          console.log('No choices data, no badge shown');
+                          return null;
+                        }
+                        
+                        console.log('Choices data exists but no required array');
+                        return null;
+                      })()}
+                    </div>
                     
-                    {/* 필수 선택된 옵션들만 표시 */}
+                    {/* 기존 selectedOptions 표시 (필요한 경우) */}
                     {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
                       <div className="mt-1 space-y-1">
                         {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
                           if (!choiceIds || choiceIds.length === 0) return null;
                           
-                          const option = productOptions.find(opt => opt.id === optionId);
+                          const option = productOptions?.find(opt => opt.id === optionId);
                           
                           if (!option) return null;
                           
@@ -1634,116 +1864,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       </div>
                     )}
 
-                    {/* Choices 값 표시 */}
-                    {(() => {
-                      // choices 데이터가 있으면 표시
-                      if (reservation.choices && Object.keys(reservation.choices).length > 0) {
-                        return true;
-                      }
-                      
-                      // choices 데이터가 없지만 특정 상품인 경우 기본 선택사항 표시
-                      const productId = reservation.productId;
-                      if (productId === 'MDGCSUNRISE' || productId === 'MDGC1D') {
-                        return true;
-                      }
-                      
-                      return false;
-                    })() && (
-                      <div className="mt-1 space-y-1">
-                        {/* 디버깅을 위한 choices 데이터 로그 */}
-                        {process.env.NODE_ENV === 'development' && reservation.choices && (
-                          <div className="text-xs text-gray-400">
-                            Debug: {(() => {
-                              try {
-                                const jsonStr = JSON.stringify(reservation.choices);
-                                return jsonStr.substring(0, 100) + '...';
-                              } catch (error) {
-                                return 'Invalid JSON data';
-                              }
-                            })()}
-                          </div>
-                        )}
-                        
-                        {/* choices.required 배열 형태 처리 - 선택된 옵션만 표시 */}
-                        {reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required) && (
-                          <>
-                            {reservation.choices.required.map((choice: Record<string, unknown>, index: number) => {
-                              if (!choice || typeof choice !== 'object') return null;
-                              
-                              // 선택된 옵션 찾기 (is_default가 true인 옵션)
-                              const selectedOption = choice.options && Array.isArray(choice.options) 
-                                ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
-                                : null;
-                              
-                              // 선택된 옵션이 있으면 해당 옵션 이름만 표시
-                              if (selectedOption) {
-                                return (
-                                  <div key={`required-${index}`} className="text-xs text-green-600">
-                                    <span className="font-medium">✓ {String(selectedOption.name_ko || selectedOption.name || selectedOption.id)}</span>
-                                  </div>
-                                );
-                              }
-                              
-                              // 선택된 옵션이 없으면 첫 번째 옵션 표시
-                              if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
-                                const firstOption = choice.options[0] as Record<string, unknown>;
-                                return (
-                                  <div key={`required-${index}`} className="text-xs text-green-600">
-                                    <span className="font-medium">✓ {String(firstOption.name_ko || firstOption.name || firstOption.id)}</span>
-                                  </div>
-                                );
-                              }
-                              
-                              return null;
-                            })}
-                          </>
-                        )}
-                        
-                        {/* choices가 객체이지만 required가 없는 경우 처리 */}
-                        {reservation.choices && !reservation.choices.required && typeof reservation.choices === 'object' && (
-                          <div className="text-xs text-blue-600">
-                            <span className="font-medium">Choices:</span>
-                            <div className="ml-2 text-xs text-gray-500">
-                              {JSON.stringify(reservation.choices).substring(0, 200)}...
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* choices 객체의 다른 속성들 처리 */}
-                        {reservation.choices && typeof reservation.choices === 'object' && (
-                          <>
-                            {Object.entries(reservation.choices).map(([key, value]) => {
-                              if (key === 'required') return null; // 이미 처리됨
-                              if (!value || typeof value !== 'object') return null;
-                              
-                              return (
-                                <div key={key} className="text-xs text-blue-600">
-                                  <span className="font-medium">{key}</span>
-                                  {Array.isArray(value) && value.length > 0 && (
-                                    <div className="ml-2 space-y-0.5">
-                                      {value.map((item: unknown, index: number) => (
-                                        <div key={index} className="text-xs text-gray-500">
-                                          • {typeof item === 'string' ? item : (typeof item === 'object' && item ? 
-                                            String((item as Record<string, unknown>).name_ko || (item as Record<string, unknown>).name || (item as Record<string, unknown>).id || JSON.stringify(item)) : 
-                                            String(item))}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </>
-                        )}
-                        
-                        {/* choices 데이터가 없는 경우 fallback 표시 */}
-                        {(!reservation.choices || Object.keys(reservation.choices).length === 0) && (
-                          <div className="text-xs text-green-600">
-                            <span className="font-medium">✓ Lower Antelope Canyon</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
 
                   {/* 투어 날짜 */}
@@ -1764,24 +1884,55 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   {reservation.pickUpHotel && (
                     <div className="flex items-center space-x-2">
                       <MapPin className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm text-gray-900">{getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels)}</span>
+                      <span className="text-sm text-gray-900">{getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])}</span>
                     </div>
                   )}
 
                   {/* 채널 정보 */}
                   <div className="flex items-center space-x-2">
-                    <div className="h-4 w-4 rounded-full bg-blue-100 flex items-center justify-center">
-                      <div className="h-2 w-2 rounded-full bg-blue-500"></div>
-                    </div>
-                    <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels)}</div>
-                    <div className="text-xs text-gray-500">({channels.find(c => c.id === reservation.channelId)?.type})</div>
+                    {(() => {
+                      const channel = channels?.find(c => c.id === reservation.channelId)
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
+                      console.log('Channel data for reservation:', {
+                        channelId: reservation.channelId,
+                        channelName: channelWithFavicon?.name,
+                        favicon_url: channelWithFavicon?.favicon_url,
+                        fullChannel: channel
+                      })
+                      return channelWithFavicon?.favicon_url ? (
+                        <img 
+                          src={channelWithFavicon.favicon_url} 
+                          alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
+                          className="h-4 w-4 rounded flex-shrink-0"
+                          onError={(e) => {
+                            // 파비콘 로드 실패 시 기본 아이콘으로 대체
+                            const target = e.target as HTMLImageElement
+                            target.style.display = 'none'
+                            const parent = target.parentElement
+                            if (parent) {
+                              const fallback = document.createElement('div')
+                              fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
+                              fallback.innerHTML = '🌐'
+                              parent.appendChild(fallback)
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-gray-400 text-xs">🌐</span>
+                        </div>
+                      )
+                    })()}
+                    <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels || [])}</div>
+                    <div className="text-xs text-gray-500">({channels?.find(c => c.id === reservation.channelId)?.type})</div>
                   </div>
 
                   {/* 가격 정보 */}
                   <div className="pt-2 border-t border-gray-100">
                     <div className="flex items-center justify-between">
                       <div className="text-lg font-bold text-blue-600">
-                        ${calculateTotalPrice(reservation, products, optionChoices).toLocaleString()}
+                        ${calculateTotalPrice(reservation, products || [], optionChoices || []).toLocaleString()}
                       </div>
                       <button
                         onClick={(e) => {
@@ -2001,7 +2152,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">
-                입금 내역 관리 - {getCustomerName(selectedReservationForPayment.customerId, customers)}
+                입금 내역 관리 - {getCustomerName(selectedReservationForPayment.customerId, (customers as Customer[]) || [])}
               </h2>
               <button
                 onClick={() => {
@@ -2018,7 +2169,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
               <PaymentRecordsList
                 reservationId={selectedReservationForPayment.id}
-                customerName={getCustomerName(selectedReservationForPayment.customerId, customers)}
+                customerName={getCustomerName(selectedReservationForPayment.customerId, (customers as Customer[]) || [])}
               />
             </div>
           </div>

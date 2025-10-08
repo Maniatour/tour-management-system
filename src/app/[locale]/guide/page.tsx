@@ -118,13 +118,37 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
         let teamMap = new Map()
         let teamEnMap = new Map()
         if (allEmails.length > 0) {
-          const { data: teamData } = await supabase
-            .from('team')
-            .select('email, name_ko, name_en')
-            .in('email', allEmails) as { data: { email: string; name_ko: string; name_en: string }[] | null }
-          
-          teamMap = new Map((teamData || []).map(member => [member.email, member.name_ko]))
-          teamEnMap = new Map((teamData || []).map(member => [member.email, member.name_en]))
+          try {
+            // 먼저 직접 조회 시도 (더 안전한 방식)
+            const { data: directData, error: directError } = await supabase
+              .from('team')
+              .select('email, name_ko, name_en')
+              .in('email', allEmails) as { data: { email: string; name_ko: string; name_en: string }[] | null }
+            
+            if (!directError && directData) {
+              teamMap = new Map((directData || []).map(member => [member.email, member.name_ko]))
+              teamEnMap = new Map((directData || []).map(member => [member.email, member.name_en]))
+            } else {
+              // 직접 조회 실패 시 RPC 함수 시도 (fallback)
+              console.log('Direct query failed, trying RPC function...', directError)
+              
+              const { data: rpcData, error: rpcError } = await supabase
+                .rpc('get_team_members_info', { p_emails: allEmails })
+              
+              if (!rpcError && rpcData) {
+                teamMap = new Map((rpcData || []).map(member => [member.email, member.name_ko]))
+                teamEnMap = new Map((rpcData || []).map(member => [member.email, member.name_en]))
+              } else {
+                console.error('Both direct query and RPC failed:', { directError, rpcError })
+                teamMap = new Map()
+                teamEnMap = new Map()
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching team data:', error)
+            teamMap = new Map()
+            teamEnMap = new Map()
+          }
         }
 
         // 차량 정보 가져오기

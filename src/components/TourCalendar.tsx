@@ -330,12 +330,10 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
   const handleMouseEnter = useCallback((tour: ExtendedTour, event: React.MouseEvent) => {
     setHoveredTour(tour)
     const rect = event.currentTarget.getBoundingClientRect()
-    const scrollTop = window.pageYOffset || document.documentElement.scrollTop
-    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft
     
     setTooltipPosition({
-      x: rect.left + scrollLeft + rect.width / 2,
-      y: rect.top + scrollTop - 10
+      x: rect.left + rect.width / 2,
+      y: rect.top - 10
     })
   }, [])
 
@@ -694,7 +692,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
       {/* 호버 툴팁 */}
       {hoveredTour && (
         <div
-          className="absolute z-50 bg-white border border-gray-300 rounded-lg shadow-xl p-3 max-w-xs pointer-events-none"
+          className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-xl p-3 max-w-xs pointer-events-none"
           style={{
             left: `${tooltipPosition.x}px`,
             top: `${tooltipPosition.y}px`,

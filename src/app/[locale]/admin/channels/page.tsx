@@ -456,13 +456,43 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className="flex-shrink-0 h-10 w-10">
-                        <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                          <Globe className="h-6 w-6 text-blue-600" />
-                        </div>
+                        {(channel as any).favicon_url ? (
+                          <img 
+                            src={(channel as any).favicon_url} 
+                            alt={`${channel.name} favicon`} 
+                            className="h-10 w-10 rounded-full object-cover"
+                            onError={(e) => {
+                              // 파비콘 로드 실패 시 기본 아이콘으로 대체
+                              const target = e.target as HTMLImageElement
+                              target.style.display = 'none'
+                              const parent = target.parentElement
+                              if (parent) {
+                                const fallback = document.createElement('div')
+                                fallback.className = 'h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center'
+                                fallback.innerHTML = '<svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9"></path></svg>'
+                                parent.appendChild(fallback)
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                            <Globe className="h-6 w-6 text-blue-600" />
+                          </div>
+                        )}
                       </div>
                       <div className="ml-4">
                         <div className="text-sm font-medium text-gray-900">{channel.name}</div>
-                        {channel.website && (
+                        {(channel as any).customer_website && (
+                          <div className="text-sm text-gray-500">
+                            고객용: {(channel as any).customer_website}
+                          </div>
+                        )}
+                        {(channel as any).admin_website && (
+                          <div className="text-sm text-gray-500">
+                            관리자용: {(channel as any).admin_website}
+                          </div>
+                        )}
+                        {!((channel as any).customer_website || (channel as any).admin_website) && channel.website && (
                           <div className="text-sm text-gray-500">{channel.website}</div>
                         )}
                       </div>
@@ -560,9 +590,35 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                   {/* 카드 헤더 */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                        {channel.name}
-                      </h3>
+                      <div className="flex items-center space-x-3 mb-1">
+                        {/* 파비콘 */}
+                        {(channel as any).favicon_url ? (
+                          <img 
+                            src={(channel as any).favicon_url} 
+                            alt={`${channel.name} favicon`} 
+                            className="w-6 h-6 rounded flex-shrink-0"
+                            onError={(e) => {
+                              // 파비콘 로드 실패 시 기본 아이콘으로 대체
+                              const target = e.target as HTMLImageElement
+                              target.style.display = 'none'
+                              const parent = target.parentElement
+                              if (parent) {
+                                const fallback = document.createElement('div')
+                                fallback.className = 'w-6 h-6 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
+                                fallback.innerHTML = '🌐'
+                                parent.appendChild(fallback)
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                            🌐
+                          </div>
+                        )}
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {channel.name}
+                        </h3>
+                      </div>
                       <p className="text-sm text-gray-600">
                         {channel.description || '설명 없음'}
                       </p>
@@ -590,10 +646,73 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                       <span className="font-medium text-blue-600">{channel.commission || 0}%</span>
                     </div>
                     
+                    {/* 웹사이트 정보 */}
+                    {((channel as any).customer_website || (channel as any).admin_website) && (
+                      <div className="space-y-1">
+                        {(channel as any).customer_website && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-500">고객용 웹사이트</span>
+                            <a 
+                              href={(channel as any).customer_website} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="font-medium text-blue-600 hover:text-blue-800 truncate max-w-32"
+                            >
+                              {(channel as any).customer_website}
+                            </a>
+                          </div>
+                        )}
+                        {(channel as any).admin_website && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-500">관리자용 웹사이트</span>
+                            <a 
+                              href={(channel as any).admin_website} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="font-medium text-blue-600 hover:text-blue-800 truncate max-w-32"
+                            >
+                              {(channel as any).admin_website}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">연결된 상품</span>
                       <span className="font-medium">{getChannelPricing(channel.id).length}개</span>
                     </div>
+                    
+                    {/* 담당자 정보 */}
+                    {((channel as any).manager_name || (channel as any).manager_contact) && (
+                      <div className="space-y-1">
+                        {(channel as any).manager_name && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-500">담당자</span>
+                            <span className="font-medium text-gray-900">{(channel as any).manager_name}</span>
+                          </div>
+                        )}
+                        {(channel as any).manager_contact && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-500">연락처</span>
+                            <span className="font-medium text-gray-900 truncate max-w-32">{(channel as any).manager_contact}</span>
+                          </div>
+                        )}
+                        {(channel as any).contract_url && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-500">계약서</span>
+                            <a 
+                              href={(channel as any).contract_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="font-medium text-blue-600 hover:text-blue-800 text-xs"
+                            >
+                              보기
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* 연결된 상품 목록 */}
                     {getChannelPricing(channel.id).length > 0 && (
@@ -726,14 +845,21 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
     name: channel?.name || '',
     type: channel?.type || '',
     website: channel?.website || '',
+    customer_website: (channel as any)?.customer_website || '',
+    admin_website: (channel as any)?.admin_website || '',
     commission: channel?.commission || null,
     status: channel?.status || '',
     description: channel?.description || '',
-    favicon_url: (channel as any)?.favicon_url || ''
+    favicon_url: (channel as any)?.favicon_url || '',
+    manager_name: (channel as any)?.manager_name || '',
+    manager_contact: (channel as any)?.manager_contact || '',
+    contract_url: (channel as any)?.contract_url || ''
   })
 
   const [uploadingFavicon, setUploadingFavicon] = useState(false)
+  const [uploadingContract, setUploadingContract] = useState(false)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const contractInputRef = React.useRef<HTMLInputElement | null>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -742,41 +868,55 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-bold mb-4">
           {channel ? t('form.editTitle') : t('form.title')}
         </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 첫 번째 줄: 채널명, 타입 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.name')}</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.type')}</label>
+              <select
+                value={formData.type || ''}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">{t('form.selectType')}</option>
+                <option value="self">Self</option>
+                <option value="ota">OTA</option>
+                <option value="partner">Partner</option>
+              </select>
+            </div>
+          </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.name')}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.customerWebsite')}</label>
             <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              type="url"
+              value={formData.customer_website || ''}
+              onChange={(e) => setFormData({ ...formData, customer_website: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
+              placeholder="https://example.com"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.type')}</label>
-            <select
-              value={formData.type || ''}
-              onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">{t('form.selectType')}</option>
-              <option value="self">Self</option>
-              <option value="ota">OTA</option>
-              <option value="partner">Partner</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.website')}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.adminWebsite')}</label>
             <input
               type="url"
-              value={formData.website || ''}
-              onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+              value={formData.admin_website || ''}
+              onChange={(e) => setFormData({ ...formData, admin_website: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="https://admin.example.com"
             />
           </div>
           <div>
@@ -823,29 +963,32 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
               <div className="mt-1 text-xs text-gray-500">업로드 중...</div>
             )}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.commission')} (%)</label>
-            <input
-              type="number"
-              value={formData.commission || ''}
-              onChange={(e) => setFormData({ ...formData, commission: Number(e.target.value) || null })}
-              min="0"
-              max="100"
-              step="0.1"
-              className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
-            <select
-              value={formData.status || ''}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">{t('form.selectStatus')}</option>
-              <option value="active">{t('status.active')}</option>
-              <option value="inactive">{t('status.inactive')}</option>
-            </select>
+          {/* 두 번째 줄: 수수료율, 상태 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.commission')} (%)</label>
+              <input
+                type="number"
+                value={formData.commission || ''}
+                onChange={(e) => setFormData({ ...formData, commission: Number(e.target.value) || null })}
+                min="0"
+                max="100"
+                step="0.1"
+                className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
+              <select
+                value={formData.status || ''}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">{t('form.selectStatus')}</option>
+                <option value="active">{t('status.active')}</option>
+                <option value="inactive">{t('status.inactive')}</option>
+              </select>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.description')}</label>
@@ -855,6 +998,96 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+          </div>
+          
+          {/* 담당자 정보 섹션 */}
+          <div className="border-t pt-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">담당자 정보</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.managerName')}</label>
+                <input
+                  type="text"
+                  value={formData.manager_name || ''}
+                  onChange={(e) => setFormData({ ...formData, manager_name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="담당자 이름을 입력하세요"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.managerContact')}</label>
+                <input
+                  type="text"
+                  value={formData.manager_contact || ''}
+                  onChange={(e) => setFormData({ ...formData, manager_contact: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="전화번호 또는 이메일을 입력하세요"
+                />
+              </div>
+            </div>
+          </div>
+          
+          {/* 계약서 업로드 섹션 */}
+          <div className="border-t pt-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">계약서</h3>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.contractUpload')}</label>
+              <div className="flex items-center space-x-3">
+                {formData.contract_url ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded bg-green-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                      </svg>
+                    </div>
+                    <a 
+                      href={formData.contract_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:text-blue-800 underline"
+                    >
+{t('form.contractView')}
+                    </a>
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">-</div>
+                )}
+                <input
+                  ref={contractInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    try {
+                      setUploadingContract(true)
+                      const fileExt = file.name.split('.').pop()
+                      const fileName = `contract-${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
+                      const filePath = `contracts/${fileName}`
+                      const { error: uploadError } = await (supabase as any).storage
+                        .from('channel-contracts')
+                        .upload(filePath, file)
+                      if (uploadError) throw uploadError
+                      const { data: urlData } = (supabase as any).storage
+                        .from('channel-contracts')
+                        .getPublicUrl(filePath)
+                      setFormData({ ...formData, contract_url: urlData.publicUrl })
+                    } catch (err) {
+                      console.error('Error uploading contract:', err)
+                      alert('계약서 업로드 중 오류가 발생했습니다.')
+                    } finally {
+                      setUploadingContract(false)
+                      if (contractInputRef.current) contractInputRef.current.value = ''
+                    }
+                  }}
+                  className="flex-1 text-sm"
+                />
+              </div>
+              <p className="mt-1 text-xs text-gray-500">PDF, DOC, DOCX, TXT 파일만 업로드 가능합니다</p>
+              {uploadingContract && (
+                <div className="mt-1 text-xs text-gray-500">업로드 중...</div>
+              )}
+            </div>
           </div>
           <div className="flex space-x-3 pt-4">
             <button

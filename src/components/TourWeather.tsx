@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
-import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, MapPin, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, EyeOff } from 'lucide-react'
+import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, MapPin, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, EyeOff, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog, CloudHail } from 'lucide-react'
 import { getGoblinTourWeatherData, type LocationWeather } from '@/lib/weatherApi'
 
 interface TourWeatherProps {
@@ -10,7 +10,61 @@ interface TourWeatherProps {
   productId?: string
 }
 
-// 날씨 상태에 따른 아이콘 반환 함수
+// 날씨 상태에 따른 Lucide 아이콘 반환 함수 (헤더용)
+const getWeatherIconComponent = (weatherMain: string, weatherDescription: string) => {
+  const main = weatherMain?.toLowerCase() || ''
+  const description = weatherDescription?.toLowerCase() || ''
+  
+  // 구체적인 날씨 상태별 아이콘
+  if (description.includes('thunderstorm') || description.includes('storm')) {
+    return <CloudLightning className="w-6 h-6 text-purple-600" />
+  }
+  if (description.includes('snow') || description.includes('blizzard')) {
+    return <CloudSnow className="w-6 h-6 text-blue-400" />
+  }
+  if (description.includes('rain') || description.includes('shower')) {
+    return <CloudRain className="w-6 h-6 text-blue-500" />
+  }
+  if (description.includes('drizzle')) {
+    return <CloudDrizzle className="w-6 h-6 text-blue-400" />
+  }
+  if (description.includes('fog') || description.includes('mist') || description.includes('haze')) {
+    return <CloudFog className="w-6 h-6 text-gray-500" />
+  }
+  if (description.includes('clear') || description.includes('sunny')) {
+    return <Sun className="w-6 h-6 text-yellow-500" />
+  }
+  if (description.includes('clouds') && description.includes('partly')) {
+    return <CloudSun className="w-6 h-6 text-orange-400" />
+  }
+  if (description.includes('clouds')) {
+    return <Cloud className="w-6 h-6 text-gray-500" />
+  }
+  
+  // 기본 날씨 상태별 아이콘
+  switch (main) {
+    case 'thunderstorm':
+      return <CloudLightning className="w-6 h-6 text-purple-600" />
+    case 'drizzle':
+      return <CloudDrizzle className="w-6 h-6 text-blue-400" />
+    case 'rain':
+      return <CloudRain className="w-6 h-6 text-blue-500" />
+    case 'snow':
+      return <CloudSnow className="w-6 h-6 text-blue-400" />
+    case 'clear':
+      return <Sun className="w-6 h-6 text-yellow-500" />
+    case 'clouds':
+      return <CloudSun className="w-6 h-6 text-orange-400" />
+    case 'mist':
+    case 'fog':
+    case 'haze':
+      return <CloudFog className="w-6 h-6 text-gray-500" />
+    default:
+      return <Cloud className="w-6 h-6 text-gray-500" />
+  }
+}
+
+// 날씨 상태에 따른 아이콘 반환 함수 (상세 정보용)
 const getWeatherIcon = (weatherMain: string, weatherDescription: string) => {
   const main = weatherMain?.toLowerCase() || ''
   const description = weatherDescription?.toLowerCase() || ''
@@ -58,7 +112,7 @@ const getWeatherIcon = (weatherMain: string, weatherDescription: string) => {
 }
 
 // 가시거리 기준 반환 함수
-const getVisibilityLevel = (visibility: number, t: any) => {
+const getVisibilityLevel = (visibility: number, t: (key: string) => string) => {
   const km = visibility / 1000
   
   if (km >= 10) return t('visibilityLevels.excellent')
@@ -80,26 +134,48 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
   const [hasData, setHasData] = useState(false)
 
-  // Convert UTC time to Las Vegas time (PST/PDT)
-  const convertToLasVegasTime = (utcTimeString: string): string => {
+  // Convert time to 12-hour format (all times are already in Las Vegas local time)
+  const convertToLocalTime = (timeString: string, location: string, isSunrise: boolean = false): string => {
     try {
-      const [hours, minutes, seconds] = utcTimeString.split(':').map(Number)
-      const today = new Date()
-      const utcDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes, seconds)
+      // Check if timeString is valid
+      if (!timeString || timeString === 'N/A' || timeString === '') {
+        return 'N/A'
+      }
+
+      console.log('Processing time:', { timeString, location, isSunrise })
+
+      // If the time is already in 12-hour format, return as-is
+      if (timeString.includes('AM') || timeString.includes('PM')) {
+        return timeString
+      }
+
+      // Parse the time string (format: "HH:MM:SS" or "HH:MM")
+      const timeParts = timeString.split(':')
+      if (timeParts.length < 2) {
+        return timeString
+      }
+
+      const hours = parseInt(timeParts[0], 10)
+      const minutes = parseInt(timeParts[1], 10)
+
+      if (isNaN(hours) || isNaN(minutes)) {
+        return timeString
+      }
+
+      console.log('Parsed hours/minutes:', { hours, minutes })
+
+      // Convert to 12-hour format
+      const period = hours >= 12 ? 'PM' : 'AM'
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+      const displayMinutes = minutes.toString().padStart(2, '0')
+
+      const result = `${displayHours}:${displayMinutes} ${period}`
+      console.log('Final result:', result)
       
-      // Convert to Las Vegas time (UTC-8 for PST, UTC-7 for PDT)
-      // For simplicity, we'll use PST (UTC-8) as Las Vegas is in Pacific Time
-      const lasVegasTime = new Date(utcDate.getTime() - (8 * 60 * 60 * 1000))
-      
-      return lasVegasTime.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'America/Los_Angeles'
-      })
+      return result
     } catch (error) {
-      console.error('Error converting time:', error)
-      return utcTimeString
+      console.error('Error processing time:', error, { timeString, location })
+      return timeString
     }
   }
 
@@ -128,7 +204,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
       } else {
         setHasData(true)
         // Convert UTC time to Las Vegas time
-        const createdAt = new Date(weatherData[0].created_at)
+        const createdAt = new Date((weatherData[0] as { created_at: string }).created_at)
         const lasVegasTime = createdAt.toLocaleString('en-US', {
           timeZone: 'America/Los_Angeles',
           year: 'numeric',
@@ -231,95 +307,165 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
   const WeatherCard = ({ locationData, showSunriseSunset = false }: { 
     locationData: LocationWeather
     showSunriseSunset?: boolean 
-  }) => (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center">
-          <MapPin className="h-3 w-3 text-gray-500 mr-1" />
-          <h3 className="font-medium text-gray-800 text-xs">{locationData.location}</h3>
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-2 gap-2 mb-2">
-        <div className="flex items-center">
-          <Thermometer className="h-3 w-3 text-red-500 mr-1" />
-          <span className="text-xs text-gray-600">
-            {locationData.weather.temperature ? 
-              `${Math.round(locationData.weather.temperature)}°C (${Math.round(locationData.weather.temperature * 9/5 + 32)}°F)` : 
-              'N/A'
-            }
-          </span>
-        </div>
-        <div className="flex items-center">
-          <Droplets className="h-3 w-3 text-blue-500 mr-1" />
-          <span className="text-xs text-gray-600">
-            {locationData.weather.humidity ? `${locationData.weather.humidity}%` : 'N/A'}
-          </span>
-        </div>
-        <div className="flex items-center">
-          <Wind className="h-3 w-3 text-gray-500 mr-1" />
-          <span className="text-xs text-gray-600">
-            {locationData.weather.wind_speed ? `${locationData.weather.wind_speed}m/s` : 'N/A'}
-          </span>
-        </div>
-        <div className="flex items-center">
-          <Eye className="h-3 w-3 text-gray-500 mr-1" />
-          <span className="text-xs text-gray-600">
-            {locationData.weather.visibility ? 
-              `${Math.round(locationData.weather.visibility / 1000)}km ${getVisibilityLevel(locationData.weather.visibility, t)}` : 
-              'N/A'
-            }
-          </span>
-        </div>
-        <div className="flex items-center text-xs text-gray-600 capitalize truncate col-span-2">
-          {getWeatherIcon(locationData.weather.weather_main || '', locationData.weather.weather_description || '')}
-          <span className="ml-1">{locationData.weather.weather_description || 'N/A'}</span>
-        </div>
-        {/* 최고/최저 기온 표시 */}
-        {(locationData.weather.temp_max !== null || locationData.weather.temp_min !== null) && (
-          <div className="col-span-2 flex items-center justify-between text-xs text-gray-600 border-t border-gray-100 pt-1 mt-1">
-            <span>
-              {t('maxTemp')}: {locationData.weather.temp_max ? 
-                `${Math.round(locationData.weather.temp_max)}°C (${Math.round(locationData.weather.temp_max * 9/5 + 32)}°F)` : 
-                'N/A'
-              }
+  }) => {
+    const [isExpanded, setIsExpanded] = useState(false)
+    
+    // 최저/최고 기온을 간단한 형식으로 표시
+    const getTempRange = () => {
+      if (locationData.weather.temp_min !== null && locationData.weather.temp_max !== null) {
+        const minF = Math.round(locationData.weather.temp_min * 9/5 + 32)
+        const maxF = Math.round(locationData.weather.temp_max * 9/5 + 32)
+        return `${minF}°F~${maxF}°F`
+      }
+      return 'N/A'
+    }
+
+    // 위치명을 간단하게 표시
+    const getSimpleLocationName = () => {
+      if (locationData.location.includes('Grand Canyon')) {
+        return 'Grand Canyon'
+      } else if (locationData.location.includes('Zion')) {
+        return 'Zion Canyon'
+      } else if (locationData.location.includes('Page')) {
+        return 'Page City'
+      }
+      return locationData.location
+    }
+
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        {/* 헤더 - 어코디언 토글 버튼 */}
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center space-x-2">
+            {/* 날씨 아이콘 (Lucide 아이콘) */}
+            {getWeatherIconComponent(locationData.weather.weather_main || '', locationData.weather.weather_description || '')}
+            
+            {/* 위치명 */}
+            <span className="font-medium text-gray-800 text-sm">{getSimpleLocationName()}</span>
+            
+            {/* 최저/최고 기온 */}
+            <span className="text-xs text-gray-600 font-mono">
+              {getTempRange()}
             </span>
-            <span>
-              {t('minTemp')}: {locationData.weather.temp_min ? 
-                `${Math.round(locationData.weather.temp_min)}°C (${Math.round(locationData.weather.temp_min * 9/5 + 32)}°F)` : 
-                'N/A'
-              }
-            </span>
+            
+            {/* 일출/일몰 시간 (아이콘과 함께) */}
+            {showSunriseSunset && (
+              <div className="flex items-center space-x-1">
+                     {locationData.location.includes('Grand Canyon') && locationData.sunrise && (
+                       <>
+                         <Sun className="w-3 h-3 text-yellow-500" />
+                         <span className="text-xs text-gray-600 font-mono">
+                           {convertToLocalTime(locationData.sunrise, locationData.location, true)}
+                         </span>
+                       </>
+                     )}
+                     {locationData.location.includes('Zion') && locationData.sunset && (
+                       <>
+                         <Sunset className="w-3 h-3 text-orange-500" />
+                         <span className="text-xs text-gray-600 font-mono">
+                           {convertToLocalTime(locationData.sunset, locationData.location, false)}
+                         </span>
+                       </>
+                     )}
+              </div>
+            )}
+          </div>
+          
+          {/* 쉐브론 애로우 */}
+          {isExpanded ? (
+            <ChevronUp className="h-4 w-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-gray-500" />
+          )}
+        </button>
+        
+        {/* 확장된 내용 */}
+        {isExpanded && (
+          <div className="px-3 pb-3 border-t border-gray-100">
+            <div className="grid grid-cols-2 gap-2 mb-2 pt-2">
+              <div className="flex items-center">
+                <Thermometer className="h-3 w-3 text-red-500 mr-1" />
+                <span className="text-xs text-gray-600">
+                  {locationData.weather.temperature ? 
+                    `${Math.round(locationData.weather.temperature)}°C (${Math.round(locationData.weather.temperature * 9/5 + 32)}°F)` : 
+                    'N/A'
+                  }
+                </span>
+              </div>
+              <div className="flex items-center">
+                <Droplets className="h-3 w-3 text-blue-500 mr-1" />
+                <span className="text-xs text-gray-600">
+                  {locationData.weather.humidity ? `${locationData.weather.humidity}%` : 'N/A'}
+                </span>
+              </div>
+              <div className="flex items-center">
+                <Wind className="h-3 w-3 text-gray-500 mr-1" />
+                <span className="text-xs text-gray-600">
+                  {locationData.weather.wind_speed ? `${locationData.weather.wind_speed}m/s` : 'N/A'}
+                </span>
+              </div>
+              <div className="flex items-center">
+                <Eye className="h-3 w-3 text-gray-500 mr-1" />
+                <span className="text-xs text-gray-600">
+                  {locationData.weather.visibility ? 
+                    `${Math.round(locationData.weather.visibility / 1000)}km ${getVisibilityLevel(locationData.weather.visibility, t)}` : 
+                    'N/A'
+                  }
+                </span>
+              </div>
+            </div>
+
+            {/* 최고/최저 기온 상세 표시 */}
+            {(locationData.weather.temp_max !== null || locationData.weather.temp_min !== null) && (
+              <div className="flex items-center justify-between text-xs text-gray-600 border-t border-gray-100 pt-2 mt-2">
+                <span>
+                  {t('maxTemp')}: {locationData.weather.temp_max ? 
+                    `${Math.round(locationData.weather.temp_max)}°C (${Math.round(locationData.weather.temp_max * 9/5 + 32)}°F)` : 
+                    'N/A'
+                  }
+                </span>
+                <span>
+                  {t('minTemp')}: {locationData.weather.temp_min ? 
+                    `${Math.round(locationData.weather.temp_min)}°C (${Math.round(locationData.weather.temp_min * 9/5 + 32)}°F)` : 
+                    'N/A'
+                  }
+                </span>
+              </div>
+            )}
+
+            {/* 일출/일몰 시간 상세 표시 */}
+            {showSunriseSunset && (
+              <div className="border-t border-gray-100 pt-2 mt-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center">
+                    <Sun className="h-3 w-3 text-yellow-500 mr-1" />
+                    <div>
+                      <div className="text-xs text-gray-500">{t('sunrise')}</div>
+                           <div className="text-xs font-medium text-gray-800">
+                             {convertToLocalTime(locationData.sunrise, locationData.location, true)}
+                           </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <Sunset className="h-3 w-3 text-orange-500 mr-1" />
+                    <div>
+                      <div className="text-xs text-gray-500">{t('sunset')}</div>
+                           <div className="text-xs font-medium text-gray-800">
+                             {convertToLocalTime(locationData.sunset, locationData.location, false)}
+                           </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
-
-      {showSunriseSunset && (
-        <div className="border-t border-gray-100 pt-2">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex items-center">
-              <Sun className="h-3 w-3 text-yellow-500 mr-1" />
-              <div>
-                <div className="text-xs text-gray-500">{t('sunrise')}</div>
-                <div className="text-xs font-medium text-gray-800">
-                  {locationData.sunrise}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <Sunset className="h-3 w-3 text-orange-500 mr-1" />
-              <div>
-                <div className="text-xs text-gray-500">{t('sunset')}</div>
-                <div className="text-xs font-medium text-gray-800">
-                  {locationData.sunset}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="space-y-2">
@@ -354,8 +500,15 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
 
       <div className="space-y-2">
         <WeatherCard locationData={weatherData.grandCanyon} showSunriseSunset={true} />
+        
+        {/* Page City를 가운데 배치 */}
+        <div className="flex justify-center">
+          <div className="w-full max-w-sm">
+            <WeatherCard locationData={weatherData.pageCity} />
+          </div>
+        </div>
+        
         <WeatherCard locationData={weatherData.zionCanyon} showSunriseSunset={true} />
-        <WeatherCard locationData={weatherData.pageCity} />
       </div>
 
       <div className="mt-3 p-2 bg-purple-100 rounded-lg">
@@ -364,8 +517,8 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
           <div className="text-xs text-purple-700">
             <p className="font-medium mb-1">{t('tourNotes.title')}</p>
             <ul className="text-xs space-y-0.5">
-              <li>• {t('tourNotes.sunriseTime')} {weatherData.grandCanyon.sunrise}</li>
-              <li>• {t('tourNotes.sunsetTime')} {weatherData.zionCanyon.sunset}</li>
+                   <li>• {t('tourNotes.sunriseTime')} {convertToLocalTime(weatherData.grandCanyon.sunrise, weatherData.grandCanyon.location, true)}</li>
+              <li>• {t('tourNotes.sunsetTime')} {convertToLocalTime(weatherData.zionCanyon.sunset, weatherData.zionCanyon.location, false)}</li>
               <li>• {t('tourNotes.clothing')}</li>
               <li>• {t('tourNotes.seasonal')}</li>
             </ul>

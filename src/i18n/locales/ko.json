@@ -409,7 +409,8 @@
         "null": "상품명 없음",
         "기타": "기타",
         "특별 투어": "특별 투어",
-        "커스텀 투어": "커스텀 투어"
+        "커스텀 투어": "커스텀 투어",
+        "공항 픽업 서비스": "공항 픽업 서비스"
       },
       "reservationCalendar": "달력",
       "yearUnit": "년",
@@ -587,6 +588,8 @@
       "name": "채널명",
       "type": "타입",
       "website": "웹사이트",
+      "customerWebsite": "고객용 웹사이트",
+      "adminWebsite": "관리자용 웹사이트",
       "commission": "수수료율",
       "basePrice": "기본 가격",
       "markup": "마크업",
@@ -595,7 +598,11 @@
       "selectType": "타입 선택",
       "selectStatus": "상태 선택",
       "favicon": "파비콘",
-      "faviconHelp": "브라우저 탭과 앱 아이콘으로 사용될 이미지를 업로드하세요 (PNG/SVG/ICO)"
+      "faviconHelp": "브라우저 탭과 앱 아이콘으로 사용될 이미지를 업로드하세요 (PNG/SVG/ICO)",
+      "managerName": "담당자 이름",
+      "managerContact": "연락처",
+      "contractUpload": "계약서 업로드",
+      "contractView": "계약서 보기"
     }
   },
   "products": {

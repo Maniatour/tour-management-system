@@ -41,7 +41,8 @@ export default function CustomerForm({
         } else if (customer.language === 'KR' || customer.language === 'ko' || customer.language === '한국어') {
           languageValue = 'KR'
         } else {
-          languageValue = '' // 알 수 없는 언어는 빈 문자열로
+          // 새로운 언어 코드들은 그대로 사용
+          languageValue = customer.language
         }
       } else {
         languageValue = '' // null/undefined 등은 빈 문자열로
@@ -195,22 +196,26 @@ export default function CustomerForm({
                     if (Array.isArray(formData.language)) {
                       // 배열인 경우 첫 번째 값만 사용하고 문자열로 변환
                       const firstLang = formData.language[0]
+                      // 기존 언어 코드 매핑 (하위 호환성 유지)
                       if (firstLang === 'KR' || firstLang === 'ko' || firstLang === '한국어') {
                         return 'KR'
                       }
                       if (firstLang === 'EN' || firstLang === 'en' || firstLang === '영어') {
                         return 'EN'
                       }
-                      return ''
+                      // 새로운 언어 코드들은 그대로 사용
+                      return firstLang || ''
                     }
                     if (typeof formData.language === 'string') {
+                      // 기존 언어 코드 매핑 (하위 호환성 유지)
                       if (formData.language === 'KR' || formData.language === 'ko' || formData.language === '한국어') {
                         return 'KR'
                       }
                       if (formData.language === 'EN' || formData.language === 'en' || formData.language === '영어') {
                         return 'EN'
                       }
-                      return ''
+                      // 새로운 언어 코드들은 그대로 사용
+                      return formData.language
                     }
                     return ''
                   })()}
@@ -220,6 +225,14 @@ export default function CustomerForm({
                   <option value="">🌐 언어 선택</option>
                   <option value="KR">🇰🇷 한국어</option>
                   <option value="EN">🇺🇸 English</option>
+                  <option value="JA">🇯🇵 日本語</option>
+                  <option value="ZH">🇨🇳 中文</option>
+                  <option value="ES">🇪🇸 Español</option>
+                  <option value="FR">🇫🇷 Français</option>
+                  <option value="DE">🇩🇪 Deutsch</option>
+                  <option value="IT">🇮🇹 Italiano</option>
+                  <option value="PT">🇵🇹 Português</option>
+                  <option value="RU">🇷🇺 Русский</option>
                 </select>
               </div>
               

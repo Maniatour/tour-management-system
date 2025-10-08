@@ -939,7 +939,7 @@ export default function ScheduleView() {
   const handleTourDoubleClick = (tourId: string) => {
     const pathLocale = locale || (typeof window !== 'undefined' ? window.location.pathname.split('/')[1] : '')
     const href = `/${pathLocale}/admin/tours/${tourId}`
-    window.open(href, '_blank')
+    window.location.href = href
   }
 
   // 미 배정된 투어들을 가이드/어시스턴트 배정 카드로 변환
@@ -2556,7 +2556,7 @@ export default function ScheduleView() {
                   if (guideModalContent.tourId) {
                     const pathLocale = locale || (typeof window !== 'undefined' ? window.location.pathname.split('/')[1] : '')
                     const href = `/${pathLocale}/admin/tours/${guideModalContent.tourId}`
-                    window.open(href, '_blank')
+                    window.location.href = href
                   }
                 }}
                 disabled={!guideModalContent.tourId}

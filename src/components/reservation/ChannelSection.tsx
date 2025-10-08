@@ -111,7 +111,32 @@ export default function ChannelSection({
                   formData.channelId === channel.id ? 'bg-blue-500 border-l-4 border-l-blue-500' : ''
                 }`}
               >
-                <div className="text-sm text-gray-900">{channel.name}</div>
+                <div className="flex items-center space-x-2">
+                  {(channel as any).favicon_url ? (
+                    <img 
+                      src={(channel as any).favicon_url} 
+                      alt={`${channel.name} favicon`} 
+                      className="h-4 w-4 rounded flex-shrink-0"
+                      onError={(e) => {
+                        // 파비콘 로드 실패 시 기본 아이콘으로 대체
+                        const target = e.target as HTMLImageElement
+                        target.style.display = 'none'
+                        const parent = target.parentElement
+                        if (parent) {
+                          const fallback = document.createElement('div')
+                          fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
+                          fallback.innerHTML = '🌐'
+                          parent.appendChild(fallback)
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                      🌐
+                    </div>
+                  )}
+                  <div className="text-sm text-gray-900">{channel.name}</div>
+                </div>
               </div>
             ))}
         </div>
@@ -126,7 +151,32 @@ export default function ChannelSection({
             const selectedChannel = channels.find(c => c.id === formData.channelId)
             return selectedChannel ? (
               <div className="space-y-2">
-                <div className="font-medium text-gray-900">{selectedChannel.name}</div>
+                <div className="flex items-center space-x-2">
+                  {(selectedChannel as any).favicon_url ? (
+                    <img 
+                      src={(selectedChannel as any).favicon_url} 
+                      alt={`${selectedChannel.name} favicon`} 
+                      className="h-4 w-4 rounded flex-shrink-0"
+                      onError={(e) => {
+                        // 파비콘 로드 실패 시 기본 아이콘으로 대체
+                        const target = e.target as HTMLImageElement
+                        target.style.display = 'none'
+                        const parent = target.parentElement
+                        if (parent) {
+                          const fallback = document.createElement('div')
+                          fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
+                          fallback.innerHTML = '🌐'
+                          parent.appendChild(fallback)
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                      🌐
+                    </div>
+                  )}
+                  <div className="font-medium text-gray-900">{selectedChannel.name}</div>
+                </div>
                 <div className="text-sm text-gray-600">
                   {selectedChannel.type === 'self' ? '자체채널' : 
                    selectedChannel.type === 'ota' ? 'OTA' : '제휴사'}

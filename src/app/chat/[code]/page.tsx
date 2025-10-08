@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, use } from 'react'
-import { ArrowLeft, Home as HomeIcon, ChevronDown, SquarePen } from 'lucide-react'
+import { ArrowLeft, ChevronDown, SquarePen } from 'lucide-react'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
 import { SUPPORTED_LANGUAGES, SupportedLanguage } from '@/lib/translation'
@@ -148,9 +148,9 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
           
           if (productData) {
             setProductNames({
-              name: productData.name ?? null,
-              name_ko: productData.name_ko ?? null,
-              name_en: productData.name_en ?? null,
+              name: (productData as { name?: string | null }).name ?? null,
+              name_ko: (productData as { name_ko?: string | null }).name_ko ?? null,
+              name_en: (productData as { name_en?: string | null }).name_en ?? null,
             })
           }
         } catch (productError) {
@@ -231,7 +231,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading chat room...</p>
@@ -242,7 +242,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-6">
           <div className="text-red-500 mb-4">
             {/* icon removed */}
@@ -263,7 +263,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
 
   if (!room || !tourInfo) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-500">Unable to load chat room information.</p>
         </div>
@@ -272,20 +272,12 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-screen bg-gray-50 flex flex-col">
       {/* 헤더 */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div className="bg-white shadow-sm border-b flex-shrink-0">
+        <div className="px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Link
-                href="/"
-                className="flex items-center text-gray-600 hover:text-gray-900"
-                aria-label="Home"
-                title="Home"
-              >
-                <HomeIcon size={20} />
-              </Link>
               <div>
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
                   {selectedLanguage === 'en'
@@ -322,9 +314,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
       </div>
 
       {/* 컨텐츠 */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 채팅방 안내 제거 */}
-
+      <div className="flex-1 overflow-hidden">
         {/* 고객 이름 입력 (첫 방문 시) */}
         {!customerName && (
           <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
@@ -401,7 +391,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
 
         {/* 채팅방 */}
         {customerName && room && tourInfo && room.tour_id && room.created_by && room.room_code && tourInfo.tour_date && (
-          <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden" style={{ height: '70vh' }}>
+          <div className="flex flex-col overflow-hidden h-full">
             <div className="flex-1 overflow-hidden">
               <TourChatRoom
                 tourId={room.tour_id}
@@ -416,16 +406,18 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
           </div>
         )}
 
-        {/* 사용 안내 */}
-        <div className="mt-6 bg-gray-50 rounded-lg p-4">
-          <h4 className="font-semibold text-gray-900 mb-2">Usage Guide</h4>
-          <ul className="text-sm text-gray-600 space-y-1">
-            <li>• Feel free to ask about pickup times, locations, or any other questions.</li>
-            <li>• You can communicate in real-time with your guide about special requests or questions during the tour.</li>
-            <li>• Please wait a moment for your guide to respond.</li>
-            <li>• The chat room will remain available for a certain period after the tour ends.</li>
-          </ul>
-        </div>
+        {/* 사용 안내 - 채팅방이 없을 때만 표시 */}
+        {!customerName && (
+          <div className="mt-6 bg-gray-50 rounded-lg p-4">
+            <h4 className="font-semibold text-gray-900 mb-2">Usage Guide</h4>
+            <ul className="text-sm text-gray-600 space-y-1">
+              <li>• Feel free to ask about pickup times, locations, or any other questions.</li>
+              <li>• You can communicate in real-time with your guide about special requests or questions during the tour.</li>
+              <li>• Please wait a moment for your guide to respond.</li>
+              <li>• The chat room will remain available for a certain period after the tour ends.</li>
+            </ul>
+          </div>
+        )}
 
         {/* 이름 변경 모달 */}
         {showNameEdit && (

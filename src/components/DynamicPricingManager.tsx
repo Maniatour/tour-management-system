@@ -57,7 +57,7 @@ export default function DynamicPricingManager({
         infant_price: number;
         commission_percent: number;
         markup_amount: number;
-        coupon_percent: number;
+        coupon_percentage_discount: number;
         is_sale_available: boolean;
         options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
         choices_pricing?: Record<string, {
@@ -76,7 +76,7 @@ export default function DynamicPricingManager({
         infant_price: number;
         commission_percent: number;
         markup_amount: number;
-        coupon_percent: number;
+        coupon_percentage_discount: number;
         is_sale_available: boolean;
         options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
         choices_pricing?: Record<string, {
@@ -99,7 +99,7 @@ export default function DynamicPricingManager({
         infant_price: number;
         commission_percent: number;
         markup_amount: number;
-        coupon_percent: number;
+        coupon_percentage_discount: number;
         is_sale_available: boolean;
         options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
         choices_pricing?: Record<string, {
@@ -118,7 +118,7 @@ export default function DynamicPricingManager({
         infant_price: number;
         commission_percent: number;
         markup_amount: number;
-        coupon_percent: number;
+        coupon_percentage_discount: number;
         is_sale_available: boolean;
         options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
         choices_pricing?: Record<string, {
@@ -200,7 +200,7 @@ export default function DynamicPricingManager({
     }>;
     commission_percent: number;
     markup_amount: number;
-    coupon_percent: number;
+    coupon_percentage_discount: number;
     is_sale_available: boolean;
   }>>([]);
 
@@ -322,7 +322,7 @@ export default function DynamicPricingManager({
         infant_price: latestPricing.infant_price || 0,
         commission_percent: latestPricing.commission_percent || 25,
         markup_amount: latestPricing.markup_amount || 0,
-        coupon_percentage_discount: latestPricing.coupon_percent || 0,
+        coupon_percentage_discount: latestPricing.coupon_percentage_discount || 0,
         is_sale_available: latestPricing.is_sale_available ?? true,
         selected_weekdays: [0, 1, 2, 3, 4, 5, 6] // 모든 요일 기본 선택
       }));
@@ -762,7 +762,7 @@ export default function DynamicPricingManager({
           ...prev,
           commission_percent: channelPricing.commission_percent || 25,
           markup_amount: channelPricing.markup_amount || 0,
-          coupon_percentage_discount: channelPricing.coupon_percent || 0,
+          coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
           is_sale_available: channelPricing.is_sale_available !== false,
           not_included_price: channelPricing.not_included_price || 0
         }));
@@ -907,7 +907,7 @@ export default function DynamicPricingManager({
           infant_price: channelPricing.infant_price || 0,
           commission_percent: channelPricing.commission_percent || 0,
           markup_amount: channelPricing.markup_amount || 0,
-          coupon_percentage_discount: channelPricing.coupon_percent || 0,
+          coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
           is_sale_available: channelPricing.is_sale_available || false,
           not_included_price: channelPricing.not_included_price || 0,
           required_options: []
@@ -1167,8 +1167,8 @@ export default function DynamicPricingManager({
     // 파란색: 최대 가격 = adult_price + 선택된 옵션의 adult_price
     const maxAdultPrice = baseAdultPrice + optionAdultPrice;
 
-    // 주황색: 할인 가격 = 최대 가격에서 coupon_percent 적용
-    const couponDiscountAmount = maxAdultPrice * (pricingData.coupon_percent / 100);
+    // 주황색: 할인 가격 = 최대 가격에서 coupon_percentage_discount 적용
+    const couponDiscountAmount = maxAdultPrice * (pricingData.coupon_percentage_discount / 100);
     const discountedAdultPrice = maxAdultPrice - couponDiscountAmount;
 
     // 초록색: Net 가격 = 할인 가격에서 commission_percent 적용
@@ -1180,7 +1180,7 @@ export default function DynamicPricingManager({
       optionAdultPrice,
       selectedOption: selectedRequiredOption,
       maxAdultPrice,
-      couponPercent: pricingData.coupon_percent,
+      couponPercent: pricingData.coupon_percentage_discount,
       discountedAdultPrice,
       commissionPercent: pricingData.commission_percent,
       netAdultPrice,
@@ -1437,7 +1437,7 @@ export default function DynamicPricingManager({
           choices_pricing: choicesPricing,
             commission_percent: pricingConfig.commission_percent,
             markup_amount: pricingConfig.markup_amount,
-          coupon_percent: pricingConfig.coupon_percentage_discount || 0,
+          coupon_percentage_discount: pricingConfig.coupon_percentage_discount || 0,
             is_sale_available: pricingConfig.is_sale_available,
             not_included_price: pricingConfig.not_included_price || 0
         }
@@ -1549,7 +1549,7 @@ export default function DynamicPricingManager({
                           infant_price: channelPricing.infant_price || 0,
                           commission_percent: channelPricing.commission_percent || 0,
                           markup_amount: channelPricing.markup_amount || 0,
-                          coupon_percentage_discount: channelPricing.coupon_percent || 0,
+                          coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
                           is_sale_available: channelPricing.is_sale_available || false,
                           not_included_price: channelPricing.not_included_price || 0,
                           required_options: []
@@ -1581,7 +1581,7 @@ export default function DynamicPricingManager({
                           infant_price: channelPricing.infant_price || 0,
                           commission_percent: channelPricing.commission_percent || 0,
                           markup_amount: channelPricing.markup_amount || 0,
-                          coupon_percentage_discount: channelPricing.coupon_percent || 0,
+                          coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
                           is_sale_available: channelPricing.is_sale_available || false,
                           not_included_price: channelPricing.not_included_price || 0,
                           required_options: []
@@ -1709,7 +1709,7 @@ export default function DynamicPricingManager({
                            infant_price: channelPricing.infant_price || 0,
                            commission_percent: channelPricing.commission_percent || 0,
                            markup_amount: channelPricing.markup_amount || 0,
-                           coupon_percentage_discount: channelPricing.coupon_percent || 0,
+                           coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
                            is_sale_available: channelPricing.is_sale_available || false,
                            not_included_price: channelPricing.not_included_price || 0,
                            required_options: []
@@ -2754,59 +2754,133 @@ export default function DynamicPricingManager({
 
             {/* 기본 가격 요약 (초이스가 없는 경우에만) */}
             {choices.length === 0 && (
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h4 className="font-medium text-blue-900 mb-3">기본 가격 (기본 판매가 + 옵션 선택가)</h4>
-              
-              {/* 옵션별 기본 가격 */}
-              {(() => {
-                const optionsWithPrices = options.filter(option => {
-                  const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                  return existingOption && (existingOption.adult_price > 0 || existingOption.child_price > 0 || existingOption.infant_price > 0);
-                });
-
-                if (optionsWithPrices.length === 0) return null;
-
-                return (
-                  <div className="mt-4 pt-3 border-t border-blue-200">
-                    <div className="space-y-3">
-                      {optionsWithPrices.map(option => {
-                        const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
-                        if (!existingOption) return null;
-
-                        const adultTotalPrice = pricingConfig.adult_price + existingOption.adult_price;
-                        const childTotalPrice = pricingConfig.child_price + existingOption.child_price;
-                        const infantTotalPrice = pricingConfig.infant_price + existingOption.infant_price;
-
-                        return (
-                          <div key={option.id} className="bg-white p-3 rounded border border-blue-200">
-                            <h6 className="font-medium text-sm text-blue-800 mb-2 flex justify-between">
-                              <span>{option.name}</span>
-                              <span className="text-blue-600">${adultTotalPrice}</span>
-                            </h6>
-                            {showDetailedPrices && (
-                              <div className="text-xs space-y-1">
-                                <div className="flex justify-between">
-                                  <span>성인:</span>
-                                  <span>${pricingConfig.adult_price} + ${existingOption.adult_price} = <span className="font-medium">${adultTotalPrice}</span></span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>아동:</span>
-                                  <span>${pricingConfig.child_price} + ${existingOption.child_price} = <span className="font-medium">${childTotalPrice}</span></span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span>유아:</span>
-                                  <span>${pricingConfig.infant_price} + ${existingOption.infant_price} = <span className="font-medium">${infantTotalPrice}</span></span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+              <div className="space-y-4">
+                {/* 기본 판매가 */}
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-green-900 mb-3">기본 판매가</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">구분</th>
+                          <th className="text-center py-2">성인</th>
+                          <th className="text-center py-2">아동</th>
+                          <th className="text-center py-2">유아</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b">
+                          <td className="py-2 font-medium">기본 가격</td>
+                          <td className="text-center py-2">${pricingConfig.adult_price.toFixed(2)}</td>
+                          <td className="text-center py-2">${pricingConfig.child_price.toFixed(2)}</td>
+                          <td className="text-center py-2">${pricingConfig.infant_price.toFixed(2)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
-                );
-              })()}
-            </div>
+                </div>
+
+                {/* 할인 가격 */}
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-yellow-900 mb-3">할인 가격 (기본 판매가 × 쿠폰%)</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">구분</th>
+                          <th className="text-center py-2">성인</th>
+                          <th className="text-center py-2">아동</th>
+                          <th className="text-center py-2">유아</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b">
+                          <td className="py-2 font-medium">할인 가격</td>
+                          <td className="text-center py-2">${(pricingConfig.adult_price * (1 - pricingConfig.coupon_percentage_discount / 100)).toFixed(2)}</td>
+                          <td className="text-center py-2">${(pricingConfig.child_price * (1 - pricingConfig.coupon_percentage_discount / 100)).toFixed(2)}</td>
+                          <td className="text-center py-2">${(pricingConfig.infant_price * (1 - pricingConfig.coupon_percentage_discount / 100)).toFixed(2)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Net Price */}
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-blue-900 mb-3">Net Price (할인가격 × 커미션)</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">구분</th>
+                          <th className="text-center py-2">성인</th>
+                          <th className="text-center py-2">아동</th>
+                          <th className="text-center py-2">유아</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b">
+                          <td className="py-2 font-medium">Net Price</td>
+                          <td className="text-center py-2">${(pricingConfig.adult_price * (1 - pricingConfig.coupon_percentage_discount / 100) * (1 - pricingConfig.commission_percent / 100)).toFixed(2)}</td>
+                          <td className="text-center py-2">${(pricingConfig.child_price * (1 - pricingConfig.coupon_percentage_discount / 100) * (1 - pricingConfig.commission_percent / 100)).toFixed(2)}</td>
+                          <td className="text-center py-2">${(pricingConfig.infant_price * (1 - pricingConfig.coupon_percentage_discount / 100) * (1 - pricingConfig.commission_percent / 100)).toFixed(2)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 옵션별 기본 가격 */}
+                {(() => {
+                  const optionsWithPrices = options.filter(option => {
+                    const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
+                    return existingOption && (existingOption.adult_price > 0 || existingOption.child_price > 0 || existingOption.infant_price > 0);
+                  });
+
+                  if (optionsWithPrices.length === 0) return null;
+
+                  return (
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <h4 className="font-medium text-gray-900 mb-3">옵션별 가격 (기본 판매가 + 옵션 선택가)</h4>
+                      <div className="space-y-3">
+                        {optionsWithPrices.map(option => {
+                          const existingOption = pricingConfig.required_options.find(opt => opt.option_id === option.id);
+                          if (!existingOption) return null;
+
+                          const adultTotalPrice = pricingConfig.adult_price + existingOption.adult_price;
+                          const childTotalPrice = pricingConfig.child_price + existingOption.child_price;
+                          const infantTotalPrice = pricingConfig.infant_price + existingOption.infant_price;
+
+                          return (
+                            <div key={option.id} className="bg-white p-3 rounded border border-gray-200">
+                              <h6 className="font-medium text-sm text-gray-800 mb-2 flex justify-between">
+                                <span>{option.name}</span>
+                                <span className="text-gray-600">성인: ${adultTotalPrice}</span>
+                              </h6>
+                              {showDetailedPrices && (
+                                <div className="text-xs space-y-1">
+                                  <div className="flex justify-between">
+                                    <span>성인:</span>
+                                    <span>${pricingConfig.adult_price} + ${existingOption.adult_price} = <span className="font-medium">${adultTotalPrice}</span></span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>아동:</span>
+                                    <span>${pricingConfig.child_price} + ${existingOption.child_price} = <span className="font-medium">${childTotalPrice}</span></span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>유아:</span>
+                                    <span>${pricingConfig.infant_price} + ${existingOption.infant_price} = <span className="font-medium">${infantTotalPrice}</span></span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             )}
 
 

@@ -9,6 +9,7 @@ export interface PickupHotel {
   address: string
   pin: string | null
   link: string | null
+  youtube_link: string | null
   media: string[] | null
   is_active: boolean | null
   group_number: number | null

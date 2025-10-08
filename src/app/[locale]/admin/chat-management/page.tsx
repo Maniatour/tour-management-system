@@ -8,6 +8,7 @@ import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES }
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { formatTimeWithAMPM } from '@/lib/utils'
 
 interface ChatRoom {
   id: string
@@ -398,19 +399,46 @@ export default function ChatManagementPage() {
       let assistantData = null
 
       if ((tourData as { tour_guide_id?: string }).tour_guide_id) {
-        const { data: guide, error: guideError } = await supabase
-          .from('team')
-          .select('email, name_ko')
-          .eq('email', (tourData as { tour_guide_id: string }).tour_guide_id)
-          .single()
+        try {
+          // 먼저 직접 조회 시도 (더 안전한 방식)
+          const { data: directGuide, error: directError } = await supabase
+            .from('team')
+            .select('email, name_ko')
+            .eq('email', (tourData as { tour_guide_id: string }).tour_guide_id)
+            .single()
 
-        if (!guideError && guide) {
-          tourGuideData = {
-            email: (guide as { email: string }).email,
-            name: (guide as { name_ko?: string; email: string }).name_ko || (guide as { email: string }).email
+          if (!directError && directGuide) {
+            tourGuideData = {
+              email: (directGuide as { email: string }).email,
+              name: (directGuide as { name_ko?: string; email: string }).name_ko || (directGuide as { email: string }).email
+            }
+          } else {
+            // 직접 조회 실패 시 RPC 함수 시도 (fallback)
+            console.log('Direct query failed, trying RPC function...', directError)
+            
+            const { data: guideData, error: guideError } = await supabase
+              .from('team')
+              .select('email, name_ko')
+              .eq('email', (tourData as { tour_guide_id: string }).tour_guide_id)
+              .single()
+
+            if (!guideError && guideData) {
+              tourGuideData = {
+                email: (guideData as { email: string }).email,
+                name: (guideData as { name_ko?: string; email: string }).name_ko || (guideData as { email: string }).email
+              }
+            } else {
+              console.error('Both direct query and RPC failed:', { directError, guideError })
+              // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
+              tourGuideData = {
+                email: (tourData as { tour_guide_id: string }).tour_guide_id,
+                name: (tourData as { tour_guide_id: string }).tour_guide_id
+              }
+            }
           }
-        } else {
-          // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
+        } catch (error) {
+          console.error('Error fetching guide info:', error)
+          // 오류 발생 시 이메일을 이름으로 사용
           tourGuideData = {
             email: (tourData as { tour_guide_id: string }).tour_guide_id,
             name: (tourData as { tour_guide_id: string }).tour_guide_id
@@ -419,19 +447,46 @@ export default function ChatManagementPage() {
       }
 
       if ((tourData as { assistant_id?: string }).assistant_id) {
-        const { data: assistant, error: assistantError } = await supabase
-          .from('team')
-          .select('email, name_ko')
-          .eq('email', (tourData as { assistant_id: string }).assistant_id)
-          .single()
+        try {
+          // 먼저 직접 조회 시도 (더 안전한 방식)
+          const { data: directAssistant, error: directError } = await supabase
+            .from('team')
+            .select('email, name_ko')
+            .eq('email', (tourData as { assistant_id: string }).assistant_id)
+            .single()
 
-        if (!assistantError && assistant) {
-          assistantData = {
-            email: (assistant as { email: string }).email,
-            name: (assistant as { name_ko?: string; email: string }).name_ko || (assistant as { email: string }).email
+          if (!directError && directAssistant) {
+            assistantData = {
+              email: (directAssistant as { email: string }).email,
+              name: (directAssistant as { name_ko?: string; email: string }).name_ko || (directAssistant as { email: string }).email
+            }
+          } else {
+            // 직접 조회 실패 시 RPC 함수 시도 (fallback)
+            console.log('Direct query failed, trying RPC function...', directError)
+            
+            const { data: assistantRpcData, error: assistantError } = await supabase
+              .from('team')
+              .select('email, name_ko')
+              .eq('email', (tourData as { assistant_id: string }).assistant_id)
+              .single()
+
+            if (!assistantError && assistantRpcData) {
+              assistantData = {
+                email: (assistantRpcData as { email: string }).email,
+                name: (assistantRpcData as { name_ko?: string; email: string }).name_ko || (assistantRpcData as { email: string }).email
+              }
+            } else {
+              console.error('Both direct query and RPC failed:', { directError, assistantError })
+              // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
+              assistantData = {
+                email: (tourData as { assistant_id: string }).assistant_id,
+                name: (tourData as { assistant_id: string }).assistant_id
+              }
+            }
           }
-        } else {
-          // team 테이블에서 찾을 수 없는 경우 이메일을 이름으로 사용
+        } catch (error) {
+          console.error('Error fetching assistant info:', error)
+          // 오류 발생 시 이메일을 이름으로 사용
           assistantData = {
             email: (tourData as { assistant_id: string }).assistant_id,
             name: (tourData as { assistant_id: string }).assistant_id
@@ -564,7 +619,7 @@ export default function ChatManagementPage() {
     setNewMessage('')
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as unknown as { from: (table: string) => { insert: (data: unknown) => { select: () => { single: () => Promise<{ data: unknown; error: unknown }> } } } })
         .from('chat_messages')
         .insert({
           room_id: selectedRoom.id,
@@ -582,7 +637,7 @@ export default function ChatManagementPage() {
       // 실제 메시지로 교체
       setMessages(prev => 
         prev.map(msg => 
-          msg.id === tempMessage.id ? data : msg
+          msg.id === tempMessage.id ? (data as ChatMessage) : msg
         )
       )
     } catch (error) {
@@ -606,7 +661,7 @@ export default function ChatManagementPage() {
     
     // 읽지 않은 메시지를 읽음 처리
     try {
-      await supabase
+      await (supabase as unknown as { from: (table: string) => { update: (data: unknown) => { eq: (column: string, value: unknown) => { eq: (column: string, value: unknown) => { eq: (column: string, value: unknown) => Promise<unknown> } } } } })
         .from('chat_messages')
         .update({ is_read: true })
         .eq('room_id', room.id)
@@ -886,7 +941,7 @@ export default function ChatManagementPage() {
               </div>
             </div>
           ) : (
-            filteredRooms.map((room: any) => (
+            filteredRooms.map((room) => (
             <div
               key={room.id}
               className={`p-2 border-b overflow-hidden border-gray-100 transition-colors ${
@@ -900,7 +955,7 @@ export default function ChatManagementPage() {
               <div className="flex items-center justify-between">
                 <div 
                   className="flex-1 min-w-0 cursor-pointer"
-                  onClick={() => selectRoom(room as ChatRoom)}
+                  onClick={() => selectRoom(room as unknown as ChatRoom)}
                 >
                   {/* 상품 이름과 상태 */}
                   <div className="flex items-center justify-between mb-0.5">
@@ -909,14 +964,14 @@ export default function ChatManagementPage() {
                         ? 'font-bold text-gray-900' 
                         : 'font-medium text-gray-900'
                     }`}>
-                      {(room.tour as any)?.product?.name_ko || (room.tour as any)?.product?.name || room.room_name}
+                      {String(((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name_ko || ((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name || room.room_name)}
                       {room.unread_count > 0 && ' • 새 메시지'}
                     </h3>
-                    {(room.tour as any)?.status && (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getTourStatus((room.tour as any).status).color}`}>
-                        {(room.tour as any).status}
+                    {(room.tour as Record<string, unknown>)?.status ? (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getTourStatus((room.tour as Record<string, unknown>).status as string).color}`}>
+                        {String((room.tour as Record<string, unknown>).status)}
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   
                   {/* 투어 날짜, 인원 정보, 방 코드 */}
@@ -924,13 +979,13 @@ export default function ChatManagementPage() {
                     <div className="flex items-center">
                       <Calendar size={10} className="mr-1" />
                       <span className="truncate">
-                        {(room.tour as any)?.tour_date ? formatTourDate((room.tour as any).tour_date) : '날짜미정'}
+                        {(room.tour as Record<string, unknown>)?.tour_date ? formatTourDate(String((room.tour as Record<string, unknown>).tour_date)) : '날짜미정'}
                       </span>
-                      {(room.tour as any)?.reservations && Array.isArray((room.tour as any).reservations) && (room.tour as any).reservations.length > 0 && (
+                      {(room.tour as Record<string, unknown>)?.reservations && Array.isArray((room.tour as Record<string, unknown>).reservations) && ((room.tour as Record<string, unknown>).reservations as unknown[]).length > 0 ? (
                         <span className="ml-2 text-gray-400">
-                          {getTotalParticipants(((room.tour as any).reservations) as Array<{ adults: number; child: number; infant: number }>)}명
+                          {getTotalParticipants(((room.tour as Record<string, unknown>).reservations) as Array<{ adults: number; child: number; infant: number }>)}명
                         </span>
-                      )}
+                      ) : null}
                     </div>
                     <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-xs">
                       {room.room_code}
@@ -943,11 +998,11 @@ export default function ChatManagementPage() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      if ((room.tour as any)?.tour_date) {
+                      if ((room.tour as Record<string, unknown>)?.tour_date) {
                         openChat({
                           id: `chat_mgmt_${room.id}_${Date.now()}`,
                           tourId: room.tour_id,
-                          tourDate: (room.tour as any).tour_date,
+                          tourDate: (room.tour as Record<string, unknown>).tour_date as string,
                           guideEmail: user?.email || "admin@tour.com",
                           tourName: room.id
                         })
@@ -1255,7 +1310,22 @@ export default function ChatManagementPage() {
                       {/* 첫 번째 줄: 시간 | 호텔 */}
                       <div className="flex items-center mb-1">
                         <div className="text-gray-900 font-medium text-sm mr-2">
-                          {schedule.time ? schedule.time.split(':').slice(0, 2).join(':') : '미정'}
+                          {(() => {
+                            const pickupTime = schedule.time ? schedule.time.split(':').slice(0, 2).join(':') : '미정'
+                            if (pickupTime === '미정') return pickupTime
+                            
+                            const timeHour = parseInt(pickupTime.split(':')[0])
+                            
+                            // 오후 9시(21:00) 이후면 날짜를 하루 빼기
+                            let displayDate = tourInfo.tour_date || ''
+                            if (timeHour >= 21 && tourInfo.tour_date) {
+                              const date = new Date(tourInfo.tour_date)
+                              date.setDate(date.getDate() - 1)
+                              displayDate = date.toISOString().split('T')[0]
+                            }
+                            
+                            return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
+                          })()}
                         </div>
                         <div className="text-gray-400">|</div>
                         <div className="text-gray-900 font-medium text-sm ml-2">

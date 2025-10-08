@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, memo } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 interface Product {
@@ -47,7 +47,7 @@ interface ProductSelectionSectionProps {
   layout?: 'modal' | 'page'
 }
 
-export default function ProductSelectionSection({
+function ProductSelectionSection({
   formData,
   setFormData,
   products,
@@ -57,6 +57,14 @@ export default function ProductSelectionSection({
   layout = 'modal'
 }: ProductSelectionSectionProps) {
   const [isExpanded, setIsExpanded] = useState(layout === 'modal')
+  
+  // formData 변경 추적을 위한 로그
+  console.log('ProductSelectionSection 렌더링:', {
+    productId: formData.productId,
+    productChoicesLength: formData.productChoices?.length || 0,
+    selectedChoicesKeys: Object.keys(formData.selectedChoices || {}),
+    choiceTotal: formData.choiceTotal
+  })
   
   // 상품이 변경될 때 choice 데이터 로드
   useEffect(() => {
@@ -225,7 +233,34 @@ export default function ProductSelectionSection({
               </h4>
               <div className="space-y-3">
                 {formData.productChoices.map((choice) => {
-                  const isSelected = formData.selectedChoices[choice.id]?.selected === choice.id
+                  // choiceGroupId를 동적으로 찾기 (reservation.choices.required에서)
+                  // choice.id가 selectedChoices의 키에 있는지 확인
+                  const choiceGroupId = Object.keys(formData.selectedChoices).find(key => 
+                    formData.selectedChoices[key]?.selected === choice.id
+                  ) || 'canyon_choice' // fallback
+                  
+                  // isSelected는 choice.id가 선택된 옵션 ID와 일치하는지 확인
+                  const isSelected = Object.values(formData.selectedChoices).some(choiceData => 
+                    choiceData?.selected === choice.id
+                  )
+                  
+                  console.log('ProductSelectionSection: choiceGroupId 찾기:', {
+                    choiceId: choice.id,
+                    choiceGroupId,
+                    selectedChoicesKeys: Object.keys(formData.selectedChoices),
+                    selectedChoicesValues: Object.values(formData.selectedChoices),
+                    isSelected
+                  })
+                  
+                  console.log('ProductSelectionSection: choice 렌더링:', {
+                    choiceId: choice.id,
+                    choiceName: choice.name_ko || choice.name,
+                    choiceGroupId,
+                    selectedChoices: formData.selectedChoices,
+                    selectedChoicesKeys: Object.keys(formData.selectedChoices),
+                    selectedChoicesValues: Object.values(formData.selectedChoices),
+                    isSelected
+                  })
                   
                   return (
                     <div 
@@ -248,13 +283,24 @@ export default function ProductSelectionSection({
                           ...prev,
                           selectedChoices: {
                             ...prev.selectedChoices,
-                            [choice.id]: selectedChoice
+                            [choiceGroupId]: selectedChoice
                           },
-                          // choiceTotal 계산
+                          // choiceTotal 계산 (동적 가격 우선, 없으면 기본 가격)
                           choiceTotal: (dynamicPricing?.adult ?? choice.adult_price) * prev.adults + 
                                      (dynamicPricing?.child ?? choice.child_price) * prev.child + 
-                                     (dynamicPricing?.infant ?? choice.infant_price) * prev.infant
+                                     (dynamicPricing?.infant ?? choice.infant_price) * prev.infant,
+                          // choices 데이터도 업데이트 (가격 계산을 위해)
+                          choices: {
+                            ...prev.choices,
+                            [choice.id]: {
+                              adult_price: dynamicPricing?.adult ?? choice.adult_price,
+                              child_price: dynamicPricing?.child ?? choice.child_price,
+                              infant_price: dynamicPricing?.infant ?? choice.infant_price
+                            }
+                          }
                         }))
+                        
+                        // 가격 업데이트는 formData 변경으로 자동 처리됨
                       }}
                     >
                       <div className="flex items-center space-x-3 mb-2">
@@ -302,3 +348,14 @@ export default function ProductSelectionSection({
     </div>
   )
 }
+
+export default memo(ProductSelectionSection, (prevProps, nextProps) => {
+  // 필요한 props만 비교하여 불필요한 재렌더링 방지
+  return (
+    prevProps.formData.productId === nextProps.formData.productId &&
+    prevProps.formData.productChoices?.length === nextProps.formData.productChoices?.length &&
+    JSON.stringify(prevProps.formData.selectedChoices) === JSON.stringify(nextProps.formData.selectedChoices) &&
+    prevProps.formData.choiceTotal === nextProps.formData.choiceTotal &&
+    prevProps.layout === nextProps.layout
+  )
+})
