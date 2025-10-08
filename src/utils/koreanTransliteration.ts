@@ -138,31 +138,38 @@ interface CustomerWithNames {
   name?: string
   name_ko?: string
   name_en?: string
+  language?: string
 }
 
 export function formatCustomerName(customer: CustomerWithNames | null | undefined, locale: string): string {
   if (!customer) return locale === 'ko' ? '정보 없음' : '정보 없음'
   
-  // 현재 고객 테이블에는 name 필드만 있을 수 있으므로 안전하게 처리
-  const customerData = customer as CustomerWithNames & { name?: string }
+  const customerData = customer as CustomerWithNames & { name?: string; language?: string }
   const customerName = customerData.name_ko || customerData.name || ''
   const englishName = customerData.name_en || ''
+  const customerLanguage = customerData.language || ''
+  
+  // 고객 언어가 한국어가 아니면 원래 이름 그대로 표시
+  if (customerLanguage && !isKoreanLanguage(customerLanguage)) {
+    return customerName || '정보 없음'
+  }
   
   if (locale === 'ko') {
     // 한국어 페이지: 한국어 이름만 표시
     return customerName || '정보 없음'
   } else {
-    // 영어 페이지: 음성학적 변환된 이름 표시
+    // 영어 페이지: 한글 이름일 때만 음성학적 변환된 이름 표시
     if (englishName && englishName !== customerName) {
       return englishName
     }
     
-    if (customerName) {
+    if (customerName && isKoreanName(customerName)) {
       const transliterated = transliterateKorean(customerName)
       return transliterated ? `${transliterated} (${customerName})` : customerName
     }
     
-    return locale === 'ko' ? '정보 없음' : '정보 없음'
+    // 한글이 아닌 이름은 그대로 표시
+    return customerName || '정보 없음'
   }
 }
 
@@ -251,30 +258,53 @@ const surnameMap: Record<string, string> = {
 
 /**
  * 고객 이름을 다국어로 표시하는 헬퍼 함수 (향상된 버전)
+ * 고객 언어가 한국어가 아니면 번역하지 않고 그대로 표시
  */
 export function formatCustomerNameEnhanced(customer: CustomerWithNames | null | undefined, locale: string): string {
   if (!customer) return locale === 'ko' ? '정보 없음' : '정보 없음'
   
-  const customerData = customer as CustomerWithNames & { name?: string }
+  const customerData = customer as CustomerWithNames & { name?: string; language?: string }
   const customerName = customerData.name_ko || customerData.name || ''
   const englishName = customerData.name_en || ''
+  const customerLanguage = customerData.language || ''
+  
+  // 고객 언어가 한국어가 아니면 원래 이름 그대로 표시
+  if (customerLanguage && !isKoreanLanguage(customerLanguage)) {
+    return customerName || '정보 없음'
+  }
   
   if (locale === 'ko') {
     // 한국어 페이지: 한국어 이름만 표시
     return customerName || '정보 없음'
   } else {
-    // 영어 페이지: 음성학적 변환된 이름 표시 (영어식 순서)
+    // 영어 페이지: 한글 이름일 때만 음성학적 변환된 이름 표시
     if (englishName && englishName !== customerName) {
       return englishName
     }
     
-    if (customerName) {
+    if (customerName && isKoreanName(customerName)) {
       const englishOrderName = getKoreanNameInEnglishOrder(customerName)
       return englishOrderName ? `${englishOrderName} (${customerName})` : customerName
     }
     
-    return locale === 'ko' ? '정보 없음' : '정보 없음'
+    // 한글이 아닌 이름은 그대로 표시
+    return customerName || '정보 없음'
   }
+}
+
+/**
+ * 언어가 한국어인지 확인하는 함수
+ */
+function isKoreanLanguage(language: string): boolean {
+  const koreanLanguageCodes = ['kr', 'ko', '한국어', 'korean']
+  return koreanLanguageCodes.includes(language.toLowerCase())
+}
+
+/**
+ * 이름이 한글인지 확인하는 함수
+ */
+function isKoreanName(name: string): boolean {
+  return /[가-힣]/.test(name)
 }
 
 /**

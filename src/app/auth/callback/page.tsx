@@ -36,10 +36,56 @@ export default function AuthCallbackPage() {
         
         if (data.session?.user) {
           console.log('Auth callback: User authenticated:', data.session.user.email)
-          // 잠시 후 AuthContext가 로드되도록 대기
+          
+          // 가이드인지 확인하고 선호 언어로 리다이렉트
+          try {
+            const { data: teamData, error: teamError } = await supabase
+              .from('team')
+              .select('position, languages')
+              .eq('email', data.session.user.email)
+              .eq('is_active', true)
+              .single()
+
+            if (!teamError && teamData) {
+              const position = teamData.position?.toLowerCase() || ''
+              const isGuide = position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')
+              
+              if (isGuide && teamData.languages && Array.isArray(teamData.languages) && teamData.languages.length > 0) {
+                const firstLanguage = teamData.languages[0]
+                let preferredLocale = 'ko' // 기본값
+                
+                // 언어 코드를 locale로 변환
+                switch (firstLanguage.toUpperCase()) {
+                  case 'KR':
+                  case 'KO':
+                    preferredLocale = 'ko'
+                    break
+                  case 'EN':
+                    preferredLocale = 'en'
+                    break
+                  case 'JP':
+                  case 'JA':
+                    preferredLocale = 'ja'
+                    break
+                  case 'CN':
+                  case 'ZH':
+                    preferredLocale = 'zh'
+                    break
+                  default:
+                    preferredLocale = 'ko'
+                }
+                
+                console.log('Auth callback: Guide detected, redirecting to preferred language:', preferredLocale)
+                router.replace(`/${preferredLocale}/guide`)
+                return
+              }
+            }
+          } catch (error) {
+            console.error('Auth callback: Error checking guide language:', error)
+          }
+          
+          // 가이드가 아니거나 언어 정보가 없는 경우 기본 리다이렉트
           setTimeout(() => {
-            // 임시 해결책: 모든 사용자를 기본 페이지로 리다이렉트
-            // AuthContext에서 역할 확인 후 적절한 페이지로 재리다이렉트됨
             router.replace(`/${locale}`)
           }, 100)
         } else {

@@ -11,6 +11,8 @@ interface TeamData {
   name_ko?: string
   email: string
   is_active: boolean
+  position?: string
+  languages?: string[]
 }
 
 interface AuthContextType {
@@ -54,51 +56,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
 
-  // team 멤버십 확인
-  const checkTeamMembership = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
-    if (!email) {
-      setUserRole('customer')
-      setPermissions(null)
-      setLoading(false)
-      if (timeoutId) clearTimeout(timeoutId)
-      return
-    }
-
+  // 가이드 언어 탐지 및 리다이렉트 함수
+  const getGuidePreferredLanguage = useCallback(async (email: string): Promise<string> => {
     try {
-      console.log('AuthContext: Checking team membership for:', email)
-      
       const { data: teamData, error } = await supabase
         .from('team')
-        .select('*')
+        .select('languages')
         .eq('email', email)
         .eq('is_active', true)
         .single()
 
       if (error || !teamData) {
-        console.log('AuthContext: Not a team member')
-        setUserRole('customer')
-        setPermissions(null)
-        setLoading(false) // team 확인 완료 후 로딩 해제
-        if (timeoutId) clearTimeout(timeoutId)
-        return
+        console.log('AuthContext: No team data found for language detection')
+        return 'ko' // 기본값
       }
 
-      console.log('AuthContext: Team member found:', (teamData as TeamData).name_ko)
-      
-      // team 멤버인 경우 역할 확인
-      await checkUserRole(email, timeoutId)
-      // checkUserRole에서 이미 setLoading(false)를 호출하므로 여기서는 호출하지 않음
+      const languages = (teamData as TeamData).languages
+      console.log('AuthContext: Guide languages:', languages)
+
+      // languages가 배열이고 첫 번째 언어가 있는 경우
+      if (Array.isArray(languages) && languages.length > 0) {
+        const firstLanguage = languages[0]
+        
+        // 언어 코드를 locale로 변환
+        switch (firstLanguage.toUpperCase()) {
+          case 'KR':
+          case 'KO':
+            return 'ko'
+          case 'EN':
+            return 'en'
+          case 'JP':
+          case 'JA':
+            return 'ja'
+          case 'CN':
+          case 'ZH':
+            return 'zh'
+          default:
+            return 'ko' // 기본값
+        }
+      }
+
+      return 'ko' // 기본값
     } catch (error) {
-      console.error('AuthContext: Team check failed:', error)
-      setUserRole('customer')
-      setPermissions(null)
-      setLoading(false) // 에러 발생 시에도 로딩 해제
-      if (timeoutId) clearTimeout(timeoutId)
+      console.error('AuthContext: Error detecting guide language:', error)
+      return 'ko' // 기본값
     }
   }, [])
 
+  // 가이드 리다이렉트 함수
+  const redirectGuideToPreferredLanguage = useCallback(async (email: string) => {
+    try {
+      const preferredLanguage = await getGuidePreferredLanguage(email)
+      console.log('AuthContext: Redirecting guide to preferred language:', preferredLanguage)
+      
+      // 현재 경로에서 locale 추출
+      const currentPath = window.location.pathname
+      const currentLocaleMatch = currentPath.match(/^\/([a-z]{2})/)
+      const currentLocale = currentLocaleMatch ? currentLocaleMatch[1] : 'ko'
+      
+      // 이미 선호 언어 페이지에 있다면 리다이렉트하지 않음
+      if (currentLocale === preferredLanguage) {
+        console.log('AuthContext: Already on preferred language page')
+        return
+      }
+      
+      // 가이드 페이지로 리다이렉트
+      router.push(`/${preferredLanguage}/guide`)
+    } catch (error) {
+      console.error('AuthContext: Error redirecting guide:', error)
+    }
+  }, [getGuidePreferredLanguage, router])
+
   // 사용자 역할 및 권한 확인
-  const checkUserRole = async (email: string, timeoutId?: NodeJS.Timeout) => {
+  const checkUserRole = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
     if (!email) {
       setUserRole('customer')
       setPermissions(null)
@@ -149,6 +179,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (timeoutId) clearTimeout(timeoutId)
       
       console.log('AuthContext: User role set:', role, 'for user:', email)
+      
+      // 가이드인 경우 선호 언어로 리다이렉트
+      if (role === 'team_member' && teamData) {
+        const position = (teamData as TeamData).position?.toLowerCase() || ''
+        if (position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')) {
+          console.log('AuthContext: Guide detected, checking language preference')
+          // 약간의 지연을 두어 다른 리다이렉트와 충돌하지 않도록 함
+          setTimeout(() => {
+            redirectGuideToPreferredLanguage(email)
+          }, 500)
+        }
+      }
     } catch (error) {
       console.error('Error checking user role:', error)
       setUserRole('customer')
@@ -156,7 +198,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }
+  }, [redirectGuideToPreferredLanguage])
+
+  // team 멤버십 확인
+  const checkTeamMembership = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
+    if (!email) {
+      setUserRole('customer')
+      setPermissions(null)
+      setLoading(false)
+      if (timeoutId) clearTimeout(timeoutId)
+      return
+    }
+
+    try {
+      console.log('AuthContext: Checking team membership for:', email)
+      
+      const { data: teamData, error } = await supabase
+        .from('team')
+        .select('*')
+        .eq('email', email)
+        .eq('is_active', true)
+        .single()
+
+      if (error || !teamData) {
+        console.log('AuthContext: Not a team member')
+        setUserRole('customer')
+        setPermissions(null)
+        setLoading(false) // team 확인 완료 후 로딩 해제
+        if (timeoutId) clearTimeout(timeoutId)
+        return
+      }
+
+      console.log('AuthContext: Team member found:', (teamData as TeamData).name_ko)
+      
+      // team 멤버인 경우 역할 확인
+      await checkUserRole(email, timeoutId)
+      // checkUserRole에서 이미 setLoading(false)를 호출하므로 여기서는 호출하지 않음
+    } catch (error) {
+      console.error('AuthContext: Team check failed:', error)
+      setUserRole('customer')
+      setPermissions(null)
+      setLoading(false) // 에러 발생 시에도 로딩 해제
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [checkUserRole])
 
   // 시뮬레이션 정보 복원 (한 번만 실행)
   useEffect(() => {

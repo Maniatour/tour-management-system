@@ -1256,41 +1256,95 @@ export default function TableScheduleAdd({
     setDragOverIndex(null)
   }
 
-  // 시간 업데이트 함수 (첫 번째 줄부터 모든 행의 시간을 순차적으로 계산, 시간 없음 행은 스킵)
+  // 시간 업데이트 함수 (일차별로 첫 번째 시간을 기준으로 나머지 시간 계산)
   const updateTimesBasedOnDuration = (schedules: ScheduleItem[]) => {
     const updatedSchedules = [...schedules]
-    let currentTime = '09:00' // 기본 시작 시간
     
-    // 모든 행을 순차적으로 처리
-    for (let i = 0; i < updatedSchedules.length; i++) {
-      const schedule = updatedSchedules[i]
-      
-      // 시간 없음이 체크된 행은 스킵
-      if (schedule.no_time) {
-        continue
+    // 일차별로 그룹화
+    const schedulesByDay = updatedSchedules.reduce((acc, schedule, index) => {
+      const day = schedule.day_number
+      if (!acc[day]) {
+        acc[day] = []
       }
+      acc[day].push({ ...schedule, originalIndex: index })
+      return acc
+    }, {} as Record<number, Array<ScheduleItem & { originalIndex: number }>>)
+    
+    // 각 일차별로 처리
+    Object.keys(schedulesByDay).forEach(dayStr => {
+      const day = parseInt(dayStr)
+      const daySchedules = schedulesByDay[day]
       
-      if (schedule.duration_minutes && schedule.duration_minutes > 0) {
-        // 시작 시간 설정
-        updatedSchedules[i] = {
-          ...updatedSchedules[i],
-          start_time: currentTime
-        }
+      // 해당 일차의 첫 번째 시간이 있는 일정 찾기
+      const firstScheduleWithTime = daySchedules.find(schedule => 
+        schedule.start_time && !schedule.no_time
+      )
+      
+      if (firstScheduleWithTime) {
+        // 첫 번째 시간을 기준으로 시작
+        let currentTime = firstScheduleWithTime.start_time!
         
-        // 종료 시간 계산 (시작 시간 + 소요시간)
-        const startMinutes = timeToMinutes(currentTime)
-        const endMinutes = startMinutes + schedule.duration_minutes
-        const endTime = minutesToTime(endMinutes)
+        // 해당 일차의 모든 일정을 순차적으로 처리
+        daySchedules.forEach(schedule => {
+          // 시간 없음이 체크된 행은 스킵
+          if (schedule.no_time) {
+            return
+          }
+          
+          if (schedule.duration_minutes && schedule.duration_minutes > 0) {
+            // 시작 시간 설정
+            updatedSchedules[schedule.originalIndex] = {
+              ...updatedSchedules[schedule.originalIndex],
+              start_time: currentTime
+            }
+            
+            // 종료 시간 계산 (시작 시간 + 소요시간)
+            const startMinutes = timeToMinutes(currentTime)
+            const endMinutes = startMinutes + schedule.duration_minutes
+            const endTime = minutesToTime(endMinutes)
+            
+            updatedSchedules[schedule.originalIndex] = {
+              ...updatedSchedules[schedule.originalIndex],
+              end_time: endTime
+            }
+            
+            // 다음 일정의 시작 시간을 현재 종료 시간으로 설정
+            currentTime = endTime
+          }
+        })
+      } else {
+        // 첫 번째 시간이 없으면 기본 시간(09:00)으로 시작
+        let currentTime = '09:00'
         
-        updatedSchedules[i] = {
-          ...updatedSchedules[i],
-          end_time: endTime
-        }
-        
-        // 다음 일정의 시작 시간을 현재 종료 시간으로 설정
-        currentTime = endTime
+        daySchedules.forEach(schedule => {
+          // 시간 없음이 체크된 행은 스킵
+          if (schedule.no_time) {
+            return
+          }
+          
+          if (schedule.duration_minutes && schedule.duration_minutes > 0) {
+            // 시작 시간 설정
+            updatedSchedules[schedule.originalIndex] = {
+              ...updatedSchedules[schedule.originalIndex],
+              start_time: currentTime
+            }
+            
+            // 종료 시간 계산 (시작 시간 + 소요시간)
+            const startMinutes = timeToMinutes(currentTime)
+            const endMinutes = startMinutes + schedule.duration_minutes
+            const endTime = minutesToTime(endMinutes)
+            
+            updatedSchedules[schedule.originalIndex] = {
+              ...updatedSchedules[schedule.originalIndex],
+              end_time: endTime
+            }
+            
+            // 다음 일정의 시작 시간을 현재 종료 시간으로 설정
+            currentTime = endTime
+          }
+        })
       }
-    }
+    })
     
     return updatedSchedules
   }

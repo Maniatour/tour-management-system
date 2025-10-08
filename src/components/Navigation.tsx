@@ -1,12 +1,17 @@
 'use client'
 
+declare global {
+  interface Window {
+    openGuideDocumentUpload?: (type: 'medical' | 'cpr') => void
+  }
+}
+
 import { useState } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Calendar, LogIn, Home, Menu, X, User, Settings, LogOut, ChevronDown, UserCheck } from 'lucide-react'
+import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
-import UserProfile from './auth/UserProfile'
 import SunriseTime from './SunriseTime'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -57,14 +62,14 @@ const Navigation = () => {
               className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
             >
               <Home className="w-4 h-4 mr-2" />
-              홈
+              {t('home')}
             </Link>
             <Link 
               href={`/${locale}/products`}
               className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
             >
               <Calendar className="w-4 h-4 mr-2" />
-              상품
+              {t('products')}
             </Link>
             {/* 일출 시간 표시 */}
             <SunriseTime />
@@ -91,12 +96,12 @@ const Navigation = () => {
                     </div>
                     <div className="hidden sm:block text-left">
                       <div className="text-sm font-medium text-gray-900">
-                        {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}
+                        {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {userRole === 'admin' ? '관리자' : 
-                         userRole === 'manager' ? '매니저' : 
-                         userRole === 'team_member' ? '팀원' : '고객'}
+                        {userRole === 'admin' ? t('admin') : 
+                         userRole === 'manager' ? t('manager') : 
+                         userRole === 'team_member' ? t('teamMember') : t('customer')}
                       </div>
                     </div>
                     <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -115,14 +120,14 @@ const Navigation = () => {
                         <div className="py-1">
                           <div className="px-4 py-2 border-b border-gray-100">
                             <p className="text-sm font-medium text-gray-900">
-                              {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}
+                              {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
                             </p>
-                            <p className="text-xs text-gray-500">{authUser?.email || '이메일 없음'}</p>
+                            <p className="text-xs text-gray-500">{authUser?.email || t('noEmail')}</p>
                             {userRole && (
                               <p className="text-xs text-blue-600 font-medium mt-1">
-                                {userRole === 'admin' ? '관리자' : 
-                                 userRole === 'manager' ? '매니저' : 
-                                 userRole === 'team_member' ? '팀원' : '고객'}
+                                {userRole === 'admin' ? t('admin') : 
+                                 userRole === 'manager' ? t('manager') : 
+                                 userRole === 'team_member' ? t('teamMember') : t('customer')}
                               </p>
                             )}
                           </div>
@@ -135,7 +140,7 @@ const Navigation = () => {
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                             >
                               <Settings className="w-4 h-4 mr-2" />
-                              관리자 페이지
+                              {t('adminPage')}
                             </Link>
                           )}
                           
@@ -147,8 +152,38 @@ const Navigation = () => {
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                             >
                               <UserCheck className="w-4 h-4 mr-2" />
-                              가이드 페이지
+                              {t('guidePage')}
                             </Link>
+                          )}
+                          
+                          {/* 문서 업로드 메뉴 (팀원만) */}
+                          {userRole === 'team_member' && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  handleUserMenuClick()
+                                  if (typeof window !== 'undefined' && window.openGuideDocumentUpload) {
+                                    window.openGuideDocumentUpload('medical')
+                                  }
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                              >
+                                <FileText className="w-4 h-4 mr-2" />
+                                {t('medicalReport')}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  handleUserMenuClick()
+                                  if (typeof window !== 'undefined' && window.openGuideDocumentUpload) {
+                                    window.openGuideDocumentUpload('cpr')
+                                  }
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                              >
+                                <Shield className="w-4 h-4 mr-2" />
+                                {t('cprCertificate')}
+                              </button>
+                            </>
                           )}
                           
                           <div className="border-t border-gray-100 my-1"></div>
@@ -158,7 +193,7 @@ const Navigation = () => {
                             className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                           >
                             <LogOut className="w-4 h-4 mr-2" />
-                            로그아웃
+                            {t('logout')}
                           </button>
                         </div>
                       </div>
@@ -172,7 +207,7 @@ const Navigation = () => {
                 className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
               >
                 <LogIn className="w-4 h-4 mr-2" />
-                로그인
+                {t('login')}
               </Link>
             )}
           </div>
@@ -199,7 +234,7 @@ const Navigation = () => {
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 <Home className="w-4 h-4 mr-3" />
-                홈
+                {t('home')}
               </Link>
               <Link 
                 href={`/${locale}/products`}
@@ -207,7 +242,7 @@ const Navigation = () => {
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 <Calendar className="w-4 h-4 mr-3" />
-                상품
+                {t('products')}
               </Link>
               
               {/* 인증 상태에 따른 메뉴 */}
@@ -227,12 +262,12 @@ const Navigation = () => {
                     </div>
                     <div>
                       <div className="text-sm font-medium text-gray-900">
-                        {authUser?.name || authUser?.email?.split('@')[0] || '사용자'}
+                        {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {userRole === 'admin' ? '관리자' : 
-                         userRole === 'manager' ? '매니저' : 
-                         userRole === 'team_member' ? '팀원' : '고객'}
+                        {userRole === 'admin' ? t('admin') : 
+                         userRole === 'manager' ? t('manager') : 
+                         userRole === 'team_member' ? t('teamMember') : t('customer')}
                       </div>
                     </div>
                   </div>
@@ -245,7 +280,7 @@ const Navigation = () => {
                       onClick={() => setIsMobileMenuOpen(false)}
                     >
                       <Settings className="w-4 h-4 mr-3" />
-                      관리자 페이지
+                      {t('adminPage')}
                     </Link>
                   )}
                   
@@ -257,8 +292,38 @@ const Navigation = () => {
                       onClick={() => setIsMobileMenuOpen(false)}
                     >
                       <UserCheck className="w-4 h-4 mr-3" />
-                      가이드 페이지
+                      {t('guidePage')}
                     </Link>
+                  )}
+                  
+                  {/* 문서 업로드 메뉴 (팀원만) */}
+                  {userRole === 'team_member' && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setIsMobileMenuOpen(false)
+                          if (typeof window !== 'undefined' && window.openGuideDocumentUpload) {
+                            window.openGuideDocumentUpload('medical')
+                          }
+                        }}
+                        className="flex items-center w-full text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
+                      >
+                        <FileText className="w-4 h-4 mr-3" />
+                        {t('medicalReport')}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsMobileMenuOpen(false)
+                          if (typeof window !== 'undefined' && window.openGuideDocumentUpload) {
+                            window.openGuideDocumentUpload('cpr')
+                          }
+                        }}
+                        className="flex items-center w-full text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
+                      >
+                        <Shield className="w-4 h-4 mr-3" />
+                        {t('cprCertificate')}
+                      </button>
+                    </>
                   )}
                   
                   {/* 로그아웃 버튼 */}
@@ -270,7 +335,7 @@ const Navigation = () => {
                     className="flex items-center w-full text-gray-600 hover:text-red-600 transition-colors px-2 py-2"
                   >
                     <LogOut className="w-4 h-4 mr-3" />
-                    로그아웃
+                    {t('logout')}
                   </button>
                 </div>
               ) : (
@@ -280,7 +345,7 @@ const Navigation = () => {
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   <LogIn className="w-4 h-4 mr-3" />
-                  로그인
+                  {t('login')}
                 </Link>
               )}
             </div>

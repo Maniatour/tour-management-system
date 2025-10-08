@@ -1,15 +1,23 @@
 'use client'
 
+declare global {
+  interface Window {
+    openGuideDocumentUpload?: (type: 'medical' | 'cpr') => void
+  }
+}
+
 import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
 import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, use, useState } from 'react'
-import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home } from 'lucide-react'
+import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home, Shield } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourReportModal from '@/components/TourReportModal'
 import TourReceiptModal from '@/components/TourReceiptModal'
+import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
+import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
 import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
 
@@ -27,16 +35,26 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   const [showPhotoModal, setShowPhotoModal] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
+  const [showMedicalReportWarning, setShowMedicalReportWarning] = useState(false)
+  const [showDocumentUploadModal, setShowDocumentUploadModal] = useState(false)
+  const [documentUploadType, setDocumentUploadType] = useState<'medical' | 'cpr'>('medical')
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
   const [uncompletedReportCount, setUncompletedReportCount] = useState(0)
 
+  // 문서 업로드 모달 열기 함수
+  const openDocumentUploadModal = (type: 'medical' | 'cpr') => {
+    setDocumentUploadType(type)
+    setShowDocumentUploadModal(true)
+  }
+
+  // 전역 함수로 등록 (다른 컴포넌트에서 사용할 수 있도록)
   useEffect(() => {
-    console.log('GuideLayout: useEffect triggered', { 
-      isLoading, 
-      user: !!user, 
-      userRole, 
-      userEmail: user?.email
-    })
+    if (typeof window !== 'undefined') {
+      window.openGuideDocumentUpload = openDocumentUploadModal
+    }
+  }, [])
+
+  useEffect(() => {
     
     if (!isLoading) {
       console.log('GuideLayout: Auth check completed', { user: !!user, userRole, isLoading })
@@ -55,6 +73,9 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       
       // 미작성 리포트 카운트 로드
       loadUncompletedReportCount()
+      
+      // 메디컬 리포트 상태 확인
+      checkMedicalReportStatus()
     }
   }, [user, userRole, isLoading, router])
 
@@ -218,6 +239,73 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     }
   }
 
+  // 메디컬 리포트 상태 확인
+  const checkMedicalReportStatus = async () => {
+    try {
+      // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
+      const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
+
+      if (!currentUserEmail) {
+        console.log('사용자 이메일이 없음')
+        return
+      }
+
+      const supabaseClient = createClientSupabase()
+      
+      // 먼저 메디컬 리포트 카테고리 ID를 가져옴
+      const { data: categoryData, error: categoryError } = await supabaseClient
+        .from('document_categories')
+        .select('id')
+        .eq('name_ko', '메디컬 리포트')
+        .single()
+
+      if (categoryError || !categoryData) {
+        console.error('메디컬 리포트 카테고리를 찾을 수 없습니다:', categoryError)
+        return
+      }
+
+      // 최신 메디컬 리포트 확인
+      const { data: medicalReports, error } = await supabaseClient
+        .from('documents')
+        .select('*')
+        .eq('guide_email', currentUserEmail)
+        .eq('category_id', categoryData.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (error) {
+        console.error('메디컬 리포트 상태 확인 오류:', error)
+        return
+      }
+
+      const latestReport = medicalReports?.[0]
+      
+      // 메디컬 리포트가 없거나 만료된 경우 경고 표시
+      if (!latestReport) {
+        console.log('메디컬 리포트가 없음 - 경고 표시')
+        setShowMedicalReportWarning(true)
+        return
+      }
+
+      // 만료일 확인
+      if (latestReport.expiry_date) {
+        const now = new Date()
+        const expiryDate = new Date(latestReport.expiry_date)
+        const oneMonthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+        
+        const isExpired = expiryDate < now
+        const expiresInOneMonth = expiryDate <= oneMonthFromNow && expiryDate > now
+        
+        if (isExpired || expiresInOneMonth) {
+          console.log('메디컬 리포트 만료 또는 만료 예정 - 경고 표시', { isExpired, expiresInOneMonth })
+          setShowMedicalReportWarning(true)
+        }
+      }
+    } catch (error) {
+      console.error('메디컬 리포트 상태 확인 오류:', error)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -335,6 +423,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
             <span className="text-xs">{t('footer.tourMaterials')}</span>
           </button>
 
+
         </div>
       </footer>
 
@@ -361,6 +450,24 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
         isOpen={showReceiptModal}
         onClose={() => setShowReceiptModal(false)}
         locale={locale}
+      />
+
+      {/* 메디컬 리포트 경고 모달 */}
+      <MedicalReportWarningModal
+        isOpen={showMedicalReportWarning}
+        onClose={() => setShowMedicalReportWarning(false)}
+        onUploadClick={() => {
+          setShowMedicalReportWarning(false)
+          setDocumentUploadType('medical')
+          setShowDocumentUploadModal(true)
+        }}
+      />
+
+      {/* 가이드 문서 업로드 모달 */}
+      <GuideDocumentUploadModal
+        isOpen={showDocumentUploadModal}
+        onClose={() => setShowDocumentUploadModal(false)}
+        documentType={documentUploadType}
       />
       </div>
     </AudioPlayerProvider>
