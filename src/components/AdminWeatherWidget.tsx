@@ -95,6 +95,21 @@ const convertToFahrenheit = (celsius: number) => {
   return Math.round(celsius * 9/5 + 32)
 }
 
+// 비 소식 감지 함수
+const checkForRainWarning = (forecast: LocationWeather[]): boolean => {
+  return forecast.some(dayWeather => {
+    const weatherMain = dayWeather.weather.weather_main?.toLowerCase() || ''
+    const weatherDescription = dayWeather.weather.weather_description?.toLowerCase() || ''
+    
+    // 비 관련 날씨 상태들
+    const rainKeywords = ['rain', 'drizzle', 'thunderstorm', 'storm', 'shower']
+    
+    return rainKeywords.some(keyword => 
+      weatherMain.includes(keyword) || weatherDescription.includes(keyword)
+    )
+  })
+}
+
 export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidgetProps) {
   const t = useTranslations('weather')
   const [weatherData, setWeatherData] = useState<{
@@ -108,6 +123,8 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
   const [updating, setUpdating] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
   const [currentLocation, setCurrentLocation] = useState<'grandCanyon' | 'zionCanyon' | 'pageCity'>('grandCanyon')
+  const [selectedDateIndex, setSelectedDateIndex] = useState(0) // 선택된 날짜 인덱스 (0 = 오늘)
+  const [hasRainWarning, setHasRainWarning] = useState(false) // 7일간 비 경고 상태
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
 
   const loadWeatherData = useCallback(async () => {
@@ -128,6 +145,9 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
       
       const forecast = await get7DayWeatherForecast(locationNames[currentLocation])
       setSevenDayForecast(forecast)
+      
+      // 비 경고 상태 업데이트
+      setHasRainWarning(checkForRainWarning(forecast))
       
       // 마지막 업데이트 시간 설정
       const now = new Date()
@@ -194,6 +214,10 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
       try {
         const forecast = await get7DayWeatherForecast(locationNames[currentLocation])
         setSevenDayForecast(forecast)
+        setSelectedDateIndex(0) // 지역 변경 시 오늘로 초기화
+        
+        // 비 경고 상태 업데이트
+        setHasRainWarning(checkForRainWarning(forecast))
       } catch (err) {
         console.error('7일간 예보 로딩 실패:', err)
       }
@@ -226,9 +250,18 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
   return (
     <div className={`relative ${className}`}>
       {/* 메인 날씨 표시 */}
-      <div className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+      <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
+        hasRainWarning 
+          ? 'bg-red-50 border-2 border-red-300 hover:bg-red-100' 
+          : 'bg-white border border-gray-200 hover:bg-gray-50'
+      }`}>
         {/* 날씨 아이콘 */}
         {getWeatherIcon(currentWeather.weather.weather_main || '', currentWeather.weather.weather_description || '')}
+        
+        {/* 비 경고 아이콘 */}
+        {hasRainWarning && (
+          <CloudRain className="w-4 h-4 text-red-500 animate-pulse" title="7일간 비 예보 있음" />
+        )}
         
         {/* 위치명과 온도 */}
         <div className="flex items-center space-x-1">
@@ -322,9 +355,17 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
                 const dayMinF = dayWeather.weather.temp_min ? convertToFahrenheit(dayWeather.weather.temp_min) : null
 
                 return (
-                  <div key={index} className={`p-3 rounded-lg ${
-                    index === 0 ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
-                  }`}>
+                  <div 
+                    key={index} 
+                    className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                      index === selectedDateIndex 
+                        ? 'bg-blue-100 border-2 border-blue-300 shadow-sm' 
+                        : index === 0 
+                          ? 'bg-blue-50 border border-blue-200 hover:bg-blue-100' 
+                          : 'bg-gray-50 hover:bg-gray-100'
+                    }`}
+                    onClick={() => setSelectedDateIndex(index)}
+                  >
                     {/* 첫 번째 행: 날짜, 날씨 아이콘, 온도 */}
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center space-x-3">
@@ -372,28 +413,59 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
               })}
             </div>
 
-            {/* 현재 날씨 상세 정보 (첫 번째 날) */}
-            {sevenDayForecast.length > 0 && (
+            {/* 선택된 날짜의 상세 정보 */}
+            {sevenDayForecast.length > 0 && sevenDayForecast[selectedDateIndex] && (
               <div className="mt-4 pt-3 border-t border-gray-200">
-                <div className="text-xs font-semibold text-gray-700 mb-2">오늘 추가 정보</div>
+                <div className="text-xs font-semibold text-gray-700 mb-2">
+                  {selectedDateIndex === 0 ? '오늘' : 
+                   selectedDateIndex === 1 ? '내일' : 
+                   new Date(Date.now() + selectedDateIndex * 24 * 60 * 60 * 1000).toLocaleDateString('ko-KR', { weekday: 'short' })} 추가 정보
+                </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="flex items-center space-x-1">
                     <span className="text-gray-500">습도:</span>
-                    <span className="font-medium">{sevenDayForecast[0].weather.humidity ? `${sevenDayForecast[0].weather.humidity}%` : 'N/A'}</span>
+                    <span className="font-medium">
+                      {sevenDayForecast[selectedDateIndex].weather.humidity ? `${sevenDayForecast[selectedDateIndex].weather.humidity}%` : 'N/A'}
+                    </span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <span className="text-gray-500">풍속:</span>
-                    <span className="font-medium">{sevenDayForecast[0].weather.wind_speed ? `${sevenDayForecast[0].weather.wind_speed}m/s` : 'N/A'}</span>
+                    <span className="font-medium">
+                      {sevenDayForecast[selectedDateIndex].weather.wind_speed ? `${sevenDayForecast[selectedDateIndex].weather.wind_speed}m/s` : 'N/A'}
+                    </span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <span className="text-gray-500">가시거리:</span>
                     <span className="font-medium">
-                      {sevenDayForecast[0].weather.visibility ? `${Math.round(sevenDayForecast[0].weather.visibility / 1000)}km` : 'N/A'}
+                      {sevenDayForecast[selectedDateIndex].weather.visibility ? 
+                        `${Math.round(sevenDayForecast[selectedDateIndex].weather.visibility / 1000)}km` : 'N/A'}
                     </span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <span className="text-gray-500">상태:</span>
-                    <span className="font-medium">{sevenDayForecast[0].weather.weather_main || 'N/A'}</span>
+                    <span className="font-medium">
+                      {sevenDayForecast[selectedDateIndex].weather.weather_main || 'N/A'}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* 선택된 날짜의 일출/일몰 시간도 다시 표시 */}
+                <div className="mt-3 pt-2 border-t border-gray-100">
+                  <div className="flex items-center justify-center space-x-4 text-xs">
+                    <div className="flex items-center space-x-1">
+                      <Sunrise className="w-3 h-3 text-yellow-500" />
+                      <span className="text-gray-600">일출:</span>
+                      <span className="font-medium text-gray-800">
+                        {sevenDayForecast[selectedDateIndex].sunrise || 'N/A'}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Sunset className="w-3 h-3 text-orange-500" />
+                      <span className="text-gray-600">일몰:</span>
+                      <span className="font-medium text-gray-800">
+                        {sevenDayForecast[selectedDateIndex].sunset || 'N/A'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
