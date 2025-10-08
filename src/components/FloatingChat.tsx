@@ -229,8 +229,7 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
             reservation_ids,
             product:products!inner(
               name_ko,
-              name_en,
-              internal_name_ko
+              name_en
             )
           `)
           .eq('id', chatInfo.tourId)
@@ -266,11 +265,10 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
         const product = tourData.product as {
           name_ko?: string;
           name_en?: string;
-          internal_name_ko?: string;
         } | null
         setTourInfo({
           tour_date: chatInfo.tourDate || tourData.tour_date, // 전달된 tourDate 우선 사용
-          product_name: product?.internal_name_ko || product?.name_ko || product?.name_en || '상품명 없음',
+          product_name: product?.name_ko || product?.name_en || '상품명 없음',
           tour_status: tourData.tour_status,
           assigned_people: assignedPeople
         })

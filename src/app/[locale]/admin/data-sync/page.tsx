@@ -403,6 +403,18 @@ export default function DataSyncPage() {
         { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
         { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
       ],
+      reservation_options: [
+        { name: 'id', type: 'text', nullable: false, default: null },
+        { name: 'reservation_id', type: 'text', nullable: false, default: null },
+        { name: 'option_id', type: 'text', nullable: false, default: null },
+        { name: 'ea', type: 'integer', nullable: false, default: '1' },
+        { name: 'price', type: 'decimal', nullable: false, default: '0' },
+        { name: 'total_price', type: 'decimal', nullable: false, default: '0' },
+        { name: 'status', type: 'text', nullable: true, default: 'active' },
+        { name: 'note', type: 'text', nullable: true, default: null },
+        { name: 'created_at', type: 'timestamp', nullable: false, default: 'now()' },
+        { name: 'updated_at', type: 'timestamp', nullable: false, default: 'now()' }
+      ],
       products: [
         { name: 'id', type: 'text', nullable: false, default: null },
         { name: 'name', type: 'text', nullable: true, default: null },
@@ -660,16 +672,16 @@ export default function DataSyncPage() {
     }
   }
 
-  // 구글 시트 정보 가져오기
+  // 구글 시트 정보 가져오기 (단순화된 버전)
   const getSheetInfo = async () => {
     if (!spreadsheetId.trim()) {
       alert('스프레드시트 ID를 입력해주세요.')
       return
     }
 
-    console.log('Starting getSheetInfo with spreadsheetId:', spreadsheetId)
+    console.log('🚀 Loading sheet information...')
     setLoading(true)
-    setSheetInfo([]) // 이전 데이터 초기화
+    setSheetInfo([])
     
     try {
       // 이전 요청이 있다면 취소
@@ -724,23 +736,22 @@ export default function DataSyncPage() {
         alert(`시트 정보를 가져오는데 실패했습니다: ${result.message}`)
       }
     } catch (error) {
-      console.error('Error getting sheet info:', error)
+      console.error('❌ Error:', error)
       
-      let errorMessage = '시트 정보를 가져오는데 오류가 발생했습니다.'
-      
+      let message = '시트 정보를 가져올 수 없습니다.'
       if (error instanceof Error) {
-        if (error.name === 'AbortError' || error.message.includes('aborted')) {
-          errorMessage = '요청 시간 초과 (70초) - 구글 시트가 너무 크거나 네트워크가 느립니다. 시트 크기를 줄이거나 잠시 후 다시 시도해주세요.'
+        if (error.message.includes('Quota exceeded')) {
+          message = 'API 할당량을 초과했습니다. 1-2분 후에 다시 시도해주세요.'
         } else if (error.message.includes('403')) {
-          errorMessage = '구글 시트 접근 권한이 없습니다. 시트 공유 설정을 확인해주세요.'
+          message = '시트 접근 권한이 없습니다.'
         } else if (error.message.includes('404')) {
-          errorMessage = '구글 시트를 찾을 수 없습니다. 스프레드시트 ID를 확인해주세요.'
+          message = '시트를 찾을 수 없습니다.'
         } else {
-          errorMessage = `오류: ${error.message}`
+          message = error.message
         }
       }
       
-      alert(errorMessage)
+      alert(`❌ ${message}`)
     } finally {
       setLoading(false)
     }
@@ -761,22 +772,14 @@ export default function DataSyncPage() {
     }
   }
 
-  // 시트 선택 시 컬럼 매핑 제안 가져오기
+  // 시트 선택 (단순화된 버전)
   const handleSheetSelect = (sheetName: string) => {
-    console.log('Sheet selected:', sheetName)
+    console.log(`📋 Selected sheet: ${sheetName}`)
     setSelectedSheet(sheetName)
     const sheet = sheetInfo.find(s => s.name === sheetName)
-    console.log('Selected sheet info:', sheet)
     
-    if (sheet && sheet.columns.length > 0 && selectedTable) {
-      console.log('Getting mapping suggestions for columns:', sheet.columns, 'and table:', selectedTable)
-      getMappingSuggestions(sheet.columns, selectedTable)
-    } else {
-      console.log('No columns found for sheet:', sheetName)
-      // 컬럼이 없는 시트인 경우 경고 표시
-      if (sheet && sheet.rowCount === 0) {
-        alert(`${sheetName} 시트는 비어있습니다. 데이터가 있는 다른 시트를 선택해주세요.`)
-      }
+    if (sheet && sheet.columns.length === 0) {
+      alert(`❌ ${sheetName} 시트에서 컬럼을 찾을 수 없습니다.\n\n시트에 헤더 행이 있는지 확인해주세요.`)
     }
   }
 
@@ -1250,16 +1253,16 @@ export default function DataSyncPage() {
           <button
             onClick={getSheetInfo}
             disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-lg font-medium"
           >
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            {sheetInfo.length === 0 ? '시트 정보 가져오기' : '시트 정보 새로고침'}
+            <FileSpreadsheet className="h-5 w-5 mr-2" />
+            {loading ? '로딩 중...' : '시트 정보 가져오기'}
           </button>
           <button
             onClick={openGoogleSheets}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center text-lg font-medium"
           >
-            <ExternalLink className="h-4 w-4 mr-2" />
+            <ExternalLink className="h-5 w-5 mr-2" />
             구글 시트 열기
           </button>
         </div>

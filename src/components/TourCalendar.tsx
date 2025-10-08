@@ -9,18 +9,16 @@ import { useTranslations, useLocale } from 'next-intl'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
-interface ExtendedTour extends Tour {
+interface ExtendedTour extends Omit<Tour, 'assignment_status'> {
   product_name?: string | null;
-  internal_name_ko?: string | null;
-  internal_name_en?: string | null;
-  customer_name_ko?: string | null;
-  customer_name_en?: string | null;
+  name_ko?: string | null;
+  name_en?: string | null;
+  assignment_status?: string | null | undefined;
   total_people?: number;
   assigned_people?: number;
   unassigned_people?: number;
   guide_name?: string | null;
   assistant_name?: string | null;
-  assignment_status?: string | null;
   vehicle_number?: string | null;
 }
 
@@ -49,15 +47,15 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
   const t = useTranslations('tours.calendar')
   const locale = useLocale()
   
-  // 투어 이름 매핑 함수 (내부용 간단한 이름 사용)
+  // 투어 이름 매핑 함수 (상품명 사용)
   const getTourDisplayName = (tour: ExtendedTour) => {
-    // 내부용 간단한 이름이 있으면 사용
-    if (tour.internal_name_ko || tour.internal_name_en) {
-      // 현재 로케일에 따라 적절한 내부용 이름 반환
+    // 상품명이 있으면 사용
+    if (tour.name_ko || tour.name_en) {
+      // 현재 로케일에 따라 적절한 이름 반환
       if (locale === 'en') {
-        return tour.internal_name_en || tour.internal_name_ko || tour.product_name || tour.product_id
+        return tour.name_en || tour.name_ko || tour.product_name || tour.product_id
       } else {
-        return tour.internal_name_ko || tour.internal_name_en || tour.product_name || tour.product_id
+        return tour.name_ko || tour.name_en || tour.product_name || tour.product_id
       }
     }
     
@@ -444,7 +442,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
 
         const { data, error } = await supabase
           .from('products')
-          .select('id, name, name_ko, name_en, internal_name_ko, internal_name_en, sub_category')
+          .select('id, name, name_ko, name_en, sub_category')
           .in('id', missing)
 
         if (error) {
@@ -453,13 +451,13 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
         }
 
         const next: {[id: string]: { name: string; sub_category: string }} = {}
-        ;(data as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; internal_name_ko?: string | null; internal_name_en?: string | null; sub_category?: string | null }> | null || []).forEach((p) => {
-          // internal_name을 우선 사용, 없으면 기존 방식 사용
+        ;(data as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; sub_category?: string | null }> | null || []).forEach((p) => {
+          // 상품명을 사용
           let label = ''
           if (locale === 'en') {
-            label = p.internal_name_en || p.internal_name_ko || p.name_en || p.name_ko || p.name || p.id
+            label = p.name_en || p.name_ko || p.name || p.id
           } else {
-            label = p.internal_name_ko || p.internal_name_en || p.name_ko || p.name_en || p.name || p.id
+            label = p.name_ko || p.name_en || p.name || p.id
           }
           next[p.id] = { name: label, sub_category: p.sub_category || '' }
         })

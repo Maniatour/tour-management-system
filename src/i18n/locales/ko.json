@@ -278,6 +278,27 @@
       "optionTotal": "옵션 합계",
       "totalPrice": "총 결제 금액",
       "balanceAmount": "잔액"
+    },
+    "reservationOptions": {
+      "title": "예약 옵션",
+      "addOption": "옵션 추가",
+      "noOptions": "등록된 옵션이 없습니다.",
+      "optionId": "옵션",
+      "quantity": "수량",
+      "unitPrice": "단가",
+      "totalPrice": "총 가격",
+      "status": "상태",
+      "note": "메모",
+      "statusActive": "활성",
+      "statusCancelled": "취소",
+      "statusRefunded": "환불",
+      "totalOptionPrice": "총 옵션 가격",
+      "addNewOption": "새 옵션 추가",
+      "editOption": "옵션 편집",
+      "deleteOption": "옵션 삭제",
+      "confirmDelete": "이 옵션을 삭제하시겠습니까?",
+      "loadingOptions": "옵션 로딩 중...",
+      "errorLoading": "오류: {error}"
     }
   },
   "schedule": {
@@ -375,6 +396,7 @@
         "라스베가스 시티 야경투어": "라스베가스 시티 야경투어",
         "불의계곡": "불의계곡",
         "불의계곡 - 밸리오브파이어 주립공원": "불의계곡 - 밸리오브파이어 주립공원",
+        "불의계곡 - 밸리오브파이어 주립공원 소규모 VIP 투어": "불의계곡 - 밸리오브파이어 주립공원 소규모 VIP 투어",
         "데쓰밸리": "데쓰밸리",
         "그랜드캐년 웨스트림 VIP 투어": "그랜드캐년 웨스트림 VIP 투어",
         "그랜드캐년": "그랜드캐년",

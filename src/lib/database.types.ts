@@ -151,6 +151,7 @@ export interface Database {
           child_age_max: number | null
           infant_age: number | null
           tags: string[] | null
+          choices: any | null
           created_at: string | null
           updated_at: string | null
         }
@@ -177,6 +178,7 @@ export interface Database {
           child_age_max?: number | null
           infant_age?: number | null
           tags?: string[] | null
+          choices?: any | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -203,6 +205,7 @@ export interface Database {
           child_age_max?: number | null
           infant_age?: number | null
           tags?: string[] | null
+          choices?: any | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -1556,6 +1559,44 @@ export interface Database {
           is_active?: boolean
           created_at?: string
           updated_at?: string
+        }
+      }
+      reservation_options: {
+        Row: {
+          id: string
+          reservation_id: string
+          option_id: string
+          ea: number
+          price: number
+          total_price: number
+          status: string
+          note: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          reservation_id: string
+          option_id: string
+          ea?: number
+          price?: number
+          total_price?: number
+          status?: string
+          note?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          reservation_id?: string
+          option_id?: string
+          ea?: number
+          price?: number
+          total_price?: number
+          status?: string
+          note?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
       }
     }

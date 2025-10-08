@@ -15,9 +15,6 @@ interface Product {
   id: string
   name_ko: string
   name_en: string | null
-  internal_name_ko: string
-  internal_name_en: string
-  customer_name_ko: string
   customer_name_en: string
   sub_category: string | null
   category: string | null
@@ -45,9 +42,6 @@ export default function ProductDetailPage() {
     id: '1',
     name_ko: '그랜드서클 1박2일 투어',
     name_en: 'Grand Circle 2-Day Tour',
-    internal_name_ko: '그랜드서클 투어',
-    internal_name_en: 'Grand Circle Tour',
-    customer_name_ko: '그랜드서클 1박2일 투어',
     customer_name_en: 'Grand Circle 2-Day Tour',
     sub_category: 'nature',
     category: 'nature',

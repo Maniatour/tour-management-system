@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play, DollarSign } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
@@ -242,7 +243,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const weekEnd = new Date(weekRange.end)
     
     
-    filteredReservations.forEach((reservation, index) => {
+    filteredReservations.forEach((reservation) => {
       // addedTime 날짜를 한국 시간대로 변환하여 YYYY-MM-DD 형식으로 변환
       if (!reservation.addedTime) {
         return // addedTime이 없으면 건너뛰기
@@ -305,7 +306,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
     // 채널별 인원 통계 (파비콘 정보 포함)
     const channelStats = allReservations.reduce((groups, reservation) => {
-      const channel = channels?.find(c => c.id === reservation.channelId)
+      const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
       const channelName = getChannelName(reservation.channelId, channels || [])
       const channelKey = `${channelName}|${reservation.channelId}`
       
@@ -867,7 +868,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
             >
               <option value="all">모든 채널</option>
-              {channels?.map(channel => (
+              {channels?.map((channel: { id: string; name: string }) => (
                 <option key={channel.id} value={channel.id}>{channel.name}</option>
               ))}
             </select>
@@ -1086,10 +1087,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         <div key={channelInfo.channelId} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
                           <div className="flex items-center space-x-1 flex-1 mr-1">
                             {channelInfo.favicon_url ? (
-                              <img 
+                              <Image 
                                 src={channelInfo.favicon_url} 
                                 alt={`${channelInfo.name} favicon`} 
-                                className="h-3 w-3 rounded flex-shrink-0"
+                                width={12}
+                                height={12}
+                                className="rounded flex-shrink-0"
                                 onError={(e) => {
                                   const target = e.target as HTMLImageElement
                                   target.style.display = 'none'
@@ -1316,17 +1319,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                             return Object.entries(channelGroups)
                               .sort(([,a], [,b]) => b - a)
                               .map(([channelName, count]) => {
-                      const channel = channels?.find(c => c.name === channelName)
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.name === channelName)
                       const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
                                 return (
                                   <div key={channelName} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
                                     <div className="flex items-center space-x-2 flex-1 mr-2 min-w-0">
                                       {channelWithFavicon?.favicon_url ? (
-                                        <img 
+                                        <Image 
                                           src={channelWithFavicon.favicon_url} 
                                           alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
-                                          className="h-4 w-4 rounded flex-shrink-0"
+                                          width={16}
+                                          height={16}
+                                          className="rounded flex-shrink-0"
                                           onError={(e) => {
                                             // 파비콘 로드 실패 시 기본 아이콘으로 대체
                                             const target = e.target as HTMLImageElement
@@ -1540,7 +1544,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
                         if (!choiceIds || choiceIds.length === 0) return null;
                         
-                        const option = productOptions?.find(opt => opt.id === optionId);
+                        const option = (productOptions as Array<{ id: string; name: string; is_required?: boolean }>)?.find(opt => opt.id === optionId);
                         
                         if (!option) return null;
                         
@@ -1585,8 +1589,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center">
                     <span className="text-gray-400 text-xs">🌐</span>
                   </div>
-                  <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels || [])}</div>
-                    <div className="text-xs text-gray-500">({channels?.find(c => c.id === reservation.channelId)?.type})</div>
+                    <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels || [])}</div>
+                    <div className="text-xs text-gray-500">({(channels as Array<{ id: string; name: string; type?: string }>)?.find(c => c.id === reservation.channelId)?.type})</div>
                 </div>
 
                 {/* 가격 정보 */}
@@ -1631,7 +1635,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       
                       {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
                       {(() => {
-                        const product = products.find(p => p.id === reservation.productId);
+                        const product = (products as Array<{ id: string; sub_category?: string }>)?.find(p => p.id === reservation.productId);
                         const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service';
                         
                         // hasExistingTour 필드를 사용하여 투어 존재 여부 확인
@@ -1847,19 +1851,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
                           if (!choiceIds || choiceIds.length === 0) return null;
                           
-                          const option = productOptions?.find(opt => opt.id === optionId);
-                          
-                          if (!option) return null;
-                          
-                          // 필수 옵션만 표시 (is_required가 true인 옵션만)
-                          if (!option.is_required) return null;
-                          
-                          // 실제 시스템에서는 choice ID가 옵션 ID와 동일하므로 옵션명을 직접 표시
-                          return (
-                            <div key={optionId} className="text-xs text-gray-600">
-                              <span className="font-medium">{option.name}</span>
-                            </div>
-                          );
+                        const option = (productOptions as Array<{ id: string; name: string; is_required?: boolean }>)?.find(opt => opt.id === optionId);
+                        
+                        if (!option) return null;
+                        
+                        // 필수 옵션만 표시 (is_required가 true인 옵션만)
+                        if (!option.is_required) return null;
+                        
+                        // 실제 시스템에서는 choice ID가 옵션 ID와 동일하므로 옵션명을 직접 표시
+                        return (
+                          <div key={optionId} className="text-xs text-gray-600">
+                            <span className="font-medium">{option.name}</span>
+                          </div>
+                        );
                         })}
                       </div>
                     )}
@@ -1891,8 +1895,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   {/* 채널 정보 */}
                   <div className="flex items-center space-x-2">
                     {(() => {
-                      const channel = channels?.find(c => c.id === reservation.channelId)
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
                       const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
                       console.log('Channel data for reservation:', {
                         channelId: reservation.channelId,
@@ -1901,10 +1904,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         fullChannel: channel
                       })
                       return channelWithFavicon?.favicon_url ? (
-                        <img 
+                        <Image 
                           src={channelWithFavicon.favicon_url} 
                           alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
-                          className="h-4 w-4 rounded flex-shrink-0"
+                          width={16}
+                          height={16}
+                          className="rounded flex-shrink-0"
                           onError={(e) => {
                             // 파비콘 로드 실패 시 기본 아이콘으로 대체
                             const target = e.target as HTMLImageElement
@@ -1925,7 +1930,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       )
                     })()}
                     <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels || [])}</div>
-                    <div className="text-xs text-gray-500">({channels?.find(c => c.id === reservation.channelId)?.type})</div>
+                    <div className="text-xs text-gray-500">({(channels as Array<{ id: string; name: string; type?: string }>)?.find(c => c.id === reservation.channelId)?.type})</div>
                   </div>
 
                   {/* 가격 정보 */}
@@ -2052,14 +2057,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       {(showAddForm || editingReservation) && (
         <ReservationForm
           reservation={editingReservation}
-          customers={customers}
-          products={products}
-          channels={channels}
-          productOptions={productOptions}
-          optionChoices={optionChoices}
-          options={options}
-          pickupHotels={pickupHotels}
-          coupons={coupons}
+          customers={customers || []}
+          products={products || []}
+          channels={channels || []}
+          productOptions={productOptions || []}
+          options={options || []}
+          pickupHotels={pickupHotels || []}
+          coupons={coupons || []}
           onSubmit={editingReservation ? handleEditReservation : handleAddReservation}
           onCancel={() => {
             setShowAddForm(false)
@@ -2075,7 +2079,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       {showCustomerForm && (
         <CustomerForm
           customer={null}
-          channels={channels}
+          channels={channels || []}
           onSubmit={handleAddCustomer}
           onCancel={() => setShowCustomerForm(false)}
         />
@@ -2085,7 +2089,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       {editingCustomer && (
         <CustomerForm
           customer={editingCustomer}
-          channels={channels}
+          channels={channels || []}
           onSubmit={async (customerData) => {
             try {
               // Supabase에 고객 정보 업데이트

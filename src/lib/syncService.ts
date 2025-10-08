@@ -23,8 +23,8 @@ const RESERVATION_COLUMN_MAPPING = {
   '상태': 'status',
   '특이사항': 'event_note',
   '개인투어': 'is_private_tour',
-  '내부명한글': 'internal_name_ko',
-  '내부명영어': 'internal_name_en'
+  '상품명한글': 'name_ko',
+  '상품명영어': 'name_en'
 }
 
 const TOUR_COLUMN_MAPPING = {
@@ -36,8 +36,8 @@ const TOUR_COLUMN_MAPPING = {
   '어시스턴트이메일': 'assistant_id',
   '차량ID': 'tour_car_id',
   '개인투어': 'is_private_tour',
-  '내부명한글': 'internal_name_ko',
-  '내부명영어': 'internal_name_en',
+  '상품명한글': 'name_ko',
+  '상품명영어': 'name_en',
   '배정현황': 'assignment_status'
 }
 

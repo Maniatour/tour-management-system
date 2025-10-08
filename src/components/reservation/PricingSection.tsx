@@ -88,6 +88,7 @@ interface PricingSectionProps {
   options: Option[]
   t: (key: string) => string
   autoSelectCoupon: () => void
+  reservationOptionsTotalPrice?: number
 }
 
 export default function PricingSection({
@@ -98,9 +99,8 @@ export default function PricingSection({
   calculateChoiceTotal,
   calculateCouponDiscount,
   coupons,
-  getOptionalOptionsForProduct,
-  options,
-  autoSelectCoupon
+  autoSelectCoupon,
+  reservationOptionsTotalPrice = 0
 }: PricingSectionProps) {
   const [showHelp, setShowHelp] = useState(false)
   return (
@@ -292,7 +292,7 @@ export default function PricingSection({
                 const selectedChoiceId = formData.selectedChoices[choice.id]?.selected
                 if (!selectedChoiceId) return null
                 
-                const selectedOption = choice.options?.find((opt: any) => opt.id === selectedChoiceId)
+                const selectedOption = choice.options?.find((opt: { id: string; name: string; adult_price?: number }) => opt.id === selectedChoiceId)
                 if (!selectedOption) return null
                 
                 return (
@@ -518,117 +518,6 @@ export default function PricingSection({
             </div>
           </div>
 
-          {/* 옵션 */}
-          <div className="bg-white p-3 rounded border border-gray-200">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">옵션</h4>
-            <div className="space-y-2">
-              {Object.entries(formData.selectedOptionalOptions).map(([optionId, option]) => {
-                return (
-                  <div key={optionId} className="border border-gray-200 rounded p-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-gray-700">옵션</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          setFormData((prev: any) => {
-                            const newOptions = { ...prev.selectedOptionalOptions }
-                            delete newOptions[optionId]
-                            return { ...prev, selectedOptionalOptions: newOptions }
-                          })
-                        }}
-                        className="text-red-500 hover:text-red-700 text-xs"
-                      >
-                        삭제
-                      </button>
-                    </div>
-                    <div className="space-y-1">
-                      <select
-                        value={option.choiceId}
-                        onChange={(e) => {
-                          const selectedOptionId = e.target.value
-                          const selectedOption = options.find((opt) => opt.id === selectedOptionId)
-                          
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          setFormData((prev: any) => ({
-                            ...prev,
-                            selectedOptionalOptions: {
-                              ...prev.selectedOptionalOptions,
-                              [optionId]: { 
-                                ...option, 
-                                choiceId: selectedOptionId,
-                                price: selectedOption?.adult_price || 0
-                              }
-                            }
-                          }))
-                        }}
-                        className="w-full px-1 py-0.5 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                      >
-                        <option value="">옵션 선택</option>
-                        {options.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.name} (${option.adult_price})
-                          </option>
-                        ))}
-                      </select>
-                      
-                      <div className="flex items-center space-x-1">
-                        <input
-                          type="number"
-                          min="0"
-                          value={option.quantity}
-                          onChange={(e) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        setFormData((prev: any) => ({
-                            ...prev,
-                            selectedOptionalOptions: {
-                              ...prev.selectedOptionalOptions,
-                              [optionId]: {
-                                ...prev.selectedOptionalOptions[optionId],
-                                quantity: Number(e.target.value) || 0
-                              }
-                            }
-                          }))}
-                          className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          placeholder="수량"
-                        />
-                        <span className="text-xs text-gray-600">x ${option.price}</span>
-                        <span className="text-xs font-medium">= ${(option.quantity * option.price).toFixed(2)}</span>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-              
-              <button
-                type="button"
-                onClick={() => {
-                  if (!formData.productId) {
-                    alert('먼저 상품을 선택해주세요.')
-                    return
-                  }
-                  
-                  const optionalOptions = getOptionalOptionsForProduct(formData.productId)
-                  if (optionalOptions.length === 0) {
-                    alert('이 상품에는 옵션이 없습니다.')
-                    return
-                  }
-                  
-                  const newOptionId = `selected_${Date.now()}`
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  setFormData((prev: any) => ({
-                    ...prev,
-                    selectedOptionalOptions: {
-                      ...prev.selectedOptionalOptions,
-                      [newOptionId]: { choiceId: '', quantity: 0, price: 0 }
-                    }
-                  }))
-                }}
-                className="w-full px-2 py-1 border border-dashed border-gray-300 rounded text-xs text-gray-600 hover:border-blue-400 hover:text-blue-600"
-              >
-                + 옵션 추가
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* 3열: 가격 계산 (2줄 높이) */}
@@ -650,6 +539,14 @@ export default function PricingSection({
               <span className="text-sm text-gray-700">소계</span>
               <span className="text-sm font-medium text-gray-900">${formData.subtotal.toFixed(2)}</span>
             </div>
+            
+            {/* 예약 옵션 총 가격 */}
+            {reservationOptionsTotalPrice > 0 && (
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-gray-700">예약 옵션</span>
+                <span className="text-sm font-medium text-gray-900">${reservationOptionsTotalPrice.toFixed(2)}</span>
+              </div>
+            )}
             
             {/* 할인 항목들 */}
             {(formData.couponDiscount > 0 || formData.additionalDiscount > 0) && (

@@ -13,11 +13,11 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 type Tour = Database['public']['Tables']['tours']['Row']
 // type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
 
-type ExtendedTour = Tour & {
+type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   product_name?: string | null;
-  internal_name_ko?: string | null;
-  internal_name_en?: string | null;
-  customer_name_ko?: string | null;
+  name_ko?: string | null;
+  name_en?: string | null;
+  assignment_status?: string | null | undefined;
   customer_name_en?: string | null;
   total_people?: number;
   assigned_people?: number;
@@ -26,7 +26,6 @@ type ExtendedTour = Tour & {
   assistant_name?: string | null;
   status?: string | null;
   tour_status?: string | null;
-  assignment_status?: string | null;
   vehicle_number?: string | null;
 }
 
@@ -82,7 +81,7 @@ export default function AdminTours() {
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, name_ko, name_en, internal_name_ko, internal_name_en, customer_name_ko, customer_name_en, status')
+        .select('id, name, name_ko, name_en, status')
         .order('created_at', { ascending: false })
       
       if (error) throw error
@@ -340,9 +339,9 @@ export default function AdminTours() {
           ...tour,
           product_name: tour.product_id ? productMap.get(tour.product_id) : null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          internal_name_ko: (product as any)?.internal_name_ko || null,
+          name_ko: (product as any)?.name_ko || null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          internal_name_en: (product as any)?.internal_name_en || null,
+          name_en: (product as any)?.name_en || null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           customer_name_ko: (product as any)?.customer_name_ko || null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

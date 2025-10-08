@@ -16,6 +16,7 @@ import ProductSelectionSection from '@/components/reservation/ProductSelectionSe
 import ChannelSection from '@/components/reservation/ChannelSection'
 import TourConnectionSection from '@/components/reservation/TourConnectionSection'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
+import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import { getRequiredOptionsForProduct, getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import type { 
   Customer, 
@@ -97,6 +98,7 @@ export default function ReservationForm({
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
   const [showRawDetails, setShowRawDetails] = useState(false)
   const [channelAccordionExpanded, setChannelAccordionExpanded] = useState(layout === 'modal')
+  const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
   
   const [formData, setFormData] = useState<{
     customerId: string
@@ -645,12 +647,13 @@ export default function ReservationForm({
     const totalDiscount = formData.couponDiscount + formData.additionalDiscount
     const totalAdditional = formData.additionalCost + formData.cardFee + formData.tax +
       formData.prepaymentCost + formData.prepaymentTip + calculateOptionTotal() +
-      (formData.isPrivateTour ? formData.privateTourAdditionalCost : 0)
+      (formData.isPrivateTour ? formData.privateTourAdditionalCost : 0) +
+      reservationOptionsTotalPrice
 
     // 총 가격(고객 총지불 기준, balance는 별도로 표시만 함)
     const grossTotal = Math.max(0, subtotal - totalDiscount + totalAdditional)
     return grossTotal
-  }, [calculateSubtotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.cardFee, formData.tax, formData.prepaymentCost, formData.prepaymentTip, calculateOptionTotal, formData.isPrivateTour, formData.privateTourAdditionalCost])
+  }, [calculateSubtotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.cardFee, formData.tax, formData.prepaymentCost, formData.prepaymentTip, calculateOptionTotal, formData.isPrivateTour, formData.privateTourAdditionalCost, reservationOptionsTotalPrice])
 
   const calculateBalance = useCallback(() => {
     return Math.max(0, formData.totalPrice - formData.depositAmount)
@@ -797,6 +800,18 @@ export default function ReservationForm({
       balanceAmount: prev.onSiteBalanceAmount > 0 ? prev.onSiteBalanceAmount : newBalance
     }))
   }, [calculateProductPriceTotal, calculateRequiredOptionTotal, calculateChoicesTotal, calculateSubtotal, calculateTotalPrice, calculateBalance])
+
+  // 예약 옵션 총 가격이 변경될 때 가격 재계산
+  useEffect(() => {
+    const newTotalPrice = calculateTotalPrice()
+    const newBalance = calculateBalance()
+
+    setFormData(prev => ({
+      ...prev,
+      totalPrice: newTotalPrice,
+      balanceAmount: prev.onSiteBalanceAmount > 0 ? prev.onSiteBalanceAmount : newBalance
+    }))
+  }, [reservationOptionsTotalPrice, calculateTotalPrice, calculateBalance])
 
   // dynamic_pricing에서 특정 choice의 가격 정보를 가져오는 함수
   const getDynamicPricingForOption = useCallback(async (choiceId: string) => {
@@ -1123,19 +1138,32 @@ export default function ReservationForm({
                  calculateCouponDiscount={calculateCouponDiscount}
                  coupons={coupons}
                  getOptionalOptionsForProduct={(productId) => getOptionalOptionsForProduct(productId, productOptions)}
-                 getDynamicPricingForOption={getDynamicPricingForOption}
                  options={options}
                  t={t}
                  autoSelectCoupon={autoSelectCoupon}
+                 reservationOptionsTotalPrice={reservationOptionsTotalPrice}
                />
 
-              {/* 입금 내역 섹션 - 예약이 있을 때만 표시 */}
+              {/* 입금 내역과 예약 옵션을 2열 그리드로 배치 - 예약이 있을 때만 표시 */}
               {reservation && (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                  <PaymentRecordsList
-                    reservationId={reservation.id}
-                    customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
-                  />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* 왼쪽: 예약 옵션 */}
+                  <div className="order-2 lg:order-1">
+                    <ReservationOptionsSection 
+                      reservationId={reservation.id} 
+                      onTotalPriceChange={setReservationOptionsTotalPrice}
+                    />
+                  </div>
+                  
+                  {/* 오른쪽: 입금 내역 */}
+                  <div className="order-1 lg:order-2">
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                      <PaymentRecordsList
+                        reservationId={reservation.id}
+                        customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1145,7 +1173,7 @@ export default function ReservationForm({
               <ProductSelectionSection
                 formData={formData}
                 setFormData={setFormData}
-                products={products}
+                products={products.map(p => ({ ...p, name_ko: p.name }))}
                 loadProductChoices={(productId) => loadProductChoices(productId)}
                 getDynamicPricingForOption={getDynamicPricingForOption}
                 t={t}

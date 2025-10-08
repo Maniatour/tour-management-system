@@ -236,6 +236,27 @@
       "price": "Price",
       "selectedProduct": "Selected Product",
       "allCategories": "All"
+    },
+    "reservationOptions": {
+      "title": "Reservation Options",
+      "addOption": "Add Option",
+      "noOptions": "No options registered.",
+      "optionId": "Option",
+      "quantity": "Quantity",
+      "unitPrice": "Unit Price",
+      "totalPrice": "Total Price",
+      "status": "Status",
+      "note": "Note",
+      "statusActive": "Active",
+      "statusCancelled": "Cancelled",
+      "statusRefunded": "Refunded",
+      "totalOptionPrice": "Total Option Price",
+      "addNewOption": "Add New Option",
+      "editOption": "Edit Option",
+      "deleteOption": "Delete Option",
+      "confirmDelete": "Are you sure you want to delete this option?",
+      "loadingOptions": "Loading options...",
+      "errorLoading": "Error: {error}"
     }
   },
   "tours": {
@@ -306,6 +327,7 @@
         "데이투어": "Day Tour",
         "라스베가스 시티 야경투어": "Las Vegas City Night Tour",
         "불의계곡": "Valley of Fire",
+        "불의계곡 - 밸리오브파이어 주립공원 소규모 VIP 투어": "Valley of Fire - Valley of Fire State Park Small VIP Tour",
         "데스밸리": "Death Valley",
         "그랜드캐니언 웨스트림 VIP 투어": "Grand Canyon West Rim VIP Tour",
         "null": "No Product Name",

@@ -33,9 +33,9 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
       setLocalStatus(newStatus)
       
       // 데이터베이스에 상태 업데이트
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('products')
-        .update({ status: newStatus as any })
+        .update({ status: newStatus })
         .eq('id', product.id)
       
       if (error) {
@@ -94,9 +94,9 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
       }
       
       // 새 상품 생성
-      const { data: newProduct, error: productError } = await supabase
+      const { data: newProduct, error: productError } = await (supabase as any)
         .from('products')
-        .insert(copyData as any)
+        .insert(copyData)
         .select()
         .single()
       
@@ -106,16 +106,19 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
         return
       }
       
+      // 타입 단언으로 해결
+      const newProductData = newProduct as { id: string } | null
+      
       // 성공 메시지
-      alert(`상품이 성공적으로 복사되었습니다! 새 상품 ID: ${newProduct.id}`)
+      alert(`상품이 성공적으로 복사되었습니다! 새 상품 ID: ${newProductData?.id}`)
       
       // 부모 컴포넌트에 알림
       if (onProductCopied) {
-        onProductCopied(newProduct.id)
+        onProductCopied(newProductData?.id || '')
       }
       
       // 새 상품 편집 페이지로 이동
-      window.location.href = `/${locale}/admin/products/${newProduct.id}`
+      window.location.href = `/${locale}/admin/products/${newProductData?.id}`
       
     } catch (error) {
       console.error('상품 복사 중 예상치 못한 오류:', error)
@@ -271,6 +274,78 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
     return `$${product.base_price}`
   }
 
+  // choices 데이터를 파싱하여 선택지 옵션들을 추출하는 함수
+  const getChoicesOptions = (product: Product) => {
+    if (!product.choices || typeof product.choices !== 'object') {
+      return []
+    }
+
+    const choices = product.choices as {
+      required?: Array<{
+        options?: Array<{
+          id?: string;
+          name?: string;
+          name_ko?: string;
+          price?: number;
+          adult_price?: number;
+        }>;
+      }>;
+    }
+    
+    const options: Array<{ id: string; name: string; name_ko?: string; price?: number }> = []
+
+    // required choices에서 옵션들 추출
+    if (choices.required && Array.isArray(choices.required)) {
+      choices.required.forEach((choice) => {
+        if (choice.options && Array.isArray(choice.options)) {
+          choice.options.forEach((option) => {
+            options.push({
+              id: option.id || '',
+              name: option.name || '',
+              name_ko: option.name_ko || '',
+              price: option.price || option.adult_price || 0
+            })
+          })
+        }
+      })
+    }
+
+    return options
+  }
+
+  // choices 옵션들을 뱃지로 렌더링하는 함수
+  const renderChoicesBadges = (product: Product) => {
+    const options = getChoicesOptions(product)
+    
+    if (options.length === 0) {
+      return null
+    }
+
+    return (
+      <div className="flex flex-wrap gap-1 mt-2">
+        {options.slice(0, 4).map((option, index) => (
+          <span
+            key={`${option.id}-${index}`}
+            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
+            title={option.name_ko || option.name}
+          >
+            {option.name_ko || option.name}
+            {(option.price || 0) > 0 && (
+              <span className="ml-1 text-purple-600">
+                (+${option.price})
+              </span>
+            )}
+          </span>
+        ))}
+        {options.length > 4 && (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-600 border border-purple-200">
+            +{options.length - 4}개
+          </span>
+        )}
+      </div>
+    )
+  }
+
   return (
     <Link href={`/${locale}/admin/products/${product.id}`} className="block">
       <div className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-all duration-200 hover:scale-[1.02] cursor-pointer group">
@@ -298,6 +373,8 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
                     </span>
                   )}
                 </div>
+                {/* Choices 선택지 뱃지 */}
+                {renderChoicesBadges(product)}
               </div>
             </div>
             <div className="flex items-center space-x-2">

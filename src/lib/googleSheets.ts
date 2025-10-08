@@ -6,7 +6,7 @@ const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
 // 시트 정보 캐시 (메모리 캐시)
 const sheetInfoCache = new Map<string, { data: any, timestamp: number }>()
-const CACHE_DURATION = 10 * 60 * 1000 // 10분으로 증가 (API 호출 감소)
+const CACHE_DURATION = 30 * 60 * 1000 // 30분으로 증가 (API 호출 대폭 감소)
 
 // 서비스 계정 인증을 위한 설정
 const getAuthClient = () => {
@@ -35,79 +35,74 @@ const getAuthClient = () => {
 // 재시도 로직을 위한 헬퍼 함수
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-// 구글 시트에서 데이터 읽기 (재시도 로직 포함)
-export const readGoogleSheet = async (spreadsheetId: string, range: string, retries: number = 3) => {
-  let lastError: Error | null = null
-  
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      console.log(`Attempt ${attempt}/${retries} - Reading range: ${range}`)
-      
-      // 매번 새로운 인증 클라이언트 생성
-      const auth = getAuthClient()
-      
-      // 더 관대한 설정으로 Google Sheets 클라이언트 생성
-      const sheets = google.sheets({ 
-        version: 'v4', 
-        auth,
-        timeout: 120000, // 120초 타임아웃
-        retry: true, // 자동 재시도 활성화
-        retryConfig: {
-          retry: 3,
-          retryDelay: 1000,
-          statusCodesToRetry: [[100, 199], [429, 429], [500, 599]]
-        }
-      })
+// 구글 시트에서 데이터 읽기 (단순화된 버전)
+export const readGoogleSheet = async (spreadsheetId: string, range: string) => {
+  try {
+    const auth = getAuthClient()
+    const sheets = google.sheets({ 
+      version: 'v4', 
+      auth,
+      timeout: 15000, // 15초 타임아웃
+    })
 
-      // AbortController를 사용하지 않고 직접 요청
-      const requestOptions = {
-        spreadsheetId,
-        range,
-        valueRenderOption: 'UNFORMATTED_VALUE',
-        dateTimeRenderOption: 'FORMATTED_STRING'
-      }
-      
-      console.log(`Making request with options:`, requestOptions)
-      
-      const response = await sheets.spreadsheets.values.get(requestOptions)
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range,
+      valueRenderOption: 'UNFORMATTED_VALUE',
+      dateTimeRenderOption: 'FORMATTED_STRING'
+    })
 
-      const rows = response.data.values
-      if (!rows || rows.length === 0) {
-        console.log('No data found.')
-        return []
-      }
+    console.log(`🔍 Raw response for ${range}:`, {
+      status: response.status,
+      hasValues: !!response.data.values,
+      valuesLength: response.data.values?.length || 0,
+      firstRow: response.data.values?.[0] || 'No first row'
+    })
 
-      // 첫 번째 행을 헤더로 사용
-      const headers = rows[0]
-      const data = rows.slice(1).map(row => {
-        const obj: any = {}
-        headers.forEach((header, index) => {
-          obj[header] = row[index] || ''
-        })
-        return obj
-      })
-
-      console.log(`Successfully read ${data.length} rows on attempt ${attempt}`)
-      return data
-    } catch (error) {
-      lastError = error as Error
-      console.error(`Attempt ${attempt}/${retries} failed:`, error)
-      
-      // AbortError인 경우 더 긴 지연 시간 적용
-      const isAbortError = error instanceof Error && 
-        (error.message.includes('aborted') || error.message.includes('AbortError'))
-      
-      if (attempt < retries) {
-        const baseDelay = isAbortError ? 3000 : 1000 // AbortError인 경우 3초, 그 외는 1초
-        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 10000) // 최대 10초
-        console.log(`Retrying in ${delay}ms... (AbortError: ${isAbortError})`)
-        await sleep(delay)
-      }
+    const rows = response.data.values
+    if (!rows || rows.length === 0) {
+      console.log(`❌ No data in ${range}`)
+      return []
     }
+
+    // 첫 번째 행을 헤더로 사용
+    const headers = rows[0]
+    console.log(`📋 Headers found:`, headers)
+    console.log(`📊 Header count:`, headers.length)
+    
+    // 빈 헤더 필터링
+    const validHeaders = headers.filter(h => h && h.toString().trim() !== '')
+    console.log(`✅ Valid headers:`, validHeaders)
+    
+    if (validHeaders.length === 0) {
+      console.log(`❌ No valid headers in ${range}`)
+      return []
+    }
+
+    // 헤더만 있는 경우도 처리 (데이터 행이 0개여도 헤더는 유효)
+    const data = rows.slice(1).map((row) => {
+      const obj: any = {}
+      headers.forEach((header, index) => {
+        obj[header] = row[index] || ''
+      })
+      return obj
+    })
+
+    // 헤더만 있는 경우 빈 객체를 하나 생성하여 헤더 정보를 유지
+    if (data.length === 0 && validHeaders.length > 0) {
+      const emptyRow: any = {}
+      headers.forEach((header) => {
+        emptyRow[header] = ''
+      })
+      data.push(emptyRow)
+    }
+
+    console.log(`✅ Successfully parsed ${data.length} rows with ${validHeaders.length} valid columns`)
+    return data
+  } catch (error) {
+    console.error(`❌ API Error:`, error instanceof Error ? error.message : error)
+    throw error
   }
-  
-  console.error('All retry attempts failed')
-  throw lastError || new Error('Failed to read Google Sheet after all retries')
 }
 
 // 구글 시트에서 특정 시트의 모든 데이터 읽기
@@ -279,7 +274,7 @@ const getColumnRange = (columnCount: number): string => {
   }
 }
 
-// 시트의 샘플 데이터 가져오기 (첫 5행만)
+// 시트의 샘플 데이터 가져오기 (단순화된 버전)
 export const getSheetSampleData = async (spreadsheetId: string, sheetName: string, maxRows: number = 5) => {
   try {
     // 캐시 확인
@@ -287,48 +282,39 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
     const cached = sheetInfoCache.get(cacheKey)
     
     if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-      console.log(`Using cached sample data for ${sheetName}`)
       return cached.data
     }
 
-    // 더 작은 범위로 시도 (A1:E1만 먼저 시도)
-    let data: any[] = []
-    let range = `${sheetName}!A1:E1` // 매우 작은 범위로 시작
+    console.log(`📊 Reading sheet: ${sheetName}`)
     
-    try {
-      console.log(`Trying small range first: ${range}`)
-      data = await readGoogleSheet(spreadsheetId, range, 2) // 재시도 횟수 줄임
-      
-      if (data.length > 0) {
-        // 성공하면 더 큰 범위로 확장
-        range = `${sheetName}!A1:M${maxRows}`
-        console.log(`Small range successful, trying larger range: ${range}`)
-        data = await readGoogleSheet(spreadsheetId, range, 2)
-      }
-    } catch (error) {
-      console.error(`Failed to read sheet ${sheetName}, returning empty data`)
-      const result = { columns: [], sampleData: [] }
-      // 빈 결과도 캐시에 저장
-      sheetInfoCache.set(cacheKey, {
-        data: result,
-        timestamp: Date.now()
-      })
-      return result
-    }
+    // 단순하게 A1:Z1 범위만 시도 (첫 번째 행의 26개 컬럼)
+    const range = `${sheetName}!A1:Z1`
+    console.log(`🎯 Trying range: ${range}`)
+    
+    const data = await readGoogleSheet(spreadsheetId, range)
+    
+    console.log(`📋 Raw data received:`, data)
+    console.log(`📊 Data length:`, data.length)
     
     if (data.length === 0) {
-      const result = { columns: [], sampleData: [] }
-      // 빈 결과도 캐시에 저장
-      sheetInfoCache.set(cacheKey, {
-        data: result,
-        timestamp: Date.now()
-      })
-      return result
+      console.log(`❌ No data found in ${sheetName}`)
+      return { columns: [], sampleData: [] }
     }
     
     // 첫 번째 행을 헤더로 사용
-    const columns = Object.keys(data[0])
+    const columns = Object.keys(data[0]).filter(col => col && col.trim() !== '')
     const sampleData = data.slice(0, maxRows)
+    
+    console.log(`✅ Found ${columns.length} columns in ${sheetName}:`, columns)
+    console.log(`📄 Sample data:`, sampleData)
+    
+    // 헤더만 있고 데이터가 없는 경우도 유효한 것으로 처리
+    if (columns.length > 0) {
+      console.log(`✅ Sheet ${sheetName} has valid headers: ${columns.length} columns`)
+    } else {
+      console.log(`❌ No valid headers found in ${sheetName}`)
+    }
+    
     const result = { columns, sampleData }
     
     // 캐시에 저장
@@ -339,7 +325,7 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
     
     return result
   } catch (error) {
-    console.error(`Error getting sample data for sheet ${sheetName}:`, error)
+    console.error(`❌ Error reading ${sheetName}:`, error)
     return { columns: [], sampleData: [] }
   }
 }

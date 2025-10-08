@@ -427,6 +427,18 @@ function getFallbackColumns(tableName: string): ColumnInfo[] {
       { name: 'amount_krw', type: 'numeric(10, 2)', nullable: true, default: null },
       { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
       { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
+    ],
+    reservation_options: [
+      { name: 'id', type: 'text', nullable: false, default: 'gen_random_uuid()::text' },
+      { name: 'reservation_id', type: 'text', nullable: false, default: null },
+      { name: 'option_id', type: 'text', nullable: false, default: null },
+      { name: 'ea', type: 'integer', nullable: false, default: '1' },
+      { name: 'price', type: 'numeric(10, 2)', nullable: false, default: '0' },
+      { name: 'total_price', type: 'numeric(10, 2)', nullable: false, default: '0' },
+      { name: 'status', type: 'text', nullable: true, default: "'active'" },
+      { name: 'note', type: 'text', nullable: true, default: null },
+      { name: 'created_at', type: 'timestamp with time zone', nullable: true, default: 'now()' },
+      { name: 'updated_at', type: 'timestamp with time zone', nullable: true, default: 'now()' }
     ]
   }
   

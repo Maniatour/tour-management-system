@@ -9,17 +9,17 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations } from 'next-intl'
 
 type Tour = Database['public']['Tables']['tours']['Row']
-type ExtendedTour = Tour & {
+type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   product_name?: string | null;
   product_name_en?: string | null;
-  internal_name_ko?: string | null;
-  internal_name_en?: string | null;
+  name_ko?: string | null;
+  name_en?: string | null;
+  assignment_status?: string | null | undefined;
   assigned_people?: number;
   guide_name?: string | null;
   guide_name_en?: string | null;
   assistant_name?: string | null;
   assistant_name_en?: string | null;
-  assignment_status?: string | null;
   vehicle_number?: string | null;
 }
 
@@ -101,13 +101,13 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
         if (productIds.length > 0) {
           const { data: productsData } = await supabase
             .from('products')
-            .select('id, name_ko, name_en, name, internal_name_ko, internal_name_en')
-            .in('id', productIds) as { data: { id: string; name_ko: string; name_en: string; name: string; internal_name_ko: string | null; internal_name_en: string | null }[] | null }
+            .select('id, name_ko, name_en, name')
+            .in('id', productIds) as { data: { id: string; name_ko: string; name_en: string; name: string }[] | null }
           
           productMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name]))
           productEnMap = new Map((productsData || []).map(p => [p.id, p.name_en || p.name]))
-          productInternalKoMap = new Map((productsData || []).map(p => [p.id, p.internal_name_ko]))
-          productInternalEnMap = new Map((productsData || []).map(p => [p.id, p.internal_name_en]))
+          productInternalKoMap = new Map((productsData || []).map(p => [p.id, p.name_ko]))
+          productInternalEnMap = new Map((productsData || []).map(p => [p.id, p.name_en]))
         }
 
         // 팀원 정보 가져오기
@@ -123,21 +123,22 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
             const { data: directData, error: directError } = await supabase
               .from('team')
               .select('email, name_ko, name_en')
-              .in('email', allEmails) as { data: { email: string; name_ko: string; name_en: string }[] | null }
+              .in('email', allEmails)
             
             if (!directError && directData) {
-              teamMap = new Map((directData || []).map(member => [member.email, member.name_ko]))
-              teamEnMap = new Map((directData || []).map(member => [member.email, member.name_en]))
+              teamMap = new Map((directData as Array<{ email: string; name_ko: string; name_en: string }> || []).map(member => [member.email, member.name_ko]))
+              teamEnMap = new Map((directData as Array<{ email: string; name_ko: string; name_en: string }> || []).map(member => [member.email, member.name_en]))
             } else {
               // 직접 조회 실패 시 RPC 함수 시도 (fallback)
               console.log('Direct query failed, trying RPC function...', directError)
               
               const { data: rpcData, error: rpcError } = await supabase
-                .rpc('get_team_members_info', { p_emails: allEmails })
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                .rpc('get_team_members_info', { p_emails: allEmails } as any)
               
               if (!rpcError && rpcData) {
-                teamMap = new Map((rpcData || []).map(member => [member.email, member.name_ko]))
-                teamEnMap = new Map((rpcData || []).map(member => [member.email, member.name_en]))
+                teamMap = new Map((rpcData as Array<{ email: string; name_ko: string; name_en: string }> || []).map((member: { email: string; name_ko: string; name_en: string }) => [member.email, member.name_ko]))
+                teamEnMap = new Map((rpcData as Array<{ email: string; name_ko: string; name_en: string }> || []).map((member: { email: string; name_ko: string; name_en: string }) => [member.email, member.name_en]))
               } else {
                 console.error('Both direct query and RPC failed:', { directError, rpcError })
                 teamMap = new Map()
@@ -197,8 +198,8 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
             ...tour,
             product_name: tour.product_id ? productMap.get(tour.product_id) : null,
             product_name_en: tour.product_id ? productEnMap.get(tour.product_id) : null,
-            internal_name_ko: tour.product_id ? productInternalKoMap.get(tour.product_id) : null,
-            internal_name_en: tour.product_id ? productInternalEnMap.get(tour.product_id) : null,
+            name_ko: tour.product_id ? productInternalKoMap.get(tour.product_id) : null,
+            name_en: tour.product_id ? productInternalEnMap.get(tour.product_id) : null,
             assigned_people: assignedPeople,
             guide_name: tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null,
             guide_name_en: tour.tour_guide_id ? teamEnMap.get(tour.tour_guide_id) : null,
@@ -237,7 +238,7 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
     }
 
     loadTours()
-  }, [currentUserEmail, supabase])
+  }, [currentUserEmail, supabase, today])
 
   // 탭 변경 시 해당 데이터 로드 (team-board 탭은 제거됨)
   // useEffect(() => {
@@ -649,11 +650,11 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
   // 투어 이름 매핑 함수
   const getTourDisplayName = (tour: ExtendedTour, locale: string) => {
     if (locale === 'en') {
-      // 영어 모드에서는 internal_name_en 우선 사용
-      return tour.internal_name_en || tour.product_name_en || tour.product_name || tour.product_id
+      // 영어 모드에서는 name_en 우선 사용
+      return tour.name_en || tour.product_name_en || tour.product_name || tour.product_id
     } else {
-      // 한국어 모드에서는 internal_name_ko 우선 사용
-      return tour.internal_name_ko || tour.product_name || tour.product_id
+      // 한국어 모드에서는 name_ko 우선 사용
+      return tour.name_ko || tour.product_name || tour.product_id
     }
   }
   

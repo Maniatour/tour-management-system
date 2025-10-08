@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, MapPin, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, EyeOff, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog, CloudHail } from 'lucide-react'
 import { getGoblinTourWeatherData, type LocationWeather } from '@/lib/weatherApi'
@@ -179,7 +179,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
     }
   }
 
-  const loadWeatherData = async () => {
+  const loadWeatherData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -225,7 +225,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [tourDate, t])
 
   const updateWeatherData = async () => {
     try {
@@ -279,7 +279,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
     } else {
       setLoading(false)
     }
-  }, [tourDate, productId])
+  }, [tourDate, productId, loadWeatherData])
 
   // 밤도깨비 투어가 아닌 경우 컴포넌트를 렌더링하지 않음
   if (productId !== 'MDGCSUNRISE') {

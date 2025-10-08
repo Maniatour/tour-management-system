@@ -14,11 +14,11 @@ import { useAuth } from '@/contexts/AuthContext'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
-type ExtendedTour = Tour & {
+type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   product_name?: string | null;
-  internal_name_ko?: string | null;
-  internal_name_en?: string | null;
-  customer_name_ko?: string | null;
+  name_ko?: string | null;
+  name_en?: string | null;
+  assignment_status?: string | null | undefined;
   customer_name_en?: string | null;
   total_people?: number;
   assigned_people?: number;
@@ -102,7 +102,7 @@ export default function GuideTours({ params }: GuideToursProps) {
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, name_ko, name_en, internal_name_ko, internal_name_en, customer_name_ko, customer_name_en, status')
+        .select('id, name, name_ko, name_en, status')
         .order('created_at', { ascending: false })
       
       if (error) throw error
@@ -356,8 +356,8 @@ export default function GuideTours({ params }: GuideToursProps) {
         return {
           ...tour,
           product_name: tour.product_id ? productMap.get(tour.product_id) : null,
-          internal_name_ko: product?.internal_name_ko || null,
-          internal_name_en: product?.internal_name_en || null,
+          name_ko: product?.name_ko || null,
+          name_en: product?.name_en || null,
           customer_name_ko: product?.customer_name_ko || null,
           customer_name_en: product?.customer_name_en || null,
           total_people: totalPeople,

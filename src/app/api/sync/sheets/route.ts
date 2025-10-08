@@ -58,17 +58,13 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      // 각 시트의 샘플 데이터를 순차적으로 가져오기 (안정성 향상)
+      // 각 시트의 컬럼 정보를 간단하게 가져오기
       const sheetInfo = []
       
-      for (let i = 0; i < sheets.length; i++) {
-        const sheet = sheets[i]
-        console.log(`Processing sheet ${i + 1}/${sheets.length}: ${sheet.name}`)
-        
+      for (const sheet of sheets) {
         try {
-          console.log(`Reading sheet: ${sheet.name}`)
-          const { columns, sampleData } = await getSheetSampleData(spreadsheetId, sheet.name, 1) // 샘플 데이터를 1행으로 줄임
-          console.log(`Sheet ${sheet.name} completed - columns: ${columns.length}`)
+          console.log(`📊 Processing: ${sheet.name}`)
+          const { columns, sampleData } = await getSheetSampleData(spreadsheetId, sheet.name, 1)
           
           sheetInfo.push({
             name: sheet.name,
@@ -76,8 +72,16 @@ export async function POST(request: NextRequest) {
             sampleData: sampleData,
             columns: columns
           })
+          
+          console.log(`✅ ${sheet.name}: ${columns.length} columns`)
         } catch (error) {
-          console.error(`Error reading sheet ${sheet.name}:`, error)
+          console.error(`❌ ${sheet.name}:`, error instanceof Error ? error.message : error)
+          
+          // 할당량 초과 시 즉시 중단
+          if (error instanceof Error && error.message.includes('Quota exceeded')) {
+            throw new Error('Google Sheets API 할당량을 초과했습니다. 1-2분 후에 다시 시도해주세요.')
+          }
+          
           sheetInfo.push({
             name: sheet.name,
             rowCount: sheet.rowCount,
@@ -85,11 +89,6 @@ export async function POST(request: NextRequest) {
             columns: [],
             error: error instanceof Error ? error.message : 'Unknown error'
           })
-        }
-        
-        // 시트 간 지연 추가 (API 부하 방지 및 안정성 향상)
-        if (i < sheets.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500)) // 500ms 지연
         }
       }
 
@@ -120,10 +119,10 @@ export async function POST(request: NextRequest) {
         errorMessage = '구글 시트 접근 권한이 없습니다. 시트 공유 설정을 확인해주세요'
       } else if (error.message.includes('404')) {
         errorMessage = '구글 시트를 찾을 수 없습니다. 스프레드시트 ID를 확인해주세요'
-      } else if (error.message.includes('quota')) {
-        errorMessage = '구글 API 할당량을 초과했습니다. 잠시 후 다시 시도해주세요'
+      } else if (error.message.includes('quota') || error.message.includes('Quota exceeded')) {
+        errorMessage = 'Google Sheets API 할당량을 초과했습니다. 1-2분 후에 다시 시도해주세요. 할당량이 복구되면 자동으로 재시도됩니다.'
       } else if (error.message.includes('rate limit')) {
-        errorMessage = 'API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요'
+        errorMessage = 'API 요청 한도를 초과했습니다. 1-2분 후에 다시 시도해주세요.'
       } else {
         errorMessage = `API 오류: ${error.message}`
       }
