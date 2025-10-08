@@ -14,7 +14,9 @@ import {
   MapPin,
   ChevronDown,
   ChevronUp,
-  RefreshCw
+  RefreshCw,
+  Sunrise,
+  Sunset
 } from 'lucide-react'
 import { getGoblinTourWeatherData, get7DayWeatherForecast, type LocationWeather } from '@/lib/weatherApi'
 
@@ -320,32 +322,49 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
                 const dayMinF = dayWeather.weather.temp_min ? convertToFahrenheit(dayWeather.weather.temp_min) : null
 
                 return (
-                  <div key={index} className={`flex items-center justify-between p-2 rounded-lg ${
+                  <div key={index} className={`p-3 rounded-lg ${
                     index === 0 ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
                   }`}>
-                    <div className="flex items-center space-x-3">
-                      {/* 날짜 정보 */}
-                      <div className="text-left">
-                        <div className="text-xs font-medium text-gray-800">{dayName}</div>
-                        <div className="text-xs text-gray-500">{dayDate}</div>
+                    {/* 첫 번째 행: 날짜, 날씨 아이콘, 온도 */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-3">
+                        {/* 날짜 정보 */}
+                        <div className="text-left">
+                          <div className="text-xs font-medium text-gray-800">{dayName}</div>
+                          <div className="text-xs text-gray-500">{dayDate}</div>
+                        </div>
+                        
+                        {/* 날씨 아이콘 */}
+                        {getWeatherIcon(dayWeather.weather.weather_main || '', dayWeather.weather.weather_description || '')}
+                        
+                        {/* 날씨 설명 */}
+                        <div className="text-xs text-gray-600 max-w-20 truncate">
+                          {dayWeather.weather.weather_description || 'N/A'}
+                        </div>
                       </div>
                       
-                      {/* 날씨 아이콘 */}
-                      {getWeatherIcon(dayWeather.weather.weather_main || '', dayWeather.weather.weather_description || '')}
-                      
-                      {/* 날씨 설명 */}
-                      <div className="text-xs text-gray-600 max-w-20 truncate">
-                        {dayWeather.weather.weather_description || 'N/A'}
+                      {/* 온도 정보 */}
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-gray-800">
+                          {dayTempF ? `${dayTempF}°F` : 'N/A'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {dayMaxF && dayMinF ? `${dayMinF}°/${dayMaxF}°` : 'N/A'}
+                        </div>
                       </div>
                     </div>
                     
-                    {/* 온도 정보 */}
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-gray-800">
-                        {dayTempF ? `${dayTempF}°F` : 'N/A'}
+                    {/* 두 번째 행: 일출/일몰 시간 */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center space-x-1">
+                        <Sunrise className="w-3 h-3 text-yellow-500" />
+                        <span className="text-gray-600">일출:</span>
+                        <span className="font-medium text-gray-800">{dayWeather.sunrise || 'N/A'}</span>
                       </div>
-                      <div className="text-xs text-gray-500">
-                        {dayMaxF && dayMinF ? `${dayMinF}°/${dayMaxF}°` : 'N/A'}
+                      <div className="flex items-center space-x-1">
+                        <Sunset className="w-3 h-3 text-orange-500" />
+                        <span className="text-gray-600">일몰:</span>
+                        <span className="font-medium text-gray-800">{dayWeather.sunset || 'N/A'}</span>
                       </div>
                     </div>
                   </div>
@@ -356,7 +375,7 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
             {/* 현재 날씨 상세 정보 (첫 번째 날) */}
             {sevenDayForecast.length > 0 && (
               <div className="mt-4 pt-3 border-t border-gray-200">
-                <div className="text-xs font-semibold text-gray-700 mb-2">오늘 상세 정보</div>
+                <div className="text-xs font-semibold text-gray-700 mb-2">오늘 추가 정보</div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="flex items-center space-x-1">
                     <span className="text-gray-500">습도:</span>
@@ -367,12 +386,14 @@ export default function AdminWeatherWidget({ className = '' }: AdminWeatherWidge
                     <span className="font-medium">{sevenDayForecast[0].weather.wind_speed ? `${sevenDayForecast[0].weather.wind_speed}m/s` : 'N/A'}</span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <span className="text-gray-500">일출:</span>
-                    <span className="font-medium">{sevenDayForecast[0].sunrise || 'N/A'}</span>
+                    <span className="text-gray-500">가시거리:</span>
+                    <span className="font-medium">
+                      {sevenDayForecast[0].weather.visibility ? `${Math.round(sevenDayForecast[0].weather.visibility / 1000)}km` : 'N/A'}
+                    </span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <span className="text-gray-500">일몰:</span>
-                    <span className="font-medium">{sevenDayForecast[0].sunset || 'N/A'}</span>
+                    <span className="text-gray-500">상태:</span>
+                    <span className="font-medium">{sevenDayForecast[0].weather.weather_main || 'N/A'}</span>
                   </div>
                 </div>
               </div>
