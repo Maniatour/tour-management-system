@@ -27,8 +27,7 @@ import {
   FileSpreadsheet,
   Globe,
   User,
-  Camera,
-  MapPin
+  Camera
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -38,6 +37,7 @@ import { supabase } from '@/lib/supabase'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import { useTranslations } from 'next-intl'
 import SimulationModal from './SimulationModal'
+import AdminWeatherWidget from './AdminWeatherWidget'
 
 interface AdminSidebarAndHeaderProps {
   locale: string
@@ -350,6 +350,11 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             </div>
             
             <div className="flex items-center space-x-1 sm:space-x-4">
+              {/* 날씨 위젯 (데스크톱에서만 표시) */}
+              <div className="hidden lg:block">
+                <AdminWeatherWidget />
+              </div>
+              
               {/* 출퇴근 버튼 (팀원만 표시) - 모바일에서는 작게 */}
               {authUser?.email && !employeeNotFound && (
                 <div className="flex items-center space-x-2">
