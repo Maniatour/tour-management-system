@@ -279,11 +279,11 @@ export default function ReservationDetailsPage() {
         <div className="mt-8 p-6 bg-gray-50 rounded-lg">
           <SimpleDocumentGenerator
             reservationId={reservation.id}
-            customerName={customers.find(c => c.id === reservation.customerId)?.name || ''}
-            productName={products.find(p => p.id === reservation.productId)?.nameKo || ''}
+            customerName={customers?.find(c => c.id === reservation.customerId)?.name || ''}
+            productName={products?.find(p => p.id === reservation.productId)?.nameKo || ''}
             tourDate={reservation.tourDate || ''}
             pickupTime={reservation.pickupTime || ''}
-            pickupLocation={pickupHotels.find(h => h.id === reservation.pickupHotelId)?.hotelName || ''}
+            pickupLocation={pickupHotels?.find(h => h.id === reservation.pickupHotelId)?.hotelName || ''}
           />
         </div>
       )}
