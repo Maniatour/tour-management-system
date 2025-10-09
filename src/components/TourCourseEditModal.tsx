@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { 
   X, 
   Globe, 
@@ -10,7 +10,12 @@ import {
   ChevronRight,
   ChevronDown,
   Folder,
-  FolderOpen
+  FolderOpen,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  Star,
+  RotateCcw
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -56,6 +61,22 @@ interface TourCourseCategory {
   icon: string
   sort_order: number
   is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface TourCoursePhoto {
+  id: string
+  course_id: string
+  file_name: string
+  file_path: string
+  file_size: number
+  file_type: string
+  mime_type: string
+  thumbnail_url?: string
+  is_primary: boolean
+  sort_order: number
+  uploaded_by?: string
   created_at: string
   updated_at: string
 }
@@ -265,6 +286,11 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
   const [categories, setCategories] = useState<TourCourseCategory[]>([])
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<'basic' | 'photos'>('basic')
+  const [photos, setPhotos] = useState<TourCoursePhoto[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 투어 코스 데이터 로드
   useEffect(() => {
@@ -298,11 +324,29 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       }
     }
 
+    const loadPhotos = async () => {
+      if (!course?.id) return
+      
+      try {
+        const { data, error } = await supabase
+          .from('tour_course_photos')
+          .select('*')
+          .eq('course_id', course.id)
+          .order('sort_order', { ascending: true })
+
+        if (error) throw error
+        setPhotos(data || [])
+      } catch (error) {
+        console.error('사진 로드 오류:', error)
+      }
+    }
+
     if (isOpen) {
       loadTourCourses()
       loadCategories()
+      loadPhotos()
     }
-  }, [isOpen])
+  }, [isOpen, course?.id])
 
   // 코스 데이터로 폼 초기화
   useEffect(() => {
@@ -367,6 +411,147 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       newExpanded.add(nodeId)
     }
     setExpandedNodes(newExpanded)
+  }
+
+  // 사진 업로드 처리
+  const handleFileUpload = async (files: FileList) => {
+    if (!files.length || !course?.id) return
+
+    setUploading(true)
+    const uploadPromises = Array.from(files).map(async (file) => {
+      try {
+        // 파일 크기 체크 (10MB 제한)
+        if (file.size > 10 * 1024 * 1024) {
+          throw new Error(`파일 ${file.name}이 너무 큽니다. (최대 10MB)`)
+        }
+
+        // 파일 타입 체크
+        if (!file.type.startsWith('image/')) {
+          throw new Error(`파일 ${file.name}은 이미지 파일이 아닙니다.`)
+        }
+
+        // 고유한 파일명 생성
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+        const filePath = `tour-courses/${course.id}/${fileName}`
+
+        // Supabase Storage에 업로드
+        const { error: uploadError } = await supabase.storage
+          .from('tour-course-photos')
+          .upload(filePath, file)
+
+        if (uploadError) throw uploadError
+
+        // 데이터베이스에 메타데이터 저장
+        const { data, error: insertError } = await supabase
+          .from('tour_course_photos')
+          .insert({
+            course_id: course.id,
+            file_name: file.name,
+            file_path: filePath,
+            file_size: file.size,
+            file_type: fileExt || '',
+            mime_type: file.type,
+            sort_order: photos.length,
+            uploaded_by: (await supabase.auth.getUser()).data.user?.email || 'unknown'
+          })
+          .select()
+          .single()
+
+        if (insertError) throw insertError
+
+        return data
+      } catch (error) {
+        console.error('파일 업로드 오류:', error)
+        alert(`파일 업로드 중 오류가 발생했습니다: ${error}`)
+        return null
+      }
+    })
+
+    const uploadedPhotos = (await Promise.all(uploadPromises)).filter(Boolean)
+    if (uploadedPhotos.length > 0) {
+      setPhotos(prev => [...prev, ...uploadedPhotos])
+    }
+
+    setUploading(false)
+  }
+
+  // 사진 삭제
+  const handleDeletePhoto = async (photoId: string) => {
+    if (!confirm('이 사진을 삭제하시겠습니까?')) return
+
+    try {
+      const photo = photos.find(p => p.id === photoId)
+      if (!photo) return
+
+      // Storage에서 파일 삭제
+      const { error: storageError } = await supabase.storage
+        .from('tour-course-photos')
+        .remove([photo.file_path])
+
+      if (storageError) throw storageError
+
+      // 데이터베이스에서 레코드 삭제
+      const { error: deleteError } = await supabase
+        .from('tour_course_photos')
+        .delete()
+        .eq('id', photoId)
+
+      if (deleteError) throw deleteError
+
+      setPhotos(prev => prev.filter(p => p.id !== photoId))
+    } catch (error) {
+      console.error('사진 삭제 오류:', error)
+      alert('사진 삭제 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 대표 사진 설정
+  const handleSetPrimary = async (photoId: string) => {
+    try {
+      // 기존 대표 사진 해제
+      await supabase
+        .from('tour_course_photos')
+        .update({ is_primary: false })
+        .eq('course_id', course?.id)
+
+      // 새로운 대표 사진 설정
+      const { error } = await supabase
+        .from('tour_course_photos')
+        .update({ is_primary: true })
+        .eq('id', photoId)
+
+      if (error) throw error
+
+      setPhotos(prev => prev.map(photo => ({
+        ...photo,
+        is_primary: photo.id === photoId
+      })))
+    } catch (error) {
+      console.error('대표 사진 설정 오류:', error)
+      alert('대표 사진 설정 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 드래그 앤 드롭 핸들러
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true)
+    } else if (e.type === 'dragleave') {
+      setDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileUpload(e.dataTransfer.files)
+    }
   }
 
   // 투어 코스 수정
@@ -474,7 +659,33 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* 탭 네비게이션 */}
+        <div className="flex space-x-1 mb-6">
+          <button
+            onClick={() => setActiveTab('basic')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'basic'
+                ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            기본 정보
+          </button>
+          <button
+            onClick={() => setActiveTab('photos')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              activeTab === 'photos'
+                ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            사진 관리
+          </button>
+        </div>
+
+        {/* 탭 컨텐츠 */}
+        {activeTab === 'basic' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* 기본 정보 */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900">기본 정보</h3>
@@ -835,6 +1046,108 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             </div>
           </div>
         </div>
+        )}
+
+        {/* 사진 관리 탭 */}
+        {activeTab === 'photos' && (
+          <div className="space-y-6">
+            <h3 className="text-lg font-semibold text-gray-900">사진 관리</h3>
+            
+            {/* 업로드 영역 */}
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                dragActive
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-300 hover:border-gray-400'
+              }`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+            >
+              <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600 mb-2">
+                사진을 드래그하여 업로드하거나 클릭하여 선택하세요
+              </p>
+              <p className="text-sm text-gray-500 mb-4">
+                JPG, PNG, GIF 파일 (최대 10MB)
+              </p>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {uploading ? '업로드 중...' : '파일 선택'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+                className="hidden"
+              />
+            </div>
+
+            {/* 사진 목록 */}
+            {photos.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {photos.map((photo) => (
+                  <div key={photo.id} className="relative group">
+                    <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                      <img
+                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.file_path}`}
+                        alt={photo.file_name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    
+                    {/* 대표 사진 표시 */}
+                    {photo.is_primary && (
+                      <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded text-xs font-medium">
+                        대표
+                      </div>
+                    )}
+                    
+                    {/* 액션 버튼들 */}
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                      <div className="flex gap-2">
+                        {!photo.is_primary && (
+                          <button
+                            onClick={() => handleSetPrimary(photo.id)}
+                            className="p-2 bg-yellow-500 text-white rounded-full hover:bg-yellow-600"
+                            title="대표 사진으로 설정"
+                          >
+                            <Star className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeletePhoto(photo.id)}
+                          className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
+                          title="삭제"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* 파일 정보 */}
+                    <div className="mt-2 text-xs text-gray-500 truncate">
+                      {photo.file_name}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {photos.length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                <ImageIcon className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <p>업로드된 사진이 없습니다</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 버튼 */}
         <div className="flex gap-2 mt-6">

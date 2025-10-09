@@ -26,7 +26,6 @@ import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import CategoryManagementModal from '@/components/CategoryManagementModal'
-import TourCoursePhotoUploadModal from '@/components/TourCoursePhotoUploadModal'
 import LocationSearch from '@/components/LocationSearch'
 import LocationPickerModal from '@/components/LocationPickerModal'
 
@@ -900,7 +899,6 @@ export default function TourCoursesPage() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [difficultyFilter, setDifficultyFilter] = useState('all')
   const [showCategoryModal, setShowCategoryModal] = useState(false)
-  const [showPhotoModal, setShowPhotoModal] = useState(false)
   const [editingCourse, setEditingCourse] = useState<TourCourse | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showMapModal, setShowMapModal] = useState(false)
@@ -1231,21 +1229,6 @@ export default function TourCoursesPage() {
     setShowEditModal(true)
   }
 
-  // 사진 관리 모달 열기
-  const openPhotoModal = (course: TourCourse) => {
-    setSelectedCourse(course)
-    setShowPhotoModal(true)
-  }
-
-  // 사진 업데이트 콜백
-  const handlePhotosUpdate = (photos: TourCoursePhoto[]) => {
-    if (selectedCourse) {
-      const updatedCourse = { ...selectedCourse, photos }
-      setSelectedCourse(updatedCourse)
-    }
-    refetchCourses()
-  }
-
   // 카테고리 선택 콜백
   const handleCategorySelect = (category: TourCourseCategory) => {
     setFormData({ 
@@ -1447,7 +1430,7 @@ export default function TourCoursesPage() {
                         onSelect={setSelectedCourse}
                         onEdit={startEdit}
                         onDelete={deleteCourse}
-                        onPhotoModal={openPhotoModal}
+                        onPhotoModal={startEdit}
                         onMoveCourse={() => {}}
                       />
                     ))}
@@ -1470,8 +1453,8 @@ export default function TourCoursesPage() {
           course={selectedCourse}
           onEdit={startEdit}
           onDelete={deleteCourse}
-          onPhotoModal={openPhotoModal}
-          allCourses={tourCourses}
+          onPhotoModal={startEdit}
+          allCourses={tourCourses || []}
         />
       </div>
 
@@ -1909,15 +1892,6 @@ export default function TourCoursesPage() {
         onClose={() => setShowCategoryModal(false)}
         onCategorySelect={handleCategorySelect}
         selectedCategoryId={formData.category_id}
-      />
-
-      {/* 사진 업로드 모달 */}
-      <TourCoursePhotoUploadModal
-        isOpen={showPhotoModal}
-        onClose={() => setShowPhotoModal(false)}
-        courseId={selectedCourse?.id || ''}
-        existingPhotos={selectedCourse?.photos || []}
-        onPhotosUpdate={handlePhotosUpdate}
       />
 
       {/* 지도 선택 모달 */}
