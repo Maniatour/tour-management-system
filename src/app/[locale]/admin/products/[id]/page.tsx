@@ -13,7 +13,8 @@ import {
   Clock,
   Info,
   Settings,
-  Trash2
+  Trash2,
+  MapPin
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -29,6 +30,7 @@ import ProductDetailsTab from '@/components/product/ProductDetailsTab'
 import ProductScheduleTab from '@/components/product/ProductScheduleTab'
 import ProductFaqTab from '@/components/product/ProductFaqTab'
 import ProductMediaTab from '@/components/product/ProductMediaTab'
+import TourCoursesTab from '@/components/product/TourCoursesTab'
 import GlobalOptionModal from '@/components/product/GlobalOptionModal'
 import OptionsManualModal from '@/components/product/OptionsManualModal'
 
@@ -980,6 +982,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     { id: 'options', label: t('optionsManagement'), icon: Settings },
     { id: 'details', label: t('details'), icon: Tag },
     { id: 'schedule', label: t('schedule'), icon: Calendar },
+    { id: 'tour-courses', label: '투어 코스', icon: MapPin },
     { id: 'faq', label: t('faq'), icon: MessageCircle },
     { id: 'media', label: t('media'), icon: Image },
     { id: 'history', label: t('changeHistory'), icon: Clock }
@@ -1167,6 +1170,14 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 setFormData={(data: unknown) => setFormData(data as any)}
                 teamType={formData?.team_type}
+              />
+            )}
+
+            {/* 투어 코스 탭 */}
+            {activeTab === 'tour-courses' && (
+              <TourCoursesTab
+                productId={id}
+                isNewProduct={isNewProduct}
               />
             )}
 

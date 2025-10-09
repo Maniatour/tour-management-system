@@ -210,6 +210,29 @@ export interface Database {
           updated_at?: string | null
         }
       }
+      product_tour_courses: {
+        Row: {
+          id: string
+          product_id: string
+          tour_course_id: string
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          tour_course_id: string
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          tour_course_id?: string
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
       product_details: {
         Row: {
           id: string
