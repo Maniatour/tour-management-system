@@ -278,12 +278,14 @@ export default function ProductDetailsTab({
               tags: sourceItem.tags
             }
 
-            // @ts-expect-error - Supabase 타입 문제 임시 해결
             const { error: insertError } = await supabase
               .from('product_details_multilingual')
-              .upsert(copyData as any)
+              .upsert([copyData] as any)
 
-            if (insertError) throw insertError
+            if (insertError) {
+              console.error(`채널 ${toChannelId} 복사 오류:`, insertError)
+              throw new Error(`채널 ${toChannelId} 복사 실패: ${insertError.message}`)
+            }
           }
         })
 
@@ -297,7 +299,23 @@ export default function ProductDetailsTab({
       }
     } catch (error) {
       console.error('채널 데이터 복사 오류:', error)
-      setSaveMessage('채널 데이터 복사 중 오류가 발생했습니다.')
+      
+      // 에러 메시지 생성
+      let errorMessage = '알 수 없는 오류'
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      } else if (error && typeof error === 'object') {
+        // Supabase 에러 객체인 경우
+        if ('message' in error) {
+          errorMessage = String(error.message)
+        } else if ('error' in error) {
+          errorMessage = String(error.error)
+        }
+      }
+      
+      setSaveMessage(`채널 데이터 복사 중 오류가 발생했습니다: ${errorMessage}`)
       setTimeout(() => setSaveMessage(''), 5000)
     }
   }
@@ -354,21 +372,30 @@ export default function ProductDetailsTab({
 
         if (existingData) {
           // 업데이트
-          const updateQuery = supabase
+          const { error: updateError } = await supabase
             .from('product_details_multilingual')
-            .update(detailsData as any)
+            .update({
+              ...detailsData,
+              updated_at: new Date().toISOString()
+            } as any)
             .eq('product_id', productId)
             .eq('channel_id', channelId)
             .eq('language_code', currentLang)
-          const { error: updateError } = await updateQuery as any
-          if (updateError) throw updateError
+          
+          if (updateError) {
+            console.error(`채널 ${channelId} 업데이트 오류:`, updateError)
+            throw new Error(`채널 ${channelId} 업데이트 실패: ${updateError.message}`)
+          }
         } else {
           // 새로 생성
-          const insertQuery = supabase
+          const { error: insertError } = await supabase
             .from('product_details_multilingual')
-            .insert(detailsData as any)
-          const { error: insertError } = await insertQuery as any
-          if (insertError) throw insertError
+            .insert([detailsData] as any)
+          
+          if (insertError) {
+            console.error(`채널 ${channelId} 생성 오류:`, insertError)
+            throw new Error(`채널 ${channelId} 생성 실패: ${insertError.message}`)
+          }
         }
       })
 
@@ -381,7 +408,23 @@ export default function ProductDetailsTab({
       loadSelectedChannelData()
     } catch (error) {
       console.error('선택된 채널 세부 정보 저장 오류:', error)
-      setSaveMessage(`채널별 세부 정보 저장 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+      
+      // 에러 메시지 생성
+      let errorMessage = '알 수 없는 오류'
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      } else if (error && typeof error === 'object') {
+        // Supabase 에러 객체인 경우
+        if ('message' in error) {
+          errorMessage = String(error.message)
+        } else if ('error' in error) {
+          errorMessage = String(error.error)
+        }
+      }
+      
+      setSaveMessage(`채널별 세부 정보 저장 중 오류가 발생했습니다: ${errorMessage}`)
       setTimeout(() => setSaveMessage(''), 5000)
     } finally {
       setSaving(false)
