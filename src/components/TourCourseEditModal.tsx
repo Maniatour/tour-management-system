@@ -771,7 +771,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               </div>
               
               {/* 트리 선택 인터페이스 */}
-              <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
+              <div className="border border-gray-200 rounded-lg max-h-96 overflow-y-auto">
                 {hierarchicalCourses.map((courseItem) => (
                   <ParentSelectionTreeItem
                     key={courseItem.id}
@@ -792,110 +792,131 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900">이름 및 설명</h3>
             
+            {/* 팀원용 이름 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                팀원용 한국어 이름 *
-              </label>
-              <input
-                type="text"
-                value={formData.team_name_ko}
-                onChange={(e) => setFormData({ ...formData, team_name_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="예: 그랜드캐년, 사우스림, 마더포인트"
-              />
+              <h4 className="text-md font-medium text-gray-800 mb-3">팀원용 이름 *</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    한국어 이름
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.team_name_ko}
+                    onChange={(e) => setFormData({ ...formData, team_name_ko: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="예: 그랜드캐년, 사우스림, 마더포인트"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    영어 이름
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.team_name_en}
+                    onChange={(e) => setFormData({ ...formData, team_name_en: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="예: Grand Canyon, South Rim, Mather Point"
+                  />
+                </div>
+              </div>
             </div>
 
+            {/* 고객용 이름 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                팀원용 영어 이름 *
-              </label>
-              <input
-                type="text"
-                value={formData.team_name_en}
-                onChange={(e) => setFormData({ ...formData, team_name_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="예: Grand Canyon, South Rim, Mather Point"
-              />
+              <h4 className="text-md font-medium text-gray-800 mb-3">고객용 이름</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    한국어 이름
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.customer_name_ko}
+                    onChange={(e) => setFormData({ ...formData, customer_name_ko: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="고객에게 표시될 한국어 이름"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    영어 이름
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.customer_name_en}
+                    onChange={(e) => setFormData({ ...formData, customer_name_en: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="고객에게 표시될 영어 이름"
+                  />
+                </div>
+              </div>
             </div>
 
+            {/* 팀원용 설명 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                고객용 한국어 이름
-              </label>
-              <input
-                type="text"
-                value={formData.customer_name_ko}
-                onChange={(e) => setFormData({ ...formData, customer_name_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="고객에게 표시될 한국어 이름"
-              />
+              <h4 className="text-md font-medium text-gray-800 mb-3">팀원용 설명</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    한국어 설명
+                  </label>
+                  <textarea
+                    value={formData.team_description_ko}
+                    onChange={(e) => setFormData({ ...formData, team_description_ko: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="팀원용 한국어 설명"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    영어 설명
+                  </label>
+                  <textarea
+                    value={formData.team_description_en}
+                    onChange={(e) => setFormData({ ...formData, team_description_en: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="팀원용 영어 설명"
+                  />
+                </div>
+              </div>
             </div>
 
+            {/* 고객용 설명 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                고객용 영어 이름
-              </label>
-              <input
-                type="text"
-                value={formData.customer_name_en}
-                onChange={(e) => setFormData({ ...formData, customer_name_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="고객에게 표시될 영어 이름"
-              />
+              <h4 className="text-md font-medium text-gray-800 mb-3">고객용 설명</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    한국어 설명
+                  </label>
+                  <textarea
+                    value={formData.customer_description_ko}
+                    onChange={(e) => setFormData({ ...formData, customer_description_ko: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="고객에게 표시될 한국어 설명"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    영어 설명
+                  </label>
+                  <textarea
+                    value={formData.customer_description_en}
+                    onChange={(e) => setFormData({ ...formData, customer_description_en: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="고객에게 표시될 영어 설명"
+                  />
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                팀원용 한국어 설명
-              </label>
-              <textarea
-                value={formData.team_description_ko}
-                onChange={(e) => setFormData({ ...formData, team_description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows={3}
-                placeholder="팀원용 한국어 설명"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                팀원용 영어 설명
-              </label>
-              <textarea
-                value={formData.team_description_en}
-                onChange={(e) => setFormData({ ...formData, team_description_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows={3}
-                placeholder="팀원용 영어 설명"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                고객용 한국어 설명
-              </label>
-              <textarea
-                value={formData.customer_description_ko}
-                onChange={(e) => setFormData({ ...formData, customer_description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows={3}
-                placeholder="고객에게 표시될 한국어 설명"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                고객용 영어 설명
-              </label>
-              <textarea
-                value={formData.customer_description_en}
-                onChange={(e) => setFormData({ ...formData, customer_description_en: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows={3}
-                placeholder="고객에게 표시될 영어 설명"
-              />
-            </div>
-
+            {/* 내부 노트 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 내부 노트
