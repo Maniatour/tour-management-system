@@ -38,35 +38,35 @@ export default function AuthCallbackPage() {
         if (data.session?.user) {
           console.log('Auth callback: User authenticated:', data.session.user.email)
           
-          // 가이드인지 확인하고 선호 언어로 리다이렉트
-          try {
-            console.log(`[AuthCallback] Checking guide language for: ${data.session.user.email}`)
-            
-            const { data: teamData, error: teamError } = await supabase
-              .from('team')
-              .select('position, languages')
-              .eq('email', data.session.user.email)
-              .eq('is_active', true)
-              .single()
+          // 가이드인지 확인하고 선호 언어로 리다이렉트 (비활성화)
+          // try {
+          //   console.log(`[AuthCallback] Checking guide language for: ${data.session.user.email}`)
+          //   
+          //   const { data: teamData, error: teamError } = await supabase
+          //     .from('team')
+          //     .select('position, languages')
+          //     .eq('email', data.session.user.email)
+          //     .eq('is_active', true)
+          //     .single()
 
-            if (!teamError && teamData) {
-              const position = teamData.position?.toLowerCase() || ''
-              const isGuide = position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')
-              
-              console.log(`[AuthCallback] Team data found - Position: ${position}, Is Guide: ${isGuide}`)
-              
-              if (isGuide) {
-                const preferredLocale = detectGuidePreferredLanguage(teamData, data.session.user.email)
-                console.log(`[AuthCallback] Guide detected, redirecting to preferred language: ${preferredLocale}`)
-                router.replace(`/${preferredLocale}/guide`)
-                return
-              }
-            } else {
-              console.log(`[AuthCallback] No team data found or error:`, teamError?.message || 'No data')
-            }
-          } catch (error) {
-            console.error('[AuthCallback] Error checking guide language:', error)
-          }
+          //   if (!teamError && teamData) {
+          //     const position = teamData.position?.toLowerCase() || ''
+          //     const isGuide = position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')
+          //     
+          //     console.log(`[AuthCallback] Team data found - Position: ${position}, Is Guide: ${isGuide}`)
+          //     
+          //     if (isGuide) {
+          //       const preferredLocale = detectGuidePreferredLanguage(teamData, data.session.user.email)
+          //       console.log(`[AuthCallback] Guide detected, redirecting to preferred language: ${preferredLocale}`)
+          //       router.replace(`/${preferredLocale}/guide`)
+          //       return
+          //     }
+          //   } else {
+          //     console.log(`[AuthCallback] No team data found or error:`, teamError?.message || 'No data')
+          //   }
+          // } catch (error) {
+          //   console.error('[AuthCallback] Error checking guide language:', error)
+          // }
           
           // 가이드가 아니거나 언어 정보가 없는 경우 기본 리다이렉트
           setTimeout(() => {

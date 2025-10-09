@@ -194,21 +194,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       console.log('AuthContext: User role set successfully:', role, 'for user:', email)
       
-      // 가이드인 경우 선호 언어로 리다이렉트 (안전하게 처리)
-      if (role === 'team_member' && teamData) {
-        const position = (teamData as TeamData).position?.toLowerCase() || ''
-        if (position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')) {
-          console.log('AuthContext: Guide detected, scheduling language redirect')
-          // 더 긴 지연을 두어 다른 리다이렉트와 충돌하지 않도록 함
-          setTimeout(() => {
-            try {
-              redirectGuideToPreferredLanguage(email)
-            } catch (error) {
-              console.error('AuthContext: Error in guide redirect:', error)
-            }
-          }, 1000)
-        }
-      }
+      // 가이드인 경우 선호 언어로 리다이렉트 (비활성화)
+      // if (role === 'team_member' && teamData) {
+      //   const position = (teamData as TeamData).position?.toLowerCase() || ''
+      //   if (position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')) {
+      //     console.log('AuthContext: Guide detected, scheduling language redirect')
+      //     // 더 긴 지연을 두어 다른 리다이렉트와 충돌하지 않도록 함
+      //     setTimeout(() => {
+      //       try {
+      //         redirectGuideToPreferredLanguage(email)
+      //       } catch (error) {
+      //         console.error('AuthContext: Error in guide redirect:', error)
+      //       }
+      //     }, 1000)
+      //   }
+      // }
     } catch (error) {
       console.error('AuthContext: Error checking user role:', error)
       // 에러 발생 시에도 기본 역할로 설정하고 로딩 해제

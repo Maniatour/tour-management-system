@@ -17,9 +17,7 @@ import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourReportModal from '@/components/TourReportModal'
 import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
-import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
-import { supabase } from '@/lib/supabase'
-import { createClientSupabase } from '@/lib/supabase'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
 
 interface GuideLayoutProps {
   children: React.ReactNode
@@ -83,8 +81,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       // 미작성 리포트 카운트 로드
       loadUncompletedReportCount()
       
-      // 메디컬 리포트 상태 확인
-      checkMedicalReportStatus()
+       // 메디컬 리포트 상태 확인 (비활성화)
+       // checkMedicalReportStatus()
     }
   }, [user, userRole, isLoading, router, isSimulating, simulatedUser])
 
@@ -356,13 +354,30 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     )
   }
 
-  return (
-    <AudioPlayerProvider>
-      <div className="min-h-screen bg-gray-50">
-        {/* 메인 컨텐츠 */}
-        <main className="max-w-7xl mx-auto px-0 sm:px-1 lg:px-2 py-2 sm:py-4 pb-20 sm:pb-4">
-          {children}
-        </main>
+   return (
+     <AudioPlayerProvider>
+       <div className="min-h-screen bg-gray-50">
+         {/* 헤더 */}
+         <header className="bg-white border-b border-gray-200 px-4 py-3">
+           <div className="max-w-7xl mx-auto flex items-center justify-between">
+             <div className="flex items-center space-x-4">
+               <h1 className="text-xl font-semibold text-gray-900">
+                 {t('title')}
+               </h1>
+             </div>
+             <div className="flex items-center space-x-4">
+               <LanguageSwitcher />
+               <div className="text-sm text-gray-600">
+                 {isSimulating && simulatedUser ? simulatedUser.name_ko : user?.email}
+               </div>
+             </div>
+           </div>
+         </header>
+
+         {/* 메인 컨텐츠 */}
+         <main className="max-w-7xl mx-auto px-0 sm:px-1 lg:px-2 py-2 sm:py-4 pb-20 sm:pb-4">
+           {children}
+         </main>
 
         {/* 전역 오디오 플레이어 */}
         <GlobalAudioPlayer />
