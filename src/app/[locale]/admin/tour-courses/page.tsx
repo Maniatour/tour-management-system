@@ -402,7 +402,7 @@ export default function TourCoursesPage() {
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">투어 코스 목록</h2>
             </div>
-            <div className="p-4 max-h-[600px] overflow-y-auto">
+            <div className="p-4 max-h-[800px] overflow-y-auto">
               {hierarchicalCourses.length > 0 ? (
                 <div className="space-y-0">
                   {hierarchicalCourses.map((course) => (
@@ -425,35 +425,163 @@ export default function TourCoursesPage() {
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">상세 정보</h2>
             </div>
-            <div className="p-4">
+            <div className="p-4 max-h-[800px] overflow-y-auto">
               {selectedCourse ? (
                 <div className="space-y-4">
+                  {/* 기본 정보 */}
                   <div>
-                    <h3 className="font-medium text-gray-900">
+                    <h3 className="font-medium text-gray-900 mb-2">
                       {selectedCourse.team_name_ko || selectedCourse.name_ko}
                     </h3>
-                    {selectedCourse.team_name_en && (
-                      <p className="text-sm text-gray-500">
+                    {selectedCourse.team_name_en && selectedCourse.team_name_en !== selectedCourse.team_name_ko && (
+                      <p className="text-sm text-gray-500 mb-2">
                         {selectedCourse.team_name_en}
                       </p>
                     )}
+                    {selectedCourse.customer_name_ko && (
+                      <p className="text-sm text-blue-600 mb-1">
+                        고객용: {selectedCourse.customer_name_ko}
+                      </p>
+                    )}
+                    {selectedCourse.customer_name_en && (
+                      <p className="text-sm text-blue-600">
+                        Customer: {selectedCourse.customer_name_en}
+                      </p>
+                    )}
                   </div>
+
+                  {/* 위치 정보 */}
                   {selectedCourse.location && (
                     <div className="text-sm text-gray-600">
                       <MapPin className="w-4 h-4 inline mr-1" />
                       {selectedCourse.location}
                     </div>
                   )}
-                  <div className="flex gap-2">
+                  {selectedCourse.point_name && (
+                    <div className="text-sm text-gray-600">
+                      📍 포인트: {selectedCourse.point_name}
+                    </div>
+                  )}
+
+                  {/* 좌표 정보 */}
+                  {(selectedCourse.start_latitude || selectedCourse.start_longitude) && (
+                    <div className="text-sm text-gray-600">
+                      <div>시작 좌표: {selectedCourse.start_latitude}, {selectedCourse.start_longitude}</div>
+                    </div>
+                  )}
+                  {(selectedCourse.end_latitude || selectedCourse.end_longitude) && (
+                    <div className="text-sm text-gray-600">
+                      <div>종료 좌표: {selectedCourse.end_latitude}, {selectedCourse.end_longitude}</div>
+                    </div>
+                  )}
+
+                  {/* 설명 정보 */}
+                  {selectedCourse.team_description_ko && (
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-700 mb-1">팀원용 설명 (한국어)</div>
+                      <div className="text-gray-600 bg-gray-50 p-2 rounded text-xs">
+                        {selectedCourse.team_description_ko}
+                      </div>
+                    </div>
+                  )}
+                  {selectedCourse.team_description_en && (
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-700 mb-1">팀원용 설명 (영어)</div>
+                      <div className="text-gray-600 bg-gray-50 p-2 rounded text-xs">
+                        {selectedCourse.team_description_en}
+                      </div>
+                    </div>
+                  )}
+                  {selectedCourse.customer_description_ko && (
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-700 mb-1">고객용 설명 (한국어)</div>
+                      <div className="text-gray-600 bg-blue-50 p-2 rounded text-xs">
+                        {selectedCourse.customer_description_ko}
+                      </div>
+                    </div>
+                  )}
+                  {selectedCourse.customer_description_en && (
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-700 mb-1">고객용 설명 (영어)</div>
+                      <div className="text-gray-600 bg-blue-50 p-2 rounded text-xs">
+                        {selectedCourse.customer_description_en}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 상세 정보 */}
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-700">소요시간:</span>
+                      <span className="text-gray-600 ml-1">{selectedCourse.duration_hours}분</span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">난이도:</span>
+                      <span className="text-gray-600 ml-1">
+                        {selectedCourse.difficulty_level === 'easy' ? '쉬움' : 
+                         selectedCourse.difficulty_level === 'medium' ? '보통' : '어려움'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">카테고리:</span>
+                      <span className="text-gray-600 ml-1">{selectedCourse.category || '미분류'}</span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">상태:</span>
+                      <span className={`ml-1 ${selectedCourse.is_active ? 'text-green-600' : 'text-red-600'}`}>
+                        {selectedCourse.is_active ? '활성' : '비활성'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 가격 정보 */}
+                  {(selectedCourse.price_adult || selectedCourse.price_child || selectedCourse.price_infant) && (
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-700 mb-1">가격 정보</div>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        {selectedCourse.price_adult && (
+                          <div className="bg-gray-50 p-2 rounded">
+                            <div className="font-medium">성인</div>
+                            <div className="text-gray-600">${selectedCourse.price_adult}</div>
+                          </div>
+                        )}
+                        {selectedCourse.price_child && (
+                          <div className="bg-gray-50 p-2 rounded">
+                            <div className="font-medium">어린이</div>
+                            <div className="text-gray-600">${selectedCourse.price_child}</div>
+                          </div>
+                        )}
+                        {selectedCourse.price_infant && (
+                          <div className="bg-gray-50 p-2 rounded">
+                            <div className="font-medium">유아</div>
+                            <div className="text-gray-600">${selectedCourse.price_infant}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 내부 노트 */}
+                  {selectedCourse.internal_note && (
+                    <div className="text-sm">
+                      <div className="font-medium text-gray-700 mb-1">내부 노트</div>
+                      <div className="text-gray-600 bg-yellow-50 p-2 rounded text-xs border-l-4 border-yellow-400">
+                        {selectedCourse.internal_note}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 액션 버튼 */}
+                  <div className="flex gap-2 pt-2 border-t border-gray-200">
                     <button
                       onClick={() => startEdit(selectedCourse)}
-                      className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                     >
                       편집
                     </button>
                     <button
                       onClick={() => deleteCourse(selectedCourse)}
-                      className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                      className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
                     >
                       삭제
                     </button>
