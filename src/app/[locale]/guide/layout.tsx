@@ -360,8 +360,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
    return (
      <AudioPlayerProvider>
        <div className="min-h-screen bg-gray-50">
-         {/* 헤더 */}
-         <header className="bg-white border-b border-gray-200 px-4 py-3">
+         {/* 헤더 (비활성화) */}
+         {/* <header className="bg-white border-b border-gray-200 px-4 py-3">
            <div className="max-w-7xl mx-auto flex items-center justify-between">
              <div className="flex items-center space-x-4">
                <h1 className="text-xl font-semibold text-gray-900">
@@ -375,7 +375,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
                </div>
              </div>
            </div>
-         </header>
+         </header> */}
 
          {/* 메인 컨텐츠 */}
          <main className="max-w-7xl mx-auto px-0 sm:px-1 lg:px-2 py-2 sm:py-4 pb-20 sm:pb-4">
