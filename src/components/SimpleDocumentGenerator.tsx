@@ -142,6 +142,65 @@ export default function SimpleDocumentGenerator({
           </table>
         </div>
 
+        <!-- Tour Course 섹션 -->
+        <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #047857; margin-top: 0;">🗺️ 투어 코스</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{tour_course_info}}
+          </div>
+        </div>
+
+        <!-- Tour Duration 섹션 -->
+        <div style="background: #fef3c7; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #92400e; margin-top: 0;">⏰ 투어 시간</h2>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; font-weight: bold; color: #374151; width: 30%;">총 투어 시간:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 18px; font-weight: bold;">{{product.duration}}시간</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Tour Schedule 섹션 -->
+        <div style="background: #f3e8ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #7c3aed; margin-top: 0;">📅 투어 스케줄</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{tour_schedule_customer_view}}
+          </div>
+        </div>
+
+        <!-- Tour Information 섹션 -->
+        <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #1e40af; margin-top: 0;">ℹ️ 투어 상세 정보</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{tour_information_details}}
+          </div>
+        </div>
+
+        <!-- Cancellation Policy 섹션 -->
+        <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #dc2626; margin-top: 0;">📋 취소 정책</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{cancellation_policy}}
+          </div>
+        </div>
+
+        <!-- Inclusions 섹션 -->
+        <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #047857; margin-top: 0;">✅ 포함 사항 (INCLUSIONS)</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{inclusions}}
+          </div>
+        </div>
+
+        <!-- Exclusions 섹션 -->
+        <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #dc2626; margin-top: 0;">❌ 불포함 사항 (EXCLUSIONS)</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{exclusions}}
+          </div>
+        </div>
+
         <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
           <h2 style="color: #047857; margin-top: 0;">픽업 정보</h2>
           <table style="width: 100%; border-collapse: collapse;">
@@ -258,6 +317,65 @@ export default function SimpleDocumentGenerator({
               <td style="padding: 8px 0; color: #111827;">{{reservation.tour_time}}</td>
             </tr>
           </table>
+        </div>
+
+        <!-- Tour Course Section -->
+        <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #047857; margin-top: 0;">🗺️ Tour Course</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{tour_course_info}}
+          </div>
+        </div>
+
+        <!-- Tour Duration Section -->
+        <div style="background: #fef3c7; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #92400e; margin-top: 0;">⏰ Tour Duration</h2>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; font-weight: bold; color: #374151; width: 30%;">Total Tour Duration:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 18px; font-weight: bold;">{{product.duration}} hours</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Tour Schedule Section -->
+        <div style="background: #f3e8ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #7c3aed; margin-top: 0;">📅 Tour Schedule</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{tour_schedule_customer_view}}
+          </div>
+        </div>
+
+        <!-- Tour Information Section -->
+        <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #1e40af; margin-top: 0;">ℹ️ Tour Information</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{tour_information_details}}
+          </div>
+        </div>
+
+        <!-- Cancellation Policy Section -->
+        <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #dc2626; margin-top: 0;">📋 Cancellation Policy</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{cancellation_policy}}
+          </div>
+        </div>
+
+        <!-- Inclusions Section -->
+        <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #047857; margin-top: 0;">✅ Inclusions</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{inclusions}}
+          </div>
+        </div>
+
+        <!-- Exclusions Section -->
+        <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h2 style="color: #dc2626; margin-top: 0;">❌ Exclusions</h2>
+          <div style="color: #111827; line-height: 1.6;">
+            {{exclusions}}
+          </div>
         </div>
 
         <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
@@ -637,7 +755,8 @@ export default function SimpleDocumentGenerator({
             name_ko: productName || '투어 상품',
             name_en: 'Tour Product',
             category: '투어',
-            sub_category: '일반'
+            sub_category: '일반',
+            duration: 8
           },
           channel: {
             name: '일반 채널',
@@ -663,7 +782,26 @@ export default function SimpleDocumentGenerator({
             phone: 'TBD',
             language: language === 'ko' ? '한국어' : 'English',
             experience: language === 'ko' ? '풍부한 경험' : 'Experienced'
-          }
+          },
+          // 새로운 섹션들 추가
+          tour_course_info: language === 'ko' ? 
+            '• 서울 시청\n• 경복궁\n• 인사동\n• 명동\n• 남산타워' : 
+            '• Seoul City Hall\n• Gyeongbokgung Palace\n• Insadong\n• Myeongdong\n• N Seoul Tower',
+          tour_schedule_customer_view: language === 'ko' ?
+            '09:00 - 호텔 픽업\n10:00 - 경복궁 관람\n12:00 - 점심 식사\n14:00 - 인사동 쇼핑\n16:00 - 남산타워\n18:00 - 호텔 도착' :
+            '09:00 - Hotel pickup\n10:00 - Gyeongbokgung Palace tour\n12:00 - Lunch\n14:00 - Insadong shopping\n16:00 - N Seoul Tower\n18:00 - Hotel arrival',
+          tour_information_details: language === 'ko' ?
+            '• 상품 설명: 서울의 주요 관광지를 둘러보는 하루 투어\n• 픽업/드롭 정보: 호텔에서 픽업 및 드롭오프\n• 수하물 정보: 개인 소지품만 가능\n• 투어 운영 정보: 전문 가이드와 함께 진행\n• 준비 사항: 편안한 신발과 간단한 개인 소지품\n• 소그룹 정보: 최대 15명 소그룹 투어\n• 안내사항: 날씨에 따라 일정이 변경될 수 있습니다' :
+            '• Product Description: Full-day tour of Seoul\'s major attractions\n• Pickup/Drop Info: Hotel pickup and drop-off\n• Luggage Info: Personal belongings only\n• Tour Operation: Led by professional guide\n• Preparation: Comfortable shoes and personal items\n• Small Group: Maximum 15 people\n• Notice: Schedule may change due to weather',
+          cancellation_policy: language === 'ko' ?
+            '• 투어 3일 전: 100% 환불\n• 투어 1일 전: 50% 환불\n• 투어 당일: 환불 불가\n• 천재지변으로 인한 취소: 100% 환불' :
+            '• 3 days before tour: 100% refund\n• 1 day before tour: 50% refund\n• On tour day: No refund\n• Cancellation due to natural disasters: 100% refund',
+          inclusions: language === 'ko' ?
+            '• 전문 가이드 서비스\n• 교통편 (왕복)\n• 모든 입장료\n• 점심 식사\n• 여행자 보험' :
+            '• Professional guide service\n• Round-trip transportation\n• All entrance fees\n• Lunch\n• Travel insurance',
+          exclusions: language === 'ko' ?
+            '• 개인 경비\n• 숙박비\n• 항공료\n• 개인 보험\n• 기념품 및 쇼핑' :
+            '• Personal expenses\n• Accommodation\n• Airfare\n• Personal insurance\n• Souvenirs and shopping'
         }
       }
       

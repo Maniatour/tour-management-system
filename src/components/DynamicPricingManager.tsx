@@ -1209,6 +1209,7 @@ export default function DynamicPricingManager({
     };
   }, [choices, pricingConfig]);
 
+
   // 쿠폰 할인 계산 함수 (현재 사용하지 않음 - 향후 확장을 위해 보존)
   // const calculateCouponDiscount = (basePrice: number, fixedDiscount: number, percentageDiscount: number, priority: 'fixed_first' | 'percentage_first' = 'fixed_first') => {
   //   let result = basePrice;
@@ -2399,7 +2400,9 @@ export default function DynamicPricingManager({
              <div className="text-xs text-gray-500 ml-4">할인가 - 커미션</div>
            </div>
          </div>
+
        </div>
+
 
       {/* 3. 가운데 가격 설정 섹션 */}
       <div id="pricing-section" className="w-full lg:w-[30%] bg-white p-4 lg:p-6 overflow-y-auto h-[60vh] lg:h-auto">
@@ -3233,8 +3236,6 @@ export default function DynamicPricingManager({
                 })()}
               </div>
             )}
-
-
 
           </div>
         )}

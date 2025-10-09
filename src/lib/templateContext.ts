@@ -269,6 +269,109 @@ export async function getTourScheduleHtmlData(reservationId: string, language: '
 }
 
 /**
+ * 예약에 대한 채널별 포함/불포함 사항 데이터를 가져옵니다
+ */
+export async function getChannelInclusionsExclusionsData(reservationId: string, language: 'ko' | 'en' = 'ko') {
+  try {
+    // 예약 정보에서 상품 ID와 채널 ID 가져오기
+    const { data: reservation, error: reservationError } = await supabase
+      .from('reservations')
+      .select('product_id, channel_id')
+      .eq('id', reservationId)
+      .single()
+
+    if (reservationError || !reservation) {
+      console.error('예약 정보 조회 실패:', reservationError)
+      return null
+    }
+
+    // 채널별 포함/불포함 사항 가져오기 (dynamic_pricing 테이블에서)
+    const { data: channelData, error: channelError } = await supabase
+      .from('dynamic_pricing')
+      .select('inclusions_ko, exclusions_ko, inclusions_en, exclusions_en')
+      .eq('product_id', reservation.product_id)
+      .eq('channel_id', reservation.channel_id)
+      .single()
+
+    if (channelError) {
+      console.error('채널별 포함/불포함 사항 조회 실패:', channelError)
+      return null
+    }
+
+    if (!channelData) {
+      return {
+        inclusions: language === 'ko' ? '포함 사항 정보가 없습니다.' : 'No inclusions information available.',
+        exclusions: language === 'ko' ? '불포함 사항 정보가 없습니다.' : 'No exclusions information available.'
+      }
+    }
+
+    // 언어에 따른 데이터 반환
+    return {
+      inclusions: language === 'ko' ? channelData.inclusions_ko : channelData.inclusions_en,
+      exclusions: language === 'ko' ? channelData.exclusions_ko : channelData.exclusions_en
+    }
+  } catch (error) {
+    console.error('채널별 포함/불포함 사항 데이터 조회 중 오류:', error)
+    return null
+  }
+}
+
+/**
+ * 예약에 대한 투어 코스 정보를 가져옵니다
+ */
+export async function getTourCourseData(reservationId: string, language: 'ko' | 'en' = 'ko') {
+  try {
+    // 예약 정보에서 상품 ID 가져오기
+    const { data: reservation, error: reservationError } = await supabase
+      .from('reservations')
+      .select('product_id')
+      .eq('id', reservationId)
+      .single()
+
+    if (reservationError || !reservation) {
+      console.error('예약 정보 조회 실패:', reservationError)
+      return null
+    }
+
+    // 상품에 연결된 투어 코스 가져오기
+    const { data: productTourCourses, error: coursesError } = await supabase
+      .from('product_tour_courses')
+      .select(`
+        tour_course_id,
+        tour_courses!inner(
+          name_ko,
+          name_en,
+          description_ko,
+          description_en
+        )
+      `)
+      .eq('product_id', reservation.product_id)
+
+    if (coursesError) {
+      console.error('투어 코스 조회 실패:', coursesError)
+      return null
+    }
+
+    if (!productTourCourses || productTourCourses.length === 0) {
+      return language === 'ko' ? '투어 코스 정보가 없습니다.' : 'No tour course information available.'
+    }
+
+    // 투어 코스 정보 포맷팅
+    const courseInfo = productTourCourses.map(item => {
+      const course = item.tour_courses
+      const name = language === 'ko' ? course.name_ko : course.name_en
+      const description = language === 'ko' ? course.description_ko : course.description_en
+      return `• ${name}${description ? `\n  ${description}` : ''}`
+    }).join('\n')
+
+    return courseInfo
+  } catch (error) {
+    console.error('투어 코스 데이터 조회 중 오류:', error)
+    return null
+  }
+}
+
+/**
  * 예약에 대한 상품 세부정보 데이터를 가져옵니다 (다국어 지원)
  */
 export async function getProductDetailsData(reservationId: string, language: 'ko' | 'en' = 'ko') {
@@ -318,7 +421,19 @@ export async function getProductDetailsData(reservationId: string, language: 'ko
       companion_info: productDetails.companion_info || '',
       exclusive_booking_info: productDetails.exclusive_booking_info || '',
       cancellation_policy: productDetails.cancellation_policy || '',
-      chat_announcement: productDetails.chat_announcement || ''
+      chat_announcement: productDetails.chat_announcement || '',
+      // 투어 바우처용 추가 데이터
+      inclusions: productDetails.included || '',
+      exclusions: productDetails.not_included || '',
+      tour_information_details: [
+        productDetails.description ? `• 상품 설명: ${productDetails.description}` : '',
+        productDetails.pickup_drop_info ? `• 픽업/드롭 정보: ${productDetails.pickup_drop_info}` : '',
+        productDetails.luggage_info ? `• 수하물 정보: ${productDetails.luggage_info}` : '',
+        productDetails.tour_operation_info ? `• 투어 운영 정보: ${productDetails.tour_operation_info}` : '',
+        productDetails.preparation_info ? `• 준비 사항: ${productDetails.preparation_info}` : '',
+        productDetails.small_group_info ? `• 소그룹 정보: ${productDetails.small_group_info}` : '',
+        productDetails.companion_info ? `• 안내사항: ${productDetails.companion_info}` : ''
+      ].filter(Boolean).join('\n')
     }
   } catch (error) {
     console.error('상품 세부정보 데이터 조회 중 오류:', error)
@@ -718,6 +833,25 @@ export async function generateTemplateContext(reservationId: string, language: '
     // 상품 세부정보 데이터 가져오기 (다국어 지원)
     const productDetails = await getProductDetailsData(reservationId, language)
     
+    // 투어 코스 데이터 가져오기
+    const tourCourseInfo = await getTourCourseData(reservationId, language)
+    
+    // 투어 스케줄 고객뷰 데이터 가져오기
+    let tourScheduleCustomerView = null
+    if (tourSchedule && tourSchedule.customer_visible) {
+      try {
+        const customerSchedules = JSON.parse(tourSchedule.customer_visible)
+        tourScheduleCustomerView = customerSchedules.map((schedule: any) => 
+          `${schedule.time} - ${schedule.title}${schedule.location ? ` (${schedule.location})` : ''}`
+        ).join('\n')
+      } catch (error) {
+        console.warn('투어 스케줄 고객뷰 파싱 실패:', error)
+      }
+    }
+    
+    // 채널별 포함/불포함 사항 데이터 가져오기
+    const channelInclusionsExclusions = await getChannelInclusionsExclusionsData(reservationId, language)
+    
     // 픽업 스케줄 데이터 가져오기
     const pickupSchedule = await getPickupScheduleData(reservationId)
 
@@ -786,7 +920,14 @@ export async function generateTemplateContext(reservationId: string, language: '
       tour_schedule_html: tourScheduleHtml || {},
       product_details: productDetails || {},
       product_details_multilingual: productDetails || {},
-      pickup_schedule: pickupSchedule || {}
+      pickup_schedule: pickupSchedule || {},
+      // 투어 바우처용 새로운 데이터
+      tour_course_info: tourCourseInfo || (language === 'ko' ? '투어 코스 정보가 없습니다.' : 'No tour course information available.'),
+      tour_schedule_customer_view: tourScheduleCustomerView || (language === 'ko' ? '투어 스케줄 정보가 없습니다.' : 'No tour schedule information available.'),
+      tour_information_details: productDetails?.tour_information_details || (language === 'ko' ? '투어 상세 정보가 없습니다.' : 'No tour information available.'),
+      cancellation_policy: productDetails?.cancellation_policy || (language === 'ko' ? '취소 정책 정보가 없습니다.' : 'No cancellation policy available.'),
+      inclusions: channelInclusionsExclusions?.inclusions || productDetails?.inclusions || (language === 'ko' ? '포함 사항 정보가 없습니다.' : 'No inclusions information available.'),
+      exclusions: channelInclusionsExclusions?.exclusions || productDetails?.exclusions || (language === 'ko' ? '불포함 사항 정보가 없습니다.' : 'No exclusions information available.')
     }
 
     console.log('템플릿 컨텍스트 생성 완료:', Object.keys(context))

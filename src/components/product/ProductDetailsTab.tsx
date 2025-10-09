@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { FileText, Save, AlertCircle, Settings, Languages, Loader2, Sparkles } from 'lucide-react'
+import { FileText, Save, AlertCircle, Settings, Languages, Loader2, Sparkles, Users, Copy, ChevronRight, ChevronDown, CheckSquare, Square } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import CommonDetailsModal from './CommonDetailsModal'
@@ -90,6 +90,21 @@ interface ProductDetailsTabProps {
   setFormData: React.Dispatch<React.SetStateAction<ProductDetailsFormData>>
 }
 
+interface Channel {
+  id: string
+  name: string
+  type: string
+}
+
+interface ChannelGroup {
+  type: string
+  channels: Channel[]
+}
+
+interface ChannelSelection {
+  [channelId: string]: boolean
+}
+
 export default function ProductDetailsTab({
   productId,
   isNewProduct,
@@ -111,6 +126,14 @@ export default function ProductDetailsTab({
   const [suggestionError, setSuggestionError] = useState<string | null>(null)
   // const [loadingCommon, setLoadingCommon] = useState(false)
 
+  // 채널 관련 상태
+  const [channels, setChannels] = useState<Channel[]>([])
+  const [channelGroups, setChannelGroups] = useState<ChannelGroup[]>([])
+  const [selectedChannels, setSelectedChannels] = useState<ChannelSelection>({})
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const [loadingChannelData, setLoadingChannelData] = useState(false)
+  const [copyFromChannel, setCopyFromChannel] = useState<string | null>(null)
+
   const supabase = createClientSupabase()
   const { user, loading: authLoading } = useAuth()
 
@@ -118,6 +141,262 @@ export default function ProductDetailsTab({
   useEffect(() => {
     setLoading(false)
   }, [])
+
+  // 채널 목록 로드
+  const loadChannels = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('channels')
+        .select('id, name, type')
+        .order('type, name')
+
+      if (error) throw error
+      
+      const channelsData = data || []
+      setChannels(channelsData)
+      
+      // 채널을 타입별로 그룹화
+      const groups: ChannelGroup[] = []
+      const typeMap = new Map<string, Channel[]>()
+      
+      channelsData.forEach(channel => {
+        if (!typeMap.has(channel.type)) {
+          typeMap.set(channel.type, [])
+        }
+        typeMap.get(channel.type)!.push(channel)
+      })
+      
+      typeMap.forEach((channels, type) => {
+        groups.push({ type, channels })
+      })
+      
+      setChannelGroups(groups)
+      
+      // 모든 그룹을 기본적으로 확장
+      const expanded: Record<string, boolean> = {}
+      groups.forEach(group => {
+        expanded[group.type] = true
+      })
+      setExpandedGroups(expanded)
+      
+    } catch (error) {
+      console.error('채널 목록 로드 오류:', error)
+    }
+  }, [supabase])
+
+  // 선택된 채널들의 세부 정보 로드
+  const loadSelectedChannelData = useCallback(async () => {
+    const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
+    if (selectedChannelIds.length === 0) return
+
+    setLoadingChannelData(true)
+    try {
+      const { data, error } = await supabase
+        .from('product_details_multilingual')
+        .select('*')
+        .eq('product_id', productId)
+        .in('channel_id', selectedChannelIds)
+
+      if (error) throw error
+
+      // 데이터 로드 완료 (향후 확장을 위해 보존)
+      console.log('선택된 채널 데이터 로드됨:', data)
+    } catch (error) {
+      console.error('선택된 채널 데이터 로드 오류:', error)
+    } finally {
+      setLoadingChannelData(false)
+    }
+  }, [selectedChannels, productId, supabase])
+
+  // 채널 선택 토글
+  const toggleChannelSelection = (channelId: string) => {
+    setSelectedChannels(prev => ({
+      ...prev,
+      [channelId]: !prev[channelId]
+    }))
+  }
+
+  // 그룹 전체 선택/해제
+  const toggleGroupSelection = (groupType: string) => {
+    const group = channelGroups.find(g => g.type === groupType)
+    if (!group) return
+
+    const allSelected = group.channels.every(channel => selectedChannels[channel.id])
+    
+    setSelectedChannels(prev => {
+      const newSelection = { ...prev }
+      group.channels.forEach(channel => {
+        newSelection[channel.id] = !allSelected
+      })
+      return newSelection
+    })
+  }
+
+  // 그룹 확장/축소 토글
+  const toggleGroupExpansion = (groupType: string) => {
+    setExpandedGroups(prev => ({
+      ...prev,
+      [groupType]: !prev[groupType]
+    }))
+  }
+
+  // 채널 간 복사
+  const copyChannelData = async (fromChannelId: string, toChannelIds: string[]) => {
+    if (!copyFromChannel) return
+
+    try {
+      const { data: sourceData, error: fetchError } = await supabase
+        .from('product_details_multilingual')
+        .select('*')
+        .eq('product_id', productId)
+        .eq('channel_id', fromChannelId)
+
+      if (fetchError) throw fetchError
+
+      if (sourceData && sourceData.length > 0) {
+        const copyPromises = toChannelIds.map(async (toChannelId) => {
+          for (const sourceItem of sourceData) {
+            const copyData = {
+              product_id: productId,
+              channel_id: toChannelId,
+              language_code: sourceItem.language_code,
+              slogan1: sourceItem.slogan1,
+              slogan2: sourceItem.slogan2,
+              slogan3: sourceItem.slogan3,
+              description: sourceItem.description,
+              included: sourceItem.included,
+              not_included: sourceItem.not_included,
+              pickup_drop_info: sourceItem.pickup_drop_info,
+              luggage_info: sourceItem.luggage_info,
+              tour_operation_info: sourceItem.tour_operation_info,
+              preparation_info: sourceItem.preparation_info,
+              small_group_info: sourceItem.small_group_info,
+              notice_info: sourceItem.notice_info,
+              private_tour_info: sourceItem.private_tour_info,
+              cancellation_policy: sourceItem.cancellation_policy,
+              chat_announcement: sourceItem.chat_announcement,
+              tags: sourceItem.tags
+            }
+
+            // @ts-expect-error - Supabase 타입 문제 임시 해결
+            const { error: insertError } = await supabase
+              .from('product_details_multilingual')
+              .upsert(copyData as any)
+
+            if (insertError) throw insertError
+          }
+        })
+
+        await Promise.all(copyPromises)
+        
+        // 복사 후 데이터 새로고침
+        loadSelectedChannelData()
+        
+        setSaveMessage(`${toChannelIds.length}개 채널에 데이터가 복사되었습니다!`)
+        setTimeout(() => setSaveMessage(''), 3000)
+      }
+    } catch (error) {
+      console.error('채널 데이터 복사 오류:', error)
+      setSaveMessage('채널 데이터 복사 중 오류가 발생했습니다.')
+      setTimeout(() => setSaveMessage(''), 5000)
+    }
+  }
+
+  // 선택된 채널들에 세부 정보 저장
+  const saveSelectedChannelsDetails = async () => {
+    const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
+    if (selectedChannelIds.length === 0) {
+      setSaveMessage('저장할 채널을 선택해주세요.')
+      setTimeout(() => setSaveMessage(''), 3000)
+      return
+    }
+
+    setSaving(true)
+    setSaveMessage('')
+
+    try {
+      const currentLang = formData.currentLanguage || 'ko'
+      const currentDetails = getCurrentLanguageDetails()
+
+      const savePromises = selectedChannelIds.map(async (channelId) => {
+        const detailsData = {
+          product_id: productId,
+          channel_id: channelId,
+          language_code: currentLang,
+          slogan1: currentDetails.slogan1,
+          slogan2: currentDetails.slogan2,
+          slogan3: currentDetails.slogan3,
+          description: currentDetails.description,
+          included: currentDetails.included,
+          not_included: currentDetails.not_included,
+          pickup_drop_info: currentDetails.pickup_drop_info,
+          luggage_info: currentDetails.luggage_info,
+          tour_operation_info: currentDetails.tour_operation_info,
+          preparation_info: currentDetails.preparation_info,
+          small_group_info: currentDetails.small_group_info,
+          notice_info: currentDetails.notice_info,
+          private_tour_info: currentDetails.private_tour_info,
+          cancellation_policy: currentDetails.cancellation_policy,
+          chat_announcement: currentDetails.chat_announcement,
+          tags: currentDetails.tags
+        }
+
+        // 기존 데이터 확인
+        const { data: existingData, error: selectError } = await supabase
+          .from('product_details_multilingual')
+          .select('id')
+          .eq('product_id', productId)
+          .eq('channel_id', channelId)
+          .eq('language_code', currentLang)
+          .maybeSingle()
+
+        if (selectError) throw selectError
+
+        if (existingData) {
+          // 업데이트
+          const updateQuery = supabase
+            .from('product_details_multilingual')
+            .update(detailsData as any)
+            .eq('product_id', productId)
+            .eq('channel_id', channelId)
+            .eq('language_code', currentLang)
+          const { error: updateError } = await updateQuery as any
+          if (updateError) throw updateError
+        } else {
+          // 새로 생성
+          const insertQuery = supabase
+            .from('product_details_multilingual')
+            .insert(detailsData as any)
+          const { error: insertError } = await insertQuery as any
+          if (insertError) throw insertError
+        }
+      })
+
+      await Promise.all(savePromises)
+
+      setSaveMessage(`${selectedChannelIds.length}개 채널의 세부 정보가 성공적으로 저장되었습니다!`)
+      setTimeout(() => setSaveMessage(''), 3000)
+      
+      // 저장 후 데이터 새로고침
+      loadSelectedChannelData()
+    } catch (error) {
+      console.error('선택된 채널 세부 정보 저장 오류:', error)
+      setSaveMessage(`채널별 세부 정보 저장 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+      setTimeout(() => setSaveMessage(''), 5000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 초기 로드
+  useEffect(() => {
+    loadChannels()
+  }, [loadChannels])
+
+  // 채널 선택 변경 시 데이터 로드
+  useEffect(() => {
+    loadSelectedChannelData()
+  }, [loadSelectedChannelData])
 
   // 현재 언어의 상세 정보 가져오기
   const getCurrentLanguageDetails = (): ProductDetailsFields => {
@@ -631,34 +910,36 @@ export default function ProductDetailsTab({
             <FileText className="h-5 w-5 mr-2" />
             상품 세부정보
           </h3>
-          <button
-            type="button"
-            onClick={translateCurrentLanguageDetails}
-            disabled={translating || (formData.currentLanguage || 'ko') !== 'ko'}
-            className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-            title="한국어 내용을 영어로 번역"
-          >
-            {translating ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Languages className="h-4 w-4 mr-1" />
-            )}
-            {translating ? '번역 중...' : '번역'}
-          </button>
-          <button
-            type="button"
-            onClick={suggestDescription}
-            disabled={suggesting}
-            className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-            title="ChatGPT로 설명 추천받기"
-          >
-            {suggesting ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4 mr-1" />
-            )}
-            {suggesting ? '추천 중...' : 'AI 추천'}
-          </button>
+          <div className="flex space-x-2">
+            <button
+              type="button"
+              onClick={translateCurrentLanguageDetails}
+              disabled={translating || (formData.currentLanguage || 'ko') !== 'ko'}
+              className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              title="한국어 내용을 영어로 번역"
+            >
+              {translating ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Languages className="h-4 w-4 mr-1" />
+              )}
+              {translating ? '번역 중...' : '번역'}
+            </button>
+            <button
+              type="button"
+              onClick={suggestDescription}
+              disabled={suggesting}
+              className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              title="ChatGPT로 설명 추천받기"
+            >
+              {suggesting ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-1" />
+              )}
+              {suggesting ? '추천 중...' : 'AI 추천'}
+            </button>
+          </div>
         </div>
         <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
           {availableLanguages.map((lang) => (
@@ -678,6 +959,475 @@ export default function ProductDetailsTab({
                lang === 'zh' ? '中文' : lang}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* 새로운 채널별 세부정보 관리 UI */}
+      <div className="bg-white border border-gray-200 rounded-lg">
+        {/* 헤더 */}
+        <div className="border-b border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center">
+              <Users className="h-5 w-5 mr-2" />
+              채널별 세부정보 관리
+            </h3>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={loadSelectedChannelData}
+                disabled={loadingChannelData}
+                className="flex items-center px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 text-sm"
+              >
+                {loadingChannelData ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4 mr-1" />
+                )}
+                새로고침
+              </button>
+              <button
+                onClick={saveSelectedChannelsDetails}
+                disabled={saving || Object.keys(selectedChannels).filter(id => selectedChannels[id]).length === 0}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {saving ? '저장 중...' : '선택된 채널 저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 좌우 분할 레이아웃 */}
+        <div className="flex h-[600px]">
+          {/* 왼쪽: 채널 선택 및 공통 세부정보 */}
+          <div className="w-1/3 border-r border-gray-200 p-4 overflow-y-auto">
+            <div className="space-y-6">
+              {/* 공통 세부정보 섹션 */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                  <Settings className="h-4 w-4 mr-2" />
+                  공통 세부정보 관리
+                </h4>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700">공통 세부정보 사용</span>
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.useCommonDetails}
+                        onChange={(e) => setFormData(prev => ({ ...prev, useCommonDetails: e.target.checked }))}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                    </label>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700">카테고리</span>
+                    <span className="text-sm font-medium text-gray-900">{subCategory}</span>
+                  </div>
+                  
+                  <button
+                    onClick={() => setShowCommonModal(true)}
+                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                  >
+                    공통 세부정보 관리
+                  </button>
+                </div>
+              </div>
+
+              {/* 채널 선택 섹션 */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-gray-900">채널 선택</h4>
+                  <span className="text-sm text-gray-500">
+                    {Object.keys(selectedChannels).filter(id => selectedChannels[id]).length}개 선택됨
+                  </span>
+                </div>
+
+              {/* 복사 기능 */}
+              {Object.keys(selectedChannels).filter(id => selectedChannels[id]).length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Copy className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-900">채널 간 복사</span>
+                  </div>
+                  <div className="space-y-2">
+                    <select
+                      value={copyFromChannel || ''}
+                      onChange={(e) => setCopyFromChannel(e.target.value || null)}
+                      className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="">복사할 채널 선택</option>
+                      {Object.keys(selectedChannels).filter(id => selectedChannels[id]).map(channelId => {
+                        const channel = channels.find(c => c.id === channelId)
+                        return (
+                          <option key={channelId} value={channelId}>
+                            {channel?.name} ({channel?.type})
+                          </option>
+                        )
+                      })}
+                    </select>
+                    {copyFromChannel && (
+                      <button
+                        onClick={() => {
+                          const toChannels = Object.keys(selectedChannels).filter(id => selectedChannels[id] && id !== copyFromChannel)
+                          if (toChannels.length > 0) {
+                            copyChannelData(copyFromChannel, toChannels)
+                          }
+                        }}
+                        className="w-full px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        선택된 다른 채널들에 복사
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 채널 그룹들 */}
+              {channelGroups.map((group) => (
+                <div key={group.type} className="border border-gray-200 rounded-lg">
+                  <div
+                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
+                    onClick={() => toggleGroupExpansion(group.type)}
+                  >
+                    <div className="flex items-center space-x-2">
+                      {expandedGroups[group.type] ? (
+                        <ChevronDown className="h-4 w-4 text-gray-500" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-gray-500" />
+                      )}
+                      <span className="font-medium text-gray-900">{group.type}</span>
+                      <span className="text-sm text-gray-500">({group.channels.length})</span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleGroupSelection(group.type)
+                      }}
+                      className="p-1 hover:bg-gray-200 rounded"
+                    >
+                      {group.channels.every(channel => selectedChannels[channel.id]) ? (
+                        <CheckSquare className="h-4 w-4 text-blue-600" />
+                      ) : (
+                        <Square className="h-4 w-4 text-gray-400" />
+                      )}
+                    </button>
+                  </div>
+                  
+                  {expandedGroups[group.type] && (
+                    <div className="border-t border-gray-200 p-2 space-y-1">
+                      {group.channels.map((channel) => (
+                        <label
+                          key={channel.id}
+                          className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedChannels[channel.id] || false}
+                            onChange={() => toggleChannelSelection(channel.id)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700">{channel.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 오른쪽: 입력 섹션 */}
+          <div className="flex-1 p-4 overflow-y-auto">
+            {Object.keys(selectedChannels).filter(id => selectedChannels[id]).length === 0 ? (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="text-center">
+                  <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p className="text-lg font-medium">채널을 선택해주세요</p>
+                  <p className="text-sm mt-1">왼쪽에서 편집할 채널을 선택하면 여기에 입력 폼이 표시됩니다.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-700">
+                    <strong>{Object.keys(selectedChannels).filter(id => selectedChannels[id]).length}개 채널</strong>에 동일한 내용을 저장합니다.
+                    각 채널별로 다른 내용이 필요한 경우 개별적으로 편집하세요.
+                  </p>
+                </div>
+
+                {/* 기존 입력 폼들 - 여기에 기존의 모든 입력 필드들이 들어갑니다 */}
+                {/* 언어 선택 */}
+                <div className="flex items-center space-x-4">
+                  <Languages className="h-5 w-5 text-gray-400" />
+                  <div className="flex space-x-2">
+                    {['ko', 'en', 'ja', 'zh'].map((lang) => (
+                      <button
+                        key={lang}
+                        onClick={() => setFormData(prev => ({ ...prev, currentLanguage: lang }))}
+                        className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                          formData.currentLanguage === lang
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {lang === 'ko' ? '한국어' : 
+                         lang === 'en' ? 'English' : 
+                         lang === 'ja' ? '日本語' : 
+                         lang === 'zh' ? '中文' : lang}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 슬로건 섹션 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">슬로건</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        슬로건 1
+                      </label>
+                      <input
+                        type="text"
+                        value={getValue('slogan1')}
+                        onChange={(e) => handleInputChange('slogan1', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="예: 최고의 투어 경험"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        슬로건 2
+                      </label>
+                      <input
+                        type="text"
+                        value={getValue('slogan2')}
+                        onChange={(e) => handleInputChange('slogan2', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="예: 전문 가이드와 함께"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        슬로건 3
+                      </label>
+                      <input
+                        type="text"
+                        value={getValue('slogan3')}
+                        onChange={(e) => handleInputChange('slogan3', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="예: 잊지 못할 추억"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 상품 설명 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">상품 설명</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      상세 설명
+                    </label>
+                    <textarea
+                      value={getValue('description')}
+                      onChange={(e) => handleInputChange('description', e.target.value)}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="상품에 대한 자세한 설명을 입력해주세요"
+                    />
+                  </div>
+                </div>
+
+                {/* 포함/불포함 정보 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">포함/불포함 정보</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        포함 사항
+                      </label>
+                      <textarea
+                        value={getValue('included')}
+                        onChange={(e) => handleInputChange('included', e.target.value)}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="포함되는 사항들을 입력해주세요"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        불포함 사항
+                      </label>
+                      <textarea
+                        value={getValue('not_included')}
+                        onChange={(e) => handleInputChange('not_included', e.target.value)}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="불포함되는 사항들을 입력해주세요"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 픽업/드롭 정보 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">픽업/드롭 정보</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      픽업 및 드롭 정보
+                    </label>
+                    <textarea
+                      value={getValue('pickup_drop_info')}
+                      onChange={(e) => handleInputChange('pickup_drop_info', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="픽업 및 드롭에 대한 정보를 입력해주세요"
+                    />
+                  </div>
+                </div>
+
+                {/* 수하물 정보 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">수하물 정보</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      수하물 관련 정보
+                    </label>
+                    <textarea
+                      value={getValue('luggage_info')}
+                      onChange={(e) => handleInputChange('luggage_info', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="수하물에 대한 정보를 입력해주세요"
+                    />
+                  </div>
+                </div>
+
+                {/* 투어 운영 정보 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">투어 운영 정보</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      투어 운영 관련 정보
+                    </label>
+                    <textarea
+                      value={getValue('tour_operation_info')}
+                      onChange={(e) => handleInputChange('tour_operation_info', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="투어 운영에 대한 정보를 입력해주세요"
+                    />
+                  </div>
+                </div>
+
+                {/* 준비 사항 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">준비 사항</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      준비해야 할 사항들
+                    </label>
+                    <textarea
+                      value={getValue('preparation_info')}
+                      onChange={(e) => handleInputChange('preparation_info', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="준비해야 할 사항들을 입력해주세요"
+                    />
+                  </div>
+                </div>
+
+                {/* 소그룹 정보 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">소그룹 정보</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      소그룹 투어 관련 정보
+                    </label>
+                    <textarea
+                      value={getValue('small_group_info')}
+                      onChange={(e) => handleInputChange('small_group_info', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="소그룹 투어에 대한 정보를 입력해주세요"
+                    />
+                  </div>
+                </div>
+
+                {/* 안내사항 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">안내사항</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      중요한 안내사항들
+                    </label>
+                    <textarea
+                      value={getValue('notice_info')}
+                      onChange={(e) => handleInputChange('notice_info', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="중요한 안내사항들을 입력해주세요"
+                    />
+                  </div>
+                </div>
+
+                {/* 단독투어 정보 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">단독투어 정보</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      단독투어 관련 정보
+                    </label>
+                    <textarea
+                      value={getValue('private_tour_info')}
+                      onChange={(e) => handleInputChange('private_tour_info', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="단독투어에 대한 정보를 입력해주세요"
+                    />
+                  </div>
+                </div>
+
+                {/* 취소 정책 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">취소 정책</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      취소 및 환불 정책
+                    </label>
+                    <textarea
+                      value={getValue('cancellation_policy')}
+                      onChange={(e) => handleInputChange('cancellation_policy', e.target.value)}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="취소 및 환불 정책을 입력해주세요"
+                    />
+                  </div>
+                </div>
+
+                {/* 채팅 공지 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">채팅 공지</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      채팅방 공지사항
+                    </label>
+                    <textarea
+                      value={getValue('chat_announcement')}
+                      onChange={(e) => handleInputChange('chat_announcement', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="채팅방에 표시될 공지사항을 입력해주세요"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -825,198 +1575,8 @@ export default function ProductDetailsTab({
         )}
       </div>
 
-      {/* 슬로건 섹션 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">슬로건</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">
-                슬로건 1
-              </label>
-              <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().slogan1}
-                        onChange={(e) => handleUseCommonChange('slogan1', e.target.checked)}
-                        className="mr-1"
-                      />
-                공통 사용
-              </label>
-            </div>
-            <input
-              type="text"
-              value={getValue('slogan1')}
-              onChange={(e) => handleInputChange('slogan1', e.target.value)}
-              disabled={getCurrentLanguageUseCommon().slogan1}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().slogan1 ? 'bg-gray-50' : ''}`}
-              placeholder={getCurrentLanguageUseCommon().slogan1 ? '공통 정보 사용' : '예: 최고의 투어 경험'}
-            />
-            {getCurrentLanguageUseCommon().slogan1 && commonPreview?.[formData.currentLanguage || 'ko']?.slogan1 && (
-              <div className="mt-1 text-xs text-gray-500">
-                공통 정보: {commonPreview[formData.currentLanguage || 'ko'].slogan1}
-              </div>
-            )}
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">
-                슬로건 2
-              </label>
-              <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().slogan2}
-                        onChange={(e) => handleUseCommonChange('slogan2', e.target.checked)}
-                        className="mr-1"
-                      />
-                공통 사용
-              </label>
-            </div>
-            <input
-              type="text"
-              value={getValue('slogan2')}
-              onChange={(e) => handleInputChange('slogan2', e.target.value)}
-              disabled={getCurrentLanguageUseCommon().slogan2 || false}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().slogan2 ? 'bg-gray-50' : ''}`}
-              placeholder={getCurrentLanguageUseCommon().slogan2 ? '공통 정보 사용' : '예: 전문 가이드와 함께'}
-            />
-            {getCurrentLanguageUseCommon().slogan2 && commonPreview?.[formData.currentLanguage || 'ko']?.slogan2 && (
-              <div className="mt-1 text-xs text-gray-500">
-                공통 정보: {commonPreview[formData.currentLanguage || 'ko'].slogan2}
-              </div>
-            )}
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">
-                슬로건 3
-              </label>
-              <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().slogan3 || false}
-                        onChange={(e) => handleUseCommonChange('slogan3', e.target.checked)}
-                        className="mr-1"
-                      />
-                공통 사용
-              </label>
-            </div>
-            <input
-              type="text"
-              value={getValue('slogan3')}
-              onChange={(e) => handleInputChange('slogan3', e.target.value)}
-              disabled={getCurrentLanguageUseCommon().slogan3 || false}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().slogan3 ? 'bg-gray-50' : ''}`}
-              placeholder={getCurrentLanguageUseCommon().slogan3 ? '공통 정보 사용' : '예: 잊지 못할 추억'}
-            />
-            {getCurrentLanguageUseCommon().slogan3 && commonPreview?.[formData.currentLanguage || 'ko']?.slogan3 && (
-              <div className="mt-1 text-xs text-gray-500">
-                공통 정보: {commonPreview[formData.currentLanguage || 'ko'].slogan3}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
 
-      {/* 상품 설명 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">상품 설명</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              상세 설명
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().description || false}
-                        onChange={(e) => handleUseCommonChange('description', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('description')}
-            onChange={(e) => handleInputChange('description', e.target.value)}
-            rows={4}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().description ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().description ? '공통 정보 사용' : '상품에 대한 자세한 설명을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().description || false}
-          />
-          {getCurrentLanguageUseCommon().description && commonPreview?.[formData.currentLanguage || 'ko']?.description && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].description}
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* 포함/불포함 정보 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">포함/불포함 정보</h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">
-                포함 사항
-              </label>
-              <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().included || false}
-                        onChange={(e) => handleUseCommonChange('included', e.target.checked)}
-                        className="mr-1"
-                      />
-                공통 사용
-              </label>
-            </div>
-            <textarea
-              value={getValue('included')}
-              onChange={(e) => handleInputChange('included', e.target.value)}
-              rows={4}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().included ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().included ? '공통 정보 사용' : '포함되는 사항들을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().included || false}
-            />
-            {getCurrentLanguageUseCommon().included && commonPreview?.[formData.currentLanguage || 'ko']?.included && (
-              <div className="mt-1 text-xs text-gray-500">
-                공통 정보: {commonPreview[formData.currentLanguage || 'ko'].included}
-              </div>
-            )}
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">
-                불포함 사항
-              </label>
-              <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().not_included || false}
-                        onChange={(e) => handleUseCommonChange('not_included', e.target.checked)}
-                        className="mr-1"
-                      />
-                공통 사용
-              </label>
-            </div>
-            <textarea
-              value={getValue('not_included')}
-              onChange={(e) => handleInputChange('not_included', e.target.value)}
-              rows={4}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().not_included ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().not_included ? '공통 정보 사용' : '불포함되는 사항들을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().not_included || false}
-            />
-            {getCurrentLanguageUseCommon().not_included && commonPreview?.[formData.currentLanguage || 'ko']?.not_included && (
-              <div className="mt-1 text-xs text-gray-500">
-                공통 정보: {commonPreview[formData.currentLanguage || 'ko'].not_included}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
 
       {/* 픽업/드롭 정보 */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
