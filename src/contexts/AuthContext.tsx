@@ -307,15 +307,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     console.log('AuthContext: Initializing...')
+    
+    // 시뮬레이션이 이미 복원된 경우 로딩을 즉시 해제
+    if (isSimulating && simulatedUser) {
+      console.log('AuthContext: Simulation already restored, skipping initialization')
+      setLoading(false)
+      return
+    }
+    
     setLoading(true)
     
-    // 타임아웃 설정 (15초 후 강제로 로딩 해제 - 더 여유있게 설정)
+    // 타임아웃 설정 (10초로 단축)
     const timeoutId = setTimeout(() => {
       console.warn('AuthContext: Initialization timeout, forcing loading to false')
       setLoading(false)
       setUserRole('customer')
       setPermissions(null)
-    }, 15000)
+    }, 10000)
     
     // 현재 세션 확인
     const checkCurrentSession = async () => {
@@ -429,7 +437,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [checkTeamMembership])
+  }, [checkTeamMembership, isSimulating, simulatedUser])
 
   // 로그아웃 함수
   const signOut = async () => {
