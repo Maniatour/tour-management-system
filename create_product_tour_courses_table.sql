@@ -1,8 +1,8 @@
 -- 상품과 투어 코스 연결 테이블 생성
 CREATE TABLE IF NOT EXISTS product_tour_courses (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  tour_course_id UUID NOT NULL REFERENCES tour_courses(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  tour_course_id TEXT NOT NULL REFERENCES tour_courses(id) ON DELETE CASCADE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   
