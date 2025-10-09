@@ -744,14 +744,14 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
         {/* 탭 컨텐츠 */}
         {activeTab === 'basic' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* 기본 정보 */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">기본 정보</h3>
+            <h3 className="text-lg font-semibold text-gray-900">계층 구조</h3>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                부모 관광지 (계층 구조)
+                부모 관광지 선택
               </label>
               
               {/* 최상위 옵션 */}
@@ -766,12 +766,12 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     className="w-4 h-4 text-blue-600"
                   />
                   <Globe className="w-4 h-4 text-green-500" />
-                  <span className="text-sm font-medium text-gray-900">최상위 관광지 (부모 없음)</span>
+                  <span className="text-sm font-medium text-gray-900">최상위 관광지</span>
                 </label>
               </div>
               
               {/* 트리 선택 인터페이스 */}
-              <div className="border border-gray-200 rounded-lg max-h-60 overflow-y-auto">
+              <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
                 {hierarchicalCourses.map((courseItem) => (
                   <ParentSelectionTreeItem
                     key={courseItem.id}
@@ -786,6 +786,11 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* 가운데: 이름 및 설명 */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">이름 및 설명</h3>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -903,6 +908,123 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 placeholder="관리자만 볼 수 있는 내부 노트"
               />
             </div>
+          </div>
+
+          {/* 오른쪽: 위치 및 상세 정보 */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">위치 및 상세 정보</h3>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                위치 정보
+              </label>
+              <input
+                type="text"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="예: 그랜드캐년 국립공원, 애리조나"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                포인트 이름
+              </label>
+              <input
+                type="text"
+                value={formData.point_name}
+                onChange={(e) => setFormData({ ...formData, point_name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="예: 마더포인트, 야바파이 포인트"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  시작 위도
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={formData.start_latitude}
+                  onChange={(e) => setFormData({ ...formData, start_latitude: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="36.1069"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  시작 경도
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={formData.start_longitude}
+                  onChange={(e) => setFormData({ ...formData, start_longitude: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="-112.1129"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  종료 위도
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={formData.end_latitude}
+                  onChange={(e) => setFormData({ ...formData, end_latitude: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="36.1069"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  종료 경도
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={formData.end_longitude}
+                  onChange={(e) => setFormData({ ...formData, end_longitude: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="-112.1129"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                소요 시간 (분)
+              </label>
+              <input
+                type="number"
+                value={formData.duration_hours}
+                onChange={(e) => setFormData({ ...formData, duration_hours: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="60"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                난이도
+              </label>
+              <select
+                value={formData.difficulty_level}
+                onChange={(e) => setFormData({ ...formData, difficulty_level: e.target.value as 'easy' | 'medium' | 'hard' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="easy">쉬움</option>
+                <option value="medium">보통</option>
+                <option value="hard">어려움</option>
+              </select>
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -928,165 +1050,42 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 ))}
               </select>
             </div>
-          </div>
-
-          {/* 위치 및 상세 정보 */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">위치 및 상세 정보</h3>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                위치 정보
-              </label>
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="예: 3V6R+MW Grand Canyon Village, Arizona"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                포인트 이름
-              </label>
-              <input
-                type="text"
-                value={formData.point_name}
-                onChange={(e) => setFormData({ ...formData, point_name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="예: 마더포인트"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  시작 위도
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.start_latitude}
-                  onChange={(e) => setFormData({ ...formData, start_latitude: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="36.06178095340507"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  시작 경도
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.start_longitude}
-                  onChange={(e) => setFormData({ ...formData, start_longitude: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="-112.10771422003565"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  종료 위도
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.end_latitude}
-                  onChange={(e) => setFormData({ ...formData, end_latitude: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="36.06178095340507"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  종료 경도
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.end_longitude}
-                  onChange={(e) => setFormData({ ...formData, end_longitude: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="-112.10771422003565"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  소요 시간 (분)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={formData.duration_hours}
-                  onChange={(e) => setFormData({ ...formData, duration_hours: parseInt(e.target.value) || 60 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  난이도
-                </label>
-                <select
-                  value={formData.difficulty_level}
-                  onChange={(e) => setFormData({ ...formData, difficulty_level: e.target.value as 'easy' | 'medium' | 'hard' })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  {DIFFICULTY_LEVELS.map((level) => (
-                    <option key={level.value} value={level.value}>
-                      {level.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
 
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  성인 가격 ($)
+                  성인 가격
                 </label>
                 <input
                   type="number"
-                  min="0"
-                  step="0.01"
                   value={formData.price_adult}
-                  onChange={(e) => setFormData({ ...formData, price_adult: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, price_adult: parseInt(e.target.value) || 0 })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="0"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  어린이 가격 ($)
+                  어린이 가격
                 </label>
                 <input
                   type="number"
-                  min="0"
-                  step="0.01"
                   value={formData.price_child}
-                  onChange={(e) => setFormData({ ...formData, price_child: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, price_child: parseInt(e.target.value) || 0 })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="0"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  유아 가격 ($)
+                  유아 가격
                 </label>
                 <input
                   type="number"
-                  min="0"
-                  step="0.01"
                   value={formData.price_infant}
-                  onChange={(e) => setFormData({ ...formData, price_infant: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, price_infant: parseInt(e.target.value) || 0 })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="0"
                 />
               </div>
             </div>
@@ -1094,13 +1093,12 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             <div className="flex items-center">
               <input
                 type="checkbox"
-                id="is_active"
                 checked={formData.is_active}
                 onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                className="mr-2"
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
-              <label htmlFor="is_active" className="text-sm font-medium text-gray-700">
-                활성 상태
+              <label className="ml-2 text-sm font-medium text-gray-700">
+                활성화
               </label>
             </div>
           </div>
