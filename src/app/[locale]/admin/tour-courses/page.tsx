@@ -28,6 +28,7 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 import CategoryManagementModal from '@/components/CategoryManagementModal'
 import LocationSearch from '@/components/LocationSearch'
 import LocationPickerModal from '@/components/LocationPickerModal'
+import TourCourseEditModal from '@/components/TourCourseEditModal'
 
 // LocationData 타입 정의
 interface LocationData {
@@ -1460,22 +1461,19 @@ export default function TourCoursesPage() {
 
 
       {/* 편집 모달 */}
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">
-                {editingCourse ? '투어 코스 수정' : '새 투어 코스 생성'}
-              </h2>
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
+      <TourCourseEditModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        course={editingCourse}
+        onSave={(updatedCourse) => {
+          console.log('투어 코스 저장:', updatedCourse)
+          setShowEditModal(false)
+          refetchCourses()
+        }}
+      />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* 카테고리 관리 모달 */}
+      <CategoryManagementModal
               {/* 기본 정보 */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-900">기본 정보</h3>
