@@ -217,7 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [redirectGuideToPreferredLanguage])
+  }, [])
 
   // team 멤버십 확인
   const checkTeamMembership = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {

@@ -82,7 +82,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
   },
 }
 
-export function getUserRole(email: string, teamData?: any): UserRole {
+export function getUserRole(email: string, teamData?: { position?: string; is_active?: boolean }): UserRole {
   if (process.env.NODE_ENV === 'development') {
     console.log('getUserRole called with:', { email, teamData })
   }
