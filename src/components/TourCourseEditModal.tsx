@@ -328,16 +328,29 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       if (!course?.id) return
       
       try {
+        console.log('사진 로드 시작:', course.id)
         const { data, error } = await supabase
           .from('tour_course_photos')
           .select('*')
           .eq('course_id', course.id)
           .order('sort_order', { ascending: true })
 
-        if (error) throw error
+        if (error) {
+          console.error('Supabase 오류:', error)
+          throw error
+        }
+
+        console.log('로드된 사진:', data)
         setPhotos(data || [])
       } catch (error) {
         console.error('사진 로드 오류:', error)
+        console.error('오류 상세:', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          courseId: course?.id,
+          error
+        })
+        // 오류가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
+        setPhotos([])
       }
     }
 
@@ -417,9 +430,13 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
   const handleFileUpload = async (files: FileList) => {
     if (!files.length || !course?.id) return
 
+    console.log('파일 업로드 시작:', files.length, '개 파일')
     setUploading(true)
+    
     const uploadPromises = Array.from(files).map(async (file) => {
       try {
+        console.log('파일 처리 중:', file.name, file.size, file.type)
+        
         // 파일 크기 체크 (10MB 제한)
         if (file.size > 10 * 1024 * 1024) {
           throw new Error(`파일 ${file.name}이 너무 큽니다. (최대 10MB)`)
@@ -435,12 +452,19 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
         const filePath = `tour-courses/${course.id}/${fileName}`
 
+        console.log('Storage 업로드 시작:', filePath)
+
         // Supabase Storage에 업로드
         const { error: uploadError } = await supabase.storage
           .from('tour-course-photos')
           .upload(filePath, file)
 
-        if (uploadError) throw uploadError
+        if (uploadError) {
+          console.error('Storage 업로드 오류:', uploadError)
+          throw uploadError
+        }
+
+        console.log('데이터베이스 저장 시작')
 
         // 데이터베이스에 메타데이터 저장
         const { data, error: insertError } = await supabase
@@ -458,18 +482,23 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           .select()
           .single()
 
-        if (insertError) throw insertError
+        if (insertError) {
+          console.error('데이터베이스 저장 오류:', insertError)
+          throw insertError
+        }
 
+        console.log('파일 업로드 성공:', data)
         return data
       } catch (error) {
-        console.error('파일 업로드 오류:', error)
-        alert(`파일 업로드 중 오류가 발생했습니다: ${error}`)
+        console.error('파일 업로드 오류:', file.name, error)
+        alert(`파일 ${file.name} 업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`)
         return null
       }
     })
 
     const uploadedPhotos = (await Promise.all(uploadPromises)).filter(Boolean)
     if (uploadedPhotos.length > 0) {
+      console.log('업로드 완료:', uploadedPhotos.length, '개 파일')
       setPhotos(prev => [...prev, ...uploadedPhotos])
     }
 
@@ -482,14 +511,22 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
     try {
       const photo = photos.find(p => p.id === photoId)
-      if (!photo) return
+      if (!photo) {
+        console.error('삭제할 사진을 찾을 수 없습니다:', photoId)
+        return
+      }
+
+      console.log('사진 삭제 시작:', photo.file_name)
 
       // Storage에서 파일 삭제
       const { error: storageError } = await supabase.storage
         .from('tour-course-photos')
         .remove([photo.file_path])
 
-      if (storageError) throw storageError
+      if (storageError) {
+        console.error('Storage 삭제 오류:', storageError)
+        throw storageError
+      }
 
       // 데이터베이스에서 레코드 삭제
       const { error: deleteError } = await supabase
@@ -497,23 +534,34 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         .delete()
         .eq('id', photoId)
 
-      if (deleteError) throw deleteError
+      if (deleteError) {
+        console.error('데이터베이스 삭제 오류:', deleteError)
+        throw deleteError
+      }
 
+      console.log('사진 삭제 성공:', photo.file_name)
       setPhotos(prev => prev.filter(p => p.id !== photoId))
     } catch (error) {
       console.error('사진 삭제 오류:', error)
-      alert('사진 삭제 중 오류가 발생했습니다.')
+      alert(`사진 삭제 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
   // 대표 사진 설정
   const handleSetPrimary = async (photoId: string) => {
     try {
+      console.log('대표 사진 설정 시작:', photoId)
+
       // 기존 대표 사진 해제
-      await supabase
+      const { error: unsetError } = await supabase
         .from('tour_course_photos')
         .update({ is_primary: false })
         .eq('course_id', course?.id)
+
+      if (unsetError) {
+        console.error('기존 대표 사진 해제 오류:', unsetError)
+        throw unsetError
+      }
 
       // 새로운 대표 사진 설정
       const { error } = await supabase
@@ -521,15 +569,19 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         .update({ is_primary: true })
         .eq('id', photoId)
 
-      if (error) throw error
+      if (error) {
+        console.error('대표 사진 설정 오류:', error)
+        throw error
+      }
 
+      console.log('대표 사진 설정 성공:', photoId)
       setPhotos(prev => prev.map(photo => ({
         ...photo,
         is_primary: photo.id === photoId
       })))
     } catch (error) {
       console.error('대표 사진 설정 오류:', error)
-      alert('대표 사진 설정 중 오류가 발생했습니다.')
+      alert(`대표 사진 설정 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
