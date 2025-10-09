@@ -230,6 +230,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
+    // 시뮬레이션 중일 때는 팀 데이터를 불러오지 않고 바로 역할 설정
+    if (isSimulating && simulatedUser) {
+      console.log('AuthContext: Simulation mode - using simulated user role:', simulatedUser.role)
+      setUserRole(simulatedUser.role)
+      setPermissions({
+        canViewAdmin: hasPermission(simulatedUser.role, 'canViewAdmin'),
+        canManageProducts: hasPermission(simulatedUser.role, 'canManageProducts'),
+        canManageCustomers: hasPermission(simulatedUser.role, 'canManageCustomers'),
+        canManageReservations: hasPermission(simulatedUser.role, 'canManageReservations'),
+        canManageTours: hasPermission(simulatedUser.role, 'canManageTours'),
+        canManageTeam: hasPermission(simulatedUser.role, 'canManageTeam'),
+        canViewSchedule: hasPermission(simulatedUser.role, 'canViewSchedule'),
+        canManageBookings: hasPermission(simulatedUser.role, 'canManageBookings'),
+        canViewAuditLogs: hasPermission(simulatedUser.role, 'canViewAuditLogs'),
+        canManageChannels: hasPermission(simulatedUser.role, 'canManageChannels'),
+        canManageOptions: hasPermission(simulatedUser.role, 'canManageOptions'),
+        canViewFinance: hasPermission(simulatedUser.role, 'canViewFinance'),
+      })
+      setLoading(false)
+      if (timeoutId) clearTimeout(timeoutId)
+      return
+    }
+
     try {
       console.log('AuthContext: Checking team membership for:', email)
       
@@ -261,7 +284,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false) // 에러 발생 시에도 로딩 해제
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [checkUserRole])
+  }, [checkUserRole, isSimulating, simulatedUser])
 
   // 시뮬레이션 정보 복원 (한 번만 실행)
   useEffect(() => {
@@ -272,6 +295,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSimulatedUser(simulationData)
         setIsSimulating(true)
         console.log('AuthContext: Simulation restored from localStorage:', simulationData)
+        
+        // 시뮬레이션 복원 시 로딩 상태 즉시 해제
+        setLoading(false)
       } catch (error) {
         console.error('AuthContext: Error parsing saved simulation:', error)
         localStorage.removeItem('positionSimulation')
@@ -433,6 +459,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
     
     console.log('Simulation started:', simulatedUserData)
+    
+    // 시뮬레이션 중일 때는 로딩 상태 즉시 해제
+    setLoading(false)
     
     // tour guide를 시뮬레이션할 때 가이드 대시보드로 이동
     if (simulatedUserData.position.toLowerCase().includes('guide')) {
