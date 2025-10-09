@@ -693,6 +693,8 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
   if (!isOpen) return null
 
+  console.log('TourCourseEditModal 렌더링:', { isOpen, activeTab, course: course?.id })
+
   const hierarchicalCourses = buildHierarchy(tourCourses)
 
   return (
@@ -713,7 +715,10 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         {/* 탭 네비게이션 */}
         <div className="flex space-x-1 mb-6">
           <button
-            onClick={() => setActiveTab('basic')}
+            onClick={() => {
+              console.log('기본 정보 탭 클릭')
+              setActiveTab('basic')
+            }}
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               activeTab === 'basic'
                 ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -723,7 +728,10 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             기본 정보
           </button>
           <button
-            onClick={() => setActiveTab('photos')}
+            onClick={() => {
+              console.log('사진 관리 탭 클릭')
+              setActiveTab('photos')
+            }}
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               activeTab === 'photos'
                 ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1103,6 +1111,9 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         {activeTab === 'photos' && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900">사진 관리</h3>
+            <div className="text-sm text-gray-500 mb-4">
+              디버그: activeTab = {activeTab}, courseId = {course?.id}, photos.length = {photos.length}
+            </div>
             
             {/* 업로드 영역 */}
             <div
