@@ -75,7 +75,7 @@ interface TourCoursePhoto {
   mime_type: string
   thumbnail_url?: string
   is_primary: boolean
-  sort_order: number
+  sort_order?: number
   uploaded_by?: string
   created_at: string
   updated_at: string
@@ -333,7 +333,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           .from('tour_course_photos')
           .select('*')
           .eq('course_id', course.id)
-          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true })
 
         if (error) {
           console.error('Supabase 오류:', error)
@@ -476,7 +476,6 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             file_size: file.size,
             file_type: fileExt || '',
             mime_type: file.type,
-            sort_order: photos.length,
             uploaded_by: (await supabase.auth.getUser()).data.user?.email || 'unknown'
           })
           .select()
