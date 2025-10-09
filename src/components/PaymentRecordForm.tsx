@@ -86,8 +86,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async () => {
     
     if (!formData.amount || !formData.payment_method) {
       setError('금액과 결제 방법을 입력해주세요.')
@@ -168,7 +167,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -304,7 +303,8 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                 취소
               </button>
               <button
-                type="submit"
+                type="button"
+                onClick={handleSubmit}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
                 disabled={saving}
               >
@@ -318,7 +318,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                 )}
               </button>
             </div>
-          </form>
+          </div>
         </div>
       </div>
     </div>

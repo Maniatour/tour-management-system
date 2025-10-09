@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { renderTemplateString } from '@/lib/template'
+import { generateTemplateContext } from '@/lib/templateContext'
 
 export default function ReservationReceiptPage() {
   const params = useParams() as { id?: string; locale?: string }
@@ -84,27 +85,50 @@ export default function ReservationReceiptPage() {
     load()
   }, [params?.id])
 
-  const rendered = useMemo(() => {
-    if (!data || !template) return null
-    const ctx = {
-      reservation: {
-        id: data.id,
-        tour_date: data.tour_date,
-        tour_time: data.tour_time,
-        pickup_time: data.pickup_time,
-        adults: data.adults,
-        child: data.child,
-        infant: data.infant
-      },
-      customer: { name: data.customers?.name },
-      product: { name: data.products?.name },
-      pickup: { display: pickupHotel ? `${pickupHotel.hotel} - ${pickupHotel.pick_up_location}` : data.pickup_hotel, hotel: pickupHotel?.hotel, pick_up_location: pickupHotel?.pick_up_location, address: pickupHotel?.address, link: pickupHotel?.link, pin: pickupHotel?.pin },
-      channel: {},
-      pricing: pricing ? { ...pricing, total, total_locale: total.toLocaleString() } : { total, total_locale: total.toLocaleString() },
-      tour: tour || {}
+  const [renderedContent, setRenderedContent] = useState<string>('')
+
+  useEffect(() => {
+    const renderContent = async () => {
+      if (!data || !template) {
+        setRenderedContent('')
+        return
+      }
+      
+      try {
+        // 새로운 템플릿 컨텍스트 생성 함수 사용
+        const context = await generateTemplateContext(data.id, params.locale as 'ko' | 'en')
+        
+        if (!context) {
+          // 기존 방식으로 폴백
+          const ctx = {
+            reservation: {
+              id: data.id,
+              tour_date: data.tour_date,
+              tour_time: data.tour_time,
+              pickup_time: data.pickup_time,
+              adults: data.adults,
+              child: data.child,
+              infant: data.infant
+            },
+            customer: { name: data.customers?.name },
+            product: { name: data.products?.name },
+            pickup: { display: pickupHotel ? `${pickupHotel.hotel} - ${pickupHotel.pick_up_location}` : data.pickup_hotel, hotel: pickupHotel?.hotel, pick_up_location: pickupHotel?.pick_up_location, address: pickupHotel?.address, link: pickupHotel?.link, pin: pickupHotel?.pin },
+            channel: {},
+            pricing: pricing ? { ...pricing, total, total_locale: total.toLocaleString() } : { total, total_locale: total.toLocaleString() },
+            tour: tour || {}
+          }
+          setRenderedContent(renderTemplateString(template.content, ctx))
+        } else {
+          setRenderedContent(renderTemplateString(template.content, context))
+        }
+      } catch (error) {
+        console.error('템플릿 렌더링 오류:', error)
+        setRenderedContent('')
+      }
     }
-    return renderTemplateString(template.content, ctx)
-  }, [data, template, total, pricing, tour, pickupHotel])
+
+    renderContent()
+  }, [data, template, total, pricing, tour, pickupHotel, params.locale])
 
   if (loading) return <div className="p-6">Loading...</div>
   if (!data) return <div className="p-6">Not found.</div>
@@ -113,7 +137,7 @@ export default function ReservationReceiptPage() {
     <div className="mx-auto max-w-3xl bg-white p-6 space-y-4">
       <h1 className="text-2xl font-bold">Reservation Receipt</h1>
       <div className="text-sm text-gray-500">Reservation ID: {data.id}</div>
-      <div className="border rounded p-4 space-y-2" dangerouslySetInnerHTML={{ __html: rendered || '' }} />
+      <div className="border rounded p-4 space-y-2" dangerouslySetInnerHTML={{ __html: renderedContent }} />
       {!location.pathname.includes('/embed') && (
         <button
           onClick={() => window.print()}

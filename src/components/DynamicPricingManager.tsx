@@ -32,6 +32,32 @@ interface DynamicPricingManagerProps {
 // 채널 타입 정의
 type ChannelType = 'OTA' | 'Self' | 'Partner';
 
+// 초이스 조합 타입 정의
+interface ChoiceCombination {
+  id: string;
+  combination_key: string;
+  combination_name: string;
+  combination_name_ko?: string;
+  adult_price: number;
+  child_price: number;
+  infant_price: number;
+  is_active: boolean;
+}
+
+// 초이스 그룹 타입 정의
+interface ChoiceGroup {
+  id: string;
+  name: string;
+  name_ko?: string;
+  description?: string;
+  choices: Array<{
+    id: string;
+    name: string;
+    name_ko?: string;
+    description?: string;
+  }>;
+}
+
 export default function DynamicPricingManager({ 
   productId, 
   onSave, 
@@ -41,6 +67,11 @@ export default function DynamicPricingManager({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  
+  // 그룹 조합 관련 상태
+  const [choiceGroups, setChoiceGroups] = useState<ChoiceGroup[]>([]);
+  const [choiceCombinations, setChoiceCombinations] = useState<ChoiceCombination[]>([]);
+  const [showCombinationPricing, setShowCombinationPricing] = useState(false);
   
   // 다중 채널 선택 모드
   const [isMultiChannelMode, setIsMultiChannelMode] = useState(false);
@@ -243,8 +274,8 @@ export default function DynamicPricingManager({
   // 선택된 필수 옵션 (전체적으로 하나만)
   const [selectedRequiredOption, setSelectedRequiredOption] = useState<string>('');
   
-  // 선택된 초이스 (초이스가 있는 경우)
-  const [selectedChoice, setSelectedChoice] = useState<string>('');
+  // 선택된 초이스 (초이스가 있는 경우) - 현재 사용하지 않음
+  // const [selectedChoice, setSelectedChoice] = useState<string>('');
 
   // Supabase에서 channels 데이터 로드
   const loadChannels = useCallback(async () => {
@@ -546,13 +577,13 @@ export default function DynamicPricingManager({
         console.log('로드된 choices:', flattenedChoices)
         setChoices(flattenedChoices)
         
-        // 기본 초이스 선택 (is_default이 true인 것)
-        const defaultChoice = flattenedChoices.find(choice => choice.is_default);
-        if (defaultChoice) {
-          setSelectedChoice(defaultChoice.id);
-        } else if (flattenedChoices.length > 0) {
-          setSelectedChoice(flattenedChoices[0].id);
-        }
+        // 기본 초이스 선택 (is_default이 true인 것) - 현재 사용하지 않음
+        // const defaultChoice = flattenedChoices.find(choice => choice.is_default);
+        // if (defaultChoice) {
+        //   setSelectedChoice(defaultChoice.id);
+        // } else if (flattenedChoices.length > 0) {
+        //   setSelectedChoice(flattenedChoices[0].id);
+        // }
       } else {
         setChoices([])
       }
@@ -560,6 +591,154 @@ export default function DynamicPricingManager({
       console.error('상품 choices 로드 중 오류:', error)
     }
   }, [productId]);
+
+  // 초이스 그룹 로드 함수
+  const loadChoiceGroups = useCallback(async () => {
+    try {
+      const { data: product, error } = await supabase
+        .from('products')
+        .select('choices')
+        .eq('id', productId)
+        .single()
+
+      if (error) {
+        console.error('상품 choices 조회 오류:', error)
+        return
+      }
+
+      const productData = product as { 
+        choices?: { 
+          required?: Array<{
+            id: string;
+            name: string;
+            name_ko?: string;
+            description?: string;
+            options?: Array<{
+              id: string;
+              name: string;
+              name_ko?: string;
+              description?: string;
+            }>;
+          }>;
+        };
+      };
+
+      if (productData?.choices?.required) {
+        const groups: ChoiceGroup[] = productData.choices.required.map((group: {
+          id: string;
+          name: string;
+          name_ko?: string;
+          description?: string;
+          options?: Array<{
+            id: string;
+            name: string;
+            name_ko?: string;
+            description?: string;
+          }>;
+        }) => ({
+          id: group.id,
+          name: group.name,
+          name_ko: group.name_ko,
+          description: group.description,
+          choices: group.options?.map((option: {
+            id: string;
+            name: string;
+            name_ko?: string;
+            description?: string;
+          }) => ({
+            id: option.id,
+            name: option.name,
+            name_ko: option.name_ko,
+            description: option.description
+          })) || []
+        }))
+
+        console.log('로드된 choice groups:', groups)
+        setChoiceGroups(groups)
+      } else {
+        setChoiceGroups([])
+      }
+    } catch (error) {
+      console.error('초이스 그룹 로드 오류:', error)
+    }
+  }, [productId]);
+
+  // 초이스 조합 로드 함수 (현재 사용하지 않음 - 향후 확장을 위해 보존)
+  // const loadChoiceCombinations = useCallback(async (pricingRuleId: string) => {
+  //   try {
+  //     const { data, error } = await supabase
+  //       .from('choice_combinations')
+  //       .select('*')
+  //       .eq('product_id', productId)
+  //       .eq('pricing_rule_id', pricingRuleId)
+  //       .order('combination_name')
+
+  //     if (error) {
+  //       console.error('초이스 조합 조회 오류:', error)
+  //       return
+  //     }
+
+  //     console.log('로드된 choice combinations:', data)
+  //     setChoiceCombinations(data || [])
+  //   } catch (error) {
+  //     console.error('초이스 조합 로드 오류:', error)
+  //   }
+  // }, [productId]);
+
+  // 초이스 조합 생성 함수
+  const generateChoiceCombinations = useCallback(() => {
+    if (choiceGroups.length < 2) {
+      console.log('그룹이 2개 이상 있어야 조합을 생성할 수 있습니다.')
+      return
+    }
+
+    const combinations: ChoiceCombination[] = []
+    
+    // 모든 그룹의 선택지를 조합하여 생성
+    const generateCombinations = (groups: ChoiceGroup[], currentCombination: string[] = [], currentNames: string[] = [], currentNamesKo: string[] = []) => {
+      if (currentCombination.length === groups.length) {
+        const combinationKey = currentCombination.join('+')
+        const combinationName = currentNames.join(' + ')
+        const combinationNameKo = currentNamesKo.join(' + ')
+        
+        combinations.push({
+          id: `temp_${Date.now()}_${Math.random()}`,
+          combination_key: combinationKey,
+          combination_name: combinationName,
+          combination_name_ko: combinationNameKo,
+          adult_price: 0,
+          child_price: 0,
+          infant_price: 0,
+          is_active: true
+        })
+        return
+      }
+
+      const currentGroup = groups[currentCombination.length]
+      currentGroup.choices.forEach(choice => {
+        generateCombinations(
+          groups,
+          [...currentCombination, choice.id],
+          [...currentNames, choice.name],
+          [...currentNamesKo, choice.name_ko || choice.name]
+        )
+      })
+    }
+
+    generateCombinations(choiceGroups)
+    setChoiceCombinations(combinations)
+  }, [choiceGroups]);
+
+  // 초이스 조합 가격 업데이트 함수
+  const updateChoiceCombinationPrice = useCallback((combinationId: string, priceType: 'adult_price' | 'child_price' | 'infant_price', value: number) => {
+    setChoiceCombinations(prev => 
+      prev.map(combination => 
+        combination.id === combinationId 
+          ? { ...combination, [priceType]: value }
+          : combination
+      )
+    )
+  }, []);
 
   // Supabase에서 동적 가격 데이터 로드
   const loadDynamicPricingData = useCallback(async () => {
@@ -613,9 +792,10 @@ export default function DynamicPricingManager({
     loadChannels();
     loadProductOptions();
     loadProductChoices();
+    loadChoiceGroups(); // 초이스 그룹 로드 추가
     loadDynamicPricingData();
     loadPriceHistory(); // 가격 히스토리도 함께 로드
-  }, [loadChannels, loadProductOptions, loadProductChoices, loadDynamicPricingData, loadPriceHistory]);
+  }, [loadChannels, loadProductOptions, loadProductChoices, loadChoiceGroups, loadDynamicPricingData, loadPriceHistory]);
 
   // 옵션 가격 적용 (채널 선택 시)
   useEffect(() => {
@@ -626,7 +806,7 @@ export default function DynamicPricingManager({
 
   // dynamic_pricing 데이터가 로드된 후 옵션 가격 업데이트 (한 번만 실행)
   const hasUpdatedOptionsFromDynamicPricing = useRef(false);
-  const hasUpdatedChoicesFromDynamicPricing = useRef(false);
+  // const hasUpdatedChoicesFromDynamicPricing = useRef(false);
   const hasLoadedChoicesForChannel = useRef<string | null>(null);
   const hasLoadedPricingConfigForChannel = useRef<string | null>(null);
   
@@ -735,7 +915,7 @@ export default function DynamicPricingManager({
       
       setChoices(updatedChoices);
     }
-  }, [dynamicPricingData, channels]);
+  }, [dynamicPricingData, channels, choices]);
 
   // 채널 선택 시 choices 가격 로드 (한 번만 실행)
   useEffect(() => {
@@ -744,7 +924,7 @@ export default function DynamicPricingManager({
       loadChoicesPricingForChannel(selectedChannel);
       hasLoadedChoicesForChannel.current = selectedChannel;
     }
-  }, [selectedChannel, loadChoicesPricingForChannel, choices.length, dynamicPricingData.length]);
+  }, [selectedChannel, loadChoicesPricingForChannel, choices, dynamicPricingData.length]);
 
   // 채널 선택 시 가격 설정 로드 (한 번만 실행)
   useEffect(() => {
@@ -1029,24 +1209,24 @@ export default function DynamicPricingManager({
     };
   }, [choices, pricingConfig]);
 
-  // 쿠폰 할인 계산 함수
-  const calculateCouponDiscount = (basePrice: number, fixedDiscount: number, percentageDiscount: number, priority: 'fixed_first' | 'percentage_first' = 'fixed_first') => {
-    let result = basePrice;
-    
-    if (priority === 'fixed_first') {
-      // 고정 할인을 먼저 적용한 후 퍼센트 할인
-      result = result - fixedDiscount;
-      if (result < 0) result = 0; // 음수 방지
-      result = result * (1 - percentageDiscount / 100);
-    } else {
-      // 퍼센트 할인을 먼저 적용한 후 고정 할인
-      result = result * (1 - percentageDiscount / 100);
-      result = result - fixedDiscount;
-      if (result < 0) result = 0; // 음수 방지
-    }
-    
-    return Math.max(0, result); // 최종적으로 음수 방지
-  };
+  // 쿠폰 할인 계산 함수 (현재 사용하지 않음 - 향후 확장을 위해 보존)
+  // const calculateCouponDiscount = (basePrice: number, fixedDiscount: number, percentageDiscount: number, priority: 'fixed_first' | 'percentage_first' = 'fixed_first') => {
+  //   let result = basePrice;
+  //   
+  //   if (priority === 'fixed_first') {
+  //     // 고정 할인을 먼저 적용한 후 퍼센트 할인
+  //     result = result - fixedDiscount;
+  //     if (result < 0) result = 0; // 음수 방지
+  //     result = result * (1 - percentageDiscount / 100);
+  //   } else {
+  //     // 퍼센트 할인을 먼저 적용한 후 고정 할인
+  //     result = result * (1 - percentageDiscount / 100);
+  //     result = result - fixedDiscount;
+  //     if (result < 0) result = 0; // 음수 방지
+  //   }
+  //   
+  //   return Math.max(0, result); // 최종적으로 음수 방지
+  // };
 
 
   // 특정 날짜의 가격 계산 (캘린더용)
@@ -1463,7 +1643,48 @@ export default function DynamicPricingManager({
         console.log('동적 가격 저장 성공:', rule.channel_id, rule.start_date)
       }
 
-      // 5. 성공 메시지
+      // 6. 초이스 조합 저장 (그룹 조합 가격 모드인 경우)
+      if (showCombinationPricing && choiceCombinations.length > 0) {
+        console.log('초이스 조합 저장 시작:', choiceCombinations)
+        
+        // 기존 초이스 조합 삭제
+        const { error: deleteCombinationsError } = await supabase
+          .from('choice_combinations')
+          .delete()
+          .eq('product_id', productId)
+
+        if (deleteCombinationsError) {
+          console.error('기존 초이스 조합 삭제 오류:', deleteCombinationsError)
+        }
+
+        // 새 초이스 조합 저장
+        const combinationData = choiceCombinations.map(combination => ({
+          product_id: productId,
+          pricing_rule_id: '', // 임시로 빈 문자열 사용
+          combination_key: combination.combination_key,
+          combination_name: combination.combination_name,
+          combination_name_ko: combination.combination_name_ko,
+          adult_price: combination.adult_price,
+          child_price: combination.child_price,
+          infant_price: combination.infant_price,
+          is_active: combination.is_active
+        }))
+
+        if (combinationData.length > 0) {
+          const { error: combinationsError } = await supabase
+            .from('choice_combinations')
+            .insert(combinationData as never)
+
+          if (combinationsError) {
+            console.error('초이스 조합 저장 오류:', combinationsError)
+            throw combinationsError
+          }
+          
+          console.log('초이스 조합 저장 성공:', combinationData.length, '개')
+        }
+      }
+
+      // 7. 성공 메시지
       const channelNames = activeChannels.map(c => c.name).join(', ');
       setSaveMessage(`${channelNames} 채널의 가격 정보가 성공적으로 저장되었습니다!`)
       setTimeout(() => setSaveMessage(''), 3000)
@@ -2457,72 +2678,202 @@ export default function DynamicPricingManager({
                                {/* 초이스 가격 설정 */}
                 {choices.length > 0 && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">초이스 가격 설정</h4>
-                    <div className="space-y-3">
-                      {choices.map(choice => (
-                        <div key={choice.id} className="border border-gray-200 rounded-lg p-4">
-                          <div className="mb-3">
-                            <h5 className="text-sm font-medium text-gray-900">
-                              {choice.name}
-                              {choice.name_ko && (
-                                <span className="text-gray-500 ml-2">({choice.name_ko})</span>
-                              )}
-                            </h5>
-                            {choice.description && (
-                              <p className="text-xs text-gray-600 mt-1">{choice.description}</p>
-                            )}
-                          </div>
-                          
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div className="flex flex-col space-y-1">
-                              <span className="text-xs text-gray-600">성인 가격</span>
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={choice.adult_price}
-                                  onChange={(e) => handleChoicePriceChange(choice.id, 'adult_price', parseFloat(e.target.value) || 0)}
-                                  className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                                  placeholder="0"
-                                />
-                                <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                              </div>
-                            </div>
-                            <div className="flex flex-col space-y-1">
-                              <span className="text-xs text-gray-600">아동 가격</span>
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={choice.child_price}
-                                  onChange={(e) => handleChoicePriceChange(choice.id, 'child_price', parseFloat(e.target.value) || 0)}
-                                  className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                                  placeholder="0"
-                                />
-                                <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                              </div>
-                            </div>
-                            <div className="flex flex-col space-y-1">
-                              <span className="text-xs text-gray-600">유아 가격</span>
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={choice.infant_price}
-                                  onChange={(e) => handleChoicePriceChange(choice.id, 'infant_price', parseFloat(e.target.value) || 0)}
-                                  className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                                  placeholder="0"
-                                />
-                                <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                              </div>
-                            </div>
-                          </div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-sm font-medium text-gray-900">초이스 가격 설정</h4>
+                      {choiceGroups.length >= 2 && (
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowCombinationPricing(!showCombinationPricing)}
+                            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                              showCombinationPricing
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            {showCombinationPricing ? '개별 가격으로' : '그룹 조합 가격으로'}
+                          </button>
+                          {showCombinationPricing && (
+                            <button
+                              type="button"
+                              onClick={generateChoiceCombinations}
+                              className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                            >
+                              조합 생성
+                            </button>
+                          )}
                         </div>
-                      ))}
+                      )}
                     </div>
+
+                    {!showCombinationPricing ? (
+                      // 기존 개별 초이스 가격 설정
+                      <div className="space-y-3">
+                        {choices.map(choice => (
+                          <div key={choice.id} className="border border-gray-200 rounded-lg p-4">
+                            <div className="mb-3">
+                              <h5 className="text-sm font-medium text-gray-900">
+                                {choice.name}
+                                {choice.name_ko && (
+                                  <span className="text-gray-500 ml-2">({choice.name_ko})</span>
+                                )}
+                              </h5>
+                              {choice.description && (
+                                <p className="text-xs text-gray-600 mt-1">{choice.description}</p>
+                              )}
+                            </div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="flex flex-col space-y-1">
+                                <span className="text-xs text-gray-600">성인 가격</span>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={choice.adult_price}
+                                    onChange={(e) => handleChoicePriceChange(choice.id, 'adult_price', parseFloat(e.target.value) || 0)}
+                                    className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="0"
+                                  />
+                                  <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                </div>
+                              </div>
+                              <div className="flex flex-col space-y-1">
+                                <span className="text-xs text-gray-600">아동 가격</span>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={choice.child_price}
+                                    onChange={(e) => handleChoicePriceChange(choice.id, 'child_price', parseFloat(e.target.value) || 0)}
+                                    className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="0"
+                                  />
+                                  <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                </div>
+                              </div>
+                              <div className="flex flex-col space-y-1">
+                                <span className="text-xs text-gray-600">유아 가격</span>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={choice.infant_price}
+                                    onChange={(e) => handleChoicePriceChange(choice.id, 'infant_price', parseFloat(e.target.value) || 0)}
+                                    className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="0"
+                                  />
+                                  <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      // 그룹 조합 가격 설정
+                      <div className="space-y-4">
+                        {choiceGroups.length < 2 ? (
+                          <div className="text-center py-8 text-gray-500">
+                            <AlertCircle className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                            <p className="text-sm">그룹이 2개 이상 있어야 조합 가격을 설정할 수 있습니다.</p>
+                            <p className="text-xs mt-1">초이스 관리 탭에서 그룹을 추가해주세요.</p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                              <h5 className="text-sm font-medium text-blue-900 mb-2">그룹 조합 가격 설정</h5>
+                              <p className="text-xs text-blue-700 mb-3">
+                                각 그룹의 초이스 조합에 따른 가격을 설정할 수 있습니다.
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                {choiceGroups.map(group => (
+                                  <div key={group.id} className="bg-white rounded p-2">
+                                    <span className="font-medium text-gray-900">{group.name}</span>
+                                    {group.name_ko && (
+                                      <span className="text-gray-500 ml-1">({group.name_ko})</span>
+                                    )}
+                                    <div className="text-gray-600 mt-1">
+                                      {group.choices.map(choice => choice.name).join(', ')}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {choiceCombinations.length > 0 && (
+                              <div className="space-y-3">
+                                {choiceCombinations.map(combination => (
+                                  <div key={combination.id} className="border border-gray-200 rounded-lg p-4">
+                                    <div className="mb-3">
+                                      <h5 className="text-sm font-medium text-gray-900">
+                                        {combination.combination_name}
+                                      </h5>
+                                      {combination.combination_name_ko && (
+                                        <p className="text-xs text-gray-600 mt-1">
+                                          {combination.combination_name_ko}
+                                        </p>
+                                      )}
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                      <div className="flex flex-col space-y-1">
+                                        <span className="text-xs text-gray-600">성인 가격</span>
+                                        <div className="relative">
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={combination.adult_price}
+                                            onChange={(e) => updateChoiceCombinationPrice(combination.id, 'adult_price', parseFloat(e.target.value) || 0)}
+                                            className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                            placeholder="0"
+                                          />
+                                          <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col space-y-1">
+                                        <span className="text-xs text-gray-600">아동 가격</span>
+                                        <div className="relative">
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={combination.child_price}
+                                            onChange={(e) => updateChoiceCombinationPrice(combination.id, 'child_price', parseFloat(e.target.value) || 0)}
+                                            className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                            placeholder="0"
+                                          />
+                                          <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col space-y-1">
+                                        <span className="text-xs text-gray-600">유아 가격</span>
+                                        <div className="relative">
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={combination.infant_price}
+                                            onChange={(e) => updateChoiceCombinationPrice(combination.id, 'infant_price', parseFloat(e.target.value) || 0)}
+                                            className="w-full pl-6 pr-2 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                            placeholder="0"
+                                          />
+                                          <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

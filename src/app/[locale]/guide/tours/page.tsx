@@ -24,7 +24,9 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   assigned_people?: number;
   unassigned_people?: number;
   guide_name?: string | null;
+  guide_name_en?: string | null;
   assistant_name?: string | null;
+  assistant_name_en?: string | null;
   status?: string | null;
   tour_status?: string | null;
   vehicle_number?: string | null;
@@ -147,6 +149,17 @@ export default function GuideTours({ params }: GuideToursProps) {
     }
   }
 
+  // 투어 이름 매핑 함수
+  const getTourDisplayName = (tour: ExtendedTour, locale: string) => {
+    if (locale === 'en') {
+      // 영어 모드에서는 name_en 우선 사용
+      return tour.name_en || tour.product_name || tour.product_id
+    } else {
+      // 한국어 모드에서는 name_ko 우선 사용
+      return tour.name_ko || tour.product_name || tour.product_id
+    }
+  }
+
   // 데이터 동기화
   useEffect(() => {
     if (employeesData) {
@@ -195,10 +208,10 @@ export default function GuideTours({ params }: GuideToursProps) {
 
       const { data: teamMembers } = await supabase
         .from('team')
-        .select('email, name_ko')
+        .select('email, name_ko, name_en')
         .in('email', allEmails)
 
-      const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string }) => [member.email, member]))
+      const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string; name_en?: string | null }) => [member.email, member]))
 
       // 3-1. 차량 정보 가져오기 (카드에 차량 번호 표시)
       const vehicleIds = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter(Boolean))]
@@ -364,7 +377,9 @@ export default function GuideTours({ params }: GuideToursProps) {
           assigned_people: assignedPeople,
           unassigned_people: unassignedPeople,
           guide_name: guide?.name_ko || null,
+          guide_name_en: guide?.name_en || null,
           assistant_name: assistant?.name_ko || null,
+          assistant_name_en: assistant?.name_en || null,
           is_private_tour: tour.is_private_tour === true,
           vehicle_number: tour.tour_car_id ? (vehicleMap.get(tour.tour_car_id as unknown as string) || null) : null
         }
@@ -569,7 +584,7 @@ export default function GuideTours({ params }: GuideToursProps) {
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <div className="text-sm font-semibold text-gray-900 truncate">
-                    {tour.tour_date} {tour.product_name || tour.product_id} {tour.assigned_people || 0}
+                    {tour.tour_date} {getTourDisplayName(tour, locale)} {tour.assigned_people || 0}
                   </div>
                   <div className="ml-auto flex items-center gap-2">
                     {navigatingToTour === tour.id && (
@@ -582,10 +597,10 @@ export default function GuideTours({ params }: GuideToursProps) {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <span className="inline-flex items-center px-2 py-0.5 border border-blue-200 rounded text-xs text-blue-700 bg-blue-50">
-                    {tour.guide_name || '-'}
+                    {locale === 'en' ? (tour.guide_name_en || tour.guide_name || '-') : (tour.guide_name || '-')}
                   </span>
                   <span className="inline-flex items-center px-2 py-0.5 border border-emerald-200 rounded text-xs text-emerald-700 bg-emerald-50">
-                    {tour.assistant_name || '-'}
+                    {locale === 'en' ? (tour.assistant_name_en || tour.assistant_name || '-') : (tour.assistant_name || '-')}
                   </span>
                   <span className="inline-flex items-center px-2 py-0.5 border border-teal-200 rounded text-xs text-teal-700 bg-teal-50">
                     {tour.vehicle_number || '-'}

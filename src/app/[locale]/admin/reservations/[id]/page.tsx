@@ -9,6 +9,7 @@ import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { Reservation, Customer } from '@/types/reservation'
 import { FileText, Mail, Printer } from 'lucide-react'
+import SimpleDocumentGenerator from '@/components/SimpleDocumentGenerator'
 
 export default function ReservationDetailsPage() {
   const t = useTranslations('reservations')
@@ -272,6 +273,20 @@ export default function ReservationDetailsPage() {
         </div>
       </div>
       {content}
+
+      {/* 간편 문서 생성 섹션 */}
+      {reservation && (
+        <div className="mt-8 p-6 bg-gray-50 rounded-lg">
+          <SimpleDocumentGenerator
+            reservationId={reservation.id}
+            customerName={customers.find(c => c.id === reservation.customerId)?.name || ''}
+            productName={products.find(p => p.id === reservation.productId)?.nameKo || ''}
+            tourDate={reservation.tourDate || ''}
+            pickupTime={reservation.pickupTime || ''}
+            pickupLocation={pickupHotels.find(h => h.id === reservation.pickupHotelId)?.hotelName || ''}
+          />
+        </div>
+      )}
 
       {/* 문서 미리보기 모달 */}
       {previewDoc && reservation && (

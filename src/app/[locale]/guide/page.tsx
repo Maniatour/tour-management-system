@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 import { Calendar, Users, CalendarOff, CheckCircle, XCircle, Clock as ClockIcon, Plus, X, User, Car, History } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -25,12 +25,48 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
 
 type OffSchedule = Database['public']['Tables']['off_schedules']['Row']
 
-export default function GuideDashboard({ params }: { params: Promise<{ locale: string }> }) {
+export default function GuideDashboard() {
   const router = useRouter()
+  const pathname = usePathname()
   const supabase = createClientSupabase()
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('guide')
-  const { locale } = use(params)
+  const localeFromHook = useLocale()
+  
+  // URL 디코딩 및 locale 추출
+  const decodedPathname = decodeURIComponent(pathname)
+  const pathSegments = decodedPathname.split('/').filter(Boolean)
+  const localeFromPath = pathSegments[0] || 'ko'
+  
+  // 브라우저의 현재 URL에서 locale 추출 (fallback)
+  const currentUrl = typeof window !== 'undefined' ? window.location.pathname : ''
+  const urlSegments = currentUrl.split('/').filter(Boolean)
+  const localeFromUrl = urlSegments[0] || 'ko'
+  
+  // 임시 하드코딩 방법 (디버깅용)
+  const isEnglishPage = currentUrl.includes('/en/') || decodedPathname.includes('/en/')
+  const hardcodedLocale = isEnglishPage ? 'en' : 'ko'
+  
+  // locale 우선순위: 하드코딩 > URL path > useLocale > 기본값
+  const locale = hardcodedLocale || 
+    (localeFromPath && localeFromPath !== '%24%7Blocale%7D') 
+    ? localeFromPath 
+    : (localeFromUrl && localeFromUrl !== '%24%7Blocale%7D') 
+    ? localeFromUrl 
+    : 'ko'
+  
+  // 디버깅을 위한 로그
+  console.log('GuideDashboard locale debug:', {
+    localeFromHook,
+    localeFromPath,
+    localeFromUrl,
+    hardcodedLocale,
+    isEnglishPage,
+    finalLocale: locale,
+    pathname,
+    decodedPathname,
+    currentUrl
+  })
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
@@ -101,13 +137,22 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
         if (productIds.length > 0) {
           const { data: productsData } = await supabase
             .from('products')
-            .select('id, name_ko, name_en, name')
-            .in('id', productIds) as { data: { id: string; name_ko: string; name_en: string; name: string }[] | null }
+            .select('id, name, name_en, name_ko, customer_name_en, customer_name_ko')
+            .in('id', productIds) as { data: { id: string; name: string; name_en: string | null; name_ko: string | null; customer_name_en: string | null; customer_name_ko: string | null }[] | null }
           
-          productMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name]))
-          productEnMap = new Map((productsData || []).map(p => [p.id, p.name_en || p.name]))
-          productInternalKoMap = new Map((productsData || []).map(p => [p.id, p.name_ko]))
+          // 디버깅을 위한 로그
+          console.log('Products Data Debug:', productsData)
+          
+          productMap = new Map((productsData || []).map(p => [p.id, p.customer_name_ko || p.name_ko || p.name]))
+          productEnMap = new Map((productsData || []).map(p => [p.id, p.customer_name_en || p.name_en || p.name]))
+          productInternalKoMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name]))
           productInternalEnMap = new Map((productsData || []).map(p => [p.id, p.name_en]))
+          
+          // 디버깅을 위한 로그
+          console.log('Product Maps Debug:', {
+            productMap: Array.from(productMap.entries()),
+            productEnMap: Array.from(productEnMap.entries())
+          })
         }
 
         // 팀원 정보 가져오기
@@ -194,7 +239,7 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
             assignedPeople = ids.reduce((sum, id) => sum + (reservationMap.get(id) || 0), 0)
           }
 
-          return {
+          const extendedTour = {
             ...tour,
             product_name: tour.product_id ? productMap.get(tour.product_id) : null,
             product_name_en: tour.product_id ? productEnMap.get(tour.product_id) : null,
@@ -207,6 +252,22 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
             assistant_name_en: tour.assistant_id ? teamEnMap.get(tour.assistant_id) : null,
             vehicle_number: tour.tour_car_id ? vehicleMap.get(tour.tour_car_id) : null,
           }
+
+          // 디버깅을 위한 로그
+          if (tour.product_id === 'MDGCSUNRISE') {
+            console.log('MDGCSUNRISE Extended Tour Data:', {
+              tourId: tour.id,
+              productId: tour.product_id,
+              product_name: extendedTour.product_name,
+              product_name_en: extendedTour.product_name_en,
+              name_ko: extendedTour.name_ko,
+              name_en: extendedTour.name_en,
+              productMapValue: tour.product_id ? productMap.get(tour.product_id) : null,
+              productEnMapValue: tour.product_id ? productEnMap.get(tour.product_id) : null
+            })
+          }
+
+          return extendedTour
         })
 
         // 투어 분류
@@ -647,14 +708,32 @@ export default function GuideDashboard({ params }: { params: Promise<{ locale: s
 function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () => void; locale: string }) {
   const t = useTranslations('guide')
   
+  // 디버깅을 위한 로그
+  console.log('TourCard received locale:', locale, 'type:', typeof locale)
+  
   // 투어 이름 매핑 함수
   const getTourDisplayName = (tour: ExtendedTour, locale: string) => {
+    // 디버깅을 위한 로그
+    console.log('TourCard Debug - getTourDisplayName:', {
+      tourId: tour.id,
+      locale,
+      name_en: tour.name_en,
+      product_name_en: tour.product_name_en,
+      product_name: tour.product_name,
+      product_id: tour.product_id,
+      allTourData: tour
+    })
+    
     if (locale === 'en') {
       // 영어 모드에서는 name_en 우선 사용
-      return tour.name_en || tour.product_name_en || tour.product_name || tour.product_id
+      const result = tour.name_en || tour.product_name_en || tour.product_name || tour.product_id
+      console.log('English result:', result)
+      return result
     } else {
       // 한국어 모드에서는 name_ko 우선 사용
-      return tour.name_ko || tour.product_name || tour.product_id
+      const result = tour.name_ko || tour.product_name || tour.product_id
+      console.log('Korean result:', result)
+      return result
     }
   }
   

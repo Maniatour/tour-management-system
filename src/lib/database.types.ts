@@ -1599,6 +1599,88 @@ export interface Database {
           updated_at?: string | null
         }
       }
+      choice_combinations: {
+        Row: {
+          id: string
+          product_id: string
+          pricing_rule_id: string
+          combination_key: string
+          combination_name: string
+          combination_name_ko: string | null
+          adult_price: number
+          child_price: number
+          infant_price: number
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          pricing_rule_id: string
+          combination_key: string
+          combination_name: string
+          combination_name_ko?: string | null
+          adult_price?: number
+          child_price?: number
+          infant_price?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          pricing_rule_id?: string
+          combination_key?: string
+          combination_name?: string
+          combination_name_ko?: string | null
+          adult_price?: number
+          child_price?: number
+          infant_price?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      document_templates: {
+        Row: {
+          id: string
+          template_key: string
+          language: string
+          name: string
+          subject: string | null
+          content: string
+          format: string
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          template_key: string
+          language?: string
+          name: string
+          subject?: string | null
+          content: string
+          format?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          template_key?: string
+          language?: string
+          name?: string
+          subject?: string | null
+          content?: string
+          format?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
     CompositeTypes: {
       [key: string]: Record<string, unknown>

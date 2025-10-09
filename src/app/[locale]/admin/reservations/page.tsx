@@ -36,6 +36,50 @@ interface AdminReservationsProps {
 
 export default function AdminReservations({ }: AdminReservationsProps) {
   const t = useTranslations('reservations')
+  
+  // 그룹별 색상 매핑 함수
+  const getGroupColorClasses = (groupId: string, groupName?: string, optionName?: string) => {
+    // 그룹 이름이나 ID에 따라 색상 결정
+    const groupNameStr = (groupName || groupId).toLowerCase()
+    const optionNameStr = (optionName || '').toLowerCase()
+    
+    // 특정 그룹에 대한 색상 매핑
+    if (groupNameStr.includes('canyon') || groupNameStr.includes('캐년')) {
+      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"
+    }
+    if (groupNameStr.includes('hotel') || groupNameStr.includes('호텔') || groupNameStr.includes('room') || groupNameStr.includes('룸')) {
+      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200"
+    }
+    if (groupNameStr.includes('meal') || groupNameStr.includes('식사') || groupNameStr.includes('food')) {
+      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200"
+    }
+    if (groupNameStr.includes('transport') || groupNameStr.includes('교통') || groupNameStr.includes('vehicle')) {
+      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
+    }
+    if (groupNameStr.includes('activity') || groupNameStr.includes('활동') || groupNameStr.includes('experience')) {
+      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-pink-100 text-pink-800 border border-pink-200"
+    }
+    
+    // 기본 색상 팔레트 (그룹 ID 해시 기반)
+    const colorPalette = [
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800 border border-teal-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-cyan-100 text-cyan-800 border border-cyan-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-800 border border-violet-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-800 border border-rose-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-800 border border-sky-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-lime-100 text-lime-800 border border-lime-200"
+    ]
+    
+    // 그룹 ID의 해시값으로 색상 선택
+    let hash = 0
+    for (let i = 0; i < groupId.length; i++) {
+      hash = groupId.charCodeAt(i) + ((hash << 5) - hash)
+    }
+    
+    return colorPalette[Math.abs(hash) % colorPalette.length]
+  }
   const router = useRouter()
   const routeParams = useParams() as { locale?: string }
   const locale = routeParams?.locale || 'ko'
@@ -1513,11 +1557,27 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         console.log('Group Card - Selected options:', selectedOptions);
                         
                         return selectedOptions.map((optionName: string, index: number) => {
-                          // 옵션 이름에 따라 다른 색상 적용
-                          const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
-                          const badgeClass = isAntelopeX 
-                            ? "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200"
-                            : "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200";
+                          // 그룹 정보를 찾아서 색상 결정
+                          let groupId = 'default'
+                          let groupName = ''
+                          
+                          // parsedChoices에서 해당 옵션이 속한 그룹 찾기
+                          if (parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                            for (const choice of parsedChoices.required) {
+                              if (choice.options && Array.isArray(choice.options)) {
+                                const foundOption = choice.options.find(opt => 
+                                  opt.name === optionName || opt.name_ko === optionName
+                                )
+                                if (foundOption) {
+                                  groupId = choice.id || 'default'
+                                  groupName = choice.name || ''
+                                  break
+                                }
+                              }
+                            }
+                          }
+                          
+                          const badgeClass = getGroupColorClasses(groupId, groupName, optionName)
                           
                           return (
                             <span key={index} className={badgeClass}>
@@ -1820,11 +1880,27 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           console.log('Selected options:', selectedOptions);
                           
                           return selectedOptions.map((optionName: string, index: number) => {
-                            // 옵션 이름에 따라 다른 색상 적용
-                            const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
-                            const badgeClass = isAntelopeX 
-                              ? "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200"
-                              : "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200";
+                            // 그룹 정보를 찾아서 색상 결정
+                            let groupId = 'default'
+                            let groupName = ''
+                            
+                            // parsedChoices에서 해당 옵션이 속한 그룹 찾기
+                            if (parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                              for (const choice of parsedChoices.required) {
+                                if (choice.options && Array.isArray(choice.options)) {
+                                  const foundOption = choice.options.find(opt => 
+                                    opt.name === optionName || opt.name_ko === optionName
+                                  )
+                                  if (foundOption) {
+                                    groupId = choice.id || 'default'
+                                    groupName = choice.name || ''
+                                    break
+                                  }
+                                }
+                              }
+                            }
+                            
+                            const badgeClass = getGroupColorClasses(groupId, groupName, optionName)
                             
                             return (
                               <span key={index} className={badgeClass}>

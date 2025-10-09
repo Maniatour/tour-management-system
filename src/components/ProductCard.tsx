@@ -3,6 +3,7 @@ import { Package, Users, DollarSign, Clock, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { getGroupColorClasses } from '@/utils/groupColors'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -274,7 +275,7 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
     return `$${product.base_price}`
   }
 
-  // choices 데이터를 파싱하여 선택지 옵션들을 추출하는 함수
+  // choices 데이터를 파싱하여 선택지 옵션들을 추출하는 함수 (그룹 정보 포함)
   const getChoicesOptions = (product: Product) => {
     if (!product.choices || typeof product.choices !== 'object') {
       return []
@@ -282,6 +283,9 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
 
     const choices = product.choices as {
       required?: Array<{
+        id?: string;
+        name?: string;
+        name_ko?: string;
         options?: Array<{
           id?: string;
           name?: string;
@@ -292,9 +296,17 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
       }>;
     }
     
-    const options: Array<{ id: string; name: string; name_ko?: string; price?: number }> = []
+    const options: Array<{ 
+      id: string; 
+      name: string; 
+      name_ko?: string; 
+      price?: number;
+      groupId?: string;
+      groupName?: string;
+      groupNameKo?: string;
+    }> = []
 
-    // required choices에서 옵션들 추출
+    // required choices에서 옵션들 추출 (그룹 정보 포함)
     if (choices.required && Array.isArray(choices.required)) {
       choices.required.forEach((choice) => {
         if (choice.options && Array.isArray(choice.options)) {
@@ -303,7 +315,10 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
               id: option.id || '',
               name: option.name || '',
               name_ko: option.name_ko || '',
-              price: option.price || option.adult_price || 0
+              price: option.price || option.adult_price || 0,
+              groupId: choice.id || '',
+              groupName: choice.name || '',
+              groupNameKo: choice.name_ko || ''
             })
           })
         }
@@ -313,7 +328,7 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
     return options
   }
 
-  // choices 옵션들을 뱃지로 렌더링하는 함수
+  // choices 옵션들을 뱃지로 렌더링하는 함수 (그룹별 색상 적용)
   const renderChoicesBadges = (product: Product) => {
     const options = getChoicesOptions(product)
     
@@ -323,22 +338,31 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
 
     return (
       <div className="flex flex-wrap gap-1 mt-2">
-        {options.slice(0, 4).map((option, index) => (
-          <span
-            key={`${option.id}-${index}`}
-            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
-            title={option.name_ko || option.name}
-          >
-            {option.name_ko || option.name}
-            {(option.price || 0) > 0 && (
-              <span className="ml-1 text-purple-600">
-                (+${option.price})
-              </span>
-            )}
-          </span>
-        ))}
+        {options.slice(0, 4).map((option, index) => {
+          const colorClasses = getGroupColorClasses(option.groupId || '', option.groupName, 'object') as {
+            bg: string;
+            text: string;
+            border: string;
+            price: string;
+          }
+          
+          return (
+            <span
+              key={`${option.id}-${index}`}
+              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border}`}
+              title={`${option.groupNameKo || option.groupName || ''} - ${option.name_ko || option.name}`}
+            >
+              {option.name_ko || option.name}
+              {(option.price || 0) > 0 && (
+                <span className={`ml-1 ${colorClasses.price}`}>
+                  (+${option.price})
+                </span>
+              )}
+            </span>
+          )
+        })}
         {options.length > 4 && (
-          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-600 border border-purple-200">
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">
             +{options.length - 4}개
           </span>
         )}
