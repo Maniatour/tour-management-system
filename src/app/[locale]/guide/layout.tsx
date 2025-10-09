@@ -17,6 +17,7 @@ import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourReportModal from '@/components/TourReportModal'
 import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
+import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 
 interface GuideLayoutProps {
