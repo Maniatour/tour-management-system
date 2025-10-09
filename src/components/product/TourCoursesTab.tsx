@@ -438,7 +438,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
               </div>
             </div>
             
-            <div className="h-96 overflow-y-auto">
+            <div className="h-[500px] overflow-y-auto">
               {filteredCourses.length > 0 ? (
                 <div className="p-2">
                   {filteredCourses.map((course) => (
@@ -475,7 +475,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
               </h4>
             </div>
             
-            <div className="h-96 overflow-y-auto">
+            <div className="h-[500px] overflow-y-auto">
               {selectedCourses.size > 0 ? (
                 <div className="p-4 space-y-3">
                   {Array.from(selectedCourses).map(courseId => {
