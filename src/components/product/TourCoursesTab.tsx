@@ -379,50 +379,33 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
         </p>
       </div>
 
-      {/* 검색 및 액션 */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1 max-w-md">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="투어 코스 검색..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleSelectAll}
-            className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
-          >
-            전체 선택
-          </button>
-          <button
-            onClick={handleDeselectAll}
-            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
-          >
-            전체 해제
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || isNewProduct}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-          >
-            {saving ? '저장 중...' : '저장'}
-          </button>
-        </div>
-      </div>
-
-      {/* 선택된 코스 수 표시 */}
+      {/* 선택된 코스 수 표시 및 액션 버튼 */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-blue-800">
             선택된 투어 코스: {selectedCourses.size}개
           </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSelectAll}
+              className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
+            >
+              전체 선택
+            </button>
+            <button
+              onClick={handleDeselectAll}
+              className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+            >
+              전체 해제
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || isNewProduct}
+              className="px-4 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            >
+              {saving ? '저장 중...' : '저장'}
+            </button>
+          </div>
           {isNewProduct && (
             <span className="text-xs text-blue-600">
               상품 저장 후 투어 코스를 선택할 수 있습니다
@@ -431,82 +414,121 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
         </div>
       </div>
 
-      {/* 투어 코스 트리 */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="p-4 border-b border-gray-200">
-          <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-            <Folder className="w-4 h-4 text-blue-500" />
-            투어 코스 목록
-          </h4>
-        </div>
-        
-        <div className="max-h-96 overflow-y-auto">
-          {filteredCourses.length > 0 ? (
-            <div className="p-2">
-              {filteredCourses.map((course) => (
-                <TreeItem
-                  key={course.id}
-                  course={course}
-                  level={0}
-                  expandedNodes={expandedNodes}
-                  selectedCourses={selectedCourses}
-                  onToggle={toggleNode}
-                  onSelect={handleSelectCourse}
-                  onDeselect={handleDeselectCourse}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-32 text-center p-8">
-              <MapPin className="w-8 h-8 text-gray-300 mb-2" />
-              <p className="text-gray-500 text-sm">등록된 투어 코스가 없습니다</p>
-              <p className="text-xs text-gray-400">투어 코스 관리에서 먼저 코스를 등록해주세요</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 선택된 코스 미리보기 */}
-      {selectedCourses.size > 0 && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-gray-900 mb-3">선택된 투어 코스</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-            {Array.from(selectedCourses).map(courseId => {
-              const course = tourCourses.find(c => c.id === courseId)
-              if (!course) return null
+      {/* 메인 레이아웃 - 좌측 목록, 우측 선택된 코스 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 좌측: 투어 코스 목록 */}
+        <div className="space-y-4">
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="p-4 border-b border-gray-200">
+              <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2 mb-3">
+                <Folder className="w-4 h-4 text-blue-500" />
+                투어 코스 목록
+              </h4>
               
-              return (
-                <div key={courseId} className="bg-white border border-gray-200 rounded-lg p-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">
-                        {course.team_name_ko || course.name_ko}
-                      </div>
-                      {course.team_name_en && course.team_name_en !== course.team_name_ko && (
-                        <div className="text-xs text-gray-500 truncate">
-                          {course.team_name_en}
-                        </div>
-                      )}
-                      {course.location && (
-                        <div className="text-xs text-gray-400 truncate flex items-center gap-1 mt-1">
-                          <MapPin className="w-3 h-3" />
-                          {course.location}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleDeselectCourse(courseId)}
-                      className="ml-2 p-1 text-gray-400 hover:text-red-500"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
+              {/* 검색 */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="투어 코스 검색..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+            
+            <div className="h-96 overflow-y-auto">
+              {filteredCourses.length > 0 ? (
+                <div className="p-2">
+                  {filteredCourses.map((course) => (
+                    <TreeItem
+                      key={course.id}
+                      course={course}
+                      level={0}
+                      expandedNodes={expandedNodes}
+                      selectedCourses={selectedCourses}
+                      onToggle={toggleNode}
+                      onSelect={handleSelectCourse}
+                      onDeselect={handleDeselectCourse}
+                    />
+                  ))}
                 </div>
-              )
-            })}
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                  <MapPin className="w-8 h-8 text-gray-300 mb-2" />
+                  <p className="text-gray-500 text-sm">등록된 투어 코스가 없습니다</p>
+                  <p className="text-xs text-gray-400">투어 코스 관리에서 먼저 코스를 등록해주세요</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      )}
+
+        {/* 우측: 선택된 투어 코스 */}
+        <div className="space-y-4">
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="p-4 border-b border-gray-200">
+              <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                <Check className="w-4 h-4 text-green-500" />
+                선택된 투어 코스 ({selectedCourses.size}개)
+              </h4>
+            </div>
+            
+            <div className="h-96 overflow-y-auto">
+              {selectedCourses.size > 0 ? (
+                <div className="p-4 space-y-3">
+                  {Array.from(selectedCourses).map(courseId => {
+                    const course = tourCourses.find(c => c.id === courseId)
+                    if (!course) return null
+                    
+                    return (
+                      <div key={courseId} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900 truncate">
+                              {course.team_name_ko || course.name_ko}
+                            </div>
+                            {course.team_name_en && course.team_name_en !== course.team_name_ko && (
+                              <div className="text-xs text-gray-500 truncate">
+                                {course.team_name_en}
+                              </div>
+                            )}
+                            {course.location && (
+                              <div className="text-xs text-gray-400 truncate flex items-center gap-1 mt-1">
+                                <MapPin className="w-3 h-3" />
+                                {course.location}
+                              </div>
+                            )}
+                            {course.category && (
+                              <div className="text-xs text-blue-600 mt-1">
+                                카테고리: {course.category}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleDeselectCourse(courseId)}
+                            className="ml-2 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+                            title="선택 해제"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                  <Check className="w-8 h-8 text-gray-300 mb-2" />
+                  <p className="text-gray-500 text-sm">선택된 투어 코스가 없습니다</p>
+                  <p className="text-xs text-gray-400">좌측 목록에서 투어 코스를 선택해주세요</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
