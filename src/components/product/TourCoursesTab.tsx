@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { MapPin, Search, Check, X, Plus, Folder, FolderOpen, ChevronRight, ChevronDown } from 'lucide-react'
+import { MapPin, Search, Check, X, Plus, Folder, FolderOpen, ChevronRight, ChevronDown, Edit } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface TourCourse {
@@ -200,6 +200,22 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [editingCourse, setEditingCourse] = useState<string | null>(null)
+  const [editFormData, setEditFormData] = useState<{
+    team_name_ko: string
+    team_name_en: string
+    customer_name_ko: string
+    customer_name_en: string
+    location: string
+    category: string
+  }>({
+    team_name_ko: '',
+    team_name_en: '',
+    customer_name_ko: '',
+    customer_name_en: '',
+    location: '',
+    category: ''
+  })
 
   // 투어 코스 데이터 로드
   useEffect(() => {
@@ -308,6 +324,77 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
 
   const handleDeselectAll = () => {
     setSelectedCourses(new Set())
+  }
+
+  // 투어 코스 편집 시작
+  const handleStartEdit = (course: TourCourse) => {
+    setEditingCourse(course.id)
+    setEditFormData({
+      team_name_ko: course.team_name_ko || course.name_ko || '',
+      team_name_en: course.team_name_en || course.name_en || '',
+      customer_name_ko: course.customer_name_ko || '',
+      customer_name_en: course.customer_name_en || '',
+      location: course.location || '',
+      category: course.category || ''
+    })
+  }
+
+  // 투어 코스 편집 취소
+  const handleCancelEdit = () => {
+    setEditingCourse(null)
+    setEditFormData({
+      team_name_ko: '',
+      team_name_en: '',
+      customer_name_ko: '',
+      customer_name_en: '',
+      location: '',
+      category: ''
+    })
+  }
+
+  // 투어 코스 편집 저장
+  const handleSaveEdit = async (courseId: string) => {
+    try {
+      const { error } = await supabase
+        .from('tour_courses')
+        .update({
+          team_name_ko: editFormData.team_name_ko,
+          team_name_en: editFormData.team_name_en,
+          customer_name_ko: editFormData.customer_name_ko,
+          customer_name_en: editFormData.customer_name_en,
+          location: editFormData.location,
+          category: editFormData.category,
+          // 기존 필드도 업데이트 (하위 호환성)
+          name_ko: editFormData.team_name_ko,
+          name_en: editFormData.team_name_en
+        })
+        .eq('id', courseId)
+
+      if (error) throw error
+
+      // 로컬 상태 업데이트
+      setTourCourses(prev => prev.map(course => 
+        course.id === courseId 
+          ? {
+              ...course,
+              team_name_ko: editFormData.team_name_ko,
+              team_name_en: editFormData.team_name_en,
+              customer_name_ko: editFormData.customer_name_ko,
+              customer_name_en: editFormData.customer_name_en,
+              location: editFormData.location,
+              category: editFormData.category,
+              name_ko: editFormData.team_name_ko,
+              name_en: editFormData.team_name_en
+            }
+          : course
+      ))
+
+      setEditingCourse(null)
+      alert('투어 코스가 성공적으로 수정되었습니다.')
+    } catch (error) {
+      console.error('투어 코스 수정 오류:', error)
+      alert('투어 코스 수정 중 오류가 발생했습니다.')
+    }
   }
 
   // 선택된 투어 코스 저장
@@ -482,38 +569,145 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
                     const course = tourCourses.find(c => c.id === courseId)
                     if (!course) return null
                     
+                    const isEditing = editingCourse === courseId
+                    
                     return (
                       <div key={courseId} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-900 truncate">
-                              {course.team_name_ko || course.name_ko}
+                        {isEditing ? (
+                          // 편집 모드
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h5 className="text-sm font-medium text-gray-900">투어 코스 편집</h5>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleSaveEdit(courseId)}
+                                  className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                >
+                                  저장
+                                </button>
+                                <button
+                                  onClick={handleCancelEdit}
+                                  className="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600"
+                                >
+                                  취소
+                                </button>
+                              </div>
                             </div>
-                            {course.team_name_en && course.team_name_en !== course.team_name_ko && (
-                              <div className="text-xs text-gray-500 truncate">
-                                {course.team_name_en}
+                            
+                            <div className="space-y-2">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">팀원용 한국어 이름</label>
+                                <input
+                                  type="text"
+                                  value={editFormData.team_name_ko}
+                                  onChange={(e) => setEditFormData(prev => ({ ...prev, team_name_ko: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                />
                               </div>
-                            )}
-                            {course.location && (
-                              <div className="text-xs text-gray-400 truncate flex items-center gap-1 mt-1">
-                                <MapPin className="w-3 h-3" />
-                                {course.location}
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">팀원용 영어 이름</label>
+                                <input
+                                  type="text"
+                                  value={editFormData.team_name_en}
+                                  onChange={(e) => setEditFormData(prev => ({ ...prev, team_name_en: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                />
                               </div>
-                            )}
-                            {course.category && (
-                              <div className="text-xs text-blue-600 mt-1">
-                                카테고리: {course.category}
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">고객용 한국어 이름</label>
+                                <input
+                                  type="text"
+                                  value={editFormData.customer_name_ko}
+                                  onChange={(e) => setEditFormData(prev => ({ ...prev, customer_name_ko: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                />
                               </div>
-                            )}
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">고객용 영어 이름</label>
+                                <input
+                                  type="text"
+                                  value={editFormData.customer_name_en}
+                                  onChange={(e) => setEditFormData(prev => ({ ...prev, customer_name_en: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                />
+                              </div>
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">위치</label>
+                                <input
+                                  type="text"
+                                  value={editFormData.location}
+                                  onChange={(e) => setEditFormData(prev => ({ ...prev, location: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                />
+                              </div>
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">카테고리</label>
+                                <input
+                                  type="text"
+                                  value={editFormData.category}
+                                  onChange={(e) => setEditFormData(prev => ({ ...prev, category: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                />
+                              </div>
+                            </div>
                           </div>
-                          <button
-                            onClick={() => handleDeselectCourse(courseId)}
-                            className="ml-2 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
-                            title="선택 해제"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
+                        ) : (
+                          // 보기 모드
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-gray-900 truncate">
+                                {course.team_name_ko || course.name_ko}
+                              </div>
+                              {course.team_name_en && course.team_name_en !== course.team_name_ko && (
+                                <div className="text-xs text-gray-500 truncate">
+                                  {course.team_name_en}
+                                </div>
+                              )}
+                              {course.customer_name_ko && (
+                                <div className="text-xs text-blue-600 truncate mt-1">
+                                  고객용: {course.customer_name_ko}
+                                </div>
+                              )}
+                              {course.customer_name_en && (
+                                <div className="text-xs text-blue-500 truncate">
+                                  고객용(EN): {course.customer_name_en}
+                                </div>
+                              )}
+                              {course.location && (
+                                <div className="text-xs text-gray-400 truncate flex items-center gap-1 mt-1">
+                                  <MapPin className="w-3 h-3" />
+                                  {course.location}
+                                </div>
+                              )}
+                              {course.category && (
+                                <div className="text-xs text-blue-600 mt-1">
+                                  카테고리: {course.category}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleStartEdit(course)}
+                                className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"
+                                title="편집"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeselectCourse(courseId)}
+                                className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+                                title="선택 해제"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
