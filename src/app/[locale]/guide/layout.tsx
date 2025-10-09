@@ -19,6 +19,8 @@ import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
 import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
+import { supabase } from '@/lib/supabase'
+import { createClientSupabase } from '@/lib/supabase'
 
 interface GuideLayoutProps {
   children: React.ReactNode
