@@ -105,11 +105,33 @@ export default function TourCoursesPage() {
     loading, 
     error, 
     refetch: refetchCourses 
-  } = useOptimizedData<TourCourse>('tour_courses')
+  } = useOptimizedData<TourCourse[]>({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('tour_courses')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      return data || []
+    },
+    cacheKey: 'tour_courses'
+  })
 
   const { 
     data: categories 
-  } = useOptimizedData<TourCourseCategory>('tour_course_categories')
+  } = useOptimizedData<TourCourseCategory[]>({
+    fetchFn: async () => {
+      const { data, error } = await supabase
+        .from('tour_course_categories')
+        .select('*')
+        .order('sort_order', { ascending: true })
+      
+      if (error) throw error
+      return data || []
+    },
+    cacheKey: 'tour_course_categories'
+  })
 
   // 편집 시작
   const startEdit = (course: TourCourse) => {
@@ -381,7 +403,7 @@ export default function TourCoursesPage() {
       <TourCourseEditModal
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
-        course={editingCourse as any}
+        course={editingCourse}
         onSave={(updatedCourse) => {
           console.log('투어 코스 저장:', updatedCourse)
           setShowEditModal(false)
