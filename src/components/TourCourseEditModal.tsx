@@ -771,7 +771,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               </div>
               
               {/* 트리 선택 인터페이스 */}
-              <div className="border border-gray-200 rounded-lg max-h-96 overflow-y-auto">
+              <div className="border border-gray-200 rounded-lg max-h-[500px] overflow-y-auto">
                 {hierarchicalCourses.map((courseItem) => (
                   <ParentSelectionTreeItem
                     key={courseItem.id}
