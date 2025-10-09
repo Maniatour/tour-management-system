@@ -911,34 +911,34 @@ export default function ProductDetailsTab({
             상품 세부정보
           </h3>
           <div className="flex space-x-2">
-            <button
-              type="button"
-              onClick={translateCurrentLanguageDetails}
-              disabled={translating || (formData.currentLanguage || 'ko') !== 'ko'}
-              className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-              title="한국어 내용을 영어로 번역"
-            >
-              {translating ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Languages className="h-4 w-4 mr-1" />
-              )}
-              {translating ? '번역 중...' : '번역'}
-            </button>
-            <button
-              type="button"
-              onClick={suggestDescription}
-              disabled={suggesting}
-              className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-              title="ChatGPT로 설명 추천받기"
-            >
-              {suggesting ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4 mr-1" />
-              )}
-              {suggesting ? '추천 중...' : 'AI 추천'}
-            </button>
+          <button
+            type="button"
+            onClick={translateCurrentLanguageDetails}
+            disabled={translating || (formData.currentLanguage || 'ko') !== 'ko'}
+            className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            title="한국어 내용을 영어로 번역"
+          >
+            {translating ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Languages className="h-4 w-4 mr-1" />
+            )}
+            {translating ? '번역 중...' : '번역'}
+          </button>
+          <button
+            type="button"
+            onClick={suggestDescription}
+            disabled={suggesting}
+            className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            title="ChatGPT로 설명 추천받기"
+          >
+            {suggesting ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-1" />
+            )}
+            {suggesting ? '추천 중...' : 'AI 추천'}
+          </button>
           </div>
         </div>
         <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
@@ -1027,7 +1027,7 @@ export default function ProductDetailsTab({
                   </div>
                   
                   <button
-                    onClick={() => setShowCommonModal(true)}
+                    onClick={() => setIsCommonModalOpen(true)}
                     className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                   >
                     공통 세부정보 관리
@@ -1501,7 +1501,6 @@ export default function ProductDetailsTab({
         </div>
       </div>
 
-      {/* 공통 세부정보 토글/안내 */}
       <div className="bg-white border border-gray-200 rounded-lg p-4">
         <div className="flex items-center justify-between">
           <label className="flex items-center space-x-3">
@@ -1568,402 +1567,8 @@ export default function ProductDetailsTab({
             <span>공통 세부정보 관리</span>
           </button>
         </div>
-        {formData.useCommonDetails && (
-          <p className="mt-2 text-sm text-gray-600">
-            공통 세부정보 사용 중입니다. 아래 입력 필드는 읽기 전용으로 표시됩니다.
-          </p>
-        )}
-      </div>
 
-
-
-
-      {/* 픽업/드롭 정보 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">픽업/드롭 정보</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              픽업 및 드롭 정보
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().pickup_drop_info || false}
-                        onChange={(e) => handleUseCommonChange('pickup_drop_info', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('pickup_drop_info')}
-            onChange={(e) => handleInputChange('pickup_drop_info', e.target.value)}
-            rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().pickup_drop_info ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().pickup_drop_info ? '공통 정보 사용' : '픽업 및 드롭에 대한 정보를 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().pickup_drop_info || false}
-          />
-          {getCurrentLanguageUseCommon().pickup_drop_info && commonPreview?.[formData.currentLanguage || 'ko']?.pickup_drop_info && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].pickup_drop_info}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 수하물 정보 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">수하물 정보</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              수하물 관련 정보
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().luggage_info || false}
-                        onChange={(e) => handleUseCommonChange('luggage_info', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('luggage_info')}
-            onChange={(e) => handleInputChange('luggage_info', e.target.value)}
-            rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().luggage_info ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().luggage_info ? '공통 정보 사용' : '수하물 관련 규정 및 정보를 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().luggage_info || false}
-          />
-          {getCurrentLanguageUseCommon().luggage_info && commonPreview?.[formData.currentLanguage || 'ko']?.luggage_info && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].luggage_info}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 투어 운영 정보 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">투어 운영 정보</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              투어 운영 관련 정보
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().tour_operation_info || false}
-                        onChange={(e) => handleUseCommonChange('tour_operation_info', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('tour_operation_info')}
-            onChange={(e) => handleInputChange('tour_operation_info', e.target.value)}
-            rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().tour_operation_info ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().tour_operation_info ? '공통 정보 사용' : '투어 운영 방식 및 특별 사항을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().tour_operation_info || false}
-          />
-          {getCurrentLanguageUseCommon().tour_operation_info && commonPreview?.[formData.currentLanguage || 'ko']?.tour_operation_info && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].tour_operation_info}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 준비 사항 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">준비 사항</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              준비해야 할 사항들
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().preparation_info || false}
-                        onChange={(e) => handleUseCommonChange('preparation_info', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('preparation_info')}
-            onChange={(e) => handleInputChange('preparation_info', e.target.value)}
-            rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().preparation_info ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().preparation_info ? '공통 정보 사용' : '투어 전 준비해야 할 사항들을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().preparation_info || false}
-          />
-          {getCurrentLanguageUseCommon().preparation_info && commonPreview?.[formData.currentLanguage || 'ko']?.preparation_info && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].preparation_info}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 소그룹 정보 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">소그룹 정보</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              소그룹 투어 관련 정보
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().small_group_info || false}
-                        onChange={(e) => handleUseCommonChange('small_group_info', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('small_group_info')}
-            onChange={(e) => handleInputChange('small_group_info', e.target.value)}
-            rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().small_group_info ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().small_group_info ? '공통 정보 사용' : '소그룹 투어의 특징 및 장점을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().small_group_info || false}
-          />
-          {getCurrentLanguageUseCommon().small_group_info && commonPreview?.[formData.currentLanguage || 'ko']?.small_group_info && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].small_group_info}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 안내사항 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">안내사항</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              투어 안내사항
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().notice_info || false}
-                        onChange={(e) => handleUseCommonChange('notice_info', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('notice_info')}
-            onChange={(e) => handleInputChange('notice_info', e.target.value)}
-            rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().notice_info ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().notice_info ? '공통 정보 사용' : '투어 관련 안내사항을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().notice_info || false}
-          />
-          {getCurrentLanguageUseCommon().notice_info && commonPreview?.[formData.currentLanguage || 'ko']?.notice_info && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].notice_info}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 단독투어 정보 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">단독투어 정보</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              단독투어 관련 정보
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().private_tour_info || false}
-                        onChange={(e) => handleUseCommonChange('private_tour_info', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('private_tour_info')}
-            onChange={(e) => handleInputChange('private_tour_info', e.target.value)}
-            rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().private_tour_info ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().private_tour_info ? '공통 정보 사용' : '단독투어 관련 특별 사항을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().private_tour_info || false}
-          />
-          {getCurrentLanguageUseCommon().private_tour_info && commonPreview?.[formData.currentLanguage || 'ko']?.private_tour_info && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].private_tour_info}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 취소 정책 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">취소 정책</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              취소 및 환불 정책
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().cancellation_policy || false}
-                        onChange={(e) => handleUseCommonChange('cancellation_policy', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('cancellation_policy')}
-            onChange={(e) => handleInputChange('cancellation_policy', e.target.value)}
-            rows={4}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().cancellation_policy ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().cancellation_policy ? '공통 정보 사용' : '취소 및 환불 정책을 자세히 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().cancellation_policy || false}
-          />
-          {getCurrentLanguageUseCommon().cancellation_policy && commonPreview?.[formData.currentLanguage || 'ko']?.cancellation_policy && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].cancellation_policy}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 채팅 공지 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">채팅 공지</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              채팅방 공지사항
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={getCurrentLanguageUseCommon().chat_announcement || false}
-                        onChange={(e) => handleUseCommonChange('chat_announcement', e.target.checked)}
-                        className="mr-1"
-                      />
-              공통 사용
-            </label>
-          </div>
-          <textarea
-            value={getValue('chat_announcement')}
-            onChange={(e) => handleInputChange('chat_announcement', e.target.value)}
-            rows={3}
-            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${getCurrentLanguageUseCommon().chat_announcement ? 'bg-gray-50' : ''}`}
-            placeholder={getCurrentLanguageUseCommon().chat_announcement ? '공통 정보 사용' : '채팅방에 표시될 공지사항을 입력해주세요'}
-            disabled={getCurrentLanguageUseCommon().chat_announcement || false}
-          />
-          {getCurrentLanguageUseCommon().chat_announcement && commonPreview?.[formData.currentLanguage || 'ko']?.chat_announcement && (
-            <div className="mt-1 text-xs text-gray-500">
-              공통 정보: {commonPreview[formData.currentLanguage || 'ko'].chat_announcement}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 태그 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">태그</h4>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              상품 태그
-            </label>
-            <label className="flex items-center text-xs text-gray-600">
-              <input
-                type="checkbox"
-                checked={getCurrentLanguageUseCommon().tags || false}
-                onChange={(e) => handleUseCommonChange('tags', e.target.checked)}
-                className="mr-1"
-              />
-              공통 사용
-            </label>
-          </div>
-          
-          {!getCurrentLanguageUseCommon().tags ? (
-            <div>
-              <div className="flex space-x-2 mb-2">
-                <input
-                  type="text"
-                  value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
-                  placeholder="태그 입력 후 Enter"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <button
-                  type="button"
-                  onClick={addTag}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  추가
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {getCurrentLanguageDetails().tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                  >
-                    {tag}
-                    <button
-                      type="button"
-                      onClick={() => removeTag(tag)}
-                      className="ml-1 text-blue-600 hover:text-blue-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="text-gray-500 text-sm">
-              공통 정보 사용 중
-              {commonPreview?.[formData.currentLanguage || 'ko']?.tags && commonPreview[formData.currentLanguage || 'ko'].tags.length > 0 && (
-                <div className="mt-2">
-                  <div className="flex flex-wrap gap-2">
-                    {commonPreview[formData.currentLanguage || 'ko'].tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 공통 세부정보 관리 모달 */}
-      <CommonDetailsModal
+        <CommonDetailsModal
         isOpen={isCommonModalOpen}
         onClose={() => setIsCommonModalOpen(false)}
         subCategory={subCategory}
@@ -1971,7 +1576,8 @@ export default function ProductDetailsTab({
           // 공통 세부정보가 저장되면 프리뷰를 다시 로드
           loadCommon()
         }}
-      />
+        />
+      </div>
     </div>
   )
 }

@@ -106,30 +106,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 가이드 리다이렉트 함수
   const redirectGuideToPreferredLanguage = useCallback(async (email: string) => {
     try {
+      console.log('AuthContext: Starting guide redirect process for:', email)
+      
       const preferredLanguage = await getGuidePreferredLanguage(email)
-      console.log('AuthContext: Redirecting guide to preferred language:', preferredLanguage)
+      console.log('AuthContext: Guide preferred language:', preferredLanguage)
       
       // 현재 경로에서 locale 추출
       const currentPath = window.location.pathname
       const currentLocaleMatch = currentPath.match(/^\/([a-z]{2})/)
       const currentLocale = currentLocaleMatch ? currentLocaleMatch[1] : 'ko'
       
+      console.log('AuthContext: Current locale:', currentLocale, 'Preferred:', preferredLanguage)
+      
       // 이미 선호 언어 페이지에 있다면 리다이렉트하지 않음
       if (currentLocale === preferredLanguage) {
-        console.log('AuthContext: Already on preferred language page')
+        console.log('AuthContext: Already on preferred language page, no redirect needed')
         return
       }
       
       // 가이드 페이지로 리다이렉트
-      router.push(`/${preferredLanguage}/guide`)
+      const targetPath = `/${preferredLanguage}/guide`
+      console.log('AuthContext: Redirecting guide to:', targetPath)
+      
+      // 리다이렉트 전에 약간의 지연을 두어 상태가 안정화되도록 함
+      setTimeout(() => {
+        try {
+          router.push(targetPath)
+        } catch (error) {
+          console.error('AuthContext: Error during router.push:', error)
+        }
+      }, 100)
+      
     } catch (error) {
-      console.error('AuthContext: Error redirecting guide:', error)
+      console.error('AuthContext: Error in guide redirect process:', error)
+      // 에러 발생 시 기본 가이드 페이지로 리다이렉트
+      try {
+        const currentPath = window.location.pathname
+        const currentLocaleMatch = currentPath.match(/^\/([a-z]{2})/)
+        const currentLocale = currentLocaleMatch ? currentLocaleMatch[1] : 'ko'
+        router.push(`/${currentLocale}/guide`)
+      } catch (fallbackError) {
+        console.error('AuthContext: Fallback redirect also failed:', fallbackError)
+      }
     }
   }, [getGuidePreferredLanguage, router])
 
   // 사용자 역할 및 권한 확인
   const checkUserRole = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
     if (!email) {
+      console.log('AuthContext: No email provided, setting customer role')
       setUserRole('customer')
       setPermissions(null)
       setLoading(false)
@@ -138,6 +163,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      console.log('AuthContext: Checking user role for:', email)
+      
       const { data: teamData, error } = await supabase
         .from('team')
         .select('*')
@@ -146,7 +173,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching team data:', error)
+        console.error('AuthContext: Error fetching team data:', error)
+        // 에러가 발생해도 기본 역할로 설정하고 계속 진행
       }
 
       const role = getUserRole(email, teamData)
@@ -178,21 +206,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
       if (timeoutId) clearTimeout(timeoutId)
       
-      console.log('AuthContext: User role set:', role, 'for user:', email)
+      console.log('AuthContext: User role set successfully:', role, 'for user:', email)
       
-      // 가이드인 경우 선호 언어로 리다이렉트
+      // 가이드인 경우 선호 언어로 리다이렉트 (안전하게 처리)
       if (role === 'team_member' && teamData) {
         const position = (teamData as TeamData).position?.toLowerCase() || ''
         if (position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')) {
-          console.log('AuthContext: Guide detected, checking language preference')
-          // 약간의 지연을 두어 다른 리다이렉트와 충돌하지 않도록 함
+          console.log('AuthContext: Guide detected, scheduling language redirect')
+          // 더 긴 지연을 두어 다른 리다이렉트와 충돌하지 않도록 함
           setTimeout(() => {
-            redirectGuideToPreferredLanguage(email)
-          }, 500)
+            try {
+              redirectGuideToPreferredLanguage(email)
+            } catch (error) {
+              console.error('AuthContext: Error in guide redirect:', error)
+            }
+          }, 1000)
         }
       }
     } catch (error) {
-      console.error('Error checking user role:', error)
+      console.error('AuthContext: Error checking user role:', error)
+      // 에러 발생 시에도 기본 역할로 설정하고 로딩 해제
       setUserRole('customer')
       setPermissions(null)
       setLoading(false)
@@ -203,6 +236,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // team 멤버십 확인
   const checkTeamMembership = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
     if (!email) {
+      console.log('AuthContext: No email provided for team check')
       setUserRole('customer')
       setPermissions(null)
       setLoading(false)
@@ -221,7 +255,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       if (error || !teamData) {
-        console.log('AuthContext: Not a team member')
+        console.log('AuthContext: Not a team member or error occurred:', error?.message || 'No data')
         setUserRole('customer')
         setPermissions(null)
         setLoading(false) // team 확인 완료 후 로딩 해제
@@ -263,20 +297,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('AuthContext: Initializing...')
     setLoading(true)
     
-    // 타임아웃 설정 (10초 후 강제로 로딩 해제)
+    // 타임아웃 설정 (15초 후 강제로 로딩 해제 - 더 여유있게 설정)
     const timeoutId = setTimeout(() => {
       console.warn('AuthContext: Initialization timeout, forcing loading to false')
       setLoading(false)
-    }, 10000)
+      setUserRole('customer')
+      setPermissions(null)
+    }, 15000)
     
     // 현재 세션 확인
     const checkCurrentSession = async () => {
       try {
+        console.log('AuthContext: Checking current session...')
         const { data: { session }, error } = await supabase.auth.getSession()
+        
         if (error) {
           console.error('AuthContext: Error getting session:', error)
           clearTimeout(timeoutId)
           setLoading(false)
+          setUserRole('customer')
+          setPermissions(null)
           return
         }
 
@@ -295,17 +335,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           setAuthUser(authUserData)
           
-          // team 확인
-          checkTeamMembership(session.user.email, timeoutId)
+          // team 확인 (타임아웃 ID 전달)
+          await checkTeamMembership(session.user.email, timeoutId)
         } else {
           console.log('AuthContext: No existing session')
           clearTimeout(timeoutId)
           setLoading(false)
+          setUserRole('customer')
+          setPermissions(null)
         }
       } catch (error) {
         console.error('AuthContext: Error checking session:', error)
         clearTimeout(timeoutId)
         setLoading(false)
+        setUserRole('customer')
+        setPermissions(null)
       }
     }
 
@@ -315,7 +359,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 인증 상태 변경 리스너
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state change:', { event, session: !!session, user: !!session?.user })
+        console.log('AuthContext: Auth state change:', { event, session: !!session, user: !!session?.user })
         
         if (event === 'SIGNED_OUT') {
           console.log('AuthContext: User signed out')
@@ -343,8 +387,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           setAuthUser(authUserData)
           
-          // team 확인
-          checkTeamMembership(session.user.email)
+          // team 확인 (타임아웃 없이)
+          try {
+            await checkTeamMembership(session.user.email)
+          } catch (error) {
+            console.error('AuthContext: Error in team membership check after sign in:', error)
+            setUserRole('customer')
+            setPermissions(null)
+            setLoading(false)
+          }
         } else if (event === 'TOKEN_REFRESHED' && session?.user?.email) {
           console.log('AuthContext: Token refreshed')
           setUser(session.user)

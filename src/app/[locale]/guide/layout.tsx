@@ -55,6 +55,13 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   }, [])
 
   useEffect(() => {
+    console.log('GuideLayout: Auth state changed', { 
+      user: !!user, 
+      userRole, 
+      isLoading,
+      isSimulating,
+      simulatedUser: !!simulatedUser
+    })
     
     if (!isLoading) {
       console.log('GuideLayout: Auth check completed', { user: !!user, userRole, isLoading })
@@ -77,7 +84,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       // 메디컬 리포트 상태 확인
       checkMedicalReportStatus()
     }
-  }, [user, userRole, isLoading, router])
+  }, [user, userRole, isLoading, router, locale, isSimulating, simulatedUser])
 
   // 안읽은 메시지 카운트 로드
   const loadUnreadMessageCount = async () => {
