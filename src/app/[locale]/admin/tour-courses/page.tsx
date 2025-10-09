@@ -98,6 +98,7 @@ export default function TourCoursesPage() {
   const [showMapModal, setShowMapModal] = useState(false)
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedCourse, setSelectedCourse] = useState<TourCourse | null>(null)
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
 
   // 데이터 로드
   const { 
@@ -137,6 +138,17 @@ export default function TourCoursesPage() {
   const startEdit = (course: TourCourse) => {
     setEditingCourse(course)
     setShowEditModal(true)
+  }
+
+  // 트리 노드 토글
+  const toggleNode = (nodeId: string) => {
+    const newExpanded = new Set(expandedNodes)
+    if (newExpanded.has(nodeId)) {
+      newExpanded.delete(nodeId)
+    } else {
+      newExpanded.add(nodeId)
+    }
+    setExpandedNodes(newExpanded)
   }
 
   // 투어 코스 삭제
@@ -213,6 +225,97 @@ export default function TourCoursesPage() {
   }) : []
 
   const hierarchicalCourses = buildHierarchy(filteredCourses)
+
+  // 트리 아이템 렌더링 컴포넌트
+  const TreeItem = ({ course, level = 0 }: { course: TourCourse, level?: number }) => {
+    const hasChildren = course.children && course.children.length > 0
+    const isExpanded = expandedNodes.has(course.id)
+    const indent = level * 20
+
+    return (
+      <div className="select-none">
+        <div 
+          className={`flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 ${
+            selectedCourse?.id === course.id ? 'bg-blue-50 border-blue-200' : ''
+          }`}
+          style={{ paddingLeft: `${indent + 8}px` }}
+          onClick={() => setSelectedCourse(course)}
+        >
+          <div className="flex items-center gap-2 flex-1">
+            {hasChildren ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleNode(course.id)
+                }}
+                className="p-1 hover:bg-gray-200 rounded"
+              >
+                {isExpanded ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                )}
+              </button>
+            ) : (
+              <div className="w-6" />
+            )}
+            
+            <MapPin className="w-4 h-4 text-gray-400" />
+            <div className="flex-1">
+              <div className="font-medium text-gray-900">
+                {course.team_name_ko || course.name_ko}
+              </div>
+              {course.team_name_en && course.team_name_en !== course.team_name_ko && (
+                <div className="text-sm text-gray-500">
+                  {course.team_name_en}
+                </div>
+              )}
+              {course.location && (
+                <div className="text-xs text-gray-400">
+                  📍 {course.location}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                startEdit(course)
+              }}
+              className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"
+              title="편집"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                deleteCourse(course)
+              }}
+              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+              title="삭제"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        
+        {hasChildren && isExpanded && (
+          <div>
+            {course.children!.map((child) => (
+              <TreeItem key={child.id} course={child} level={level + 1} />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -299,43 +402,11 @@ export default function TourCoursesPage() {
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">투어 코스 목록</h2>
             </div>
-            <div className="p-4">
+            <div className="p-4 max-h-[600px] overflow-y-auto">
               {hierarchicalCourses.length > 0 ? (
-                <div className="space-y-2">
+                <div className="space-y-0">
                   {hierarchicalCourses.map((course) => (
-                    <div key={course.id} className="border border-gray-200 rounded-lg p-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-gray-400" />
-                          <div>
-                            <div className="font-medium text-gray-900">
-                              {course.team_name_ko || course.name_ko}
-                            </div>
-                            {course.team_name_en && course.team_name_en !== course.team_name_ko && (
-                              <div className="text-sm text-gray-500">
-                                {course.team_name_en}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => startEdit(course)}
-                            className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"
-                            title="편집"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteCourse(course)}
-                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
-                            title="삭제"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                    <TreeItem key={course.id} course={course} />
                   ))}
                 </div>
               ) : (
