@@ -69,7 +69,9 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       // 관리자, 매니저, 투어 가이드가 아닌 경우 접근 차단
       if (!user || !['admin', 'manager', 'team_member'].includes(userRole || '')) {
         console.log('GuideLayout: Access denied, redirecting to auth')
-        router.push(`/${locale}/auth`)
+        // 현재 경로에서 locale 추출
+        const currentLocale = pathname.split('/')[1] || 'ko'
+        router.push(`/${currentLocale}/auth`)
         return
       }
       
@@ -84,7 +86,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       // 메디컬 리포트 상태 확인
       checkMedicalReportStatus()
     }
-  }, [user, userRole, isLoading, router, locale, isSimulating, simulatedUser])
+  }, [user, userRole, isLoading, router, isSimulating, simulatedUser])
 
   // 안읽은 메시지 카운트 로드
   const loadUnreadMessageCount = async () => {
@@ -341,7 +343,10 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
             </p>
           </div>
           <button 
-            onClick={() => router.push(`/${locale}/auth`)}
+            onClick={() => {
+              const currentLocale = pathname.split('/')[1] || 'ko'
+              router.push(`/${currentLocale}/auth`)
+            }}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             로그인 페이지로 이동
@@ -366,7 +371,10 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
         <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-50">
         <div className="grid grid-cols-5 py-2">
           <button
-            onClick={() => router.push(`/${locale}/guide`)}
+            onClick={() => {
+              const currentLocale = pathname.split('/')[1] || 'ko'
+              router.push(`/${currentLocale}/guide`)
+            }}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
               pathname === `/${locale}/guide` || pathname === `/${locale}/guide/`
                 ? 'text-purple-600'
@@ -378,7 +386,10 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
           </button>
           
           <button
-            onClick={() => router.push(`/${locale}/guide/tours?view=calendar`)}
+            onClick={() => {
+              const currentLocale = pathname.split('/')[1] || 'ko'
+              router.push(`/${currentLocale}/guide/tours?view=calendar`)
+            }}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
               pathname.includes('/guide/tours') && pathname.includes('calendar')
                 ? 'text-blue-600'
@@ -390,7 +401,10 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
           </button>
           
           <button
-            onClick={() => router.push(`/${locale}/guide/chat`)}
+            onClick={() => {
+              const currentLocale = pathname.split('/')[1] || 'ko'
+              router.push(`/${currentLocale}/guide/chat`)
+            }}
             className={`flex flex-col items-center py-1 px-1 transition-colors relative ${
               pathname.includes('/guide/chat')
                 ? 'text-green-600'
@@ -407,7 +421,10 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
           </button>
           
           <button
-            onClick={() => router.push(`/${locale}/guide/team-board`)}
+            onClick={() => {
+              const currentLocale = pathname.split('/')[1] || 'ko'
+              router.push(`/${currentLocale}/guide/team-board`)
+            }}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
               pathname.includes('/guide/team-board')
                 ? 'text-indigo-600'
@@ -419,7 +436,10 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
           </button>
 
           <button
-            onClick={() => router.push(`/${locale}/guide/tour-materials`)}
+            onClick={() => {
+              const currentLocale = pathname.split('/')[1] || 'ko'
+              router.push(`/${currentLocale}/guide/tour-materials`)
+            }}
             className={`flex flex-col items-center py-1 px-1 transition-colors ${
               pathname.includes('/guide/tour-materials')
                 ? 'text-blue-600'
