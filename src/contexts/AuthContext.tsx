@@ -6,13 +6,14 @@ import { supabase } from '@/lib/supabase'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
 import { useRouter } from 'next/navigation'
+import { detectGuidePreferredLanguage, SupportedLocale } from '@/lib/guideLanguageDetection'
 
 interface TeamData {
   name_ko?: string
   email: string
   is_active: boolean
   position?: string
-  languages?: string[]
+  languages?: string[] | null
 }
 
 interface AuthContextType {
@@ -57,8 +58,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSimulating, setIsSimulating] = useState(false)
 
   // 가이드 언어 탐지 및 리다이렉트 함수
-  const getGuidePreferredLanguage = useCallback(async (email: string): Promise<string> => {
+  const getGuidePreferredLanguage = useCallback(async (email: string): Promise<SupportedLocale> => {
     try {
+      console.log(`[AuthContext] Getting preferred language for guide: ${email}`)
+      
       const { data: teamData, error } = await supabase
         .from('team')
         .select('languages')
@@ -66,39 +69,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('is_active', true)
         .single()
 
-      if (error || !teamData) {
-        console.log('AuthContext: No team data found for language detection')
+      if (error) {
+        console.error(`[AuthContext] Error fetching team data for ${email}:`, error)
         return 'ko' // 기본값
       }
 
-      const languages = (teamData as TeamData).languages
-      console.log('AuthContext: Guide languages:', languages)
-
-      // languages가 배열이고 첫 번째 언어가 있는 경우
-      if (Array.isArray(languages) && languages.length > 0) {
-        const firstLanguage = languages[0]
-        
-        // 언어 코드를 locale로 변환
-        switch (firstLanguage.toUpperCase()) {
-          case 'KR':
-          case 'KO':
-            return 'ko'
-          case 'EN':
-            return 'en'
-          case 'JP':
-          case 'JA':
-            return 'ja'
-          case 'CN':
-          case 'ZH':
-            return 'zh'
-          default:
-            return 'ko' // 기본값
-        }
+      if (!teamData) {
+        console.log(`[AuthContext] No team data found for ${email}`)
+        return 'ko' // 기본값
       }
 
-      return 'ko' // 기본값
+      const preferredLocale = detectGuidePreferredLanguage(teamData, email)
+      console.log(`[AuthContext] Guide ${email} preferred language: ${preferredLocale}`)
+      
+      return preferredLocale
     } catch (error) {
-      console.error('AuthContext: Error detecting guide language:', error)
+      console.error(`[AuthContext] Error detecting guide language for ${email}:`, error)
       return 'ko' // 기본값
     }
   }, [])

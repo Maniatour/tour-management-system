@@ -12,7 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Calendar, MapPin, Users, DollarSign, Cloud, Star, MessageSquare, AlertTriangle, Package, Lightbulb, MessageCircle, Handshake, FileText } from 'lucide-react'
 import { toast } from 'sonner'
-import { useTranslations } from 'next-intl'
 
 interface TourReportFormProps {
   tourId: string
@@ -41,12 +40,12 @@ interface TourReportData {
 }
 
 const WEATHER_OPTIONS = [
-  { value: 'sunny', icon: '☀️' },
-  { value: 'cloudy', icon: '☁️' },
-  { value: 'rainy', icon: '🌧️' },
-  { value: 'snowy', icon: '❄️' },
-  { value: 'windy', icon: '💨' },
-  { value: 'foggy', icon: '🌫️' }
+  { value: 'sunny', icon: '☀️', ko: '맑음', en: 'Sunny' },
+  { value: 'cloudy', icon: '☁️', ko: '흐림', en: 'Cloudy' },
+  { value: 'rainy', icon: '🌧️', ko: '비', en: 'Rainy' },
+  { value: 'snowy', icon: '❄️', ko: '눈', en: 'Snowy' },
+  { value: 'windy', icon: '💨', ko: '바람', en: 'Windy' },
+  { value: 'foggy', icon: '🌫️', ko: '안개', en: 'Foggy' }
 ]
 
 const MOOD_OPTIONS = [
@@ -120,11 +119,78 @@ const LOST_DAMAGE_OPTIONS = [
 ]
 
 export default function TourReportForm({ tourId, onSuccess, onCancel, locale = 'ko' }: TourReportFormProps) {
-  const t = useTranslations('tourReportForm')
   const { user } = useAuth()
   
-  // 번역 함수
+  // 번역 함수 - locale prop을 사용하여 언어 결정
   const getText = (ko: string, en: string) => locale === 'en' ? en : ko
+  
+  // 번역 함수들을 정의
+  const t = {
+    title: getText('투어 리포트 작성', 'Tour Report'),
+    fields: {
+      endMileage: getText('종료 주행거리', 'End Mileage'),
+      cashBalance: getText('현금 잔액', 'Cash Balance'),
+      customerCount: getText('고객 수', 'Customer Count'),
+      weather: getText('날씨', 'Weather'),
+      mainStopsVisited: getText('주요 방문지', 'Main Stops Visited'),
+      activitiesCompleted: getText('완료된 활동', 'Activities Completed'),
+      overallMood: getText('전체 분위기', 'Overall Mood'),
+      guestComments: getText('고객 코멘트', 'Guest Comments'),
+      incidentsDelaysHealth: getText('사고/지연/건강 문제', 'Incidents/Delays/Health Issues'),
+      lostItemsDamage: getText('분실/손상', 'Lost Items/Damage'),
+      suggestionsFollowup: getText('제안사항/후속조치', 'Suggestions/Follow-up'),
+      communication: getText('소통', 'Communication'),
+      teamwork: getText('팀워크', 'Teamwork'),
+      comments: getText('코멘트', 'Comments'),
+      sign: getText('서명', 'Signature'),
+      officeNote: getText('사무실 메모', 'Office Note')
+    },
+    weatherOptions: {
+      sunny: getText('맑음', 'Sunny'),
+      cloudy: getText('흐림', 'Cloudy'),
+      rainy: getText('비', 'Rainy'),
+      snowy: getText('눈', 'Snowy'),
+      windy: getText('바람', 'Windy'),
+      foggy: getText('안개', 'Foggy')
+    },
+    moodOptions: {
+      excellent: getText('매우 좋음', 'Excellent'),
+      good: getText('좋음', 'Good'),
+      average: getText('보통', 'Average'),
+      poor: getText('나쁨', 'Poor')
+    },
+    communicationOptions: {
+      excellent: getText('매우 좋음', 'Excellent'),
+      good: getText('좋음', 'Good'),
+      average: getText('보통', 'Average'),
+      poor: getText('나쁨', 'Poor')
+    },
+    teamworkOptions: {
+      excellent: getText('매우 좋음', 'Excellent'),
+      good: getText('좋음', 'Good'),
+      average: getText('보통', 'Average'),
+      poor: getText('나쁨', 'Poor')
+    },
+    buttons: {
+      submit: getText('제출', 'Submit'),
+      cancel: getText('취소', 'Cancel')
+    },
+    messages: {
+      reportSubmitted: getText('리포트가 성공적으로 제출되었습니다.', 'Report submitted successfully.'),
+      submitError: getText('리포트 제출 중 오류가 발생했습니다.', 'Error submitting report.'),
+      loginRequired: getText('로그인이 필요합니다.', 'Login required.')
+    },
+    placeholders: {
+      endMileage: getText('종료 주행거리를 입력하세요', 'Enter end mileage'),
+      cashBalance: getText('현금 잔액을 입력하세요', 'Enter cash balance'),
+      customerCount: getText('고객 수를 입력하세요', 'Enter customer count'),
+      guestComments: getText('고객의 코멘트를 입력하세요', 'Enter guest comments'),
+      suggestionsFollowup: getText('제안사항이나 후속조치를 입력하세요', 'Enter suggestions or follow-up actions'),
+      comments: getText('추가 코멘트를 입력하세요', 'Enter additional comments'),
+      sign: getText('서명을 입력하세요', 'Enter signature'),
+      officeNote: getText('사무실 메모를 입력하세요', 'Enter office note')
+    }
+  }
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState<TourReportData>({
     end_mileage: null,
@@ -172,7 +238,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user?.email) {
-      toast.error('로그인이 필요합니다.')
+      toast.error(t.messages.loginRequired)
       return
     }
 
@@ -188,11 +254,11 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
 
       if (error) throw error
 
-      toast.success(t('reportSubmitted'))
+      toast.success(t.messages.reportSubmitted)
       onSuccess?.()
     } catch (error) {
       console.error('Error submitting tour report:', error)
-      toast.error(t('submitError'))
+      toast.error(t.messages.submitError)
     } finally {
       setLoading(false)
     }
@@ -204,7 +270,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
         <CardHeader className="p-4 md:p-6">
           <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
             <FileText className="w-5 h-5" />
-            {t('title')}
+            {t.title}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-4 md:p-6">
@@ -214,20 +280,20 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
               <div>
                 <Label htmlFor="end_mileage" className="flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
-                  {t('fields.endMileage')}
+                  {t.fields.endMileage}
                 </Label>
                 <Input
                   id="end_mileage"
                   type="number"
                   value={formData.end_mileage || ''}
                   onChange={(e) => handleInputChange('end_mileage', parseInt(e.target.value) || null)}
-                  placeholder={t('placeholders.endMileage')}
+                  placeholder={t.placeholders.endMileage}
                 />
               </div>
               <div>
                 <Label htmlFor="cash_balance" className="flex items-center gap-2">
                   <DollarSign className="w-4 h-4" />
-                  {t('fields.cashBalance')}
+                  {t.fields.cashBalance}
                 </Label>
                 <Input
                   id="cash_balance"
@@ -235,20 +301,20 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                   step="0.01"
                   value={formData.cash_balance || ''}
                   onChange={(e) => handleInputChange('cash_balance', parseFloat(e.target.value) || null)}
-                  placeholder={t('placeholders.cashBalance')}
+                  placeholder={t.placeholders.cashBalance}
                 />
               </div>
               <div>
                 <Label htmlFor="customer_count" className="flex items-center gap-2">
                   <Users className="w-4 h-4" />
-                  {t('fields.customerCount')}
+                  {t.fields.customerCount}
                 </Label>
                 <Input
                   id="customer_count"
                   type="number"
                   value={formData.customer_count || ''}
                   onChange={(e) => handleInputChange('customer_count', parseInt(e.target.value) || null)}
-                  placeholder={t('placeholders.customerCount')}
+                  placeholder={t.placeholders.customerCount}
                 />
               </div>
             </div>
@@ -257,7 +323,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Cloud className="w-4 h-4" />
-                {t('fields.weather')}
+                {t.fields.weather}
               </Label>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                 {WEATHER_OPTIONS.map((option) => (
@@ -270,7 +336,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                     className="flex items-center gap-1 text-xs md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{t(`weather.${option.value}`)}</span>
+                    <span className="truncate">{locale === 'en' ? option.en : option.ko}</span>
                   </Button>
                 ))}
               </div>
@@ -280,7 +346,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <MapPin className="w-4 h-4" />
-                {t('fields.mainStopsVisited')}
+                {t.fields.mainStopsVisited}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {MAIN_STOPS_OPTIONS.map((stop) => {
@@ -331,7 +397,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Package className="w-4 h-4" />
-                {t('fields.activitiesCompleted')}
+                {t.fields.activitiesCompleted}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {ACTIVITIES_OPTIONS.map((activity) => {
@@ -382,7 +448,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Star className="w-4 h-4" />
-                {t('fields.overallMood')}
+                {t.fields.overallMood}
               </Label>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
                 {MOOD_OPTIONS.map((option) => (
@@ -395,7 +461,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                     className="flex items-center gap-1 text-xs md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{t(`mood.${option.value}`)}</span>
+                    <span className="truncate">{locale === 'en' ? option.en : option.ko}</span>
                   </Button>
                 ))}
               </div>
@@ -405,13 +471,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label htmlFor="guest_comments" className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
-                {t('fields.guestComments')}
+                {t.fields.guestComments}
               </Label>
               <Textarea
                 id="guest_comments"
                 value={formData.guest_comments || ''}
                 onChange={(e) => handleInputChange('guest_comments', e.target.value)}
-                placeholder={t('placeholders.guestComments')}
+                placeholder={t.placeholders.guestComments}
                 rows={3}
               />
             </div>
@@ -420,7 +486,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <AlertTriangle className="w-4 h-4" />
-                {t('fields.incidentsDelaysHealth')}
+                {t.fields.incidentsDelaysHealth}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {INCIDENTS_OPTIONS.map((incident) => {
@@ -471,7 +537,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Package className="w-4 h-4" />
-                {t('fields.lostItemsDamage')}
+                {t.fields.lostItemsDamage}
               </Label>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {LOST_DAMAGE_OPTIONS.map((item) => {
@@ -522,13 +588,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label htmlFor="suggestions_followup" className="flex items-center gap-2">
                 <Lightbulb className="w-4 h-4" />
-                {t('fields.suggestionsFollowup')}
+                {t.fields.suggestionsFollowup}
               </Label>
               <Textarea
                 id="suggestions_followup"
                 value={formData.suggestions_followup || ''}
                 onChange={(e) => handleInputChange('suggestions_followup', e.target.value)}
-                placeholder={t('placeholders.suggestionsFollowup')}
+                placeholder={t.placeholders.suggestionsFollowup}
                 rows={3}
               />
             </div>
@@ -537,7 +603,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <MessageCircle className="w-4 h-4" />
-                {t('fields.communication')}
+                {t.fields.communication}
               </Label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {RATING_OPTIONS.map((option) => (
@@ -550,7 +616,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                     className="flex items-center gap-1 text-xs md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{t(`rating.${option.value}`)}</span>
+                    <span className="truncate">{locale === 'en' ? option.en : option.ko}</span>
                   </Button>
                 ))}
               </div>
@@ -560,7 +626,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label className="flex items-center gap-2 mb-3">
                 <Handshake className="w-4 h-4" />
-                {t('fields.teamwork')}
+                {t.fields.teamwork}
               </Label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {RATING_OPTIONS.map((option) => (
@@ -573,7 +639,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                     className="flex items-center gap-1 text-xs md:text-sm"
                   >
                     <span className="text-base">{option.icon}</span>
-                    <span className="truncate">{t(`rating.${option.value}`)}</span>
+                    <span className="truncate">{locale === 'en' ? option.en : option.ko}</span>
                   </Button>
                 ))}
               </div>
@@ -583,13 +649,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label htmlFor="comments" className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
-                {t('fields.comments')}
+                {t.fields.comments}
               </Label>
               <Textarea
                 id="comments"
                 value={formData.comments || ''}
                 onChange={(e) => handleInputChange('comments', e.target.value)}
-                placeholder={t('placeholders.comments')}
+                placeholder={t.placeholders.comments}
                 rows={3}
               />
             </div>
@@ -598,13 +664,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label htmlFor="sign" className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
-                {t('fields.sign')}
+                {t.fields.sign}
               </Label>
               <Input
                 id="sign"
                 value={formData.sign || ''}
                 onChange={(e) => handleInputChange('sign', e.target.value)}
-                placeholder={t('placeholders.sign')}
+                placeholder={t.placeholders.sign}
               />
             </div>
 
@@ -612,13 +678,13 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
             <div>
               <Label htmlFor="office_note" className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
-                {t('fields.officeNote')}
+                {t.fields.officeNote}
               </Label>
               <Textarea
                 id="office_note"
                 value={formData.office_note || ''}
                 onChange={(e) => handleInputChange('office_note', e.target.value)}
-                placeholder={t('placeholders.officeNote')}
+                placeholder={t.placeholders.officeNote}
                 rows={2}
               />
             </div>
@@ -630,7 +696,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                 disabled={loading}
                 className="flex-1 h-12 text-base font-medium"
               >
-                {loading ? t('submitting') : t('submitReport')}
+                {loading ? getText('제출 중...', 'Submitting...') : t.buttons.submit}
               </Button>
               {onCancel && (
                 <Button
@@ -639,7 +705,7 @@ export default function TourReportForm({ tourId, onSuccess, onCancel, locale = '
                   onClick={onCancel}
                   className="flex-1 sm:flex-none h-12 text-base"
                 >
-                  {t('cancel')}
+                  {t.buttons.cancel}
                 </Button>
               )}
             </div>

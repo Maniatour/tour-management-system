@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { detectGuidePreferredLanguage, SupportedLocale } from '@/lib/guideLanguageDetection'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -39,6 +40,8 @@ export default function AuthCallbackPage() {
           
           // 가이드인지 확인하고 선호 언어로 리다이렉트
           try {
+            console.log(`[AuthCallback] Checking guide language for: ${data.session.user.email}`)
+            
             const { data: teamData, error: teamError } = await supabase
               .from('team')
               .select('position, languages')
@@ -50,38 +53,19 @@ export default function AuthCallbackPage() {
               const position = teamData.position?.toLowerCase() || ''
               const isGuide = position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')
               
-              if (isGuide && teamData.languages && Array.isArray(teamData.languages) && teamData.languages.length > 0) {
-                const firstLanguage = teamData.languages[0]
-                let preferredLocale = 'ko' // 기본값
-                
-                // 언어 코드를 locale로 변환
-                switch (firstLanguage.toUpperCase()) {
-                  case 'KR':
-                  case 'KO':
-                    preferredLocale = 'ko'
-                    break
-                  case 'EN':
-                    preferredLocale = 'en'
-                    break
-                  case 'JP':
-                  case 'JA':
-                    preferredLocale = 'ja'
-                    break
-                  case 'CN':
-                  case 'ZH':
-                    preferredLocale = 'zh'
-                    break
-                  default:
-                    preferredLocale = 'ko'
-                }
-                
-                console.log('Auth callback: Guide detected, redirecting to preferred language:', preferredLocale)
+              console.log(`[AuthCallback] Team data found - Position: ${position}, Is Guide: ${isGuide}`)
+              
+              if (isGuide) {
+                const preferredLocale = detectGuidePreferredLanguage(teamData, data.session.user.email)
+                console.log(`[AuthCallback] Guide detected, redirecting to preferred language: ${preferredLocale}`)
                 router.replace(`/${preferredLocale}/guide`)
                 return
               }
+            } else {
+              console.log(`[AuthCallback] No team data found or error:`, teamError?.message || 'No data')
             }
           } catch (error) {
-            console.error('Auth callback: Error checking guide language:', error)
+            console.error('[AuthCallback] Error checking guide language:', error)
           }
           
           // 가이드가 아니거나 언어 정보가 없는 경우 기본 리다이렉트
