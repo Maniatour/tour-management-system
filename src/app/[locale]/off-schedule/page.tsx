@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useUser } from '@supabase/auth-helpers-react'
+import { useAuth } from '@/contexts/AuthContext'
 import { Calendar, Plus, Trash2, Clock, CheckCircle, XCircle } from 'lucide-react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
@@ -21,9 +21,7 @@ interface OffSchedule {
 }
 
 export default function OffSchedulePage() {
-  const userData = useUser()
-  const user = userData?.user || null
-  const userLoading = userData?.loading || false
+  const { user, loading: userLoading } = useAuth()
   const [offSchedules, setOffSchedules] = useState<OffSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [showRequestForm, setShowRequestForm] = useState(false)

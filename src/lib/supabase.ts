@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import type { Database } from './database.types'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -10,50 +9,52 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables. Please check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.')
 }
 
-console.log('Supabase config:', {
-  url: supabaseUrl,
-  hasKey: !!supabaseAnonKey,
-  keyLength: supabaseAnonKey?.length
-})
+// 개발 환경에서만 로그 출력
+if (process.env.NODE_ENV === 'development') {
+  console.log('Supabase config:', {
+    url: supabaseUrl,
+    hasKey: !!supabaseAnonKey,
+    keyLength: supabaseAnonKey?.length
+  })
+}
 
-// 싱글톤 패턴으로 클라이언트 인스턴스 생성
-let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null
+// 기본 Supabase 클라이언트 생성
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)
 
-// 주의: 브라우저에서는 auth-helpers 클라이언트와 스토리지를 공유하지 않도록 비지속 모드 사용
-export const supabase = (() => {
-  if (!supabaseInstance) {
-    const isBrowser = typeof window !== 'undefined'
-    console.log('Creating new Supabase client instance')
-    supabaseInstance = createClient<Database>(
-      supabaseUrl,
-      supabaseAnonKey,
-      isBrowser
-        ? {
-            auth: {
-              persistSession: true,
-              autoRefreshToken: true,
-              storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-            },
-            global: {
-              fetch: (url, options = {}) => {
-                // QUIC 오류 해결을 위한 설정
-                const headers = new Headers(options?.headers)
-                headers.set('Connection', 'close')
-                
-                return fetch(url, {
-                  ...options,
-                  headers: headers,
-                  // HTTP/1.1 사용 강제
-                  cache: 'no-store'
-                })
-              }
-            }
-          }
-        : undefined
-    )
+// Supabase 연결 상태 확인 함수
+export const checkSupabaseConnection = async (): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('team')
+      .select('count')
+      .limit(1)
+      .single()
+    
+    if (error && error.code !== 'PGRST116') {
+      console.error('Supabase connection check failed:', error)
+      return false
+    }
+    
+    console.log('Supabase connection is healthy')
+    return true
+  } catch (error) {
+    console.error('Supabase connection check error:', error)
+    return false
   }
-  return supabaseInstance
-})()
+}
+
+// 토큰을 동적으로 업데이트하는 함수
+export const updateSupabaseToken = (accessToken: string) => {
+  if (typeof window !== 'undefined') {
+    // Supabase 클라이언트의 auth 헤더 업데이트
+    supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: localStorage.getItem('sb-refresh-token') || ''
+    }).catch(error => {
+      console.error('Failed to update Supabase token:', error)
+    })
+  }
+}
 
 // 클라이언트 컴포넌트용 Supabase 클라이언트 (같은 인스턴스 사용)
 export const createClientSupabase = () => {

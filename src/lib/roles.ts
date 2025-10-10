@@ -83,13 +83,16 @@ export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
 }
 
 export function getUserRole(email: string, teamData?: { position?: string; is_active?: boolean }): UserRole {
-  if (process.env.NODE_ENV === 'development') {
-    console.log('getUserRole called with:', { email, teamData })
-  }
+  console.log('getUserRole called with:', { email, teamData })
+  console.log('SUPER_ADMIN_EMAILS:', SUPER_ADMIN_EMAILS)
 
   // 슈퍼관리자 이메일은 team 데이터와 무관하게 무조건 관리자
   const normalizedEmail = (email || '').toLowerCase()
+  console.log('normalizedEmail:', normalizedEmail)
+  console.log('isSuperAdmin:', normalizedEmail && SUPER_ADMIN_EMAILS.includes(normalizedEmail))
+  
   if (normalizedEmail && SUPER_ADMIN_EMAILS.includes(normalizedEmail)) {
+    console.log('Returning admin role for super admin email')
     return 'admin'
   }
   

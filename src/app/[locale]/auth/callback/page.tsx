@@ -4,56 +4,35 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-export default function AuthCallbackPage() {
+interface AuthCallbackPageProps {
+  params: {
+    locale: string
+  }
+}
+
+export default function AuthCallbackPage({ params }: AuthCallbackPageProps) {
   const router = useRouter()
+  const { locale } = params
 
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        console.log('Auth callback: Handling OAuth callback')
+        console.log('Auth callback: Handling OAuth callback for locale:', locale)
         
-        // URL에서 locale 추출
-        const currentPath = window.location.pathname
-        let locale = 'ko' // 기본값
-        if (currentPath.startsWith('/ko/')) {
-          locale = 'ko'
-        } else if (currentPath.startsWith('/en/')) {
-          locale = 'en'
-        } else if (currentPath.startsWith('/ja/')) {
-          locale = 'ja'
-        }
+        // 짧은 대기 후 즉시 리다이렉트 (Supabase가 자동으로 처리하도록 함)
+        setTimeout(() => {
+          console.log('Auth callback: Redirecting to main page')
+          router.replace(`/${locale}`)
+        }, 500)
         
-        console.log('Auth callback: Detected locale:', locale)
-        
-        // Supabase가 자동으로 URL의 토큰을 처리하도록 함
-        const { data, error } = await supabase.auth.getSession()
-        
-        if (error) {
-          console.error('Auth callback: Error getting session:', error)
-          router.replace(`/${locale}/auth?error=session_error`)
-          return
-        }
-        
-        if (data.session?.user) {
-          console.log('Auth callback: User authenticated:', data.session.user.email)
-          // 잠시 후 AuthContext가 로드되도록 대기
-          setTimeout(() => {
-            // 임시 해결책: 모든 사용자를 기본 페이지로 리다이렉트
-            // AuthContext에서 역할 확인 후 적절한 페이지로 재리다이렉트됨
-            router.replace(`/${locale}`)
-          }, 100)
-        } else {
-          console.log('Auth callback: No session found')
-          router.replace(`/${locale}/auth?error=no_session`)
-        }
       } catch (error) {
         console.error('Auth callback: Unexpected error:', error)
-        router.replace(`/ko/auth?error=unexpected_error`)
+        router.replace(`/${locale}/auth?error=unexpected_error`)
       }
     }
 
     handleAuthCallback()
-  }, [router])
+  }, [router, locale])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

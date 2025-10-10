@@ -3,7 +3,6 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { detectGuidePreferredLanguage, SupportedLocale } from '@/lib/guideLanguageDetection'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -13,69 +12,60 @@ export default function AuthCallbackPage() {
       try {
         console.log('Auth callback: Handling OAuth callback')
         
-        // URL에서 locale 추출
-        const currentPath = window.location.pathname
+        // URL에서 해시 프래그먼트 확인
+        const hash = window.location.hash
+        console.log('Auth callback: URL hash:', hash)
+        
+        // locale 감지
         let locale = 'ko' // 기본값
-        if (currentPath.startsWith('/ko/')) {
-          locale = 'ko'
-        } else if (currentPath.startsWith('/en/')) {
+        
+        // 브라우저 언어 설정 확인
+        const browserLang = navigator.language || navigator.languages?.[0] || 'ko'
+        if (browserLang.startsWith('en')) {
           locale = 'en'
-        } else if (currentPath.startsWith('/ja/')) {
+        } else if (browserLang.startsWith('ja')) {
           locale = 'ja'
+        }
+        
+        // localStorage에서 저장된 locale 확인
+        const savedLocale = localStorage.getItem('preferred-locale')
+        if (savedLocale && ['ko', 'en', 'ja'].includes(savedLocale)) {
+          locale = savedLocale
         }
         
         console.log('Auth callback: Detected locale:', locale)
         
-        // Supabase가 자동으로 URL의 토큰을 처리하도록 함
-        const { data, error } = await supabase.auth.getSession()
-        
-        if (error) {
-          console.error('Auth callback: Error getting session:', error)
-          router.replace(`/${locale}/auth?error=session_error`)
-          return
-        }
-        
-        if (data.session?.user) {
-          console.log('Auth callback: User authenticated:', data.session.user.email)
+        // 해시가 있으면 토큰을 localStorage에 저장하고 즉시 리다이렉트
+        if (hash && hash.includes('access_token')) {
+          console.log('Auth callback: Found access token in hash, storing tokens')
           
-          // 가이드인지 확인하고 선호 언어로 리다이렉트 (비활성화)
-          // try {
-          //   console.log(`[AuthCallback] Checking guide language for: ${data.session.user.email}`)
-          //   
-          //   const { data: teamData, error: teamError } = await supabase
-          //     .from('team')
-          //     .select('position, languages')
-          //     .eq('email', data.session.user.email)
-          //     .eq('is_active', true)
-          //     .single()
-
-          //   if (!teamError && teamData) {
-          //     const position = teamData.position?.toLowerCase() || ''
-          //     const isGuide = position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')
-          //     
-          //     console.log(`[AuthCallback] Team data found - Position: ${position}, Is Guide: ${isGuide}`)
-          //     
-          //     if (isGuide) {
-          //       const preferredLocale = detectGuidePreferredLanguage(teamData, data.session.user.email)
-          //       console.log(`[AuthCallback] Guide detected, redirecting to preferred language: ${preferredLocale}`)
-          //       router.replace(`/${preferredLocale}/guide`)
-          //       return
-          //     }
-          //   } else {
-          //     console.log(`[AuthCallback] No team data found or error:`, teamError?.message || 'No data')
-          //   }
-          // } catch (error) {
-          //   console.error('[AuthCallback] Error checking guide language:', error)
-          // }
+          // 해시에서 토큰 정보 추출
+          const hashParams = new URLSearchParams(hash.substring(1))
+          const accessToken = hashParams.get('access_token')
+          const refreshToken = hashParams.get('refresh_token')
+          const expiresAt = hashParams.get('expires_at')
           
-          // 가이드가 아니거나 언어 정보가 없는 경우 기본 리다이렉트
-          setTimeout(() => {
+          if (accessToken) {
+            console.log('Auth callback: Storing tokens in localStorage')
+            
+            // 토큰을 localStorage에 저장
+            localStorage.setItem('sb-access-token', accessToken)
+            if (refreshToken) {
+              localStorage.setItem('sb-refresh-token', refreshToken)
+            }
+            if (expiresAt) {
+              localStorage.setItem('sb-expires-at', expiresAt)
+            }
+            
+            console.log('Auth callback: Tokens stored, redirecting to main page')
             router.replace(`/${locale}`)
-          }, 100)
-        } else {
-          console.log('Auth callback: No session found')
-          router.replace(`/${locale}/auth?error=no_session`)
+            return
+          }
         }
+        
+        // 토큰이 없으면 에러 페이지로 리다이렉트
+        console.log('Auth callback: No access token found')
+        router.replace(`/${locale}/auth?error=no_token`)
       } catch (error) {
         console.error('Auth callback: Unexpected error:', error)
         router.replace(`/ko/auth?error=unexpected_error`)

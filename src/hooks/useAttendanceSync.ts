@@ -33,17 +33,55 @@ export function useAttendanceSync() {
 
     try {
       console.log('직원 정보 조회 시작...')
-      // 먼저 이메일로 직원 정보 조회
-      const { data: employeeData, error: employeeError } = await supabase
+      console.log('Supabase client available:', !!supabase)
+      console.log('Access token available:', !!localStorage.getItem('sb-access-token'))
+      
+      // 타임아웃과 함께 직원 정보 조회 (5초 타임아웃)
+      const queryPromise = supabase
         .from('team')
-        .select('name_ko, email')
+        .select('name_ko, email, position, is_active')
         .eq('email', authUser.email)
         .eq('is_active', true)
-        .single()
+        .maybeSingle()
+      
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Employee query timeout')), 5000)
+      )
+      
+      let employeeData = null
+      let employeeError = null
+      
+      try {
+        const result = await Promise.race([
+          queryPromise,
+          timeoutPromise
+        ]) as { data: {
+          name_ko: string | null
+          email: string
+          position: string | null
+          is_active: boolean
+        } | null; error: { message?: string; code?: string } | null }
+        
+        employeeData = result.data
+        employeeError = result.error
+      } catch {
+        console.warn('useAttendanceSync: Employee query timed out, skipping attendance sync')
+        setEmployeeNotFound(true)
+        return
+      }
 
-      console.log('직원 정보 조회 결과:', { employeeData, employeeError })
+      console.log('직원 정보 조회 결과:', { 
+        hasData: !!employeeData, 
+        error: employeeError?.message, 
+        errorCode: employeeError?.code,
+        employeeData: employeeData && !employeeError ? { 
+          name_ko: employeeData.name_ko, 
+          position: employeeData.position,
+          is_active: employeeData.is_active 
+        } : null
+      })
 
-      if (employeeError) {
+      if (employeeError && employeeError.code !== 'PGRST116') {
         console.error('직원 정보 조회 오류:', employeeError)
         setEmployeeNotFound(true)
         return
@@ -70,15 +108,16 @@ export function useAttendanceSync() {
       yesterday.setDate(yesterday.getDate() - 1)
       const yesterdayStr = yesterday.toISOString().split('T')[0]
       
+      // 간단한 출퇴근 기록 조회
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('employee_email', employeeData.email)
         .is('check_out_time', null)
-        .in('date', [today, yesterdayStr]) // 오늘과 어제의 기록만 조회
+        .in('date', [today, yesterdayStr])
         .order('date', { ascending: false })
         .order('session_number', { ascending: true })
-        .limit(1) // 가장 최근 미체크아웃 기록만
+        .limit(1)
 
       console.log('출퇴근 기록 조회 결과:', { data, error })
       console.log('조회 범위:', { today, yesterdayStr })
@@ -91,10 +130,10 @@ export function useAttendanceSync() {
 
       if (data && data.length > 0) {
         const records = data.map(record => ({
-          ...record,
-          employee_name: employeeData.name_ko,
+          ...(record as Record<string, unknown>),
+          employee_name: employeeData.name_ko || '',
           employee_email: employeeData.email
-        }))
+        })) as AttendanceRecord[]
         
         // 현재 진행 중인 세션 찾기 (퇴근하지 않은 세션)
         // check_out_time이 null이거나 빈 문자열인 경우를 모두 체크
@@ -113,6 +152,15 @@ export function useAttendanceSync() {
       }
     } catch (error) {
       console.error('오늘 기록 조회 중 오류:', error)
+      console.error('에러 타입:', typeof error)
+      console.error('에러 메시지:', error instanceof Error ? error.message : 'Unknown error')
+      console.error('에러 스택:', error instanceof Error ? error.stack : 'No stack trace')
+      
+      // 타임아웃 에러인 경우 특별 처리
+      if (error instanceof Error && error.message === 'Query timeout') {
+        console.error('직원 정보 조회가 타임아웃되었습니다.')
+        setEmployeeNotFound(true)
+      }
     }
   }, [authUser?.email])
 
@@ -128,7 +176,7 @@ export function useAttendanceSync() {
         .select('name_ko, email')
         .eq('email', authUser.email)
         .eq('is_active', true)
-        .single()
+        .single() as { data: { name_ko: string | null; email: string } | null; error: { message?: string; code?: string } | null }
 
       if (employeeError) {
         console.error('직원 정보 조회 오류:', employeeError)
@@ -146,12 +194,12 @@ export function useAttendanceSync() {
         .from('attendance_records')
         .select('session_number')
         .eq('employee_email', employeeData.email)
-        .eq('date', new Date().toISOString().split('T')[0])
+        .eq('date', new Date().toISOString().split('T')[0] as string)
         .order('session_number', { ascending: false })
         .limit(1)
 
       const nextSessionNumber = existingRecords && existingRecords.length > 0 
-        ? existingRecords[0].session_number + 1 
+        ? (existingRecords[0] as { session_number: number }).session_number + 1 
         : 1
 
       const { error } = await supabase
@@ -162,7 +210,7 @@ export function useAttendanceSync() {
           check_in_time: new Date().toISOString(),
           status: 'present',
           session_number: nextSessionNumber
-        })
+        } as never)
 
       if (error) {
         console.error('출근 체크인 오류:', error)
@@ -197,8 +245,8 @@ export function useAttendanceSync() {
         .update({
           check_out_time: checkOutTime,
           work_hours: roundedWorkHours
-        })
-        .eq('id', currentSession.id)
+        } as never)
+        .eq('id', currentSession.id as string)
 
       if (error) {
         console.error('퇴근 체크아웃 오류:', error)

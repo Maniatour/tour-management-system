@@ -2,12 +2,11 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { User } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
+import { supabase, updateSupabaseToken } from '@/lib/supabase'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
-import { useRouter } from 'next/navigation'
-import { detectGuidePreferredLanguage, SupportedLocale } from '@/lib/guideLanguageDetection'
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface TeamData {
   name_ko?: string
   email: string
@@ -27,7 +26,6 @@ interface AuthContextType {
   getRedirectPath: (locale: string) => string
   teamChatUnreadCount: number
   refreshTeamChatUnreadCount: () => Promise<void>
-  preventAutoRedirect?: boolean
   // 시뮬레이션 관련
   simulatedUser: SimulatedUser | null
   startSimulation: (user: SimulatedUser) => void
@@ -45,7 +43,6 @@ interface SimulatedUser {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [userRole, setUserRole] = useState<UserRole | null>(null)
@@ -57,236 +54,126 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
 
-  // 가이드 언어 탐지 및 리다이렉트 함수
-  const getGuidePreferredLanguage = useCallback(async (email: string): Promise<SupportedLocale> => {
-    try {
-      console.log(`[AuthContext] Getting preferred language for guide: ${email}`)
-      
-      const { data: teamData, error } = await supabase
-        .from('team')
-        .select('languages')
-        .eq('email', email)
-        .eq('is_active', true)
-        .single()
-
-      if (error) {
-        console.error(`[AuthContext] Error fetching team data for ${email}:`, error)
-        return 'ko' // 기본값
-      }
-
-      if (!teamData) {
-        console.log(`[AuthContext] No team data found for ${email}`)
-        return 'ko' // 기본값
-      }
-
-      const preferredLocale = detectGuidePreferredLanguage(teamData, email)
-      console.log(`[AuthContext] Guide ${email} preferred language: ${preferredLocale}`)
-      
-      return preferredLocale
-    } catch (error) {
-      console.error(`[AuthContext] Error detecting guide language for ${email}:`, error)
-      return 'ko' // 기본값
-    }
-  }, [])
-
-  // 가이드 리다이렉트 함수
-  const redirectGuideToPreferredLanguage = useCallback(async (email: string) => {
-    try {
-      console.log('AuthContext: Starting guide redirect process for:', email)
-      
-      const preferredLanguage = await getGuidePreferredLanguage(email)
-      console.log('AuthContext: Guide preferred language:', preferredLanguage)
-      
-      // 현재 경로에서 locale 추출
-      const currentPath = window.location.pathname
-      const currentLocaleMatch = currentPath.match(/^\/([a-z]{2})/)
-      const currentLocale = currentLocaleMatch ? currentLocaleMatch[1] : 'ko'
-      
-      console.log('AuthContext: Current locale:', currentLocale, 'Preferred:', preferredLanguage)
-      
-      // 이미 선호 언어 페이지에 있다면 리다이렉트하지 않음
-      if (currentLocale === preferredLanguage) {
-        console.log('AuthContext: Already on preferred language page, no redirect needed')
-        return
-      }
-      
-      // 가이드 페이지로 리다이렉트
-      const targetPath = `/${preferredLanguage}/guide`
-      console.log('AuthContext: Redirecting guide to:', targetPath)
-      
-      // 리다이렉트 전에 약간의 지연을 두어 상태가 안정화되도록 함
-      setTimeout(() => {
-        try {
-          router.push(targetPath)
-        } catch (error) {
-          console.error('AuthContext: Error during router.push:', error)
-        }
-      }, 100)
-      
-    } catch (error) {
-      console.error('AuthContext: Error in guide redirect process:', error)
-      // 에러 발생 시 기본 가이드 페이지로 리다이렉트
-      try {
-        const currentPath = window.location.pathname
-        const currentLocaleMatch = currentPath.match(/^\/([a-z]{2})/)
-        const currentLocale = currentLocaleMatch ? currentLocaleMatch[1] : 'ko'
-        router.push(`/${currentLocale}/guide`)
-      } catch (fallbackError) {
-        console.error('AuthContext: Fallback redirect also failed:', fallbackError)
-      }
-    }
-  }, [getGuidePreferredLanguage, router])
-
   // 사용자 역할 및 권한 확인
-  const checkUserRole = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
+  const checkUserRole = useCallback(async (email: string): Promise<void> => {
     if (!email) {
       console.log('AuthContext: No email provided, setting customer role')
       setUserRole('customer')
       setPermissions(null)
-      setLoading(false)
-      if (timeoutId) clearTimeout(timeoutId)
       return
     }
 
     try {
       console.log('AuthContext: Checking user role for:', email)
       
-      const { data: teamData, error } = await supabase
-        .from('team')
-        .select('*')
-        .eq('email', email)
-        .eq('is_active', true)
-        .single()
-
-      if (error && error.code !== 'PGRST116') {
-        console.error('AuthContext: Error fetching team data:', error)
-        // 에러가 발생해도 기본 역할로 설정하고 계속 진행
-      }
-
-      const role = getUserRole(email, teamData)
-      const userPermissions = {
-        canViewAdmin: hasPermission(role, 'canViewAdmin'),
-        canManageProducts: hasPermission(role, 'canManageProducts'),
-        canManageCustomers: hasPermission(role, 'canManageCustomers'),
-        canManageReservations: hasPermission(role, 'canManageReservations'),
-        canManageTours: hasPermission(role, 'canManageTours'),
-        canManageTeam: hasPermission(role, 'canManageTeam'),
-        canViewSchedule: hasPermission(role, 'canViewSchedule'),
-        canManageBookings: hasPermission(role, 'canManageBookings'),
-        canViewAuditLogs: hasPermission(role, 'canViewAuditLogs'),
-        canManageChannels: hasPermission(role, 'canManageChannels'),
-        canManageOptions: hasPermission(role, 'canManageOptions'),
-        canViewFinance: hasPermission(role, 'canViewFinance'),
-      }
-      
-      // team 테이블에서 사용자 이름 업데이트
-      if (teamData && (teamData as TeamData).name_ko) {
-        setAuthUser(prev => prev ? {
-          ...prev,
-          name: (teamData as TeamData).name_ko
-        } : null)
-      }
-      
-      setUserRole(role)
-      setPermissions(userPermissions)
-      setLoading(false)
-      if (timeoutId) clearTimeout(timeoutId)
-      
-      console.log('AuthContext: User role set successfully:', role, 'for user:', email)
-      
-      // 가이드인 경우 선호 언어로 리다이렉트 (비활성화)
-      // if (role === 'team_member' && teamData) {
-      //   const position = (teamData as TeamData).position?.toLowerCase() || ''
-      //   if (position.includes('guide') || position.includes('tour guide') || position.includes('tourguide')) {
-      //     console.log('AuthContext: Guide detected, scheduling language redirect')
-      //     // 더 긴 지연을 두어 다른 리다이렉트와 충돌하지 않도록 함
-      //     setTimeout(() => {
-      //       try {
-      //         redirectGuideToPreferredLanguage(email)
-      //       } catch (error) {
-      //         console.error('AuthContext: Error in guide redirect:', error)
-      //       }
-      //     }, 1000)
-      //   }
-      // }
-    } catch (error) {
-      console.error('AuthContext: Error checking user role:', error)
-      // 에러 발생 시에도 기본 역할로 설정하고 로딩 해제
-      setUserRole('customer')
-      setPermissions(null)
-      setLoading(false)
-      if (timeoutId) clearTimeout(timeoutId)
-    }
-  }, [])
-
-  // team 멤버십 확인
-  const checkTeamMembership = useCallback(async (email: string, timeoutId?: NodeJS.Timeout) => {
-    if (!email) {
-      console.log('AuthContext: No email provided for team check')
-      setUserRole('customer')
-      setPermissions(null)
-      setLoading(false)
-      if (timeoutId) clearTimeout(timeoutId)
-      return
-    }
-
-    // 시뮬레이션 중일 때는 팀 데이터를 불러오지 않고 바로 역할 설정
-    if (isSimulating && simulatedUser) {
-      console.log('AuthContext: Simulation mode - using simulated user role:', simulatedUser.role)
-      setUserRole(simulatedUser.role)
-      setPermissions({
-        canViewAdmin: hasPermission(simulatedUser.role, 'canViewAdmin'),
-        canManageProducts: hasPermission(simulatedUser.role, 'canManageProducts'),
-        canManageCustomers: hasPermission(simulatedUser.role, 'canManageCustomers'),
-        canManageReservations: hasPermission(simulatedUser.role, 'canManageReservations'),
-        canManageTours: hasPermission(simulatedUser.role, 'canManageTours'),
-        canManageTeam: hasPermission(simulatedUser.role, 'canManageTeam'),
-        canViewSchedule: hasPermission(simulatedUser.role, 'canViewSchedule'),
-        canManageBookings: hasPermission(simulatedUser.role, 'canManageBookings'),
-        canViewAuditLogs: hasPermission(simulatedUser.role, 'canViewAuditLogs'),
-        canManageChannels: hasPermission(simulatedUser.role, 'canManageChannels'),
-        canManageOptions: hasPermission(simulatedUser.role, 'canManageOptions'),
-        canViewFinance: hasPermission(simulatedUser.role, 'canViewFinance'),
-      })
-      setLoading(false)
-      if (timeoutId) clearTimeout(timeoutId)
-      return
-    }
-
-    try {
-      console.log('AuthContext: Checking team membership for:', email)
-      
-      const { data: teamData, error } = await supabase
-        .from('team')
-        .select('*')
-        .eq('email', email)
-        .eq('is_active', true)
-        .single()
-
-      if (error || !teamData) {
-        console.log('AuthContext: Not a team member or error occurred:', error?.message || 'No data')
+      if (!supabase) {
+        console.error('AuthContext: Supabase client not available')
         setUserRole('customer')
         setPermissions(null)
-        setLoading(false) // team 확인 완료 후 로딩 해제
-        if (timeoutId) clearTimeout(timeoutId)
         return
       }
 
-      console.log('AuthContext: Team member found:', (teamData as TeamData).name_ko)
+      console.log('AuthContext: Querying team table for email:', email)
       
-      // team 멤버인 경우 역할 확인
-      await checkUserRole(email, timeoutId)
-      // checkUserRole에서 이미 setLoading(false)를 호출하므로 여기서는 호출하지 않음
+      // 먼저 슈퍼관리자 체크 (team 데이터 없이도 작동)
+      const normalizedEmail = email.toLowerCase()
+      const superAdminEmails = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
+      
+      if (superAdminEmails.includes(normalizedEmail)) {
+        console.log('AuthContext: Super admin detected, setting admin role')
+        setUserRole('admin')
+        setPermissions({
+          canViewAdmin: true,
+          canManageProducts: true,
+          canManageCustomers: true,
+          canManageReservations: true,
+          canManageTours: true,
+          canManageTeam: true,
+          canViewSchedule: true,
+          canManageBookings: true,
+          canViewAuditLogs: true,
+          canManageChannels: true,
+          canManageOptions: true,
+          canViewFinance: true,
+        })
+        return
+      }
+      
+      // 일반 사용자의 경우 team 쿼리 시도
+      try {
+        const queryPromise = supabase
+          .from('team')
+          .select('name_ko, email, position, is_active')
+          .eq('email', email)
+          .eq('is_active', true)
+          .maybeSingle()
+        
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Query timeout')), 3000)
+        )
+        
+        const { data: teamData, error } = await Promise.race([queryPromise, timeoutPromise]) as { 
+          data: { name_ko: string | null; email: string; position: string | null; is_active: boolean } | null; 
+          error: { message?: string; code?: string } | null 
+        }
+
+        console.log('AuthContext: Team query result:', { 
+          hasData: !!teamData, 
+          error: error?.message, 
+          errorCode: error?.code,
+          teamData: teamData && !error ? { 
+            name_ko: (teamData as Record<string, unknown>).name_ko, 
+            position: (teamData as Record<string, unknown>).position,
+            is_active: (teamData as Record<string, unknown>).is_active 
+          } : null,
+          rawTeamData: teamData
+        })
+
+        if (error && error.code !== 'PGRST116') {
+          console.error('AuthContext: Error fetching team data:', error)
+        }
+
+        const role = getUserRole(email, teamData && !error ? teamData as Record<string, unknown> : undefined)
+        const userPermissions = {
+          canViewAdmin: hasPermission(role, 'canViewAdmin'),
+          canManageProducts: hasPermission(role, 'canManageProducts'),
+          canManageCustomers: hasPermission(role, 'canManageCustomers'),
+          canManageReservations: hasPermission(role, 'canManageReservations'),
+          canManageTours: hasPermission(role, 'canManageTours'),
+          canManageTeam: hasPermission(role, 'canManageTeam'),
+          canViewSchedule: hasPermission(role, 'canViewSchedule'),
+          canManageBookings: hasPermission(role, 'canManageBookings'),
+          canViewAuditLogs: hasPermission(role, 'canViewAuditLogs'),
+          canManageChannels: hasPermission(role, 'canManageChannels'),
+          canManageOptions: hasPermission(role, 'canManageOptions'),
+          canViewFinance: hasPermission(role, 'canViewFinance'),
+        }
+        
+        // team 테이블에서 사용자 이름 업데이트
+        if (teamData && !error && (teamData as Record<string, unknown>).name_ko) {
+          setAuthUser(prev => prev ? {
+            ...prev,
+            name: (teamData as Record<string, unknown>).name_ko as string
+          } : null)
+        }
+        
+        setUserRole(role)
+        setPermissions(userPermissions)
+        
+        console.log('AuthContext: User role set successfully:', role, 'for user:', email)
+      } catch (error) {
+        console.warn('AuthContext: Team query failed, using customer role:', error)
+        setUserRole('customer')
+        setPermissions(null)
+      }
     } catch (error) {
-      console.error('AuthContext: Team check failed:', error)
+      console.error('AuthContext: Error checking user role:', error)
       setUserRole('customer')
       setPermissions(null)
-      setLoading(false) // 에러 발생 시에도 로딩 해제
-      if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [checkUserRole, isSimulating, simulatedUser])
+  }, [])
 
-  // 시뮬레이션 정보 복원 (한 번만 실행)
+  // 시뮬레이션 정보 복원
   useEffect(() => {
     const savedSimulation = localStorage.getItem('positionSimulation')
     if (savedSimulation) {
@@ -295,91 +182,123 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSimulatedUser(simulationData)
         setIsSimulating(true)
         console.log('AuthContext: Simulation restored from localStorage:', simulationData)
-        
-        // 시뮬레이션 복원 시 로딩 상태 즉시 해제
-        setLoading(false)
       } catch (error) {
         console.error('AuthContext: Error parsing saved simulation:', error)
         localStorage.removeItem('positionSimulation')
       }
     }
-  }, []) // 빈 의존성 배열로 한 번만 실행
+  }, [])
 
+  // 인증 상태 관리
   useEffect(() => {
     console.log('AuthContext: Initializing...')
     
-    // 시뮬레이션이 이미 복원된 경우 로딩을 즉시 해제
+    // 시뮬레이션이 이미 복원된 경우
     if (isSimulating && simulatedUser) {
       console.log('AuthContext: Simulation already restored, skipping initialization')
       setLoading(false)
       return
     }
     
-    setLoading(true)
-    
-    // 타임아웃 설정 (10초로 단축)
-    const timeoutId = setTimeout(() => {
-      console.warn('AuthContext: Initialization timeout, forcing loading to false')
-      setLoading(false)
-      setUserRole('customer')
-      setPermissions(null)
-    }, 10000)
-    
-    // 현재 세션 확인
-    const checkCurrentSession = async () => {
+    // localStorage에서 토큰 확인
+    const checkStoredTokens = async () => {
       try {
-        console.log('AuthContext: Checking current session...')
-        const { data: { session }, error } = await supabase.auth.getSession()
+        const accessToken = localStorage.getItem('sb-access-token')
+        const expiresAt = localStorage.getItem('sb-expires-at')
         
-        if (error) {
-          console.error('AuthContext: Error getting session:', error)
-          clearTimeout(timeoutId)
-          setLoading(false)
-          setUserRole('customer')
-          setPermissions(null)
-          return
-        }
-
-        if (session?.user?.email) {
-          console.log('AuthContext: Found existing session for:', session.user.email)
-          setUser(session.user)
+        if (accessToken && expiresAt) {
+          const now = Math.floor(Date.now() / 1000)
+          const tokenExpiry = parseInt(expiresAt)
           
-          const authUserData: AuthUser = {
-            id: session.user.id,
-            email: session.user.email,
-            name: session.user.user_metadata?.name || 
-                  session.user.user_metadata?.full_name || 
-                  session.user.email.split('@')[0],
-            avatar_url: session.user.user_metadata?.avatar_url,
-            created_at: session.user.created_at,
+          if (tokenExpiry > now) {
+            console.log('AuthContext: Found valid stored token, creating mock session')
+            
+            // JWT 토큰에서 사용자 정보 추출 (간단한 방법)
+            try {
+              const tokenPayload = JSON.parse(atob(accessToken.split('.')[1]))
+              console.log('AuthContext: Token payload:', tokenPayload)
+              
+              if (tokenPayload.email) {
+                // Mock 사용자 객체 생성
+                const mockUser = {
+                  id: tokenPayload.sub,
+                  email: tokenPayload.email,
+                  user_metadata: {
+                    name: tokenPayload.user_metadata?.name || tokenPayload.user_metadata?.full_name || 'User',
+                    avatar_url: tokenPayload.user_metadata?.avatar_url,
+                    ...tokenPayload.user_metadata
+                  },
+                  created_at: tokenPayload.iat ? new Date(tokenPayload.iat * 1000).toISOString() : new Date().toISOString()
+                } as User
+                
+                console.log('AuthContext: Mock user created:', mockUser.email)
+                setUser(mockUser)
+                
+                const authUserData: AuthUser = {
+                  id: mockUser.id,
+                  email: mockUser.email || '',
+                  name: mockUser.user_metadata?.name || 
+                        mockUser.user_metadata?.full_name || 
+                        mockUser.email?.split('@')[0] || 'User',
+                  avatar_url: mockUser.user_metadata?.avatar_url,
+                  created_at: mockUser.created_at,
+                }
+                setAuthUser(authUserData)
+                
+                console.log('AuthContext: Mock session created, updating Supabase token')
+                
+                // Supabase 클라이언트에 토큰 설정
+                updateSupabaseToken(accessToken)
+                
+                checkUserRole(mockUser.email || '').catch(error => {
+                  console.error('AuthContext: Team membership check failed:', error)
+                  setUserRole('customer')
+                  setPermissions(null)
+                })
+                
+                setLoading(false)
+                return
+              }
+            } catch (tokenError) {
+              console.error('AuthContext: Error parsing token:', tokenError)
+            }
+          } else {
+            console.log('AuthContext: Stored token expired, removing')
+            localStorage.removeItem('sb-access-token')
+            localStorage.removeItem('sb-refresh-token')
+            localStorage.removeItem('sb-expires-at')
           }
-          setAuthUser(authUserData)
-          
-          // team 확인 (타임아웃 ID 전달)
-          await checkTeamMembership(session.user.email, timeoutId)
-        } else {
-          console.log('AuthContext: No existing session')
-          clearTimeout(timeoutId)
-          setLoading(false)
-          setUserRole('customer')
-          setPermissions(null)
         }
       } catch (error) {
-        console.error('AuthContext: Error checking session:', error)
-        clearTimeout(timeoutId)
-        setLoading(false)
-        setUserRole('customer')
-        setPermissions(null)
+        console.error('AuthContext: Error checking stored tokens:', error)
       }
+      
+      // 토큰이 없거나 만료된 경우
+      setUserRole('customer')
+      setPermissions(null)
+      setLoading(false)
+    }
+    
+    checkStoredTokens().catch(error => {
+      console.error('AuthContext: Error in checkStoredTokens:', error)
+    })
+    
+    console.log('AuthContext: Initialization complete, setting up auth listener')
+
+    // 인증 상태 변경 리스너만 설정
+    if (!supabase) {
+      console.error('AuthContext: Supabase client not available')
+      return
     }
 
-    // 현재 세션 확인
-    checkCurrentSession()
-
-    // 인증 상태 변경 리스너
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('AuthContext: Auth state change:', { event, session: !!session, user: !!session?.user })
+        console.log('AuthContext: Auth state change:', { 
+          event, 
+          session: !!session, 
+          user: !!session?.user,
+          userEmail: session?.user?.email 
+        })
         
         if (event === 'SIGNED_OUT') {
           console.log('AuthContext: User signed out')
@@ -407,15 +326,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           setAuthUser(authUserData)
           
-          // team 확인 (타임아웃 없이)
-          try {
-            await checkTeamMembership(session.user.email)
-          } catch (error) {
-            console.error('AuthContext: Error in team membership check after sign in:', error)
+          // team 확인 (비동기로 처리하여 로딩을 차단하지 않음)
+          checkUserRole(session.user.email).catch(error => {
+            console.error('AuthContext: Team membership check failed:', error)
             setUserRole('customer')
             setPermissions(null)
-            setLoading(false)
-          }
+          })
         } else if (event === 'TOKEN_REFRESHED' && session?.user?.email) {
           console.log('AuthContext: Token refreshed')
           setUser(session.user)
@@ -430,6 +346,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             created_at: session.user.created_at,
           }
           setAuthUser(authUserData)
+        } else if (event === 'INITIAL_SESSION') {
+          // 초기 세션 처리
+          console.log('AuthContext: INITIAL_SESSION event received')
+          if (session?.user?.email) {
+            console.log('AuthContext: Initial session found for:', session.user.email)
+            setUser(session.user)
+            
+            const authUserData: AuthUser = {
+              id: session.user.id,
+              email: session.user.email,
+              name: session.user.user_metadata?.name || 
+                    session.user.user_metadata?.full_name || 
+                    session.user.email.split('@')[0],
+              avatar_url: session.user.user_metadata?.avatar_url,
+              created_at: session.user.created_at,
+            }
+            setAuthUser(authUserData)
+            
+            checkUserRole(session.user.email).catch(error => {
+              console.error('AuthContext: Team membership check failed:', error)
+              setUserRole('customer')
+              setPermissions(null)
+            })
+          } else {
+            console.log('AuthContext: No initial session in INITIAL_SESSION event')
+          }
         }
       }
     )
@@ -437,12 +379,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [checkTeamMembership, isSimulating, simulatedUser])
+  }, [checkUserRole, isSimulating, simulatedUser])
 
   // 로그아웃 함수
   const signOut = async () => {
     try {
+      if (!supabase) {
+        console.error('AuthContext: Supabase client not available')
+        return
+      }
+      
       await supabase.auth.signOut()
+      
+      // localStorage에서 토큰 제거
+      localStorage.removeItem('sb-access-token')
+      localStorage.removeItem('sb-refresh-token')
+      localStorage.removeItem('sb-expires-at')
+      
       setUser(null)
       setAuthUser(null)
       setUserRole('customer')
@@ -463,22 +416,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSimulatedUser(simulatedUserData)
     setIsSimulating(true)
     
-    // localStorage에 시뮬레이션 정보 저장
     localStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
     
     console.log('Simulation started:', simulatedUserData)
-    
-    // 시뮬레이션 중일 때는 로딩 상태 즉시 해제
     setLoading(false)
-    
-    // tour guide를 시뮬레이션할 때 가이드 대시보드로 이동
-    if (simulatedUserData.position.toLowerCase().includes('guide')) {
-      // 현재 locale을 가져와서 가이드 대시보드로 이동
-      const currentPath = window.location.pathname
-      const localeMatch = currentPath.match(/^\/([a-z]{2})/)
-      const locale = localeMatch ? localeMatch[1] : 'ko'
-      router.push(`/${locale}/guide`)
-    }
   }
 
   const stopSimulation = () => {
@@ -514,14 +455,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     switch (currentRole) {
       case 'admin':
       case 'manager':
-        // 관리자, 매니저, 슈퍼관리자 등은 admin 페이지로
         return `/${locale}/admin`
       case 'team_member':
-        // 투어 가이드만 guide 페이지로 리다이렉트
         return `/${locale}/guide`
       case 'customer':
       default:
-        // 일반 고객은 로그인 페이지로
         return `/${locale}/auth`
     }
   }
@@ -534,6 +472,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      if (!supabase) {
+        console.error('AuthContext: Supabase client not available')
+        return
+      }
+      
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) {
         return
@@ -560,27 +503,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshTeamChatUnreadCount()
       
       // 실시간 구독으로 새 메시지 감지
-      const subscription = supabase
-        .channel('team-chat-unread')
-        .on('postgres_changes', 
-          { 
-            event: 'INSERT', 
-            schema: 'public', 
-            table: 'team_chat_messages'
-          }, 
-          () => {
-            // 새 메시지가 올 때만 카운트 새로고침
-            refreshTeamChatUnreadCount()
-          }
-        )
-        .subscribe()
+      if (supabase) {
+        const subscription = supabase
+          .channel('team-chat-unread')
+          .on('postgres_changes', 
+            { 
+              event: 'INSERT', 
+              schema: 'public', 
+              table: 'team_chat_messages'
+            }, 
+            () => {
+              refreshTeamChatUnreadCount()
+            }
+          )
+          .subscribe()
       
-      // 5분마다 안읽은 메시지 수 새로고침 (폴백용)
-      const interval = setInterval(refreshTeamChatUnreadCount, 300000)
-      
-      return () => {
-        subscription.unsubscribe()
-        clearInterval(interval)
+        // 5분마다 안읽은 메시지 수 새로고침
+        const interval = setInterval(refreshTeamChatUnreadCount, 300000)
+        
+        return () => {
+          subscription.unsubscribe()
+          clearInterval(interval)
+        }
       }
     } else {
       setTeamChatUnreadCount(0)
@@ -598,7 +542,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     getRedirectPath,
     teamChatUnreadCount,
     refreshTeamChatUnreadCount,
-    // 시뮬레이션 관련
     simulatedUser,
     startSimulation,
     stopSimulation,
