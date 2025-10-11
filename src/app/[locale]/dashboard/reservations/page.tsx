@@ -117,28 +117,73 @@ export default function CustomerReservations() {
       if (customerData) {
         setCustomer(customerData)
         
-        // 고객의 예약 정보 조회
+        // 고객의 예약 정보 조회 (JOIN 없이 먼저 예약만 조회)
         const { data: reservationsData, error: reservationsError } = await supabase
           .from('reservations')
-          .select(`
-            *,
-            products (
-              name,
-              description,
-              duration,
-              adult_price,
-              child_price,
-              infant_price
-            )
-          `)
+          .select('*')
           .eq('customer_id', customerData.id)
           .order('tour_date', { ascending: false })
 
         if (reservationsError) {
-          console.error('예약 정보 조회 오류:', reservationsError)
+          console.error('예약 정보 조회 오류:', {
+            error: reservationsError,
+            message: reservationsError?.message || 'Unknown error',
+            code: reservationsError?.code || 'No code',
+            details: reservationsError?.details || 'No details',
+            customer_id: customerData.id
+          })
           setReservations([])
+        } else if (reservationsData && reservationsData.length > 0) {
+          // 각 예약에 대해 상품 정보를 별도로 조회
+          const reservationsWithProducts = await Promise.all(
+            reservationsData.map(async (reservation) => {
+              try {
+                const { data: productData, error: productError } = await supabase
+                  .from('products')
+                  .select('name, description, duration, adult_price, child_price, infant_price')
+                  .eq('id', reservation.product_id)
+                  .single()
+
+                if (productError) {
+                  console.warn('상품 정보 조회 오류:', {
+                    error: productError,
+                    message: productError?.message || 'Unknown error',
+                    code: productError?.code || 'No code',
+                    product_id: reservation.product_id,
+                    reservation_id: reservation.id
+                  })
+                }
+
+                return {
+                  ...reservation,
+                  products: productData || { 
+                    name: '상품명 없음', 
+                    description: null, 
+                    duration: null, 
+                    adult_price: null, 
+                    child_price: null, 
+                    infant_price: null 
+                  }
+                }
+              } catch (error) {
+                console.error('상품 정보 조회 중 예외:', error)
+                return {
+                  ...reservation,
+                  products: { 
+                    name: '상품명 없음', 
+                    description: null, 
+                    duration: null, 
+                    adult_price: null, 
+                    child_price: null, 
+                    infant_price: null 
+                  }
+                }
+              }
+            })
+          )
+          setReservations(reservationsWithProducts)
         } else {
-          setReservations(reservationsData || [])
+          setReservations([])
         }
       } else {
         setCustomer(null)
@@ -182,11 +227,21 @@ export default function CustomerReservations() {
         const reservationsWithProducts = await Promise.all(
           reservationsData.map(async (reservation) => {
             try {
-              const { data: productData } = await supabase
+              const { data: productData, error: productError } = await supabase
                 .from('products')
                 .select('name, description, duration, adult_price, child_price, infant_price')
                 .eq('id', reservation.product_id)
                 .single()
+
+              if (productError) {
+                console.warn('시뮬레이션 상품 정보 조회 오류:', {
+                  error: productError,
+                  message: productError?.message || 'Unknown error',
+                  code: productError?.code || 'No code',
+                  product_id: reservation.product_id,
+                  reservation_id: reservation.id
+                })
+              }
 
               return {
                 ...reservation,
@@ -200,7 +255,7 @@ export default function CustomerReservations() {
                 }
               }
             } catch (error) {
-              console.error('상품 정보 조회 오류:', error)
+              console.error('시뮬레이션 상품 정보 조회 중 예외:', error)
               return {
                 ...reservation,
                 products: { 
