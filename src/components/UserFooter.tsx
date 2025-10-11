@@ -180,6 +180,13 @@ export default function UserFooter({ locale }: UserFooterProps) {
       showForAll: true
     },
     {
+      name: '내 예약',
+      href: `/${locale}/dashboard/reservations`,
+      icon: Calendar,
+      showForAll: false,
+      showForCustomer: true
+    },
+    {
       name: '전달사항',
       href: '#',
       icon: AlertCircle,
@@ -203,6 +210,9 @@ export default function UserFooter({ locale }: UserFooterProps) {
 
   // 팀원이 아닌 경우 전달사항과 팀채팅 숨김
   const shouldShowTeamFeatures = userRole && userRole !== 'customer'
+  
+  // 고객인 경우 고객용 메뉴 표시
+  const isCustomer = userRole === 'customer'
 
   return (
     <>
@@ -213,8 +223,8 @@ export default function UserFooter({ locale }: UserFooterProps) {
             const Icon = item.icon
             const active = isActive(item.href)
             
-            // 팀 기능은 팀원만 볼 수 있음
-            if (!item.showForAll && !shouldShowTeamFeatures) {
+            // 팀 기능은 팀원만, 고객 기능은 고객만 볼 수 있음
+            if (!item.showForAll && !shouldShowTeamFeatures && !(item.showForCustomer && isCustomer)) {
               return null
             }
             

@@ -6,8 +6,8 @@ import { createClientSupabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Eye, Users, Settings, Code, Monitor, Play, Square, ChevronDown, ChevronUp } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { Eye, Users, Settings, Code, Monitor, Play, Square, ChevronDown, ChevronUp, User } from 'lucide-react'
+import { useRouter, useParams } from 'next/navigation'
 
 interface TeamMember {
   email: string
@@ -25,6 +25,8 @@ export default function DevToolsPage() {
   const [simulatedRole, setSimulatedRole] = useState<string>('')
   const [showSimulator, setShowSimulator] = useState(false)
   const router = useRouter()
+  const params = useParams()
+  const locale = params.locale as string || 'ko'
 
   useEffect(() => {
     const loadTeamMembers = async () => {
@@ -278,6 +280,38 @@ export default function DevToolsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* 고객 시뮬레이터 */}
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <User className="w-5 h-5 mr-2" />
+            고객 시뮬레이터
+          </CardTitle>
+          <CardDescription>고객의 관점에서 시스템을 테스트할 수 있습니다.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 mb-2">
+                실제 고객 계정으로 시뮬레이션하여 고객 대시보드, 내 정보, 내 예약 페이지를 테스트할 수 있습니다.
+              </p>
+              <div className="flex items-center space-x-2 text-xs text-gray-500">
+                <span>• 고객 대시보드 접근</span>
+                <span>• 예약 정보 확인</span>
+                <span>• 프로필 관리</span>
+              </div>
+            </div>
+            <Button
+              onClick={() => router.push(`/${locale}/admin/dev-tools/customer-simulator`)}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <User className="w-4 h-4 mr-2" />
+              고객 시뮬레이션 시작
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 고급 시뮬레이터 */}
       <Card className="mb-8">

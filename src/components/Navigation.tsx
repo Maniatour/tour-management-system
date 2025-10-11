@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield } from 'lucide-react'
+import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
 import SunriseTime from './SunriseTime'
 import { useAuth } from '@/contexts/AuthContext'
@@ -131,6 +131,36 @@ const Navigation = () => {
                               </p>
                             )}
                           </div>
+                          
+                          {/* 고객용 메뉴 */}
+                          {userRole === 'customer' && (
+                            <>
+                              <Link
+                                href={`/${locale}/dashboard`}
+                                onClick={handleUserMenuClick}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                              >
+                                <Home className="w-4 h-4 mr-2" />
+                                내 대시보드
+                              </Link>
+                              <Link
+                                href={`/${locale}/dashboard/profile`}
+                                onClick={handleUserMenuClick}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                              >
+                                <User className="w-4 h-4 mr-2" />
+                                내 정보
+                              </Link>
+                              <Link
+                                href={`/${locale}/dashboard/reservations`}
+                                onClick={handleUserMenuClick}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                              >
+                                <Calendar className="w-4 h-4 mr-2" />
+                                내 예약
+                              </Link>
+                            </>
+                          )}
                           
                           {/* 관리자 페이지 링크 (관리자/매니저/팀원만) */}
                           {userRole && userRole !== 'customer' && (
@@ -271,6 +301,36 @@ const Navigation = () => {
                       </div>
                     </div>
                   </div>
+                  
+                  {/* 고객용 메뉴 */}
+                  {userRole === 'customer' && (
+                    <>
+                      <Link
+                        href={`/${locale}/dashboard`}
+                        className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        <Home className="w-4 h-4 mr-3" />
+                        내 대시보드
+                      </Link>
+                      <Link
+                        href={`/${locale}/dashboard/profile`}
+                        className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        <User className="w-4 h-4 mr-3" />
+                        내 정보
+                      </Link>
+                      <Link
+                        href={`/${locale}/dashboard/reservations`}
+                        className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        <Calendar className="w-4 h-4 mr-3" />
+                        내 예약
+                      </Link>
+                    </>
+                  )}
                   
                   {/* 관리자 페이지 링크 (관리자/매니저/팀원만) */}
                   {userRole && userRole !== 'customer' && (

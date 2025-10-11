@@ -103,24 +103,23 @@ export function useAttendanceSync() {
       const lasVegasToday = lasVegasTime.toISOString().split('T')[0]
       console.log('라스베가스 오늘 날짜:', lasVegasToday)
       
-      // 하루를 넘나드는 근무를 고려하여 최근 2일간의 미체크아웃 기록 조회
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      const yesterdayStr = yesterday.toISOString().split('T')[0]
+      // 미체크아웃 기록 조회 (최근 7일간)
+      const sevenDaysAgo = new Date()
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+      const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0]
       
-      // 간단한 출퇴근 기록 조회
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('employee_email', employeeData.email)
         .is('check_out_time', null)
-        .in('date', [today, yesterdayStr])
+        .gte('date', sevenDaysAgoStr)
         .order('date', { ascending: false })
+        .order('check_in_time', { ascending: false })
         .order('session_number', { ascending: true })
-        .limit(1)
 
       console.log('출퇴근 기록 조회 결과:', { data, error })
-      console.log('조회 범위:', { today, yesterdayStr })
+      console.log('조회 범위:', { sevenDaysAgoStr, today })
 
       if (error && error.code !== 'PGRST116') {
         console.log('출퇴근 기록 테이블이 아직 생성되지 않았습니다.')
@@ -147,7 +146,7 @@ export function useAttendanceSync() {
         
         setCurrentSession(activeSession || null)
       } else {
-        console.log('최근 2일간 미체크아웃 기록이 없습니다.')
+        console.log('최근 7일간 미체크아웃 기록이 없습니다.')
         setCurrentSession(null)
       }
     } catch (error) {

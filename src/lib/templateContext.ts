@@ -281,20 +281,43 @@ export async function getChannelInclusionsExclusionsData(reservationId: string, 
       .single()
 
     if (reservationError || !reservation) {
-      console.error('예약 정보 조회 실패:', reservationError)
+      console.error('예약 정보 조회 실패:', {
+        error: reservationError,
+        message: reservationError?.message || 'Unknown error',
+        code: reservationError?.code || 'No code',
+        reservationId
+      })
       return null
     }
 
     // 채널별 포함/불포함 사항 가져오기 (dynamic_pricing 테이블에서)
+    // 먼저 테이블 존재 여부 확인
     const { data: channelData, error: channelError } = await supabase
       .from('dynamic_pricing')
       .select('inclusions_ko, exclusions_ko, inclusions_en, exclusions_en')
       .eq('product_id', reservation.product_id)
       .eq('channel_id', reservation.channel_id)
-      .single()
+      .maybeSingle() // single() 대신 maybeSingle() 사용
 
     if (channelError) {
-      console.error('채널별 포함/불포함 사항 조회 실패:', channelError)
+      console.error('채널별 포함/불포함 사항 조회 실패:', {
+        error: channelError,
+        message: channelError?.message || 'Unknown error',
+        code: channelError?.code || 'No code',
+        details: channelError?.details || 'No details',
+        product_id: reservation.product_id,
+        channel_id: reservation.channel_id
+      })
+      
+      // 테이블이 존재하지 않거나 컬럼이 없는 경우 기본값 반환
+      if (channelError.code === 'PGRST116' || channelError.code === 'PGRST200' || channelError.code === 'PGRST201') {
+        console.warn('dynamic_pricing 테이블 또는 컬럼이 존재하지 않습니다. 기본값을 반환합니다.')
+        return {
+          inclusions: language === 'ko' ? '포함 사항 정보가 없습니다.' : 'No inclusions information available.',
+          exclusions: language === 'ko' ? '불포함 사항 정보가 없습니다.' : 'No exclusions information available.'
+        }
+      }
+      
       return null
     }
 
@@ -311,7 +334,13 @@ export async function getChannelInclusionsExclusionsData(reservationId: string, 
       exclusions: language === 'ko' ? channelData.exclusions_ko : channelData.exclusions_en
     }
   } catch (error) {
-    console.error('채널별 포함/불포함 사항 데이터 조회 중 오류:', error)
+    console.error('채널별 포함/불포함 사항 데이터 조회 중 예외:', {
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : 'No stack trace',
+      reservationId,
+      language
+    })
     return null
   }
 }

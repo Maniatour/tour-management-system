@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users } from 'lucide-react'
+import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import AddAttendanceForm from '@/components/AddAttendanceForm'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import AttendanceEditModal from '@/components/attendance/AttendanceEditModal'
 
@@ -49,6 +50,7 @@ export default function AttendancePage() {
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [currentSessionForSelectedEmployee, setCurrentSessionForSelectedEmployee] = useState<AttendanceRecord | null>(null)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
+  const [isAddFormOpen, setIsAddFormOpen] = useState(false)
   
   // 어드민 권한 체크
   const checkAdminPermission = async () => {
@@ -140,13 +142,19 @@ export default function AttendancePage() {
         return
       }
 
-      // 오늘의 모든 출퇴근 기록 조회
-      const today = new Date().toISOString().split('T')[0]
+      // 최근 7일간의 미체크아웃 기록 조회
+      const sevenDaysAgo = new Date()
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+      const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0]
+      
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
         .eq('employee_email', (employeeData as any).email)
-        .eq('date', today)
+        .is('check_out_time', null)
+        .gte('date', sevenDaysAgoStr)
+        .order('date', { ascending: false })
+        .order('check_in_time', { ascending: false })
         .order('session_number', { ascending: true })
 
       if (error) {
@@ -156,19 +164,37 @@ export default function AttendancePage() {
         return
       }
 
-      const records = data?.map((record: any) => ({
+      const activeRecords = data?.map((record: any) => ({
         ...record,
         employee_name: (employeeData as any).name_ko,
         employee_email: (employeeData as any).email
       })) || []
       
-      setTodayRecords(records)
-      
       // 현재 진행 중인 세션 찾기 (퇴근하지 않은 세션)
-      const activeSession = records.find(record => 
+      const activeSession = activeRecords.find(record => 
         record.check_in_time && 
         (record.check_out_time === null || record.check_out_time === '')
       )
+      
+      // 오늘의 모든 출퇴근 기록 조회 (완료된 것도 포함)
+      const today = new Date().toISOString().split('T')[0]
+      const { data: todayData, error: todayError } = await supabase
+        .from('attendance_records')
+        .select('*')
+        .eq('employee_email', (employeeData as any).email)
+        .eq('date', today)
+        .order('session_number', { ascending: true })
+
+      if (!todayError && todayData) {
+        const todayRecords = todayData.map((record: any) => ({
+          ...record,
+          employee_name: (employeeData as any).name_ko,
+          employee_email: (employeeData as any).email
+        }))
+        setTodayRecords(todayRecords)
+      } else {
+        setTodayRecords([])
+      }
       
       setCurrentSessionForSelectedEmployee(activeSession || null)
     } catch (error) {
@@ -225,8 +251,18 @@ export default function AttendancePage() {
         .gte('date', monthStart)
         .lte('date', monthEnd)
         .order('date', { ascending: false })
+        .order('check_in_time', { ascending: true })
+        .order('session_number', { ascending: true })
+        .limit(10000) // 충분히 큰 제한값 설정
 
-      console.log('출퇴근 기록 조회 결과:', { data, error })
+      console.log('출퇴근 기록 조회 결과:', { 
+        data: data, 
+        error: error,
+        recordCount: data?.length || 0,
+        monthStart,
+        monthEnd,
+        employeeEmail: (employeeData as any).email
+      })
 
       if (error) {
         console.log('출퇴근 기록 테이블이 아직 생성되지 않았습니다.')
@@ -240,7 +276,14 @@ export default function AttendancePage() {
         employee_email: (employeeData as any).email
       })) || []
       
-      console.log('처리된 출퇴근 기록:', records)
+      console.log('처리된 출퇴근 기록:', {
+        totalRecords: records.length,
+        records: records,
+        dateRange: records.length > 0 ? {
+          earliest: records[records.length - 1]?.date,
+          latest: records[0]?.date
+        } : null
+      })
       setAttendanceRecords(records)
     } catch (error) {
       console.error('출퇴근 기록 조회 중 오류:', error)
@@ -402,7 +445,7 @@ export default function AttendancePage() {
     })
   }
 
-  // UTC 시간을 라스베가스 현지 날짜로 변환
+  // UTC 시간을 라스베가스 현지 날짜로 변환 (요일 포함)
   const formatDateFromUTC = (utcTimeString: string) => {
     if (!utcTimeString) return '-'
     
@@ -412,8 +455,22 @@ export default function AttendancePage() {
     const year = lasVegasDate.getFullYear()
     const month = lasVegasDate.getMonth() + 1
     const day = lasVegasDate.getDate()
+    const weekday = lasVegasDate.toLocaleDateString('ko-KR', { weekday: 'short' })
     
-    return `${year}년 ${month}월 ${day}일`
+    return `${year}년 ${month}월 ${day}일 (${weekday})`
+  }
+
+  // 날짜 문자열에서 요일 추출 (date 필드용)
+  const formatDateWithWeekday = (dateString: string) => {
+    if (!dateString) return '-'
+    
+    const date = new Date(dateString + 'T00:00:00')
+    const year = date.getFullYear()
+    const month = date.getMonth() + 1
+    const day = date.getDate()
+    const weekday = date.toLocaleDateString('ko-KR', { weekday: 'short' })
+    
+    return `${year}년 ${month}월 ${day}일 (${weekday})`
   }
 
   const formatWorkHours = (hours: number) => {
@@ -421,6 +478,30 @@ export default function AttendancePage() {
     const h = Math.floor(hours)
     const m = Math.round((hours - h) * 60)
     return `${h}시간 ${m}분`
+  }
+
+  // 날짜별 배경 색상 결정 함수
+  const getDateBackgroundColor = (date: string, index: number) => {
+    // 날짜별로 고유한 색상 배열 생성
+    const colors = [
+      'bg-blue-50 hover:bg-blue-100',      // 연한 파란색
+      'bg-green-50 hover:bg-green-100',    // 연한 초록색
+      'bg-yellow-50 hover:bg-yellow-100',  // 연한 노란색
+      'bg-purple-50 hover:bg-purple-100',  // 연한 보라색
+      'bg-pink-50 hover:bg-pink-100',      // 연한 분홍색
+      'bg-indigo-50 hover:bg-indigo-100',  // 연한 남색
+      'bg-red-50 hover:bg-red-100',       // 연한 빨간색
+      'bg-gray-50 hover:bg-gray-100',     // 연한 회색
+    ]
+    
+    // 날짜 문자열을 해시하여 일관된 색상 선택
+    let hash = 0
+    for (let i = 0; i < date.length; i++) {
+      hash = ((hash << 5) - hash + date.charCodeAt(i)) & 0xffffffff
+    }
+    
+    const colorIndex = Math.abs(hash) % colors.length
+    return colors[colorIndex]
   }
 
   if (loading) {
@@ -507,13 +588,24 @@ export default function AttendancePage() {
               💡 하루를 넘나드는 근무 (오후 12시~다음날 오전 1시)를 고려하여 최근 2일간의 미체크아웃 기록을 조회합니다.
             </div>
           </div>
-          <button
-            onClick={refreshData}
-            className="flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            새로고침
-          </button>
+          <div className="flex space-x-3">
+            {isAdmin && (
+              <button
+                onClick={() => setIsAddFormOpen(true)}
+                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                기록 추가
+              </button>
+            )}
+            <button
+              onClick={refreshData}
+              className="flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              새로고침
+            </button>
+          </div>
         </div>
       </div>
 
@@ -713,6 +805,11 @@ export default function AttendancePage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  {isAdmin && (
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      ID
+                    </th>
+                  )}
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     출근 날짜
                   </th>
@@ -740,9 +837,14 @@ export default function AttendancePage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {attendanceRecords.map((record) => (
-                  <tr key={record.id} className="hover:bg-gray-50">
+                  <tr key={record.id} className={`${getDateBackgroundColor(record.date, 0)} transition-colors`}>
+                    {isAdmin && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                        {record.id}
+                      </td>
+                    )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {record.check_in_time ? formatDateFromUTC(record.check_in_time) : '-'}
+                      {formatDateWithWeekday(record.date)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatTime(record.check_in_time)}
@@ -793,6 +895,15 @@ export default function AttendancePage() {
         onClose={handleCloseEditModal}
         record={selectedRecord}
         onUpdate={handleUpdateComplete}
+      />
+
+      {/* 추가 모달 */}
+      <AddAttendanceForm
+        isOpen={isAddFormOpen}
+        onClose={() => setIsAddFormOpen(false)}
+        onSuccess={refreshData}
+        selectedEmployee={selectedEmployee}
+        selectedMonth={selectedMonth}
       />
     </div>
   )
