@@ -34,8 +34,12 @@ interface AuthContextType {
 }
 
 interface SimulatedUser {
+  id: string
   email: string
   name_ko: string
+  phone: string | null
+  language: string | null
+  created_at: string
   position: string
   role: UserRole
 }

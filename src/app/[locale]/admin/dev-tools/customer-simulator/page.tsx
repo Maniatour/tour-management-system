@@ -76,8 +76,12 @@ export default function CustomerSimulatorPage() {
   // 고객 시뮬레이션 시작
   const handleStartSimulation = (customer: Customer) => {
     const simulatedUserData = {
+      id: customer.id,
       email: customer.email,
       name_ko: customer.name,
+      phone: customer.phone,
+      language: customer.language,
+      created_at: customer.created_at,
       position: 'customer',
       role: 'customer' as const
     }

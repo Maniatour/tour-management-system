@@ -148,23 +148,39 @@ export default function CustomerDashboard() {
   // 시뮬레이션된 사용자의 예약 정보 로드
   const loadSimulatedReservations = async (customerId: string) => {
     try {
+      // 먼저 예약 정보만 조회
       const { data: reservationsData, error: reservationsError } = await supabase
         .from('reservations')
-        .select(`
-          *,
-          products (
-            name,
-            description
-          )
-        `)
+        .select('*')
         .eq('customer_id', customerId)
         .order('tour_date', { ascending: false })
 
       if (reservationsError) {
         console.error('시뮬레이션 예약 정보 조회 오류:', reservationsError)
         setReservations([])
+        setLoading(false)
+        return
+      }
+
+      if (reservationsData && reservationsData.length > 0) {
+        // 각 예약에 대해 상품 정보를 별도로 조회
+        const reservationsWithProducts = await Promise.all(
+          reservationsData.map(async (reservation) => {
+            const { data: productData } = await supabase
+              .from('products')
+              .select('name, description')
+              .eq('id', reservation.product_id)
+              .single()
+
+            return {
+              ...reservation,
+              products: productData || { name: '상품명 없음', description: null }
+            }
+          })
+        )
+        setReservations(reservationsWithProducts)
       } else {
-        setReservations(reservationsData || [])
+        setReservations([])
       }
     } catch (error) {
       console.error('시뮬레이션 예약 정보 로드 오류:', error)
