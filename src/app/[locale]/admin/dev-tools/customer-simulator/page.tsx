@@ -98,8 +98,8 @@ export default function CustomerSimulatorPage() {
 
   // 검색 필터링
   const filteredCustomers = customers.filter(customer =>
-    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (customer.name && customer.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (customer.email && customer.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (customer.phone && customer.phone.includes(searchTerm))
   )
 
