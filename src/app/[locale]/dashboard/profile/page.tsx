@@ -31,8 +31,14 @@ export default function CustomerProfile() {
     language: 'ko'
   })
 
-  // 인증 확인
+  // 인증 확인 (시뮬레이션 상태 우선 확인)
   useEffect(() => {
+    // 시뮬레이션 중인 경우 인증 체크 건너뛰기
+    if (isSimulating && simulatedUser) {
+      console.log('Profile: Simulation active, skipping authentication check')
+      return
+    }
+    
     if (!user) {
       router.push(`/${locale}/auth`)
       return

@@ -1,22 +1,12 @@
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { User } from '@supabase/supabase-js'
 import { supabase, updateSupabaseToken } from '@/lib/supabase'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-interface TeamData {
-  name_ko?: string
-  email: string
-  is_active: boolean
-  position?: string
-  languages?: string[] | null
-}
-
 interface AuthContextType {
-  user: User | null
+  user: any | null
   authUser: AuthUser | null
   userRole: UserRole | null
   permissions: UserPermissions | null
@@ -177,7 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // 시뮬레이션 정보 복원
+  // 시뮬레이션 정보 복원 (가장 먼저 실행)
   useEffect(() => {
     const savedSimulation = localStorage.getItem('positionSimulation')
     if (savedSimulation) {
@@ -197,9 +187,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     console.log('AuthContext: Initializing...')
     
-    // 시뮬레이션이 이미 복원된 경우
+    // 시뮬레이션이 활성화된 경우 인증 체크 건너뛰기
     if (isSimulating && simulatedUser) {
-      console.log('AuthContext: Simulation already restored, skipping initialization')
+      console.log('AuthContext: Simulation active, skipping authentication check')
       setLoading(false)
       return
     }
@@ -296,7 +286,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event: string, session: any) => {
         console.log('AuthContext: Auth state change:', { 
           event, 
           session: !!session, 
