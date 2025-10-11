@@ -37,7 +37,7 @@ interface SimulatedUser {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<any | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [permissions, setPermissions] = useState<UserPermissions | null>(null)
@@ -175,7 +175,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const simulationData = JSON.parse(savedSimulation)
         setSimulatedUser(simulationData)
         setIsSimulating(true)
+        setLoading(false) // 시뮬레이션 복원 시 즉시 로딩 완료
         console.log('AuthContext: Simulation restored from localStorage:', simulationData)
+        return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
       } catch (error) {
         console.error('AuthContext: Error parsing saved simulation:', error)
         localStorage.removeItem('positionSimulation')
@@ -183,16 +185,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // 인증 상태 관리
+  // 인증 상태 관리 (시뮬레이션이 복원되지 않은 경우에만 실행)
   useEffect(() => {
-    console.log('AuthContext: Initializing...')
-    
-    // 시뮬레이션이 활성화된 경우 인증 체크 건너뛰기
+    // 시뮬레이션이 이미 복원된 경우 건너뛰기
     if (isSimulating && simulatedUser) {
-      console.log('AuthContext: Simulation active, skipping authentication check')
-      setLoading(false)
+      console.log('AuthContext: Simulation already restored, skipping authentication initialization')
       return
     }
+    
+    console.log('AuthContext: Initializing authentication...')
     
     // localStorage에서 토큰 확인
     const checkStoredTokens = async () => {

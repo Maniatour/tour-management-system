@@ -170,9 +170,7 @@ export default function CustomerReservations() {
                     name: '상품명 없음', 
                     description: null, 
                     duration: null, 
-                    adult_price: null, 
-                    child_price: null, 
-                    infant_price: null 
+                    base_price: null
                   }
                 }
               } catch (error) {
@@ -239,7 +237,7 @@ export default function CustomerReservations() {
             try {
               const { data: productData, error: productError } = await supabase
                 .from('products')
-                .select('name, description, duration, adult_price, child_price, infant_price')
+                .select('name, description, duration, base_price')
                 .eq('id', reservation.product_id)
                 .single()
 
@@ -259,9 +257,7 @@ export default function CustomerReservations() {
                   name: '상품명 없음', 
                   description: null, 
                   duration: null, 
-                  adult_price: null, 
-                  child_price: null, 
-                  infant_price: null 
+                  base_price: null
                 }
               }
             } catch (error) {
@@ -272,9 +268,7 @@ export default function CustomerReservations() {
                   name: '상품명 없음', 
                   description: null, 
                   duration: null, 
-                  adult_price: null, 
-                  child_price: null, 
-                  infant_price: null 
+                  base_price: null
                 }
               }
             }

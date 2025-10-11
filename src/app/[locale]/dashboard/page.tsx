@@ -56,13 +56,15 @@ export default function CustomerDashboard() {
 
   // 인증 확인 (시뮬레이션 상태 우선 확인)
   useEffect(() => {
-    // 시뮬레이션 중인 경우 인증 체크 건너뛰기
+    // 시뮬레이션 중인 경우 인증 체크 완전히 건너뛰기
     if (isSimulating && simulatedUser) {
       console.log('Dashboard: Simulation active, skipping authentication check')
       return
     }
     
+    // 시뮬레이션이 아닌 경우에만 인증 체크
     if (!user) {
+      console.log('Dashboard: No user, redirecting to auth')
       router.push(`/${locale}/auth`)
       return
     }
@@ -70,8 +72,11 @@ export default function CustomerDashboard() {
 
   // 데이터 로딩 (시뮬레이션 상태와 분리)
   useEffect(() => {
+    console.log('Dashboard: Data loading effect triggered', { isSimulating, hasSimulatedUser: !!simulatedUser, hasUser: !!user })
+    
     // 시뮬레이션 중이 아닌 경우에만 고객 데이터 로드
     if (!isSimulating && user) {
+      console.log('Dashboard: Loading normal customer data')
       loadCustomerData()
     } else if (isSimulating && simulatedUser && simulatedUser.id) {
       // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보로 설정
