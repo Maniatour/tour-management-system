@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# build optimization
+/.next/cache/
+/.next/static/
+/analyze/
+bundle-analyzer-report.html

@@ -25,11 +25,68 @@ export interface TourScheduleItem {
   order_index: number | null
 }
 
+export interface ProcessedScheduleItem {
+  id: string
+  day_number: number
+  start_time: string | null
+  end_time: string | null
+  duration_minutes: number | null
+  is_break: boolean | null
+  is_meal: boolean | null
+  is_transport: boolean | null
+  is_tour: boolean | null
+  show_to_customers: boolean | null
+  title: string | null
+  description: string | null
+  location: string | null
+  guide_notes: string | null
+  thumbnail_url: string | null
+  order_index: number | null
+}
+
 export interface PickupScheduleItem {
   hotel: string
   location: string
   time: string
   description?: string
+}
+
+export interface PickupHotel {
+  hotel_name: string
+  pick_up_location: string
+  description_ko: string
+  description_en: string
+  address: string
+  link: string
+  pin: string
+}
+
+export interface PickupDetails {
+  location: string
+  time: string
+  description: string
+  address: string
+  link: string
+  pin: string
+}
+
+export interface TourCourseItem {
+  tour_course_id: string
+  tour_courses: {
+    name_ko: string
+    name_en: string
+    description_ko: string
+    description_en: string
+  }
+}
+
+export interface CustomerScheduleItem {
+  day: number
+  time: string | null
+  title: string | null
+  location: string | null
+  description: string | null
+  show_to_customers: boolean | null
 }
 
 /**
@@ -67,7 +124,7 @@ export async function getTourScheduleData(reservationId: string, language: 'ko' 
     }
 
     // 언어에 따라 적절한 필드 선택
-    const processedSchedules = schedules.map(schedule => ({
+    const processedSchedules: ProcessedScheduleItem[] = schedules.map((schedule: TourScheduleItem) => ({
       id: schedule.id,
       day_number: schedule.day_number,
       start_time: schedule.start_time,
@@ -87,25 +144,25 @@ export async function getTourScheduleData(reservationId: string, language: 'ko' 
     }))
 
     // 일차별로 그룹화
-    const schedulesByDay = processedSchedules.reduce((acc, schedule) => {
+    const schedulesByDay = processedSchedules.reduce((acc: Record<number, ProcessedScheduleItem[]>, schedule: ProcessedScheduleItem) => {
       const day = schedule.day_number
       if (!acc[day]) {
         acc[day] = []
       }
       acc[day].push(schedule)
       return acc
-    }, {} as Record<number, typeof processedSchedules>)
+    }, {} as Record<number, ProcessedScheduleItem[]>)
 
     // 고객에게 표시되는 스케줄만 필터링
-    const customerVisibleSchedules = processedSchedules.filter(s => s.show_to_customers)
-    const customerVisibleByDay = customerVisibleSchedules.reduce((acc, schedule) => {
+    const customerVisibleSchedules = processedSchedules.filter((s: ProcessedScheduleItem) => s.show_to_customers)
+    const customerVisibleByDay = customerVisibleSchedules.reduce((acc: Record<number, ProcessedScheduleItem[]>, schedule: ProcessedScheduleItem) => {
       const day = schedule.day_number
       if (!acc[day]) {
         acc[day] = []
       }
       acc[day].push(schedule)
       return acc
-    }, {} as Record<number, typeof customerVisibleSchedules>)
+    }, {} as Record<number, ProcessedScheduleItem[]>)
 
     // 다양한 형태로 데이터 제공
     return {
@@ -126,16 +183,16 @@ export async function getTourScheduleData(reservationId: string, language: 'ko' 
       customer_day_3: customerVisibleByDay[3] ? JSON.stringify(customerVisibleByDay[3]) : '[]',
       
       // 고객에게 표시되는 스케줄만 (카테고리별)
-      customer_tour_items: JSON.stringify(customerVisibleSchedules.filter(s => s.is_tour)),
-      customer_transport_items: JSON.stringify(customerVisibleSchedules.filter(s => s.is_transport)),
-      customer_meal_items: JSON.stringify(customerVisibleSchedules.filter(s => s.is_meal)),
-      customer_break_items: JSON.stringify(customerVisibleSchedules.filter(s => s.is_break)),
+      customer_tour_items: JSON.stringify(customerVisibleSchedules.filter((s: ProcessedScheduleItem) => s.is_tour)),
+      customer_transport_items: JSON.stringify(customerVisibleSchedules.filter((s: ProcessedScheduleItem) => s.is_transport)),
+      customer_meal_items: JSON.stringify(customerVisibleSchedules.filter((s: ProcessedScheduleItem) => s.is_meal)),
+      customer_break_items: JSON.stringify(customerVisibleSchedules.filter((s: ProcessedScheduleItem) => s.is_break)),
       
       // 카테고리별 스케줄 (전체)
-      tour_items: JSON.stringify(processedSchedules.filter(s => s.is_tour)),
-      transport_items: JSON.stringify(processedSchedules.filter(s => s.is_transport)),
-      meal_items: JSON.stringify(processedSchedules.filter(s => s.is_meal)),
-      break_items: JSON.stringify(processedSchedules.filter(s => s.is_break))
+      tour_items: JSON.stringify(processedSchedules.filter((s: ProcessedScheduleItem) => s.is_tour)),
+      transport_items: JSON.stringify(processedSchedules.filter((s: ProcessedScheduleItem) => s.is_transport)),
+      meal_items: JSON.stringify(processedSchedules.filter((s: ProcessedScheduleItem) => s.is_meal)),
+      break_items: JSON.stringify(processedSchedules.filter((s: ProcessedScheduleItem) => s.is_break))
     }
   } catch (error) {
     console.error('투어 스케줄 데이터 조회 중 오류:', error)
@@ -178,27 +235,27 @@ export async function getTourScheduleHtmlData(reservationId: string, language: '
     }
 
     // 고객에게 표시되는 스케줄만 필터링
-    const customerVisibleSchedules = schedules.filter(s => s.show_to_customers)
-    const customerVisibleByDay = customerVisibleSchedules.reduce((acc, schedule) => {
+    const customerVisibleSchedules = schedules.filter((s: TourScheduleItem) => s.show_to_customers)
+    const customerVisibleByDay = customerVisibleSchedules.reduce((acc: Record<number, TourScheduleItem[]>, schedule: TourScheduleItem) => {
       const day = schedule.day_number
       if (!acc[day]) {
         acc[day] = []
       }
       acc[day].push(schedule)
       return acc
-    }, {} as Record<number, typeof customerVisibleSchedules>)
+    }, {} as Record<number, TourScheduleItem[]>)
 
     // HTML 렌더링된 스케줄들
     const tourScheduleHtmlContext: Record<string, string> = {}
 
     // 고객용 전체 스케줄 HTML
     tourScheduleHtmlContext.customer_visible_html = scheduleRenderers.renderCustomerSchedule(
-      JSON.stringify(customerVisibleSchedules.map(s => ({
+      JSON.stringify(customerVisibleSchedules.map((s: TourScheduleItem) => ({
         day: s.day_number,
         time: s.start_time,
-        title: s[`title_${language}`] || s.title_en || s.title_ko,
-        location: s[`location_${language}`] || s.location_en || s.location_ko,
-        description: s[`description_${language}`] || s.description_en || s.description_ko,
+        title: s[`title_${language}` as keyof TourScheduleItem] || s.title_en || s.title_ko,
+        location: s[`location_${language}` as keyof TourScheduleItem] || s.location_en || s.location_ko,
+        description: s[`description_${language}` as keyof TourScheduleItem] || s.description_en || s.description_ko,
         show_to_customers: s.show_to_customers
       }))), language
     )
@@ -206,11 +263,11 @@ export async function getTourScheduleHtmlData(reservationId: string, language: '
     // 고객용 일차별 스케줄 HTML
     for (const day in customerVisibleByDay) {
       tourScheduleHtmlContext[`customer_day_${day}_html`] = scheduleRenderers.renderCustomerDaySchedule(
-        JSON.stringify(customerVisibleByDay[day].map(s => ({
+        JSON.stringify(customerVisibleByDay[day].map((s: TourScheduleItem) => ({
           time: s.start_time,
-          title: s[`title_${language}`] || s.title_en || s.title_ko,
-          location: s[`location_${language}`] || s.location_en || s.location_ko,
-          description: s[`description_${language}`] || s.description_en || s.description_ko,
+          title: s[`title_${language}` as keyof TourScheduleItem] || s.title_en || s.title_ko,
+          location: s[`location_${language}` as keyof TourScheduleItem] || s.location_en || s.location_ko,
+          description: s[`description_${language}` as keyof TourScheduleItem] || s.description_en || s.description_ko,
           show_to_customers: s.show_to_customers
         }))), language
       )
@@ -218,45 +275,45 @@ export async function getTourScheduleHtmlData(reservationId: string, language: '
 
     // 고객용 카테고리별 스케줄 HTML
     tourScheduleHtmlContext.customer_tour_items_html = scheduleRenderers.renderCustomerTourItems(
-      JSON.stringify(customerVisibleSchedules.filter(s => s.is_tour).map(s => ({
+      JSON.stringify(customerVisibleSchedules.filter((s: TourScheduleItem) => s.is_tour).map((s: TourScheduleItem) => ({
         day: s.day_number,
         time: s.start_time,
-        title: s[`title_${language}`] || s.title_en || s.title_ko,
-        location: s[`location_${language}`] || s.location_en || s.location_ko,
-        description: s[`description_${language}`] || s.description_en || s.description_ko,
+        title: s[`title_${language}` as keyof TourScheduleItem] || s.title_en || s.title_ko,
+        location: s[`location_${language}` as keyof TourScheduleItem] || s.location_en || s.location_ko,
+        description: s[`description_${language}` as keyof TourScheduleItem] || s.description_en || s.description_ko,
         show_to_customers: s.show_to_customers
       }))), language
     )
 
     tourScheduleHtmlContext.customer_transport_items_html = scheduleRenderers.renderCustomerTransportItems(
-      JSON.stringify(customerVisibleSchedules.filter(s => s.is_transport).map(s => ({
+      JSON.stringify(customerVisibleSchedules.filter((s: TourScheduleItem) => s.is_transport).map((s: TourScheduleItem) => ({
         day: s.day_number,
         time: s.start_time,
-        title: s[`title_${language}`] || s.title_en || s.title_ko,
-        location: s[`location_${language}`] || s.location_en || s.location_ko,
-        description: s[`description_${language}`] || s.description_en || s.description_ko,
+        title: s[`title_${language}` as keyof TourScheduleItem] || s.title_en || s.title_ko,
+        location: s[`location_${language}` as keyof TourScheduleItem] || s.location_en || s.location_ko,
+        description: s[`description_${language}` as keyof TourScheduleItem] || s.description_en || s.description_ko,
         show_to_customers: s.show_to_customers
       }))), language
     )
 
     tourScheduleHtmlContext.customer_meal_items_html = scheduleRenderers.renderCustomerMealItems(
-      JSON.stringify(customerVisibleSchedules.filter(s => s.is_meal).map(s => ({
+      JSON.stringify(customerVisibleSchedules.filter((s: TourScheduleItem) => s.is_meal).map((s: TourScheduleItem) => ({
         day: s.day_number,
         time: s.start_time,
-        title: s[`title_${language}`] || s.title_en || s.title_ko,
-        location: s[`location_${language}`] || s.location_en || s.location_ko,
-        description: s[`description_${language}`] || s.description_en || s.description_ko,
+        title: s[`title_${language}` as keyof TourScheduleItem] || s.title_en || s.title_ko,
+        location: s[`location_${language}` as keyof TourScheduleItem] || s.location_en || s.location_ko,
+        description: s[`description_${language}` as keyof TourScheduleItem] || s.description_en || s.description_ko,
         show_to_customers: s.show_to_customers
       }))), language
     )
 
     tourScheduleHtmlContext.customer_break_items_html = scheduleRenderers.renderCustomerBreakItems(
-      JSON.stringify(customerVisibleSchedules.filter(s => s.is_break).map(s => ({
+      JSON.stringify(customerVisibleSchedules.filter((s: TourScheduleItem) => s.is_break).map((s: TourScheduleItem) => ({
         day: s.day_number,
         time: s.start_time,
-        title: s[`title_${language}`] || s.title_en || s.title_ko,
-        location: s[`location_${language}`] || s.location_en || s.location_ko,
-        description: s[`description_${language}`] || s.description_en || s.description_ko,
+        title: s[`title_${language}` as keyof TourScheduleItem] || s.title_en || s.title_ko,
+        location: s[`location_${language}` as keyof TourScheduleItem] || s.location_en || s.location_ko,
+        description: s[`description_${language}` as keyof TourScheduleItem] || s.description_en || s.description_ko,
         show_to_customers: s.show_to_customers
       }))), language
     )
@@ -386,7 +443,7 @@ export async function getTourCourseData(reservationId: string, language: 'ko' | 
     }
 
     // 투어 코스 정보 포맷팅
-    const courseInfo = productTourCourses.map(item => {
+    const courseInfo = productTourCourses.map((item: TourCourseItem) => {
       const course = item.tour_courses
       const name = language === 'ko' ? course.name_ko : course.name_en
       const description = language === 'ko' ? course.description_ko : course.description_en
@@ -500,7 +557,7 @@ export async function getPickupScheduleData(reservationId: string) {
 
     console.log('픽업 호텔 데이터 조회 중...')
     // 픽업 호텔 정보 가져오기 (에러가 발생해도 기본 데이터 제공)
-    let pickupHotels = []
+    let pickupHotels: PickupHotel[] = []
     try {
       const { data: pickupHotelsData, error: pickupError } = await supabase
         .from('pickup_hotels')
@@ -524,7 +581,7 @@ export async function getPickupScheduleData(reservationId: string) {
           }
         ]
       } else {
-        pickupHotels = pickupHotelsData || []
+        pickupHotels = (pickupHotelsData as PickupHotel[]) || []
         console.log('픽업 호텔 데이터 조회 성공:', pickupHotels.length, '개')
       }
     } catch (error) {
@@ -548,7 +605,7 @@ export async function getPickupScheduleData(reservationId: string) {
     const defaultPickupTime = reservation?.pickup_time || '09:00'
 
     // 픽업 위치 목록
-    const pickupLocations = pickupHotels.map(hotel => ({
+    const pickupLocations = pickupHotels.map((hotel: PickupHotel) => ({
       hotel: hotel.hotel_name,
       location: hotel.pick_up_location,
       time: defaultPickupTime,
@@ -556,13 +613,13 @@ export async function getPickupScheduleData(reservationId: string) {
     }))
 
     // 픽업 시간 목록 (고유한 시간들)
-    const pickupTimes = [...new Set(pickupHotels.map(hotel => defaultPickupTime))]
+    const pickupTimes = [...new Set(pickupHotels.map(() => defaultPickupTime))]
 
     // 호텔 목록
-    const hotelList = pickupHotels.map(hotel => hotel.hotel_name)
+    const hotelList = pickupHotels.map((hotel: PickupHotel) => hotel.hotel_name)
 
     // 픽업 상세 정보
-    const pickupDetails = pickupHotels.reduce((acc, hotel) => {
+    const pickupDetails = pickupHotels.reduce((acc: Record<string, PickupDetails>, hotel: PickupHotel) => {
       acc[hotel.hotel_name] = {
         location: hotel.pick_up_location,
         time: defaultPickupTime,
@@ -572,7 +629,7 @@ export async function getPickupScheduleData(reservationId: string) {
         pin: hotel.pin || ''
       }
       return acc
-    }, {} as Record<string, any>)
+    }, {} as Record<string, PickupDetails>)
 
     console.log('픽업 스케줄 데이터 생성 완료')
     return {
@@ -869,8 +926,8 @@ export async function generateTemplateContext(reservationId: string, language: '
     let tourScheduleCustomerView = null
     if (tourSchedule && tourSchedule.customer_visible) {
       try {
-        const customerSchedules = JSON.parse(tourSchedule.customer_visible)
-        tourScheduleCustomerView = customerSchedules.map((schedule: any) => 
+        const customerSchedules = JSON.parse(tourSchedule.customer_visible) as CustomerScheduleItem[]
+        tourScheduleCustomerView = customerSchedules.map((schedule: CustomerScheduleItem) => 
           `${schedule.time} - ${schedule.title}${schedule.location ? ` (${schedule.location})` : ''}`
         ).join('\n')
       } catch (error) {
