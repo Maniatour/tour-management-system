@@ -53,7 +53,7 @@ export default function CustomerReservations() {
     // 시뮬레이션 중이 아닌 경우에만 고객 데이터 로드
     if (!isSimulating) {
       loadReservations()
-    } else if (isSimulating && simulatedUser) {
+    } else if (isSimulating && simulatedUser && simulatedUser.id) {
       // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보로 설정
       setCustomer({
         id: simulatedUser.id,
@@ -66,6 +66,10 @@ export default function CustomerReservations() {
       
       // 시뮬레이션된 사용자의 예약 정보 로드
       loadSimulatedReservations(simulatedUser.id)
+    } else if (isSimulating && !simulatedUser) {
+      // 시뮬레이션 중이지만 simulatedUser가 없는 경우
+      console.warn('시뮬레이션 중이지만 simulatedUser가 없습니다.')
+      setLoading(false)
     }
   }, [user, userRole, router, locale, isSimulating, simulatedUser])
 
@@ -140,6 +144,13 @@ export default function CustomerReservations() {
 
   // 시뮬레이션된 사용자의 예약 정보 로드
   const loadSimulatedReservations = async (customerId: string) => {
+    if (!customerId) {
+      console.error('고객 ID가 없습니다.')
+      setReservations([])
+      setLoading(false)
+      return
+    }
+
     try {
       // 먼저 예약 정보만 조회
       const { data: reservationsData, error: reservationsError } = await supabase
@@ -159,21 +170,36 @@ export default function CustomerReservations() {
         // 각 예약에 대해 상품 정보를 별도로 조회
         const reservationsWithProducts = await Promise.all(
           reservationsData.map(async (reservation) => {
-            const { data: productData } = await supabase
-              .from('products')
-              .select('name, description, duration, adult_price, child_price, infant_price')
-              .eq('id', reservation.product_id)
-              .single()
+            try {
+              const { data: productData } = await supabase
+                .from('products')
+                .select('name, description, duration, adult_price, child_price, infant_price')
+                .eq('id', reservation.product_id)
+                .single()
 
-            return {
-              ...reservation,
-              products: productData || { 
-                name: '상품명 없음', 
-                description: null, 
-                duration: null, 
-                adult_price: null, 
-                child_price: null, 
-                infant_price: null 
+              return {
+                ...reservation,
+                products: productData || { 
+                  name: '상품명 없음', 
+                  description: null, 
+                  duration: null, 
+                  adult_price: null, 
+                  child_price: null, 
+                  infant_price: null 
+                }
+              }
+            } catch (error) {
+              console.error('상품 정보 조회 오류:', error)
+              return {
+                ...reservation,
+                products: { 
+                  name: '상품명 없음', 
+                  description: null, 
+                  duration: null, 
+                  adult_price: null, 
+                  child_price: null, 
+                  infant_price: null 
+                }
               }
             }
           })

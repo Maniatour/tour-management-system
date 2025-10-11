@@ -41,7 +41,7 @@ export default function CustomerProfile() {
     // 시뮬레이션 중이 아닌 경우에만 고객 데이터 로드
     if (!isSimulating) {
       loadCustomerData()
-    } else if (isSimulating && simulatedUser) {
+    } else if (isSimulating && simulatedUser && simulatedUser.id) {
       // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보로 설정
       setCustomer({
         id: simulatedUser.id,
@@ -64,6 +64,10 @@ export default function CustomerProfile() {
         special_requests: ''
       })
       
+      setLoading(false)
+    } else if (isSimulating && !simulatedUser) {
+      // 시뮬레이션 중이지만 simulatedUser가 없는 경우
+      console.warn('시뮬레이션 중이지만 simulatedUser가 없습니다.')
       setLoading(false)
     }
   }, [user, userRole, router, locale, isSimulating, simulatedUser])
