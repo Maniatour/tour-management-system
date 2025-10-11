@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Calendar, Clock, MapPin, Users, CreditCard, ArrowLeft, Filter } from 'lucide-react'
+import { Calendar, Clock, MapPin, Users, CreditCard, ArrowLeft, Filter, ChevronDown, ChevronUp, User, Phone, Car } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface Reservation {
@@ -38,10 +38,46 @@ export default function CustomerReservations() {
   const params = useParams()
   const locale = params.locale as string || 'ko'
   const t = useTranslations('common')
-  const [reservations, setReservations] = useState<Reservation[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all')
-  const [customer, setCustomer] = useState<any>(null)
+  const [expandedReservations, setExpandedReservations] = useState<Set<string>>(new Set())
+  const [reservationDetails, setReservationDetails] = useState<Record<string, any>>({})
+
+  // 예약 상세 정보 토글
+  const toggleReservationDetails = async (reservationId: string) => {
+    const isExpanded = expandedReservations.has(reservationId)
+    
+    if (isExpanded) {
+      // 축소
+      setExpandedReservations(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(reservationId)
+        return newSet
+      })
+    } else {
+      // 확장 - 상세 정보 로드
+      setExpandedReservations(prev => new Set(prev).add(reservationId))
+      
+      // 상세 정보가 아직 로드되지 않은 경우에만 로드
+      if (!reservationDetails[reservationId]) {
+        const reservation = reservations.find(r => r.id === reservationId)
+        if (reservation) {
+          const [productDetails, pickupSchedule, tourDetails] = await Promise.all([
+            getProductDetails(reservation.product_id),
+            getPickupSchedule(reservationId),
+            getTourDetails(reservationId)
+          ])
+          
+          setReservationDetails(prev => ({
+            ...prev,
+            [reservationId]: {
+              productDetails,
+              pickupSchedule,
+              tourDetails
+            }
+          }))
+        }
+      }
+    }
+  }
 
   // 인증 확인 (시뮬레이션 상태 우선 확인)
   useEffect(() => {
@@ -283,6 +319,111 @@ export default function CustomerReservations() {
       setReservations([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 상품 세부 정보 가져오기
+  const getProductDetails = async (productId: string) => {
+    try {
+      const { data: productDetails, error } = await supabase
+        .from('product_details_multilingual')
+        .select('*')
+        .eq('product_id', productId)
+        .eq('language_code', 'ko')
+        .single()
+
+      if (error) {
+        console.warn('상품 세부 정보 조회 오류:', error)
+        return null
+      }
+
+      return productDetails
+    } catch (error) {
+      console.error('상품 세부 정보 조회 중 예외:', error)
+      return null
+    }
+  }
+
+  // 픽업 스케줄 정보 가져오기
+  const getPickupSchedule = async (reservationId: string) => {
+    try {
+      const { data: pickupSchedule, error } = await supabase
+        .from('pickup_schedules')
+        .select(`
+          *,
+          pickup_hotels (
+            hotel_name,
+            pick_up_location,
+            address,
+            description_ko
+          )
+        `)
+        .eq('reservation_id', reservationId)
+        .single()
+
+      if (error) {
+        console.warn('픽업 스케줄 조회 오류:', error)
+        return null
+      }
+
+      return pickupSchedule
+    } catch (error) {
+      console.error('픽업 스케줄 조회 중 예외:', error)
+      return null
+    }
+  }
+
+  // 투어 상세 정보 가져오기
+  const getTourDetails = async (reservationId: string) => {
+    try {
+      // reservation_ids에서 tour_id 찾기
+      const { data: reservationIds, error: reservationIdsError } = await supabase
+        .from('reservation_ids')
+        .select('tour_id')
+        .eq('reservation_id', reservationId)
+        .single()
+
+      if (reservationIdsError || !reservationIds) {
+        console.warn('예약 ID 조회 오류:', reservationIdsError)
+        return null
+      }
+
+      // tour_id로 투어 상세 정보 조회
+      const { data: tourDetails, error: tourError } = await supabase
+        .from('tours')
+        .select(`
+          *,
+          guides (
+            name,
+            phone,
+            email,
+            languages
+          ),
+          assistants (
+            name,
+            phone,
+            email
+          ),
+          vehicles (
+            type,
+            capacity,
+            license_plate,
+            driver_name,
+            driver_phone
+          )
+        `)
+        .eq('id', reservationIds.tour_id)
+        .single()
+
+      if (tourError) {
+        console.warn('투어 상세 정보 조회 오류:', tourError)
+        return null
+      }
+
+      return tourDetails
+    } catch (error) {
+      console.error('투어 상세 정보 조회 중 예외:', error)
+      return null
     }
   }
 
@@ -565,6 +706,187 @@ export default function CustomerReservations() {
                     <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">
                       {reservation.event_note}
                     </p>
+                  </div>
+                )}
+
+                {/* 상세 정보 토글 버튼 */}
+                <div className="border-t border-gray-200 pt-4 mt-4">
+                  <button
+                    onClick={() => toggleReservationDetails(reservation.id)}
+                    className="flex items-center justify-center w-full py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+                  >
+                    {expandedReservations.has(reservation.id) ? (
+                      <>
+                        <ChevronUp className="w-4 h-4 mr-1" />
+                        상세 정보 숨기기
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-4 h-4 mr-1" />
+                        상세 정보 보기
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* 확장된 상세 정보 */}
+                {expandedReservations.has(reservation.id) && (
+                  <div className="border-t border-gray-200 pt-6 mt-4 space-y-6">
+                    {/* 상품 세부 정보 */}
+                    {reservationDetails[reservation.id]?.productDetails && (
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                          <MapPin className="w-5 h-5 mr-2" />
+                          상품 세부 정보
+                        </h4>
+                        <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                          {reservationDetails[reservation.id].productDetails.description && (
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-1">상품 설명</h5>
+                              <p className="text-sm text-gray-700">{reservationDetails[reservation.id].productDetails.description}</p>
+                            </div>
+                          )}
+                          {reservationDetails[reservation.id].productDetails.highlights && (
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-1">하이라이트</h5>
+                              <p className="text-sm text-gray-700">{reservationDetails[reservation.id].productDetails.highlights}</p>
+                            </div>
+                          )}
+                          {reservationDetails[reservation.id].productDetails.included && (
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-1">포함 사항</h5>
+                              <p className="text-sm text-gray-700">{reservationDetails[reservation.id].productDetails.included}</p>
+                            </div>
+                          )}
+                          {reservationDetails[reservation.id].productDetails.not_included && (
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-1">불포함 사항</h5>
+                              <p className="text-sm text-gray-700">{reservationDetails[reservation.id].productDetails.not_included}</p>
+                            </div>
+                          )}
+                          {reservationDetails[reservation.id].productDetails.meeting_point && (
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-1">만남 장소</h5>
+                              <p className="text-sm text-gray-700">{reservationDetails[reservation.id].productDetails.meeting_point}</p>
+                            </div>
+                          )}
+                          {reservationDetails[reservation.id].productDetails.cancellation_policy && (
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-1">취소 정책</h5>
+                              <p className="text-sm text-gray-700">{reservationDetails[reservation.id].productDetails.cancellation_policy}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 픽업 스케줄 */}
+                    {reservationDetails[reservation.id]?.pickupSchedule && (
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                          <Clock className="w-5 h-5 mr-2" />
+                          픽업 스케줄
+                        </h4>
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-2">픽업 시간</h5>
+                              <p className="text-sm text-gray-700">{reservationDetails[reservation.id].pickupSchedule.pickup_time}</p>
+                            </div>
+                            {reservationDetails[reservation.id].pickupSchedule.pickup_hotels && (
+                              <div>
+                                <h5 className="font-medium text-gray-900 mb-2">픽업 호텔</h5>
+                                <p className="text-sm text-gray-700">{reservationDetails[reservation.id].pickupSchedule.pickup_hotels.hotel_name}</p>
+                                <p className="text-xs text-gray-600">{reservationDetails[reservation.id].pickupSchedule.pickup_hotels.pick_up_location}</p>
+                                {reservationDetails[reservation.id].pickupSchedule.pickup_hotels.address && (
+                                  <p className="text-xs text-gray-600">{reservationDetails[reservation.id].pickupSchedule.pickup_hotels.address}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 투어 상세 정보 */}
+                    {reservationDetails[reservation.id]?.tourDetails && (
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                          <Users className="w-5 h-5 mr-2" />
+                          투어 상세 정보
+                        </h4>
+                        <div className="bg-green-50 p-4 rounded-lg space-y-4">
+                          {/* 가이드 정보 */}
+                          {reservationDetails[reservation.id].tourDetails.guides && (
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-2 flex items-center">
+                                <User className="w-4 h-4 mr-1" />
+                                가이드
+                              </h5>
+                              <div className="bg-white p-3 rounded-md">
+                                <p className="text-sm font-medium text-gray-900">{reservationDetails[reservation.id].tourDetails.guides.name}</p>
+                                {reservationDetails[reservation.id].tourDetails.guides.phone && (
+                                  <p className="text-xs text-gray-600 flex items-center mt-1">
+                                    <Phone className="w-3 h-3 mr-1" />
+                                    {reservationDetails[reservation.id].tourDetails.guides.phone}
+                                  </p>
+                                )}
+                                {reservationDetails[reservation.id].tourDetails.guides.languages && (
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    언어: {reservationDetails[reservation.id].tourDetails.guides.languages}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 어시스턴트 정보 */}
+                          {reservationDetails[reservation.id].tourDetails.assistants && (
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-2 flex items-center">
+                                <User className="w-4 h-4 mr-1" />
+                                어시스턴트
+                              </h5>
+                              <div className="bg-white p-3 rounded-md">
+                                <p className="text-sm font-medium text-gray-900">{reservationDetails[reservation.id].tourDetails.assistants.name}</p>
+                                {reservationDetails[reservation.id].tourDetails.assistants.phone && (
+                                  <p className="text-xs text-gray-600 flex items-center mt-1">
+                                    <Phone className="w-3 h-3 mr-1" />
+                                    {reservationDetails[reservation.id].tourDetails.assistants.phone}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 차량 정보 */}
+                          {reservationDetails[reservation.id].tourDetails.vehicles && (
+                            <div>
+                              <h5 className="font-medium text-gray-900 mb-2 flex items-center">
+                                <Car className="w-4 h-4 mr-1" />
+                                차량
+                              </h5>
+                              <div className="bg-white p-3 rounded-md">
+                                <p className="text-sm font-medium text-gray-900">{reservationDetails[reservation.id].tourDetails.vehicles.type}</p>
+                                <p className="text-xs text-gray-600">정원: {reservationDetails[reservation.id].tourDetails.vehicles.capacity}명</p>
+                                {reservationDetails[reservation.id].tourDetails.vehicles.license_plate && (
+                                  <p className="text-xs text-gray-600">번호판: {reservationDetails[reservation.id].tourDetails.vehicles.license_plate}</p>
+                                )}
+                                {reservationDetails[reservation.id].tourDetails.vehicles.driver_name && (
+                                  <p className="text-xs text-gray-600">기사: {reservationDetails[reservation.id].tourDetails.vehicles.driver_name}</p>
+                                )}
+                                {reservationDetails[reservation.id].tourDetails.vehicles.driver_phone && (
+                                  <p className="text-xs text-gray-600 flex items-center mt-1">
+                                    <Phone className="w-3 h-3 mr-1" />
+                                    {reservationDetails[reservation.id].tourDetails.vehicles.driver_phone}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
