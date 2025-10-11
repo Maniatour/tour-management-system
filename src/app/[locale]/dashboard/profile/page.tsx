@@ -89,7 +89,15 @@ export default function CustomerProfile() {
         .single()
 
       if (error) {
-        console.error('고객 정보 조회 오류:', error)
+        console.error('고객 정보 조회 오류:', {
+          error: error,
+          message: error?.message || 'Unknown error',
+          code: error?.code || 'No code',
+          details: error?.details || 'No details',
+          hint: error?.hint || 'No hint',
+          status: error?.status || 'No status',
+          email: authUser.email
+        })
         // 406 오류나 다른 권한 오류의 경우 새 고객으로 처리
         if (error.code === 'PGRST116' || error.code === 'PGRST301' || error.status === 406) {
           setCustomer(null)

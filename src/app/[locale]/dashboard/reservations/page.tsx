@@ -91,7 +91,15 @@ export default function CustomerReservations() {
         .single()
 
       if (customerError) {
-        console.error('고객 정보 조회 오류:', customerError)
+        console.error('고객 정보 조회 오류:', {
+          error: customerError,
+          message: customerError?.message || 'Unknown error',
+          code: customerError?.code || 'No code',
+          details: customerError?.details || 'No details',
+          hint: customerError?.hint || 'No hint',
+          status: customerError?.status || 'No status',
+          email: authUser.email
+        })
         // 406 오류나 다른 권한 오류의 경우 빈 상태로 설정
         if (customerError.code === 'PGRST116' || customerError.code === 'PGRST301' || customerError.status === 406) {
           setCustomer(null)
@@ -99,6 +107,9 @@ export default function CustomerReservations() {
           setLoading(false)
           return
         }
+        // 다른 오류의 경우에도 빈 상태로 설정
+        setCustomer(null)
+        setReservations([])
         setLoading(false)
         return
       }
