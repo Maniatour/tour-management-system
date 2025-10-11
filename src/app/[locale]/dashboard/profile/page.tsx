@@ -17,7 +17,7 @@ interface Customer {
 }
 
 export default function CustomerProfile() {
-  const { user, userRole, authUser, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
@@ -130,6 +130,12 @@ export default function CustomerProfile() {
     }
   }
 
+  // 시뮬레이션 중지
+  const handleStopSimulation = () => {
+    stopSimulation()
+    router.push(`/${locale}/admin`)
+  }
+
   // 고객 정보 저장
   const handleSave = async () => {
     if (!authUser?.email) return
@@ -225,6 +231,13 @@ export default function CustomerProfile() {
                     className="bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700"
                   >
                     내 예약
+                  </button>
+                  <button
+                    onClick={handleStopSimulation}
+                    className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 flex items-center"
+                  >
+                    <ArrowLeft className="w-3 h-3 mr-1" />
+                    관리자로 돌아가기
                   </button>
                 </div>
               </div>

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Calendar, User, Phone, Mail, Search, MapPin, Clock, Users, CreditCard } from 'lucide-react'
+import { Calendar, User, Phone, Mail, Search, MapPin, Clock, Users, CreditCard, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface Customer {
@@ -37,7 +37,7 @@ interface Reservation {
 }
 
 export default function CustomerDashboard() {
-  const { user, userRole, authUser, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
@@ -188,6 +188,12 @@ export default function CustomerDashboard() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // 시뮬레이션 중지
+  const handleStopSimulation = () => {
+    stopSimulation()
+    router.push(`/${locale}/admin`)
   }
 
   // 고객 ID 검색 및 자동 매칭
@@ -343,6 +349,13 @@ export default function CustomerDashboard() {
                     className="bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700"
                   >
                     내 예약
+                  </button>
+                  <button
+                    onClick={handleStopSimulation}
+                    className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 flex items-center"
+                  >
+                    <ArrowLeft className="w-3 h-3 mr-1" />
+                    관리자로 돌아가기
                   </button>
                 </div>
               </div>

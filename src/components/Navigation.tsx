@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User } from 'lucide-react'
+import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User, ArrowLeft } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
 import SunriseTime from './SunriseTime'
 import { useAuth } from '@/contexts/AuthContext'
@@ -20,7 +20,7 @@ const Navigation = () => {
   const pathname = usePathname()
   const locale = useLocale()
   const router = useRouter()
-  const { user, userRole, loading, signOut, authUser } = useAuth()
+  const { user, userRole, loading, signOut, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   
@@ -42,6 +42,12 @@ const Navigation = () => {
     setIsUserMenuOpen(false)
   }
 
+  // 시뮬레이션 중지
+  const handleStopSimulation = () => {
+    stopSimulation()
+    router.push(`/${locale}/admin`)
+  }
+
   return (
     <nav className="bg-white shadow-lg border-b relative z-50">
       <div className="container mx-auto px-4">
@@ -53,6 +59,20 @@ const Navigation = () => {
                 {t('systemTitle')}
               </h1>
             </Link>
+            {isSimulating && simulatedUser && (
+              <div className="flex items-center space-x-2">
+                <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                  시뮬레이션: {simulatedUser.name_ko}
+                </div>
+                <button
+                  onClick={handleStopSimulation}
+                  className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 flex items-center"
+                >
+                  <ArrowLeft className="w-3 h-3 mr-1" />
+                  관리자로 돌아가기
+                </button>
+              </div>
+            )}
           </div>
           
           {/* 데스크톱 네비게이션 메뉴 */}

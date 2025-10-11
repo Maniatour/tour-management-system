@@ -33,7 +33,7 @@ interface Reservation {
 }
 
 export default function CustomerReservations() {
-  const { user, userRole, authUser, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
@@ -190,6 +190,12 @@ export default function CustomerReservations() {
     }
   }
 
+  // 시뮬레이션 중지
+  const handleStopSimulation = () => {
+    stopSimulation()
+    router.push(`/${locale}/admin`)
+  }
+
   // 상태별 필터링
   const filteredReservations = reservations.filter(reservation => {
     if (filter === 'all') return true
@@ -293,6 +299,13 @@ export default function CustomerReservations() {
                     className="bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700"
                   >
                     내 정보
+                  </button>
+                  <button
+                    onClick={handleStopSimulation}
+                    className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 flex items-center"
+                  >
+                    <ArrowLeft className="w-3 h-3 mr-1" />
+                    관리자로 돌아가기
                   </button>
                 </div>
               </div>
