@@ -34,12 +34,39 @@ export default function CustomerProfile() {
   // 인증 확인
   useEffect(() => {
     if (!user) {
-      router.push('/auth')
+      router.push(`/${locale}/auth`)
       return
     }
 
-    loadCustomerData()
-  }, [user, userRole, router])
+    // 시뮬레이션 중이 아닌 경우에만 고객 데이터 로드
+    if (!isSimulating) {
+      loadCustomerData()
+    } else if (isSimulating && simulatedUser) {
+      // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보로 설정
+      setCustomer({
+        id: simulatedUser.id,
+        name: simulatedUser.name_ko,
+        email: simulatedUser.email,
+        phone: simulatedUser.phone,
+        language: simulatedUser.language,
+        created_at: simulatedUser.created_at
+      })
+      
+      // 폼 데이터 설정
+      setFormData({
+        name: simulatedUser.name_ko,
+        email: simulatedUser.email,
+        phone: simulatedUser.phone || '',
+        language: simulatedUser.language || 'ko',
+        address: '',
+        nationality: '',
+        emergency_contact: '',
+        special_requests: ''
+      })
+      
+      setLoading(false)
+    }
+  }, [user, userRole, router, locale, isSimulating, simulatedUser])
 
   // 고객 정보 로드
   const loadCustomerData = async () => {

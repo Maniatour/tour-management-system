@@ -46,12 +46,28 @@ export default function CustomerReservations() {
   // 인증 확인
   useEffect(() => {
     if (!user) {
-      router.push('/auth')
+      router.push(`/${locale}/auth`)
       return
     }
 
-    loadReservations()
-  }, [user, userRole, router])
+    // 시뮬레이션 중이 아닌 경우에만 고객 데이터 로드
+    if (!isSimulating) {
+      loadReservations()
+    } else if (isSimulating && simulatedUser) {
+      // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보로 설정
+      setCustomer({
+        id: simulatedUser.id,
+        name: simulatedUser.name_ko,
+        email: simulatedUser.email,
+        phone: simulatedUser.phone,
+        language: simulatedUser.language,
+        created_at: simulatedUser.created_at
+      })
+      
+      // 시뮬레이션된 사용자의 예약 정보 로드
+      loadSimulatedReservations(simulatedUser.id)
+    }
+  }, [user, userRole, router, locale, isSimulating, simulatedUser])
 
   // 예약 정보 로드
   const loadReservations = async () => {
@@ -116,6 +132,39 @@ export default function CustomerReservations() {
     } catch (error) {
       console.error('데이터 로드 오류:', error)
       setCustomer(null)
+      setReservations([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 시뮬레이션된 사용자의 예약 정보 로드
+  const loadSimulatedReservations = async (customerId: string) => {
+    try {
+      const { data: reservationsData, error: reservationsError } = await supabase
+        .from('reservations')
+        .select(`
+          *,
+          products (
+            name,
+            description,
+            duration,
+            adult_price,
+            child_price,
+            infant_price
+          )
+        `)
+        .eq('customer_id', customerId)
+        .order('tour_date', { ascending: false })
+
+      if (reservationsError) {
+        console.error('시뮬레이션 예약 정보 조회 오류:', reservationsError)
+        setReservations([])
+      } else {
+        setReservations(reservationsData || [])
+      }
+    } catch (error) {
+      console.error('시뮬레이션 예약 정보 로드 오류:', error)
       setReservations([])
     } finally {
       setLoading(false)
