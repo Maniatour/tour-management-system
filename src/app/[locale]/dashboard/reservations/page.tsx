@@ -192,8 +192,17 @@ export default function CustomerReservations() {
 
   // 시뮬레이션 중지
   const handleStopSimulation = () => {
-    stopSimulation()
-    router.push(`/${locale}/admin`)
+    try {
+      stopSimulation()
+      // 약간의 지연을 두고 페이지 이동
+      setTimeout(() => {
+        router.push(`/${locale}/admin`)
+      }, 100)
+    } catch (error) {
+      console.error('시뮬레이션 중지 중 오류:', error)
+      // 오류가 발생해도 관리자 페이지로 이동
+      router.push(`/${locale}/admin`)
+    }
   }
 
   // 상태별 필터링

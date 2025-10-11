@@ -417,21 +417,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 시뮬레이션 함수들
   const startSimulation = (simulatedUserData: SimulatedUser) => {
-    setSimulatedUser(simulatedUserData)
-    setIsSimulating(true)
-    
-    localStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
-    
-    console.log('Simulation started:', simulatedUserData)
-    setLoading(false)
+    try {
+      setSimulatedUser(simulatedUserData)
+      setIsSimulating(true)
+      
+      localStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
+      
+      console.log('Simulation started:', simulatedUserData)
+      setLoading(false)
+    } catch (error) {
+      console.error('시뮬레이션 시작 중 오류:', error)
+      setSimulatedUser(null)
+      setIsSimulating(false)
+    }
   }
 
   const stopSimulation = () => {
-    setSimulatedUser(null)
-    setIsSimulating(false)
-    localStorage.removeItem('positionSimulation')
-    
-    console.log('Simulation stopped')
+    try {
+      setSimulatedUser(null)
+      setIsSimulating(false)
+      localStorage.removeItem('positionSimulation')
+      
+      console.log('Simulation stopped')
+      setLoading(false)
+    } catch (error) {
+      console.error('시뮬레이션 중지 중 오류:', error)
+    }
   }
 
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
