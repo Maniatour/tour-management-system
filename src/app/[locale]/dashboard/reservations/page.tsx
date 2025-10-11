@@ -38,6 +38,10 @@ export default function CustomerReservations() {
   const params = useParams()
   const locale = params.locale as string || 'ko'
   const t = useTranslations('common')
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+  const [customer, setCustomer] = useState<any>(null)
   const [expandedReservations, setExpandedReservations] = useState<Set<string>>(new Set())
   const [reservationDetails, setReservationDetails] = useState<Record<string, any>>({})
 
