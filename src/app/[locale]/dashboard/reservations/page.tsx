@@ -55,12 +55,16 @@ export default function CustomerReservations() {
       router.push(`/${locale}/auth`)
       return
     }
+  }, [user, isSimulating, simulatedUser, router, locale])
 
+  // 데이터 로딩 (시뮬레이션 상태와 분리)
+  useEffect(() => {
     // 시뮬레이션 중이 아닌 경우에만 고객 데이터 로드
-    if (!isSimulating) {
+    if (!isSimulating && user) {
       loadReservations()
     } else if (isSimulating && simulatedUser && simulatedUser.id) {
       // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보로 설정
+      console.log('Reservations: Loading simulated customer data:', simulatedUser)
       setCustomer({
         id: simulatedUser.id,
         name: simulatedUser.name_ko,
@@ -74,10 +78,10 @@ export default function CustomerReservations() {
       loadSimulatedReservations(simulatedUser.id)
     } else if (isSimulating && !simulatedUser) {
       // 시뮬레이션 중이지만 simulatedUser가 없는 경우
-      console.warn('시뮬레이션 중이지만 simulatedUser가 없습니다.')
+      console.warn('Reservations: 시뮬레이션 중이지만 simulatedUser가 없습니다.')
       setLoading(false)
     }
-  }, [user, userRole, router, locale, isSimulating, simulatedUser])
+  }, [isSimulating, simulatedUser, user])
 
   // 예약 정보 로드
   const loadReservations = async () => {
