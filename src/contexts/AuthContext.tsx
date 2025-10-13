@@ -11,6 +11,7 @@ interface AuthContextType {
   userRole: UserRole | null
   permissions: UserPermissions | null
   loading: boolean
+  isInitialized: boolean
   signOut: () => Promise<void>
   hasPermission: (permission: keyof UserPermissions) => boolean
   getRedirectPath: (locale: string) => string
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [permissions, setPermissions] = useState<UserPermissions | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isInitialized, setIsInitialized] = useState(false)
   const [teamChatUnreadCount, setTeamChatUnreadCount] = useState(0)
   
   // 시뮬레이션 상태
@@ -55,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUserRole('customer')
       setPermissions(null)
       setLoading(false)
+      setIsInitialized(true)
       return
     }
 
@@ -66,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserRole('customer')
         setPermissions(null)
         setLoading(false)
+        setIsInitialized(true)
         return
       }
 
@@ -93,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           canViewFinance: true,
         })
         setLoading(false)
+        setIsInitialized(true)
         return
       }
       
@@ -157,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserRole(role)
         setPermissions(userPermissions)
         setLoading(false)
+        setIsInitialized(true)
         
         console.log('AuthContext: User role set successfully:', role, 'for user:', email)
       } catch (error) {
@@ -164,12 +170,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserRole('customer')
         setPermissions(null)
         setLoading(false)
+        setIsInitialized(true)
       }
     } catch (error) {
       console.error('AuthContext: Error checking user role:', error)
       setUserRole('customer')
       setPermissions(null)
       setLoading(false)
+      setIsInitialized(true)
     }
   }, [])
 
@@ -278,6 +286,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUserRole('customer')
       setPermissions(null)
       setLoading(false)
+      setIsInitialized(true)
     }
     
     checkStoredTokens().catch(error => {
@@ -549,6 +558,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     userRole: effectiveUserRole,
     permissions: effectivePermissions,
     loading,
+    isInitialized,
     signOut,
     hasPermission: hasPermissionCheck,
     getRedirectPath,

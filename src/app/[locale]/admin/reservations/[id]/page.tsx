@@ -14,22 +14,22 @@ export default function ReservationDetailsPage() {
   const t = useTranslations('reservations')
   const router = useRouter()
   const params = useParams() as { locale?: string; id?: string }
-  const { hasPermission, userRole, user, loading: authLoading } = useAuth()
+  const { hasPermission, userRole, user, loading: authLoading, isInitialized } = useAuth()
 
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
   const isStaff = hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager')
   
   // 권한이 없을 때만 리다이렉트 (useEffect로 처리)
   useEffect(() => {
-    // 로딩이 완료되고 권한이 없을 때만 리다이렉트
-    if (!authLoading && !isStaff) {
-      console.log('권한 없음, 리다이렉트:', { authLoading, isStaff, userRole, user: user?.email })
+    // 초기화가 완료되고 권한이 없을 때만 리다이렉트
+    if (isInitialized && !isStaff) {
+      console.log('권한 없음, 리다이렉트:', { isInitialized, isStaff, userRole, user: user?.email })
       router.push(`/${params.locale}/admin`)
     }
-  }, [authLoading, isStaff, router, params.locale, userRole, user])
+  }, [isInitialized, isStaff, router, params.locale, userRole, user])
   
-  // 로딩 중일 때 로딩 화면 표시
-  if (authLoading) {
+  // 초기화가 완료되지 않았을 때 로딩 화면 표시
+  if (!isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
