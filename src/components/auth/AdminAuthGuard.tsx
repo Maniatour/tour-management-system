@@ -24,19 +24,23 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
   })
 
   useEffect(() => {
-    if (isInitialized) {
-      if (!user) {
-        console.log('AdminAuthGuard: No user, redirecting to auth')
-        router.replace(`/${locale}/auth?redirectTo=/${locale}/admin`)
-      } else if (userRole === 'customer') {
+    // isInitialized가 true이고 user가 undefined인 경우 잠시 기다림
+    if (isInitialized && !user) {
+      console.log('AdminAuthGuard: Initialized but no user yet, waiting...')
+      return
+    }
+    
+    if (isInitialized && user) {
+      if (userRole === 'customer') {
         console.log('AdminAuthGuard: Customer role, redirecting to home')
         router.replace(`/${locale}`)
       }
     }
   }, [user, userRole, isInitialized, router, locale])
 
-  if (!isInitialized) {
-    console.log('AdminAuthGuard: Not initialized, showing loading')
+  // isInitialized가 false이거나 user가 undefined인 경우 로딩 표시
+  if (!isInitialized || !user) {
+    console.log('AdminAuthGuard: Not ready, showing loading')
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -47,7 +51,7 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
     )
   }
 
-  if (!user || userRole === 'customer') {
+  if (userRole === 'customer') {
     console.log('AdminAuthGuard: No access, showing access denied')
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
