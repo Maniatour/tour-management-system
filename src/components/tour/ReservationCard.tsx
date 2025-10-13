@@ -1,6 +1,7 @@
-import React from 'react'
-import { Check, X, Users, Clock, Building } from 'lucide-react'
+import React, { useState } from 'react'
+import { Check, X, Users, Clock, Building, DollarSign } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
+import { supabase } from '@/lib/supabase'
 
 interface Reservation {
   id: string
@@ -17,6 +18,17 @@ interface Reservation {
   tour_id: string | null
   choices?: string | null
   [key: string]: unknown
+}
+
+interface PaymentRecord {
+  id: string
+  reservation_id: string
+  payment_status: 'pending' | 'confirmed' | 'rejected'
+  amount: number
+  payment_method: string
+  note?: string
+  submit_on: string
+  amount_krw?: number
 }
 
 interface ReservationCardProps {
@@ -54,7 +66,48 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 }) => {
   const customerName = getCustomerName(reservation.customer_id || '')
   const customerLanguage = getCustomerLanguage(reservation.customer_id || '')
+  const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([])
+  const [showPaymentRecords, setShowPaymentRecords] = useState(false)
+  const [loadingPayments, setLoadingPayments] = useState(false)
   
+  // 입금 내역 가져오기
+  const fetchPaymentRecords = async () => {
+    if (!isStaff) return
+    
+    setLoadingPayments(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('인증이 필요합니다.')
+      }
+
+      const response = await fetch(`/api/payment-records?reservation_id=${reservation.id}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('입금 내역을 불러올 수 없습니다.')
+      }
+
+      const data = await response.json()
+      setPaymentRecords(data.paymentRecords || [])
+    } catch (error) {
+      console.error('입금 내역 조회 오류:', error)
+    } finally {
+      setLoadingPayments(false)
+    }
+  }
+
+  // 입금 내역 표시 토글
+  const togglePaymentRecords = () => {
+    if (!showPaymentRecords && paymentRecords.length === 0) {
+      fetchPaymentRecords()
+    }
+    setShowPaymentRecords(!showPaymentRecords)
+  }
+
   // 총 인원수 계산
   const totalPeople = (reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)
   
@@ -67,7 +120,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   
   const flagCode = getFlagCode(customerLanguage)
 
-  const getStatusColor = (status: string) => {
+  const getReservationStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
       case 'confirmed':
         return 'bg-green-100 text-green-800'
@@ -207,6 +260,64 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     return timeStr
   }
 
+  // 입금 내역 관련 유틸리티 함수들
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'confirmed':
+        return 'bg-green-100 text-green-800'
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'rejected':
+        return 'bg-red-100 text-red-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getStatusText = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'confirmed':
+        return '확인됨'
+      case 'pending':
+        return '대기중'
+      case 'rejected':
+        return '거부됨'
+      default:
+        return status
+    }
+  }
+
+  const getPaymentMethodText = (method: string) => {
+    switch (method?.toLowerCase()) {
+      case 'bank_transfer':
+        return '계좌이체'
+      case 'cash':
+        return '현금'
+      case 'card':
+        return '카드'
+      default:
+        return method
+    }
+  }
+
+  const formatCurrency = (amount: number, currency: string = 'USD') => {
+    if (currency === 'KRW') {
+      return `₩${amount.toLocaleString()}`
+    }
+    return `$${amount.toLocaleString()}`
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
   return (
     <div 
       className={`p-3 rounded-lg border transition-colors ${
@@ -297,7 +408,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         <div className="flex items-center space-x-2">
           {/* 상태 표시 */}
           {showStatus && reservation.status && (
-            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getReservationStatusColor(reservation.status)}`}>
               {reservation.status}
             </span>
           )}
@@ -307,6 +418,20 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
               투어 배정됨
             </span>
+          )}
+
+          {/* 입금 내역 버튼 */}
+          {isStaff && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                togglePaymentRecords()
+              }}
+              className="p-1 text-green-600 hover:bg-green-50 rounded"
+              title="입금 내역 보기"
+            >
+              <DollarSign size={14} />
+            </button>
           )}
 
           {/* 액션 버튼들 */}
@@ -343,6 +468,69 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           )}
         </div>
       </div>
+
+      {/* 입금 내역 섹션 */}
+      {showPaymentRecords && isStaff && (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-medium text-gray-700">입금 내역</h4>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowPaymentRecords(false)
+              }}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              접기
+            </button>
+          </div>
+          
+          {loadingPayments ? (
+            <div className="text-center py-2">
+              <div className="text-sm text-gray-500">입금 내역을 불러오는 중...</div>
+            </div>
+          ) : paymentRecords.length === 0 ? (
+            <div className="text-center py-2">
+              <div className="text-sm text-gray-500">입금 내역이 없습니다</div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {paymentRecords.map((record) => (
+                <div key={record.id} className="bg-gray-50 border border-gray-200 rounded p-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${getStatusColor(record.payment_status)}`}>
+                        {getStatusText(record.payment_status)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {getPaymentMethodText(record.payment_method)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold text-gray-900">
+                        {formatCurrency(record.amount, 'USD')}
+                      </div>
+                      {record.amount_krw && (
+                        <div className="text-xs text-gray-600">
+                          {formatCurrency(record.amount_krw, 'KRW')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {formatDate(record.submit_on)}
+                  </div>
+                  {record.note && (
+                    <div className="text-xs text-gray-600 mt-1 truncate">
+                      {record.note}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
