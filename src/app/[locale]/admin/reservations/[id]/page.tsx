@@ -8,8 +8,6 @@ import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { Reservation, Customer } from '@/types/reservation'
-import { FileText, Mail, Printer } from 'lucide-react'
-import SimpleDocumentGenerator from '@/components/SimpleDocumentGenerator'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function ReservationDetailsPage() {
@@ -31,7 +29,7 @@ export default function ReservationDetailsPage() {
   }, [authLoading, isStaff, router, params.locale, userRole, user])
   
   // 로딩 중이거나 권한이 없을 때 로딩 화면 표시
-  if (authLoading) {
+  if (authLoading || (!authLoading && !isStaff)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -62,7 +60,6 @@ export default function ReservationDetailsPage() {
   const [loadingReservation, setLoadingReservation] = useState<boolean>(false)
   const [reservation, setReservation] = useState<Reservation | null>(null)
   const reservationId = params?.id || ''
-  const [previewDoc, setPreviewDoc] = useState<null | 'confirmation' | 'pickup' | 'receipt'>(null)
   const [tourCreated, setTourCreated] = useState(false)
 
   // Try to use already-loaded list; if not found, fetch just this reservation
@@ -252,46 +249,6 @@ export default function ReservationDetailsPage() {
           )}
         </div>
         <div className="flex items-center space-x-2">
-          {reservation && (
-            <>
-              <button
-                onClick={() => setPreviewDoc('confirmation')}
-                className="p-2 bg-white border border-gray-200 rounded hover:bg-gray-50"
-                title="Reservation Confirmation 미리보기"
-              >
-                <FileText className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setPreviewDoc('pickup')}
-                className="p-2 bg-white border border-gray-200 rounded hover:bg-gray-50"
-                title="Pick up Notification 미리보기"
-              >
-                <Printer className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setPreviewDoc('receipt')}
-                className="p-2 bg-white border border-gray-200 rounded hover:bg-gray-50"
-                title="Reservation Receipt 미리보기"
-              >
-                <FileText className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => {
-                  const customer = (customers as Customer[]).find(c => c.id === reservation.customerId)
-                  const to = customer?.email || ''
-                  const origin = typeof window !== 'undefined' ? window.location.origin : ''
-                  const confirmUrl = `${origin}/${params?.locale || 'ko'}/admin/reservations/${reservation.id}/documents/confirmation`
-                  const subject = `[Reservation Confirmation] ${reservation.id}`
-                  const body = `Dear ${customer?.name || ''},%0D%0A%0D%0APlease review your reservation confirmation here:%0D%0A${confirmUrl}%0D%0A%0D%0AThank you.`
-                  window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${body}`
-                }}
-                className="p-2 bg-white border border-gray-200 rounded hover:bg-gray-50"
-                title="이메일 보내기"
-              >
-                <Mail className="w-4 h-4" />
-              </button>
-            </>
-          )}
           <button
             onClick={() => router.push(`/${params?.locale || 'ko'}/admin/reservations`)}
             className="px-3 py-2 rounded bg-gray-100 hover:bg-gray-200"
@@ -301,55 +258,6 @@ export default function ReservationDetailsPage() {
         </div>
       </div>
       {content}
-
-      {/* 간편 문서 생성 섹션 */}
-      {reservation && (
-        <div className="mt-8 p-6 bg-gray-50 rounded-lg">
-          <SimpleDocumentGenerator
-            reservationId={reservation.id}
-            customerName={customers?.find(c => c.id === reservation.customerId)?.name || ''}
-            productName={products?.find(p => p.id === reservation.productId)?.nameKo || ''}
-            tourDate={reservation.tourDate || ''}
-            pickupTime={reservation.pickupTime || ''}
-            pickupLocation={pickupHotels?.find(h => h.id === reservation.pickupHotelId)?.hotelName || ''}
-          />
-        </div>
-      )}
-
-      {/* 문서 미리보기 모달 */}
-      {previewDoc && reservation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-2 sm:p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-[95vw] sm:max-w-[90vw] h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-3 py-2 border-b">
-              <div className="text-sm font-medium text-gray-700">
-                {previewDoc === 'confirmation' && 'Reservation Confirmation 미리보기'}
-                {previewDoc === 'pickup' && 'Pick up Notification 미리보기'}
-                {previewDoc === 'receipt' && 'Reservation Receipt 미리보기'}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const base = `/${params?.locale || 'ko'}/admin/reservations/${reservation.id}/documents/${previewDoc}`
-                    window.open(base, '_blank')
-                  }}
-                  className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
-                >새 창</button>
-                <button
-                  onClick={() => setPreviewDoc(null)}
-                  className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
-                >닫기</button>
-              </div>
-            </div>
-            <div className="flex-1">
-              <iframe
-                title="document-preview"
-                src={`/${params?.locale || 'ko'}/admin/reservations/${reservation.id}/documents/${previewDoc}?mode=embed`}
-                className="w-full h-full"
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
