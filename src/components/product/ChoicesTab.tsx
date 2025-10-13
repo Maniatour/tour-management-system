@@ -480,7 +480,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         {choiceGroups.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <p>등록된 그룹이 없습니다.</p>
-            <p className="text-sm">위의 "그룹 추가" 버튼을 클릭하여 그룹을 추가하세요.</p>
+            <p className="text-sm">위의 &quot;그룹 추가&quot; 버튼을 클릭하여 그룹을 추가하세요.</p>
           </div>
         ) : (
           choiceGroups.map((group) => (
@@ -550,7 +550,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                 {group.choices.length === 0 ? (
                   <div className="text-center py-4 text-gray-500 bg-white rounded border-2 border-dashed border-gray-300">
                     <p className="text-sm">이 그룹에 초이스가 없습니다.</p>
-                    <p className="text-xs">"초이스 추가" 버튼을 클릭하여 초이스를 추가하세요.</p>
+                    <p className="text-xs">&quot;초이스 추가&quot; 버튼을 클릭하여 초이스를 추가하세요.</p>
                   </div>
                 ) : (
                   group.choices.map((choice) => (

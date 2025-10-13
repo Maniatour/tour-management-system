@@ -19,11 +19,11 @@ export interface ScheduleItem {
  * 스케줄 아이템을 HTML로 렌더링
  */
 export function renderScheduleItem(item: ScheduleItem, locale: 'ko' | 'en' = 'ko'): string {
-  const timeLabel = locale === 'ko' ? '시간' : 'Time'
+  // const timeLabel = locale === 'ko' ? '시간' : 'Time'
   const locationLabel = locale === 'ko' ? '장소' : 'Location'
   const descriptionLabel = locale === 'ko' ? '설명' : 'Description'
   
-  let html = `
+  const html = `
     <div class="schedule-item" style="margin-bottom: 12px; padding: 8px; border-left: 3px solid #3b82f6; background-color: #f8fafc;">
       <div style="font-weight: bold; color: #1e40af; margin-bottom: 4px;">
         ${item.time} - ${item.title}
@@ -50,12 +50,12 @@ export function renderScheduleByDay(schedules: ScheduleItem[], locale: 'ko' | 'e
     return `<p style="color: #6b7280; font-style: italic;">${locale === 'ko' ? '등록된 일정이 없습니다.' : 'No schedules registered.'}</p>`
   }
 
-  const dayLabel = locale === 'ko' ? '일차' : 'Day'
-  const scheduleLabel = locale === 'ko' ? '일정' : 'Schedule'
+  // const dayLabel = locale === 'ko' ? '일차' : 'Day'
+  // const scheduleLabel = locale === 'ko' ? '일정' : 'Schedule'
   
   let html = '<div class="schedule-container">'
   
-  schedules.forEach((item, index) => {
+  schedules.forEach((item) => {
     html += renderScheduleItem(item, locale)
   })
   
@@ -72,8 +72,8 @@ export function renderFullSchedule(schedules: ScheduleItem[], locale: 'ko' | 'en
     return `<p style="color: #6b7280; font-style: italic;">${locale === 'ko' ? '등록된 일정이 없습니다.' : 'No schedules registered.'}</p>`
   }
 
-  const dayLabel = locale === 'ko' ? '일차' : 'Day'
-  const scheduleLabel = locale === 'ko' ? '일정' : 'Schedule'
+  // const dayLabel = locale === 'ko' ? '일차' : 'Day'
+  // const scheduleLabel = locale === 'ko' ? '일정' : 'Schedule'
   
   // 일차별로 그룹화
   const schedulesByDay = schedules.reduce((acc, schedule) => {
@@ -124,7 +124,7 @@ export function renderScheduleByCategory(schedules: ScheduleItem[], category: 't
 
   const categoryLabel = categoryLabels[category]
   
-  let html = `
+  const html = `
     <div class="category-schedule" style="margin-bottom: 16px;">
       <h3 style="color: #059669; border-bottom: 2px solid #10b981; padding-bottom: 4px; margin-bottom: 12px;">
         ${categoryLabel} ${locale === 'ko' ? '일정' : 'Schedule'}

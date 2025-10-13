@@ -24,7 +24,7 @@ interface LocationSearchProps {
 
 declare global {
   interface Window {
-    google: any
+    google: typeof google
   }
 }
 
@@ -107,7 +107,7 @@ export default function LocationSearch({
     try {
       const geocoder = new window.google.maps.Geocoder()
       const result = await new Promise((resolve, reject) => {
-        geocoder.geocode({ address: plusCode }, (results: any, status: any) => {
+        geocoder.geocode({ address: plusCode }, (results: google.maps.GeocoderResult[] | null, status: google.maps.GeocoderStatus) => {
           if (status === 'OK' && results && results[0]) {
             resolve(results[0])
           } else {
@@ -167,7 +167,7 @@ export default function LocationSearch({
         region: 'US' // 미국 지역 우선
       }
 
-      service.textSearch(request, (results: any[], status: any) => {
+      service.textSearch(request, (results: google.maps.places.PlaceResult[] | null, status: google.maps.places.PlacesServiceStatus) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
           // 결과를 평점과 리뷰 수로 정렬하여 더 관련성 높은 결과 우선 표시
           const sortedResults = results
@@ -197,7 +197,7 @@ export default function LocationSearch({
         } else {
           // Places API 실패 시 Geocoder로 일반 주소 검색 시도
           const geocoder = new window.google.maps.Geocoder()
-          geocoder.geocode({ address: query }, (geocodeResults: any[], geocodeStatus: any) => {
+          geocoder.geocode({ address: query }, (geocodeResults: google.maps.GeocoderResult[] | null, geocodeStatus: google.maps.GeocoderStatus) => {
             if (geocodeStatus === 'OK' && geocodeResults && geocodeResults[0]) {
               const location = geocodeResults[0].geometry.location
               const lat = location.lat()

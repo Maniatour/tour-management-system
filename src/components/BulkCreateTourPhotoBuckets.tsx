@@ -109,7 +109,7 @@ export default function BulkCreateTourPhotoBuckets() {
                 <p>3. 또는 다음 간단한 SQL을 실행:</p>
                 <div className="bg-gray-100 p-2 rounded text-xs font-mono mt-2">
                   INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)<br/>
-                  VALUES ('tour-photos', 'tour-photos', true, 52428800, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif'])<br/>
+                  VALUES (&apos;tour-photos&apos;, &apos;tour-photos&apos;, true, 52428800, ARRAY[&apos;image/jpeg&apos;, &apos;image/png&apos;, &apos;image/webp&apos;, &apos;image/gif&apos;])<br/>
                   ON CONFLICT (id) DO NOTHING;
                 </div>
               </div>

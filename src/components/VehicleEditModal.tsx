@@ -689,7 +689,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                     </select>
                     {vehicleTypes.length === 0 && (
                       <p className="mt-1 text-sm text-gray-500">
-                        차종이 없습니다. 위의 "차종 관리" 버튼을 클릭하여 차종을 추가해주세요.
+                        차종이 없습니다. 위의 &quot;차종 관리&quot; 버튼을 클릭하여 차종을 추가해주세요.
                       </p>
                     )}
                   </div>
@@ -1368,7 +1368,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                   {formData.vehicle_type} 타입의 사진이 없습니다.
                 </p>
                 <p className="text-xs text-gray-400">
-                  먼저 차량 사진을 업로드하고 '템플릿 저장'을 클릭하세요.
+                  먼저 차량 사진을 업로드하고 &apos;템플릿 저장&apos;을 클릭하세요.
                 </p>
               </div>
             )}

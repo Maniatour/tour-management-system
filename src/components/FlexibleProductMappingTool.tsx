@@ -33,7 +33,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
   const [mappingRules, setMappingRules] = useState<MappingRule[]>([])
   const [previewMode, setPreviewMode] = useState(true)
-  const [migrationResults, setMigrationResults] = useState<any[]>([])
+  const [migrationResults, setMigrationResults] = useState<Record<string, unknown>[]>([])
   const [debugMode, setDebugMode] = useState(false)
   const [testMode, setTestMode] = useState(false)
 
@@ -285,7 +285,7 @@ export default function FlexibleProductMappingTool({ onDataUpdated }: FlexiblePr
                     // 선택된 옵션은 옵션 ID 자체를 choice ID로 사용
                     acc[id!] = [id!] // 옵션 ID 자체를 choice ID로 사용 (실제 시스템 방식)
                     return acc
-                  }, {} as Record<string, any>)
+                  }, {} as Record<string, string[]>)
                   
                   // 선택되지 않은 옵션들도 포함 (빈 배열로)
                   const allOptionIds = productOptions

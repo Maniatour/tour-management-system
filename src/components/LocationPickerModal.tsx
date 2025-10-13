@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 // Google Maps 타입 정의
 declare global {
   interface Window {
-    google: any
+    google: typeof google
   }
 }
 
@@ -33,8 +33,8 @@ export default function LocationPickerModal({
   const [address, setAddress] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [mapLoaded, setMapLoaded] = useState(false)
-  const [map, setMap] = useState<any>(null)
-  const [marker, setMarker] = useState<any>(null)
+  const [map, setMap] = useState<google.maps.Map | null>(null)
+  const [marker, setMarker] = useState<google.maps.Marker | null>(null)
   const [apiKeyError, setApiKeyError] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -123,7 +123,7 @@ export default function LocationPickerModal({
     const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
     console.log('LocationPickerModal Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
     
-    const mapOptions: any = {
+    const mapOptions: google.maps.MapOptions = {
       center: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
       zoom: 13,
       mapTypeId: window.google.maps.MapTypeId.ROADMAP,
@@ -147,7 +147,7 @@ export default function LocationPickerModal({
     const newMap = new window.google.maps.Map(mapElement, mapOptions)
 
     // Advanced Marker 또는 기본 Marker 생성
-    let newMarker: any
+    let newMarker: google.maps.Marker
     if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
       newMarker = new window.google.maps.marker.AdvancedMarkerElement({
         position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
@@ -167,7 +167,7 @@ export default function LocationPickerModal({
     }
 
     // 지도 클릭 이벤트
-    newMap.addListener('click', (event: any) => {
+    newMap.addListener('click', (event: google.maps.MapMouseEvent) => {
       const lat = event.latLng.lat()
       const lng = event.latLng.lng()
       newMarker.setPosition({ lat, lng })
@@ -200,7 +200,7 @@ export default function LocationPickerModal({
     if (!window.google) return
 
     const geocoder = new window.google.maps.Geocoder()
-    geocoder.geocode({ location: { lat, lng } }, (results: any[], status: string) => {
+    geocoder.geocode({ location: { lat, lng } }, (results: google.maps.GeocoderResult[], status: string) => {
       if (status === 'OK' && results[0]) {
         setAddress(results[0].formatted_address)
       } else {
@@ -226,7 +226,7 @@ export default function LocationPickerModal({
         region: 'US' // 미국 지역 우선
       }
 
-      service.textSearch(request, (results: any[], status: any) => {
+      service.textSearch(request, (results: google.maps.places.PlaceResult[], status: google.maps.places.PlacesServiceStatus) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
           // 결과를 평점과 리뷰 수로 정렬하여 더 관련성 높은 결과 우선 표시
           const sortedResults = results
@@ -278,7 +278,7 @@ export default function LocationPickerModal({
   }
 
   // 위치 선택
-  const handleLocationSelect = (location: any) => {
+  const handleLocationSelect = (location: google.maps.places.PlaceResult) => {
     const lat = location.latitude
     const lng = location.longitude
     
