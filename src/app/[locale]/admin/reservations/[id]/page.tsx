@@ -22,14 +22,15 @@ export default function ReservationDetailsPage() {
   // 권한이 없을 때만 리다이렉트 (useEffect로 처리)
   useEffect(() => {
     // 로딩이 완료되고 권한이 없을 때만 리다이렉트
-    if (!authLoading && !isStaff) {
+    // userRole이 null이 아닐 때만 체크 (권한 체크 완료 후)
+    if (!authLoading && userRole !== null && !isStaff) {
       console.log('권한 없음, 리다이렉트:', { authLoading, isStaff, userRole, user: user?.email })
       router.push(`/${params.locale}/admin`)
     }
   }, [authLoading, isStaff, router, params.locale, userRole, user])
   
-  // 로딩 중이거나 권한이 없을 때 로딩 화면 표시
-  if (authLoading || (!authLoading && !isStaff)) {
+  // 로딩 중이거나 권한 체크가 완료되지 않았을 때 로딩 화면 표시
+  if (authLoading || userRole === null) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
