@@ -13,6 +13,16 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
   const { user, userRole, loading, isInitialized } = useAuth()
   const router = useRouter()
 
+  // 디버깅을 위한 로깅
+  console.log('AdminAuthGuard - 상태:', {
+    user: user?.email,
+    userRole,
+    loading,
+    isInitialized,
+    hasUser: !!user,
+    isCustomer: userRole === 'customer'
+  })
+
   useEffect(() => {
     if (isInitialized) {
       if (!user) {
@@ -26,6 +36,7 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
   }, [user, userRole, isInitialized, router, locale])
 
   if (!isInitialized) {
+    console.log('AdminAuthGuard: Not initialized, showing loading')
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -37,6 +48,7 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
   }
 
   if (!user || userRole === 'customer') {
+    console.log('AdminAuthGuard: No access, showing access denied')
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -53,5 +65,6 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
     )
   }
 
+  console.log('AdminAuthGuard: Access granted, rendering children')
   return <>{children}</>
 }
