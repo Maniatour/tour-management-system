@@ -53,9 +53,9 @@ export default function AuthCallbackPage() {
             if (refreshToken) {
               localStorage.setItem('sb-refresh-token', refreshToken)
             }
-            if (expiresAt) {
-              localStorage.setItem('sb-expires-at', expiresAt)
-            }
+            // 토큰 만료 시간을 7일로 설정 (기본값)
+            const tokenExpiry = expiresAt ? parseInt(expiresAt) : Math.floor(Date.now() / 1000) + (7 * 24 * 3600)
+            localStorage.setItem('sb-expires-at', tokenExpiry.toString())
             
             console.log('Auth callback: Tokens stored, redirecting to main page')
             router.replace(`/${locale}`)

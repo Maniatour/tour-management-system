@@ -50,6 +50,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
 
+  // 토큰 자동 갱신 함수
+  const refreshTokenIfNeeded = useCallback(async () => {
+    try {
+      const accessToken = localStorage.getItem('sb-access-token')
+      const refreshToken = localStorage.getItem('sb-refresh-token')
+      const expiresAt = localStorage.getItem('sb-expires-at')
+      
+      if (!accessToken || !refreshToken || !expiresAt) {
+        return false
+      }
+      
+      const now = Math.floor(Date.now() / 1000)
+      const tokenExpiry = parseInt(expiresAt)
+      
+      // 토큰이 1시간 이내에 만료되는 경우 갱신
+      if (tokenExpiry <= now + 3600) {
+        console.log('AuthContext: Token expires soon, attempting refresh')
+        
+        if (supabase) {
+          const { data, error } = await supabase.auth.refreshSession({
+            refresh_token: refreshToken
+          })
+          
+          if (data.session && !error) {
+            console.log('AuthContext: Token refreshed successfully')
+            localStorage.setItem('sb-access-token', data.session.access_token)
+            localStorage.setItem('sb-refresh-token', data.session.refresh_token)
+            const newExpiry = data.session.expires_at || Math.floor(Date.now() / 1000) + (7 * 24 * 3600)
+            localStorage.setItem('sb-expires-at', newExpiry.toString())
+            updateSupabaseToken(data.session.access_token)
+            return true
+          } else {
+            console.warn('AuthContext: Token refresh failed:', error)
+            return false
+          }
+        }
+      }
+      
+      return true
+    } catch (error) {
+      console.warn('AuthContext: Token refresh error:', error)
+      return false
+    }
+  }, [])
+
   // 사용자 역할 및 권한 확인
   const checkUserRole = useCallback(async (email: string): Promise<void> => {
     if (!email) {
@@ -219,7 +264,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const now = Math.floor(Date.now() / 1000)
           const tokenExpiry = parseInt(expiresAt)
           
-          if (tokenExpiry > now) {
+          // 토큰이 유효하거나 만료 시간이 1시간 이내인 경우 갱신 시도
+          if (tokenExpiry > now || (tokenExpiry > now - 3600)) {
             console.log('AuthContext: Found valid stored token, creating mock session')
             
             // JWT 토큰에서 사용자 정보 추출 (간단한 방법)
@@ -258,6 +304,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 
                 // Supabase 클라이언트에 토큰 설정
                 updateSupabaseToken(accessToken)
+                
+                // 토큰이 곧 만료되는 경우 갱신 시도
+                if (tokenExpiry <= now + 3600) {
+                  console.log('AuthContext: Token expires soon, attempting refresh')
+                  try {
+                    const refreshToken = localStorage.getItem('sb-refresh-token')
+                    if (refreshToken && supabase) {
+                      const { data, error } = await supabase.auth.refreshSession({
+                        refresh_token: refreshToken
+                      })
+                      
+                      if (data.session && !error) {
+                        console.log('AuthContext: Token refreshed successfully')
+                        localStorage.setItem('sb-access-token', data.session.access_token)
+                        localStorage.setItem('sb-refresh-token', data.session.refresh_token)
+                        // 토큰 만료 시간을 7일로 설정
+                        const newExpiry = data.session.expires_at || Math.floor(Date.now() / 1000) + (7 * 24 * 3600)
+                        localStorage.setItem('sb-expires-at', newExpiry.toString())
+                        updateSupabaseToken(data.session.access_token)
+                      } else {
+                        console.warn('AuthContext: Token refresh failed:', error)
+                      }
+                    }
+                  } catch (refreshError) {
+                    console.warn('AuthContext: Token refresh error:', refreshError)
+                  }
+                }
                 
                 checkUserRole(mockUser.email || '').catch(error => {
                   console.error('AuthContext: Team membership check failed:', error)
@@ -551,6 +624,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTeamChatUnreadCount(0)
     }
   }, [user?.email, userRole, refreshTeamChatUnreadCount])
+
+  // 토큰 자동 갱신 (30분마다 체크)
+  useEffect(() => {
+    if (user && !isSimulating) {
+      const interval = setInterval(async () => {
+        const refreshed = await refreshTokenIfNeeded()
+        if (!refreshed) {
+          console.warn('AuthContext: Token refresh failed, user may need to re-login')
+        }
+      }, 30 * 60 * 1000) // 30분마다 체크
+      
+      return () => clearInterval(interval)
+    }
+  }, [user, isSimulating, refreshTokenIfNeeded])
 
   const value: AuthContextType = {
     user,
