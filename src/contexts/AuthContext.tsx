@@ -54,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('AuthContext: No email provided, setting customer role')
       setUserRole('customer')
       setPermissions(null)
+      setLoading(false)
       return
     }
 
@@ -64,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('AuthContext: Supabase client not available')
         setUserRole('customer')
         setPermissions(null)
+        setLoading(false)
         return
       }
 
@@ -90,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           canManageOptions: true,
           canViewFinance: true,
         })
+        setLoading(false)
         return
       }
       
@@ -153,17 +156,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         setUserRole(role)
         setPermissions(userPermissions)
+        setLoading(false)
         
         console.log('AuthContext: User role set successfully:', role, 'for user:', email)
       } catch (error) {
         console.warn('AuthContext: Team query failed, using customer role:', error)
         setUserRole('customer')
         setPermissions(null)
+        setLoading(false)
       }
     } catch (error) {
       console.error('AuthContext: Error checking user role:', error)
       setUserRole('customer')
       setPermissions(null)
+      setLoading(false)
     }
   }, [])
 
@@ -251,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   setPermissions(null)
                 })
                 
-                setLoading(false)
+                // setLoading(false) 제거 - checkUserRole에서 처리
                 return
               }
             } catch (tokenError) {
