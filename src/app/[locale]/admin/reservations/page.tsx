@@ -1137,6 +1137,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                 width={12}
                                 height={12}
                                 className="rounded flex-shrink-0"
+                                style={{ width: 'auto', height: 'auto' }}
                                 onError={(e) => {
                                   const target = e.target as HTMLImageElement
                                   target.style.display = 'none'
@@ -1375,6 +1376,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                           width={16}
                                           height={16}
                                           className="rounded flex-shrink-0"
+                                          style={{ width: 'auto', height: 'auto' }}
                                           onError={(e) => {
                                             // 파비콘 로드 실패 시 기본 아이콘으로 대체
                                             const target = e.target as HTMLImageElement
@@ -1646,9 +1648,36 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
                 {/* 채널 정보 */}
                 <div className="flex items-center space-x-2">
-                  <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center">
-                    <span className="text-gray-400 text-xs">🌐</span>
-                  </div>
+                  {(() => {
+                    const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
+                    const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
+                    return channelWithFavicon?.favicon_url ? (
+                      <Image 
+                        src={channelWithFavicon.favicon_url} 
+                        alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
+                        width={16}
+                        height={16}
+                        className="rounded flex-shrink-0"
+                        style={{ width: 'auto', height: 'auto' }}
+                        onError={(e) => {
+                          // 파비콘 로드 실패 시 기본 아이콘으로 대체
+                          const target = e.target as HTMLImageElement
+                          target.style.display = 'none'
+                          const parent = target.parentElement
+                          if (parent) {
+                            const fallback = document.createElement('div')
+                            fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
+                            fallback.innerHTML = '🌐'
+                            parent.appendChild(fallback)
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-gray-400 text-xs">🌐</span>
+                      </div>
+                    )
+                  })()}
                     <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels || [])}</div>
                     <div className="text-xs text-gray-500">({(channels as Array<{ id: string; name: string; type?: string }>)?.find(c => c.id === reservation.channelId)?.type})</div>
                 </div>
@@ -1986,6 +2015,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           width={16}
                           height={16}
                           className="rounded flex-shrink-0"
+                          style={{ width: 'auto', height: 'auto' }}
                           onError={(e) => {
                             // 파비콘 로드 실패 시 기본 아이콘으로 대체
                             const target = e.target as HTMLImageElement

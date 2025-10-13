@@ -80,9 +80,34 @@ export default function TourDetailPage() {
   const params = useParams()
   const router = useRouter()
   const locale = useLocale()
-  const { hasPermission, userRole, user } = useAuth()
+  const { hasPermission, userRole, user, loading } = useAuth()
   const { openChat } = useFloatingChat()
+  
+  // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
   const isStaff = hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager')
+  
+  // 권한이 없을 때만 리다이렉트 (useEffect로 처리)
+  useEffect(() => {
+    // 로딩이 완료되고 권한이 없을 때만 리다이렉트
+    if (!loading && !isStaff) {
+      console.log('권한 없음, 리다이렉트:', { loading, isStaff, userRole, user: user?.email })
+      router.push(`/${params.locale}/admin`)
+    }
+  }, [loading, isStaff, router, params.locale, userRole, user])
+  
+  // 로딩 중이거나 권한이 없을 때 로딩 화면 표시
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+  
+  // 권한이 없을 때는 리다이렉트 중이므로 빈 화면 표시
+  if (!isStaff) {
+    return null
+  }
   
   // 그룹별 색상 매핑 함수
   const getGroupColorClasses = (groupId: string, groupName?: string, optionName?: string) => {
@@ -143,7 +168,7 @@ export default function TourDetailPage() {
   const [showAssignmentStatusDropdown, setShowAssignmentStatusDropdown] = useState(false)
   
   // 아코디언 상태 관리
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['team-composition']))
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['team-composition', 'vehicle-assignment', 'pickup-schedule', 'assignment-management']))
 
   // 아코디언 토글 함수
   const toggleSection = (sectionId: string) => {
@@ -418,7 +443,7 @@ export default function TourDetailPage() {
   const [allReservations, setAllReservations] = useState<ReservationRow[]>([])
   const [allTours, setAllTours] = useState<TourRow[]>([])
   const [allProducts, setAllProducts] = useState<ProductRow[]>([])
-  const [channels, setChannels] = useState<{ id: string; name: string }[]>([])
+  const [channels, setChannels] = useState<{ id: string; name: string; favicon_url?: string }[]>([])
   const [assignedReservations, setAssignedReservations] = useState<ReservationRow[]>([])
   const [pendingReservations, setPendingReservations] = useState<ReservationRow[]>([])
   const [otherToursAssignedReservations, setOtherToursAssignedReservations] = useState<(ReservationRow & { assigned_tour_id?: string | null })[]>([])
@@ -433,7 +458,7 @@ export default function TourDetailPage() {
   const [selectedGuide, setSelectedGuide] = useState<string>('')
   const [selectedAssistant, setSelectedAssistant] = useState<string>('')
   const [tourNote, setTourNote] = useState<string>('')
-  const [loading, setLoading] = useState(true)
+  const [pageLoading, setPageLoading] = useState(true)
   const [loadingStates, setLoadingStates] = useState({
     tour: false,
     reservations: false,
@@ -555,7 +580,7 @@ export default function TourDetailPage() {
 
   const fetchTourData = useCallback(async (tourId: string) => {
     try {
-      setLoading(true)
+      setPageLoading(true)
         setLoadingStates((prev: any) => ({ ...prev, tour: true }))
       
       // 1단계: 핵심 투어 데이터만 먼저 로드 (캐시 확인)
@@ -614,9 +639,33 @@ export default function TourDetailPage() {
         }
         if (td?.tour_note) setTourNote(td.tour_note as string)
 
-        // 2단계: 병렬로 핵심 데이터 로드 (상품, 예약, 고객)
+        // 2단계: 병렬로 핵심 데이터 로드 (상품, 예약, 고객, 채널)
         setLoadingStates((prev: any) => ({ ...prev, reservations: true }))
         const coreDataPromises = []
+        
+        // 채널 데이터 로드 (캐시 확인)
+        if (channels.length === 0) {
+          const channelsCacheKey = cacheKeys.channels()
+          let channelsData = cache.get(channelsCacheKey)
+          
+          if (channelsData) {
+            setChannels(channelsData as any[])
+            coreDataPromises.push(Promise.resolve(channelsData))
+          } else {
+            coreDataPromises.push(
+              supabase
+                .from('channels')
+                .select('*')
+                .order('name')
+                .then(({ data }: { data: any }) => {
+                  const channels = (data as any[]) || []
+                  cache.set(channelsCacheKey, channels, 30 * 60 * 1000) // 30분 캐시
+                  setChannels(channels)
+                  return channels
+                })
+            )
+          }
+        }
         
         // 상품 정보 (캐시 확인)
         if (td?.product_id) {
@@ -906,7 +955,7 @@ export default function TourDetailPage() {
     } catch (error) {
       console.error('Error fetching tour data:', error)
     } finally {
-      setLoading(false)
+      setPageLoading(false)
       
       // 팀 멤버가 로드되지 않은 경우 fallback 시도
       console.log('Checking if team members need fallback loading...')
@@ -1371,6 +1420,48 @@ export default function TourDetailPage() {
     return hotel ? hotel.hotel : pickupHotelId || '픽업 호텔 미지정'
   }
 
+  const getChannelInfo = (channelId: string) => {
+    const channel = channels.find((c: any) => c.id === channelId)
+    return channel || null
+  }
+
+  const getChannelIcon = (channelInfo: any) => {
+    // favicon_url이 있으면 실제 파비콘 사용
+    if (channelInfo?.favicon_url) {
+      return (
+        <img 
+          src={channelInfo.favicon_url} 
+          alt={channelInfo.name || 'Channel'} 
+          className="w-4 h-4 rounded-sm"
+          onError={(e) => {
+            // 이미지 로드 실패 시 기본 아이콘으로 대체
+            e.currentTarget.style.display = 'none'
+            e.currentTarget.nextElementSibling?.classList.remove('hidden')
+          }}
+        />
+      )
+    }
+    
+    // favicon_url이 없으면 채널명 기반 이모지 사용
+    const name = (channelInfo?.name || '').toLowerCase()
+    if (name.includes('booking') || name.includes('부킹')) return '🏨'
+    if (name.includes('tripadvisor') || name.includes('트립어드바이저')) return '🦉'
+    if (name.includes('viator') || name.includes('비아토르')) return '🎯'
+    if (name.includes('getyourguide') || name.includes('겟유어가이드')) return '🧭'
+    if (name.includes('klook') || name.includes('클룩')) return '🎪'
+    if (name.includes('airbnb') || name.includes('에어비앤비')) return '🏠'
+    if (name.includes('expedia') || name.includes('익스피디아')) return '✈️'
+    if (name.includes('agoda') || name.includes('아고다')) return '🏨'
+    if (name.includes('hotels') || name.includes('호텔스')) return '🏨'
+    if (name.includes('direct') || name.includes('직접') || name.includes('direct')) return '📞'
+    if (name.includes('website') || name.includes('웹사이트')) return '🌐'
+    if (name.includes('phone') || name.includes('전화')) return '📞'
+    if (name.includes('email') || name.includes('이메일')) return '📧'
+    if (name.includes('walk') || name.includes('워크인')) return '🚶'
+    if (name.includes('referral') || name.includes('추천')) return '👥'
+    return '📋' // 기본 아이콘
+  }
+
   const getCountryCode = (language: string) => {
     const languageMap: Record<string, string> = {
       'ko': 'KR',
@@ -1652,14 +1743,20 @@ export default function TourDetailPage() {
     // 모든 투어에서 모든 팀 타입 선택 가능
     
     setTeamType(type)
-    setSelectedGuide('')
-    setSelectedAssistant('')
+    
+    // 기존 배정 유지 - 리셋하지 않음
+    // setSelectedGuide('')  // 제거: 기존 가이드 배정 유지
+    // setSelectedAssistant('')  // 제거: 기존 어시스턴트/드라이버 배정 유지
     
     if (tour) {
       try {
         const updateData: { team_type: string; assistant_id?: string | null } = { team_type: type }
+        
+        // 1가이드로 변경할 때만 어시스턴트를 null로 설정
         if (type === '1guide') {
           updateData.assistant_id = null
+          // 1가이드로 변경할 때만 어시스턴트 선택을 리셋
+          setSelectedAssistant('')
         }
         
         const { error } = await (supabase as any)
@@ -1671,6 +1768,15 @@ export default function TourDetailPage() {
           console.error('Error updating team type:', error)
         } else {
           console.log('Team type updated successfully:', type)
+          // 로컬 상태도 업데이트
+          setTour(prev => {
+            if (!prev) return null
+            return {
+              ...prev,
+              team_type: type,
+              assistant_id: updateData.assistant_id ?? null
+            }
+          })
         }
       } catch (error) {
         console.error('Error updating team type:', error)
@@ -2018,7 +2124,7 @@ export default function TourDetailPage() {
     { value: 'pending', label: '대기', color: 'bg-yellow-100 text-yellow-800' }
   ]
 
-  if (loading) {
+  if (pageLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
         {/* 헤더 스켈레톤 */}
@@ -2139,7 +2245,86 @@ export default function TourDetailPage() {
               </div>
         </div>
             {/* 모바일 요약/액션 (아이콘) */}
-            <div className="flex sm:hidden items-center justify-between w-full mt-1">
+            <div className="flex sm:hidden flex-col w-full mt-1 space-y-3">
+              {/* 모바일 상태 변경 버튼들 */}
+              <div className="flex space-x-2">
+                {/* 투어 상태 드롭다운 */}
+                <div className="relative flex-1">
+                  <button 
+                    onClick={() => {
+                      setShowTourStatusDropdown(!showTourStatusDropdown)
+                    }}
+                    className={`w-full px-3 py-2 rounded-lg font-medium text-xs flex items-center justify-center ${getStatusColor(tour.tour_status)} hover:opacity-80 transition-opacity`}
+                  >
+                    투어: {getStatusText(tour.tour_status)}
+                    <svg className="ml-1 w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  
+                  {showTourStatusDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                      {tourStatusOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            updateTourStatus(option.value)
+                            setShowTourStatusDropdown(false)
+                          }}
+                          className={`w-full px-3 py-2 text-xs text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${option.color}`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                {/* 배정 상태 드롭다운 */}
+                <div className="relative flex-1">
+                  <button 
+                    onClick={() => {
+                      setShowAssignmentStatusDropdown(!showAssignmentStatusDropdown)
+                    }}
+                    className={`w-full px-3 py-2 rounded-lg font-medium text-xs flex items-center justify-center ${getAssignmentStatusColor()} hover:opacity-80 transition-opacity`}
+                  >
+                    배정: {getAssignmentStatusText()}
+                    <svg className="ml-1 w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  
+                  {showAssignmentStatusDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                      {assignmentStatusOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            updateAssignmentStatus(option.value)
+                            setShowAssignmentStatusDropdown(false)
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            updateAssignmentStatus(option.value)
+                            setShowAssignmentStatusDropdown(false)
+                          }}
+                          className={`w-full px-3 py-2 text-xs text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${option.color}`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* 모바일 요약 정보 및 액션 버튼들 */}
+              <div className="flex items-center justify-between">
               <div className="bg-blue-50 rounded px-2 py-1 border border-blue-200 text-blue-700 text-xs font-semibold">
                 {getTotalAssignedPeople} / {getTotalPeopleFiltered} ({Math.max(getTotalPeopleAll - getTotalPeopleFiltered, 0)})
               </div>
@@ -2153,6 +2338,7 @@ export default function TourDetailPage() {
                 <button className="p-1.5 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200">
                   <Edit size={16} />
                 </button>
+                </div>
               </div>
             </div>
 
@@ -2337,21 +2523,10 @@ export default function TourDetailPage() {
           <div className="p-4">
             <TourWeather 
               tourDate={tour.tour_date} 
-              productId={product?.id} 
+              {...(product?.id && { productId: product.id })}
             />
           </div>
         </div>
-
-        {/* 투어 스케줄 섹션 */}
-        {tour.product_id && (
-          <div className="bg-white rounded-lg shadow-sm border p-4">
-            <TourScheduleSection 
-              productId={tour.product_id} 
-              teamType={tour.team_type as 'guide+driver' | '2guide' | null}
-              locale={params.locale as string}
-            />
-          </div>
-        )}
 
             {/* 픽업 스케줄 */}
             <div className="bg-white rounded-lg shadow-sm border">
@@ -2455,6 +2630,37 @@ export default function TourDetailPage() {
                 )}
               </div>
             </div>
+
+        {/* 투어 스케줄 섹션 */}
+        {tour.product_id && (
+          <div className="bg-white rounded-lg shadow-sm border">
+            <div className="p-4">
+              <div 
+                className="flex items-center justify-between cursor-pointer mb-3 p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                onClick={() => toggleSection('tour-schedule')}
+              >
+                <h2 className="text-md font-semibold text-gray-900 flex items-center">
+                  투어 스케줄
+                </h2>
+                <div className="flex items-center space-x-2">
+                  {expandedSections.has('tour-schedule') ? (
+                    <ChevronUp className="w-5 h-5 text-gray-500" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-gray-500" />
+                  )}
+                </div>
+              </div>
+              
+              {expandedSections.has('tour-schedule') && (
+                <TourScheduleSection 
+                  productId={tour.product_id} 
+                  teamType={tour.team_type as 'guide+driver' | '2guide' | null}
+                  locale={params.locale as string}
+                />
+              )}
+            </div>
+          </div>
+        )}
 
             {/* 옵션 관리 */}
             <div className="bg-white rounded-lg shadow-sm border">
@@ -2828,7 +3034,14 @@ export default function TourDetailPage() {
                     )}
                   </h3>
                   <div className="space-y-2">
-                    {assignedReservations.map((reservation: any) => (
+                    {assignedReservations
+                      .sort((a: any, b: any) => {
+                        // 픽업 시간으로 정렬 (시간이 없는 경우 기본값 08:00 사용)
+                        const timeA = a.pickup_time ? a.pickup_time.substring(0, 5) : '08:00'
+                        const timeB = b.pickup_time ? b.pickup_time.substring(0, 5) : '08:00'
+                        return timeA.localeCompare(timeB)
+                      })
+                      .map((reservation: any) => (
                       <div 
                         key={reservation.id} 
                         className={`p-3 rounded-lg border ${isStaff ? 'bg-white hover:bg-gray-50 cursor-pointer' : 'bg-gray-50 cursor-not-allowed'}`}
@@ -2884,61 +3097,89 @@ export default function TourDetailPage() {
                         
                         {/* 중단: Choices 표시 */}
                         <div className="mb-2">
-                          {(() => {
-                            // choices 데이터 파싱
-                            let parsedChoices = safeJsonParse(reservation.choices, null);
-                            
-                            // choices 데이터에서 선택된 옵션 찾기
-                            if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
-                              const selectedOptions = parsedChoices.required
-                                .map((choice: Record<string, unknown>) => {
-                                  if (!choice || typeof choice !== 'object') return null;
-                                  
-                                  // 선택된 옵션 찾기 (is_default가 true인 옵션)
-                                  const selectedOption = choice.options && Array.isArray(choice.options) 
-                                    ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
-                                    : null;
-                                  
-                                  if (selectedOption) {
-                                    const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
-                                    return optionName;
-                                  }
-                                  
-                                  // 선택된 옵션이 없으면 첫 번째 옵션
-                                  if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
-                                    const firstOption = choice.options[0] as Record<string, unknown>;
-                                    const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
-                                    return optionName;
-                                  }
-                                  
-                                  return null;
-                                })
-                                .filter(Boolean);
-                              
-                              if (selectedOptions.length > 0) {
-                                return (
-                                  <div className="flex flex-wrap gap-1">
-                                    {selectedOptions.map((optionName: string, index: number) => {
-                                      // 옵션 이름에 따라 다른 색상 적용
-                                      const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
-                                      const badgeClass = isAntelopeX 
-                                        ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
-                                        : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              {(() => {
+                                // choices 데이터 파싱
+                                let parsedChoices = safeJsonParse(reservation.choices, null);
+                                
+                                // choices 데이터에서 선택된 옵션 찾기
+                                if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                                  const selectedOptions = parsedChoices.required
+                                    .map((choice: Record<string, unknown>) => {
+                                      if (!choice || typeof choice !== 'object') return null;
                                       
-                                      return (
-                                        <span key={index} className={badgeClass}>
-                                          ✓ {String(optionName)}
-                                        </span>
-                                      );
-                                    })}
+                                      // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                                      const selectedOption = choice.options && Array.isArray(choice.options) 
+                                        ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
+                                        : null;
+                                      
+                                      if (selectedOption) {
+                                        const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                                        return optionName;
+                                      }
+                                      
+                                      // 선택된 옵션이 없으면 첫 번째 옵션
+                                      if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                        const firstOption = choice.options[0] as Record<string, unknown>;
+                                        const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                                        return optionName;
+                                      }
+                                      
+                                      // 테스트용: 채널 정보가 없어도 기본 아이콘 표시
+                              return (
+                                <div className="flex items-center space-x-1 ml-2">
+                                  <span className="text-sm">📋</span>
+                                  <span className="text-xs text-gray-400">채널 없음</span>
+                                </div>
+                              );
+                                    })
+                                    .filter(Boolean);
+                                  
+                                  if (selectedOptions.length > 0) {
+                                    return (
+                                      <div className="flex flex-wrap gap-1">
+                                        {selectedOptions.map((optionName: string, index: number) => {
+                                          // 옵션 이름에 따라 다른 색상 적용
+                                          const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
+                                          const badgeClass = isAntelopeX 
+                                            ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
+                                            : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                                          
+                                          return (
+                                            <span key={index} className={badgeClass}>
+                                              ✓ {String(optionName)}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  }
+                                }
+                                
+                                // choices 데이터가 없는 경우
+                                return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
+                              })()}
+                            </div>
+                            
+                            {/* 채널 정보 표시 - 오른쪽 끝 정렬 */}
+                            {(() => {
+                              const channelInfo = reservation.channel_id ? getChannelInfo(reservation.channel_id) : null;
+                              
+                              if (channelInfo) {
+                                return (
+                                  <div className="flex items-center space-x-1 ml-2">
+                                    <div className="flex items-center">
+                                      {getChannelIcon(channelInfo)}
+                                      <span className="hidden text-sm">📋</span> {/* 이미지 로드 실패 시 대체 아이콘 */}
+                                    </div>
+                                    <span className="text-xs text-gray-600">{channelInfo.name}</span>
                                   </div>
                                 );
                               }
-                            }
-                            
-                            // choices 데이터가 없는 경우
-                            return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
-                          })()}
+                              return null;
+                            })()}
+                          </div>
                         </div>
                         
                         {/* 하단: 픽업 시간 | 픽업 정보 */}
@@ -3051,36 +3292,38 @@ export default function TourDetailPage() {
                           
                           {/* 중단: Choices 표시 */}
                           <div className="mb-2">
-                            {(() => {
-                              // choices 데이터 파싱
-                              let parsedChoices = safeJsonParse(reservation.choices, null);
-                              
-                              // choices 데이터에서 선택된 옵션 찾기
-                              if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
-                                const selectedOptions = parsedChoices.required
-                                  .map((choice: Record<string, unknown>) => {
-                                    if (!choice || typeof choice !== 'object') return null;
-                                    
-                                    // 선택된 옵션 찾기 (is_default가 true인 옵션)
-                                    const selectedOption = choice.options && Array.isArray(choice.options) 
-                                      ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
-                                      : null;
-                                    
-                                    if (selectedOption) {
-                                      const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
-                                      return optionName;
-                                    }
-                                    
-                                    // 선택된 옵션이 없으면 첫 번째 옵션
-                                    if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
-                                      const firstOption = choice.options[0] as Record<string, unknown>;
-                                      const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
-                                      return optionName;
-                                    }
-                                    
-                                    return null;
-                                  })
-                                  .filter(Boolean);
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                {(() => {
+                                  // choices 데이터 파싱
+                                  let parsedChoices = safeJsonParse(reservation.choices, null);
+                                  
+                                  // choices 데이터에서 선택된 옵션 찾기
+                                  if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                                    const selectedOptions = parsedChoices.required
+                                      .map((choice: Record<string, unknown>) => {
+                                        if (!choice || typeof choice !== 'object') return null;
+                                        
+                                        // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                                        const selectedOption = choice.options && Array.isArray(choice.options) 
+                                          ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
+                                          : null;
+                                        
+                                        if (selectedOption) {
+                                          const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                                          return optionName;
+                                        }
+                                        
+                                        // 선택된 옵션이 없으면 첫 번째 옵션
+                                        if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                          const firstOption = choice.options[0] as Record<string, unknown>;
+                                          const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                                          return optionName;
+                                        }
+                                        
+                                        return null;
+                                      })
+                                      .filter(Boolean);
                                 
                                 if (selectedOptions.length > 0) {
                                   return (
@@ -3094,7 +3337,7 @@ export default function TourDetailPage() {
                                         if (parsedChoices.required && Array.isArray(parsedChoices.required)) {
                                           for (const choice of parsedChoices.required) {
                                             if (choice.options && Array.isArray(choice.options)) {
-                                              const foundOption = choice.options.find(opt => 
+                                              const foundOption = choice.options.find((opt: any) => 
                                                 opt.name === optionName || opt.name_ko === optionName
                                               )
                                               if (foundOption) {
@@ -3122,6 +3365,26 @@ export default function TourDetailPage() {
                               // choices 데이터가 없는 경우
                               return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
                             })()}
+                              </div>
+                              
+                              {/* 채널 정보 표시 - 오른쪽 끝 정렬 */}
+                              {(() => {
+                                const channelInfo = reservation.channel_id ? getChannelInfo(reservation.channel_id) : null;
+                                
+                                if (channelInfo) {
+                                  return (
+                                    <div className="flex items-center space-x-1 ml-2">
+                                      <div className="flex items-center">
+                                        {getChannelIcon(channelInfo)}
+                                        <span className="hidden text-sm">📋</span> {/* 이미지 로드 실패 시 대체 아이콘 */}
+                                      </div>
+                                      <span className="text-xs text-gray-600">{channelInfo.name}</span>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
                           </div>
                           
                           {/* 하단: 픽업 시간 | 픽업 정보 */}
@@ -3223,61 +3486,89 @@ export default function TourDetailPage() {
                         
                         {/* 중단: Choices 표시 */}
                         <div className="mb-2">
-                          {(() => {
-                            // choices 데이터 파싱
-                            let parsedChoices = safeJsonParse(reservation.choices, null);
-                            
-                            // choices 데이터에서 선택된 옵션 찾기
-                            if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
-                              const selectedOptions = parsedChoices.required
-                                .map((choice: Record<string, unknown>) => {
-                                  if (!choice || typeof choice !== 'object') return null;
-                                  
-                                  // 선택된 옵션 찾기 (is_default가 true인 옵션)
-                                  const selectedOption = choice.options && Array.isArray(choice.options) 
-                                    ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
-                                    : null;
-                                  
-                                  if (selectedOption) {
-                                    const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
-                                    return optionName;
-                                  }
-                                  
-                                  // 선택된 옵션이 없으면 첫 번째 옵션
-                                  if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
-                                    const firstOption = choice.options[0] as Record<string, unknown>;
-                                    const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
-                                    return optionName;
-                                  }
-                                  
-                                  return null;
-                                })
-                                .filter(Boolean);
-                              
-                              if (selectedOptions.length > 0) {
-                                return (
-                                  <div className="flex flex-wrap gap-1">
-                                    {selectedOptions.map((optionName: string, index: number) => {
-                                      // 옵션 이름에 따라 다른 색상 적용
-                                      const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
-                                      const badgeClass = isAntelopeX 
-                                        ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
-                                        : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              {(() => {
+                                // choices 데이터 파싱
+                                let parsedChoices = safeJsonParse(reservation.choices, null);
+                                
+                                // choices 데이터에서 선택된 옵션 찾기
+                                if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                                  const selectedOptions = parsedChoices.required
+                                    .map((choice: Record<string, unknown>) => {
+                                      if (!choice || typeof choice !== 'object') return null;
                                       
-                                      return (
-                                        <span key={index} className={badgeClass}>
-                                          ✓ {String(optionName)}
-                                        </span>
-                                      );
-                                    })}
+                                      // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                                      const selectedOption = choice.options && Array.isArray(choice.options) 
+                                        ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
+                                        : null;
+                                      
+                                      if (selectedOption) {
+                                        const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                                        return optionName;
+                                      }
+                                      
+                                      // 선택된 옵션이 없으면 첫 번째 옵션
+                                      if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                        const firstOption = choice.options[0] as Record<string, unknown>;
+                                        const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                                        return optionName;
+                                      }
+                                      
+                                      // 테스트용: 채널 정보가 없어도 기본 아이콘 표시
+                              return (
+                                <div className="flex items-center space-x-1 ml-2">
+                                  <span className="text-sm">📋</span>
+                                  <span className="text-xs text-gray-400">채널 없음</span>
+                                </div>
+                              );
+                                    })
+                                    .filter(Boolean);
+                                  
+                                  if (selectedOptions.length > 0) {
+                                    return (
+                                      <div className="flex flex-wrap gap-1">
+                                        {selectedOptions.map((optionName: string, index: number) => {
+                                          // 옵션 이름에 따라 다른 색상 적용
+                                          const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
+                                          const badgeClass = isAntelopeX 
+                                            ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
+                                            : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                                          
+                                          return (
+                                            <span key={index} className={badgeClass}>
+                                              ✓ {String(optionName)}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  }
+                                }
+                                
+                                // choices 데이터가 없는 경우
+                                return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
+                              })()}
+                            </div>
+                            
+                            {/* 채널 정보 표시 - 오른쪽 끝 정렬 */}
+                            {(() => {
+                              const channelInfo = reservation.channel_id ? getChannelInfo(reservation.channel_id) : null;
+                              
+                              if (channelInfo) {
+                                return (
+                                  <div className="flex items-center space-x-1 ml-2">
+                                    <div className="flex items-center">
+                                      {getChannelIcon(channelInfo)}
+                                      <span className="hidden text-sm">📋</span> {/* 이미지 로드 실패 시 대체 아이콘 */}
+                                    </div>
+                                    <span className="text-xs text-gray-600">{channelInfo.name}</span>
                                   </div>
                                 );
                               }
-                            }
-                            
-                            // choices 데이터가 없는 경우
-                            return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
-                          })()}
+                              return null;
+                            })()}
+                          </div>
                         </div>
                         
                         {/* 하단: 픽업 시간 | 픽업 정보 */}
@@ -3371,61 +3662,89 @@ export default function TourDetailPage() {
                         
                         {/* 중단: Choices 표시 */}
                         <div className="mb-2">
-                          {(() => {
-                            // choices 데이터 파싱
-                            let parsedChoices = safeJsonParse(reservation.choices, null);
-                            
-                            // choices 데이터에서 선택된 옵션 찾기
-                            if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
-                              const selectedOptions = parsedChoices.required
-                                .map((choice: Record<string, unknown>) => {
-                                  if (!choice || typeof choice !== 'object') return null;
-                                  
-                                  // 선택된 옵션 찾기 (is_default가 true인 옵션)
-                                  const selectedOption = choice.options && Array.isArray(choice.options) 
-                                    ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
-                                    : null;
-                                  
-                                  if (selectedOption) {
-                                    const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
-                                    return optionName;
-                                  }
-                                  
-                                  // 선택된 옵션이 없으면 첫 번째 옵션
-                                  if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
-                                    const firstOption = choice.options[0] as Record<string, unknown>;
-                                    const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
-                                    return optionName;
-                                  }
-                                  
-                                  return null;
-                                })
-                                .filter(Boolean);
-                              
-                              if (selectedOptions.length > 0) {
-                                return (
-                                  <div className="flex flex-wrap gap-1">
-                                    {selectedOptions.map((optionName: string, index: number) => {
-                                      // 옵션 이름에 따라 다른 색상 적용
-                                      const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
-                                      const badgeClass = isAntelopeX 
-                                        ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
-                                        : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              {(() => {
+                                // choices 데이터 파싱
+                                let parsedChoices = safeJsonParse(reservation.choices, null);
+                                
+                                // choices 데이터에서 선택된 옵션 찾기
+                                if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
+                                  const selectedOptions = parsedChoices.required
+                                    .map((choice: Record<string, unknown>) => {
+                                      if (!choice || typeof choice !== 'object') return null;
                                       
-                                      return (
-                                        <span key={index} className={badgeClass}>
-                                          ✓ {String(optionName)}
-                                        </span>
-                                      );
-                                    })}
+                                      // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                                      const selectedOption = choice.options && Array.isArray(choice.options) 
+                                        ? choice.options.find((option: Record<string, unknown>) => option.is_default === true)
+                                        : null;
+                                      
+                                      if (selectedOption) {
+                                        const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
+                                        return optionName;
+                                      }
+                                      
+                                      // 선택된 옵션이 없으면 첫 번째 옵션
+                                      if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+                                        const firstOption = choice.options[0] as Record<string, unknown>;
+                                        const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
+                                        return optionName;
+                                      }
+                                      
+                                      // 테스트용: 채널 정보가 없어도 기본 아이콘 표시
+                              return (
+                                <div className="flex items-center space-x-1 ml-2">
+                                  <span className="text-sm">📋</span>
+                                  <span className="text-xs text-gray-400">채널 없음</span>
+                                </div>
+                              );
+                                    })
+                                    .filter(Boolean);
+                                  
+                                  if (selectedOptions.length > 0) {
+                                    return (
+                                      <div className="flex flex-wrap gap-1">
+                                        {selectedOptions.map((optionName: string, index: number) => {
+                                          // 옵션 이름에 따라 다른 색상 적용
+                                          const isAntelopeX = String(optionName).includes('X') || String(optionName).includes('앤텔롭 X');
+                                          const badgeClass = isAntelopeX 
+                                            ? "text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200"
+                                            : "text-xs px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-200";
+                                          
+                                          return (
+                                            <span key={index} className={badgeClass}>
+                                              ✓ {String(optionName)}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  }
+                                }
+                                
+                                // choices 데이터가 없는 경우
+                                return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
+                              })()}
+                            </div>
+                            
+                            {/* 채널 정보 표시 - 오른쪽 끝 정렬 */}
+                            {(() => {
+                              const channelInfo = reservation.channel_id ? getChannelInfo(reservation.channel_id) : null;
+                              
+                              if (channelInfo) {
+                                return (
+                                  <div className="flex items-center space-x-1 ml-2">
+                                    <div className="flex items-center">
+                                      {getChannelIcon(channelInfo)}
+                                      <span className="hidden text-sm">📋</span> {/* 이미지 로드 실패 시 대체 아이콘 */}
+                                    </div>
+                                    <span className="text-xs text-gray-600">{channelInfo.name}</span>
                                   </div>
                                 );
                               }
-                            }
-                            
-                            // choices 데이터가 없는 경우
-                            return <span className="text-xs text-gray-400">선택된 옵션 없음</span>;
-                          })()}
+                              return null;
+                            })()}
+                          </div>
                         </div>
                         
                         {/* 하단: 픽업 시간 | 픽업 정보 */}

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
-import { useTranslations } from 'next-intl'
-import { Calendar, User, Phone, Mail, Search, MapPin, Clock, Users, CreditCard, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
+import { Calendar, User, Phone, Mail, Search, MapPin, Clock, Users, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface Customer {
@@ -37,11 +37,10 @@ interface Reservation {
 }
 
 export default function CustomerDashboard() {
-  const { user, userRole, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
+  const { user, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
-  const t = useTranslations('common')
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loading, setLoading] = useState(true)
@@ -97,10 +96,10 @@ export default function CustomerDashboard() {
       console.warn('Dashboard: 시뮬레이션 중이지만 simulatedUser가 없습니다.')
       setLoading(false)
     }
-  }, [isSimulating, simulatedUser, user])
+  }, [isSimulating, simulatedUser, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 고객 정보 로드
-  const loadCustomerData = async () => {
+  const loadCustomerData = useCallback(async () => {
     if (!authUser?.email) {
       setLoading(false)
       return
@@ -118,16 +117,16 @@ export default function CustomerDashboard() {
 
       if (customerError) {
         console.error('고객 정보 조회 오류:', {
-          error: customerError,
           message: customerError?.message || 'Unknown error',
           code: customerError?.code || 'No code',
           details: customerError?.details || 'No details',
           hint: customerError?.hint || 'No hint',
-          status: customerError?.status || 'No status',
+          status: (customerError as { status?: number })?.status || 'No status',
           email: authUser.email
         })
+        console.error('전체 오류 객체:', customerError)
         // 406 오류나 다른 권한 오류의 경우 빈 상태로 설정
-        if (customerError.code === 'PGRST116' || customerError.code === 'PGRST301' || customerError.status === 406) {
+        if (customerError.code === 'PGRST116' || customerError.code === 'PGRST301' || (customerError as { status?: number }).status === 406) {
           setCustomer(null)
           setReservations([])
           setLoading(false)
@@ -153,11 +152,16 @@ export default function CustomerDashboard() {
               description
             )
           `)
-          .eq('customer_id', customerData.id)
+          .eq('customer_id', (customerData as { id: string }).id)
           .order('tour_date', { ascending: false })
 
         if (reservationsError) {
-          console.error('예약 정보 조회 오류:', reservationsError)
+          console.error('예약 정보 조회 오류:', {
+            message: reservationsError?.message || 'Unknown error',
+            code: reservationsError?.code || 'No code',
+            details: reservationsError?.details || 'No details'
+          })
+          console.error('전체 예약 오류 객체:', reservationsError)
           setReservations([])
         } else {
           setReservations(reservationsData || [])
@@ -173,7 +177,7 @@ export default function CustomerDashboard() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [authUser?.email])
 
   // 시뮬레이션된 사용자의 예약 정보 로드
   const loadSimulatedReservations = async (customerId: string) => {
@@ -193,7 +197,12 @@ export default function CustomerDashboard() {
         .order('tour_date', { ascending: false })
 
       if (reservationsError) {
-        console.error('시뮬레이션 예약 정보 조회 오류:', reservationsError)
+        console.error('시뮬레이션 예약 정보 조회 오류:', {
+          message: reservationsError?.message || 'Unknown error',
+          code: reservationsError?.code || 'No code',
+          details: reservationsError?.details || 'No details'
+        })
+        console.error('전체 시뮬레이션 예약 오류 객체:', reservationsError)
         setReservations([])
         setLoading(false)
         return
@@ -207,23 +216,23 @@ export default function CustomerDashboard() {
               const { data: productData } = await supabase
                 .from('products')
                 .select('name, description')
-                .eq('id', reservation.product_id)
+                .eq('id', (reservation as { product_id: string }).product_id)
                 .single()
 
               return {
-                ...reservation,
+                ...(reservation as Record<string, unknown>),
                 products: productData || { name: '상품명 없음', description: null }
               }
             } catch (error) {
               console.error('상품 정보 조회 오류:', error)
               return {
-                ...reservation,
+                ...(reservation as Record<string, unknown>),
                 products: { name: '상품명 없음', description: null }
               }
             }
           })
         )
-        setReservations(reservationsWithProducts)
+        setReservations(reservationsWithProducts as Reservation[])
       } else {
         setReservations([])
       }
@@ -271,7 +280,12 @@ export default function CustomerDashboard() {
       const { data, error } = await query
 
       if (error) {
-        console.error('검색 오류:', error)
+        console.error('검색 오류:', {
+          message: error?.message || 'Unknown error',
+          code: error?.code || 'No code',
+          details: error?.details || 'No details'
+        })
+        console.error('전체 검색 오류 객체:', error)
         alert('검색 중 오류가 발생했습니다.')
         return
       }
@@ -292,7 +306,7 @@ export default function CustomerDashboard() {
 
         if (reservationsData) {
           const matchingCustomerIds = reservationsData
-            .filter(reservation => {
+            .filter((reservation: { tour_date: string; products?: { name?: string } }) => {
               const matchesDate = !searchForm.tourDate || 
                 reservation.tour_date === searchForm.tourDate
               const matchesProduct = !searchForm.productName || 
@@ -300,9 +314,9 @@ export default function CustomerDashboard() {
               
               return matchesDate && matchesProduct
             })
-            .map(reservation => reservation.customer_id)
+            .map((reservation: { customer_id: string }) => reservation.customer_id)
 
-          filteredResults = filteredResults.filter(customer => 
+          filteredResults = filteredResults.filter((customer: { id: string }) => 
             matchingCustomerIds.includes(customer.id)
           )
         }
@@ -312,7 +326,7 @@ export default function CustomerDashboard() {
 
       // 자동 매칭 시도
       if (filteredResults.length === 1 && authUser?.email) {
-        const exactMatch = filteredResults[0]
+        const exactMatch = filteredResults[0] as { name: string; email: string; phone?: string; id: string }
         
         // 전화번호나 이메일이 정확히 일치하는 경우 자동 매칭
         const phoneMatch = searchForm.phone && exactMatch.phone && 
@@ -346,11 +360,16 @@ export default function CustomerDashboard() {
     try {
       const { error } = await supabase
         .from('customers')
-        .update({ email: authUser.email })
+        .update({ email: authUser.email } as never)
         .eq('id', customerId)
 
       if (error) {
-        console.error('고객 ID 매칭 오류:', error)
+        console.error('고객 ID 매칭 오류:', {
+          message: error?.message || 'Unknown error',
+          code: error?.code || 'No code',
+          details: error?.details || 'No details'
+        })
+        console.error('전체 고객 ID 매칭 오류 객체:', error)
         alert('고객 ID 매칭 중 오류가 발생했습니다.')
         return
       }
@@ -561,12 +580,12 @@ export default function CustomerDashboard() {
                 )}
               </div>
               <div className="mt-4">
-                <a
+                <Link
                   href="/dashboard/profile"
                   className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                 >
                   정보 수정하기 →
-                </a>
+                </Link>
               </div>
             </div>
 

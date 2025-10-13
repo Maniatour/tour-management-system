@@ -35,9 +35,9 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // 타임아웃 설정 (120초로 증가)
+    // 타임아웃 설정 (60초로 단축)
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout after 120 seconds')), 120000)
+      setTimeout(() => reject(new Error('Request timeout after 60 seconds')), 60000)
     })
 
     const fetchPromise = async () => {
@@ -58,39 +58,15 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      // 각 시트의 컬럼 정보를 간단하게 가져오기
-      const sheetInfo = []
+      // 각 시트의 기본 정보만 가져오기 (컬럼 정보는 나중에 필요할 때만)
+      const sheetInfo = sheets.map(sheet => ({
+        name: sheet.name,
+        rowCount: sheet.rowCount,
+        sampleData: [], // 나중에 필요할 때만 로드
+        columns: [] // 나중에 필요할 때만 로드
+      }))
       
-      for (const sheet of sheets) {
-        try {
-          console.log(`📊 Processing: ${sheet.name}`)
-          const { columns, sampleData } = await getSheetSampleData(spreadsheetId, sheet.name, 1)
-          
-          sheetInfo.push({
-            name: sheet.name,
-            rowCount: sheet.rowCount,
-            sampleData: sampleData,
-            columns: columns
-          })
-          
-          console.log(`✅ ${sheet.name}: ${columns.length} columns`)
-        } catch (error) {
-          console.error(`❌ ${sheet.name}:`, error instanceof Error ? error.message : error)
-          
-          // 할당량 초과 시 즉시 중단
-          if (error instanceof Error && error.message.includes('Quota exceeded')) {
-            throw new Error('Google Sheets API 할당량을 초과했습니다. 1-2분 후에 다시 시도해주세요.')
-          }
-          
-          sheetInfo.push({
-            name: sheet.name,
-            rowCount: sheet.rowCount,
-            sampleData: [],
-            columns: [],
-            error: error instanceof Error ? error.message : 'Unknown error'
-          })
-        }
-      }
+      console.log(`✅ Processed ${sheetInfo.length} sheets without detailed data`)
 
       return {
         success: true,
@@ -112,7 +88,7 @@ export async function POST(request: NextRequest) {
     let errorMessage = 'Failed to get sheet information'
     if (error instanceof Error) {
       if (error.message.includes('timeout')) {
-        errorMessage = '요청 시간 초과 (120초) - 구글 시트가 너무 크거나 네트워크가 느립니다. 시트 크기를 줄이거나 잠시 후 다시 시도해주세요.'
+        errorMessage = '요청 시간 초과 (60초) - 구글 시트가 너무 크거나 네트워크가 느립니다. 시트 크기를 줄이거나 잠시 후 다시 시도해주세요.'
       } else if (error.message.includes('aborted') || error.message.includes('abort')) {
         errorMessage = '요청이 중단되었습니다. 네트워크 연결을 확인하고 잠시 후 다시 시도해주세요.'
       } else if (error.message.includes('403')) {

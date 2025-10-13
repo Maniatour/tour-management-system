@@ -1837,6 +1837,7 @@ export default function TableScheduleAdd({
                       width={24}
                       height={24}
                       className="object-cover rounded"
+                      style={{ width: 'auto', height: 'auto' }}
                     />
                   ) : (
                     <ImageIcon className="h-4 w-4" />
@@ -2320,6 +2321,7 @@ export default function TableScheduleAdd({
                       width={400}
                       height={192}
                       className="mx-auto max-w-full max-h-48 object-contain rounded-lg border"
+                      style={{ width: 'auto', height: 'auto' }}
                     />
                   </div>
                 )}

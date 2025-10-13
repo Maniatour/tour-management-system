@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database } from 'lucide-react'
+import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database, X } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import WeatherDataCollector from '@/components/WeatherDataCollector'
 
@@ -272,6 +272,12 @@ export default function DataSyncPage() {
         console.log('Available tables:', result.data.tables)
       }
     } catch (error) {
+      // AbortError는 정상적인 취소이므로 무시
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('테이블 목록 요청이 취소되었습니다.')
+        return
+      }
+      
       console.error('Error getting available tables:', error)
     }
   }, [availableTables.length])
@@ -334,6 +340,12 @@ export default function DataSyncPage() {
         setTableColumns(fallbackColumns)
       }
     } catch (error) {
+      // AbortError는 정상적인 취소이므로 무시
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('스키마 요청이 취소되었습니다.')
+        return
+      }
+      
       // 폴백: 하드코딩된 컬럼 목록 사용
       const fallbackColumns = getFallbackColumns(tableName)
       console.warn('Using fallback columns due to error:', error)
@@ -633,6 +645,12 @@ export default function DataSyncPage() {
         console.error('Failed to check cleanup status:', result.message)
       }
     } catch (error) {
+      // AbortError는 정상적인 취소이므로 무시
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('정리 상태 확인 요청이 취소되었습니다.')
+        return
+      }
+      
       console.error('Error checking cleanup status:', error)
     }
   }
@@ -662,6 +680,12 @@ export default function DataSyncPage() {
         await checkCleanupStatus()
       }
     } catch (error) {
+      // AbortError는 정상적인 취소이므로 무시
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('정리 요청이 취소되었습니다.')
+        return
+      }
+      
       console.error('Error during cleanup:', error)
       setCleanupResult({
         success: false,
@@ -669,6 +693,15 @@ export default function DataSyncPage() {
       })
     } finally {
       setCleanupLoading(false)
+    }
+  }
+
+  // 요청 취소 함수
+  const cancelRequest = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      console.log('사용자가 요청을 취소했습니다.')
     }
   }
 
@@ -693,11 +726,11 @@ export default function DataSyncPage() {
       const controller = new AbortController()
       abortControllerRef.current = controller
 
-      // 타임아웃 설정 (70초로 증가)
+      // 타임아웃 설정 (60초로 단축)
       const timeoutId = setTimeout(() => {
         console.log('Request timeout - aborting fetch')
         controller.abort()
-      }, 70000)
+      }, 60000)
 
       console.log('Sending request to /api/sync/sheets')
       const response = await fetch('/api/sync/sheets', {
@@ -736,6 +769,14 @@ export default function DataSyncPage() {
         alert(`시트 정보를 가져오는데 실패했습니다: ${result.message}`)
       }
     } catch (error) {
+      // AbortError 처리 개선
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('요청이 취소되었습니다 (타임아웃 또는 사용자 취소)')
+        // 사용자에게 더 명확한 메시지 제공
+        alert('요청 시간이 초과되었습니다 (60초). 네트워크 연결을 확인하고 다시 시도해주세요. 구글 시트가 너무 크거나 복잡할 수 있습니다.')
+        return
+      }
+      
       console.error('❌ Error:', error)
       
       let message = '시트 정보를 가져올 수 없습니다.'
@@ -743,15 +784,18 @@ export default function DataSyncPage() {
         if (error.message.includes('Quota exceeded')) {
           message = 'API 할당량을 초과했습니다. 1-2분 후에 다시 시도해주세요.'
         } else if (error.message.includes('403')) {
-          message = '시트 접근 권한이 없습니다.'
+          message = '시트 접근 권한이 없습니다. 스프레드시트 공유 설정을 확인해주세요.'
         } else if (error.message.includes('404')) {
-          message = '시트를 찾을 수 없습니다.'
+          message = '시트를 찾을 수 없습니다. 스프레드시트 ID를 확인해주세요.'
+        } else if (error.message.includes('Failed to fetch')) {
+          message = '네트워크 연결을 확인해주세요. 인터넷 연결이 불안정할 수 있습니다.'
         } else {
-          message = error.message
+          message = `오류: ${error.message}`
         }
       }
       
       alert(`❌ ${message}`)
+      setSheetInfo([])
     } finally {
       setLoading(false)
     }
@@ -768,18 +812,69 @@ export default function DataSyncPage() {
         console.log('Mapping suggestions:', result.data.suggestions)
       }
     } catch (error) {
+      // AbortError는 정상적인 취소이므로 무시
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('매핑 제안 요청이 취소되었습니다.')
+        return
+      }
+      
       console.error('Error getting mapping suggestions:', error)
     }
   }
 
-  // 시트 선택 (단순화된 버전)
-  const handleSheetSelect = (sheetName: string) => {
+  // 시트 컬럼 정보 로드
+  const loadSheetColumns = async (sheetName: string) => {
+    try {
+      console.log(`📊 Loading columns for ${sheetName}...`)
+      
+      const response = await fetch('/api/sync/sheet-columns', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          spreadsheetId, 
+          sheetName 
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      
+      if (result.success) {
+        // 시트 정보 업데이트
+        setSheetInfo(prev => prev.map(sheet => 
+          sheet.name === sheetName 
+            ? { 
+                ...sheet, 
+                columns: result.data.columns,
+                sampleData: result.data.sampleData
+              }
+            : sheet
+        ))
+        
+        console.log(`✅ Loaded ${result.data.columns.length} columns for ${sheetName}`)
+      } else {
+        console.error(`❌ Failed to load columns for ${sheetName}:`, result.message)
+      }
+    } catch (error) {
+      console.error(`❌ Error loading columns for ${sheetName}:`, error)
+    }
+  }
+
+  // 시트 선택 (개선된 버전)
+  const handleSheetSelect = async (sheetName: string) => {
     console.log(`📋 Selected sheet: ${sheetName}`)
     setSelectedSheet(sheetName)
     const sheet = sheetInfo.find(s => s.name === sheetName)
     
+    // 컬럼 정보가 없는 경우 로드
     if (sheet && sheet.columns.length === 0) {
-      alert(`❌ ${sheetName} 시트에서 컬럼을 찾을 수 없습니다.\n\n시트에 헤더 행이 있는지 확인해주세요.`)
+      console.log(`📊 Loading column information for ${sheetName}...`)
+      await loadSheetColumns(sheetName)
     }
   }
 
@@ -797,6 +892,12 @@ export default function DataSyncPage() {
         setLastSyncTime(null)
       }
     } catch (error) {
+      // AbortError는 정상적인 취소이므로 무시
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('마지막 동기화 시간 요청이 취소되었습니다.')
+        return
+      }
+      
       console.error('Error fetching last sync time:', error)
       setLastSyncTime(null)
     }
@@ -986,6 +1087,16 @@ export default function DataSyncPage() {
         setSyncResult({ success: false, message: '동기화 결과를 수신하지 못했습니다.' })
       }
     } catch (error) {
+      // AbortError 처리 개선
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('동기화 요청이 취소되었습니다 (타임아웃 또는 사용자 취소)')
+        setSyncResult({
+          success: false,
+          message: '동기화가 취소되었습니다. 네트워크 연결을 확인하고 다시 시도해주세요.'
+        })
+        return
+      }
+      
       console.error('Error syncing data:', error)
       setSyncResult({
         success: false,
@@ -1258,6 +1369,15 @@ export default function DataSyncPage() {
             <FileSpreadsheet className="h-5 w-5 mr-2" />
             {loading ? '로딩 중...' : '시트 정보 가져오기'}
           </button>
+          {loading && (
+            <button
+              onClick={cancelRequest}
+              className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center text-lg font-medium"
+            >
+              <X className="h-5 w-5 mr-2" />
+              취소
+            </button>
+          )}
           <button
             onClick={openGoogleSheets}
             className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center text-lg font-medium"

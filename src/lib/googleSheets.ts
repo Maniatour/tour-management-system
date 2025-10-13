@@ -118,10 +118,11 @@ export const readSheetRange = async (spreadsheetId: string, sheetName: string, s
 }
 
 // 구글 시트의 시트 목록과 메타데이터 가져오기 (첫 글자가 'S'인 시트만 필터링)
-export const getSheetNames = async (spreadsheetId: string) => {
+export const getSheetNames = async (spreadsheetId: string, retryCount: number = 0) => {
   try {
     console.log('=== getSheetNames started ===')
     console.log('spreadsheetId:', spreadsheetId)
+    console.log('retryCount:', retryCount)
     
     // 캐시 확인
     const cacheKey = `sheetNames_${spreadsheetId}`
@@ -146,12 +147,16 @@ export const getSheetNames = async (spreadsheetId: string) => {
     const auth = getAuthClient()
     console.log('Auth client created successfully')
     
-    const sheets = google.sheets({ version: 'v4', auth })
+    const sheets = google.sheets({ 
+      version: 'v4', 
+      auth,
+      timeout: 30000 // 30초로 단축
+    })
     console.log('Google Sheets client created')
 
-    // 타임아웃 설정 (90초로 증가)
+    // 타임아웃 설정 (30초로 단축)
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Google Sheets API timeout')), 90000)
+      setTimeout(() => reject(new Error('Google Sheets API timeout after 30 seconds')), 30000)
     })
 
     console.log('Making API request to Google Sheets...')
@@ -189,16 +194,29 @@ export const getSheetNames = async (spreadsheetId: string) => {
   } catch (error) {
     console.error('Error getting sheet names:', error)
     
+    // 재시도 로직 (최대 2번)
+    if (retryCount < 2 && error instanceof Error && (
+      error.message.includes('timeout') || 
+      error.message.includes('ECONNRESET') ||
+      error.message.includes('ETIMEDOUT')
+    )) {
+      console.log(`Retrying getSheetNames (attempt ${retryCount + 1}/2)...`)
+      await sleep(2000 * (retryCount + 1)) // 점진적 지연
+      return getSheetNames(spreadsheetId, retryCount + 1)
+    }
+    
     // 구체적인 에러 메시지 제공
     if (error instanceof Error) {
       if (error.message.includes('timeout')) {
-        throw new Error('구글 시트 API 응답 시간 초과')
+        throw new Error('구글 시트 API 응답 시간 초과 (30초). 네트워크 연결을 확인하고 다시 시도해주세요.')
       } else if (error.message.includes('403')) {
         throw new Error('구글 시트 접근 권한이 없습니다. 시트 공유 설정을 확인해주세요')
       } else if (error.message.includes('404')) {
         throw new Error('구글 시트를 찾을 수 없습니다. 스프레드시트 ID를 확인해주세요')
       } else if (error.message.includes('credentials')) {
         throw new Error('구글 시트 API 인증 정보가 설정되지 않았습니다')
+      } else if (error.message.includes('quota') || error.message.includes('Quota exceeded')) {
+        throw new Error('Google Sheets API 할당량을 초과했습니다. 1-2분 후에 다시 시도해주세요.')
       }
     }
     

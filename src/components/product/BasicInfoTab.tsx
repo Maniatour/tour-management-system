@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { Info, Calendar, MessageCircle, Image, Clock, Save } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { Info, Save } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 
@@ -31,7 +31,7 @@ import { supabase } from '@/lib/supabase'
       customerNameKo?: string
       customerNameEn?: string
     }
-  setFormData: React.Dispatch<React.SetStateAction<any>>
+  setFormData: <T>(updater: React.SetStateAction<T>) => void
   productId: string
   isNewProduct: boolean
 }
@@ -49,6 +49,11 @@ export default function BasicInfoTab({
   const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [newDepartureTime, setNewDepartureTime] = useState('')
+
+  // 디버깅을 위한 로그
+  console.log('BasicInfoTab - formData.tourDepartureTimes:', formData.tourDepartureTimes);
+  console.log('BasicInfoTab - tourDepartureTimes 타입:', typeof formData.tourDepartureTimes);
+  console.log('BasicInfoTab - tourDepartureTimes 배열 여부:', Array.isArray(formData.tourDepartureTimes));
 
   // 출발 시간 관리 함수들
   const addDepartureTime = () => {
@@ -124,7 +129,7 @@ export default function BasicInfoTab({
             tour_departure_times: formData.tourDepartureTimes || null,
             customer_name_ko: formData.customerNameKo?.trim() || null,
             customer_name_en: formData.customerNameEn?.trim() || null
-          }])
+          }] as never[])
           .select()
           .single()
 
@@ -138,7 +143,7 @@ export default function BasicInfoTab({
         
         // 상품 편집 페이지로 이동 (새로 생성된 ID로)
         setTimeout(() => {
-          window.location.href = `/admin/products/${data.id}`
+          window.location.href = `/admin/products/${(data as { id: string }).id}`
         }, 1500)
       } else {
         // 기존 상품 업데이트
@@ -168,7 +173,7 @@ export default function BasicInfoTab({
             tour_departure_times: formData.tourDepartureTimes || null,
             customer_name_ko: formData.customerNameKo?.trim() || null,
             customer_name_en: formData.customerNameEn?.trim() || null
-          })
+          } as never)
           .eq('id', productId)
 
         if (error) throw error
@@ -184,30 +189,7 @@ export default function BasicInfoTab({
     }
   }
 
-  // 카테고리와 서브카테고리 데이터 가져오기
-  useEffect(() => {
-    fetchCategoriesAndSubCategories()
-  }, [])
-
-
-
-  // 카테고리 선택 시 서브카테고리 필터링
-  useEffect(() => {
-    if (formData.category) {
-      // 현재 선택된 카테고리에 해당하는 서브카테고리만 필터링
-      const filteredSubCategories = allSubCategories.filter(
-        subCat => {
-          // 해당 서브카테고리가 현재 선택된 카테고리의 상품에 포함되어 있는지 확인
-          return true // 모든 서브카테고리를 표시 (카테고리별 필터링은 나중에 구현)
-        }
-      )
-      setSubCategories(filteredSubCategories)
-    } else {
-      setSubCategories([])
-    }
-  }, [formData.category, allSubCategories])
-
-  const fetchCategoriesAndSubCategories = async () => {
+  const fetchCategoriesAndSubCategories = useCallback(async () => {
     try {
       // 상품 데이터에서 카테고리와 서브카테고리 추출
       const { data: products, error } = await supabase
@@ -220,7 +202,7 @@ export default function BasicInfoTab({
       const categoryCounts: { [key: string]: number } = {}
       const subCategoryCounts: { [key: string]: number } = {}
 
-      products?.forEach(product => {
+      products?.forEach((product: { category?: string; sub_category?: string }) => {
         if (product.category) {
           categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1
         }
@@ -255,7 +237,28 @@ export default function BasicInfoTab({
     } catch (error) {
       console.error('카테고리 및 서브카테고리 데이터 가져오기 오류:', error)
     }
-  }
+  }, [formData.category, formData.subCategory])
+
+  // 카테고리와 서브카테고리 데이터 가져오기
+  useEffect(() => {
+    fetchCategoriesAndSubCategories()
+  }, [fetchCategoriesAndSubCategories])
+
+  // 카테고리 선택 시 서브카테고리 필터링
+  useEffect(() => {
+    if (formData.category) {
+      // 현재 선택된 카테고리에 해당하는 서브카테고리만 필터링
+      const filteredSubCategories = allSubCategories.filter(
+        () => {
+          // 해당 서브카테고리가 현재 선택된 카테고리의 상품에 포함되어 있는지 확인
+          return true // 모든 서브카테고리를 표시 (카테고리별 필터링은 나중에 구현)
+        }
+      )
+      setSubCategories(filteredSubCategories)
+    } else {
+      setSubCategories([])
+    }
+  }, [formData.category, allSubCategories])
 
   return (
     <>

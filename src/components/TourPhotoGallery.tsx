@@ -423,6 +423,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                           width={200}
                           height={128}
                           className="w-full h-24 sm:h-28 md:h-32 object-cover rounded-lg hover:opacity-90 transition-opacity"
+                          style={{ width: 'auto', height: 'auto' }}
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white bg-opacity-20 rounded-full p-2">
@@ -441,6 +442,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                           width={64}
                           height={64}
                           className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
+                          style={{ width: 'auto', height: 'auto' }}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{photo.file_name}</p>
@@ -513,6 +515,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
               width={1200}
               height={800}
               className="max-w-full max-h-full object-contain"
+              style={{ width: 'auto', height: 'auto' }}
             />
 
             {/* 사진 정보 */}

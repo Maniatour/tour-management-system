@@ -10,11 +10,39 @@ import { useReservationData } from '@/hooks/useReservationData'
 import type { Reservation, Customer } from '@/types/reservation'
 import { FileText, Mail, Printer } from 'lucide-react'
 import SimpleDocumentGenerator from '@/components/SimpleDocumentGenerator'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function ReservationDetailsPage() {
   const t = useTranslations('reservations')
   const router = useRouter()
   const params = useParams() as { locale?: string; id?: string }
+  const { hasPermission, userRole, user, loading: authLoading } = useAuth()
+
+  // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
+  const isStaff = hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager')
+  
+  // 권한이 없을 때만 리다이렉트 (useEffect로 처리)
+  useEffect(() => {
+    // 로딩이 완료되고 권한이 없을 때만 리다이렉트
+    if (!authLoading && !isStaff) {
+      console.log('권한 없음, 리다이렉트:', { authLoading, isStaff, userRole, user: user?.email })
+      router.push(`/${params.locale}/admin`)
+    }
+  }, [authLoading, isStaff, router, params.locale, userRole, user])
+  
+  // 로딩 중이거나 권한이 없을 때 로딩 화면 표시
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+  
+  // 권한이 없을 때는 리다이렉트 중이므로 빈 화면 표시
+  if (!isStaff) {
+    return null
+  }
 
   const {
     reservations,

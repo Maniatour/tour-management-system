@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       targetTable,
       columnMapping,
       enableIncrementalSync = false,
-      truncateReservations = false
+      truncateTable = false
     } = body
 
     if (!spreadsheetId || !sheetName || !targetTable) {
@@ -40,21 +40,36 @@ export async function POST(request: NextRequest) {
         ;(async () => {
           try {
             write({ type: 'info', message: '동기화 시작' })
-            if (truncateReservations && (targetTable === 'reservations' || targetTable === 'channels')) {
-              const tableToTruncate = targetTable
-              write({ type: 'info', message: `${tableToTruncate} 테이블 초기화 시작` })
-              // 안전하게 대상 테이블 비우기
-              const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/${tableToTruncate}?select=id`, {
-                method: 'DELETE',
-                headers: {
-                  'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-                  'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
+            
+            // 테이블 삭제 옵션이 활성화된 경우
+            if (truncateTable) {
+              write({ type: 'info', message: `${targetTable} 테이블 초기화 시작` })
+              
+              try {
+                // 먼저 테이블의 레코드 수 확인
+                const { count, error: countError } = await client
+                  .from(targetTable)
+                  .select('*', { count: 'exact', head: true })
+                
+                if (countError) {
+                  write({ type: 'warn', message: `${targetTable} 테이블 레코드 수 확인 실패: ${countError.message}` })
+                } else {
+                  write({ type: 'info', message: `${targetTable} 테이블에 ${count || 0}개 레코드가 있습니다.` })
                 }
-              })
-              if (!res.ok) {
-                write({ type: 'warn', message: `${tableToTruncate} 테이블 초기화 실패` })
-              } else {
-                write({ type: 'info', message: `${tableToTruncate} 테이블 초기화 완료` })
+                
+                // Supabase 클라이언트를 사용하여 테이블 삭제
+                const { error: deleteError } = await client
+                  .from(targetTable)
+                  .delete()
+                  .neq('id', '') // 모든 레코드 삭제 (id가 빈 문자열이 아닌 모든 레코드)
+                
+                if (deleteError) {
+                  write({ type: 'warn', message: `${targetTable} 테이블 초기화 실패: ${deleteError.message}` })
+                } else {
+                  write({ type: 'info', message: `${targetTable} 테이블 초기화 완료` })
+                }
+              } catch (error) {
+                write({ type: 'warn', message: `${targetTable} 테이블 초기화 중 오류: ${error instanceof Error ? error.message : 'Unknown error'}` })
               }
             }
             const summary = await flexibleSync(

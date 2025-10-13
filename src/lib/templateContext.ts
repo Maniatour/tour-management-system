@@ -539,7 +539,7 @@ export async function getPickupScheduleData(reservationId: string) {
     try {
       const { data: reservationData, error: reservationError } = await supabase
         .from('reservations')
-        .select('pickup_hotel_id, pickup_time')
+        .select('pickup_hotel, pickup_time')
         .eq('id', reservationId)
         .single()
 
@@ -669,7 +669,7 @@ export async function generateTemplateContext(reservationId: string, language: '
           customer_id: null,
           product_id: null,
           channel_id: null,
-          pickup_hotel_id: null,
+          pickup_hotel: null,
           tour_date: new Date().toISOString().split('T')[0],
           tour_time: '09:00',
           pickup_time: '09:00',
@@ -694,7 +694,7 @@ export async function generateTemplateContext(reservationId: string, language: '
         customer_id: null,
         product_id: null,
         channel_id: null,
-        pickup_hotel_id: null,
+        pickup_hotel: null,
         tour_date: new Date().toISOString().split('T')[0],
         tour_time: '09:00',
         pickup_time: '09:00',
@@ -860,12 +860,12 @@ export async function generateTemplateContext(reservationId: string, language: '
 
     // 픽업 호텔 정보 가져오기 (에러가 발생해도 기본 데이터 제공)
     let pickup = null
-    if (reservation.pickup_hotel_id) {
+    if (reservation.pickup_hotel) {
       try {
         const { data: pickupData, error: pickupError } = await supabase
           .from('pickup_hotels')
           .select('hotel_name, pick_up_location, address, link, pin, description_ko, description_en')
-          .eq('id', reservation.pickup_hotel_id)
+          .eq('hotel_name', reservation.pickup_hotel)
           .single()
         
         if (!pickupError && pickupData) {

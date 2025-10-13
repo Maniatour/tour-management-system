@@ -452,6 +452,7 @@ export default function ProductScheduleTab({
                               width={48}
                               height={32}
                               className="w-full h-full object-cover rounded border"
+                              style={{ width: 'auto', height: 'auto' }}
                             />
                           ) : (
                             <div className="w-full h-full bg-gray-100 rounded border flex items-center justify-center">
@@ -631,6 +632,7 @@ export default function ProductScheduleTab({
                                       width={48}
                                       height={32}
                                       className="w-full h-full object-cover rounded border"
+                                      style={{ width: 'auto', height: 'auto' }}
                                     />
                                   ) : (
                                     <div className="w-full h-full bg-gray-100 rounded border flex items-center justify-center">
@@ -769,6 +771,7 @@ export default function ProductScheduleTab({
                                       width={48}
                                       height={32}
                                       className="w-full h-full object-cover rounded border"
+                                      style={{ width: 'auto', height: 'auto' }}
                                     />
                                   ) : (
                                     <div className="w-full h-full bg-gray-100 rounded border flex items-center justify-center">

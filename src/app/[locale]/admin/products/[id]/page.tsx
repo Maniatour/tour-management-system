@@ -580,8 +580,24 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             infantAge: productData.infant_age || 2,
             tourDepartureTime: productData.tour_departure_time || '',
             tourDepartureTimes: (() => {
-              const parsed = safeJsonParse(productData.tour_departure_times, []);
-              return Array.isArray(parsed) ? parsed : [];
+              console.log('tour_departure_times 원본 데이터:', productData.tour_departure_times);
+              console.log('데이터 타입:', typeof productData.tour_departure_times);
+              console.log('배열 여부:', Array.isArray(productData.tour_departure_times));
+              
+              // Supabase JSONB는 이미 파싱된 상태로 반환되므로 직접 사용
+              if (Array.isArray(productData.tour_departure_times)) {
+                console.log('배열로 인식됨, 직접 반환:', productData.tour_departure_times);
+                return productData.tour_departure_times;
+              }
+              // 문자열인 경우에만 파싱 시도
+              if (typeof productData.tour_departure_times === 'string') {
+                console.log('문자열로 인식됨, 파싱 시도:', productData.tour_departure_times);
+                const parsed = safeJsonParse(productData.tour_departure_times, []);
+                console.log('파싱 결과:', parsed);
+                return Array.isArray(parsed) ? parsed : [];
+              }
+              console.log('기본값 반환: []');
+              return [];
             })(),
             customerNameKo: productData.customer_name_ko || '',
             customerNameEn: productData.customer_name_en || '',
@@ -851,6 +867,32 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     }
   }
 
+  // 상품 비활성화 함수
+  const handleDeactivateProduct = async () => {
+    if (isNewProduct) return
+    
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('products')
+        .update({ status: 'inactive' })
+        .eq('id', id)
+
+      if (error) {
+        console.error('상품 비활성화 오류:', error)
+        alert('상품 비활성화에 실패했습니다.')
+        return
+      }
+
+      alert('상품이 비활성화되었습니다.')
+      // 페이지 새로고침하여 상태 반영
+      window.location.reload()
+      
+    } catch (error) {
+      console.error('상품 비활성화 중 오류 발생:', error)
+      alert('상품 비활성화 중 오류가 발생했습니다.')
+    }
+  }
 
   const addProductOptionFromGlobal = (globalOption: GlobalOption) => {
     try {
@@ -1073,7 +1115,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         {activeTab === 'basic' && (
           <BasicInfoTab
             formData={formData}
-            setFormData={setFormData}
+            setFormData={setFormData as <T>(updater: React.SetStateAction<T>) => void}
             productId={id}
             isNewProduct={isNewProduct}
           />
@@ -1244,7 +1286,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
       {/* 삭제 확인 모달 */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
             <div className="flex items-center space-x-3 mb-4">
               <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
                 <Trash2 className="h-5 w-5 text-red-600" />
@@ -1252,25 +1294,40 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
               <h3 className="text-lg font-medium text-gray-900">상품 삭제 확인</h3>
             </div>
             
-            <p className="text-gray-600 mb-6">
-              이 상품을 정말로 삭제하시겠습니까? 이 작업은 되돌릴 수 없으며, 
-              상품과 관련된 모든 옵션 정보도 함께 삭제됩니다.
-            </p>
+            <div className="text-gray-600 mb-6">
+              <p className="mb-3 font-medium text-red-700">
+                ⚠️ 상품 삭제 시 주의사항
+              </p>
+              <p className="mb-2">
+                해당 상품을 삭제하면, 해당 상품의 기존 예약, 기존 투어 등의 데이터를 사용하지 못할 수 있습니다.
+              </p>
+              <p className="text-sm text-gray-500">
+                더 이상 필요없는 상품이거나, 기존 예약건이 있다면 삭제하지 말고 <strong>비활성화</strong>를 해주세요.
+              </p>
+            </div>
             
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
-                disabled={deleting}
-              >
-                취소
-              </button>
+            <div className="space-y-3">
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleDeactivateProduct}
+                  className="flex-1 bg-yellow-600 text-white py-2 px-4 rounded-lg hover:bg-yellow-700 transition-colors"
+                >
+                  비활성화하기
+                </button>
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                  disabled={deleting}
+                >
+                  취소
+                </button>
+              </div>
               <button
                 onClick={handleDeleteProduct}
-                className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                className="w-full bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
                 disabled={deleting}
               >
-                {deleting ? t('deleting') : t('delete')}
+                {deleting ? '삭제 중...' : '그래도 삭제하기'}
               </button>
             </div>
           </div>
