@@ -163,8 +163,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [searchTerm])
 
-  // 필터링 및 정렬 로직
-  const filteredAndSortedReservations = useCallback(() => {
+  // 필터링 및 정렬 로직 - useMemo로 최적화
+  const filteredAndSortedReservations = useMemo(() => {
     const filtered = reservations.filter(reservation => {
       // 고객 ID 필터 (URL 파라미터에서)
       const matchesCustomer = !customerIdFromUrl || reservation.customerId === customerIdFromUrl
@@ -242,7 +242,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return filtered
   }, [reservations, customers, products, channels, searchTerm, selectedStatus, selectedChannel, dateRange, sortBy, sortOrder, customerIdFromUrl])
   
-  const filteredReservations = filteredAndSortedReservations()
+  const filteredReservations = filteredAndSortedReservations
   
   // 주간 페이지네이션을 위한 유틸리티 함수들
   const getWeekStartDate = useCallback((weekOffset: number) => {
