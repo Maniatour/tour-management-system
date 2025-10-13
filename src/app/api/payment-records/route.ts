@@ -21,21 +21,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    // 임시로 빈 배열 반환 (테이블이 아직 생성되지 않은 경우)
+    // 입금 내역 조회 (간단한 쿼리로 변경)
     try {
       let query = supabase
         .from('payment_records')
-        .select(`
-          *,
-          reservation:reservations(
-            id,
-            customer_id,
-            customer:customers(
-              name,
-              email
-            )
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false })
 
       if (reservationId) {
@@ -109,17 +99,7 @@ export async function POST(request: NextRequest) {
         submit_by: user.email!,
         amount_krw: amount_krw ? parseFloat(amount_krw) : null
       })
-      .select(`
-        *,
-        reservation:reservations(
-          id,
-          customer_id,
-          customer:customers(
-            name,
-            email
-          )
-        )
-      `)
+      .select('*')
       .single()
 
     if (error) {
