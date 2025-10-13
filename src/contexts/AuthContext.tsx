@@ -173,7 +173,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             position: (teamData as Record<string, unknown>).position,
             is_active: (teamData as Record<string, unknown>).is_active 
           } : null,
-          rawTeamData: teamData
+          rawTeamData: teamData,
+          email: email
         })
 
         if (error && error.code !== 'PGRST116') {
@@ -490,9 +491,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 권한 확인 함수
   const hasPermissionCheck = (permission: keyof UserPermissions): boolean => {
-    const result = permissions ? permissions[permission] || false : false
-    console.log('hasPermissionCheck:', { permission, permissions, result })
-    return result
+    if (!permissions) return false
+    return permissions[permission] || false
   }
 
   // 시뮬레이션 함수들

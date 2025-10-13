@@ -109,13 +109,13 @@ export function getUserRole(email: string, teamData?: { position?: string; is_ac
     if (position === 'office manager') {
       return 'manager'  // Office Manager는 매니저
     }
-    // 투어 가이드와 드라이버는 team_member로 분류 (guide 페이지로 리다이렉트)
-    if (position === 'tour guide' || position === 'tourguide' || position === 'guide' || position === 'driver') {
-      return 'team_member'  // 투어 가이드와 드라이버는 team_member
-    }
     // OP는 관리자 권한으로 분류 (admin 페이지로 리다이렉트)
     if (position === 'op') {
       return 'admin'  // OP는 관리자 권한
+    }
+    // 투어 가이드와 드라이버는 team_member로 분류 (guide 페이지로 리다이렉트)
+    if (position === 'tour guide' || position === 'tourguide' || position === 'guide' || position === 'driver') {
+      return 'team_member'  // 투어 가이드와 드라이버는 team_member
     }
     
     // position이 있지만 특정 키워드가 없는 경우 관리자 권한으로 처리
