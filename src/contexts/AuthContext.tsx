@@ -490,8 +490,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 권한 확인 함수
   const hasPermissionCheck = (permission: keyof UserPermissions): boolean => {
-    if (!permissions) return false
-    return permissions[permission] || false
+    const result = permissions ? permissions[permission] || false : false
+    console.log('hasPermissionCheck:', { permission, permissions, result })
+    return result
   }
 
   // 시뮬레이션 함수들

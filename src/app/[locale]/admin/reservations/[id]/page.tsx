@@ -19,6 +19,19 @@ export default function ReservationDetailsPage() {
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
   const isStaff = isInitialized && (hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager'))
   
+  // 디버깅을 위한 상세 로그
+  useEffect(() => {
+    console.log('ReservationDetailsPage - 인증 상태:', {
+      isInitialized,
+      userRole,
+      userEmail: user?.email,
+      hasManageReservations: hasPermission('canManageReservations'),
+      hasManageTours: hasPermission('canManageTours'),
+      isStaff,
+      authLoading
+    })
+  }, [isInitialized, userRole, user?.email, isStaff, authLoading])
+  
   // 권한이 없을 때만 리다이렉트 (useEffect로 처리)
   useEffect(() => {
     // 초기화가 완료되고 권한이 없을 때만 리다이렉트

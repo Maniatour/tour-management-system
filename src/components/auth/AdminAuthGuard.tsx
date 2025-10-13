@@ -10,11 +10,11 @@ interface AdminAuthGuardProps {
 }
 
 export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps) {
-  const { user, userRole, loading } = useAuth()
+  const { user, userRole, loading, isInitialized } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (!loading) {
+    if (isInitialized) {
       if (!user) {
         console.log('AdminAuthGuard: No user, redirecting to auth')
         router.replace(`/${locale}/auth?redirectTo=/${locale}/admin`)
@@ -23,9 +23,9 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
         router.replace(`/${locale}`)
       }
     }
-  }, [user, userRole, loading, router, locale])
+  }, [user, userRole, isInitialized, router, locale])
 
-  if (loading) {
+  if (!isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
