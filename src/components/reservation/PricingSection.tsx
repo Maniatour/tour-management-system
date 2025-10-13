@@ -620,7 +620,7 @@ export default function PricingSection({
               
               {/* OTA/현장 분리 입력 - 같은 줄 배치 (라벨과 입력칸을 한 줄에) */}
               <div className="flex flex-col gap-2 mb-2">
-                <div className="flex items-center gap-1">
+                <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-600">OTA 판매가</span>
                   <div className="relative">
                     <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
@@ -634,7 +634,7 @@ export default function PricingSection({
                     />
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-600">balance</span>
                   <div className="relative">
                     <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
