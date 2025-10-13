@@ -17,7 +17,7 @@ export default function ReservationDetailsPage() {
   const { hasPermission, userRole, user, loading: authLoading, isInitialized } = useAuth()
 
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
-  const isStaff = hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager')
+  const isStaff = isInitialized && (hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager'))
   
   // 권한이 없을 때만 리다이렉트 (useEffect로 처리)
   useEffect(() => {
