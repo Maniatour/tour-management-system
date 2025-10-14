@@ -52,12 +52,8 @@ export default function CustomerProfile() {
       return
     }
     
-    // 시뮬레이션이 아닌 경우에만 인증 체크
-    if (!isSimulating && !user) {
-      console.log('Profile: No user, redirecting to auth')
-      router.push(`/${locale}/auth`)
-      return
-    }
+    // 고객 페이지는 로그인하지 않은 사용자도 접근 가능하므로 인증 체크 제거
+    console.log('Profile: Customer page allows unauthenticated access')
   }, [user, isSimulating, simulatedUser, router, locale])
 
   // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
@@ -91,19 +87,18 @@ export default function CustomerProfile() {
       // 폼 데이터 설정
       setFormData({
         name: simulatedUser.name_ko,
-        email: simulatedUser.email,
         phone: simulatedUser.phone || '',
-        language: simulatedUser.language || 'ko',
-        address: '',
-        nationality: '',
-        emergency_contact: '',
-        special_requests: ''
+        language: simulatedUser.language || 'ko'
       })
       
       setLoading(false)
     } else if (isSimulating && !simulatedUser) {
       // 시뮬레이션 중이지만 simulatedUser가 없는 경우
       console.warn('Profile: 시뮬레이션 중이지만 simulatedUser가 없습니다.')
+      setLoading(false)
+    } else if (!isSimulating && !user) {
+      // 로그인하지 않은 사용자의 경우 로딩 완료
+      console.log('Profile: No user logged in, showing public page')
       setLoading(false)
     }
   }, [isSimulating, simulatedUser, user])

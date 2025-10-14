@@ -104,12 +104,8 @@ export default function CustomerReservations() {
       return
     }
     
-    // 시뮬레이션이 아닌 경우에만 인증 체크
-    if (!isSimulating && !user) {
-      console.log('Reservations: No user, redirecting to auth')
-      router.push(`/${locale}/auth`)
-      return
-    }
+    // 고객 페이지는 로그인하지 않은 사용자도 접근 가능하므로 인증 체크 제거
+    console.log('Reservations: Customer page allows unauthenticated access')
   }, [user, isSimulating, simulatedUser, router, locale])
 
   // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
@@ -145,6 +141,10 @@ export default function CustomerReservations() {
     } else if (isSimulating && !simulatedUser) {
       // 시뮬레이션 중이지만 simulatedUser가 없는 경우
       console.warn('Reservations: 시뮬레이션 중이지만 simulatedUser가 없습니다.')
+      setLoading(false)
+    } else if (!isSimulating && !user) {
+      // 로그인하지 않은 사용자의 경우 로딩 완료
+      console.log('Reservations: No user logged in, showing public page')
       setLoading(false)
     }
   }, [isSimulating, simulatedUser, user])
