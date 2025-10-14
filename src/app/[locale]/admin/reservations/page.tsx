@@ -38,10 +38,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const t = useTranslations('reservations')
   
   // 그룹별 색상 매핑 함수
-  const getGroupColorClasses = (groupId: string, groupName?: string, optionName?: string) => {
+  const getGroupColorClasses = (groupId: string, groupName?: string) => {
     // 그룹 이름이나 ID에 따라 색상 결정
     const groupNameStr = (groupName || groupId).toLowerCase()
-    const optionNameStr = (optionName || '').toLowerCase()
     
     // 특정 그룹에 대한 색상 매핑
     if (groupNameStr.includes('canyon') || groupNameStr.includes('캐년')) {
@@ -171,7 +170,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       
       // 검색 조건 - 검색어가 있을 때만 검색 수행
       const customer = customers?.find(c => c.id === reservation.customerId)
-      const customerSpecialRequests = customer?.special_requests || ''
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const customerSpecialRequests = (customer as any)?.special_requests || ''
       
       const matchesSearch = !searchTerm || 
       reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1567,7 +1567,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           if (parsedChoices.required && Array.isArray(parsedChoices.required)) {
                             for (const choice of parsedChoices.required) {
                               if (choice.options && Array.isArray(choice.options)) {
-                                const foundOption = choice.options.find(opt => 
+                                const foundOption = choice.options.find((opt: Record<string, unknown>) => 
                                   opt.name === optionName || opt.name_ko === optionName
                                 )
                                 if (foundOption) {
@@ -1579,7 +1579,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                             }
                           }
                           
-                          const badgeClass = getGroupColorClasses(groupId, groupName, optionName)
+                          const badgeClass = getGroupColorClasses(groupId, groupName)
                           
                           return (
                             <span key={index} className={badgeClass}>
@@ -1917,7 +1917,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                             if (parsedChoices.required && Array.isArray(parsedChoices.required)) {
                               for (const choice of parsedChoices.required) {
                                 if (choice.options && Array.isArray(choice.options)) {
-                                  const foundOption = choice.options.find(opt => 
+                                  const foundOption = choice.options.find((opt: Record<string, unknown>) => 
                                     opt.name === optionName || opt.name_ko === optionName
                                   )
                                   if (foundOption) {
@@ -1929,7 +1929,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                               }
                             }
                             
-                            const badgeClass = getGroupColorClasses(groupId, groupName, optionName)
+                            const badgeClass = getGroupColorClasses(groupId, groupName)
                             
                             return (
                               <span key={index} className={badgeClass}>

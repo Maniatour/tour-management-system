@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
 type Customer = Database['public']['Tables']['customers']['Row']

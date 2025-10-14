@@ -1,14 +1,34 @@
 'use client'
 
-import { useState, use, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Search, Edit, Trash2, Globe, Package, Grid, List } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import React from 'react'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import type { Database } from '@/lib/supabase'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 
-type Channel = Database['public']['Tables']['channels']['Row']
+interface Channel {
+  id: string
+  name: string
+  name_ko?: string
+  type?: string
+  description?: string
+  website_url?: string
+  contact_email?: string
+  contact_phone?: string
+  manager_name?: string
+  manager_email?: string
+  manager_phone?: string
+  commission_rate?: number
+  is_active: boolean
+  favicon_url?: string
+  created_at: string
+  customer_website?: string
+  admin_website?: string
+  manager_contact?: string
+  contract_url?: string
+}
 
 interface Product {
   id: string
@@ -46,12 +66,7 @@ interface ChannelProductPricing {
   created_at: string
 }
 
-interface AdminChannelsProps {
-  params: Promise<{ locale: string }>
-}
-
-export default function AdminChannels({ params }: AdminChannelsProps) {
-  const { locale } = use(params)
+export default function AdminChannels() {
   const t = useTranslations('channels')
   const tCommon = useTranslations('common')
   
@@ -126,7 +141,7 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
         return
       }
 
-      setChannels(data || [])
+      setChannels((data as Channel[]) || [])
     } catch (error) {
       console.error('Error fetching channels:', error)
     } finally {
@@ -147,7 +162,8 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
 
   const handleAddChannel = async (channel: Omit<Channel, 'id' | 'created_at'>) => {
     try {
-      const { data, error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
         .from('channels')
         .insert([channel])
         .select()
@@ -158,15 +174,16 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
         return
       }
 
-              if (data) {
-          setChannels([...channels, data[0]])
-          // 새로 추가된 채널의 타입에 맞는 탭으로 이동
-          if (data[0].type) {
-            setActiveTab(data[0].type)
-          }
+      if (data && data.length > 0) {
+        const newChannel = data[0] as Channel
+        setChannels([...channels, newChannel])
+        // 새로 추가된 채널의 타입에 맞는 탭으로 이동
+        if (newChannel.type) {
+          setActiveTab(newChannel.type)
         }
-        setShowAddForm(false)
-        alert('채널이 성공적으로 추가되었습니다!')
+      }
+      setShowAddForm(false)
+      alert('채널이 성공적으로 추가되었습니다!')
     } catch (error) {
       console.error('Error adding channel:', error)
       alert('채널 추가 중 오류가 발생했습니다.')
@@ -176,7 +193,8 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
   const handleEditChannel = async (channel: Omit<Channel, 'id' | 'created_at'>) => {
     if (editingChannel) {
       try {
-        const { error } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
           .from('channels')
           .update(channel)
           .eq('id', editingChannel.id)
@@ -232,9 +250,8 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
     }
   }
 
-  const getStatusLabel = (status: string | null) => {
-    if (!status) return '미지정'
-    return t(`status.${status}`)
+  const getStatusLabel = (isActive: boolean) => {
+    return isActive ? '활성' : '비활성'
   }
 
   const getProductName = (productId: string) => {
@@ -456,10 +473,12 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className="flex-shrink-0 h-10 w-10">
-                        {(channel as any).favicon_url ? (
-                          <img 
-                            src={(channel as any).favicon_url} 
+                        {channel.favicon_url ? (
+                          <Image 
+                            src={channel.favicon_url} 
                             alt={`${channel.name} favicon`} 
+                            width={40}
+                            height={40}
                             className="h-10 w-10 rounded-full object-cover"
                             onError={(e) => {
                               // 파비콘 로드 실패 시 기본 아이콘으로 대체
@@ -482,18 +501,18 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                       </div>
                       <div className="ml-4">
                         <div className="text-sm font-medium text-gray-900">{channel.name}</div>
-                        {(channel as any).customer_website && (
+                        {channel.customer_website && (
                           <div className="text-sm text-gray-500">
-                            고객용: {(channel as any).customer_website}
+                            고객용: {channel.customer_website}
                           </div>
                         )}
-                        {(channel as any).admin_website && (
+                        {channel.admin_website && (
                           <div className="text-sm text-gray-500">
-                            관리자용: {(channel as any).admin_website}
+                            관리자용: {channel.admin_website}
                           </div>
                         )}
-                        {!((channel as any).customer_website || (channel as any).admin_website) && channel.website && (
-                          <div className="text-sm text-gray-500">{channel.website}</div>
+                        {!(channel.customer_website || channel.admin_website) && channel.website_url && (
+                          <div className="text-sm text-gray-500">{channel.website_url}</div>
                         )}
                       </div>
                     </div>
@@ -505,7 +524,7 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                       channel.type === 'partner' ? 'bg-purple-100 text-purple-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>
-                      {getChannelTypeLabel(channel.type)}
+                      {getChannelTypeLabel(channel.type || null)}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -538,15 +557,14 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {channel.commission || 0}%
+                    {channel.commission_rate || 0}%
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      channel.status === 'active' ? 'bg-green-100 text-green-800' : 
-                      channel.status === 'inactive' ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
+                      channel.is_active ? 'bg-green-100 text-green-800' : 
+                      'bg-red-100 text-red-800'
                     }`}>
-                      {getStatusLabel(channel.status)}
+                      {getStatusLabel(channel.is_active)}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -592,10 +610,12 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-1">
                         {/* 파비콘 */}
-                        {(channel as any).favicon_url ? (
-                          <img 
-                            src={(channel as any).favicon_url} 
+                        {channel.favicon_url ? (
+                          <Image 
+                            src={channel.favicon_url} 
                             alt={`${channel.name} favicon`} 
+                            width={24}
+                            height={24}
                             className="w-6 h-6 rounded flex-shrink-0"
                             onError={(e) => {
                               // 파비콘 로드 실패 시 기본 아이콘으로 대체
@@ -624,13 +644,11 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                       </p>
                     </div>
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      channel.status === 'active' 
+                      channel.is_active 
                         ? 'bg-green-100 text-green-800' 
-                        : channel.status === 'inactive'
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-gray-100 text-gray-800'
+                        : 'bg-red-100 text-red-800'
                     }`}>
-                      {getStatusLabel(channel.status)}
+                      {getStatusLabel(channel.is_active)}
                     </span>
                   </div>
 
@@ -638,40 +656,40 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">타입</span>
-                      <span className="font-medium">{getChannelTypeLabel(channel.type)}</span>
+                      <span className="font-medium">{getChannelTypeLabel(channel.type || null)}</span>
                     </div>
                     
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-500">수수료</span>
-                      <span className="font-medium text-blue-600">{channel.commission || 0}%</span>
+                      <span className="font-medium text-blue-600">{channel.commission_rate || 0}%</span>
                     </div>
                     
                     {/* 웹사이트 정보 */}
-                    {((channel as any).customer_website || (channel as any).admin_website) && (
+                    {(channel.customer_website || channel.admin_website) && (
                       <div className="space-y-1">
-                        {(channel as any).customer_website && (
+                        {channel.customer_website && (
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-gray-500">고객용 웹사이트</span>
                             <a 
-                              href={(channel as any).customer_website} 
+                              href={channel.customer_website} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="font-medium text-blue-600 hover:text-blue-800 truncate max-w-32"
                             >
-                              {(channel as any).customer_website}
+                              {channel.customer_website}
                             </a>
                           </div>
                         )}
-                        {(channel as any).admin_website && (
+                        {channel.admin_website && (
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-gray-500">관리자용 웹사이트</span>
                             <a 
-                              href={(channel as any).admin_website} 
+                              href={channel.admin_website} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="font-medium text-blue-600 hover:text-blue-800 truncate max-w-32"
                             >
-                              {(channel as any).admin_website}
+                              {channel.admin_website}
                             </a>
                           </div>
                         )}
@@ -684,25 +702,25 @@ export default function AdminChannels({ params }: AdminChannelsProps) {
                     </div>
                     
                     {/* 담당자 정보 */}
-                    {((channel as any).manager_name || (channel as any).manager_contact) && (
+                    {(channel.manager_name || channel.manager_contact) && (
                       <div className="space-y-1">
-                        {(channel as any).manager_name && (
+                        {channel.manager_name && (
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-gray-500">담당자</span>
-                            <span className="font-medium text-gray-900">{(channel as any).manager_name}</span>
+                            <span className="font-medium text-gray-900">{channel.manager_name}</span>
                           </div>
                         )}
-                        {(channel as any).manager_contact && (
+                        {channel.manager_contact && (
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-gray-500">연락처</span>
-                            <span className="font-medium text-gray-900 truncate max-w-32">{(channel as any).manager_contact}</span>
+                            <span className="font-medium text-gray-900 truncate max-w-32">{channel.manager_contact}</span>
                           </div>
                         )}
-                        {(channel as any).contract_url && (
+                        {channel.contract_url && (
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-gray-500">계약서</span>
                             <a 
-                              href={(channel as any).contract_url} 
+                              href={channel.contract_url} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="font-medium text-blue-600 hover:text-blue-800 text-xs"
@@ -844,16 +862,16 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
   const [formData, setFormData] = useState({
     name: channel?.name || '',
     type: channel?.type || '',
-    website: channel?.website || '',
-    customer_website: (channel as any)?.customer_website || '',
-    admin_website: (channel as any)?.admin_website || '',
-    commission: channel?.commission || null,
-    status: channel?.status || '',
+    website: channel?.website_url || '',
+    customer_website: channel?.customer_website || '',
+    admin_website: channel?.admin_website || '',
+    commission_rate: channel?.commission_rate || 0,
+    is_active: channel?.is_active || false,
     description: channel?.description || '',
-    favicon_url: (channel as any)?.favicon_url || '',
-    manager_name: (channel as any)?.manager_name || '',
-    manager_contact: (channel as any)?.manager_contact || '',
-    contract_url: (channel as any)?.contract_url || ''
+    favicon_url: channel?.favicon_url || '',
+    manager_name: channel?.manager_name || '',
+    manager_contact: channel?.manager_contact || '',
+    contract_url: channel?.contract_url || ''
   })
 
   const [uploadingFavicon, setUploadingFavicon] = useState(false)
@@ -923,7 +941,7 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.favicon')}</label>
             <div className="flex items-center space-x-3">
               {formData.favicon_url ? (
-                <img src={formData.favicon_url} alt="favicon preview" className="w-8 h-8 rounded" />
+                <Image src={formData.favicon_url} alt="favicon preview" width={32} height={32} className="w-8 h-8 rounded" />
               ) : (
                 <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">-</div>
               )}
@@ -939,11 +957,11 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
                     const fileExt = file.name.split('.').pop()
                     const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
                     const filePath = `channels/${fileName}`
-                    const { error: uploadError } = await (supabase as any).storage
+                    const { error: uploadError } = await supabase.storage
                       .from('channel-icons')
                       .upload(filePath, file)
                     if (uploadError) throw uploadError
-                    const { data: urlData } = (supabase as any).storage
+                    const { data: urlData } = supabase.storage
                       .from('channel-icons')
                       .getPublicUrl(filePath)
                     setFormData({ ...formData, favicon_url: urlData.publicUrl })
@@ -969,8 +987,8 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.commission')} (%)</label>
               <input
                 type="number"
-                value={formData.commission || ''}
-                onChange={(e) => setFormData({ ...formData, commission: Number(e.target.value) || null })}
+                value={formData.commission_rate || ''}
+                onChange={(e) => setFormData({ ...formData, commission_rate: Number(e.target.value) || 0 })}
                 min="0"
                 max="100"
                 step="0.1"
@@ -980,13 +998,12 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
               <select
-                value={formData.status || ''}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                value={formData.is_active ? 'true' : 'false'}
+                onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <option value="">{t('form.selectStatus')}</option>
-                <option value="active">{t('status.active')}</option>
-                <option value="inactive">{t('status.inactive')}</option>
+                <option value="true">{t('status.active')}</option>
+                <option value="false">{t('status.inactive')}</option>
               </select>
             </div>
           </div>
@@ -1064,11 +1081,11 @@ function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
                       const fileExt = file.name.split('.').pop()
                       const fileName = `contract-${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
                       const filePath = `contracts/${fileName}`
-                      const { error: uploadError } = await (supabase as any).storage
+                      const { error: uploadError } = await supabase.storage
                         .from('channel-contracts')
                         .upload(filePath, file)
                       if (uploadError) throw uploadError
-                      const { data: urlData } = (supabase as any).storage
+                      const { data: urlData } = supabase.storage
                         .from('channel-contracts')
                         .getPublicUrl(filePath)
                       setFormData({ ...formData, contract_url: urlData.publicUrl })

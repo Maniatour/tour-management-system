@@ -1,7 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-import { X, AlertTriangle, CheckCircle } from 'lucide-react'
+import { X, AlertTriangle } from 'lucide-react'
 
 interface DataReviewErrorModalProps {
   isOpen: boolean

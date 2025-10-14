@@ -1,7 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-import { Settings, ArrowRight, Clock } from 'lucide-react'
+import { Settings, ArrowRight } from 'lucide-react'
 import { TableInfo, ColumnInfo, ColumnMapping, SheetInfo } from '@/types/data-sync'
 
 interface SyncConfigProps {
@@ -24,7 +23,6 @@ export default function SyncConfig({
   selectedTable,
   sheetInfo,
   availableTables,
-  tableColumns,
   columnMapping,
   truncateTable,
   lastSyncTime,

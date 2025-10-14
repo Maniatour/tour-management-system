@@ -39,7 +39,6 @@ export default function AttendancePage() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([])
   const [loading, setLoading] = useState(true)
-  const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
   const [todayRecords, setTodayRecords] = useState<AttendanceRecord[]>([])
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -117,10 +116,8 @@ export default function AttendancePage() {
   const {
     currentSession,
     isCheckingIn,
-    elapsedTime,
     handleCheckIn,
-    handleCheckOut,
-    refreshAttendance
+    handleCheckOut
   } = useAttendanceSync()
 
   // 오늘의 출퇴근 기록 조회 (선택된 직원 기준)
@@ -421,30 +418,6 @@ export default function AttendancePage() {
     })
   }
 
-  const formatTimeInTimezone = (timeString: string | null, timezone: string) => {
-    if (!timeString) return '-'
-    return new Date(timeString).toLocaleTimeString('ko-KR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: timezone
-    })
-  }
-
-  const formatDate = (dateString: string) => {
-    // date 필드는 "2025-10-01" 형태의 문자열이므로 직접 사용
-    // 라스베가스 시간대에서 해당 날짜를 해석
-    const date = new Date(dateString + 'T00:00:00') // 로컬 시간으로 해석
-    
-    // 라스베가스 시간대로 변환하여 날짜 표시
-    return date.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long',
-      timeZone: 'America/Los_Angeles'
-    })
-  }
-
   // UTC 시간을 라스베가스 현지 날짜로 변환 (요일 포함)
   const formatDateFromUTC = (utcTimeString: string) => {
     if (!utcTimeString) return '-'
@@ -481,7 +454,7 @@ export default function AttendancePage() {
   }
 
   // 날짜별 배경 색상 결정 함수
-  const getDateBackgroundColor = (date: string, index: number) => {
+  const getDateBackgroundColor = (date: string) => {
     // 날짜별로 고유한 색상 배열 생성
     const colors = [
       'bg-blue-50 hover:bg-blue-100',      // 연한 파란색
@@ -673,7 +646,7 @@ export default function AttendancePage() {
           <div className="mt-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">오늘의 출퇴근 기록</h3>
             <div className="space-y-2">
-              {todayRecords.map((record, index) => (
+              {todayRecords.map((record) => (
                 <div key={record.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div className="flex items-center space-x-4">
                     <div className="text-sm font-medium text-gray-600">
@@ -837,7 +810,7 @@ export default function AttendancePage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {attendanceRecords.map((record) => (
-                  <tr key={record.id} className={`${getDateBackgroundColor(record.date, 0)} transition-colors`}>
+                  <tr key={record.id} className={`${getDateBackgroundColor(record.date)} transition-colors`}>
                     {isAdmin && (
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                         {record.id}

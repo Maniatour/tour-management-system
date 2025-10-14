@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import createIntlMiddleware from 'next-intl/middleware'
 
 const intlMiddleware = createIntlMiddleware({

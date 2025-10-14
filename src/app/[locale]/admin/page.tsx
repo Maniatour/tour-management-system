@@ -28,8 +28,6 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ params }: AdminDashboardProps) {
-  const { locale } = use(params)
-  const t = useTranslations('admin')
 
   const stats = [
     {
@@ -171,7 +169,7 @@ export default function AdminDashboard({ params }: AdminDashboardProps) {
       <div className="px-2 pt-0 pb-4">
         <div className="grid grid-cols-2 gap-3 mb-6">
           {stats.map((stat) => {
-            const Icon = stat.icon
+            const IconComponent = stat.icon
             return (
               <Link
                 key={stat.name}

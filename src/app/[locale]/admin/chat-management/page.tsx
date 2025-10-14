@@ -582,10 +582,25 @@ export default function ChatManagementPage() {
 
       const combinedData: TourInfo = {
         ...(tourData as Record<string, unknown>),
-        product: productData || undefined,
+        id: (tourData as Record<string, unknown>)?.id as string || '',
+        product_id: (tourData as Record<string, unknown>)?.product_id as string || '',
+        tour_date: (tourData as Record<string, unknown>)?.tour_date as string || '',
+        tour_guide_id: (tourData as Record<string, unknown>)?.tour_guide_id as string || '',
+        product: productData ? {
+          name_ko: (productData as Record<string, unknown>).name_ko as string,
+          name_en: (productData as Record<string, unknown>).name_en as string,
+          name: (productData as Record<string, unknown>).name as string,
+          description: (productData as Record<string, unknown>).description as string
+        } : undefined,
         tour_guide: tourGuideData || undefined,
         assistant: assistantData || undefined,
-        vehicle: vehicleData || undefined,
+        vehicle: vehicleData ? {
+          id: (vehicleData as Record<string, unknown>).id as string,
+          vehicle_number: (vehicleData as Record<string, unknown>).vehicle_number as string,
+          vehicle_category: (vehicleData as Record<string, unknown>).vehicle_category as string,
+          driver_name: (vehicleData as Record<string, unknown>).driver_name as string,
+          driver_phone: (vehicleData as Record<string, unknown>).driver_phone as string
+        } : undefined,
         reservations: combinedReservations
       } as TourInfo
 

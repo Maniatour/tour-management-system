@@ -6,7 +6,6 @@ import {
   X, 
   Save, 
   Loader2,
-  Palette,
   Folder,
   Trash2
 } from 'lucide-react'

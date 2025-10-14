@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useTranslations } from 'next-intl'
-import { Plus, Edit, Trash2, Search, Filter, Grid, List, Ticket, Calendar, Percent, DollarSign } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, Filter, Grid, List, Ticket } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 // 새로운 쿠폰 스키마에 맞는 타입 정의
 type Coupon = {
@@ -22,7 +21,6 @@ type Coupon = {
 }
 
 export default function CouponsPage() {
-  const t = useTranslations('admin')
 
   const [coupons, setCoupons] = useState<Coupon[]>([])
   const [loading, setLoading] = useState(true)
@@ -90,7 +88,7 @@ export default function CouponsPage() {
   }, [])
 
   // 쿠폰 추가
-  const handleAddCoupon = async (id: string, couponData: Omit<Coupon, 'id' | 'created_at'>) => {
+  const handleAddCoupon = async (couponData: Omit<Coupon, 'id' | 'created_at'>) => {
     try {
       // product_id를 그대로 저장 (다중 상품 ID 지원)
       const productId = couponData.product_id || null

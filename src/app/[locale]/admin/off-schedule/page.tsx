@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { Calendar, CheckCircle, XCircle, Clock, User, Filter, Plus } from 'lucide-react'
@@ -51,9 +51,9 @@ export default function AdminOffSchedulePage() {
     } else {
       console.log('Not calling fetchOffData:', { user: !!user, authLoading })
     }
-  }, [user, authLoading, filter, selectedDate])
+  }, [user, authLoading, filter, selectedDate, fetchOffData])
 
-  const fetchOffData = async () => {
+  const fetchOffData = useCallback(async () => {
     try {
       setLoading(true)
       console.log('Fetching off schedules data...')
@@ -109,7 +109,7 @@ export default function AdminOffSchedulePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [filter, selectedDate])
 
   const handleApproveRequest = async (requestId: string) => {
     if (!confirm('이 Off 신청을 승인하시겠습니까?')) return
@@ -263,7 +263,7 @@ export default function AdminOffSchedulePage() {
                   <Filter className="w-4 h-4 text-gray-500" />
                   <select
                     value={filter}
-                    onChange={(e) => setFilter(e.target.value as any)}
+                    onChange={(e) => setFilter(e.target.value as 'all' | 'pending' | 'approved' | 'rejected')}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                   >
                     <option value="all">전체</option>

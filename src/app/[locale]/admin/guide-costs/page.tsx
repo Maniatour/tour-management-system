@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Calendar, DollarSign, Users, Clock } from 'lucide-react'
+import { Plus, Edit, Trash2, Calendar, DollarSign } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 
 interface GuideCost {
@@ -36,7 +36,6 @@ interface GuideCostFormData {
 }
 
 export default function GuideCostManagementPage() {
-  const t = useTranslations('admin')
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -337,7 +336,7 @@ export default function GuideCostManagementPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">팀 타입</label>
                 <select
                   value={formData.teamType}
-                  onChange={(e) => setFormData(prev => ({ ...prev, teamType: e.target.value as any }))}
+                  onChange={(e) => setFormData(prev => ({ ...prev, teamType: e.target.value as '1_guide' | '2_guides' | 'guide_driver' }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   disabled={!!editingCost}
                 >

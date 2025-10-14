@@ -13,7 +13,6 @@ interface AdminOptionsProps {
 }
 
 export default function AdminOptions({ params }: AdminOptionsProps) {
-  const { locale } = use(params)
   const t = useTranslations('options')
   const tCommon = useTranslations('common')
   
@@ -165,7 +164,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
     try {
       const result = t(`categories.${category}`, { fallback: category })
       return result
-    } catch (error) {
+    } catch {
       return category
     }
   }
@@ -179,7 +178,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
     try {
       const result = t(`priceTypes.${priceType}`, { fallback: priceType })
       return result
-    } catch (error) {
+    } catch {
       return priceType
     }
   }
@@ -188,7 +187,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
     try {
       const result = t(`status.${status}`, { fallback: status })
       return result
-    } catch (error) {
+    } catch {
       return status
     }
   }

@@ -1,21 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { 
   Plus, 
-  Search, 
-  Filter, 
-  Calendar, 
-  AlertTriangle, 
   FileText, 
   Upload,
   Folder,
-  Eye,
-  Edit,
-  Trash2,
-  Download,
-  MoreVertical,
   Clock,
   CheckCircle,
   XCircle,
@@ -81,8 +72,7 @@ interface DocumentStats {
 }
 
 export default function DocumentManagementPage() {
-  const t = useTranslations('documents')
-  const { user, userRole } = useAuth()
+  const { user } = useAuth()
   
   // 상태 관리
   const [documents, setDocuments] = useState<Document[]>([])
@@ -113,9 +103,9 @@ export default function DocumentManagementPage() {
   useEffect(() => {
     loadDocuments()
     loadCategories()
-  }, [])
+  }, [loadDocuments])
 
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     try {
       setLoading(true)
       const { data, error } = await supabase
@@ -136,7 +126,7 @@ export default function DocumentManagementPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   const loadCategories = async () => {
     try {

@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { Reservation, Customer } from '@/types/reservation'
@@ -15,6 +14,26 @@ export default function ReservationDetailsPage() {
   const router = useRouter()
   const params = useParams() as { locale?: string; id?: string }
   const { hasPermission, userRole, user, loading: authLoading, isInitialized } = useAuth()
+
+  // 모든 훅을 조건부 호출 없이 먼저 호출
+  const {
+    reservations,
+    customers,
+    products,
+    channels,
+    productOptions,
+    options,
+    pickupHotels,
+    coupons,
+    loading,
+    refreshReservations,
+    refreshCustomers
+  } = useReservationData()
+
+  const [loadingReservation, setLoadingReservation] = useState<boolean>(false)
+  const [reservation, setReservation] = useState<Reservation | null>(null)
+  const reservationId = params?.id || ''
+  const [tourCreated, setTourCreated] = useState(false)
 
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
   const isStaff = isInitialized && (hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager'))
@@ -30,7 +49,7 @@ export default function ReservationDetailsPage() {
       isStaff,
       authLoading
     })
-  }, [isInitialized, userRole, user?.email, isStaff, authLoading])
+  }, [isInitialized, userRole, user?.email, isStaff, authLoading, hasPermission])
   
   // 권한이 없을 때만 리다이렉트 (useEffect로 처리)
   useEffect(() => {
@@ -40,40 +59,6 @@ export default function ReservationDetailsPage() {
       router.push(`/${params.locale}/admin`)
     }
   }, [isInitialized, isStaff, router, params.locale, userRole, user])
-  
-  // 초기화가 완료되지 않았을 때 로딩 화면 표시
-  if (!isInitialized) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
-  
-  // 권한이 없을 때는 리다이렉트 중이므로 빈 화면 표시
-  if (!isStaff) {
-    return null
-  }
-
-  const {
-    reservations,
-    customers,
-    products,
-    channels,
-    productOptions,
-    optionChoices,
-    options,
-    pickupHotels,
-    coupons,
-    loading,
-    refreshReservations,
-    refreshCustomers
-  } = useReservationData()
-
-  const [loadingReservation, setLoadingReservation] = useState<boolean>(false)
-  const [reservation, setReservation] = useState<Reservation | null>(null)
-  const reservationId = params?.id || ''
-  const [tourCreated, setTourCreated] = useState(false)
 
   // Try to use already-loaded list; if not found, fetch just this reservation
   useEffect(() => {
@@ -100,33 +85,60 @@ export default function ReservationDetailsPage() {
         if (data) {
           // Minimal map to Reservation type; rely on list loader shape
           const mapped: Reservation = {
-            id: data.id,
-            customerId: data.customer_id || '',
-            productId: data.product_id || '',
-            tourDate: data.tour_date || '',
-            tourTime: data.tour_time || '',
-            eventNote: data.event_note || '',
-            pickUpHotel: data.pickup_hotel || '',
-            pickUpTime: data.pickup_time || '',
-            adults: data.adults || 0,
-            child: data.child || 0,
-            infant: data.infant || 0,
-            totalPeople: data.total_people || 0,
-            channelId: data.channel_id || '',
-            channelRN: data.channel_rn || '',
-            addedBy: data.added_by || '',
-            addedTime: data.created_at || '',
-            tourId: data.tour_id || '',
-            status: (data.status as Reservation['status']) || 'pending',
-            selectedOptions: (typeof data.selected_options === 'string'
-              ? (() => { try { return JSON.parse(data.selected_options as unknown as string) } catch { return {} } })()
-              : (data.selected_options as { [optionId: string]: string[] }) || {}),
-            selectedOptionPrices: (typeof data.selected_option_prices === 'string'
-              ? (() => { try { return JSON.parse(data.selected_option_prices as unknown as string) } catch { return {} } })()
-              : (data.selected_option_prices as { [key: string]: number }) || {}),
-            choices: (typeof data.choices === 'string'
-              ? (() => { try { return JSON.parse(data.choices as unknown as string) } catch { return {} } })()
-              : (data.choices as { [key: string]: unknown }) || {}),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            id: (data as any).id,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            customerId: (data as any).customer_id || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            productId: (data as any).product_id || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            tourDate: (data as any).tour_date || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            tourTime: (data as any).tour_time || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            eventNote: (data as any).event_note || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            pickUpHotel: (data as any).pickup_hotel || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            pickUpTime: (data as any).pickup_time || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            adults: (data as any).adults || 0,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            child: (data as any).child || 0,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            infant: (data as any).infant || 0,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            totalPeople: (data as any).total_people || 0,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            channelId: (data as any).channel_id || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            channelRN: (data as any).channel_rn || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            addedBy: (data as any).added_by || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            addedTime: (data as any).created_at || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            tourId: (data as any).tour_id || '',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            status: ((data as any).status as Reservation['status']) || 'pending',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            selectedOptions: (typeof (data as any).selected_options === 'string'
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ? (() => { try { return JSON.parse((data as any).selected_options as unknown as string) } catch { return {} } })()
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              : ((data as any).selected_options as { [optionId: string]: string[] }) || {}),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            selectedOptionPrices: (typeof (data as any).selected_option_prices === 'string'
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ? (() => { try { return JSON.parse((data as any).selected_option_prices as unknown as string) } catch { return {} } })()
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              : ((data as any).selected_option_prices as { [key: string]: number }) || {}),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            choices: (typeof (data as any).choices === 'string'
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ? (() => { try { return JSON.parse((data as any).choices as unknown as string) } catch { return {} } })()
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              : ((data as any).choices as { [key: string]: unknown }) || {}),
             hasExistingTour: false
           }
           setReservation(mapped)
@@ -138,7 +150,7 @@ export default function ReservationDetailsPage() {
     load()
   }, [reservationId, reservations])
 
-  const handleSubmit = async (payload: Omit<Reservation, 'id'>) => {
+  const handleSubmit = useCallback(async (payload: Omit<Reservation, 'id'>) => {
     if (!reservation) return
     try {
       const reservationData = {
@@ -163,7 +175,8 @@ export default function ReservationDetailsPage() {
         is_private_tour: payload.isPrivateTour || false
       }
 
-      const { error } = await (supabase as unknown as Database)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('reservations')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .update(reservationData as any)
@@ -184,9 +197,9 @@ export default function ReservationDetailsPage() {
       console.error(e)
       alert('예약 수정 중 오류가 발생했습니다.')
     }
-  }
+  }, [reservation, refreshReservations, tourCreated])
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     if (!confirm(t('deleteConfirm'))) return
     try {
       const { error } = await supabase
@@ -205,7 +218,7 @@ export default function ReservationDetailsPage() {
       console.error(e)
       alert('삭제 중 오류가 발생했습니다.')
     }
-  }
+  }, [t, refreshReservations, router, params?.locale])
 
   const content = useMemo(() => {
     if (loading || loadingReservation) {
@@ -234,14 +247,13 @@ export default function ReservationDetailsPage() {
       <div className="space-y-6">
         <ReservationForm
           reservation={reservation}
-          customers={customers as Customer[]}
-          products={products}
-          channels={channels}
-          productOptions={productOptions}
-          optionChoices={optionChoices}
-          options={options}
-          pickupHotels={pickupHotels}
-          coupons={coupons}
+          customers={(customers as Customer[]) || []}
+          products={products || []}
+          channels={channels || []}
+          productOptions={productOptions || []}
+          options={options || []}
+          pickupHotels={pickupHotels || []}
+          coupons={coupons || []}
           onSubmit={handleSubmit}
           onCancel={() => router.push(`/${params?.locale || 'ko'}/admin/reservations`)}
           onRefreshCustomers={refreshCustomers}
@@ -250,7 +262,7 @@ export default function ReservationDetailsPage() {
         />
       </div>
     )
-  }, [loading, loadingReservation, reservation, customers, products, channels, productOptions, optionChoices, options, pickupHotels, coupons])
+  }, [loading, loadingReservation, reservation, customers, products, channels, productOptions, options, pickupHotels, coupons, handleSubmit, handleDelete, params?.locale, router, refreshCustomers])
 
   return (
     <div className="space-y-4">
@@ -270,7 +282,19 @@ export default function ReservationDetailsPage() {
           </button>
         </div>
       </div>
-      {content}
+      
+      {/* 초기화가 완료되지 않았을 때 로딩 화면 표시 */}
+      {!isInitialized ? (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        </div>
+      ) : !isStaff ? (
+        // 권한이 없을 때는 리다이렉트 중이므로 빈 화면 표시
+        null
+      ) : (
+        // 권한이 있을 때만 실제 콘텐츠 표시
+        content
+      )}
     </div>
   )
 }

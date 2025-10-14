@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { FileSpreadsheet, ExternalLink, X } from 'lucide-react'
 
 interface GoogleSheetsConfigProps {
