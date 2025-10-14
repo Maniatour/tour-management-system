@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { useTranslations } from 'next-intl'
+import { useParams } from 'next/navigation'
 import { 
   Package, 
   Users, 
