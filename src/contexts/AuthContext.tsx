@@ -233,16 +233,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (savedSimulation) {
       try {
         const simulationData = JSON.parse(savedSimulation)
-        setSimulatedUser(simulationData)
-        setIsSimulating(true)
-        setLoading(false) // 시뮬레이션 복원 시 즉시 로딩 완료
-        setIsInitialized(true) // 시뮬레이션 복원 시 초기화 완료
-        console.log('AuthContext: Simulation restored from localStorage:', simulationData)
-        return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
+        console.log('AuthContext: Found saved simulation data:', simulationData)
+        
+        // 시뮬레이션 데이터 유효성 검사
+        if (simulationData.email && simulationData.role) {
+          setSimulatedUser(simulationData)
+          setIsSimulating(true)
+          setLoading(false) // 시뮬레이션 복원 시 즉시 로딩 완료
+          setIsInitialized(true) // 시뮬레이션 복원 시 초기화 완료
+          console.log('AuthContext: Simulation restored successfully:', simulationData)
+          return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
+        } else {
+          console.warn('AuthContext: Invalid simulation data, removing:', simulationData)
+          localStorage.removeItem('positionSimulation')
+        }
       } catch (error) {
         console.error('AuthContext: Error parsing saved simulation:', error)
         localStorage.removeItem('positionSimulation')
       }
+    } else {
+      console.log('AuthContext: No saved simulation data found')
     }
   }, [])
 

@@ -19,33 +19,48 @@ const LanguageSwitcher = () => {
     const pathWithoutLocale = pathname.replace(`/${locale}`, '') || '/'
     const newPath = `/${newLocale}${pathWithoutLocale}`
     
-    // 시뮬레이션 상태 보존
+    // 시뮬레이션 상태 보존 (더 안전한 방법)
     let simulationData = null
     if (isSimulating && simulatedUser) {
       simulationData = {
         email: simulatedUser.email,
         name_ko: simulatedUser.name_ko,
+        name_en: simulatedUser.name_en,
         position: simulatedUser.position,
         role: simulatedUser.role
       }
+      console.log('LanguageSwitcher: Preserving simulation data:', simulationData)
     }
     
     // 언어 관련 상태만 정리 (시뮬레이션 상태는 보존)
     localStorage.removeItem('locale')
     localStorage.removeItem('preferred-locale')
     
-    // 시뮬레이션 상태 복원
+    // 시뮬레이션 상태를 먼저 저장 (페이지 이동 전에 확실히 저장)
     if (simulationData) {
       localStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+      console.log('LanguageSwitcher: Simulation data saved to localStorage')
     }
     
     // 새로운 언어 설정 (쿠키만 설정)
     document.cookie = `NEXT_LOCALE=${newLocale}; path=/; max-age=31536000; SameSite=Lax`
     
     // 디버깅을 위한 로그
-    console.log('Language change:', { from: locale, to: newLocale, path: newPath })
+    console.log('Language change:', { 
+      from: locale, 
+      to: newLocale, 
+      path: newPath,
+      isSimulating,
+      simulationData: !!simulationData
+    })
     
-    // Next.js 라우터를 사용하여 언어 변경 (한 번만 새로고침)
+    // 페이지 이동 전에 시뮬레이션 상태가 저장되었는지 확인
+    const savedSimulation = localStorage.getItem('positionSimulation')
+    if (simulationData && savedSimulation) {
+      console.log('LanguageSwitcher: Simulation data confirmed saved before navigation')
+    }
+    
+    // Next.js 라우터를 사용하여 언어 변경
     router.push(newPath)
   }
 

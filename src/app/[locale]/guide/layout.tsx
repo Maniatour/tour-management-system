@@ -65,44 +65,48 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       simulatedUser: !!simulatedUser
     })
     
-    if (!isLoading) {
-      console.log('GuideLayout: Auth check completed', { user: !!user, userRole, isLoading })
-      
-      // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
-      const currentUser = isSimulating && simulatedUser ? simulatedUser : user
-      const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
-      
-      console.log('GuideLayout: Current user info', { 
-        currentUser: !!currentUser, 
+    // 시뮬레이션 상태가 복원되는 동안 잠시 기다림
+    if (isLoading && !isSimulating) {
+      console.log('GuideLayout: Still loading, waiting...')
+      return
+    }
+    
+    // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
+    const currentUser = isSimulating && simulatedUser ? simulatedUser : user
+    const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
+    
+    console.log('GuideLayout: Current user info', { 
+      currentUser: !!currentUser, 
+      currentUserRole,
+      isSimulating,
+      simulatedUser: !!simulatedUser,
+      isLoading
+    })
+    
+    // 관리자, 매니저, 투어 가이드가 아닌 경우 접근 차단
+    if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
+      console.log('GuideLayout: Access denied, redirecting to auth', {
+        currentUser: !!currentUser,
         currentUserRole,
         isSimulating,
-        simulatedUser: !!simulatedUser
+        isLoading
       })
-      
-      // 관리자, 매니저, 투어 가이드가 아닌 경우 접근 차단
-      if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
-        console.log('GuideLayout: Access denied, redirecting to auth', {
-          currentUser: !!currentUser,
-          currentUserRole,
-          isSimulating
-        })
-        // 현재 경로에서 locale 추출
-        const currentLocale = pathname.split('/')[1] || 'ko'
-        router.push(`/${currentLocale}/auth`)
-        return
-      }
-      
-      console.log('GuideLayout: Access granted - staying on guide page')
-      
-      // 안읽은 메시지 카운트 로드
-      loadUnreadMessageCount()
-      
-      // 미작성 리포트 카운트 로드
-      loadUncompletedReportCount()
-      
-       // 메디컬 리포트 상태 확인 (비활성화)
-       // checkMedicalReportStatus()
+      // 현재 경로에서 locale 추출
+      const currentLocale = pathname.split('/')[1] || 'ko'
+      router.push(`/${currentLocale}/auth`)
+      return
     }
+    
+    console.log('GuideLayout: Access granted - staying on guide page')
+    
+    // 안읽은 메시지 카운트 로드
+    loadUnreadMessageCount()
+    
+    // 미작성 리포트 카운트 로드
+    loadUncompletedReportCount()
+    
+     // 메디컬 리포트 상태 확인 (비활성화)
+     // checkMedicalReportStatus()
   }, [user, userRole, isLoading, router, isSimulating, simulatedUser])
 
   // 안읽은 메시지 카운트 로드
