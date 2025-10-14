@@ -31,8 +31,8 @@ interface TicketBooking {
     tour_date: string;
     products?: {
       name: string;
-    };
-  };
+    } | undefined;
+  } | undefined;
 }
 
 interface TourEvent {
