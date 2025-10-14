@@ -59,6 +59,11 @@ export default function GuideCostManagementPage() {
       const response = await fetch('/api/guide-costs')
       const data = await response.json()
       
+      if (!response.ok) {
+        console.error('API 응답 오류:', response.status, data)
+        throw new Error(data.error || `HTTP ${response.status} 오류`)
+      }
+      
       if (data.error) {
         throw new Error(data.error)
       }
@@ -66,7 +71,8 @@ export default function GuideCostManagementPage() {
       setProducts(data.products || [])
     } catch (error) {
       console.error('상품 목록 로드 오류:', error)
-      alert('상품 목록을 불러오는 중 오류가 발생했습니다.')
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류'
+      alert(`상품 목록을 불러오는 중 오류가 발생했습니다.\n\n오류 내용: ${errorMessage}`)
     } finally {
       setLoading(false)
     }
