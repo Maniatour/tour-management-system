@@ -640,6 +640,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       case 'team_member':
         return `/${locale}/guide`
       case 'customer':
+        return `/${locale}/dashboard`
       default:
         return `/${locale}/auth`
     }

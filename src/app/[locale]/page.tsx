@@ -25,6 +25,13 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
     const handleRedirect = async () => {
       const { locale } = await params
       
+      // 로그인하지 않은 사용자는 홈페이지를 보여줌 (리다이렉트하지 않음)
+      if (!loading && !user) {
+        console.log('HomePage: No user logged in, showing home page')
+        return
+      }
+      
+      // 로그인한 사용자만 역할에 따라 리다이렉트
       if (!loading && user && userRole) {
         console.log('HomePage: User logged in, role:', userRole, 'redirecting...')
         
