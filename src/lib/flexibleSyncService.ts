@@ -258,7 +258,7 @@ export const flexibleSync = async (
   sheetName: string, 
   targetTable: string, 
   columnMapping: { [key: string]: string }, 
-  enableIncrementalSync: boolean = true, // eslint-disable-line @typescript-eslint/no-unused-vars
+  enableIncrementalSync: boolean = true,
   onProgress?: (event: {
     type: 'start' | 'progress' | 'complete' | 'info' | 'warn' | 'error'
     message?: string
@@ -479,7 +479,7 @@ export const flexibleSync = async (
       errorDetails: [] as string[]
     }
     let processed = 0
-    const batchSize = 100 // Google Sheets API 할당량을 고려하여 500 → 100으로 감소
+    const batchSize = 50 // Google Sheets API 할당량을 고려하여 100 → 50으로 추가 감소
     const rowsBuffer: Record<string, unknown>[] = []
 
     const flush = async () => {
@@ -496,8 +496,8 @@ export const flexibleSync = async (
           return row
         })
         
-        // API 할당량을 고려한 지연 시간 추가 (100ms)
-        await new Promise(resolve => setTimeout(resolve, 100))
+        // API 할당량을 고려한 지연 시간 추가 (200ms)
+        await new Promise(resolve => setTimeout(resolve, 200))
         
         const { error } = await (db as any) // eslint-disable-line @typescript-eslint/no-explicit-any
           .from(targetTable)
@@ -596,7 +596,7 @@ export const flexibleSync = async (
       if (rowsBuffer.length >= batchSize) {
         await flush()
         // 배치 처리 후 추가 지연 (API 할당량 고려)
-        await new Promise(resolve => setTimeout(resolve, 200))
+        await new Promise(resolve => setTimeout(resolve, 500))
       }
     }
 
@@ -676,7 +676,7 @@ export const getAvailableTables = () => {
 // const getTableDisplayName = (tableName: string) => { ... }
 
 // 테이블의 기본 컬럼 매핑 가져오기 (하드코딩 제거)
-export const getTableColumnMapping = (tableName: string) => { // eslint-disable-line @typescript-eslint/no-unused-vars
+export const getTableColumnMapping = (_tableName: string) => {
   // 이제 동적으로 생성되므로 빈 객체 반환
   return {}
 }

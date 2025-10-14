@@ -2,7 +2,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
@@ -104,6 +105,10 @@ export default function TourDetailPage() {
   const [editingTourHotelBooking, setEditingTourHotelBooking] = useState<LocalTourHotelBooking | null>(null)
   const [showTicketBookingDetails, setShowTicketBookingDetails] = useState<boolean>(false)
   const [editingReservation, setEditingReservation] = useState<any>(null)
+  
+  // 팀 수수료 관련 상태
+  const [guideFee, setGuideFee] = useState<number>(0)
+  const [assistantFee, setAssistantFee] = useState<number>(0)
 
   // 핸들러 함수들
   const handlePrivateTourToggle = () => {
@@ -133,11 +138,23 @@ export default function TourDetailPage() {
   }
 
   const handleTeamTypeChange = async (type: '1guide' | '2guide' | 'guide+driver') => {
-    tourData.setTeamType(type)
-    if (type === '1guide') {
-      tourData.setSelectedAssistant('')
+    console.log('handleTeamTypeChange 호출됨:', { type, tour: tourData.tour })
+    
+    const success = await tourHandlers.handleTeamTypeChange(tourData.tour, type)
+    
+    console.log('팀 타입 변경 결과:', success)
+    
+    if (success) {
+      tourData.setTeamType(type)
+      if (type === '1guide') {
+        tourData.setSelectedAssistant('')
+      }
+      // 투어 데이터도 업데이트
+      tourData.setTour(prev => prev ? { ...prev, team_type: type } : null)
+      console.log('로컬 상태 업데이트 완료')
+    } else {
+      console.log('팀 타입 변경 실패')
     }
-    await tourHandlers.handleTeamTypeChange(tourData.tour, type)
   }
 
   const handleGuideSelect = async (guideEmail: string) => {
@@ -154,6 +171,79 @@ export default function TourDetailPage() {
     tourData.setTourNote(note)
     await tourHandlers.handleTourNoteChange(tourData.tour, note)
   }
+
+  // 가이드비 로드
+  const loadGuideCosts = useCallback(async () => {
+    if (!tourData.tour?.product_id || !tourData.teamType) return
+
+    try {
+      const teamTypeMap: Record<string, string> = {
+        '1guide': '1_guide',
+        '2guide': '2_guides',
+        'guide+driver': 'guide_driver'
+      }
+
+      const mappedTeamType = teamTypeMap[tourData.teamType]
+      if (!mappedTeamType) return
+
+      const response = await fetch(`/api/guide-costs?product_id=${tourData.tour.product_id}&team_type=${mappedTeamType}`)
+      const data = await response.json()
+
+      if (data.guideCost) {
+        setGuideFee(data.guideCost.guide_fee)
+        setAssistantFee(data.guideCost.assistant_fee)
+        console.log('가이드비 로드됨:', data.guideCost)
+      }
+    } catch (error) {
+      console.error('가이드비 로드 오류:', error)
+    }
+  }, [tourData.tour?.product_id, tourData.teamType])
+
+  // 팀 수수료 변경 핸들러
+  const handleGuideFeeChange = async (fee: number) => {
+    setGuideFee(fee)
+    // TODO: 서버에 가이드 수수료 저장
+    console.log('가이드 수수료 변경:', fee)
+  }
+
+  const handleAssistantFeeChange = async (fee: number) => {
+    setAssistantFee(fee)
+    // TODO: 서버에 어시스턴트 수수료 저장
+    console.log('어시스턴트 수수료 변경:', fee)
+  }
+
+  // 채널 정보 가져오기 함수
+  const getChannelInfo = async (channelId: string) => {
+    if (!channelId) return null
+    
+    try {
+      const { data: channel, error } = await supabase
+        .from('channels')
+        .select('id, name, favicon_url')
+        .eq('id', channelId)
+        .single()
+
+      if (error) {
+        console.error('채널 정보 조회 오류:', error)
+        return { name: 'Unknown Channel', favicon: undefined }
+      }
+
+      return {
+        name: (channel as any)?.name || 'Unknown Channel',
+        favicon: (channel as any)?.favicon_url || undefined
+      }
+    } catch (error) {
+      console.error('채널 정보 조회 중 오류:', error)
+      return { name: 'Unknown Channel', favicon: undefined }
+    }
+  }
+
+  // 가이드비 로드 useEffect
+  useEffect(() => {
+    if (tourData.tour?.product_id && tourData.teamType) {
+      loadGuideCosts()
+    }
+  }, [tourData.tour?.product_id, tourData.teamType, loadGuideCosts])
 
 
   const handleUnassignReservation = async (reservationId: string) => {
@@ -499,12 +589,16 @@ export default function TourDetailPage() {
               teamType={tourData.teamType}
               selectedGuide={tourData.selectedGuide}
               selectedAssistant={tourData.selectedAssistant}
+              guideFee={guideFee}
+              assistantFee={assistantFee}
               expandedSections={tourData.expandedSections}
               connectionStatus={{ team: tourData.connectionStatus.team }}
               onToggleSection={tourData.toggleSection}
               onTeamTypeChange={handleTeamTypeChange}
               onGuideSelect={handleGuideSelect}
               onAssistantSelect={handleAssistantSelect}
+              onGuideFeeChange={handleGuideFeeChange}
+              onAssistantFeeChange={handleAssistantFeeChange}
               onLoadTeamMembersFallback={() => {}}
               getTeamMemberName={tourData.getTeamMemberName}
             />
@@ -542,6 +636,7 @@ export default function TourDetailPage() {
               onEditPickupHotel={handleEditReservationClick}
               getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
               getCustomerLanguage={(customerId: string) => tourData.getCustomerLanguage(customerId) ?? 'Unknown'}
+              getChannelInfo={getChannelInfo}
               safeJsonParse={safeJsonParse}
               pickupHotels={tourData.pickupHotels}
             />

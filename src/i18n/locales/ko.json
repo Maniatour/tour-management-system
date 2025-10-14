@@ -1408,7 +1408,13 @@
       "expenseUpdated": "비용이 수정되었습니다.",
       "expenseDeleted": "비용이 삭제되었습니다.",
       "confirmDelete": "정말로 이 비용을 삭제하시겠습니까?"
-    }
+    },
+    "status": {
+      "pending": "대기중",
+      "approved": "승인됨",
+      "rejected": "거부됨"
+    },
+    "delete": "삭제"
   },
   "tourReportForm": {
     "title": "투어 리포트 작성",

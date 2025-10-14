@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Upload, X, Check, Eye, Camera, DollarSign, MapPin, Calendar, CreditCard, FileText } from 'lucide-react'
+import { Plus, Upload, X, Check, Eye, Camera, DollarSign, MapPin, Calendar, CreditCard, FileText, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 
@@ -37,6 +37,20 @@ interface ExpenseVendor {
   name: string
 }
 
+interface ReservationPricing {
+  reservation_id: string
+  total_price: number
+  currency: string
+}
+
+interface Reservation {
+  id: string
+  customer_name: string
+  adults: number
+  children: number
+  infants: number
+}
+
 interface TourExpenseManagerProps {
   tourId: string
   tourDate: string
@@ -57,6 +71,10 @@ export default function TourExpenseManager({
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [vendors, setVendors] = useState<ExpenseVendor[]>([])
   const [loading, setLoading] = useState(false)
+  const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [reservationPricing, setReservationPricing] = useState<ReservationPricing[]>([])
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const [showAddForm, setShowAddForm] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -76,6 +94,55 @@ export default function TourExpenseManager({
     custom_paid_to: '',
     custom_paid_for: ''
   })
+
+  // 예약 데이터 로드
+  const loadReservations = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('id, customer_name, adults, children, infants')
+        .eq('tour_id', tourId)
+
+      if (error) throw error
+      setReservations(data || [])
+    } catch (error) {
+      console.error('Error loading reservations:', error)
+    }
+  }
+
+  // 예약 가격 정보 로드
+  const loadReservationPricing = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('reservation_pricing')
+        .select('reservation_id, total_price, currency')
+        .in('reservation_id', reservations.map(r => r.id))
+
+      if (error) throw error
+      setReservationPricing(data || [])
+    } catch (error) {
+      console.error('Error loading reservation pricing:', error)
+    }
+  }
+
+  // 팀 멤버 정보 로드
+  const loadTeamMembers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('team')
+        .select('email, name_ko')
+
+      if (error) throw error
+      
+      const memberMap: Record<string, string> = {}
+      data?.forEach(member => {
+        memberMap[member.email] = member.name_ko || member.email
+      })
+      setTeamMembers(memberMap)
+    } catch (error) {
+      console.error('Error loading team members:', error)
+    }
+  }
 
   // 지출 목록 로드
   const loadExpenses = async () => {
@@ -359,11 +426,71 @@ export default function TourExpenseManager({
     }
   }
 
+  // 어코디언 토글
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }))
+  }
+
+  // 통계 계산
+  const calculateFinancialStats = () => {
+    // 총 입금액 계산
+    const totalPayments = reservationPricing.reduce((sum, pricing) => sum + pricing.total_price, 0)
+    
+    // 총 지출 계산
+    const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0)
+    
+    // 가이드/드라이버 수수료 계산 (여기서는 간단히 0으로 설정, 실제로는 tour 데이터에서 가져와야 함)
+    const guideFee = 0 // TODO: tour 데이터에서 guide_fee 가져오기
+    const driverFee = 0 // TODO: tour 데이터에서 driver_fee 가져오기
+    const totalFees = guideFee + driverFee
+    
+    // 수익 계산
+    const profit = totalPayments - totalFees - totalExpenses
+    
+    return {
+      totalPayments,
+      totalExpenses,
+      totalFees,
+      profit
+    }
+  }
+
+  // 지출 카테고리별 그룹화
+  const getExpenseBreakdown = () => {
+    const breakdown: Record<string, { amount: number, count: number, expenses: TourExpense[] }> = {}
+    
+    expenses.forEach(expense => {
+      const category = expense.paid_for
+      if (!breakdown[category]) {
+        breakdown[category] = { amount: 0, count: 0, expenses: [] }
+      }
+      breakdown[category].amount += expense.amount
+      breakdown[category].count += 1
+      breakdown[category].expenses.push(expense)
+    })
+    
+    return breakdown
+  }
+
+  const financialStats = calculateFinancialStats()
+  const expenseBreakdown = getExpenseBreakdown()
+
   useEffect(() => {
     loadExpenses()
     loadCategories()
     loadVendors()
+    loadTeamMembers()
+    loadReservations()
   }, [tourId])
+
+  useEffect(() => {
+    if (reservations.length > 0) {
+      loadReservationPricing()
+    }
+  }, [reservations])
 
   return (
     <div className="space-y-4">
@@ -378,6 +505,135 @@ export default function TourExpenseManager({
         </button>
       </div>
 
+      {/* 정산 통계 섹션 */}
+      <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+        <h4 className="text-lg font-semibold text-gray-900">정산 통계</h4>
+        
+        {/* 입금액 총합 */}
+        <div className="bg-white rounded-lg border">
+          <button
+            onClick={() => toggleSection('payments')}
+            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              <span className="font-medium text-gray-900">입금액 총합</span>
+              <span className="text-lg font-bold text-green-600">
+                {formatCurrency(financialStats.totalPayments)}
+              </span>
+            </div>
+            {expandedSections.payments ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+          </button>
+          
+          {expandedSections.payments && (
+            <div className="border-t p-4 bg-gray-50">
+              <div className="space-y-2">
+                {reservations.map((reservation) => {
+                  const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
+                  const totalPeople = reservation.adults + reservation.children + reservation.infants
+                  return (
+                    <div key={reservation.id} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium">{reservation.customer_name}</span>
+                        <span className="text-gray-500">({totalPeople}명)</span>
+                      </div>
+                      <span className="font-medium text-green-600">
+                        {pricing ? formatCurrency(pricing.total_price) : '$0'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 지출 총합 */}
+        <div className="bg-white rounded-lg border">
+          <button
+            onClick={() => toggleSection('expenses')}
+            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+              <span className="font-medium text-gray-900">지출 총합</span>
+              <span className="text-lg font-bold text-red-600">
+                {formatCurrency(financialStats.totalExpenses)}
+              </span>
+            </div>
+            {expandedSections.expenses ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+          </button>
+          
+          {expandedSections.expenses && (
+            <div className="border-t p-4 bg-gray-50">
+              <div className="space-y-3">
+                {Object.entries(expenseBreakdown).map(([category, data]) => (
+                  <div key={category} className="bg-white rounded p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-gray-900">{category}</span>
+                      <span className="font-bold text-red-600">
+                        {formatCurrency(data.amount)} ({data.count}건)
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-sm text-gray-600">
+                      {data.expenses.map((expense) => (
+                        <div key={expense.id} className="flex items-center justify-between">
+                          <span>{expense.paid_to} - {expense.note || '메모 없음'}</span>
+                          <span>{formatCurrency(expense.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 수익 */}
+        <div className="bg-white rounded-lg border">
+          <button
+            onClick={() => toggleSection('profit')}
+            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+          >
+            <div className="flex items-center space-x-3">
+              <div className={`w-3 h-3 rounded-full ${financialStats.profit >= 0 ? 'bg-blue-500' : 'bg-orange-500'}`}></div>
+              <span className="font-medium text-gray-900">수익</span>
+              <span className={`text-lg font-bold ${financialStats.profit >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                {formatCurrency(financialStats.profit)}
+              </span>
+            </div>
+            {expandedSections.profit ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+          </button>
+          
+          {expandedSections.profit && (
+            <div className="border-t p-4 bg-gray-50">
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span>총 입금액</span>
+                  <span className="text-green-600 font-medium">{formatCurrency(financialStats.totalPayments)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>가이드/드라이버 수수료</span>
+                  <span className="text-gray-600">{formatCurrency(financialStats.totalFees)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>총 지출</span>
+                  <span className="text-red-600">{formatCurrency(financialStats.totalExpenses)}</span>
+                </div>
+                <hr className="my-2" />
+                <div className="flex items-center justify-between font-bold">
+                  <span>수익</span>
+                  <span className={financialStats.profit >= 0 ? 'text-blue-600' : 'text-orange-600'}>
+                    {formatCurrency(financialStats.profit)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 지출 목록 */}
       {loading ? (
         <div className="text-center py-4">
@@ -385,83 +641,77 @@ export default function TourExpenseManager({
           <p className="text-gray-500 mt-2">Loading...</p>
         </div>
       ) : expenses.length > 0 ? (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {expenses.map((expense) => (
-            <div key={expense.id} className="border rounded-lg p-4 hover:bg-gray-50">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <span className="font-medium text-gray-900">{expense.paid_to}</span>
-                    <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(expense.status)}`}>
-                      {getStatusText(expense.status)}
-                    </span>
-                    <span className="text-lg font-bold text-green-600">
-                      {formatCurrency(expense.amount)}
-                    </span>
-                  </div>
-                  
-                  <div className="text-sm text-gray-600 space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <FileText size={14} />
-                      <span>{expense.paid_for}</span>
-                    </div>
-                    {expense.payment_method && (
-                      <div className="flex items-center space-x-2">
-                        <CreditCard size={14} />
-                        <span>{expense.payment_method}</span>
-                      </div>
-                    )}
-                    {expense.note && (
-                      <div className="flex items-center space-x-2">
-                        <span className="text-gray-400">{t('memo')}:</span>
-                        <span>{expense.note}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center space-x-2">
-                      <Calendar size={14} />
-                      <span>{new Date(expense.submit_on).toLocaleString('ko-KR')}</span>
-                    </div>
-                  </div>
-                </div>
-
+            <div key={expense.id} className="border rounded-lg p-3 hover:bg-gray-50">
+              {/* 1번째 줄: Paid_for, Amount, Payment_method(뱃지), Status(뱃지) */}
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">
-                  {expense.image_url && (
-                    <button
-                      onClick={() => window.open(expense.image_url!, '_blank')}
-                      className="p-2 text-gray-600 hover:text-blue-600"
-                      title={t('viewReceipt')}
-                    >
-                      <Eye size={16} />
-                    </button>
-                  )}
-                  
-                  {expense.status === 'pending' && (
-                    <>
-                      <button
-                        onClick={() => handleStatusUpdate(expense.id, 'approved')}
-                        className="p-2 text-green-600 hover:text-green-800"
-                        title={t('approve')}
-                      >
-                        <Check size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleStatusUpdate(expense.id, 'rejected')}
-                        className="p-2 text-red-600 hover:text-red-800"
-                        title={t('reject')}
-                      >
-                        <X size={16} />
-                      </button>
-                    </>
-                  )}
-                  
-                  <button
-                    onClick={() => handleDeleteExpense(expense.id)}
-                    className="p-2 text-gray-600 hover:text-red-600"
-                    title={t('delete')}
-                  >
-                    <X size={16} />
-                  </button>
+                  <span className="font-medium text-gray-900">{expense.paid_for}</span>
+                  <span className="text-lg font-bold text-green-600">
+                    {formatCurrency(expense.amount)}
+                  </span>
                 </div>
+                <div className="flex items-center space-x-2">
+                  {expense.payment_method && (
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                      {expense.payment_method}
+                    </span>
+                  )}
+                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(expense.status)}`}>
+                    {getStatusText(expense.status)}
+                  </span>
+                </div>
+              </div>
+              
+              {/* 2번째 줄: Paid_to, Submitted_by(name_ko), Submit_on */}
+              <div className="flex items-center justify-between text-sm text-gray-600">
+                <div className="flex items-center space-x-3">
+                  <span>{expense.paid_to}</span>
+                  <span>•</span>
+                  <span>{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
+                </div>
+                <span>{new Date(expense.submit_on).toLocaleDateString('ko-KR')}</span>
+              </div>
+              
+              {/* 액션 버튼들 */}
+              <div className="flex items-center justify-end space-x-1 mt-2">
+                {expense.image_url && (
+                  <button
+                    onClick={() => window.open(expense.image_url!, '_blank')}
+                    className="p-1 text-gray-600 hover:text-blue-600"
+                    title="영수증 보기"
+                  >
+                    <Eye size={14} />
+                  </button>
+                )}
+                
+                {expense.status === 'pending' && (
+                  <>
+                    <button
+                      onClick={() => handleStatusUpdate(expense.id, 'approved')}
+                      className="p-1 text-green-600 hover:text-green-800"
+                      title="승인"
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleStatusUpdate(expense.id, 'rejected')}
+                      className="p-1 text-red-600 hover:text-red-800"
+                      title="거부"
+                    >
+                      <X size={14} />
+                    </button>
+                  </>
+                )}
+                
+                <button
+                  onClick={() => handleDeleteExpense(expense.id)}
+                  className="p-1 text-gray-600 hover:text-red-600"
+                  title={t('delete')}
+                >
+                  <X size={14} />
+                </button>
               </div>
             </div>
           ))}

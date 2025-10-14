@@ -7,12 +7,16 @@ interface TeamCompositionProps {
   teamType: '1guide' | '2guide' | 'guide+driver'
   selectedGuide: string
   selectedAssistant: string
+  guideFee: number
+  assistantFee: number
   expandedSections: Set<string>
   connectionStatus: { team: boolean }
   onToggleSection: (sectionId: string) => void
   onTeamTypeChange: (type: '1guide' | '2guide' | 'guide+driver') => void
   onGuideSelect: (email: string) => void
   onAssistantSelect: (email: string) => void
+  onGuideFeeChange: (fee: number) => void
+  onAssistantFeeChange: (fee: number) => void
   onLoadTeamMembersFallback: () => void
   getTeamMemberName: (email: string) => string
 }
@@ -22,20 +26,31 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
   teamType,
   selectedGuide,
   selectedAssistant,
+  guideFee,
+  assistantFee,
   expandedSections,
   connectionStatus,
   onToggleSection,
   onTeamTypeChange,
   onGuideSelect,
   onAssistantSelect,
+  onGuideFeeChange,
+  onAssistantFeeChange,
   onLoadTeamMembersFallback,
   getTeamMemberName
 }) => {
   const getFilteredTeamMembers = (excludeEmail?: string) => {
     return teamMembers.filter((member: any) => {
+      // is_active가 TRUE인 사람만 포함
+      if (member.is_active !== true) return false
+      
+      // 제외할 이메일이 있으면 제외
       if (excludeEmail && member.email === excludeEmail) return false
       
-      if (!member.position) return true // position이 없으면 포함
+      // position이 없으면 포함
+      if (!member.position) return true
+      
+      // position 필터링
       const position = member.position.toLowerCase()
       return position.includes('tour') && position.includes('guide') ||
              position.includes('guide') ||
@@ -47,13 +62,14 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
   }
 
   const getDisplayName = (member: any) => {
-    const locale = window.location.pathname.split('/')[1] || 'ko'
-    return locale === 'ko' 
-      ? (member.name_ko || member.name_en || member.email)
-      : (member.name_en || member.name_ko || member.email)
+    // name_ko만 표시, 없으면 이메일 표시
+    return member.name_ko || member.email
   }
 
   const guideDriverCount = teamMembers.filter((m: any) => {
+    // is_active가 TRUE인 사람만 포함
+    if (m.is_active !== true) return false
+    
     if (!m.position) return true
     const position = m.position.toLowerCase()
     return position.includes('tour') && position.includes('guide') ||
@@ -146,18 +162,33 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-gray-600 text-sm">가이드:</span>
-                <select
-                  value={selectedGuide}
-                  onChange={(e) => onGuideSelect(e.target.value)}
-                  className="text-xs border rounded px-2 py-1 min-w-32"
-                >
-                  <option value="">가이드 선택</option>
-                  {getFilteredTeamMembers().map((member: any) => (
-                    <option key={member.email} value={member.email}>
-                      {getDisplayName(member)} ({member.position || 'No position'})
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center space-x-2">
+                  <select
+                    value={selectedGuide}
+                    onChange={(e) => onGuideSelect(e.target.value)}
+                    className="text-xs border rounded px-2 py-1 min-w-32"
+                  >
+                    <option value="">가이드 선택</option>
+                    {getFilteredTeamMembers().map((member: any) => (
+                      <option key={member.email} value={member.email}>
+                        {getDisplayName(member)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex items-center space-x-1">
+                    <span className="text-xs text-gray-500">수수료:</span>
+                    <input
+                      type="number"
+                      value={guideFee || ''}
+                      onChange={(e) => onGuideFeeChange(Number(e.target.value) || 0)}
+                      className="text-xs border rounded px-2 py-1 w-20"
+                      placeholder="0"
+                      min="0"
+                      step="0.01"
+                    />
+                    <span className="text-xs text-gray-500">$</span>
+                  </div>
+                </div>
               </div>
 
               {/* 2가이드 또는 가이드+드라이버일 때 어시스턴트 선택 */}
@@ -166,18 +197,33 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                   <span className="text-gray-600 text-sm">
                     {teamType === '2guide' ? '2차 가이드:' : '드라이버:'}
                   </span>
-                  <select
-                    value={selectedAssistant}
-                    onChange={(e) => onAssistantSelect(e.target.value)}
-                    className="text-xs border rounded px-2 py-1 min-w-32"
-                  >
-                    <option value="">선택</option>
-                    {getFilteredTeamMembers(selectedGuide).map((member: any) => (
-                      <option key={member.email} value={member.email}>
-                        {getDisplayName(member)} ({member.position || 'No position'})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center space-x-2">
+                    <select
+                      value={selectedAssistant}
+                      onChange={(e) => onAssistantSelect(e.target.value)}
+                      className="text-xs border rounded px-2 py-1 min-w-32"
+                    >
+                      <option value="">선택</option>
+                      {getFilteredTeamMembers(selectedGuide).map((member: any) => (
+                        <option key={member.email} value={member.email}>
+                          {getDisplayName(member)}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex items-center space-x-1">
+                      <span className="text-xs text-gray-500">수수료:</span>
+                      <input
+                        type="number"
+                        value={assistantFee || ''}
+                        onChange={(e) => onAssistantFeeChange(Number(e.target.value) || 0)}
+                        className="text-xs border rounded px-2 py-1 w-20"
+                        placeholder="0"
+                        min="0"
+                        step="0.01"
+                      />
+                      <span className="text-xs text-gray-500">$</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -187,11 +233,17 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
               <div className="p-2 bg-gray-50 rounded text-xs">
                 <div className="font-medium text-gray-700 mb-1">현재 배정된 팀원:</div>
                 {selectedGuide && (
-                  <div className="text-gray-600">가이드: {getTeamMemberName(selectedGuide)}</div>
+                  <div className="text-gray-600 flex justify-between">
+                    <span>가이드: {getTeamMemberName(selectedGuide)}</span>
+                    {guideFee > 0 && <span className="text-green-600">${guideFee}</span>}
+                  </div>
                 )}
                 {selectedAssistant && (
-                  <div className="text-gray-600">
-                    {teamType === '2guide' ? '2차 가이드' : '드라이버'}: {getTeamMemberName(selectedAssistant)}
+                  <div className="text-gray-600 flex justify-between">
+                    <span>
+                      {teamType === '2guide' ? '2차 가이드' : '드라이버'}: {getTeamMemberName(selectedAssistant)}
+                    </span>
+                    {assistantFee > 0 && <span className="text-green-600">${assistantFee}</span>}
                   </div>
                 )}
               </div>

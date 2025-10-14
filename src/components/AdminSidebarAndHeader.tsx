@@ -27,7 +27,8 @@ import {
   FileSpreadsheet,
   Globe,
   User,
-  Camera
+  Camera,
+  Calculator
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -257,6 +258,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const navigation = [
     // removed from sidebar: 대시보드, 고객 관리, 예약 관리, 부킹 관리, 투어 관리, 채팅 관리
     { name: t('products'), href: `/${locale}/admin/products`, icon: BookOpen },
+    { name: '가이드비 관리', href: `/${locale}/admin/guide-costs`, icon: Calculator },
     { name: t('options'), href: `/${locale}/admin/options`, icon: Settings },
     { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },
     { name: t('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },

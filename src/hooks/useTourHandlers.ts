@@ -97,7 +97,12 @@ export function useTourHandlers() {
 
   // 팀 타입 변경 함수
   const handleTeamTypeChange = useCallback(async (tour: any, type: '1guide' | '2guide' | 'guide+driver') => {
-    if (!tour) return
+    if (!tour) {
+      console.error('Tour object is null or undefined')
+      return false
+    }
+
+    console.log('팀 타입 변경 시작:', { tourId: tour.id, teamType: type })
 
     try {
       const updateData: { team_type: string; assistant_id?: string | null } = { team_type: type }
@@ -106,6 +111,8 @@ export function useTourHandlers() {
         updateData.assistant_id = null
       }
       
+      console.log('업데이트할 데이터:', updateData)
+      
       const { error } = await (supabase as any)
         .from('tours')
         .update(updateData as Database['public']['Tables']['tours']['Update'])
@@ -113,9 +120,16 @@ export function useTourHandlers() {
 
       if (error) {
         console.error('Error updating team type:', error)
+        alert(`팀 타입 업데이트 중 오류가 발생했습니다: ${error.message}`)
+        return false
       }
+
+      console.log('팀 타입이 성공적으로 업데이트되었습니다:', type)
+      return true
     } catch (error) {
       console.error('Error updating team type:', error)
+      alert(`팀 타입 업데이트 중 오류가 발생했습니다: ${(error as Error).message}`)
+      return false
     }
   }, [])
 

@@ -33,6 +33,7 @@ interface ReservationSectionProps {
   onEditPickupHotel?: (reservation: Reservation) => void
   getCustomerName: (customerId: string) => string
   getCustomerLanguage: (customerId: string) => string
+  getChannelInfo?: (channelId: string) => Promise<{ name: string; favicon?: string } | null | undefined>
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
   pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
 }
@@ -52,6 +53,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   onEditPickupHotel,
   getCustomerName,
   getCustomerLanguage,
+  getChannelInfo,
   safeJsonParse,
   pickupHotels = []
 }) => {
@@ -81,6 +83,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
               onEditPickupHotel={onEditPickupHotel}
               getCustomerName={getCustomerName}
               getCustomerLanguage={getCustomerLanguage}
+              getChannelInfo={getChannelInfo}
               safeJsonParse={safeJsonParse}
               pickupHotels={pickupHotels}
             />

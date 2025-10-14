@@ -1357,7 +1357,13 @@
       "expenseUpdated": "Expense has been updated.",
       "expenseDeleted": "Expense has been deleted.",
       "confirmDelete": "Are you sure you want to delete this expense?"
-    }
+    },
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "delete": "Delete"
   },
   "tourReportForm": {
     "title": "Write Tour Report",
