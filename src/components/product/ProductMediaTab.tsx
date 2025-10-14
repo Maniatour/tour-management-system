@@ -22,8 +22,8 @@ interface MediaItem {
 interface ProductMediaTabProps {
   productId: string
   isNewProduct: boolean
-  formData: any
-  setFormData: React.Dispatch<React.SetStateAction<any>>
+  formData: Record<string, unknown>
+  setFormData: React.Dispatch<React.SetStateAction<Record<string, unknown>>>
 }
 
 export default function ProductMediaTab({
@@ -102,12 +102,12 @@ export default function ProductMediaTab({
       }
 
       // 루트 폴더의 이미지 파일들 처리
-      const rootImageFiles = rootData?.filter((file: any) => 
+      const rootImageFiles = rootData?.filter((file: { name: string }) => 
         file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)
       ) || []
 
-      rootImageFiles.forEach((file: any) => {
-        const { data: { publicUrl } } = (supabase as any)
+      rootImageFiles.forEach((file: { name: string; id: string }) => {
+        const { data: { publicUrl } } = supabase
           .storage
           .from('product-media')
           .getPublicUrl(file.name)
@@ -120,12 +120,12 @@ export default function ProductMediaTab({
       })
 
       // 하위 폴더들 찾기
-      const folders = rootData?.filter((item: any) => item.name && !item.name.includes('.')) || []
+      const folders = rootData?.filter((item: { name: string }) => item.name && !item.name.includes('.')) || []
 
       // 각 하위 폴더의 이미지들 가져오기
       for (const folder of folders) {
         try {
-          const { data: folderData, error: folderError } = await (supabase as any)
+          const { data: folderData, error: folderError } = await supabase
             .storage
             .from('product-media')
             .list(folder.name, {
@@ -139,13 +139,13 @@ export default function ProductMediaTab({
           }
 
           // 폴더 내의 이미지 파일들 처리
-          const folderImageFiles = folderData?.filter((file: any) => 
+          const folderImageFiles = folderData?.filter((file: { name: string }) => 
             file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)
           ) || []
 
-          folderImageFiles.forEach((file: any) => {
+          folderImageFiles.forEach((file: { name: string; id: string }) => {
             const filePath = `${folder.name}/${file.name}`
-            const { data: { publicUrl } } = (supabase as any)
+            const { data: { publicUrl } } = supabase
               .storage
               .from('product-media')
               .getPublicUrl(filePath)
@@ -158,11 +158,11 @@ export default function ProductMediaTab({
           })
 
           // 폴더 내의 하위 폴더들도 확인 (재귀적으로 2단계까지만)
-          const subFolders = folderData?.filter((item: any) => item.name && !item.name.includes('.')) || []
+          const subFolders = folderData?.filter((item: { name: string }) => item.name && !item.name.includes('.')) || []
           
           for (const subFolder of subFolders) {
             try {
-              const { data: subFolderData, error: subFolderError } = await (supabase as any)
+              const { data: subFolderData, error: subFolderError } = await supabase
                 .storage
                 .from('product-media')
                 .list(`${folder.name}/${subFolder.name}`, {
@@ -175,13 +175,13 @@ export default function ProductMediaTab({
                 continue
               }
 
-              const subFolderImageFiles = subFolderData?.filter((file: any) => 
+              const subFolderImageFiles = subFolderData?.filter((file: { name: string }) => 
                 file.name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)
               ) || []
 
-              subFolderImageFiles.forEach((file: any) => {
+              subFolderImageFiles.forEach((file: { name: string; id: string }) => {
                 const filePath = `${folder.name}/${subFolder.name}/${file.name}`
-                const { data: { publicUrl } } = (supabase as any)
+                const { data: { publicUrl } } = supabase
                   .storage
                   .from('product-media')
                   .getPublicUrl(filePath)
@@ -838,7 +838,7 @@ function MediaModal({ media, onSave, onClose, saving, previewUrl }: MediaModalPr
     onSave(formData)
   }
 
-  const handleInputChange = (field: keyof MediaItem, value: any) => {
+  const handleInputChange = (field: keyof MediaItem, value: unknown) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
