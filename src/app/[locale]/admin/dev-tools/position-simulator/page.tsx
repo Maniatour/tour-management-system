@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClientSupabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'

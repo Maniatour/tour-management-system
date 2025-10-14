@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Search, Filter, Grid, List, Ticket } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 // 새로운 쿠폰 스키마에 맞는 타입 정의

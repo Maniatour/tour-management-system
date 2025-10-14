@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Calendar, DollarSign } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 

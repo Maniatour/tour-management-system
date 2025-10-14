@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { RefreshCw, ArrowRight } from 'lucide-react'
 import { ColumnInfo, ColumnMapping, SheetInfo } from '@/types/data-sync'
 import { getAutoCompleteSuggestions, getAutoMapping } from '@/utils/columnMapping'

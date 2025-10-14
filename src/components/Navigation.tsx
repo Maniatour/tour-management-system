@@ -6,7 +6,7 @@ declare global {
   }
 }
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'

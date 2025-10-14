@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { X, DollarSign, Users, Calendar, MapPin, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Reservation } from '@/types/reservation'

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Search, Plus } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 

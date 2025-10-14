@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { CheckCircle, XCircle } from 'lucide-react'
 import { SyncResult } from '@/types/data-sync'
 

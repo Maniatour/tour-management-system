@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Database, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
 import { CleanupStatus, SyncResult } from '@/types/data-sync'
 

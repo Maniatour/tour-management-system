@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Database } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import { AlertTriangle, CheckCircle, RefreshCw, Search, Plus, X, ArrowRight } from 'lucide-react'

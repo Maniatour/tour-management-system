@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationOptions, type ReservationOption, type CreateReservationOptionData } from '@/hooks/useReservationOptions'

@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Plus, Search, Edit, Trash2, Globe, Package, Grid, List } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import React from 'react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
