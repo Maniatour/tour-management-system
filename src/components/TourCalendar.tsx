@@ -10,16 +10,16 @@ import { useTranslations, useLocale } from 'next-intl'
 type Tour = Database['public']['Tables']['tours']['Row']
 
 interface ExtendedTour extends Omit<Tour, 'assignment_status'> {
-  product_name?: string | null;
-  name_ko?: string | null;
-  name_en?: string | null;
+  product_name?: string | null | undefined;
+  name_ko?: string | null | undefined;
+  name_en?: string | null | undefined;
   assignment_status?: string | null | undefined;
-  total_people?: number;
-  assigned_people?: number;
-  unassigned_people?: number;
-  guide_name?: string | null;
-  assistant_name?: string | null;
-  vehicle_number?: string | null;
+  total_people?: number | undefined;
+  assigned_people?: number | undefined;
+  unassigned_people?: number | undefined;
+  guide_name?: string | null | undefined;
+  assistant_name?: string | null | undefined;
+  vehicle_number?: string | null | undefined;
 }
 
 interface OffSchedule {
