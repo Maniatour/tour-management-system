@@ -117,6 +117,7 @@ export default function TourDetailPage() {
   }
 
   const handlePrivateTourConfirm = async () => {
+    if (!tourData.tour) return
     const success = await tourHandlers.updatePrivateTourStatus(tourData.tour, tourData.pendingPrivateTourValue)
     if (success) {
       tourData.setIsPrivateTour(tourData.pendingPrivateTourValue)
@@ -126,12 +127,14 @@ export default function TourDetailPage() {
   }
 
   const handleTourStatusUpdate = (status: string) => {
+    if (!tourData.tour) return
     tourHandlers.updateTourStatus(tourData.tour, status, tourData.isStaff)
     tourData.setTour(prev => prev ? { ...prev, tour_status: status } : null)
     tourData.setShowTourStatusDropdown(false)
   }
 
   const handleAssignmentStatusUpdate = (status: string) => {
+    if (!tourData.tour) return
     tourHandlers.updateAssignmentStatus(tourData.tour, status, tourData.isStaff)
     tourData.setTour(prev => prev ? { ...prev, assignment_status: status } : null)
     tourData.setShowAssignmentStatusDropdown(false)
@@ -140,6 +143,7 @@ export default function TourDetailPage() {
   const handleTeamTypeChange = async (type: '1guide' | '2guide' | 'guide+driver') => {
     console.log('handleTeamTypeChange 호출됨:', { type, tour: tourData.tour })
     
+    if (!tourData.tour) return
     const success = await tourHandlers.handleTeamTypeChange(tourData.tour, type)
     
     console.log('팀 타입 변경 결과:', success)
@@ -158,16 +162,19 @@ export default function TourDetailPage() {
   }
 
   const handleGuideSelect = async (guideEmail: string) => {
+    if (!tourData.tour) return
     tourData.setSelectedGuide(guideEmail)
     await tourHandlers.handleGuideSelect(tourData.tour, guideEmail, tourData.teamType)
   }
 
   const handleAssistantSelect = async (assistantEmail: string) => {
+    if (!tourData.tour) return
     tourData.setSelectedAssistant(assistantEmail)
     await tourHandlers.handleAssistantSelect(tourData.tour, assistantEmail)
   }
 
   const handleTourNoteChange = async (note: string) => {
+    if (!tourData.tour) return
     tourData.setTourNote(note)
     await tourHandlers.handleTourNoteChange(tourData.tour, note)
   }
@@ -247,7 +254,11 @@ export default function TourDetailPage() {
 
 
   const handleUnassignReservation = async (reservationId: string) => {
-    const updatedReservationIds = await tourHandlers.handleUnassignReservation(tourData.tour, reservationId)
+    if (!tourData.tour) return
+    const updatedReservationIds = await tourHandlers.handleUnassignReservation({
+      ...tourData.tour,
+      reservation_ids: tourData.tour.reservation_ids || []
+    }, reservationId)
     if (updatedReservationIds) {
       const reservation = tourData.assignedReservations.find((r: any) => r.id === reservationId)
       if (reservation) {
@@ -259,7 +270,11 @@ export default function TourDetailPage() {
   }
 
   const handleAssignAllReservations = async () => {
-    const updatedReservationIds = await tourHandlers.handleAssignAllReservations(tourData.tour, tourData.pendingReservations)
+    if (!tourData.tour) return
+    const updatedReservationIds = await tourHandlers.handleAssignAllReservations({
+      ...tourData.tour,
+      reservation_ids: tourData.tour.reservation_ids || []
+    }, tourData.pendingReservations)
     if (updatedReservationIds) {
       tourData.setAssignedReservations([...tourData.assignedReservations, ...tourData.pendingReservations])
       tourData.setPendingReservations([])
@@ -268,6 +283,7 @@ export default function TourDetailPage() {
   }
 
   const handleUnassignAllReservations = async () => {
+    if (!tourData.tour) return
     const updatedReservationIds = await tourHandlers.handleUnassignAllReservations(tourData.tour)
     if (updatedReservationIds) {
       tourData.setPendingReservations([...tourData.pendingReservations, ...tourData.assignedReservations])
@@ -585,7 +601,13 @@ export default function TourDetailPage() {
           <div className="space-y-6">
             {/* 팀 구성 */}
             <TeamComposition
-              teamMembers={tourData.teamMembers}
+              teamMembers={tourData.teamMembers.map(member => ({
+                id: member.email, // email을 id로 사용
+                name_ko: member.name_ko,
+                email: member.email,
+                position: 'guide', // 기본값 설정
+                is_active: true // 기본값 설정
+              }))}
               teamType={tourData.teamType}
               selectedGuide={tourData.selectedGuide}
               selectedAssistant={tourData.selectedAssistant}
@@ -702,18 +724,20 @@ export default function TourDetailPage() {
       </div>
 
       {/* 모달들 */}
-      <PickupTimeModal
-        isOpen={tourData.showTimeModal}
-        selectedReservation={tourData.selectedReservation}
-        pickupTimeValue={tourData.pickupTimeValue}
-        onTimeChange={tourData.setPickupTimeValue}
-        onSave={handleSavePickupTime}
-        onCancel={handleCancelEditPickupTime}
-        getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
-        getCustomerLanguage={(customerId: string) => tourData.getCustomerLanguage(customerId) || 'Unknown'}
-        getPickupHotelName={tourData.getPickupHotelName}
-        getCountryCode={tourData.getCountryCode}
-      />
+      {tourData.selectedReservation && (
+        <PickupTimeModal
+          isOpen={tourData.showTimeModal}
+          selectedReservation={tourData.selectedReservation}
+          pickupTimeValue={tourData.pickupTimeValue}
+          onTimeChange={tourData.setPickupTimeValue}
+          onSave={handleSavePickupTime}
+          onCancel={handleCancelEditPickupTime}
+          getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
+          getCustomerLanguage={(customerId: string) => tourData.getCustomerLanguage(customerId) || 'Unknown'}
+          getPickupHotelName={tourData.getPickupHotelName}
+          getCountryCode={tourData.getCountryCode}
+        />
+      )}
 
       <PickupHotelModal
         isOpen={tourData.showPickupHotelModal}
