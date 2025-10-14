@@ -39,6 +39,7 @@ import { supabase } from '@/lib/supabase'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import { useTranslations } from 'next-intl'
 import SimulationModal from './SimulationModal'
+import CustomerSimulationModal from './CustomerSimulationModal'
 import AdminWeatherWidget from './AdminWeatherWidget'
 
 interface AdminSidebarAndHeaderProps {
@@ -59,6 +60,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [attendanceAction, setAttendanceAction] = useState<'checkin' | 'checkout' | null>(null)
   const [teamBoardCount, setTeamBoardCount] = useState(0)
   const [showSimulationModal, setShowSimulationModal] = useState(false)
+  const [showCustomerSimulationModal, setShowCustomerSimulationModal] = useState(false)
   const [expiringDocumentsCount, setExpiringDocumentsCount] = useState(0)
   // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
   const { teamChatUnreadCount } = useAuth()
@@ -542,17 +544,67 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                           </div>
                         )}
                         
-                        {/* 시뮬레이션 메뉴 */}
-                        {isSimulating ? (
-                          <>
-                            <Link
-                              href={`/${locale}/guide`}
-                              onClick={handleUserMenuClick}
+                        {/* 시뮬레이션 메뉴 (관리자만) */}
+                        {userRole === 'admin' && (
+                          <div className="px-4 py-2 border-t border-gray-100">
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                              시뮬레이션
+                            </p>
+                            
+                            {/* 가이드 시뮬레이션 */}
+                            <button
+                              onClick={() => {
+                                setShowSimulationModal(true)
+                                handleUserMenuClick()
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 flex items-center"
+                            >
+                              <UserCheck className="w-4 h-4 mr-2" />
+                              가이드 시뮬레이션
+                            </button>
+                            
+                            {/* 고객 시뮬레이션 */}
+                            <button
+                              onClick={() => {
+                                setShowCustomerSimulationModal(true)
+                                handleUserMenuClick()
+                              }}
                               className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center"
                             >
                               <User className="w-4 h-4 mr-2" />
-                              가이드 페이지
-                            </Link>
+                              고객 시뮬레이션
+                            </button>
+                          </div>
+                        )}
+                        
+                        {/* 현재 시뮬레이션 상태 표시 */}
+                        {isSimulating && (
+                          <div className="px-4 py-2 border-t border-gray-100">
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                              현재 시뮬레이션
+                            </p>
+                            {/* 가이드 시뮬레이션인 경우 */}
+                            {userRole === 'team_member' && (
+                              <Link
+                                href={`/${locale}/guide`}
+                                onClick={handleUserMenuClick}
+                                className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center"
+                              >
+                                <UserCheck className="w-4 h-4 mr-2" />
+                                가이드 페이지
+                              </Link>
+                            )}
+                            {/* 고객 시뮬레이션인 경우 */}
+                            {userRole === 'customer' && (
+                              <Link
+                                href={`/${locale}/dashboard`}
+                                onClick={handleUserMenuClick}
+                                className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center"
+                              >
+                                <User className="w-4 h-4 mr-2" />
+                                고객 페이지
+                              </Link>
+                            )}
                             <button
                               onClick={() => {
                                 stopSimulation()
@@ -563,18 +615,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                               <XCircle className="w-4 h-4 mr-2" />
                               시뮬레이션 중지
                             </button>
-                          </>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setShowSimulationModal(true)
-                              handleUserMenuClick()
-                            }}
-                            className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 flex items-center"
-                          >
-                            <User className="w-4 h-4 mr-2" />
-                            시뮬레이션 시작
-                          </button>
+                          </div>
                         )}
                         
                         <div className="border-t border-gray-100 my-1"></div>
@@ -804,6 +845,12 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       <SimulationModal
         isOpen={showSimulationModal}
         onClose={() => setShowSimulationModal(false)}
+      />
+      
+      {/* 고객 시뮬레이션 모달 */}
+      <CustomerSimulationModal
+        isOpen={showCustomerSimulationModal}
+        onClose={() => setShowCustomerSimulationModal(false)}
       />
     </>
   )

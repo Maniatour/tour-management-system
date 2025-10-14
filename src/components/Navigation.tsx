@@ -269,6 +269,39 @@ const Navigation = () => {
                             </>
                           )}
                           
+                          {/* 시뮬레이션 메뉴 (관리자만) */}
+                          {userRole === 'admin' && (
+                            <div className="px-4 py-2 border-t border-gray-100">
+                              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                                시뮬레이션
+                              </p>
+                              
+                              {/* 가이드 시뮬레이션 */}
+                              <button
+                                onClick={() => {
+                                  // 가이드 시뮬레이션은 관리자 페이지에서만 가능
+                                  window.location.href = `/${locale}/admin`
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 flex items-center"
+                              >
+                                <UserCheck className="w-4 h-4 mr-2" />
+                                가이드 시뮬레이션
+                              </button>
+                              
+                              {/* 고객 시뮬레이션 */}
+                              <button
+                                onClick={() => {
+                                  // 고객 시뮬레이션은 관리자 페이지에서만 가능
+                                  window.location.href = `/${locale}/admin`
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center"
+                              >
+                                <User className="w-4 h-4 mr-2" />
+                                고객 시뮬레이션
+                              </button>
+                            </div>
+                          )}
+                          
                           <div className="border-t border-gray-100 my-1"></div>
                           
                           <button
