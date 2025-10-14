@@ -4,12 +4,12 @@ import type { Database } from '@/lib/supabase'
 
 export function useTourHandlers() {
   // 단독투어 상태 업데이트 함수
-  const updatePrivateTourStatus = useCallback(async (tour: any, newValue: boolean) => {
+  const updatePrivateTourStatus = useCallback(async (tour: { id: string }, newValue: boolean) => {
     if (!tour) return false
 
     try {
       const updateData: Database['public']['Tables']['tours']['Update'] = { is_private_tour: newValue }
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('tours')
         .update(updateData)
         .eq('id', tour.id)
@@ -29,7 +29,7 @@ export function useTourHandlers() {
   }, [])
 
   // 투어 상태 변경 함수
-  const updateTourStatus = useCallback(async (tour: any, newStatus: string, isStaff: boolean) => {
+  const updateTourStatus = useCallback(async (tour: { id: string }, newStatus: string, isStaff: boolean) => {
     try {
       if (!tour || !tour.id) {
         alert('투어 정보를 찾을 수 없습니다.')
@@ -57,7 +57,7 @@ export function useTourHandlers() {
   }, [])
 
   // 배정 상태 변경 함수
-  const updateAssignmentStatus = useCallback(async (tour: any, newStatus: string, isStaff: boolean) => {
+  const updateAssignmentStatus = useCallback(async (tour: { id: string }, newStatus: string, isStaff: boolean) => {
     try {
       if (!tour || !tour.id) {
         alert('투어 정보를 찾을 수 없습니다.')
@@ -96,7 +96,7 @@ export function useTourHandlers() {
   }, [])
 
   // 팀 타입 변경 함수
-  const handleTeamTypeChange = useCallback(async (tour: any, type: '1guide' | '2guide' | 'guide+driver') => {
+  const handleTeamTypeChange = useCallback(async (tour: { id: string }, type: '1guide' | '2guide' | 'guide+driver') => {
     if (!tour) {
       console.error('Tour object is null or undefined')
       return false
@@ -134,7 +134,7 @@ export function useTourHandlers() {
   }, [])
 
   // 가이드 선택 함수
-  const handleGuideSelect = useCallback(async (tour: any, guideEmail: string, teamType: string) => {
+  const handleGuideSelect = useCallback(async (tour: { id: string }, guideEmail: string, teamType: string) => {
     if (!tour) return
 
     try {
@@ -164,12 +164,12 @@ export function useTourHandlers() {
   }, [])
 
   // 어시스턴트 선택 함수
-  const handleAssistantSelect = useCallback(async (tour: any, assistantEmail: string) => {
+  const handleAssistantSelect = useCallback(async (tour: { id: string }, assistantEmail: string) => {
     if (!tour) return
 
     try {
       // assistant_id는 team 테이블의 email 값을 직접 저장
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('tours')
         .update({ assistant_id: assistantEmail } as Database['public']['Tables']['tours']['Update'])
         .eq('id', tour.id)
@@ -189,11 +189,11 @@ export function useTourHandlers() {
   }, [])
 
   // 투어 노트 변경 함수
-  const handleTourNoteChange = useCallback(async (tour: any, note: string) => {
+  const handleTourNoteChange = useCallback(async (tour: { id: string }, note: string) => {
     if (!tour) return
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('tours')
         .update({ tour_note: note } as Database['public']['Tables']['tours']['Update'])
         .eq('id', tour.id)
@@ -207,14 +207,14 @@ export function useTourHandlers() {
   }, [])
 
   // 예약 배정 함수
-  const handleAssignReservation = useCallback(async (tour: any, reservationId: string) => {
+  const handleAssignReservation = useCallback(async (tour: { id: string }, reservationId: string) => {
     if (!tour) return
 
     try {
-      const currentReservationIds = (tour as any).reservation_ids || []
+      const currentReservationIds = (tour as { reservation_ids?: string[] }).reservation_ids || []
       const updatedReservationIds = [...currentReservationIds, reservationId]
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('tours')
         .update({ reservation_ids: updatedReservationIds } as Database['public']['Tables']['tours']['Update'])
         .eq('id', tour.id)
@@ -231,14 +231,14 @@ export function useTourHandlers() {
   }, [])
 
   // 예약 배정 해제 함수
-  const handleUnassignReservation = useCallback(async (tour: any, reservationId: string) => {
+  const handleUnassignReservation = useCallback(async (tour: { id: string; reservation_ids?: string[] }, reservationId: string) => {
     if (!tour) return
 
     try {
-      const currentReservationIds = (tour as any).reservation_ids || []
+      const currentReservationIds = tour.reservation_ids || []
       const updatedReservationIds = currentReservationIds.filter((id: string) => id !== reservationId)
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('tours')
         .update({ reservation_ids: updatedReservationIds } as Database['public']['Tables']['tours']['Update'])
         .eq('id', tour.id)
@@ -255,15 +255,15 @@ export function useTourHandlers() {
   }, [])
 
   // 모든 예약 배정 함수
-  const handleAssignAllReservations = useCallback(async (tour: any, pendingReservations: any[]) => {
+  const handleAssignAllReservations = useCallback(async (tour: { id: string; reservation_ids?: string[] }, pendingReservations: Array<{ id: string }>) => {
     if (!tour || pendingReservations.length === 0) return
 
     try {
-      const currentReservationIds = (tour as any).reservation_ids || []
-      const newReservationIds = pendingReservations.map((r: any) => r.id)
+      const currentReservationIds = tour.reservation_ids || []
+      const newReservationIds = pendingReservations.map((r) => r.id)
       const updatedReservationIds = [...currentReservationIds, ...newReservationIds]
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('tours')
         .update({ reservation_ids: updatedReservationIds } as Database['public']['Tables']['tours']['Update'])
         .eq('id', tour.id)
@@ -280,11 +280,11 @@ export function useTourHandlers() {
   }, [])
 
   // 모든 예약 배정 해제 함수
-  const handleUnassignAllReservations = useCallback(async (tour: any) => {
+  const handleUnassignAllReservations = useCallback(async (tour: { id: string }) => {
     if (!tour) return
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('tours')
         .update({ reservation_ids: [] } as Database['public']['Tables']['tours']['Update'])
         .eq('id', tour.id)
@@ -301,7 +301,7 @@ export function useTourHandlers() {
   }, [])
 
   // 픽업 시간 저장 함수
-  const handleSavePickupTime = useCallback(async (selectedReservation: any, pickupTimeValue: string) => {
+  const handleSavePickupTime = useCallback(async (selectedReservation: { id: string }, pickupTimeValue: string) => {
     if (!selectedReservation) return
 
     try {
@@ -325,11 +325,11 @@ export function useTourHandlers() {
   }, [])
 
   // 픽업 호텔 저장 함수
-  const handleSavePickupHotel = useCallback(async (selectedReservation: any, newHotelId: string) => {
+  const handleSavePickupHotel = useCallback(async (selectedReservation: { id: string }, newHotelId: string) => {
     if (!selectedReservation) return false
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('reservations')
         .update({ pickup_hotel: newHotelId } as Database['public']['Tables']['reservations']['Update'])
         .eq('id', selectedReservation.id)
@@ -344,7 +344,12 @@ export function useTourHandlers() {
   }, [])
 
   // 차량 선택 핸들러 생성 함수
-  const createVehicleSelectHandler = useCallback((tour: any, setSelectedVehicleId: any, vehicles: any[], setAssignedVehicle: any) => {
+  const createVehicleSelectHandler = useCallback((
+    tour: { id: string }, 
+    setSelectedVehicleId: (id: string) => void, 
+    vehicles: Array<{ id: string; name: string }>, 
+    setAssignedVehicle: (vehicle: { id: string; name: string } | null) => void
+  ) => {
     return async (vehicleId: string) => {
       if (!tour) return
 

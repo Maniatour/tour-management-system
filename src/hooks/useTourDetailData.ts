@@ -447,43 +447,43 @@ export function useTourDetailData() {
   const getTotalPeopleFiltered = useMemo(() => {
     if (!tour || !allReservations || allReservations.length === 0) return 0
     return allReservations
-      .filter((r: any) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
-      .filter((r: any) => {
+      .filter((r) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
+      .filter((r) => {
         const s = (r.status || '').toString().toLowerCase()
         return s === 'confirmed' || s === 'recruiting'
       })
-      .reduce((sum: number, r: any) => sum + (r.total_people || 0), 0)
+      .reduce((sum: number, r) => sum + (r.total_people || 0), 0)
   }, [tour, allReservations])
 
   const getTotalPeopleAll = useMemo(() => {
     if (!tour || !allReservations || allReservations.length === 0) return 0
     return allReservations
-      .filter((r: any) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
-      .reduce((sum: number, r: any) => sum + (r.total_people || 0), 0)
+      .filter((r) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
+      .reduce((sum: number, r) => sum + (r.total_people || 0), 0)
   }, [tour, allReservations])
 
   // 유틸리티 함수들
   const getCustomerName = (customerId: string) => {
     // 먼저 예약 데이터에서 직접 고객 이름 찾기
-    const reservation = allReservations.find((r: any) => r.customer_id === customerId)
+    const reservation = allReservations.find((r) => r.customer_id === customerId)
     if (reservation && reservation.customer_name) {
       return reservation.customer_name
     }
     
     // 예약 데이터에 없으면 customers 배열에서 찾기
-    const customer = customers.find((c: any) => c.id === customerId)
-    return customer ? formatCustomerNameEnhanced(customer as any, locale) : '정보 없음'
+    const customer = customers.find((c) => c.id === customerId)
+    return customer ? formatCustomerNameEnhanced(customer, locale) : '정보 없음'
   }
 
   const getCustomerLanguage = (customerId: string) => {
     // 먼저 예약 데이터에서 직접 고객 언어 찾기
-    const reservation = allReservations.find((r: any) => r.customer_id === customerId)
+    const reservation = allReservations.find((r) => r.customer_id === customerId)
     if (reservation && reservation.customer_language) {
       return reservation.customer_language
     }
     
     // 예약 데이터에 없으면 customers 배열에서 찾기
-    const customer = customers.find((c: any) => c.id === customerId)
+    const customer = customers.find((c) => c.id === customerId)
     return customer ? customer.language : 'Unknown'
   }
 
@@ -492,7 +492,7 @@ export function useTourDetailData() {
       console.log('getPickupHotelName called:', { pickupHotelId, pickupHotelsCount: pickupHotels.length })
     }
     
-    const hotel = pickupHotels.find((h: any) => h.id === pickupHotelId)
+    const hotel = pickupHotels.find((h) => h.id === pickupHotelId)
     if (hotel) {
       const result = `${hotel.hotel} - ${hotel.pick_up_location}`
       if (process.env.NODE_ENV === 'development') {
@@ -508,12 +508,12 @@ export function useTourDetailData() {
   }
 
   const getPickupHotelNameOnly = (pickupHotelId: string) => {
-    const hotel = pickupHotels.find((h: any) => h.id === pickupHotelId)
+    const hotel = pickupHotels.find((h) => h.id === pickupHotelId)
     return hotel ? hotel.hotel : pickupHotelId || '픽업 호텔 미지정'
   }
 
   const getChannelInfo = (channelId: string) => {
-    const channel = channels.find((c: any) => c.id === channelId)
+    const channel = channels.find((c) => c.id === channelId)
     return channel || null
   }
 
@@ -542,7 +542,7 @@ export function useTourDetailData() {
   const getTeamMemberName = (email: string) => {
     if (!email) return '직원 미선택'
     
-    const member = teamMembers.find((member: any) => member.email === email)
+    const member = teamMembers.find((member) => member.email === email)
     if (!member) {
       return email
     }

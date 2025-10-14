@@ -5,7 +5,7 @@ import { JWT } from 'google-auth-library'
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
 // 시트 정보 캐시 (메모리 캐시)
-const sheetInfoCache = new Map<string, { data: any, timestamp: number }>()
+const sheetInfoCache = new Map<string, { data: unknown, timestamp: number }>()
 const CACHE_DURATION = 30 * 60 * 1000 // 30분으로 증가 (API 호출 대폭 감소)
 
 // 서비스 계정 인증을 위한 설정
@@ -40,7 +40,7 @@ const readGoogleSheetInChunks = async (
   spreadsheetId: string, 
   range: string, 
   chunkSize: number, 
-  sheets: any
+  sheets: { spreadsheets: { values: { get: (params: { spreadsheetId: string; range: string }) => Promise<{ data: { values: string[][] } }> } } }
 ) => {
   try {
     console.log(`📊 청크 단위 읽기 시작: ${range}, 청크 크기: ${chunkSize}`)
@@ -64,7 +64,7 @@ const readGoogleSheetInChunks = async (
     
     console.log(`📋 시트 ${sheetName} 총 행 수: ${totalRows}`)
     
-    const allData: any[] = []
+    const allData: Record<string, unknown>[] = []
     let headers: string[] = []
     
     // 첫 번째 청크로 헤더 읽기
@@ -88,8 +88,8 @@ const readGoogleSheetInChunks = async (
     console.log(`📋 헤더 확인: ${headers.length}개 컬럼`)
     
     // 첫 번째 청크 데이터 처리 (헤더 제외)
-    const firstChunkData = firstResponse.data.values.slice(1).map((row: any[]) => {
-      const obj: any = {}
+    const firstChunkData = firstResponse.data.values.slice(1).map((row: string[]) => {
+      const obj: Record<string, unknown> = {}
       headers.forEach((header, index) => {
         obj[header] = row[index] || ''
       })
@@ -126,8 +126,8 @@ const readGoogleSheetInChunks = async (
           })
           
           if (chunkResponse.data.values && chunkResponse.data.values.length > 0) {
-            const chunkData = chunkResponse.data.values.map((row: any[]) => {
-              const obj: any = {}
+            const chunkData = chunkResponse.data.values.map((row: string[]) => {
+              const obj: Record<string, unknown> = {}
               headers.forEach((header, index) => {
                 obj[header] = row[index] || ''
               })
@@ -204,7 +204,7 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
 
     // 헤더만 있는 경우도 처리 (데이터 행이 0개여도 헤더는 유효)
     const data = rows.slice(1).map((row) => {
-      const obj: any = {}
+      const obj: Record<string, unknown> = {}
       headers.forEach((header, index) => {
         obj[header] = row[index] || ''
       })
@@ -213,7 +213,7 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
 
     // 헤더만 있는 경우 빈 객체를 하나 생성하여 헤더 정보를 유지
     if (data.length === 0 && validHeaders.length > 0) {
-      const emptyRow: any = {}
+      const emptyRow: Record<string, unknown> = {}
       headers.forEach((header) => {
         emptyRow[header] = ''
       })
