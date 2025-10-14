@@ -41,12 +41,12 @@ export const fetchBookings = async (tourId: string) => {
 }
 
 // 다른 투어에 배정된 예약들 조회
-export const fetchOtherToursAssignedReservations = async (targetTour: any) => {
+export const fetchOtherToursAssignedReservations = async (targetTour: { id: string; product_id: string; tour_date: string }) => {
   try {
     if (!targetTour || !targetTour.product_id || !targetTour.tour_date) return []
 
     // 1) 같은 상품/날짜의 모든 투어 가져오기
-    const { data: siblingTours, error: toursError } = await (supabase as any)
+    const { data: siblingTours, error: toursError } = await supabase
       .from('tours')
       .select('id, reservation_ids, product_id, tour_date')
       .eq('product_id', targetTour.product_id)
@@ -59,8 +59,8 @@ export const fetchOtherToursAssignedReservations = async (targetTour: any) => {
 
     // 2) 현재 투어를 제외한 다른 투어들의 예약 ID 수집
     const otherTourReservationIds = (siblingTours || [])
-      .filter((tour: any) => tour.id !== targetTour.id)
-      .flatMap((tour: any) => tour.reservation_ids || [])
+      .filter((tour: { id: string; reservation_ids?: string[] }) => tour.id !== targetTour.id)
+      .flatMap((tour: { id: string; reservation_ids?: string[] }) => tour.reservation_ids || [])
 
     if (otherTourReservationIds.length === 0) return []
 

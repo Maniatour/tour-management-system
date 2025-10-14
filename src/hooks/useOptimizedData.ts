@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface UseOptimizedDataOptions<T> {
   fetchFn: () => Promise<T>
-  dependencies?: any[]
+  dependencies?: unknown[]
   cacheKey?: string
   cacheTime?: number
   enabled?: boolean
@@ -15,7 +15,7 @@ interface CacheItem<T> {
 }
 
 // 간단한 메모리 캐시
-const cache = new Map<string, CacheItem<any>>()
+const cache = new Map<string, CacheItem<unknown>>()
 
 export function useOptimizedData<T>({
   fetchFn,

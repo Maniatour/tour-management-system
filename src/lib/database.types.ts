@@ -151,7 +151,7 @@ export interface Database {
           child_age_max: number | null
           infant_age: number | null
           tags: string[] | null
-          choices: any | null
+          choices: Record<string, unknown> | null
           created_at: string | null
           updated_at: string | null
         }
@@ -178,7 +178,7 @@ export interface Database {
           child_age_max?: number | null
           infant_age?: number | null
           tags?: string[] | null
-          choices?: any | null
+          choices?: Record<string, unknown> | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -205,7 +205,7 @@ export interface Database {
           child_age_max?: number | null
           infant_age?: number | null
           tags?: string[] | null
-          choices?: any | null
+          choices?: Record<string, unknown> | null
           created_at?: string | null
           updated_at?: string | null
         }

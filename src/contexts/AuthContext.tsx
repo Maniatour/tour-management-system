@@ -6,7 +6,7 @@ import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
 
 interface AuthContextType {
-  user: any | null
+  user: AuthUser | null
   authUser: AuthUser | null
   userRole: UserRole | null
   permissions: UserPermissions | null
@@ -38,7 +38,7 @@ interface SimulatedUser {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [permissions, setPermissions] = useState<UserPermissions | null>(null)
@@ -376,7 +376,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event: string, session: any) => {
+      async (event: string, session: { user: AuthUser; access_token: string; refresh_token: string } | null) => {
         console.log('AuthContext: Auth state change:', { 
           event, 
           session: !!session, 

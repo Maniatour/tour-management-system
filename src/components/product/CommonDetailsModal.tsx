@@ -109,7 +109,7 @@ export default function CommonDetailsModal({
     if (isOpen && subCategory) {
       loadCommonDetails()
     }
-  }, [isOpen, subCategory])
+  }, [isOpen, subCategory, loadCommonDetails])
 
   const loadCommonDetails = async () => {
     try {

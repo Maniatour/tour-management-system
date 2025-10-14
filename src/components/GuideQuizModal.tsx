@@ -244,7 +244,7 @@ export default function GuideQuizModal({ isOpen, onClose, onSuccess, quizId }: Q
         loadQuizData()
       }
     }
-  }, [isOpen, quizId])
+  }, [isOpen, quizId, loadAttractions, loadQuizData])
 
   if (!isOpen) return null
 

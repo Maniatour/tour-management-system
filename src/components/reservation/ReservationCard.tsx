@@ -22,10 +22,10 @@ interface ReservationCardProps {
   customers: Customer[]
   products: Array<{ id: string; name: string }>
   channels: Array<{ id: string; name: string; favicon_url?: string }>
-  productOptions: any[]
-  optionChoices: any[]
-  options: any[]
-  pickupHotels: any[]
+  productOptions: Array<{ id: string; name: string; product_id: string }>
+  optionChoices: Array<{ id: string; name: string; option_id: string; adult_price: number; child_price: number; infant_price: number }>
+  options: Array<{ id: string; name: string; name_ko?: string }>
+  pickupHotels: Array<{ id: string; name: string; name_ko?: string; address?: string }>
   locale: string
   onEdit: (reservation: Reservation) => void
   onDelete: (id: string) => void

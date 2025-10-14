@@ -50,7 +50,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     }
 
     loadProductChoices()
-  }, [productId, isNewProduct])
+  }, [productId, isNewProduct, loadProductChoices])
 
   // 상품 목록 로드
   const loadProducts = async () => {
@@ -80,12 +80,12 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       if (product?.choices?.required) {
         // choices.required를 그룹으로 변환
-        const groups: ChoiceGroup[] = product.choices.required.map((group: any) => ({
+        const groups: ChoiceGroup[] = product.choices.required.map((group: { id: string; name: string; name_ko?: string; description?: string; options?: Array<{ id: string; name: string; name_ko?: string; description?: string; adult_price?: number; child_price?: number; infant_price?: number; is_default?: boolean }> }) => ({
           id: group.id,
           name: group.name,
           name_ko: group.name_ko,
           description: group.description,
-          choices: group.options?.map((option: any) => ({
+          choices: group.options?.map((option: { id: string; name: string; name_ko?: string; description?: string; adult_price?: number; child_price?: number; infant_price?: number; is_default?: boolean }) => ({
             id: option.id,
             name: option.name,
             name_ko: option.name_ko,
@@ -208,12 +208,12 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       if (error) throw error
 
       if (product?.choices?.required) {
-        const groups: ChoiceGroup[] = product.choices.required.map((group: any) => ({
+        const groups: ChoiceGroup[] = product.choices.required.map((group: { id: string; name: string; name_ko?: string; description?: string; options?: Array<{ id: string; name: string; name_ko?: string; description?: string; adult_price?: number; child_price?: number; infant_price?: number; is_default?: boolean }> }) => ({
           id: `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           name: group.name,
           name_ko: group.name_ko,
           description: group.description,
-          choices: group.options?.map((option: any) => ({
+          choices: group.options?.map((option: { id: string; name: string; name_ko?: string; description?: string; adult_price?: number; child_price?: number; infant_price?: number; is_default?: boolean }) => ({
             id: `choice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             name: option.name,
             name_ko: option.name_ko,

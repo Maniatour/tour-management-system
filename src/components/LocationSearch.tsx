@@ -35,7 +35,7 @@ export default function LocationSearch({
   className = ""
 }: LocationSearchProps) {
   const [searchTerm, setSearchTerm] = useState('')
-  const [suggestions, setSuggestions] = useState<any[]>([])
+  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([])
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(initialLocation || null)
   const [isLoading, setIsLoading] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)

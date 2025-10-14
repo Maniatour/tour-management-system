@@ -50,7 +50,7 @@ export default function ProductFaqTab({
     } else {
       setLoading(false)
     }
-  }, [productId, isNewProduct])
+  }, [productId, isNewProduct, fetchFaqs])
 
   const fetchFaqs = async () => {
     try {

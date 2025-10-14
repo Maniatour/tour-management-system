@@ -26,7 +26,7 @@ export default function LocationPickerModal({
   onClose,
   scheduleId
 }: LocationPickerModalProps) {
-  const [suggestions, setSuggestions] = useState<any[]>([])
+  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedLat, setSelectedLat] = useState(currentLat || 36.1699) // 라스베가스 위도
   const [selectedLng, setSelectedLng] = useState(currentLng || -115.1398) // 라스베가스 경도
@@ -106,7 +106,7 @@ export default function LocationPickerModal({
       setSelectedLng(currentLng)
       reverseGeocode(currentLat, currentLng)
     }
-  }, [map, marker]) // currentLat, currentLng 의존성 제거
+  }, [map, marker, initializeMap])
 
   const initializeMap = () => {
     const mapElement = document.getElementById('map')

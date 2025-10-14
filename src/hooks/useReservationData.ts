@@ -20,7 +20,7 @@ export function useReservationData() {
   // 최적화된 데이터 로딩
   const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
     fetchFn: async () => {
-      let allCustomers: any[] = []
+      let allCustomers: Customer[] = []
       let from = 0
       const pageSize = 1000
       let hasMore = true
@@ -54,7 +54,7 @@ export function useReservationData() {
 
   const { data: products = [], loading: productsLoading, refetch: refetchProducts } = useOptimizedData({
     fetchFn: async () => {
-      let allProducts: any[] = []
+      let allProducts: Product[] = []
       let from = 0
       const pageSize = 1000
       let hasMore = true
@@ -244,7 +244,7 @@ export function useReservationData() {
       setLoadingProgress({ current: 0, total: totalCount })
       
       // 모든 예약 데이터를 페이지네이션으로 로드
-      let allReservations: any[] = []
+      let allReservations: Reservation[] = []
       let from = 0
       const pageSize = 1000
       let hasMore = true
@@ -265,9 +265,9 @@ export function useReservationData() {
 
         if (data && data.length > 0) {
           // choices 데이터가 있는 예약들 로그
-          const reservationsWithChoices = data.filter((res: any) => res.choices && Object.keys(res.choices).length > 0)
+          const reservationsWithChoices = data.filter((res: Reservation) => res.choices && Object.keys(res.choices).length > 0)
           if (reservationsWithChoices.length > 0) {
-            console.log(`Found ${reservationsWithChoices.length} reservations with choices:`, reservationsWithChoices.map((r: any) => ({
+            console.log(`Found ${reservationsWithChoices.length} reservations with choices:`, reservationsWithChoices.map((r: Reservation) => ({
               id: r.id,
               product_id: r.product_id,
               choices: r.choices
