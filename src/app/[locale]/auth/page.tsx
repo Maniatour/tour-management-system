@@ -11,7 +11,7 @@ type AuthMode = 'login' | 'signup' | 'reset'
 
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
-  const { user, userRole, loading, getRedirectPath } = useAuth()
+  const { user, userRole, loading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const pathname = usePathname()
@@ -28,19 +28,18 @@ export default function AuthPage() {
     if (!loading && user && userRole) {
       console.log('Auth page: User logged in, role:', userRole, 'redirecting to:', redirectToParam)
       
-      // redirectToParam이 auth 페이지를 가리키는 경우 무한 루프 방지
+      // redirectToParam이 auth 페이지를 가리키는 경우 홈페이지로 리다이렉트
       if (redirectToParam.includes('/auth')) {
-        console.log('Auth page: RedirectTo points to auth page, redirecting to admin instead')
-        router.replace(`/${currentLocale}/admin`)
+        console.log('Auth page: RedirectTo points to auth page, redirecting to home instead')
+        router.replace(`/${currentLocale}`)
         return
       }
       
-      // AuthContext의 getRedirectPath 함수를 사용하여 올바른 경로로 리다이렉트
-      const redirectPath = getRedirectPath(currentLocale)
-      console.log('Auth page: Redirecting to:', redirectPath)
-      router.replace(redirectPath)
+      // redirectToParam으로 리다이렉트
+      console.log('Auth page: Redirecting to:', redirectToParam)
+      router.replace(redirectToParam)
     }
-  }, [user, userRole, loading, router, redirectToParam, currentLocale, getRedirectPath])
+  }, [user, userRole, loading, router, redirectToParam, currentLocale])
 
   if (loading) {
     return (

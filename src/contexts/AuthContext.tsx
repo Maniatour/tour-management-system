@@ -14,7 +14,6 @@ interface AuthContextType {
   isInitialized: boolean
   signOut: () => Promise<void>
   hasPermission: (permission: keyof UserPermissions) => boolean
-  getRedirectPath: (locale: string) => string
   teamChatUnreadCount: number
   refreshTeamChatUnreadCount: () => Promise<void>
   // 시뮬레이션 관련
@@ -628,23 +627,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     canViewFinance: hasPermission(simulatedUser.role, 'canViewFinance'),
   } : permissions
 
-  // 리다이렉트 경로 가져오기
-  const getRedirectPath = (locale: string): string => {
-    const currentRole = effectiveUserRole
-    if (!currentRole) return `/${locale}/auth`
-    
-    switch (currentRole) {
-      case 'admin':
-      case 'manager':
-        return `/${locale}/admin`
-      case 'team_member':
-        return `/${locale}/guide`
-      case 'customer':
-        return `/${locale}/dashboard`
-      default:
-        return `/${locale}/auth`
-    }
-  }
+  // getRedirectPath 함수 제거 - 사용자가 직접 메뉴에서 선택하도록 함
 
   // 팀 채팅 안읽은 메시지 수 가져오기
   const refreshTeamChatUnreadCount = useCallback(async () => {
@@ -736,7 +719,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isInitialized,
     signOut,
     hasPermission: hasPermissionCheck,
-    getRedirectPath,
     teamChatUnreadCount,
     refreshTeamChatUnreadCount,
     simulatedUser,

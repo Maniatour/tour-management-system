@@ -161,58 +161,82 @@ const Navigation = () => {
                             )}
                           </div>
                           
-                          {/* 고객용 메뉴 */}
+                          {/* 페이지 이동 메뉴 */}
+                          <div className="px-4 py-2 border-t border-gray-100">
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                              페이지 이동
+                            </p>
+                            
+                            {/* 홈페이지 */}
+                            <Link
+                              href={`/${locale}`}
+                              onClick={handleUserMenuClick}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                            >
+                              <Home className="w-4 h-4 mr-2" />
+                              홈페이지
+                            </Link>
+                            
+                            {/* 고객 페이지 (모든 사용자) */}
+                            <Link
+                              href={`/${locale}/dashboard`}
+                              onClick={handleUserMenuClick}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                            >
+                              <User className="w-4 h-4 mr-2" />
+                              고객 페이지
+                            </Link>
+                            
+                            {/* 관리자 페이지 (관리자/매니저/팀원) */}
+                            {userRole && userRole !== 'customer' && (
+                              <Link
+                                href={`/${locale}/admin`}
+                                onClick={handleUserMenuClick}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                              >
+                                <Settings className="w-4 h-4 mr-2" />
+                                관리자 페이지
+                              </Link>
+                            )}
+                            
+                            {/* 가이드 페이지 (팀원만) */}
+                            {userRole === 'team_member' && (
+                              <Link
+                                href={`/${locale}/guide`}
+                                onClick={handleUserMenuClick}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                              >
+                                <UserCheck className="w-4 h-4 mr-2" />
+                                가이드 페이지
+                              </Link>
+                            )}
+                          </div>
+                          
+                          {/* 개인 메뉴 (고객용) */}
                           {userRole === 'customer' && (
                             <>
-                              <Link
-                                href={`/${locale}/dashboard`}
-                                onClick={handleUserMenuClick}
-                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                              >
-                                <Home className="w-4 h-4 mr-2" />
-                                내 대시보드
-                              </Link>
-                              <Link
-                                href={`/${locale}/dashboard/profile`}
-                                onClick={handleUserMenuClick}
-                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                              >
-                                <User className="w-4 h-4 mr-2" />
-                                내 정보
-                              </Link>
-                              <Link
-                                href={`/${locale}/dashboard/reservations`}
-                                onClick={handleUserMenuClick}
-                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                              >
-                                <Calendar className="w-4 h-4 mr-2" />
-                                내 예약
-                              </Link>
+                              <div className="px-4 py-2 border-t border-gray-100">
+                                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                                  내 정보
+                                </p>
+                                <Link
+                                  href={`/${locale}/dashboard/profile`}
+                                  onClick={handleUserMenuClick}
+                                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                                >
+                                  <User className="w-4 h-4 mr-2" />
+                                  내 정보
+                                </Link>
+                                <Link
+                                  href={`/${locale}/dashboard/reservations`}
+                                  onClick={handleUserMenuClick}
+                                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                                >
+                                  <Calendar className="w-4 h-4 mr-2" />
+                                  내 예약
+                                </Link>
+                              </div>
                             </>
-                          )}
-                          
-                          {/* 관리자 페이지 링크 (관리자/매니저/팀원만) */}
-                          {userRole && userRole !== 'customer' && (
-                            <Link
-                              href={`/${locale}/admin`}
-                              onClick={handleUserMenuClick}
-                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                            >
-                              <Settings className="w-4 h-4 mr-2" />
-                              {t('adminPage')}
-                            </Link>
-                          )}
-                          
-                          {/* 가이드 페이지 링크 (팀원만) */}
-                          {userRole === 'team_member' && (
-                            <Link
-                              href={`/${locale}/guide`}
-                              onClick={handleUserMenuClick}
-                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                            >
-                              <UserCheck className="w-4 h-4 mr-2" />
-                              {t('guidePage')}
-                            </Link>
                           )}
                           
                           {/* 문서 업로드 메뉴 (팀원만) */}

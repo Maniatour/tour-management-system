@@ -1,10 +1,9 @@
 'use client'
 
-import React, { useEffect } from 'react'
+import React from 'react'
 import { Star, MapPin, Users, Calendar, ArrowRight, Play, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
-import { useRouter } from 'next/navigation'
 
 interface FeaturedProduct {
   id: string
@@ -18,35 +17,9 @@ interface FeaturedProduct {
 }
 
 export default function HomePage({ params }: { params: Promise<{ locale: string }> }) {
-  const { user, userRole, loading, getRedirectPath } = useAuth()
-  const router = useRouter()
+  const { user, userRole, loading } = useAuth()
   
-  useEffect(() => {
-    const handleRedirect = async () => {
-      const { locale } = await params
-      
-      // 로그인하지 않은 사용자는 홈페이지를 보여줌 (리다이렉트하지 않음)
-      if (!loading && !user) {
-        console.log('HomePage: No user logged in, showing home page')
-        return
-      }
-      
-      // 로그인한 사용자만 역할에 따라 리다이렉트
-      if (!loading && user && userRole) {
-        console.log('HomePage: User logged in, role:', userRole, 'redirecting...')
-        
-        const redirectPath = getRedirectPath(locale)
-        console.log('HomePage: Redirecting to:', redirectPath)
-        
-        // 현재 페이지가 리다이렉트 대상과 다른 경우에만 리다이렉트
-        if (redirectPath !== `/${locale}`) {
-          router.replace(redirectPath)
-        }
-      }
-    }
-    
-    handleRedirect()
-  }, [user, userRole, loading, router, params, getRedirectPath])
+  // 자동 리다이렉트 기능 제거 - 사용자가 직접 메뉴에서 선택하도록 함
   const featuredProducts: FeaturedProduct[] = [
     {
       id: '1',

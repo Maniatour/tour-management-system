@@ -28,7 +28,8 @@ import {
   Globe,
   User,
   Camera,
-  Calculator
+  Calculator,
+  UserCheck
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -485,25 +486,60 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                           )}
                         </div>
                         
-                        <Link
-                          href={`/${locale}/dashboard`}
-                          onClick={handleUserMenuClick}
-                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                        >
-                          <Home className="w-4 h-4 mr-2" />
-                          고객 페이지
-                        </Link>
-                        
-                        {/* 개발자 도구 (관리자만 표시) */}
-                        {(userRole === 'admin' || (userRole === 'team_member' && isSimulating)) && (
+                        {/* 페이지 이동 메뉴 */}
+                        <div className="px-4 py-2 border-t border-gray-100">
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                            페이지 이동
+                          </p>
+                          
+                          {/* 홈페이지 */}
                           <Link
-                            href={`/${locale}/admin/dev-tools`}
+                            href={`/${locale}`}
                             onClick={handleUserMenuClick}
                             className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                           >
-                            <Settings className="w-4 h-4 mr-2" />
-                            개발자 도구
+                            <Home className="w-4 h-4 mr-2" />
+                            홈페이지
                           </Link>
+                          
+                          {/* 고객 페이지 */}
+                          <Link
+                            href={`/${locale}/dashboard`}
+                            onClick={handleUserMenuClick}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                          >
+                            <User className="w-4 h-4 mr-2" />
+                            고객 페이지
+                          </Link>
+                          
+                          {/* 가이드 페이지 (팀원만) */}
+                          {userRole === 'team_member' && (
+                            <Link
+                              href={`/${locale}/guide`}
+                              onClick={handleUserMenuClick}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                            >
+                              <UserCheck className="w-4 h-4 mr-2" />
+                              가이드 페이지
+                            </Link>
+                          )}
+                        </div>
+                        
+                        {/* 개발자 도구 (관리자만 표시) */}
+                        {(userRole === 'admin' || (userRole === 'team_member' && isSimulating)) && (
+                          <div className="px-4 py-2 border-t border-gray-100">
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                              관리자 도구
+                            </p>
+                            <Link
+                              href={`/${locale}/admin/dev-tools`}
+                              onClick={handleUserMenuClick}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                            >
+                              <Settings className="w-4 h-4 mr-2" />
+                              개발자 도구
+                            </Link>
+                          </div>
                         )}
                         
                         {/* 시뮬레이션 메뉴 */}
