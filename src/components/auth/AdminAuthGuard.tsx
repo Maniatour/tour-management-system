@@ -46,6 +46,25 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
     }
   }, [currentUser, currentUserRole, isInitialized, router, locale])
 
+  // SSR 호환성을 위해 초기 로딩 상태 처리
+  const [isClient, setIsClient] = useState(false)
+  
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+  
+  // 클라이언트가 마운트되기 전까지는 로딩 표시
+  if (!isClient) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+  
   // isInitialized가 false이거나 currentUser가 undefined인 경우 로딩 표시
   if (!isInitialized || !currentUser) {
     console.log('AdminAuthGuard: Not ready, showing loading')
