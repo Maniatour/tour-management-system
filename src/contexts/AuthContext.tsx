@@ -47,8 +47,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [teamChatUnreadCount, setTeamChatUnreadCount] = useState(0)
   
   // 시뮬레이션 상태 (SSR 호환성을 위해 초기값은 null/false로 설정)
-  const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(null)
-  const [isSimulating, setIsSimulating] = useState(false)
+  const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(() => {
+    // 클라이언트에서만 실행
+    if (typeof window !== 'undefined') {
+      const savedSimulation = localStorage.getItem('positionSimulation')
+      if (savedSimulation) {
+        try {
+          const simulationData = JSON.parse(savedSimulation)
+          if (simulationData.email && simulationData.role) {
+            console.log('AuthContext: Initial simulation state from localStorage:', simulationData)
+            return simulationData
+          }
+        } catch (error) {
+          console.error('AuthContext: Error parsing initial simulation:', error)
+        }
+      }
+    }
+    return null
+  })
+  const [isSimulating, setIsSimulating] = useState(() => {
+    // 클라이언트에서만 실행
+    if (typeof window !== 'undefined') {
+      const savedSimulation = localStorage.getItem('positionSimulation')
+      return !!savedSimulation
+    }
+    return false
+  })
 
   // 토큰 자동 갱신 함수
   const refreshTokenIfNeeded = useCallback(async () => {
@@ -234,9 +258,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
     
-    // 이미 시뮬레이션 상태가 설정되어 있으면 건너뛰기
+    // 이미 시뮬레이션 상태가 설정되어 있으면 로딩 상태만 업데이트
     if (simulatedUser && isSimulating) {
-      console.log('AuthContext: Simulation already initialized, skipping restoration')
+      console.log('AuthContext: Simulation already initialized from initial state, updating loading status')
+      setLoading(false)
+      setIsInitialized(true)
       return
     }
     
@@ -254,7 +280,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     
-    // localStorage에 없으면 쿠키에서 확인
+    // localStorage에 없으면 sessionStorage에서 확인
+    if (!simulationData) {
+      const sessionSimulation = sessionStorage.getItem('positionSimulation')
+      if (sessionSimulation) {
+        try {
+          simulationData = JSON.parse(sessionSimulation)
+          console.log('AuthContext: Found saved simulation data in sessionStorage:', simulationData)
+          
+          // sessionStorage에서 복원한 데이터를 localStorage에도 저장
+          localStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+        } catch (error) {
+          console.error('AuthContext: Error parsing sessionStorage simulation:', error)
+          sessionStorage.removeItem('positionSimulation')
+        }
+      }
+    }
+    
+    // sessionStorage에도 없으면 쿠키에서 확인
     if (!simulationData) {
       const cookies = document.cookie.split(';')
       const simulationActiveCookie = cookies.find(cookie => cookie.trim().startsWith('simulation_active='))
@@ -266,8 +309,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           simulationData = JSON.parse(decodeURIComponent(userCookieValue))
           console.log('AuthContext: Found saved simulation data in cookies:', simulationData)
           
-          // 쿠키에서 복원한 데이터를 localStorage에도 저장
+          // 쿠키에서 복원한 데이터를 localStorage와 sessionStorage에도 저장
           localStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+          sessionStorage.setItem('positionSimulation', JSON.stringify(simulationData))
         } catch (error) {
           console.error('AuthContext: Error parsing cookie simulation:', error)
         }
@@ -289,6 +333,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         console.warn('AuthContext: Invalid simulation data, removing:', simulationData)
         localStorage.removeItem('positionSimulation')
+        sessionStorage.removeItem('positionSimulation')
         // 쿠키도 정리
         document.cookie = 'simulation_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
         document.cookie = 'simulation_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
@@ -296,7 +341,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       console.log('AuthContext: No saved simulation data found')
     }
-  }, []) // 의존성 배열을 빈 배열로 변경하여 컴포넌트 마운트 시 한 번만 실행
+  }, [simulatedUser, isSimulating]) // 의존성 배열에 simulatedUser, isSimulating 추가
 
   // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
   useEffect(() => {
@@ -567,6 +612,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       localStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
       
+      // sessionStorage에도 백업 저장
+      sessionStorage.setItem('positionSimulation', JSON.stringify(simulatedUserData))
+      
+      // 쿠키에도 시뮬레이션 정보 저장
+      document.cookie = `simulation_active=true; path=/; max-age=3600; SameSite=Lax`
+      document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulatedUserData))}; path=/; max-age=3600; SameSite=Lax`
+      
       console.log('Simulation started:', simulatedUserData)
       setLoading(false)
     } catch (error) {
@@ -581,6 +633,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSimulatedUser(null)
       setIsSimulating(false)
       localStorage.removeItem('positionSimulation')
+      sessionStorage.removeItem('positionSimulation')
+      
+      // 쿠키도 정리
+      document.cookie = 'simulation_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+      document.cookie = 'simulation_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
       
       console.log('Simulation stopped')
       setLoading(false)

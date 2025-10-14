@@ -38,6 +38,9 @@ const LanguageSwitcher = () => {
       // 추가 안전장치: 쿠키에도 시뮬레이션 정보 저장
       document.cookie = `simulation_active=true; path=/; max-age=3600; SameSite=Lax`
       document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulationData))}; path=/; max-age=3600; SameSite=Lax`
+      
+      // 세션 스토리지에도 백업 저장
+      sessionStorage.setItem('positionSimulation', JSON.stringify(simulationData))
     }
     
     // 언어 관련 상태만 정리 (시뮬레이션 상태는 보존)
@@ -58,13 +61,21 @@ const LanguageSwitcher = () => {
     
     // 페이지 이동 전에 시뮬레이션 상태가 저장되었는지 확인
     const savedSimulation = localStorage.getItem('positionSimulation')
-    if (simulationData && savedSimulation) {
+    const sessionSimulation = sessionStorage.getItem('positionSimulation')
+    if (simulationData && (savedSimulation || sessionSimulation)) {
       console.log('LanguageSwitcher: Simulation data confirmed saved before navigation')
     }
     
-    // 모든 경우에 Next.js 라우터 사용 (window.location.href 사용하지 않음)
-    console.log('LanguageSwitcher: Using Next.js router for navigation')
-    router.push(newPath)
+    // 시뮬레이션 중일 때는 약간의 지연 후 라우팅 (상태 저장 완료 보장)
+    if (simulationData) {
+      console.log('LanguageSwitcher: Using delayed router.push for simulation safety')
+      setTimeout(() => {
+        router.push(newPath)
+      }, 100) // 100ms 지연으로 상태 저장 완료 보장
+    } else {
+      // 일반 사용자는 즉시 라우팅
+      router.push(newPath)
+    }
   }
 
   return (
