@@ -48,23 +48,33 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({ guideCosts: data })
     } else {
-      // 모든 Mania Tour/Service 상품의 가이드비 조회
-      const { data, error } = await supabase
+      // 모든 Mania Tour/Service 상품 목록만 조회 (product_guide_costs는 별도 쿼리로)
+      const { data: products, error: productsError } = await supabase
         .from('products')
-        .select(`
-          id,
-          name,
-          sub_category,
-          product_guide_costs (*)
-        `)
+        .select('id, name, sub_category')
         .or('sub_category.ilike.%mania tour%,sub_category.ilike.%mania service%')
-        .eq('product_guide_costs.is_active', true)
-        .lte('product_guide_costs.effective_from', date)
-        .or(`product_guide_costs.effective_to.is.null,product_guide_costs.effective_to.gte.${date}`)
 
-      if (error) throw error
+      if (productsError) throw productsError
 
-      return NextResponse.json({ products: data })
+      // 각 상품의 가이드비를 별도로 조회
+      const productsWithCosts = await Promise.all(
+        (products || []).map(async (product) => {
+          const { data: costs } = await supabase
+            .from('product_guide_costs')
+            .select('*')
+            .eq('product_id', product.id)
+            .eq('is_active', true)
+            .lte('effective_from', date)
+            .or(`effective_to.is.null,effective_to.gte.${date}`)
+
+          return {
+            ...product,
+            product_guide_costs: costs || []
+          }
+        })
+      )
+
+      return NextResponse.json({ products: productsWithCosts })
     }
   } catch (error) {
     console.error('가이드비 조회 오류:', error)
