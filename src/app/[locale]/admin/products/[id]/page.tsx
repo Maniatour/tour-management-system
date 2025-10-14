@@ -17,7 +17,7 @@ import {
   MapPin
 } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 // import type { Database } from '@/lib/supabase'
@@ -1231,7 +1231,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 productId={id}
                 isNewProduct={isNewProduct}
                 formData={formData}
-                setFormData={setFormData}
+                setFormData={setFormData as React.Dispatch<React.SetStateAction<Record<string, unknown>>>}
               />
             )}
 
@@ -1241,7 +1241,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
                 productId={id}
                 isNewProduct={isNewProduct}
                 formData={formData}
-                setFormData={setFormData}
+                setFormData={setFormData as React.Dispatch<React.SetStateAction<Record<string, unknown>>>}
               />
             )}
 

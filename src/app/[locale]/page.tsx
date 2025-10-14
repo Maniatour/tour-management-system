@@ -48,7 +48,7 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
       price: 299,
       rating: 4.8,
       reviewCount: 127,
-      image: '/images/grand-circle-1.jpg',
+      image: '/placeholder-tour.svg',
       category: '자연'
     },
     {
@@ -68,7 +68,7 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
       price: 99,
       rating: 4.4,
       reviewCount: 156,
-      image: '/images/las-vegas-1.jpg',
+      image: '/placeholder-tour.svg',
       category: '도시'
     }
   ]

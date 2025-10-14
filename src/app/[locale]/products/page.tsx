@@ -43,7 +43,7 @@ export default function ProductsPage() {
       difficulty: 'medium',
       status: 'active',
       tags: ['그랜드서클', '자연', '1박2일'],
-      images: ['/images/grand-circle-1.jpg', '/images/grand-circle-2.jpg'],
+      images: ['/placeholder-tour.svg', '/placeholder-tour.svg'],
       rating: 4.8,
       reviewCount: 127,
       highlights: ['세계적인 자연 경관', '전문 가이드 동행', '편안한 숙박']
@@ -77,7 +77,7 @@ export default function ProductsPage() {
       difficulty: 'easy',
       status: 'active',
       tags: ['라스베가스', '시티투어', '야경'],
-      images: ['/images/las-vegas-1.jpg'],
+      images: ['/placeholder-tour.svg'],
       rating: 4.4,
       reviewCount: 156,
       highlights: ['화려한 네온사인', '유명 호텔 관광', '자유 시간 포함']
