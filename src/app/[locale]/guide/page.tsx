@@ -49,11 +49,11 @@ export default function GuideDashboard() {
   
   // locale 우선순위: 하드코딩 > URL path > useLocale > 기본값
   const locale = hardcodedLocale || 
-    (localeFromPath && localeFromPath !== '%24%7Blocale%7D') 
+    (localeFromPath && localeFromPath !== '%24%7Blocale%7D' && localeFromPath !== '${locale}') 
     ? localeFromPath 
-    : (localeFromUrl && localeFromUrl !== '%24%7Blocale%7D') 
+    : (localeFromUrl && localeFromUrl !== '%24%7Blocale%7D' && localeFromUrl !== '${locale}') 
     ? localeFromUrl 
-    : 'ko'
+    : localeFromHook || 'ko'
   
   // 디버깅을 위한 로그
   console.log('GuideDashboard locale debug:', {
@@ -718,6 +718,7 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
       tourId: tour.id,
       locale,
       name_en: tour.name_en,
+      name_ko: tour.name_ko,
       product_name_en: tour.product_name_en,
       product_name: tour.product_name,
       product_id: tour.product_id,
@@ -725,13 +726,13 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
     })
     
     if (locale === 'en') {
-      // 영어 모드에서는 name_en 우선 사용
-      const result = tour.name_en || tour.product_name_en || tour.product_name || tour.product_id
+      // 영어 모드에서는 영어 이름 우선 사용
+      const result = tour.name_en || tour.product_name_en || tour.name_ko || tour.product_name || tour.product_id
       console.log('English result:', result)
       return result
     } else {
-      // 한국어 모드에서는 name_ko 우선 사용
-      const result = tour.name_ko || tour.product_name || tour.product_id
+      // 한국어 모드에서는 한국어 이름 우선 사용
+      const result = tour.name_ko || tour.product_name || tour.name_en || tour.product_name_en || tour.product_id
       console.log('Korean result:', result)
       return result
     }
