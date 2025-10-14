@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { HelpCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -22,13 +22,9 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
   const [loading, setLoading] = useState(true)
   const [expandedFaqs, setExpandedFaqs] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
-    fetchFaqs()
-  }, [productId])
-
-  const fetchFaqs = async () => {
+  const fetchFaqs = useCallback(async () => {
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('product_faqs')
         .select('*')
         .eq('product_id', productId)
@@ -47,7 +43,11 @@ export default function ProductFaqDisplay({ productId }: ProductFaqDisplayProps)
     } finally {
       setLoading(false)
     }
-  }
+  }, [productId])
+
+  useEffect(() => {
+    fetchFaqs()
+  }, [fetchFaqs])
 
   const toggleFaqExpansion = (faqId: string) => {
     const newExpanded = new Set(expandedFaqs)

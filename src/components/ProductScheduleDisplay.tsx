@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Calendar, Clock, MapPin, Utensils, Car, Coffee, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -31,13 +31,9 @@ export default function ProductScheduleDisplay({ productId }: ProductScheduleDis
   const [loading, setLoading] = useState(true)
   const [expandedDays, setExpandedDays] = useState<Set<number>>(new Set())
 
-  useEffect(() => {
-    fetchSchedules()
-  }, [productId])
-
-  const fetchSchedules = async () => {
+  const fetchSchedules = useCallback(async () => {
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('product_schedules')
         .select('*')
         .eq('product_id', productId)
@@ -63,7 +59,11 @@ export default function ProductScheduleDisplay({ productId }: ProductScheduleDis
     } finally {
       setLoading(false)
     }
-  }
+  }, [productId])
+
+  useEffect(() => {
+    fetchSchedules()
+  }, [fetchSchedules])
 
   const toggleDayExpansion = (dayNumber: number) => {
     const newExpanded = new Set(expandedDays)
@@ -157,7 +157,7 @@ export default function ProductScheduleDisplay({ productId }: ProductScheduleDis
             
             {isExpanded && (
               <div className="p-6 space-y-4">
-                {daySchedules.map((schedule, index) => (
+                {daySchedules.map((schedule) => (
                   <div
                     key={schedule.id}
                     className={`p-4 rounded-lg border ${getScheduleColor(schedule)}`}

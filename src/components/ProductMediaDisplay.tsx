@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Image, Play, Download, Eye } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -29,13 +29,9 @@ export default function ProductMediaDisplay({ productId }: ProductMediaDisplayPr
   const [selectedImage, setSelectedImage] = useState(0)
   const [showLightbox, setShowLightbox] = useState(false)
 
-  useEffect(() => {
-    fetchMedia()
-  }, [productId])
-
-  const fetchMedia = async () => {
+  const fetchMedia = useCallback(async () => {
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('product_media')
         .select('*')
         .eq('product_id', productId)
@@ -54,20 +50,11 @@ export default function ProductMediaDisplay({ productId }: ProductMediaDisplayPr
     } finally {
       setLoading(false)
     }
-  }
+  }, [productId])
 
-  const getFileIcon = (fileType: string) => {
-    switch (fileType) {
-      case 'image':
-        return <Image className="h-4 w-4" />
-      case 'video':
-        return <Play className="h-4 w-4" />
-      case 'document':
-        return <Download className="h-4 w-4" />
-      default:
-        return <Image className="h-4 w-4" />
-    }
-  }
+  useEffect(() => {
+    fetchMedia()
+  }, [fetchMedia])
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes'

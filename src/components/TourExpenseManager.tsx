@@ -484,13 +484,13 @@ export default function TourExpenseManager({
     loadVendors()
     loadTeamMembers()
     loadReservations()
-  }, [tourId])
+  }, [tourId, loadExpenses, loadReservations])
 
   useEffect(() => {
     if (reservations.length > 0) {
       loadReservationPricing()
     }
-  }, [reservations])
+  }, [reservations, loadReservationPricing])
 
   return (
     <div className="space-y-4">

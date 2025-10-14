@@ -34,7 +34,7 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
       setLocalStatus(newStatus)
       
       // 데이터베이스에 상태 업데이트
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('products')
         .update({ status: newStatus })
         .eq('id', product.id)
@@ -95,7 +95,7 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
       }
       
       // 새 상품 생성
-      const { data: newProduct, error: productError } = await (supabase as any)
+      const { data: newProduct, error: productError } = await supabase
         .from('products')
         .insert(copyData)
         .select()
