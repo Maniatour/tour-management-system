@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import type { Database } from '@/lib/supabase'
 
 // 가이드비 조회
 export async function GET(request: NextRequest) {

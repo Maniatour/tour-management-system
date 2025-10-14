@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { use } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { Save, Plus, Trash2, ArrowLeft } from 'lucide-react'

@@ -15,7 +15,7 @@ function generateNext7Days() {
 }
 
 // Collect weather data for upcoming tours
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const dates = generateNext7Days()
     const results = []

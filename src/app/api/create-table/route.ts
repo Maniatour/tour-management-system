@@ -8,7 +8,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
   throw new Error('Supabase environment variables not configured')
 }
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 

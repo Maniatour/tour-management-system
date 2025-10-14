@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     // 환경 변수에서 Supabase 설정 가져오기
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

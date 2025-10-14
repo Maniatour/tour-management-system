@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
 // 테이블 존재 여부 확인 및 간단한 테스트
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // 1. products 테이블에서 Mania Tour/Service 상품 조회
     const { data: products, error: productsError } = await supabase

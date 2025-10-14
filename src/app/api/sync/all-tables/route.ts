@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -8,7 +8,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
   throw new Error('Supabase environment variables not configured')
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Supabase에서 직접 테이블 목록을 조회하는 것은 RLS 정책 때문에 복잡할 수 있음
     // 안전하게 하드코딩된 목록을 사용하되, 실제 존재하는 테이블만 필터링

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, use, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Plus, Search } from 'lucide-react'
 import Link from 'next/link'

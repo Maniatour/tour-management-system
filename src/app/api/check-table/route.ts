@@ -8,7 +8,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Supabase environment variables not configured')
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const supabase = createClient(supabaseUrl, supabaseAnonKey)
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSheetNames, getSheetSampleData } from '@/lib/googleSheets'
+import { getSheetNames } from '@/lib/googleSheets'
 
 export async function POST(request: NextRequest) {
   try {
