@@ -236,6 +236,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSimulatedUser(simulationData)
         setIsSimulating(true)
         setLoading(false) // 시뮬레이션 복원 시 즉시 로딩 완료
+        setIsInitialized(true) // 시뮬레이션 복원 시 초기화 완료
         console.log('AuthContext: Simulation restored from localStorage:', simulationData)
         return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
       } catch (error) {

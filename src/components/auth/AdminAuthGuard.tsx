@@ -10,8 +10,12 @@ interface AdminAuthGuardProps {
 }
 
 export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps) {
-  const { user, userRole, loading, isInitialized } = useAuth()
+  const { user, userRole, loading, isInitialized, isSimulating, simulatedUser } = useAuth()
   const router = useRouter()
+
+  // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
+  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
+  const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
 
   // 디버깅을 위한 로깅
   console.log('AdminAuthGuard - 상태:', {
@@ -20,26 +24,30 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
     loading,
     isInitialized,
     hasUser: !!user,
-    isCustomer: userRole === 'customer'
+    isCustomer: userRole === 'customer',
+    isSimulating,
+    simulatedUser: simulatedUser?.email,
+    currentUser: currentUser?.email,
+    currentUserRole
   })
 
   useEffect(() => {
-    // isInitialized가 true이고 user가 undefined인 경우 잠시 기다림
-    if (isInitialized && !user) {
-      console.log('AdminAuthGuard: Initialized but no user yet, waiting...')
+    // isInitialized가 true이고 currentUser가 undefined인 경우 잠시 기다림
+    if (isInitialized && !currentUser) {
+      console.log('AdminAuthGuard: Initialized but no currentUser yet, waiting...')
       return
     }
     
-    if (isInitialized && user) {
-      if (userRole === 'customer') {
+    if (isInitialized && currentUser) {
+      if (currentUserRole === 'customer') {
         console.log('AdminAuthGuard: Customer role, redirecting to home')
         router.replace(`/${locale}`)
       }
     }
-  }, [user, userRole, isInitialized, router, locale])
+  }, [currentUser, currentUserRole, isInitialized, router, locale])
 
-  // isInitialized가 false이거나 user가 undefined인 경우 로딩 표시
-  if (!isInitialized || !user) {
+  // isInitialized가 false이거나 currentUser가 undefined인 경우 로딩 표시
+  if (!isInitialized || !currentUser) {
     console.log('AdminAuthGuard: Not ready, showing loading')
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">

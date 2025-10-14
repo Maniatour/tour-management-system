@@ -9,7 +9,7 @@ declare global {
 import { AudioPlayerProvider } from '@/contexts/AudioPlayerContext'
 import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import { useAuth } from '@/contexts/AuthContext'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter, usePathname, useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home, Shield } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -68,9 +68,24 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     if (!isLoading) {
       console.log('GuideLayout: Auth check completed', { user: !!user, userRole, isLoading })
       
+      // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
+      const currentUser = isSimulating && simulatedUser ? simulatedUser : user
+      const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
+      
+      console.log('GuideLayout: Current user info', { 
+        currentUser: !!currentUser, 
+        currentUserRole,
+        isSimulating,
+        simulatedUser: !!simulatedUser
+      })
+      
       // 관리자, 매니저, 투어 가이드가 아닌 경우 접근 차단
-      if (!user || !['admin', 'manager', 'team_member'].includes(userRole || '')) {
-        console.log('GuideLayout: Access denied, redirecting to auth')
+      if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
+        console.log('GuideLayout: Access denied, redirecting to auth', {
+          currentUser: !!currentUser,
+          currentUserRole,
+          isSimulating
+        })
         // 현재 경로에서 locale 추출
         const currentLocale = pathname.split('/')[1] || 'ko'
         router.push(`/${currentLocale}/auth`)
@@ -328,7 +343,11 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     )
   }
 
-  if (!user || !['admin', 'manager', 'team_member'].includes(userRole || '')) {
+  // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
+  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
+  const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
+
+  if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -339,9 +358,10 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
           <div className="bg-gray-100 p-4 rounded-lg mb-4 text-left">
             <p className="text-sm text-gray-700">
               <strong>현재 상태:</strong><br/>
-              사용자: {user ? user.email : '로그인되지 않음'}<br/>
-              역할: {userRole || '역할 없음'}<br/>
-              로딩: {isLoading ? 'Loading' : 'Complete'}
+              사용자: {currentUser ? currentUser.email : '로그인되지 않음'}<br/>
+              역할: {currentUserRole || '역할 없음'}<br/>
+              로딩: {isLoading ? 'Loading' : 'Complete'}<br/>
+              시뮬레이션: {isSimulating ? 'Yes' : 'No'}
             </p>
           </div>
           <button 
@@ -372,7 +392,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
              <div className="flex items-center space-x-4">
                <LanguageSwitcher />
                <div className="text-sm text-gray-600">
-                 {isSimulating && simulatedUser ? simulatedUser.name_ko : user?.email}
+                 {currentUser ? (isSimulating && simulatedUser ? simulatedUser.name_ko : currentUser.email) : '사용자 없음'}
                </div>
              </div>
            </div>
