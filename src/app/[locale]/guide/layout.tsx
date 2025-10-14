@@ -65,8 +65,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       simulatedUser: !!simulatedUser
     })
     
-    // 시뮬레이션 상태가 복원되는 동안 잠시 기다림
-    if (isLoading && !isSimulating) {
+    // 시뮬레이션 상태가 복원되는 동안 충분히 기다림
+    if (isLoading) {
       console.log('GuideLayout: Still loading, waiting...')
       return
     }
@@ -83,13 +83,20 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       isLoading
     })
     
+    // 시뮬레이션 상태가 복원 중이면 잠시 더 기다림
+    if (isSimulating && !simulatedUser) {
+      console.log('GuideLayout: Simulation in progress but no simulatedUser yet, waiting...')
+      return
+    }
+    
     // 관리자, 매니저, 투어 가이드가 아닌 경우 접근 차단
     if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
       console.log('GuideLayout: Access denied, redirecting to auth', {
         currentUser: !!currentUser,
         currentUserRole,
         isSimulating,
-        isLoading
+        isLoading,
+        simulatedUser: !!simulatedUser
       })
       // 현재 경로에서 locale 추출
       const currentLocale = pathname.split('/')[1] || 'ko'

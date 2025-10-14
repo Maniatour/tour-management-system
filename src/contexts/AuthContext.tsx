@@ -42,13 +42,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [permissions, setPermissions] = useState<UserPermissions | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const [loading, setLoading] = useState(() => {
+    // 시뮬레이션이 있으면 즉시 로딩 완료
+    if (typeof window !== 'undefined') {
+      const savedSimulation = localStorage.getItem('positionSimulation')
+      return !savedSimulation
+    }
+    return true
+  })
+  const [isInitialized, setIsInitialized] = useState(() => {
+    // 시뮬레이션이 있으면 즉시 초기화 완료
+    if (typeof window !== 'undefined') {
+      const savedSimulation = localStorage.getItem('positionSimulation')
+      return !!savedSimulation
+    }
+    return false
+  })
   const [teamChatUnreadCount, setTeamChatUnreadCount] = useState(0)
   
-  // 시뮬레이션 상태
-  const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(null)
-  const [isSimulating, setIsSimulating] = useState(false)
+  // 시뮬레이션 상태 (초기값을 localStorage에서 즉시 확인)
+  const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(() => {
+    if (typeof window !== 'undefined') {
+      const savedSimulation = localStorage.getItem('positionSimulation')
+      if (savedSimulation) {
+        try {
+          const simulationData = JSON.parse(savedSimulation)
+          if (simulationData.email && simulationData.role) {
+            console.log('AuthProvider: Initial simulation state from localStorage:', simulationData)
+            return simulationData
+          }
+        } catch (error) {
+          console.error('AuthProvider: Error parsing initial simulation:', error)
+        }
+      }
+    }
+    return null
+  })
+  const [isSimulating, setIsSimulating] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const savedSimulation = localStorage.getItem('positionSimulation')
+      return !!savedSimulation
+    }
+    return false
+  })
 
   // 토큰 자동 갱신 함수
   const refreshTokenIfNeeded = useCallback(async () => {
@@ -227,8 +263,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // 시뮬레이션 정보 복원 (가장 먼저 실행, 동기적으로 처리)
+  // 시뮬레이션 정보 복원 (초기값이 설정되지 않은 경우에만 실행)
   useEffect(() => {
+    // 이미 시뮬레이션 상태가 설정되어 있으면 건너뛰기
+    if (simulatedUser && isSimulating) {
+      console.log('AuthContext: Simulation already initialized, skipping restoration')
+      return
+    }
+    
     const savedSimulation = localStorage.getItem('positionSimulation')
     if (savedSimulation) {
       try {
@@ -237,18 +279,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         // 시뮬레이션 데이터 유효성 검사
         if (simulationData.email && simulationData.role) {
-          // 즉시 상태 설정 (동기적으로)
+          // 상태 설정
           setSimulatedUser(simulationData)
           setIsSimulating(true)
           setLoading(false) // 시뮬레이션 복원 시 즉시 로딩 완료
           setIsInitialized(true) // 시뮬레이션 복원 시 초기화 완료
           
           console.log('AuthContext: Simulation restored successfully:', simulationData)
-          
-          // 시뮬레이션 복원 완료를 알리는 추가 로그
-          setTimeout(() => {
-            console.log('AuthContext: Simulation restoration confirmed after timeout')
-          }, 100)
           
           return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
         } else {
@@ -262,7 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       console.log('AuthContext: No saved simulation data found')
     }
-  }, [])
+  }, [simulatedUser, isSimulating])
 
   // 인증 상태 관리 (시뮬레이션이 복원되지 않은 경우에만 실행)
   useEffect(() => {
