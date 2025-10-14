@@ -1,16 +1,13 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
 // 가이드비 조회
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const productId = searchParams.get('product_id')
   const teamType = searchParams.get('team_type')
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0]
-
-  const supabase = createRouteHandlerClient<Database>({ cookies })
 
   try {
     if (productId && teamType) {
@@ -76,9 +73,7 @@ export async function GET(request: Request) {
 }
 
 // 가이드비 설정/수정
-export async function POST(request: Request) {
-  const supabase = createRouteHandlerClient<Database>({ cookies })
-  
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { productId, teamType, guideFee, assistantFee, driverFee, effectiveFrom, effectiveTo } = body
@@ -130,9 +125,7 @@ export async function POST(request: Request) {
 }
 
 // 가이드비 수정
-export async function PUT(request: Request) {
-  const supabase = createRouteHandlerClient<Database>({ cookies })
-  
+export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { id, guideFee, assistantFee, driverFee, effectiveFrom, effectiveTo } = body
@@ -165,15 +158,13 @@ export async function PUT(request: Request) {
 }
 
 // 가이드비 삭제 (비활성화)
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
 
   if (!id) {
     return NextResponse.json({ error: '가이드비 ID가 필요합니다.' }, { status: 400 })
   }
-
-  const supabase = createRouteHandlerClient<Database>({ cookies })
 
   try {
     const { error } = await supabase
