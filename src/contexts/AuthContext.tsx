@@ -227,7 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // 시뮬레이션 정보 복원 (가장 먼저 실행)
+  // 시뮬레이션 정보 복원 (가장 먼저 실행, 동기적으로 처리)
   useEffect(() => {
     const savedSimulation = localStorage.getItem('positionSimulation')
     if (savedSimulation) {
@@ -237,11 +237,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         // 시뮬레이션 데이터 유효성 검사
         if (simulationData.email && simulationData.role) {
+          // 즉시 상태 설정 (동기적으로)
           setSimulatedUser(simulationData)
           setIsSimulating(true)
           setLoading(false) // 시뮬레이션 복원 시 즉시 로딩 완료
           setIsInitialized(true) // 시뮬레이션 복원 시 초기화 완료
+          
           console.log('AuthContext: Simulation restored successfully:', simulationData)
+          
+          // 시뮬레이션 복원 완료를 알리는 추가 로그
+          setTimeout(() => {
+            console.log('AuthContext: Simulation restoration confirmed after timeout')
+          }, 100)
+          
           return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
         } else {
           console.warn('AuthContext: Invalid simulation data, removing:', simulationData)

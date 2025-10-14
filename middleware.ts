@@ -28,7 +28,7 @@ export async function middleware(req: NextRequest) {
   // 언어 처리 미들웨어 실행
   const response = intlMiddleware(req)
   
-  // 언어 변경 시 쿠키 설정 및 강제 리다이렉트
+  // 언어 변경 시 쿠키 설정 (강제 리다이렉트 제거)
   const locale = req.nextUrl.pathname.split('/')[1]
   const cookieLocale = req.cookies.get('NEXT_LOCALE')?.value
   
@@ -40,12 +40,14 @@ export async function middleware(req: NextRequest) {
       sameSite: 'lax'
     })
     
-    // 쿠키와 URL의 언어가 다르면 강제 리다이렉트
-    if (cookieLocale && cookieLocale !== locale) {
-      const newUrl = new URL(req.url)
-      newUrl.pathname = newUrl.pathname.replace(`/${locale}`, `/${cookieLocale}`)
-      return NextResponse.redirect(newUrl)
+    // 개발 환경에서만 로그 출력
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Middleware: Setting locale cookie:', locale)
+      console.log('Middleware: Previous cookie locale:', cookieLocale)
     }
+    
+    // 강제 리다이렉트 제거 - LanguageSwitcher에서 처리하도록 변경
+    // 이렇게 하면 시뮬레이션 상태가 유지됨
   }
 
   return response
