@@ -1,10 +1,15 @@
 import { X } from 'lucide-react'
-// @ts-expect-error
+// @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
 import ReactCountryFlag from 'react-country-flag'
 
 interface PickupTimeModalProps {
   isOpen: boolean
-  selectedReservation: any
+  selectedReservation: {
+    id: string
+    customer_id: string | null
+    pickup_time: string | null
+    pickup_hotel: string | null
+  }
   pickupTimeValue: string
   onTimeChange: (time: string) => void
   onSave: () => void

@@ -2,9 +2,18 @@ import { X } from 'lucide-react'
 
 interface PickupHotelModalProps {
   isOpen: boolean
-  selectedReservation: any
+  selectedReservation: {
+    id: string
+    customer_id: string | null
+    pickup_time: string | null
+    pickup_hotel: string | null
+  }
   hotelSearchTerm: string
-  filteredHotels: any[]
+  filteredHotels: Array<{
+    id: string
+    hotel: string
+    pick_up_location?: string
+  }>
   onSearchChange: (term: string) => void
   onHotelSelect: (hotelId: string) => void
   onCancel: () => void
@@ -47,7 +56,7 @@ export default function PickupHotelModal({
           
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {filteredHotels.length > 0 ? (
-              filteredHotels.map((hotel: any) => (
+              filteredHotels.map((hotel) => (
                 <button
                   key={hotel.id}
                   onClick={() => onHotelSelect(hotel.id)}

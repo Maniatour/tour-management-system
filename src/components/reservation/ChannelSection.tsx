@@ -112,9 +112,9 @@ export default function ChannelSection({
                 }`}
               >
                 <div className="flex items-center space-x-2">
-                  {(channel as any).favicon_url ? (
+                  {(channel as { favicon_url?: string }).favicon_url ? (
                     <img 
-                      src={(channel as any).favicon_url} 
+                      src={(channel as { favicon_url: string }).favicon_url} 
                       alt={`${channel.name} favicon`} 
                       className="h-4 w-4 rounded flex-shrink-0"
                       onError={(e) => {

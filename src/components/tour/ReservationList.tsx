@@ -1,29 +1,104 @@
 import React from 'react'
 import { Check, X, Edit, MapPin, Clock, User, Users, Eye } from 'lucide-react'
-// @ts-expect-error
+// @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
 import ReactCountryFlag from 'react-country-flag'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
 import { formatTimeWithAMPM } from '@/lib/utils'
 import { getGroupColorClasses, getOptionBadgeColor, getOptionName } from '@/utils/tourUtils'
 
 interface ReservationListProps {
-  assignedReservations: any[]
-  pendingReservations: any[]
-  otherToursAssignedReservations: any[]
-  customers: any[]
-  pickupHotels: any[]
-  channels: any[]
-  productOptions: any[]
-  tour: any
-  product: any
+  assignedReservations: Array<{
+    id: string
+    customer_id: string | null
+    product_id: string | null
+    tour_date: string
+    tour_time: string | null
+    pickup_hotel: string | null
+    pickup_time: string | null
+    adults: number | null
+    children?: number | null
+    infants?: number | null
+    status: string | null
+    tour_id: string | null
+    channel_id?: string | null
+    choices?: string | null
+  }>
+  pendingReservations: Array<{
+    id: string
+    customer_id: string | null
+    product_id: string | null
+    tour_date: string
+    tour_time: string | null
+    pickup_hotel: string | null
+    pickup_time: string | null
+    adults: number | null
+    children?: number | null
+    infants?: number | null
+    status: string | null
+    tour_id: string | null
+    channel_id?: string | null
+    choices?: string | null
+  }>
+  otherToursAssignedReservations: Array<{
+    id: string
+    customer_id: string | null
+    product_id: string | null
+    tour_date: string
+    tour_time: string | null
+    pickup_hotel: string | null
+    pickup_time: string | null
+    adults: number | null
+    children?: number | null
+    infants?: number | null
+    status: string | null
+    tour_id: string | null
+    channel_id?: string | null
+    choices?: string | null
+  }>
+  customers: Array<{
+    id: string
+    name: string
+    email: string
+    phone: string | null
+    language: string | null
+  }>
+  pickupHotels: Array<{
+    id: string
+    hotel: string
+    pick_up_location?: string
+  }>
+  channels: Array<{
+    id: string
+    name: string
+    favicon_url?: string
+  }>
+  productOptions: Array<{
+    id: string
+    name: string
+    choices?: Array<{
+      id: string
+      name: string
+    }>
+  }>
+  tour: {
+    id: string
+    product_id: string | null
+    tour_date: string
+    tour_time: string | null
+    status: string | null
+  }
+  product: {
+    id: string
+    name: string
+  }
   onAssignReservation: (id: string) => void
   onUnassignReservation: (id: string) => void
   onReassignFromOtherTour: (reservationId: string, fromTourId: string) => void
-  onEditReservationClick: (reservation: any) => void
-  onEditPickupTime: (reservation: any) => void
-  onEditPickupHotel: (reservation: any) => void
-  editingPickupTime: any
-  editingPickupHotel: any
+  onEditReservationClick: (reservation: { id: string; customer_id: string | null }) => void
+  onEditPickupTime: (reservation: { id: string; customer_id: string | null }) => void
+  onEditPickupHotel: (reservation: { id: string; customer_id: string | null }) => void
+  editingPickupTime: { id: string; customer_id: string | null } | null
+  editingPickupHotel: { id: string; customer_id: string | null } | null
   onSavePickupTime: () => void
   onCancelEditPickupTime: () => void
   onSavePickupHotel: (hotelId: string) => void
@@ -32,7 +107,7 @@ interface ReservationListProps {
   getCustomerLanguage: (id: string) => string
   getPickupHotelName: (id: string) => string
   getChannelInfo: (id: string) => any
-  getChannelIcon: (channelInfo: any) => React.ReactNode
+  getChannelIcon: (channelInfo: { favicon_url?: string }) => React.ReactNode
   getCountryCode: (language: string) => string
 }
 
@@ -83,7 +158,7 @@ export const ReservationList: React.FC<ReservationListProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              {assignedReservations.map((reservation: any) => (
+              {assignedReservations.map((reservation) => (
                 <div key={reservation.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -148,7 +223,7 @@ export const ReservationList: React.FC<ReservationListProps> = ({
                                   className="px-2 py-1 border rounded text-sm"
                                 >
                                   <option value="">호텔 선택</option>
-                                  {pickupHotels.map((hotel: any) => (
+                                  {pickupHotels.map((hotel) => (
                                     <option key={hotel.id} value={hotel.id}>
                                       {hotel.name_ko}
                                     </option>
@@ -242,7 +317,7 @@ export const ReservationList: React.FC<ReservationListProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              {pendingReservations.map((reservation: any) => (
+              {pendingReservations.map((reservation) => (
                 <div key={reservation.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -341,7 +416,7 @@ export const ReservationList: React.FC<ReservationListProps> = ({
           </div>
           <div className="p-4">
             <div className="space-y-3">
-              {otherToursAssignedReservations.map((reservation: any) => (
+              {otherToursAssignedReservations.map((reservation) => (
                 <div key={reservation.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">

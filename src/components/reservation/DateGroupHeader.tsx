@@ -21,7 +21,7 @@ interface DateGroupHeaderProps {
   pickupHotels: Array<{ id: string; name: string; name_ko?: string }>
   isCollapsed: boolean
   onToggleCollapse: () => void
-  t: any
+  t: (key: string) => string
 }
 
 export default function DateGroupHeader({

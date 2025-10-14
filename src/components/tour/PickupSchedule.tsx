@@ -3,8 +3,21 @@ import { ChevronDown, ChevronUp, MapPin, Map } from 'lucide-react'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
 interface PickupScheduleProps {
-  assignedReservations: any[]
-  pickupHotels: any[]
+  assignedReservations: Array<{
+    id: string
+    customer_id: string | null
+    pickup_hotel: string | null
+    pickup_time: string | null
+    adults: number | null
+    children?: number | null
+    infants?: number | null
+  }>
+  pickupHotels: Array<{
+    id: string
+    hotel: string
+    pick_up_location?: string
+    google_maps_link?: string
+  }>
   expandedSections: Set<string>
   connectionStatus: { reservations: boolean }
   onToggleSection: (sectionId: string) => void
@@ -37,7 +50,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     }
 
     // 호텔별로 그룹화
-    const groupedByHotel = assignedReservations.reduce((acc: any, reservation: any) => {
+    const groupedByHotel = assignedReservations.reduce((acc: Record<string, Array<{ id: string; customer_id: string | null; pickup_time: string | null; adults: number | null; children?: number | null; infants?: number | null }>>, reservation) => {
       const hotelName = getPickupHotelNameOnly(reservation.pickup_hotel || '')
       if (!acc[hotelName]) {
         acc[hotelName] = []
@@ -47,11 +60,11 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     }, {} as Record<string, any[]>)
 
     return Object.entries(groupedByHotel).map(([hotelName, reservations]) => {
-      const totalPeople = (reservations as any[]).reduce((sum: number, res: any) => sum + (res.total_people || 0), 0)
-      const hotelInfo = pickupHotels.find((h: any) => h.hotel === hotelName)
+      const totalPeople = reservations.reduce((sum: number, res) => sum + ((res.adults || 0) + (res.children || 0) + (res.infants || 0)), 0)
+      const hotelInfo = pickupHotels.find((h) => h.hotel === hotelName)
       
       // 가장 빠른 픽업 시간 찾기
-      const pickupTimes = (reservations as any[]).map((r: any) => r.pickup_time).filter(Boolean)
+      const pickupTimes = reservations.map((r) => r.pickup_time).filter(Boolean)
       const earliestTime = pickupTimes.length > 0 ? 
         (pickupTimes.sort()[0] || '').substring(0, 5) : '08:00'
       
@@ -79,7 +92,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
             </div>
           )}
           <div className="space-y-1">
-            {(reservations as any[]).map((reservation: any) => (
+            {reservations.map((reservation) => (
               <div key={reservation.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                 <div className="text-xs text-gray-600">
                   {getCustomerName(reservation.customer_id || '')}
