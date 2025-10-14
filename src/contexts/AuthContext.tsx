@@ -47,32 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [teamChatUnreadCount, setTeamChatUnreadCount] = useState(0)
   
   // 시뮬레이션 상태 (SSR 호환성을 위해 초기값은 null/false로 설정)
-  const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(() => {
-    // 클라이언트에서만 실행
-    if (typeof window !== 'undefined') {
-      const savedSimulation = localStorage.getItem('positionSimulation')
-      if (savedSimulation) {
-        try {
-          const simulationData = JSON.parse(savedSimulation)
-          if (simulationData.email && simulationData.role) {
-            console.log('AuthContext: Initial simulation state from localStorage:', simulationData)
-            return simulationData
-          }
-        } catch (error) {
-          console.error('AuthContext: Error parsing initial simulation:', error)
-        }
-      }
-    }
-    return null
-  })
-  const [isSimulating, setIsSimulating] = useState(() => {
-    // 클라이언트에서만 실행
-    if (typeof window !== 'undefined') {
-      const savedSimulation = localStorage.getItem('positionSimulation')
-      return !!savedSimulation
-    }
-    return false
-  })
+  const [simulatedUser, setSimulatedUser] = useState<SimulatedUser | null>(null)
+  const [isSimulating, setIsSimulating] = useState(false)
 
   // 토큰 자동 갱신 함수
   const refreshTokenIfNeeded = useCallback(async () => {
@@ -341,18 +317,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       console.log('AuthContext: No saved simulation data found')
     }
-  }, [simulatedUser, isSimulating]) // 의존성 배열에 simulatedUser, isSimulating 추가
-
-  // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
-  useEffect(() => {
-    if (isSimulating && simulatedUser) {
-      console.log('AuthContext: Simulation state confirmed:', {
-        simulatedUser: simulatedUser.email,
-        role: simulatedUser.role,
-        isSimulating
-      })
-    }
-  }, [isSimulating, simulatedUser])
+  }, []) // 의존성 배열을 빈 배열로 변경하여 컴포넌트 마운트 시 한 번만 실행
 
   // 인증 상태 관리 (시뮬레이션이 복원되지 않은 경우에만 실행)
   useEffect(() => {
