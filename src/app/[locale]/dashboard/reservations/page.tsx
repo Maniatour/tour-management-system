@@ -85,17 +85,43 @@ export default function CustomerReservations() {
 
   // 인증 확인 (시뮬레이션 상태 우선 확인)
   useEffect(() => {
-    // 시뮬레이션 중인 경우 인증 체크 건너뛰기
+    console.log('Reservations: Auth check effect triggered', { 
+      isSimulating, 
+      hasSimulatedUser: !!simulatedUser, 
+      hasUser: !!user,
+      simulatedUserEmail: simulatedUser?.email 
+    })
+    
+    // 시뮬레이션 중인 경우 인증 체크 완전히 건너뛰기
     if (isSimulating && simulatedUser) {
       console.log('Reservations: Simulation active, skipping authentication check')
       return
     }
     
-    if (!user) {
+    // 시뮬레이션 중이지만 simulatedUser가 없는 경우 잠시 기다림
+    if (isSimulating && !simulatedUser) {
+      console.log('Reservations: Simulation in progress but no simulatedUser yet, waiting...')
+      return
+    }
+    
+    // 시뮬레이션이 아닌 경우에만 인증 체크
+    if (!isSimulating && !user) {
+      console.log('Reservations: No user, redirecting to auth')
       router.push(`/${locale}/auth`)
       return
     }
   }, [user, isSimulating, simulatedUser, router, locale])
+
+  // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
+  useEffect(() => {
+    if (isSimulating && simulatedUser) {
+      console.log('Reservations: Simulation state confirmed:', {
+        simulatedUser: simulatedUser.email,
+        role: simulatedUser.role,
+        isSimulating
+      })
+    }
+  }, [isSimulating, simulatedUser])
 
   // 데이터 로딩 (시뮬레이션 상태와 분리)
   useEffect(() => {
