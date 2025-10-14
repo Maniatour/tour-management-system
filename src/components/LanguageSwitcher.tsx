@@ -30,17 +30,19 @@ const LanguageSwitcher = () => {
         role: simulatedUser.role
       }
       console.log('LanguageSwitcher: Preserving simulation data:', simulationData)
+      
+      // 시뮬레이션 상태를 먼저 저장 (페이지 이동 전에 확실히 저장)
+      localStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+      console.log('LanguageSwitcher: Simulation data saved to localStorage')
+      
+      // 추가 안전장치: 쿠키에도 시뮬레이션 정보 저장
+      document.cookie = `simulation_active=true; path=/; max-age=3600; SameSite=Lax`
+      document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulationData))}; path=/; max-age=3600; SameSite=Lax`
     }
     
     // 언어 관련 상태만 정리 (시뮬레이션 상태는 보존)
     localStorage.removeItem('locale')
     localStorage.removeItem('preferred-locale')
-    
-    // 시뮬레이션 상태를 먼저 저장 (페이지 이동 전에 확실히 저장)
-    if (simulationData) {
-      localStorage.setItem('positionSimulation', JSON.stringify(simulationData))
-      console.log('LanguageSwitcher: Simulation data saved to localStorage')
-    }
     
     // 새로운 언어 설정 (쿠키만 설정)
     document.cookie = `NEXT_LOCALE=${newLocale}; path=/; max-age=31536000; SameSite=Lax`

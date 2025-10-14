@@ -89,19 +89,34 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       return
     }
     
-    // 관리자, 매니저, 투어 가이드가 아닌 경우 접근 차단
-    if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
-      console.log('GuideLayout: Access denied, redirecting to auth', {
-        currentUser: !!currentUser,
-        currentUserRole,
-        isSimulating,
-        isLoading,
-        simulatedUser: !!simulatedUser
-      })
-      // 현재 경로에서 locale 추출
-      const currentLocale = pathname.split('/')[1] || 'ko'
-      router.push(`/${currentLocale}/auth`)
-      return
+    // 시뮬레이션이 아닌 경우에만 일반 사용자 인증 체크
+    if (!isSimulating) {
+      // 관리자, 매니저, 투어 가이드가 아닌 경우 접근 차단
+      if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
+        console.log('GuideLayout: Access denied, redirecting to auth', {
+          currentUser: !!currentUser,
+          currentUserRole,
+          isSimulating,
+          isLoading,
+          simulatedUser: !!simulatedUser
+        })
+        // 현재 경로에서 locale 추출
+        const currentLocale = pathname.split('/')[1] || 'ko'
+        router.push(`/${currentLocale}/auth`)
+        return
+      }
+    } else {
+      // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보로 인증 체크
+      if (!simulatedUser || !['admin', 'manager', 'team_member'].includes(simulatedUser.role || '')) {
+        console.log('GuideLayout: Simulation access denied, redirecting to auth', {
+          simulatedUser: !!simulatedUser,
+          simulatedUserRole: simulatedUser?.role,
+          isSimulating
+        })
+        const currentLocale = pathname.split('/')[1] || 'ko'
+        router.push(`/${currentLocale}/auth`)
+        return
+      }
     }
     
     console.log('GuideLayout: Access granted - staying on guide page')

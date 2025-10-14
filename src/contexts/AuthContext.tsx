@@ -240,35 +240,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
     
+    // localStorage에서 시뮬레이션 정보 확인
+    let simulationData = null
     const savedSimulation = localStorage.getItem('positionSimulation')
+    
     if (savedSimulation) {
       try {
-        const simulationData = JSON.parse(savedSimulation)
-        console.log('AuthContext: Found saved simulation data:', simulationData)
-        
-        // 시뮬레이션 데이터 유효성 검사
-        if (simulationData.email && simulationData.role) {
-          // 상태 설정
-          setSimulatedUser(simulationData)
-          setIsSimulating(true)
-          setLoading(false) // 시뮬레이션 복원 시 즉시 로딩 완료
-          setIsInitialized(true) // 시뮬레이션 복원 시 초기화 완료
-          
-          console.log('AuthContext: Simulation restored successfully:', simulationData)
-          
-          return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
-        } else {
-          console.warn('AuthContext: Invalid simulation data, removing:', simulationData)
-          localStorage.removeItem('positionSimulation')
-        }
+        simulationData = JSON.parse(savedSimulation)
+        console.log('AuthContext: Found saved simulation data in localStorage:', simulationData)
       } catch (error) {
-        console.error('AuthContext: Error parsing saved simulation:', error)
+        console.error('AuthContext: Error parsing localStorage simulation:', error)
         localStorage.removeItem('positionSimulation')
+      }
+    }
+    
+    // localStorage에 없으면 쿠키에서 확인
+    if (!simulationData) {
+      const cookies = document.cookie.split(';')
+      const simulationActiveCookie = cookies.find(cookie => cookie.trim().startsWith('simulation_active='))
+      const simulationUserCookie = cookies.find(cookie => cookie.trim().startsWith('simulation_user='))
+      
+      if (simulationActiveCookie && simulationUserCookie) {
+        try {
+          const userCookieValue = simulationUserCookie.split('=')[1]
+          simulationData = JSON.parse(decodeURIComponent(userCookieValue))
+          console.log('AuthContext: Found saved simulation data in cookies:', simulationData)
+          
+          // 쿠키에서 복원한 데이터를 localStorage에도 저장
+          localStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+        } catch (error) {
+          console.error('AuthContext: Error parsing cookie simulation:', error)
+        }
+      }
+    }
+    
+    if (simulationData) {
+      // 시뮬레이션 데이터 유효성 검사
+      if (simulationData.email && simulationData.role) {
+        // 상태 설정 (동기적으로 즉시 설정)
+        setSimulatedUser(simulationData)
+        setIsSimulating(true)
+        setLoading(false) // 시뮬레이션 복원 시 즉시 로딩 완료
+        setIsInitialized(true) // 시뮬레이션 복원 시 초기화 완료
+        
+        console.log('AuthContext: Simulation restored successfully:', simulationData)
+        
+        return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
+      } else {
+        console.warn('AuthContext: Invalid simulation data, removing:', simulationData)
+        localStorage.removeItem('positionSimulation')
+        // 쿠키도 정리
+        document.cookie = 'simulation_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+        document.cookie = 'simulation_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
       }
     } else {
       console.log('AuthContext: No saved simulation data found')
     }
-  }, [simulatedUser, isSimulating])
+  }, []) // 의존성 배열을 빈 배열로 변경하여 컴포넌트 마운트 시 한 번만 실행
 
   // 인증 상태 관리 (시뮬레이션이 복원되지 않은 경우에만 실행)
   useEffect(() => {
