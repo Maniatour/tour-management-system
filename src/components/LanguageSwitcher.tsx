@@ -62,15 +62,9 @@ const LanguageSwitcher = () => {
       console.log('LanguageSwitcher: Simulation data confirmed saved before navigation')
     }
     
-    // 시뮬레이션 중일 때는 window.location.href를 사용하여 완전한 페이지 이동
-    // 이렇게 하면 시뮬레이션 상태가 더 확실하게 보존됨
-    if (simulationData) {
-      console.log('LanguageSwitcher: Using window.location.href for simulation safety')
-      window.location.href = newPath
-    } else {
-      // 일반 사용자는 Next.js 라우터 사용
-      router.push(newPath)
-    }
+    // 모든 경우에 Next.js 라우터 사용 (window.location.href 사용하지 않음)
+    console.log('LanguageSwitcher: Using Next.js router for navigation')
+    router.push(newPath)
   }
 
   return (

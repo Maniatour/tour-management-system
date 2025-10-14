@@ -298,6 +298,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []) // 의존성 배열을 빈 배열로 변경하여 컴포넌트 마운트 시 한 번만 실행
 
+  // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
+  useEffect(() => {
+    if (isSimulating && simulatedUser) {
+      console.log('AuthContext: Simulation state confirmed:', {
+        simulatedUser: simulatedUser.email,
+        role: simulatedUser.role,
+        isSimulating
+      })
+    }
+  }, [isSimulating, simulatedUser])
+
   // 인증 상태 관리 (시뮬레이션이 복원되지 않은 경우에만 실행)
   useEffect(() => {
     // 시뮬레이션이 이미 복원된 경우 건너뛰기

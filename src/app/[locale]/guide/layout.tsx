@@ -131,6 +131,17 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
      // checkMedicalReportStatus()
   }, [user, userRole, isLoading, router, isSimulating, simulatedUser])
 
+  // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
+  useEffect(() => {
+    if (isSimulating && simulatedUser) {
+      console.log('GuideLayout: Simulation state confirmed:', {
+        simulatedUser: simulatedUser.email,
+        role: simulatedUser.role,
+        isSimulating
+      })
+    }
+  }, [isSimulating, simulatedUser])
+
   // 안읽은 메시지 카운트 로드
   const loadUnreadMessageCount = async () => {
     try {
