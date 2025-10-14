@@ -20,8 +20,8 @@ interface FaqItem {
 interface ProductFaqTabProps {
   productId: string
   isNewProduct: boolean
-  formData: any
-  setFormData: React.Dispatch<React.SetStateAction<any>>
+  formData: Record<string, unknown>
+  setFormData: React.Dispatch<React.SetStateAction<Record<string, unknown>>>
 }
 
 export default function ProductFaqTab({
@@ -619,7 +619,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
     onSave(formData)
   }
 
-  const handleInputChange = (field: keyof FaqItem, value: any) => {
+  const handleInputChange = (field: keyof FaqItem, value: unknown) => {
     setFormData(prev => ({
       ...prev,
       [field]: value

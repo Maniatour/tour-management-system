@@ -280,7 +280,7 @@ export default function ProductDetailsTab({
 
             const { error: insertError } = await supabase
               .from('product_details_multilingual')
-              .upsert([copyData] as any)
+              .upsert([copyData])
 
             if (insertError) {
               console.error(`채널 ${toChannelId} 복사 오류:`, insertError)
@@ -377,7 +377,7 @@ export default function ProductDetailsTab({
             .update({
               ...detailsData,
               updated_at: new Date().toISOString()
-            } as any)
+            })
             .eq('product_id', productId)
             .eq('channel_id', channelId)
             .eq('language_code', currentLang)
@@ -390,7 +390,7 @@ export default function ProductDetailsTab({
           // 새로 생성
           const { error: insertError } = await supabase
             .from('product_details_multilingual')
-            .insert([detailsData] as any)
+            .insert([detailsData])
           
           if (insertError) {
             console.error(`채널 ${channelId} 생성 오류:`, insertError)
@@ -892,8 +892,7 @@ export default function ProductDetailsTab({
 
       if (existingDetails) {
         // 업데이트
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: detailsError } = await (supabase as any)
+        const { error: detailsError } = await supabase
           .from('product_details_multilingual')
           .update({
             ...detailsData,
@@ -909,8 +908,7 @@ export default function ProductDetailsTab({
         console.log('product_details 업데이트 완료')
       } else {
         // 새로 생성
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: detailsError } = await (supabase as any)
+        const { error: detailsError } = await supabase
           .from('product_details_multilingual')
           .insert([detailsData])
 
