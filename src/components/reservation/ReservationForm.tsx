@@ -430,9 +430,9 @@ export default function ReservationForm({
           .from('reservation_pricing')
           .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent')
           .eq('reservation_id', reservationId)
-          .single()
+          .maybeSingle()
 
-        if (existingError && existingError.code !== 'PGRST116') {
+        if (existingError) {
           console.log('기존 가격 정보 조회 오류:', existingError.message)
           // 오류가 발생해도 계속 진행 (dynamic_pricing 조회)
         } else if (existingPricing) {
@@ -861,7 +861,7 @@ export default function ReservationForm({
         .from('reservation_pricing')
         .select('id')
         .eq('reservation_id', reservationId)
-        .single()
+        .maybeSingle()
 
       let pricingId: string
       if (existingPricing) {

@@ -29,6 +29,7 @@ export const TourFinance: React.FC<TourFinanceProps> = ({
           tourDate={tour.tour_date}
           productId={tour.product_id}
           submittedBy={userRole === 'admin' ? 'admin@tour.com' : 'guide@tour.com'}
+          reservationIds={tour.reservation_ids || []}
           onExpenseUpdated={onExpenseUpdated}
         />
       </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
@@ -38,9 +38,12 @@ interface ExpenseVendor {
 }
 
 interface ReservationPricing {
+  id: string
   reservation_id: string
   total_price: number
-  currency: string
+  adult_product_price: number
+  child_product_price: number
+  infant_product_price: number
 }
 
 interface Reservation {
@@ -56,6 +59,7 @@ interface TourExpenseManagerProps {
   tourDate: string
   productId?: string | null
   submittedBy: string
+  reservationIds?: string[] // 투어에 배정된 예약 ID들
   onExpenseUpdated?: () => void
 }
 
@@ -64,6 +68,7 @@ export default function TourExpenseManager({
   tourDate, 
   productId, 
   submittedBy, 
+  reservationIds,
   onExpenseUpdated 
 }: TourExpenseManagerProps) {
   const t = useTranslations('tourExpense')
@@ -98,30 +103,112 @@ export default function TourExpenseManager({
   // 예약 데이터 로드
   const loadReservations = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('reservations')
-        .select('id, customer_name, adults, children, infants')
-        .eq('tour_id', tourId)
+      console.log('🔍 Loading reservations for tourId:', tourId, 'reservationIds:', reservationIds)
+      
+      let reservationsData: any[] = []
+      
+      if (reservationIds && reservationIds.length > 0) {
+        // reservationIds가 있으면 해당 예약들만 가져오기
+        console.log('📋 Loading assigned reservations:', reservationIds)
+        const { data, error } = await supabase
+          .from('reservations')
+          .select('id, customer_id, adults, child, infant')
+          .in('id', reservationIds)
 
-      if (error) throw error
-      setReservations(data || [])
+        if (error) {
+          console.error('❌ Assigned reservations error:', error)
+          throw error
+        }
+        
+        reservationsData = data || []
+        console.log('✅ Assigned reservations data:', reservationsData)
+      } else {
+        // reservationIds가 없으면 tour_id로 필터링 (기존 방식)
+        console.log('📋 Loading reservations by tour_id:', tourId)
+        const { data, error } = await supabase
+          .from('reservations')
+          .select('id, customer_id, adults, child, infant')
+          .eq('tour_id', tourId)
+
+        if (error) {
+          console.error('❌ Reservations by tour_id error:', error)
+          throw error
+        }
+        
+        reservationsData = data || []
+        console.log('✅ Reservations by tour_id data:', reservationsData)
+      }
+      
+      if (!reservationsData || reservationsData.length === 0) {
+        setReservations([])
+        return
+      }
+      
+      // 고객 ID들을 수집
+      const customerIds = reservationsData
+        .map(r => r.customer_id)
+        .filter(id => id !== null)
+      
+      // 고객 정보를 별도로 가져옴
+      let customersData: any[] = []
+      if (customerIds.length > 0) {
+        const { data: customers, error: customersError } = await supabase
+          .from('customers')
+          .select('id, name')
+          .in('id', customerIds)
+        
+        if (customersError) {
+          console.error('❌ Customers error:', customersError)
+        } else {
+          customersData = customers || []
+        }
+      }
+      
+      // 데이터 변환 및 결합
+      const transformedData = reservationsData.map(reservation => {
+        const customer = customersData.find(c => c.id === reservation.customer_id)
+        return {
+          id: reservation.id,
+          customer_name: customer?.name || 'Unknown',
+          adults: reservation.adults || 0,
+          children: reservation.child || 0,
+          infants: reservation.infant || 0
+        }
+      })
+      
+      console.log('✅ Transformed data:', transformedData)
+      setReservations(transformedData)
     } catch (error) {
-      console.error('Error loading reservations:', error)
+      console.error('❌ Error loading reservations:', error)
+      setReservations([])
     }
-  }, [tourId])
+  }, [tourId, reservationIds])
 
   // 예약 가격 정보 로드
   const loadReservationPricing = useCallback(async () => {
     try {
+      console.log('🔍 Loading reservation pricing for reservations:', reservations.map(r => r.id))
+      
+      if (reservations.length === 0) {
+        setReservationPricing([])
+        return
+      }
+      
       const { data, error } = await supabase
         .from('reservation_pricing')
-        .select('reservation_id, total_price, currency')
+        .select('id, reservation_id, total_price, adult_product_price, child_product_price, infant_product_price')
         .in('reservation_id', reservations.map(r => r.id))
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Reservation pricing error:', error)
+        throw error
+      }
+      
+      console.log('✅ Reservation pricing data:', data)
       setReservationPricing(data || [])
     } catch (error) {
-      console.error('Error loading reservation pricing:', error)
+      console.error('❌ Error loading reservation pricing:', error)
+      setReservationPricing([])
     }
   }, [reservations])
 
@@ -436,6 +523,13 @@ export default function TourExpenseManager({
 
   // 통계 계산
   const calculateFinancialStats = () => {
+    console.log('💰 Financial stats calculation:', {
+      reservations: reservations.length,
+      reservationIds: reservationIds,
+      reservationPricing: reservationPricing.length,
+      expenses: expenses.length
+    })
+    
     // 총 입금액 계산
     const totalPayments = reservationPricing.reduce((sum, pricing) => sum + pricing.total_price, 0)
     
@@ -449,6 +543,13 @@ export default function TourExpenseManager({
     
     // 수익 계산
     const profit = totalPayments - totalFees - totalExpenses
+    
+    console.log('💰 Calculated stats:', {
+      totalPayments,
+      totalExpenses,
+      totalFees,
+      profit
+    })
     
     return {
       totalPayments,
@@ -527,10 +628,19 @@ export default function TourExpenseManager({
           
           {expandedSections.payments && (
             <div className="border-t p-4 bg-gray-50">
+              <div className="mb-2 text-xs text-gray-500">
+                📋 표시된 예약: {reservations.length}팀 (배정된 예약만)
+              </div>
               <div className="space-y-2">
                 {reservations.map((reservation) => {
                   const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
                   const totalPeople = reservation.adults + reservation.children + reservation.infants
+                  console.log('💰 Payment display:', {
+                    reservationId: reservation.id,
+                    customerName: reservation.customer_name,
+                    totalPeople,
+                    pricing: pricing?.total_price || 0
+                  })
                   return (
                     <div key={reservation.id} className="flex items-center justify-between text-sm">
                       <div className="flex items-center space-x-2">

@@ -115,7 +115,7 @@ export const fetchVehicles = async () => {
     const { data, error } = await supabase
       .from('vehicles')
       .select('*')
-      .eq('is_active', true)
+      .eq('vehicle_status', '운행 가능')
       .order('vehicle_type', { ascending: true })
       .order('vehicle_number', { ascending: true })
 

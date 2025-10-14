@@ -83,14 +83,47 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         .from('reservation_pricing')
         .select('*')
         .eq('reservation_id', reservation.id)
-        .single()
+        .maybeSingle()
 
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
+        console.error('❌ Reservation pricing error:', error)
         throw error
       }
 
+      // 데이터가 없으면 기본값 설정
+      if (!data) {
+        console.log('📋 No reservation pricing data found for reservation:', reservation.id)
+        const defaultData = {
+          reservation_id: reservation.id,
+          adult_product_price: 0,
+          child_product_price: 0,
+          infant_product_price: 0,
+          product_price_total: 0,
+          required_options: {},
+          required_option_total: 0,
+          subtotal: 0,
+          coupon_code: null,
+          coupon_discount: 0,
+          additional_discount: 0,
+          additional_cost: 0,
+          card_fee: 0,
+          tax: 0,
+          prepayment_cost: 0,
+          prepayment_tip: 0,
+          selected_options: {},
+          option_total: 0,
+          total_price: 0,
+          deposit_amount: 0,
+          balance_amount: 0,
+          private_tour_additional_cost: 0
+        }
+        setPricingData(defaultData)
+        setEditData(defaultData)
+        return
+      }
+
       // 쿠폰 할인이 양수로 저장되어 있다면 마이너스로 변환
-      if (data && data.coupon_discount > 0) {
+      if (data.coupon_discount > 0) {
         data.coupon_discount = -data.coupon_discount
       }
       

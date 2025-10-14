@@ -1092,7 +1092,7 @@ export default function GuideTourDetailPage() {
         {/* 정산 관리 - 정산 탭에만 표시 */}
         <div className={`${activeTab === 'expenses' ? 'block' : 'hidden'} lg:block`}>
           <AccordionSection id="expenses" title={t('expenseManagement')} icon={Calculator}>
-          <TourExpenseManager tourId={tour.id} tourDate={tour.tour_date} submittedBy={currentUserEmail || ''} />
+          <TourExpenseManager tourId={tour.id} tourDate={tour.tour_date} submittedBy={currentUserEmail || ''} reservationIds={tour.reservation_ids || []} />
           </AccordionSection>
         </div>
 
