@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Save, Copy, Download, Upload } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -42,18 +42,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const [selectedTargetProductId, setSelectedTargetProductId] = useState('')
   const [importData, setImportData] = useState('')
 
-  // 상품의 choices 정보 로드
-  useEffect(() => {
-    if (!productId || isNewProduct) {
-      setLoading(false)
-      return
-    }
-
-    loadProductChoices()
-  }, [productId, isNewProduct, loadProductChoices])
-
   // 상품 목록 로드
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('products')
@@ -66,9 +56,10 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     } catch (error) {
       console.error('상품 목록 로드 오류:', error)
     }
-  }
+  }, [productId])
 
-  const loadProductChoices = async () => {
+  // 상품의 choices 정보 로드
+  const loadProductChoices = useCallback(async () => {
     try {
       const { data: product, error } = await supabase
         .from('products')
@@ -109,7 +100,17 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     } finally {
       setLoading(false)
     }
-  }
+  }, [productId])
+
+  // 상품의 choices 정보 로드
+  useEffect(() => {
+    if (!productId || isNewProduct) {
+      setLoading(false)
+      return
+    }
+
+    loadProductChoices()
+  }, [productId, isNewProduct, loadProductChoices])
 
   // 새 그룹 추가
   const addGroup = () => {

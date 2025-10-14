@@ -98,12 +98,6 @@ export default function DocumentManagementPage() {
   const [editingDocument, setEditingDocument] = useState<Document | null>(null)
   const [editingCategory, setEditingCategory] = useState<DocumentCategory | null>(null)
 
-  // 데이터 로드
-  useEffect(() => {
-    loadDocuments()
-    loadCategories()
-  }, [loadDocuments])
-
   const loadDocuments = useCallback(async () => {
     try {
       setLoading(true)
@@ -127,7 +121,7 @@ export default function DocumentManagementPage() {
     }
   }, [])
 
-  const loadCategories = async () => {
+  const loadCategories = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('document_categories')
@@ -140,7 +134,7 @@ export default function DocumentManagementPage() {
     } catch (error) {
       console.error('카테고리 로드 오류:', error)
     }
-  }
+  }, [])
 
   const calculateStats = (docs: Document[]) => {
     const now = new Date()
@@ -176,6 +170,12 @@ export default function DocumentManagementPage() {
 
     setStats(stats)
   }
+
+  // 데이터 로드
+  useEffect(() => {
+    loadDocuments()
+    loadCategories()
+  }, [loadDocuments, loadCategories])
 
   // 필터링된 문서 목록
   const filteredDocuments = documents.filter(doc => {

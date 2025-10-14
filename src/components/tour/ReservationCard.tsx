@@ -63,7 +63,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   reservation,
   isStaff,
   showActions = false,
-  showStatus = false,
+  showStatus = true,
   showTourInfo = false,
   onEdit,
   onUnassign,
@@ -81,24 +81,19 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [showPaymentRecords, setShowPaymentRecords] = useState(false)
   const [loadingPayments, setLoadingPayments] = useState(false)
   const [reservationPricing, setReservationPricing] = useState<ReservationPricing | null>(null)
-  const [loadingPricing, setLoadingPricing] = useState(false)
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string } | null>(null)
-  const [loadingChannel, setLoadingChannel] = useState(false)
   
   // 채널 정보 가져오기
   const fetchChannelInfo = useCallback(async () => {
     if (!getChannelInfo || !reservation.channel_id) return
     
-    setLoadingChannel(true)
     try {
       const info = await getChannelInfo(reservation.channel_id)
       setChannelInfo(info || null)
     } catch (error) {
       console.error('채널 정보 조회 오류:', error)
       setChannelInfo(null)
-    } finally {
-      setLoadingChannel(false)
     }
   }, [getChannelInfo, reservation.channel_id])
 
@@ -106,7 +101,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const fetchReservationPricing = useCallback(async () => {
     if (!isStaff) return
     
-    setLoadingPricing(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) {
@@ -132,8 +126,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       setReservationPricing(data.pricing || null)
     } catch (error) {
       console.error('예약 가격 정보 조회 오류:', error)
-    } finally {
-      setLoadingPricing(false)
     }
   }, [isStaff, reservation.id])
 
@@ -507,70 +499,75 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           ))}
         </div>
 
-        {/* 오른쪽 상단 - 채널 정보 */}
+        {/* 오른쪽 상단 - 상태 뱃지 */}
         <div className="flex items-center space-x-2">
-          {/* 채널 정보 */}
-          {channelInfo && (
-            <div className="flex items-center space-x-1 text-xs text-gray-500">
-              {channelInfo.favicon && (
-                <Image 
-                  src={channelInfo.favicon} 
-                  alt={channelInfo.name}
-                  width={12}
-                  height={12}
-                  className="rounded"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
-              )}
-              <span>{channelInfo.name}</span>
+          {/* 상태 뱃지 - 첫 번째 줄 오른쪽 끝 */}
+          {showStatus && reservation.status && (
+            <div className={`px-2 py-1 rounded-full text-xs font-medium ${getReservationStatusColor(reservation.status)}`}>
+              {reservation.status}
             </div>
           )}
           
-          {/* 채널 로딩 중일 때 */}
-          {loadingChannel && (
-            <div className="text-xs text-gray-400">채널 로딩중...</div>
-          )}
-          
-          {/* 잔액 로딩 중일 때 */}
-          {isStaff && loadingPricing && (
-            <div className="text-xs text-gray-400">잔액 로딩중...</div>
-          )}
         </div>
       </div>
 
       {/* 픽업 정보 섹션 */}
       <div className="mt-2 text-xs text-gray-500">
-        <div className="flex items-center space-x-2">
-           {/* 픽업 시간 수정 버튼 */}
-           {isStaff && (
-             <button
-               onClick={(e) => {
-                 e.stopPropagation()
-                 setShowSimplePickupModal(true)
-               }}
-               className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
-               title="픽업 시간 수정"
-             >
-               <Clock size={12} />
-             </button>
-           )}
-           <span>{getPickupTime()}</span>
-           {/* 픽업 호텔 수정 버튼 */}
-           {isStaff && (
-             <button
-               onClick={(e) => {
-                 e.stopPropagation()
-                 setShowSimplePickupModal(true)
-               }}
-               className="p-1 text-green-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
-               title="픽업 호텔 수정"
-             >
-               <Building size={12} />
-             </button>
-           )}
-          <span>{getPickupHotelName()}</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+             {/* 픽업 시간 수정 버튼 */}
+             {isStaff && (
+               <button
+                 onClick={(e) => {
+                   e.stopPropagation()
+                   setShowSimplePickupModal(true)
+                 }}
+                 className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                 title="픽업 시간 수정"
+               >
+                 <Clock size={12} />
+               </button>
+             )}
+             <span>{getPickupTime()}</span>
+             {/* 픽업 호텔 수정 버튼 */}
+             {isStaff && (
+               <button
+                 onClick={(e) => {
+                   e.stopPropagation()
+                   setShowSimplePickupModal(true)
+                 }}
+                 className="p-1 text-green-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
+                 title="픽업 호텔 수정"
+               >
+                 <Building size={12} />
+               </button>
+             )}
+            <span>{getPickupHotelName()}</span>
+          </div>
+          
+          {/* 채널 정보 - 두 번째 줄 오른쪽 끝 */}
+          <div className="flex items-center space-x-2">
+            {/* 채널 정보 */}
+            {channelInfo && (
+              <div className="flex items-center space-x-1 text-xs text-gray-500">
+                {channelInfo.favicon && (
+                  <Image 
+                    src={channelInfo.favicon} 
+                    alt={channelInfo.name}
+                    width={12}
+                    height={12}
+                    className="rounded"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }}
+                  />
+                )}
+                <span>{channelInfo.name}</span>
+              </div>
+            )}
+            
+            
+          </div>
         </div>
         {/* 3번째 줄 - pickup_location과 잔액 정보, 액션 버튼들 */}
         <div className="flex items-center justify-between mt-1">
@@ -580,19 +577,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               {getPickupLocation() || ''}
             </div>
             
-            {/* 잔액 정보 */}
-            {isStaff && reservationPricing && reservationPricing.balance_amount !== null && (
-              <div className="flex items-center space-x-1">
-                <span className="text-xs text-gray-500">잔액:</span>
-                <span className={`text-xs font-medium ${
-                  reservationPricing.balance_amount > 0 
-                    ? 'text-red-600' 
-                    : reservationPricing.balance_amount < 0 
-                      ? 'text-green-600' 
-                      : 'text-gray-600'
-                }`}>
-                  {formatCurrency(reservationPricing.balance_amount, reservationPricing.currency)}
-                </span>
+            {/* 잔액 뱃지 - $90만 표시 */}
+            {isStaff && reservationPricing && reservationPricing.balance_amount !== null && reservationPricing.balance_amount > 0 && (
+              <div className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+                {formatCurrency(reservationPricing.balance_amount, reservationPricing.currency)}
               </div>
             )}
           </div>
@@ -649,22 +637,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         </div>
       </div>
 
-      {/* 상태 정보 섹션 */}
-      {(showStatus || showTourInfo) && (
+      {/* 투어 정보 섹션 */}
+      {showTourInfo && reservation.tour_id && (
         <div className="mt-2 flex items-center space-x-2">
-          {/* 상태 표시 */}
-          {showStatus && reservation.status && (
-            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getReservationStatusColor(reservation.status)}`}>
-              {reservation.status}
-            </span>
-          )}
-
           {/* 투어 정보 */}
-          {showTourInfo && reservation.tour_id && (
-            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-              투어 배정됨
-            </span>
-          )}
+          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+            투어 배정됨
+          </span>
         </div>
       )}
 

@@ -713,7 +713,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       <div className="pt-16 lg:pl-64">
         {/* 페이지 콘텐츠 */}
         <main className="py-2 sm:py-4 lg:py-6 pb-20 lg:pb-6">
-          <div className="max-w-full mx-auto px-1 sm:px-4 lg:px-6">
+          <div className="max-w-none mx-auto px-1 sm:px-2 lg:px-3">
             {children}
           </div>
         </main>

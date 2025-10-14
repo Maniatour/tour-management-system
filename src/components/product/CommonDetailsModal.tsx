@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { X, Save, AlertCircle, Globe } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -104,14 +104,8 @@ export default function CommonDetailsModal({
     handleInputChange('tags', currentData.tags.filter(tag => tag !== tagToRemove))
   }
 
-  // 데이터 로드
-  useEffect(() => {
-    if (isOpen && subCategory) {
-      loadCommonDetails()
-    }
-  }, [isOpen, subCategory, loadCommonDetails])
-
-  const loadCommonDetails = async () => {
+  // 데이터 로드 함수
+  const loadCommonDetails = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -178,7 +172,14 @@ export default function CommonDetailsModal({
     } finally {
       setLoading(false)
     }
-  }
+  }, [subCategory, supabase, availableLanguages])
+
+  // 데이터 로드
+  useEffect(() => {
+    if (isOpen && subCategory) {
+      loadCommonDetails()
+    }
+  }, [isOpen, subCategory, loadCommonDetails])
 
   // 저장 핸들러
   const handleSave = async () => {

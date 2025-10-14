@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { HelpCircle, Plus, Edit, Trash2, Save, AlertCircle, ChevronDown, ChevronUp, Languages, Loader2, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { translateFaqFields, type FaqTranslationFields } from '@/lib/translationService'
@@ -44,15 +44,7 @@ export default function ProductFaqTab({
   const [showEnglishFields, setShowEnglishFields] = useState(false)
 
   // 기존 FAQ 데이터 로드
-  useEffect(() => {
-    if (!isNewProduct && productId) {
-      fetchFaqs()
-    } else {
-      setLoading(false)
-    }
-  }, [productId, isNewProduct, fetchFaqs])
-
-  const fetchFaqs = async () => {
+  const fetchFaqs = useCallback(async () => {
     try {
       const { data, error } = await (supabase as any)
         .from('product_faqs')
@@ -74,7 +66,16 @@ export default function ProductFaqTab({
     } finally {
       setLoading(false)
     }
-  }
+  }, [productId])
+
+  // 기존 FAQ 데이터 로드
+  useEffect(() => {
+    if (!isNewProduct && productId) {
+      fetchFaqs()
+    } else {
+      setLoading(false)
+    }
+  }, [productId, isNewProduct, fetchFaqs])
 
   const handleAddFaq = () => {
     const newFaq: FaqItem = {
@@ -294,7 +295,7 @@ export default function ProductFaqTab({
     setSuggestionError(null)
 
     try {
-      const productTitle = product?.title || '투어 상품'
+      const productTitle = (formData.title as string) || '투어 상품'
       const suggestedQuestion = await suggestFAQQuestion(productTitle)
       
       const updatedFaqs = [...faqs]
@@ -675,7 +676,7 @@ function FaqModal({ faq, onSave, onClose, saving }: FaqModalProps) {
                   type="button"
                   onClick={async () => {
                     try {
-                      const productTitle = product?.title || '투어 상품'
+                      const productTitle = (formData.title as string) || '투어 상품'
                       const suggestedQuestion = await suggestFAQQuestion(productTitle)
                       handleInputChange('question', suggestedQuestion)
                     } catch (error) {

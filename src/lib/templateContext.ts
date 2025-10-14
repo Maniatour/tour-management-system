@@ -474,6 +474,8 @@ export async function getProductDetailsData(reservationId: string, language: 'ko
       return null
     }
 
+    console.log(`상품 세부정보 조회 시도: product_id=${reservation.product_id}, language=${language}`)
+
     // 상품의 다국어 세부정보 데이터 가져오기
     const { data: productDetails, error: detailsError } = await supabase
       .from('product_details_multilingual')
@@ -483,11 +485,27 @@ export async function getProductDetailsData(reservationId: string, language: 'ko
       .single()
 
     if (detailsError) {
-      console.error('상품 세부정보 조회 실패:', detailsError)
-      return null
+      console.error('상품 세부정보 조회 실패:', {
+        error: detailsError,
+        product_id: reservation.product_id,
+        language: language,
+        error_code: detailsError.code,
+        error_message: detailsError.message
+      })
+      
+      // 데이터가 없는 경우 빈 객체 반환 (오류가 아닌 경우)
+      if (detailsError.code === 'PGRST116') {
+        console.log(`상품 ID ${reservation.product_id}의 ${language} 언어 세부정보가 없습니다. 빈 객체를 반환합니다.`)
+        return {}
+      }
+      
+      // 다른 오류의 경우에도 빈 객체를 반환하여 템플릿이 계속 작동하도록 함
+      console.warn('상품 세부정보 조회 오류가 발생했지만 템플릿 작동을 위해 빈 객체를 반환합니다.')
+      return {}
     }
 
     if (!productDetails) {
+      console.log('상품 세부정보 데이터가 null입니다. 빈 객체를 반환합니다.')
       return {}
     }
 
@@ -523,7 +541,8 @@ export async function getProductDetailsData(reservationId: string, language: 'ko
     }
   } catch (error) {
     console.error('상품 세부정보 데이터 조회 중 오류:', error)
-    return null
+    // 오류가 발생해도 빈 객체를 반환하여 템플릿이 계속 작동하도록 함
+    return {}
   }
 }
 
@@ -918,6 +937,11 @@ export async function generateTemplateContext(reservationId: string, language: '
     
     // 상품 세부정보 데이터 가져오기 (다국어 지원)
     const productDetails = await getProductDetailsData(reservationId, language)
+    
+    // 상품 세부정보가 없는 경우 기본값 제공
+    if (!productDetails) {
+      console.log('상품 세부정보가 없어 기본값을 사용합니다.')
+    }
     
     // 투어 코스 데이터 가져오기
     const tourCourseInfo = await getTourCourseData(reservationId, language)

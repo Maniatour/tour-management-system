@@ -43,7 +43,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   reservations,
   isStaff,
   showActions = false,
-  showStatus = false,
+  showStatus = true,
   showTourInfo = false,
   emptyMessage = '예약이 없습니다.',
   onEditReservation,

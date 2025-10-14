@@ -378,14 +378,47 @@ export function useTourDetailData() {
           // 1. 이 투어에 배정된 예약 (reservation_ids 컬럼의 예약)
           const assignedReservations = reservationsData.filter(r => assignedReservationIds.includes(r.id))
           
-          // 2. 다른 투어에 배정된 예약 (tour_date와 product_id가 같고, tour_id가 이 투어가 아닌 예약)
-          const otherToursAssignedReservations = reservationsData.filter(r => 
-            r.product_id === tourData.product_id && 
-            r.tour_date === tourData.tour_date &&
-            r.tour_id && 
-            r.tour_id !== tourData.id &&
-            !assignedReservationIds.includes(r.id)
-          )
+          // 2. 다른 투어에 배정된 예약 (같은 상품/날짜의 다른 투어들의 reservation_ids에 있는 예약들)
+          const otherToursAssignedReservations = await (async () => {
+            try {
+              // 같은 상품/날짜의 다른 투어들 조회
+              const { data: otherTours, error: toursError } = await supabase
+                .from('tours')
+                .select('id, reservation_ids')
+                .eq('product_id', tourData.product_id)
+                .eq('tour_date', tourData.tour_date)
+                .neq('id', tourData.id)
+
+              if (toursError) {
+                console.error('❌ Error loading other tours:', toursError)
+                return []
+              }
+
+              // 다른 투어들의 reservation_ids 수집
+              const otherReservationIds: string[] = []
+              otherTours?.forEach(tour => {
+                if (tour.reservation_ids && Array.isArray(tour.reservation_ids)) {
+                  otherReservationIds.push(...tour.reservation_ids)
+                }
+              })
+
+              console.log('📊 Other tours reservation IDs:', otherReservationIds)
+
+              if (otherReservationIds.length === 0) return []
+
+              // 해당 예약들 필터링
+              const filteredReservations = reservationsData.filter(r => 
+                otherReservationIds.includes(r.id) &&
+                !assignedReservationIds.includes(r.id)
+              )
+
+              console.log('📊 Other tours assigned reservations found:', filteredReservations.length)
+              return filteredReservations
+            } catch (error) {
+              console.error('❌ Error processing other tours reservations:', error)
+              return []
+            }
+          })()
           
           // 3. 배정 대기 중인 예약 (tour_date와 product_id가 같고, tour_id가 empty 또는 null인 예약)
           const pendingReservations = reservationsData.filter(r => 
@@ -405,6 +438,13 @@ export function useTourDetailData() {
             !otherToursAssignedReservations.some(ot => ot.id === r.id) &&
             !pendingReservations.some(p => p.id === r.id)
           )
+          
+          console.log('📊 Other status reservations:', otherStatusReservations.map(r => ({
+            id: r.id,
+            customer_id: r.customer_id,
+            customer_name: r.customer_name,
+            status: r.status
+          })))
           
           console.log('예약 분류 계산:', {
             assigned: assignedReservations.length,
@@ -464,15 +504,24 @@ export function useTourDetailData() {
 
   // 유틸리티 함수들
   const getCustomerName = (customerId: string) => {
+    console.log('🔍 getCustomerName called for customerId:', customerId)
+    
     // 먼저 예약 데이터에서 직접 고객 이름 찾기
     const reservation = allReservations.find((r) => r.customer_id === customerId)
     if (reservation && reservation.customer_name) {
+      console.log('✅ Found customer name from reservation:', reservation.customer_name)
       return reservation.customer_name
     }
     
     // 예약 데이터에 없으면 customers 배열에서 찾기
     const customer = customers.find((c) => c.id === customerId)
-    return customer ? formatCustomerNameEnhanced(customer, locale) : '정보 없음'
+    if (customer) {
+      console.log('✅ Found customer from customers array:', customer.name)
+      return formatCustomerNameEnhanced(customer, locale)
+    }
+    
+    console.log('❌ Customer not found for ID:', customerId)
+    return '정보 없음'
   }
 
   const getCustomerLanguage = (customerId: string) => {
