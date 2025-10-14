@@ -1704,6 +1704,229 @@ export interface Database {
           updated_at?: string
         }
       }
+      consultation_categories: {
+        Row: {
+          id: string
+          name_ko: string
+          name_en: string
+          description_ko: string | null
+          description_en: string | null
+          icon: string
+          color: string
+          sort_order: number
+          is_active: boolean
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name_ko: string
+          name_en: string
+          description_ko?: string | null
+          description_en?: string | null
+          icon?: string
+          color?: string
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name_ko?: string
+          name_en?: string
+          description_ko?: string | null
+          description_en?: string | null
+          icon?: string
+          color?: string
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      consultation_templates: {
+        Row: {
+          id: string
+          category_id: string | null
+          product_id: string | null
+          channel_id: string | null
+          question_ko: string
+          question_en: string
+          answer_ko: string
+          answer_en: string
+          template_type: string
+          priority: number
+          is_active: boolean
+          is_favorite: boolean
+          usage_count: number
+          last_used_at: string | null
+          tags: string[] | null
+          created_by: string | null
+          updated_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          category_id?: string | null
+          product_id?: string | null
+          channel_id?: string | null
+          question_ko: string
+          question_en: string
+          answer_ko: string
+          answer_en: string
+          template_type?: string
+          priority?: number
+          is_active?: boolean
+          is_favorite?: boolean
+          usage_count?: number
+          last_used_at?: string | null
+          tags?: string[] | null
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          category_id?: string | null
+          product_id?: string | null
+          channel_id?: string | null
+          question_ko?: string
+          question_en?: string
+          answer_ko?: string
+          answer_en?: string
+          template_type?: string
+          priority?: number
+          is_active?: boolean
+          is_favorite?: boolean
+          usage_count?: number
+          last_used_at?: string | null
+          tags?: string[] | null
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      consultation_logs: {
+        Row: {
+          id: string
+          customer_id: string | null
+          product_id: string | null
+          channel_id: string | null
+          consultation_type: string
+          language: string
+          customer_message: string | null
+          agent_response: string | null
+          templates_used: string[] | null
+          status: string
+          resolution: string | null
+          agent_name: string | null
+          agent_email: string | null
+          started_at: string | null
+          ended_at: string | null
+          duration_minutes: number | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          customer_id?: string | null
+          product_id?: string | null
+          channel_id?: string | null
+          consultation_type?: string
+          language?: string
+          customer_message?: string | null
+          agent_response?: string | null
+          templates_used?: string[] | null
+          status?: string
+          resolution?: string | null
+          agent_name?: string | null
+          agent_email?: string | null
+          started_at?: string | null
+          ended_at?: string | null
+          duration_minutes?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          customer_id?: string | null
+          product_id?: string | null
+          channel_id?: string | null
+          consultation_type?: string
+          language?: string
+          customer_message?: string | null
+          agent_response?: string | null
+          templates_used?: string[] | null
+          status?: string
+          resolution?: string | null
+          agent_name?: string | null
+          agent_email?: string | null
+          started_at?: string | null
+          ended_at?: string | null
+          duration_minutes?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      consultation_stats: {
+        Row: {
+          id: string
+          date: string
+          product_id: string | null
+          channel_id: string | null
+          total_inquiries: number
+          resolved_inquiries: number
+          avg_response_time_minutes: number
+          avg_duration_minutes: number
+          template_usage_count: number
+          most_used_template_id: string | null
+          satisfaction_score: number | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          date: string
+          product_id?: string | null
+          channel_id?: string | null
+          total_inquiries?: number
+          resolved_inquiries?: number
+          avg_response_time_minutes?: number
+          avg_duration_minutes?: number
+          template_usage_count?: number
+          most_used_template_id?: string | null
+          satisfaction_score?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          date?: string
+          product_id?: string | null
+          channel_id?: string | null
+          total_inquiries?: number
+          resolved_inquiries?: number
+          avg_response_time_minutes?: number
+          avg_duration_minutes?: number
+          template_usage_count?: number
+          most_used_template_id?: string | null
+          satisfaction_score?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+    }
+    Functions: {
+      increment_template_usage: {
+        Args: {
+          template_id: string
+        }
+        Returns: undefined
+      }
     }
     CompositeTypes: {
       [key: string]: Record<string, unknown>

@@ -29,7 +29,8 @@ import {
   User,
   Camera,
   Calculator,
-  UserCheck
+  UserCheck,
+  HelpCircle
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -268,6 +269,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
     { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
+    { name: '상담 관리', href: `/${locale}/admin/consultation`, icon: HelpCircle },
     { name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
     { name: t('documentTemplates'), href: `/${locale}/admin/reservations/templates`, icon: FileText },
     { name: t('team'), href: `/${locale}/admin/team`, icon: Users },
@@ -289,7 +291,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   return (
     <>
       {/* 어드민 헤더 - 페이지 가장 상단에 여백 없이 */}
-      <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50">
+      <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-[9999]">
         <div className="w-full px-2 sm:px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-2 sm:space-x-6">
@@ -313,31 +315,51 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               <div className="hidden lg:flex items-center space-x-2">
                 <Link
                   href={`/${locale}/admin/customers`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-teal-600 border-teal-600 hover:bg-teal-600 hover:text-white transition-colors"
+                  className="px-3 py-1.5 text-sm border rounded-md text-teal-600 border-teal-600 hover:bg-teal-600 hover:text-white transition-colors cursor-pointer relative z-10"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    router.push(`/${locale}/admin/customers`)
+                  }}
                 >
                   {t('customers')}
                 </Link>
                 <Link
                   href={`/${locale}/admin/reservations`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors"
+                  className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer relative z-10"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    router.push(`/${locale}/admin/reservations`)
+                  }}
                 >
                   {t('reservations')}
                 </Link>
                 <Link
                   href={`/${locale}/admin/booking`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-indigo-600 border-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors"
+                  className="px-3 py-1.5 text-sm border rounded-md text-indigo-600 border-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors cursor-pointer relative z-10"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    router.push(`/${locale}/admin/booking`)
+                  }}
                 >
                   {t('booking')}
                 </Link>
                 <Link
                   href={`/${locale}/admin/tours`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-green-600 border-green-600 hover:bg-green-600 hover:text-white transition-colors"
+                  className="px-3 py-1.5 text-sm border rounded-md text-green-600 border-green-600 hover:bg-green-600 hover:text-white transition-colors cursor-pointer relative z-10"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    router.push(`/${locale}/admin/tours`)
+                  }}
                 >
                   {t('tours')}
                 </Link>
                 <Link
                   href={`/${locale}/admin/chat-management`}
-                  className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors"
+                  className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    router.push(`/${locale}/admin/chat-management`)
+                  }}
                 >
                   {t('chatManagement')}
                 </Link>
@@ -345,7 +367,11 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 {(userRole === 'admin' || (userRole === 'team_member' && isSimulating)) && (
                   <Link
                     href={`/${locale}/admin/dev-tools`}
-                    className="px-3 py-1.5 text-sm border rounded-md text-orange-600 border-orange-600 hover:bg-orange-600 hover:text-white transition-colors"
+                    className="px-3 py-1.5 text-sm border rounded-md text-orange-600 border-orange-600 hover:bg-orange-600 hover:text-white transition-colors cursor-pointer relative z-10"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      router.push(`/${locale}/admin/dev-tools`)
+                    }}
                   >
                     개발자 도구
                   </Link>
