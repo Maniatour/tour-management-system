@@ -3,7 +3,13 @@ import { User, Users, Car } from 'lucide-react'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
 interface TeamCompositionProps {
-  teamMembers: any[]
+  teamMembers: Array<{
+    id: string
+    name_ko: string
+    email: string
+    position: string
+    is_active: boolean
+  }>
   teamType: '1guide' | '2guide' | 'guide+driver'
   selectedGuide: string
   selectedAssistant: string
@@ -40,7 +46,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
   getTeamMemberName
 }) => {
   const getFilteredTeamMembers = (excludeEmail?: string) => {
-    return teamMembers.filter((member: any) => {
+    return teamMembers.filter((member) => {
       // is_active가 TRUE인 사람만 포함
       if (member.is_active !== true) return false
       
@@ -61,12 +67,12 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
     })
   }
 
-  const getDisplayName = (member: any) => {
+  const getDisplayName = (member: { name_ko: string; email: string }) => {
     // name_ko만 표시, 없으면 이메일 표시
     return member.name_ko || member.email
   }
 
-  const guideDriverCount = teamMembers.filter((m: any) => {
+  const guideDriverCount = teamMembers.filter((m) => {
     // is_active가 TRUE인 사람만 포함
     if (m.is_active !== true) return false
     
@@ -169,7 +175,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                     className="text-xs border rounded px-2 py-1 min-w-32"
                   >
                     <option value="">가이드 선택</option>
-                    {getFilteredTeamMembers().map((member: any) => (
+                    {getFilteredTeamMembers().map((member) => (
                       <option key={member.email} value={member.email}>
                         {getDisplayName(member)}
                       </option>
@@ -204,7 +210,7 @@ export const TeamComposition: React.FC<TeamCompositionProps> = ({
                       className="text-xs border rounded px-2 py-1 min-w-32"
                     >
                       <option value="">선택</option>
-                      {getFilteredTeamMembers(selectedGuide).map((member: any) => (
+                      {getFilteredTeamMembers(selectedGuide).map((member) => (
                         <option key={member.email} value={member.email}>
                           {getDisplayName(member)}
                         </option>

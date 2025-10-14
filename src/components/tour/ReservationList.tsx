@@ -1,6 +1,6 @@
 import React from 'react'
 import { Check, X, Edit, MapPin, Clock, User, Users, Eye } from 'lucide-react'
-// @ts-ignore
+// @ts-expect-error
 import ReactCountryFlag from 'react-country-flag'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
 import { formatTimeWithAMPM } from '@/lib/utils'

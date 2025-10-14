@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Upload, X, Check, Eye, Camera, DollarSign, MapPin, Calendar, CreditCard, FileText, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 
@@ -96,7 +96,7 @@ export default function TourExpenseManager({
   })
 
   // 예약 데이터 로드
-  const loadReservations = async () => {
+  const loadReservations = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('reservations')
@@ -108,10 +108,10 @@ export default function TourExpenseManager({
     } catch (error) {
       console.error('Error loading reservations:', error)
     }
-  }
+  }, [tourId])
 
   // 예약 가격 정보 로드
-  const loadReservationPricing = async () => {
+  const loadReservationPricing = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('reservation_pricing')
@@ -123,7 +123,7 @@ export default function TourExpenseManager({
     } catch (error) {
       console.error('Error loading reservation pricing:', error)
     }
-  }
+  }, [reservations])
 
   // 팀 멤버 정보 로드
   const loadTeamMembers = async () => {
@@ -145,7 +145,7 @@ export default function TourExpenseManager({
   }
 
   // 지출 목록 로드
-  const loadExpenses = async () => {
+  const loadExpenses = useCallback(async () => {
     try {
       setLoading(true)
       const { data, error } = await supabase
@@ -161,7 +161,7 @@ export default function TourExpenseManager({
     } finally {
       setLoading(false)
     }
-  }
+  }, [tourId])
 
   // 카테고리 목록 로드
   const loadCategories = async () => {

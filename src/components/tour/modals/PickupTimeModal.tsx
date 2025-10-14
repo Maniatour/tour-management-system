@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-// @ts-ignore
+// @ts-expect-error
 import ReactCountryFlag from 'react-country-flag'
 
 interface PickupTimeModalProps {
