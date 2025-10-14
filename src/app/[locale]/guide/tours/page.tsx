@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import TourCalendar from '@/components/TourCalendar'
@@ -40,7 +40,8 @@ interface GuideToursProps {
 }
 
 export default function GuideTours({ params }: GuideToursProps) {
-  const { locale } = use(params)
+  const paramsObj = useParams()
+  const locale = paramsObj.locale as string
   const t = useTranslations('tours')
   const gt = useTranslations('tours.guideTours')
   const router = useRouter()

@@ -32,7 +32,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   const router = useRouter()
   const pathname = usePathname()
   const t = useTranslations('guide')
-  const { locale } = use(params)
+  const paramsObj = useParams()
+  const locale = paramsObj.locale as string
   const [showPhotoModal, setShowPhotoModal] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
   const [showReceiptModal, setShowReceiptModal] = useState(false)

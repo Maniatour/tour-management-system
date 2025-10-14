@@ -6,6 +6,7 @@ import { Plus, Search } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { useParams } from 'next/navigation'
 import ProductCard from '@/components/ProductCard'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -15,7 +16,8 @@ interface AdminProductsProps {
 }
 
 export default function AdminProducts({ params }: AdminProductsProps) {
-  const { locale } = use(params)
+  const paramsObj = useParams()
+  const locale = paramsObj.locale as string
   const t = useTranslations('products')
   const tCommon = useTranslations('common')
   

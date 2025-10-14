@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { Save, Plus, Trash2, ArrowLeft } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface CommonDetailsRow {
@@ -49,8 +49,9 @@ interface PageProps {
   params: Promise<{ locale: string }>
 }
 
-export default function CommonDetailsAdminPage({ params }: PageProps) {
-  const { locale } = use(params)
+export default function CommonDetailsAdminPage() {
+  const params = useParams()
+  const locale = params.locale as string
   // const router = useRouter()
   const supabase = createClientSupabase()
   const router = useRouter()

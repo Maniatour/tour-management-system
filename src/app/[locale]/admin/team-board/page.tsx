@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import { Check, Edit, Loader2, Pin, PinOff, Plus, Trash2, X } from 'lucide-react'
+import { useParams } from 'next/navigation'
 
 interface TeamBoardPageProps {
   params: Promise<{ locale: string }>
@@ -95,8 +96,9 @@ type TeamMember = {
   is_active: boolean
 }
 
-export default function TeamBoardPage({ params }: TeamBoardPageProps) {
-  use(params)
+export default function TeamBoardPage() {
+  const params = useParams()
+  const locale = params.locale as string
   const { authUser } = useAuth()
   // supabase 클라이언트는 AuthContext에서 관리됨
   

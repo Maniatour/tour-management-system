@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Plus, Search, MapPin, Image as ImageIcon, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle, ChevronDown, ChevronUp, Info, Map, Table, Grid3X3, Edit2, Save, XCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import NextImage from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { useParams } from 'next/navigation'
 
 import PickupHotelForm from '@/components/PickupHotelForm'
 
@@ -166,8 +167,8 @@ interface AdminPickupHotelsProps {
 
 
 export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
-
-  use(params) // locale 사용하지 않지만 params는 필요
+  const paramsObj = useParams()
+  const locale = paramsObj.locale as string
 
   
 

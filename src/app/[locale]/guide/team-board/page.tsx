@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -12,12 +12,13 @@ type Todo = Database['public']['Tables']['op_todos']['Row']
 type Announcement = Database['public']['Tables']['team_announcements']['Row']
 type Issue = Database['public']['Tables']['issues']['Row']
 
-export default function GuideTeamBoard({ params }: { params: Promise<{ locale: string }> }) {
+export default function GuideTeamBoard() {
   const router = useRouter()
+  const params = useParams()
+  const locale = params.locale as string
   const supabase = createClientSupabase()
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('guide')
-  const { locale } = use(params)
   
   // 번역 함수
   const getText = (ko: string, en: string) => locale === 'en' ? en : ko

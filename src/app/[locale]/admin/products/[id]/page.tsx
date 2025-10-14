@@ -132,7 +132,9 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     }
   };
   
-  const { locale, id } = use(params)
+  const paramsObj = useParams()
+  const locale = paramsObj.locale as string
+  const id = paramsObj.id as string
   const t = useTranslations('common')
   const router = useRouter()
   const isNewProduct = id === 'new'

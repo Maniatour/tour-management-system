@@ -5,6 +5,7 @@ import { Plus, Search, Edit, Trash2, Settings, DollarSign, Copy } from 'lucide-r
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { useParams } from 'next/navigation'
 
 type Option = Database['public']['Tables']['options']['Row']
 
@@ -13,6 +14,8 @@ interface AdminOptionsProps {
 }
 
 export default function AdminOptions({ params }: AdminOptionsProps) {
+  const paramsObj = useParams()
+  const locale = paramsObj.locale as string
   const t = useTranslations('options')
   const tCommon = useTranslations('common')
   

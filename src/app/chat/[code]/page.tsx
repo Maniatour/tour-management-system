@@ -6,6 +6,7 @@ import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
 import { SUPPORTED_LANGUAGES, SupportedLanguage } from '@/lib/translation'
 import { supabase } from '@/lib/supabase'
+import { useParams } from 'next/navigation'
 
 interface ChatRoom {
   id: string
@@ -43,7 +44,8 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   const [showNameEdit, setShowNameEdit] = useState(false)
   const [productNames, setProductNames] = useState<ProductNames | null>(null)
 
-  const { code } = use(params)
+  const paramsObj = useParams()
+  const code = paramsObj.code as string
 
   useEffect(() => {
     console.log('PublicChatPage useEffect triggered with code:', code)
