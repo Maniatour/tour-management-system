@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
-import { useTranslations } from 'next-intl'
 import { User, Mail, Phone, Search, Play, StopCircle, ArrowLeft, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -21,7 +20,6 @@ export default function CustomerSimulatorPage() {
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
-  const t = useTranslations('common')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -55,7 +53,7 @@ export default function CustomerSimulatorPage() {
       if (error) {
         console.error('고객 목록 조회 오류:', error)
         // 406 오류의 경우 빈 배열로 설정
-        if (error.status === 406) {
+        if (error.code === 'PGRST116') {
           setCustomers([])
           setLoading(false)
           return

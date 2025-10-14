@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useTranslations } from 'next-intl'
 import FlexibleProductMappingTool from '@/components/FlexibleProductMappingTool'
 
 interface AdminDataReviewProps {
@@ -9,8 +8,6 @@ interface AdminDataReviewProps {
 }
 
 export default function AdminDataReview({ }: AdminDataReviewProps) {
-  const t = useTranslations('reservations')
-  
   // 상태 관리
   const [loading, setLoading] = useState(true)
 

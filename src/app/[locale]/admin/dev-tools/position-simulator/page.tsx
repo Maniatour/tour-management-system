@@ -6,9 +6,6 @@ import { createClientSupabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Eye, Users, Settings, Code, Monitor, Play, Square } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -19,15 +16,8 @@ interface TeamMember {
   is_active: boolean
 }
 
-interface SimulatedUser {
-  email: string
-  name_ko: string
-  position: string
-  role: string
-}
-
 export default function PositionSimulatorPage() {
-  const { user, userRole, simulatedUser, startSimulation, stopSimulation, isSimulating } = useAuth()
+  const { simulatedUser, startSimulation, stopSimulation, isSimulating } = useAuth()
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
@@ -58,7 +48,7 @@ export default function PositionSimulatorPage() {
     loadTeamMembers()
   }, [])
 
-  const getRoleFromPosition = (position: string): string => {
+  const getRoleFromPosition = (position: string): 'customer' | 'team_member' | 'admin' | 'manager' => {
     switch (position.toLowerCase()) {
       case 'super':
         return 'admin'
@@ -76,8 +66,12 @@ export default function PositionSimulatorPage() {
   const handleStartSimulation = (member: TeamMember) => {
     const simulatedRole = getRoleFromPosition(member.position)
     const simulatedUserData = {
+      id: `simulated-${member.email}`,
       email: member.email,
       name_ko: member.name_ko,
+      phone: null,
+      language: 'ko',
+      created_at: new Date().toISOString(),
       position: member.position,
       role: simulatedRole
     }

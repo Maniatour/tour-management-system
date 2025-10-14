@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClientSupabase } from '@/lib/supabase'
+import { UserRole } from '@/lib/roles'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,8 +11,12 @@ import { Eye, Users, Settings, Code, Monitor, Play, Square, ChevronDown, Chevron
 import { useRouter, useParams } from 'next/navigation'
 
 interface TeamMember {
+  id: string
   email: string
   name_ko: string
+  phone: string | null
+  language: string | null
+  created_at: string
   position: string
   is_active: boolean
 }
@@ -72,10 +77,14 @@ export default function DevToolsPage() {
   const handleStartSimulation = (member: TeamMember) => {
     const simulatedRole = getRoleFromPosition(member.position)
     const simulatedUserData = {
+      id: member.id,
       email: member.email,
       name_ko: member.name_ko,
+      phone: member.phone,
+      language: member.language,
+      created_at: member.created_at,
       position: member.position,
-      role: simulatedRole
+      role: simulatedRole as UserRole
     }
     
     startSimulation(simulatedUserData)

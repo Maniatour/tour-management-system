@@ -1274,8 +1274,8 @@ export default function AdminCustomers() {
             setEditingCustomer(null)
           }}
           onDelete={editingCustomer ? 
-            () => handleDeleteCustomer(editingCustomer.id) : 
-            undefined
+            () => { handleDeleteCustomer(editingCustomer.id) } : 
+            () => {}
           }
         />
       )}

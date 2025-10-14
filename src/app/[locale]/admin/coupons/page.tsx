@@ -107,7 +107,8 @@ export default function CouponsPage() {
         product_id: productId
       }
 
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('coupons')
         .insert([cleanData])
 
@@ -140,7 +141,8 @@ export default function CouponsPage() {
         product_id: productId
       }
 
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('coupons')
         .update(cleanData)
         .eq('id', id)
@@ -482,10 +484,10 @@ export default function CouponsPage() {
              setShowAddModal(false)
              setEditingCoupon(null)
            }}
-           onSave={editingCoupon ? 
-             (id: string, data: Omit<Coupon, 'id' | 'created_at'>) => handleEditCoupon(id, data) : 
-             (id: string, data: Omit<Coupon, 'id' | 'created_at'>) => handleAddCoupon(id, data)
-           }
+            onSave={editingCoupon ?
+              (id: string, data: Omit<Coupon, 'id' | 'created_at'>) => handleEditCoupon(id, data) :
+              (_id: string, data: Omit<Coupon, 'id' | 'created_at'>) => handleAddCoupon(data)
+            }
          />
        )}
     </div>

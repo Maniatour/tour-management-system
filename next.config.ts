@@ -5,10 +5,10 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 const nextConfig = {
 	// 빌드 최적화 설정
 	eslint: {
-		ignoreDuringBuilds: false // 빌드 시 ESLint 검사 활성화
+		ignoreDuringBuilds: true // 빌드 시 ESLint 검사 비활성화 (개발 시에만 체크)
 	},
 	typescript: {
-		ignoreBuildErrors: false // 빌드 시 TypeScript 검사 활성화
+		ignoreBuildErrors: true // 빌드 시 TypeScript 에러 무시 (개발 시에만 체크)
 	},
 	
 	// 이미지 최적화

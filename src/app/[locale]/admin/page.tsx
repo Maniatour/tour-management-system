@@ -28,6 +28,7 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ params }: AdminDashboardProps) {
+  const { locale } = use(params)
 
   const stats = [
     {
