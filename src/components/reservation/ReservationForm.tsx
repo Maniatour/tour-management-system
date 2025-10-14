@@ -1,7 +1,7 @@
 'use client'
 /* eslint-disable */
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { sanitizeTimeInput } from '@/lib/utils'

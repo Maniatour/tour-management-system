@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { Upload, X, Camera, Image as ImageIcon, Share2, Eye } from 'lucide-react'
 import { supabase } from '@/lib/supabase'

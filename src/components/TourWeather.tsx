@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, MapPin, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, EyeOff, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog, CloudHail } from 'lucide-react'
 import { getGoblinTourWeatherData, type LocationWeather } from '@/lib/weatherApi'

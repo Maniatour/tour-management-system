@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import React, { useCallback } from 'react'
 import { Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 

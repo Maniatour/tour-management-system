@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import React, { useState, useCallback, useMemo, useEffect } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play, DollarSign } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useRouter, useParams } from 'next/navigation'

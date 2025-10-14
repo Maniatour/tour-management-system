@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database, X } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import WeatherDataCollector from '@/components/WeatherDataCollector'

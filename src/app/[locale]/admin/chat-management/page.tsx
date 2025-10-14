@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast } from 'lucide-react'
 import { supabase } from '@/lib/supabase'

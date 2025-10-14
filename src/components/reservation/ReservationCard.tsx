@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import React, { useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { MapPin, Users, Calendar, Play, DollarSign, Edit, Trash2, Eye } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'

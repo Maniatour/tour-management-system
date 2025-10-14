@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, memo, useEffect } from 'react'
+import React, { useState, useMemo, useCallback, memo, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Filter } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import type { Database } from '@/lib/supabase'

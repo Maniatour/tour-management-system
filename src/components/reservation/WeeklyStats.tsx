@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import React, { useCallback } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import Image from 'next/image'
 
