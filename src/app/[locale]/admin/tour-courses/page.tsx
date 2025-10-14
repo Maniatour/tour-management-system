@@ -10,7 +10,8 @@ import {
   Settings,
   X,
   HelpCircle,
-  BookOpen
+  BookOpen,
+  Plus
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
@@ -21,41 +22,42 @@ import TourCourseEditModal from '@/components/TourCourseEditModal'
 // 타입 정의
 interface TourCourse {
   id: string
-  product_id: string | null
-  parent_id: string | null
-  level: number
-  customer_name_ko: string | null
-  customer_name_en: string | null
-  customer_description_ko: string | null
-  customer_description_en: string | null
-  team_name_ko: string | null
-  team_name_en: string | null
-  team_description_ko: string | null
-  team_description_en: string | null
-  internal_note: string | null
   name_ko: string
   name_en: string
-  description_ko: string | null
-  description_en: string | null
-  category: string
-  category_id: string | null
-  point_name: string | null
-  location: string | null
-  start_latitude: number | null
-  start_longitude: number | null
-  end_latitude: number | null
-  end_longitude: number | null
-  duration_hours: number
-  difficulty_level: 'easy' | 'medium' | 'hard'
-  price_adult: number | null
-  price_child: number | null
-  price_infant: number | null
+  team_name_ko?: string
+  team_name_en?: string
+  customer_name_ko?: string
+  customer_name_en?: string
+  team_description_ko?: string
+  team_description_en?: string
+  customer_description_ko?: string
+  customer_description_en?: string
+  internal_note?: string
+  location?: string
+  category?: string
+  category_id?: string
+  point_name?: string
+  start_latitude?: number
+  start_longitude?: number
+  end_latitude?: number
+  end_longitude?: number
+  duration_hours?: number
+  difficulty_level?: 'easy' | 'medium' | 'hard'
+  price_adult?: number
+  price_child?: number
+  price_infant?: number
   is_active: boolean
-  created_at: string
-  updated_at: string
-  photos?: TourCoursePhoto[]
+  parent_id?: string
   children?: TourCourse[]
   parent?: TourCourse
+  photos?: TourCoursePhoto[]
+  // 추가 필드들 (데이터베이스에서 가져오는 필드들)
+  product_id?: string | null
+  level?: number
+  description_ko?: string | null
+  description_en?: string | null
+  created_at?: string
+  updated_at?: string
 }
 
 interface TourCoursePhoto {
@@ -137,6 +139,26 @@ export default function TourCoursesPage() {
   // 편집 시작
   const startEdit = (course: TourCourse) => {
     setEditingCourse(course)
+    setShowEditModal(true)
+  }
+
+  // 새 투어 코스 생성
+  const createNewCourse = () => {
+    const newCourse: TourCourse = {
+      id: '', // 새 코스는 빈 ID로 시작
+      name_ko: '',
+      name_en: '',
+      is_active: true,
+      duration_hours: 0,
+      difficulty_level: 'easy',
+      product_id: null,
+      level: 0,
+      description_ko: null,
+      description_en: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+    setEditingCourse(newCourse)
     setShowEditModal(true)
   }
 
@@ -338,6 +360,13 @@ export default function TourCoursesPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">투어 코스 관리</h1>
         <div className="flex gap-2">
+          <button
+            onClick={createNewCourse}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+          >
+            <Plus className="w-4 h-4" />
+            투어 코스 추가
+          </button>
           <button
             onClick={() => setShowHelpModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
@@ -621,8 +650,8 @@ export default function TourCoursesPage() {
       {/* 지도 선택 모달 */}
       {showMapModal && (
         <LocationPickerModal
-          currentLat={undefined}
-          currentLng={undefined}
+          currentLat={0}
+          currentLng={0}
           onLocationSelect={handleMapLocationSelect}
           onClose={() => setShowMapModal(false)}
         />

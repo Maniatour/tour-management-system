@@ -1,8 +1,10 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Calendar, DollarSign } from 'lucide-react'
+import { Plus, Edit, Trash2, Calendar, DollarSign, Save, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 interface GuideCost {
   id: string
@@ -36,6 +38,7 @@ interface GuideCostFormData {
 }
 
 export default function GuideCostManagementPage() {
+  const { authUser } = useAuth()
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -50,6 +53,52 @@ export default function GuideCostManagementPage() {
     effectiveTo: ''
   })
   const [saving, setSaving] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [editingRow, setEditingRow] = useState<string | null>(null)
+  const [inlineEditData, setInlineEditData] = useState<Partial<GuideCost>>({})
+  const [editingProductId, setEditingProductId] = useState<string | null>(null)
+  const [rowEditData, setRowEditData] = useState<{
+    '1_guide': Partial<GuideCost>
+    '2_guides': Partial<GuideCost>
+    'guide_driver': Partial<GuideCost>
+  }>({
+    '1_guide': {},
+    '2_guides': {},
+    'guide_driver': {}
+  })
+  const [isGlobalEditMode, setIsGlobalEditMode] = useState(false)
+  const [globalEditData, setGlobalEditData] = useState<Record<string, {
+    '1_guide': Partial<GuideCost>
+    '2_guides': Partial<GuideCost>
+    'guide_driver': Partial<GuideCost>
+  }>>({})
+
+  // 권한 체크
+  const checkAdminPermission = async () => {
+    if (!authUser?.email) return
+    
+    try {
+      const { data: teamData, error } = await supabase
+        .from('team')
+        .select('position')
+        .eq('email', authUser.email)
+        .eq('is_active', true)
+        .single()
+      
+      if (error || !teamData) {
+        setIsAdmin(false)
+        return
+      }
+      
+      const position = (teamData as any).position?.toLowerCase()
+      const isAdminUser = position === 'super' || position === 'admin' || position === 'op'
+      
+      setIsAdmin(isAdminUser)
+    } catch (error) {
+      console.error('권한 체크 오류:', error)
+      setIsAdmin(false)
+    }
+  }
 
   // 상품 목록 로드
   const loadProducts = async () => {
@@ -190,6 +239,480 @@ export default function GuideCostManagementPage() {
     setShowModal(true)
   }
 
+  // 인라인 편집 시작
+  const startInlineEdit = (cost: GuideCost) => {
+    setEditingRow(cost.id)
+    setInlineEditData({
+      guide_fee: cost.guide_fee,
+      assistant_fee: cost.assistant_fee,
+      driver_fee: cost.driver_fee,
+      effective_from: cost.effective_from,
+      effective_to: cost.effective_to
+    })
+  }
+
+  // 인라인 편집 취소
+  const cancelInlineEdit = () => {
+    setEditingRow(null)
+    setInlineEditData({})
+  }
+
+  // 인라인 편집 저장
+  const saveInlineEdit = async (costId: string) => {
+    try {
+      setSaving(true)
+      
+      const response = await fetch('/api/guide-costs', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id: costId,
+          guideFee: inlineEditData.guide_fee,
+          assistantFee: inlineEditData.assistant_fee,
+          driverFee: inlineEditData.driver_fee,
+          effectiveFrom: inlineEditData.effective_from,
+          effectiveTo: inlineEditData.effective_to || null
+        })
+      })
+
+      const data = await response.json()
+      
+      if (data.error) {
+        throw new Error(data.error)
+      }
+
+      alert('가이드비가 수정되었습니다.')
+      setEditingRow(null)
+      setInlineEditData({})
+      loadProducts()
+    } catch (error) {
+      console.error('가이드비 수정 오류:', error)
+      alert('가이드비 수정 중 오류가 발생했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 행 편집 시작
+  const startRowEdit = (productId: string, costsByType: any) => {
+    setEditingProductId(productId)
+    setRowEditData({
+      '1_guide': costsByType['1_guide'] ? {
+        guide_fee: costsByType['1_guide'].guide_fee,
+        effective_from: costsByType['1_guide'].effective_from,
+        effective_to: costsByType['1_guide'].effective_to
+      } : {
+        guide_fee: 0,
+        effective_from: new Date().toISOString().split('T')[0],
+        effective_to: null
+      },
+      '2_guides': costsByType['2_guides'] ? {
+        guide_fee: costsByType['2_guides'].guide_fee,
+        assistant_fee: costsByType['2_guides'].assistant_fee,
+        effective_from: costsByType['2_guides'].effective_from,
+        effective_to: costsByType['2_guides'].effective_to
+      } : {
+        guide_fee: 0,
+        assistant_fee: 0,
+        effective_from: new Date().toISOString().split('T')[0],
+        effective_to: null
+      },
+      'guide_driver': costsByType['guide_driver'] ? {
+        guide_fee: costsByType['guide_driver'].guide_fee,
+        driver_fee: costsByType['guide_driver'].driver_fee,
+        effective_from: costsByType['guide_driver'].effective_from,
+        effective_to: costsByType['guide_driver'].effective_to
+      } : {
+        guide_fee: 0,
+        driver_fee: 0,
+        effective_from: new Date().toISOString().split('T')[0],
+        effective_to: null
+      }
+    })
+  }
+
+  // 행 편집 취소
+  const cancelRowEdit = () => {
+    setEditingProductId(null)
+    setRowEditData({
+      '1_guide': {},
+      '2_guides': {},
+      'guide_driver': {}
+    })
+  }
+
+  // 행 편집 저장
+  const saveRowEdit = async () => {
+    if (!editingProductId) return
+
+    try {
+      setSaving(true)
+      
+      // 각 팀 타입별로 저장
+      const savePromises = []
+      
+      // 1가이드 저장
+      if (rowEditData['1_guide'].guide_fee !== undefined) {
+        const existingCost = products.find(p => p.id === editingProductId)
+          ?.product_guide_costs?.find(c => c.team_type === '1_guide')
+        
+        if (existingCost) {
+          // 기존 가이드비 수정
+          savePromises.push(
+            fetch('/api/guide-costs', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: existingCost.id,
+                guideFee: rowEditData['1_guide'].guide_fee,
+                assistantFee: 0,
+                driverFee: 0,
+                effectiveFrom: rowEditData['1_guide'].effective_from,
+                effectiveTo: rowEditData['1_guide'].effective_to || null
+              })
+            })
+          )
+        } else if (rowEditData['1_guide'].guide_fee! > 0) {
+          // 새 가이드비 생성
+          savePromises.push(
+            fetch('/api/guide-costs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                productId: editingProductId,
+                teamType: '1_guide',
+                guideFee: rowEditData['1_guide'].guide_fee,
+                assistantFee: 0,
+                driverFee: 0,
+                effectiveFrom: rowEditData['1_guide'].effective_from,
+                effectiveTo: rowEditData['1_guide'].effective_to || null
+              })
+            })
+          )
+        }
+      }
+
+      // 2가이드 저장
+      if (rowEditData['2_guides'].guide_fee !== undefined) {
+        const existingCost = products.find(p => p.id === editingProductId)
+          ?.product_guide_costs?.find(c => c.team_type === '2_guides')
+        
+        if (existingCost) {
+          // 기존 가이드비 수정
+          savePromises.push(
+            fetch('/api/guide-costs', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: existingCost.id,
+                guideFee: rowEditData['2_guides'].guide_fee,
+                assistantFee: rowEditData['2_guides'].assistant_fee,
+                driverFee: 0,
+                effectiveFrom: rowEditData['2_guides'].effective_from,
+                effectiveTo: rowEditData['2_guides'].effective_to || null
+              })
+            })
+          )
+        } else if (rowEditData['2_guides'].guide_fee! > 0 || rowEditData['2_guides'].assistant_fee! > 0) {
+          // 새 가이드비 생성
+          savePromises.push(
+            fetch('/api/guide-costs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                productId: editingProductId,
+                teamType: '2_guides',
+                guideFee: rowEditData['2_guides'].guide_fee,
+                assistantFee: rowEditData['2_guides'].assistant_fee,
+                driverFee: 0,
+                effectiveFrom: rowEditData['2_guides'].effective_from,
+                effectiveTo: rowEditData['2_guides'].effective_to || null
+              })
+            })
+          )
+        }
+      }
+
+      // 가이드+드라이버 저장
+      if (rowEditData['guide_driver'].guide_fee !== undefined) {
+        const existingCost = products.find(p => p.id === editingProductId)
+          ?.product_guide_costs?.find(c => c.team_type === 'guide_driver')
+        
+        if (existingCost) {
+          // 기존 가이드비 수정
+          savePromises.push(
+            fetch('/api/guide-costs', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: existingCost.id,
+                guideFee: rowEditData['guide_driver'].guide_fee,
+                assistantFee: 0,
+                driverFee: rowEditData['guide_driver'].driver_fee,
+                effectiveFrom: rowEditData['guide_driver'].effective_from,
+                effectiveTo: rowEditData['guide_driver'].effective_to || null
+              })
+            })
+          )
+        } else if (rowEditData['guide_driver'].guide_fee! > 0 || rowEditData['guide_driver'].driver_fee! > 0) {
+          // 새 가이드비 생성
+          savePromises.push(
+            fetch('/api/guide-costs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                productId: editingProductId,
+                teamType: 'guide_driver',
+                guideFee: rowEditData['guide_driver'].guide_fee,
+                assistantFee: 0,
+                driverFee: rowEditData['guide_driver'].driver_fee,
+                effectiveFrom: rowEditData['guide_driver'].effective_from,
+                effectiveTo: rowEditData['guide_driver'].effective_to || null
+              })
+            })
+          )
+        }
+      }
+
+      // 모든 저장 작업 실행
+      const responses = await Promise.all(savePromises)
+      
+      // 응답 확인
+      for (const response of responses) {
+        const data = await response.json()
+        if (data.error) {
+          throw new Error(data.error)
+        }
+      }
+
+      alert('가이드비가 저장되었습니다.')
+      cancelRowEdit()
+      loadProducts()
+    } catch (error) {
+      console.error('가이드비 저장 오류:', error)
+      alert('가이드비 저장 중 오류가 발생했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 전체 테이블 편집 시작
+  const startGlobalEdit = () => {
+    const initialData: Record<string, {
+      '1_guide': Partial<GuideCost>
+      '2_guides': Partial<GuideCost>
+      'guide_driver': Partial<GuideCost>
+    }> = {}
+
+    products.forEach(product => {
+      const costsByType = {
+        '1_guide': product.product_guide_costs?.find(c => c.team_type === '1_guide'),
+        '2_guides': product.product_guide_costs?.find(c => c.team_type === '2_guides'),
+        'guide_driver': product.product_guide_costs?.find(c => c.team_type === 'guide_driver')
+      }
+
+      initialData[product.id] = {
+        '1_guide': costsByType['1_guide'] ? {
+          guide_fee: costsByType['1_guide'].guide_fee,
+          effective_from: costsByType['1_guide'].effective_from,
+          effective_to: costsByType['1_guide'].effective_to
+        } : {
+          guide_fee: 0,
+          effective_from: new Date().toISOString().split('T')[0],
+          effective_to: null
+        },
+        '2_guides': costsByType['2_guides'] ? {
+          guide_fee: costsByType['2_guides'].guide_fee,
+          assistant_fee: costsByType['2_guides'].assistant_fee,
+          effective_from: costsByType['2_guides'].effective_from,
+          effective_to: costsByType['2_guides'].effective_to
+        } : {
+          guide_fee: 0,
+          assistant_fee: 0,
+          effective_from: new Date().toISOString().split('T')[0],
+          effective_to: null
+        },
+        'guide_driver': costsByType['guide_driver'] ? {
+          guide_fee: costsByType['guide_driver'].guide_fee,
+          driver_fee: costsByType['guide_driver'].driver_fee,
+          effective_from: costsByType['guide_driver'].effective_from,
+          effective_to: costsByType['guide_driver'].effective_to
+        } : {
+          guide_fee: 0,
+          driver_fee: 0,
+          effective_from: new Date().toISOString().split('T')[0],
+          effective_to: null
+        }
+      }
+    })
+
+    setGlobalEditData(initialData)
+    setIsGlobalEditMode(true)
+  }
+
+  // 전체 테이블 편집 취소
+  const cancelGlobalEdit = () => {
+    setIsGlobalEditMode(false)
+    setGlobalEditData({})
+  }
+
+  // 전체 테이블 저장
+  const saveGlobalEdit = async () => {
+    try {
+      setSaving(true)
+      
+      const savePromises = []
+      
+      // 모든 상품의 모든 팀 타입별로 저장
+      Object.entries(globalEditData).forEach(([productId, productData]) => {
+        // 1가이드 저장
+        if (productData['1_guide'].guide_fee !== undefined) {
+          const existingCost = products.find(p => p.id === productId)
+            ?.product_guide_costs?.find(c => c.team_type === '1_guide')
+          
+          if (existingCost) {
+            // 기존 가이드비 수정
+            savePromises.push(
+              fetch('/api/guide-costs', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  id: existingCost.id,
+                  guideFee: productData['1_guide'].guide_fee,
+                  assistantFee: 0,
+                  driverFee: 0,
+                  effectiveFrom: productData['1_guide'].effective_from,
+                  effectiveTo: productData['1_guide'].effective_to || null
+                })
+              })
+            )
+          } else if (productData['1_guide'].guide_fee! > 0) {
+            // 새 가이드비 생성
+            savePromises.push(
+              fetch('/api/guide-costs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  productId: productId,
+                  teamType: '1_guide',
+                  guideFee: productData['1_guide'].guide_fee,
+                  assistantFee: 0,
+                  driverFee: 0,
+                  effectiveFrom: productData['1_guide'].effective_from,
+                  effectiveTo: productData['1_guide'].effective_to || null
+                })
+              })
+            )
+          }
+        }
+
+        // 2가이드 저장
+        if (productData['2_guides'].guide_fee !== undefined) {
+          const existingCost = products.find(p => p.id === productId)
+            ?.product_guide_costs?.find(c => c.team_type === '2_guides')
+          
+          if (existingCost) {
+            // 기존 가이드비 수정
+            savePromises.push(
+              fetch('/api/guide-costs', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  id: existingCost.id,
+                  guideFee: productData['2_guides'].guide_fee,
+                  assistantFee: productData['2_guides'].assistant_fee,
+                  driverFee: 0,
+                  effectiveFrom: productData['2_guides'].effective_from,
+                  effectiveTo: productData['2_guides'].effective_to || null
+                })
+              })
+            )
+          } else if (productData['2_guides'].guide_fee! > 0 || productData['2_guides'].assistant_fee! > 0) {
+            // 새 가이드비 생성
+            savePromises.push(
+              fetch('/api/guide-costs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  productId: productId,
+                  teamType: '2_guides',
+                  guideFee: productData['2_guides'].guide_fee,
+                  assistantFee: productData['2_guides'].assistant_fee,
+                  driverFee: 0,
+                  effectiveFrom: productData['2_guides'].effective_from,
+                  effectiveTo: productData['2_guides'].effective_to || null
+                })
+              })
+            )
+          }
+        }
+
+        // 가이드+드라이버 저장
+        if (productData['guide_driver'].guide_fee !== undefined) {
+          const existingCost = products.find(p => p.id === productId)
+            ?.product_guide_costs?.find(c => c.team_type === 'guide_driver')
+          
+          if (existingCost) {
+            // 기존 가이드비 수정
+            savePromises.push(
+              fetch('/api/guide-costs', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  id: existingCost.id,
+                  guideFee: productData['guide_driver'].guide_fee,
+                  assistantFee: 0,
+                  driverFee: productData['guide_driver'].driver_fee,
+                  effectiveFrom: productData['guide_driver'].effective_from,
+                  effectiveTo: productData['guide_driver'].effective_to || null
+                })
+              })
+            )
+          } else if (productData['guide_driver'].guide_fee! > 0 || productData['guide_driver'].driver_fee! > 0) {
+            // 새 가이드비 생성
+            savePromises.push(
+              fetch('/api/guide-costs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  productId: productId,
+                  teamType: 'guide_driver',
+                  guideFee: productData['guide_driver'].guide_fee,
+                  assistantFee: 0,
+                  driverFee: productData['guide_driver'].driver_fee,
+                  effectiveFrom: productData['guide_driver'].effective_from,
+                  effectiveTo: productData['guide_driver'].effective_to || null
+                })
+              })
+            )
+          }
+        }
+      })
+
+      // 모든 저장 작업 실행
+      const responses = await Promise.all(savePromises)
+      
+      // 응답 확인
+      for (const response of responses) {
+        const data = await response.json()
+        if (data.error) {
+          throw new Error(data.error)
+        }
+      }
+
+      alert('전체 가이드비가 저장되었습니다.')
+      cancelGlobalEdit()
+      loadProducts()
+    } catch (error) {
+      console.error('전체 가이드비 저장 오류:', error)
+      alert('전체 가이드비 저장 중 오류가 발생했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // 팀 타입별 라벨
   const getTeamTypeLabel = (teamType: string) => {
     switch (teamType) {
@@ -211,6 +734,7 @@ export default function GuideCostManagementPage() {
   }
 
   useEffect(() => {
+    checkAdminPermission()
     loadProducts()
   }, [])
 
@@ -225,101 +749,515 @@ export default function GuideCostManagementPage() {
   return (
     <div className="max-w-7xl mx-auto p-6">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">가이드비 관리</h1>
-        <p className="text-gray-600">Mania Tour/Mania Service 상품의 가이드비를 설정하고 관리합니다.</p>
-      </div>
-
-      {/* 상품 목록 */}
-      <div className="space-y-6">
-        {products.map((product) => (
-          <div key={product.id} className="bg-white rounded-lg shadow-sm border">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
-                  <p className="text-sm text-gray-500">{product.sub_category}</p>
-                </div>
-                <button
-                  onClick={() => openNewModal(product.id)}
-                  className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                >
-                  <Plus size={16} />
-                  <span>가이드비 설정</span>
-                </button>
-              </div>
-
-              {/* 가이드비 목록 */}
-              {product.product_guide_costs && product.product_guide_costs.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {product.product_guide_costs.map((cost) => (
-                    <div key={cost.id} className="border rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTeamTypeColor(cost.team_type)}`}>
-                          {getTeamTypeLabel(cost.team_type)}
-                        </span>
-                        <div className="flex space-x-1">
-                          <button
-                            onClick={() => openEditModal(cost)}
-                            className="p-1 text-gray-600 hover:text-blue-600"
-                            title="수정"
-                          >
-                            <Edit size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(cost.id)}
-                            className="p-1 text-gray-600 hover:text-red-600"
-                            title="삭제"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">가이드:</span>
-                          <span className="font-medium">${cost.guide_fee}</span>
-                        </div>
-                        {cost.assistant_fee > 0 && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">어시스턴트:</span>
-                            <span className="font-medium">${cost.assistant_fee}</span>
-                          </div>
-                        )}
-                        {cost.driver_fee > 0 && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">드라이버:</span>
-                            <span className="font-medium">${cost.driver_fee}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">총합:</span>
-                          <span className="font-bold text-green-600">
-                            ${cost.guide_fee + cost.assistant_fee + cost.driver_fee}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 pt-3 border-t text-xs text-gray-500">
-                        <div className="flex items-center space-x-1">
-                          <Calendar size={12} />
-                          <span>{cost.effective_from}</span>
-                          {cost.effective_to && <span>~ {cost.effective_to}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">가이드비 관리</h1>
+            <p className="text-gray-600">Mania Tour/Mania Service 상품의 가이드비를 설정하고 관리합니다.</p>
+          </div>
+          {isAdmin && (
+            <div className="flex space-x-3">
+              {isGlobalEditMode ? (
+                <>
+                  <button
+                    onClick={saveGlobalEdit}
+                    disabled={saving}
+                    className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                  >
+                    <Save size={16} />
+                    <span>전체 저장</span>
+                  </button>
+                  <button
+                    onClick={cancelGlobalEdit}
+                    className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                  >
+                    <X size={16} />
+                    <span>취소</span>
+                  </button>
+                </>
               ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <DollarSign size={48} className="mx-auto mb-4 text-gray-300" />
-                  <p>설정된 가이드비가 없습니다.</p>
-                  <p className="text-sm">새 가이드비를 설정해주세요.</p>
-                </div>
+                <button
+                  onClick={startGlobalEdit}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <Edit size={16} />
+                  <span>전체 편집</span>
+                </button>
               )}
             </div>
+          )}
+        </div>
+        {!isAdmin && (
+          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-yellow-800">관리자 권한이 필요합니다. 수정 및 삭제 기능이 제한됩니다.</p>
           </div>
-        ))}
+        )}
+        {isGlobalEditMode && (
+          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-blue-800">전체 편집 모드입니다. 모든 상품의 가이드비를 한 번에 수정할 수 있습니다.</p>
+          </div>
+        )}
+      </div>
+
+      {/* 테이블 뷰 */}
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  상품명
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  1가이드
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  2가이드
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  가이드+드라이버
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  시작일
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  종료일
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  액션
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {products.map((product) => {
+                // 각 상품별로 팀 타입별 가이드비 정리
+                const costsByType = {
+                  '1_guide': product.product_guide_costs?.find(c => c.team_type === '1_guide'),
+                  '2_guides': product.product_guide_costs?.find(c => c.team_type === '2_guides'),
+                  'guide_driver': product.product_guide_costs?.find(c => c.team_type === 'guide_driver')
+                }
+
+                return (
+                  <tr key={product.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                        <div className="text-sm text-gray-500">{product.sub_category}</div>
+                      </div>
+                    </td>
+                    
+                    {/* 1가이드 */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {isGlobalEditMode ? (
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-gray-600">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={globalEditData[product.id]?.['1_guide']?.guide_fee || 0}
+                            onChange={(e) => setGlobalEditData(prev => ({ 
+                              ...prev, 
+                              [product.id]: {
+                                ...prev[product.id],
+                                '1_guide': { 
+                                  ...prev[product.id]?.['1_guide'], 
+                                  guide_fee: Number(e.target.value) 
+                                }
+                              }
+                            }))}
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      ) : editingProductId === product.id ? (
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-gray-600">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={rowEditData['1_guide'].guide_fee || 0}
+                            onChange={(e) => setRowEditData(prev => ({ 
+                              ...prev, 
+                              '1_guide': { ...prev['1_guide'], guide_fee: Number(e.target.value) }
+                            }))}
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      ) : costsByType['1_guide'] ? (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-900">
+                            ${costsByType['1_guide'].guide_fee}
+                          </span>
+                          {isAdmin && !isGlobalEditMode && (
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => handleDelete(costsByType['1_guide']!.id)}
+                                className="p-1 text-gray-400 hover:text-red-600"
+                                title="삭제"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400">미설정</span>
+                      )}
+                    </td>
+
+                    {/* 2가이드 */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {isGlobalEditMode ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-600">가이드:</span>
+                            <span className="text-sm text-gray-600">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={globalEditData[product.id]?.['2_guides']?.guide_fee || 0}
+                              onChange={(e) => setGlobalEditData(prev => ({ 
+                                ...prev, 
+                                [product.id]: {
+                                  ...prev[product.id],
+                                  '2_guides': { 
+                                    ...prev[product.id]?.['2_guides'], 
+                                    guide_fee: Number(e.target.value) 
+                                  }
+                                }
+                              }))}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-600">어시스턴트:</span>
+                            <span className="text-sm text-gray-600">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={globalEditData[product.id]?.['2_guides']?.assistant_fee || 0}
+                              onChange={(e) => setGlobalEditData(prev => ({ 
+                                ...prev, 
+                                [product.id]: {
+                                  ...prev[product.id],
+                                  '2_guides': { 
+                                    ...prev[product.id]?.['2_guides'], 
+                                    assistant_fee: Number(e.target.value) 
+                                  }
+                                }
+                              }))}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="text-xs font-medium text-green-600">
+                            총합: ${(globalEditData[product.id]?.['2_guides']?.guide_fee || 0) + (globalEditData[product.id]?.['2_guides']?.assistant_fee || 0)}
+                          </div>
+                        </div>
+                      ) : editingProductId === product.id ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-600">가이드:</span>
+                            <span className="text-sm text-gray-600">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={rowEditData['2_guides'].guide_fee || 0}
+                              onChange={(e) => setRowEditData(prev => ({ 
+                                ...prev, 
+                                '2_guides': { ...prev['2_guides'], guide_fee: Number(e.target.value) }
+                              }))}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-600">어시스턴트:</span>
+                            <span className="text-sm text-gray-600">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={rowEditData['2_guides'].assistant_fee || 0}
+                              onChange={(e) => setRowEditData(prev => ({ 
+                                ...prev, 
+                                '2_guides': { ...prev['2_guides'], assistant_fee: Number(e.target.value) }
+                              }))}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="text-xs font-medium text-green-600">
+                            총합: ${(rowEditData['2_guides'].guide_fee || 0) + (rowEditData['2_guides'].assistant_fee || 0)}
+                          </div>
+                        </div>
+                      ) : costsByType['2_guides'] ? (
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-gray-900">
+                            <div>가이드: ${costsByType['2_guides'].guide_fee}</div>
+                            <div>어시스턴트: ${costsByType['2_guides'].assistant_fee}</div>
+                            <div className="font-medium text-green-600">
+                              총합: ${costsByType['2_guides'].guide_fee + costsByType['2_guides'].assistant_fee}
+                            </div>
+                          </div>
+                          {isAdmin && !isGlobalEditMode && (
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => handleDelete(costsByType['2_guides']!.id)}
+                                className="p-1 text-gray-400 hover:text-red-600"
+                                title="삭제"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400">미설정</span>
+                      )}
+                    </td>
+
+                    {/* 가이드+드라이버 */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {isGlobalEditMode ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-600">가이드:</span>
+                            <span className="text-sm text-gray-600">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={globalEditData[product.id]?.['guide_driver']?.guide_fee || 0}
+                              onChange={(e) => setGlobalEditData(prev => ({ 
+                                ...prev, 
+                                [product.id]: {
+                                  ...prev[product.id],
+                                  'guide_driver': { 
+                                    ...prev[product.id]?.['guide_driver'], 
+                                    guide_fee: Number(e.target.value) 
+                                  }
+                                }
+                              }))}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-600">드라이버:</span>
+                            <span className="text-sm text-gray-600">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={globalEditData[product.id]?.['guide_driver']?.driver_fee || 0}
+                              onChange={(e) => setGlobalEditData(prev => ({ 
+                                ...prev, 
+                                [product.id]: {
+                                  ...prev[product.id],
+                                  'guide_driver': { 
+                                    ...prev[product.id]?.['guide_driver'], 
+                                    driver_fee: Number(e.target.value) 
+                                  }
+                                }
+                              }))}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="text-xs font-medium text-green-600">
+                            총합: ${(globalEditData[product.id]?.['guide_driver']?.guide_fee || 0) + (globalEditData[product.id]?.['guide_driver']?.driver_fee || 0)}
+                          </div>
+                        </div>
+                      ) : editingProductId === product.id ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-600">가이드:</span>
+                            <span className="text-sm text-gray-600">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={rowEditData['guide_driver'].guide_fee || 0}
+                              onChange={(e) => setRowEditData(prev => ({ 
+                                ...prev, 
+                                'guide_driver': { ...prev['guide_driver'], guide_fee: Number(e.target.value) }
+                              }))}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-600">드라이버:</span>
+                            <span className="text-sm text-gray-600">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={rowEditData['guide_driver'].driver_fee || 0}
+                              onChange={(e) => setRowEditData(prev => ({ 
+                                ...prev, 
+                                'guide_driver': { ...prev['guide_driver'], driver_fee: Number(e.target.value) }
+                              }))}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="text-xs font-medium text-green-600">
+                            총합: ${(rowEditData['guide_driver'].guide_fee || 0) + (rowEditData['guide_driver'].driver_fee || 0)}
+                          </div>
+                        </div>
+                      ) : costsByType['guide_driver'] ? (
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-gray-900">
+                            <div>가이드: ${costsByType['guide_driver'].guide_fee}</div>
+                            <div>드라이버: ${costsByType['guide_driver'].driver_fee}</div>
+                            <div className="font-medium text-green-600">
+                              총합: ${costsByType['guide_driver'].guide_fee + costsByType['guide_driver'].driver_fee}
+                            </div>
+                          </div>
+                          {isAdmin && !isGlobalEditMode && (
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => handleDelete(costsByType['guide_driver']!.id)}
+                                className="p-1 text-gray-400 hover:text-red-600"
+                                title="삭제"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400">미설정</span>
+                      )}
+                    </td>
+
+                    {/* 시작일 */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {isGlobalEditMode ? (
+                        <input
+                          type="date"
+                          value={globalEditData[product.id]?.['1_guide']?.effective_from || ''}
+                          onChange={(e) => {
+                            const newDate = e.target.value
+                            setGlobalEditData(prev => ({ 
+                              ...prev, 
+                              [product.id]: {
+                                ...prev[product.id],
+                                '1_guide': { ...prev[product.id]?.['1_guide'], effective_from: newDate },
+                                '2_guides': { ...prev[product.id]?.['2_guides'], effective_from: newDate },
+                                'guide_driver': { ...prev[product.id]?.['guide_driver'], effective_from: newDate }
+                              }
+                            }))
+                          }}
+                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                        />
+                      ) : editingProductId === product.id ? (
+                        <input
+                          type="date"
+                          value={rowEditData['1_guide'].effective_from || ''}
+                          onChange={(e) => setRowEditData(prev => ({ 
+                            ...prev, 
+                            '1_guide': { ...prev['1_guide'], effective_from: e.target.value },
+                            '2_guides': { ...prev['2_guides'], effective_from: e.target.value },
+                            'guide_driver': { ...prev['guide_driver'], effective_from: e.target.value }
+                          }))}
+                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                        />
+                      ) : (
+                        <div className="flex items-center space-x-1">
+                          <Calendar size={12} className="text-gray-400" />
+                          <span>{costsByType['1_guide']?.effective_from || '-'}</span>
+                        </div>
+                      )}
+                    </td>
+
+                    {/* 종료일 */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {isGlobalEditMode ? (
+                        <input
+                          type="date"
+                          value={globalEditData[product.id]?.['1_guide']?.effective_to || ''}
+                          onChange={(e) => {
+                            const newDate = e.target.value
+                            setGlobalEditData(prev => ({ 
+                              ...prev, 
+                              [product.id]: {
+                                ...prev[product.id],
+                                '1_guide': { ...prev[product.id]?.['1_guide'], effective_to: newDate },
+                                '2_guides': { ...prev[product.id]?.['2_guides'], effective_to: newDate },
+                                'guide_driver': { ...prev[product.id]?.['guide_driver'], effective_to: newDate }
+                              }
+                            }))
+                          }}
+                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                        />
+                      ) : editingProductId === product.id ? (
+                        <input
+                          type="date"
+                          value={rowEditData['1_guide'].effective_to || ''}
+                          onChange={(e) => setRowEditData(prev => ({ 
+                            ...prev, 
+                            '1_guide': { ...prev['1_guide'], effective_to: e.target.value },
+                            '2_guides': { ...prev['2_guides'], effective_to: e.target.value },
+                            'guide_driver': { ...prev['guide_driver'], effective_to: e.target.value }
+                          }))}
+                          className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                        />
+                      ) : (
+                        <div className="flex items-center space-x-1">
+                          <Calendar size={12} className="text-gray-400" />
+                          <span>{costsByType['1_guide']?.effective_to || '-'}</span>
+                        </div>
+                      )}
+                    </td>
+
+                    {/* 액션 */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {isAdmin && !isGlobalEditMode && (
+                        <div className="flex items-center space-x-2">
+                          {editingProductId === product.id ? (
+                            <>
+                              <button
+                                onClick={saveRowEdit}
+                                disabled={saving}
+                                className="flex items-center space-x-1 px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                              >
+                                <Save size={12} />
+                                <span>저장</span>
+                              </button>
+                              <button
+                                onClick={cancelRowEdit}
+                                className="flex items-center space-x-1 px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
+                              >
+                                <X size={12} />
+                                <span>취소</span>
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => startRowEdit(product.id, costsByType)}
+                                className="flex items-center space-x-1 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                              >
+                                <Edit size={12} />
+                                <span>편집</span>
+                              </button>
+                              <button
+                                onClick={() => openNewModal(product.id)}
+                                className="flex items-center space-x-1 px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                              >
+                                <Plus size={12} />
+                                <span>추가</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* 가이드비 설정/수정 모달 */}
