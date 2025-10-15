@@ -1,9 +1,26 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Info, Save } from 'lucide-react'
+import { Info, Save, Settings } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import CategoryManagementModal from './CategoryManagementModal'
+
+interface CategoryItem {
+  value: string
+  label: string
+  count: number
+  id?: string
+}
+
+interface SubCategoryItem {
+  value: string
+  label: string
+  count: number
+  id?: string
+  categoryId?: string
+  categoryName?: string
+}
 
   interface BasicInfoTabProps {
     formData: {
@@ -45,10 +62,11 @@ export default function BasicInfoTab({
   const t = useTranslations('common')
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
-  const [categories, setCategories] = useState<{ value: string; label: string; count: number }[]>([])
-  const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
-  const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
+  const [categories, setCategories] = useState<CategoryItem[]>([])
+  const [subCategories, setSubCategories] = useState<SubCategoryItem[]>([])
+  const [allSubCategories, setAllSubCategories] = useState<SubCategoryItem[]>([])
   const [newDepartureTime, setNewDepartureTime] = useState('')
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
 
   // 디버깅을 위한 로그
   console.log('BasicInfoTab - formData.tourDepartureTimes:', formData.tourDepartureTimes);
@@ -71,6 +89,30 @@ export default function BasicInfoTab({
       ...formData,
       tourDepartureTimes: formData.tourDepartureTimes?.filter((_, i) => i !== index) || []
     })
+  }
+
+  // 카테고리 관리 모달 업데이트 핸들러
+  const handleCategoriesUpdate = (updatedCategories: CategoryItem[], updatedSubCategories: SubCategoryItem[]) => {
+    setCategories(updatedCategories)
+    setAllSubCategories(updatedSubCategories)
+    
+    // 현재 선택된 카테고리에 해당하는 서브카테고리만 필터링
+    if (formData.category) {
+      const selectedCategory = updatedCategories.find(cat => cat.value === formData.category)
+      const filteredSubCategories = updatedSubCategories.filter(sub => sub.categoryId === selectedCategory?.id)
+      setSubCategories(filteredSubCategories)
+      
+      // 현재 선택된 서브카테고리가 필터링된 목록에 없으면 초기화
+      if (formData.subCategory && !filteredSubCategories.some(sub => sub.value === formData.subCategory)) {
+        setFormData({ ...formData, subCategory: '' })
+      }
+    } else {
+      setSubCategories([])
+      // 카테고리가 선택되지 않았으면 서브카테고리도 초기화
+      if (formData.subCategory) {
+        setFormData({ ...formData, subCategory: '' })
+      }
+    }
   }
 
   // 기본 정보 저장 함수
@@ -191,18 +233,22 @@ export default function BasicInfoTab({
 
   const fetchCategoriesAndSubCategories = useCallback(async () => {
     try {
-      // 상품 데이터에서 카테고리와 서브카테고리 추출
-      const { data: products, error } = await supabase
-        .from('products')
-        .select('category, sub_category')
+      // 새로운 카테고리 관리 테이블에서 데이터 가져오기
+      const [categoriesResult, subCategoriesResult, productsResult] = await Promise.all([
+        supabase.from('product_categories').select('*').eq('is_active', true).order('sort_order'),
+        supabase.from('product_sub_categories').select('*, product_categories(name)').eq('is_active', true).order('sort_order'),
+        supabase.from('products').select('category, sub_category')
+      ])
 
-      if (error) throw error
+      if (categoriesResult.error) throw categoriesResult.error
+      if (subCategoriesResult.error) throw subCategoriesResult.error
+      if (productsResult.error) throw productsResult.error
 
-      // 카테고리 통계 계산
+      // 상품 데이터에서 카테고리와 서브카테고리 사용 횟수 계산
       const categoryCounts: { [key: string]: number } = {}
       const subCategoryCounts: { [key: string]: number } = {}
 
-      products?.forEach((product: { category?: string; sub_category?: string }) => {
+      productsResult.data?.forEach((product: { category?: string; sub_category?: string }) => {
         if (product.category) {
           categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1
         }
@@ -211,31 +257,85 @@ export default function BasicInfoTab({
         }
       })
 
-      // 카테고리 목록 생성
-      const categoryList = Object.keys(categoryCounts).map(category => ({
-        value: category,
-        label: category,
-        count: categoryCounts[category]
-      }))
+      // 카테고리 목록 생성 (DB에서 가져온 데이터 + 사용 횟수)
+      const categoryList = categoriesResult.data?.map((category: { id: string; name: string }) => ({
+        value: category.name,
+        label: category.name,
+        count: categoryCounts[category.name] || 0,
+        id: category.id
+      })) || []
 
-      // 서브카테고리 목록 생성
-      const subCategoryList = Object.keys(subCategoryCounts).map(subCategory => ({
-        value: subCategory,
-        label: subCategory,
-        count: subCategoryCounts[subCategory]
-      }))
+      // 서브카테고리 목록 생성 (DB에서 가져온 데이터 + 사용 횟수 + 카테고리 정보)
+      const subCategoryList = subCategoriesResult.data?.map((subCategory: { id: string; name: string; category_id: string; product_categories: { name: string } }) => ({
+        value: subCategory.name,
+        label: subCategory.name,
+        count: subCategoryCounts[subCategory.name] || 0,
+        id: subCategory.id,
+        categoryId: subCategory.category_id,
+        categoryName: subCategory.product_categories?.name
+      })) || []
 
       console.log('=== Categories and SubCategories Debug ===')
-      console.log('Categories found:', categoryList)
-      console.log('SubCategories found:', subCategoryList)
+      console.log('Categories from DB:', categoryList)
+      console.log('SubCategories from DB:', subCategoryList)
       console.log('Current formData.category:', formData.category)
       console.log('Current formData.subCategory:', formData.subCategory)
       
       setCategories(categoryList)
       setAllSubCategories(subCategoryList)
-      setSubCategories(subCategoryList)
+      
+      // 현재 선택된 카테고리에 해당하는 서브카테고리만 필터링
+      if (formData.category) {
+        const selectedCategory = categoryList.find(cat => cat.value === formData.category)
+        const filteredSubCategories = subCategoryList.filter(sub => sub.categoryId === selectedCategory?.id)
+        setSubCategories(filteredSubCategories)
+      } else {
+        setSubCategories([])
+      }
     } catch (error) {
       console.error('카테고리 및 서브카테고리 데이터 가져오기 오류:', error)
+      
+      // DB 테이블이 없을 경우 기존 방식으로 폴백
+      try {
+        const { data: products, error } = await supabase
+          .from('products')
+          .select('category, sub_category')
+
+        if (error) throw error
+
+        // 카테고리 통계 계산
+        const categoryCounts: { [key: string]: number } = {}
+        const subCategoryCounts: { [key: string]: number } = {}
+
+        products?.forEach((product: { category?: string; sub_category?: string }) => {
+          if (product.category) {
+            categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1
+          }
+          if (product.sub_category) {
+            subCategoryCounts[product.sub_category] = (subCategoryCounts[product.sub_category] || 0) + 1
+          }
+        })
+
+        // 카테고리 목록 생성
+        const categoryList = Object.keys(categoryCounts).map(category => ({
+          value: category,
+          label: category,
+          count: categoryCounts[category]
+        }))
+
+        // 서브카테고리 목록 생성
+        const subCategoryList = Object.keys(subCategoryCounts).map(subCategory => ({
+          value: subCategory,
+          label: subCategory,
+          count: subCategoryCounts[subCategory]
+        }))
+
+        setCategories(categoryList)
+        setAllSubCategories(subCategoryList)
+        setSubCategories(subCategoryList)
+      } catch (fallbackError) {
+        console.error('폴백 카테고리 데이터 가져오기 오류:', fallbackError)
+      }
     }
   }, [formData.category, formData.subCategory])
 
@@ -245,20 +345,29 @@ export default function BasicInfoTab({
   }, [fetchCategoriesAndSubCategories])
 
   // 카테고리 선택 시 서브카테고리 필터링
-  useEffect(() => {
-    if (formData.category) {
-      // 현재 선택된 카테고리에 해당하는 서브카테고리만 필터링
-      const filteredSubCategories = allSubCategories.filter(
-        () => {
-          // 해당 서브카테고리가 현재 선택된 카테고리의 상품에 포함되어 있는지 확인
-          return true // 모든 서브카테고리를 표시 (카테고리별 필터링은 나중에 구현)
-        }
-      )
+  const filterSubCategories = useCallback(() => {
+    if (formData.category && allSubCategories.length > 0) {
+      // 선택된 카테고리에 해당하는 서브카테고리만 필터링
+      const selectedCategory = categories.find(cat => cat.value === formData.category)
+      const filteredSubCategories = allSubCategories.filter(sub => sub.categoryId === selectedCategory?.id)
       setSubCategories(filteredSubCategories)
+      
+      // 현재 선택된 서브카테고리가 필터링된 목록에 없으면 초기화
+      if (formData.subCategory && !filteredSubCategories.some(sub => sub.value === formData.subCategory)) {
+        setFormData((prev: typeof formData) => ({ ...prev, subCategory: '' }))
+      }
     } else {
       setSubCategories([])
+      // 카테고리가 선택되지 않았으면 서브카테고리도 초기화
+      if (formData.subCategory) {
+        setFormData((prev: typeof formData) => ({ ...prev, subCategory: '' }))
+      }
     }
-  }, [formData.category, allSubCategories])
+  }, [formData.category, formData.subCategory, allSubCategories, categories, setFormData])
+
+  useEffect(() => {
+    filterSubCategories()
+  }, [filterSubCategories])
 
   return (
     <>
@@ -344,41 +453,61 @@ export default function BasicInfoTab({
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">카테고리 *</label>
-            <select
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value, subCategory: '' })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
-            >
-              <option value="">카테고리 선택</option>
-              {categories.map((category) => (
-                <option key={category.value} value={category.value}>
-                  {category.label} ({category.count})
-                </option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value, subCategory: '' })}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              >
+                <option value="">카테고리 선택</option>
+                {categories.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label} ({category.count})
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(true)}
+                className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center"
+                title="카테고리 관리"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">서브카테고리 *</label>
-            <select
-              value={formData.subCategory}
-              onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
-            >
-              <option value="">서브카테고리 선택</option>
-              {subCategories.map((subCategory) => (
-                <option key={subCategory.value} value={subCategory.value}>
-                  {subCategory.label} ({subCategory.count})
-                </option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select
+                value={formData.subCategory}
+                onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              >
+                <option value="">서브카테고리 선택</option>
+                {subCategories.map((subCategory) => (
+                  <option key={subCategory.value} value={subCategory.value}>
+                    {subCategory.label} ({subCategory.count})
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(true)}
+                className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center"
+                title="서브카테고리 관리"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* 상품 설명 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">상품 설명</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">상품 설명 (내부)</label>
           <textarea
             value={formData.description || ''}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -761,6 +890,15 @@ export default function BasicInfoTab({
           {saving ? '저장 중...' : '기본 정보 저장'}
         </button>
       </div>
+
+      {/* 카테고리 관리 모달 */}
+      <CategoryManagementModal
+        isOpen={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        categories={categories}
+        subCategories={subCategories}
+        onCategoriesUpdate={handleCategoriesUpdate}
+      />
     </>
   )
 }

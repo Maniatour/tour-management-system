@@ -19,7 +19,7 @@ interface CustomerSectionProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
   customers: Customer[]
-  customerSearchRef: RefObject<HTMLDivElement | null>
+  customerSearchRef: RefObject<HTMLDivElement>
   setShowCustomerForm: (show: boolean) => void
   t: (key: string) => string
 }
@@ -32,11 +32,6 @@ export default function CustomerSection({
   setShowCustomerForm,
   t
 }: CustomerSectionProps) {
-  console.log('CustomerSection 렌더링:', {
-    customerSearch: formData.customerSearch,
-    customerId: formData.customerId,
-    customersLength: customers.length
-  })
   
   return (
     <div className="grid grid-cols-2 gap-4">

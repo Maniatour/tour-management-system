@@ -174,6 +174,7 @@ export default function DynamicPricingManager({
     is_sale_available: true,
     commission_percent: 0, // 기본 커미션 0% (저장된 값으로 덮어씌워짐)
     markup_amount: 0,
+    markup_percent: 0, // 업차지 퍼센트 (%)
     coupon_fixed_discount: 0, // 고정 할인 금액 ($)
     coupon_percentage_discount: 0, // 퍼센트 할인 (%)
     discount_priority: 'percentage_first' as 'fixed_first' | 'percentage_first', // 할인 우선순위 (퍼센트 우선)
@@ -353,6 +354,7 @@ export default function DynamicPricingManager({
         infant_price: latestPricing.infant_price || 0,
         commission_percent: latestPricing.commission_percent || 25,
         markup_amount: latestPricing.markup_amount || 0,
+        markup_percent: (latestPricing as any).markup_percent || 0,
         coupon_percentage_discount: latestPricing.coupon_percentage_discount || 0,
         is_sale_available: latestPricing.is_sale_available ?? true,
         selected_weekdays: [0, 1, 2, 3, 4, 5, 6] // 모든 요일 기본 선택
@@ -942,6 +944,7 @@ export default function DynamicPricingManager({
           ...prev,
           commission_percent: channelPricing.commission_percent || 25,
           markup_amount: channelPricing.markup_amount || 0,
+          markup_percent: (channelPricing as any).markup_percent || 0,
           coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
           is_sale_available: channelPricing.is_sale_available !== false,
           not_included_price: channelPricing.not_included_price || 0
@@ -1087,6 +1090,7 @@ export default function DynamicPricingManager({
           infant_price: channelPricing.infant_price || 0,
           commission_percent: channelPricing.commission_percent || 0,
           markup_amount: channelPricing.markup_amount || 0,
+          markup_percent: (channelPricing as any).markup_percent || 0,
           coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
           is_sale_available: channelPricing.is_sale_available || false,
           not_included_price: channelPricing.not_included_price || 0,
@@ -1165,13 +1169,14 @@ export default function DynamicPricingManager({
     const baseChildPrice = choice.child_price || 0;
     const baseInfantPrice = choice.infant_price || 0;
 
-    // 업차지 계산
+    // 업차지 계산 (달러 + 퍼센트)
     const markupAmount = pricingConfig.markup_amount || 0;
+    const markupPercent = pricingConfig.markup_percent || 0;
     
-    // 최대 판매가 = 초이스 가격 + 업차지
-    const maxAdultPrice = baseAdultPrice + markupAmount;
-    const maxChildPrice = baseChildPrice + markupAmount;
-    const maxInfantPrice = baseInfantPrice + markupAmount;
+    // 최대 판매가 = 초이스 가격 + 달러 업차지 + 퍼센트 업차지
+    const maxAdultPrice = baseAdultPrice + markupAmount + (baseAdultPrice * markupPercent / 100);
+    const maxChildPrice = baseChildPrice + markupAmount + (baseChildPrice * markupPercent / 100);
+    const maxInfantPrice = baseInfantPrice + markupAmount + (baseInfantPrice * markupPercent / 100);
 
     // 쿠폰 할인 계산
     const couponPercent = pricingConfig.coupon_percentage_discount || 0;
@@ -1597,14 +1602,22 @@ export default function DynamicPricingManager({
           };
           
           choices.forEach(choice => {
-            choicesPricing!.canyon_choice.options[choice.id] = {
-              name: choice.name,
-              name_ko: choice.name_ko,
-              adult_price: choice.adult_price || 0,
-              child_price: choice.child_price || 0,
-              infant_price: choice.infant_price || 0
-            };
+            // 가격이 실제로 설정된 경우에만 저장 (0이 아닌 경우)
+            if (choice.adult_price > 0 || choice.child_price > 0 || choice.infant_price > 0) {
+              choicesPricing!.canyon_choice.options[choice.id] = {
+                name: choice.name,
+                name_ko: choice.name_ko,
+                adult_price: choice.adult_price,
+                child_price: choice.child_price,
+                infant_price: choice.infant_price
+              };
+            }
           });
+          
+          // options가 비어있으면 choices_pricing을 null로 설정
+          if (Object.keys(choicesPricing!.canyon_choice.options).length === 0) {
+            choicesPricing = null;
+          }
         }
 
         const insertData = {
@@ -1618,7 +1631,7 @@ export default function DynamicPricingManager({
           choices_pricing: choicesPricing,
             commission_percent: pricingConfig.commission_percent,
             markup_amount: pricingConfig.markup_amount,
-          coupon_percentage_discount: pricingConfig.coupon_percentage_discount || 0,
+            markup_percent: pricingConfig.markup_percent,
             is_sale_available: pricingConfig.is_sale_available,
             not_included_price: pricingConfig.not_included_price || 0
         }
@@ -1770,8 +1783,9 @@ export default function DynamicPricingManager({
                           child_price: channelPricing.child_price || 0,
                           infant_price: channelPricing.infant_price || 0,
                           commission_percent: channelPricing.commission_percent || 0,
-                          markup_amount: channelPricing.markup_amount || 0,
-                          coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
+          markup_amount: channelPricing.markup_amount || 0,
+          markup_percent: (channelPricing as any).markup_percent || 0,
+          coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
                           is_sale_available: channelPricing.is_sale_available || false,
                           not_included_price: channelPricing.not_included_price || 0,
                           required_options: []
@@ -1802,8 +1816,9 @@ export default function DynamicPricingManager({
                           child_price: channelPricing.child_price || 0,
                           infant_price: channelPricing.infant_price || 0,
                           commission_percent: channelPricing.commission_percent || 0,
-                          markup_amount: channelPricing.markup_amount || 0,
-                          coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
+          markup_amount: channelPricing.markup_amount || 0,
+          markup_percent: (channelPricing as any).markup_percent || 0,
+          coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
                           is_sale_available: channelPricing.is_sale_available || false,
                           not_included_price: channelPricing.not_included_price || 0,
                           required_options: []
@@ -2565,6 +2580,24 @@ export default function DynamicPricingManager({
                         placeholder="0"
                       />
                      <DollarSign className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400" />
+                   </div>
+                 </div>
+                 <div>
+                   <label className="block text-xs font-medium text-gray-700 mb-1">
+                     업차지 (%)
+                   </label>
+                   <div className="relative">
+                     <input
+                       type="number"
+                       min="0"
+                       max="100"
+                       step="0.01"
+                       value={pricingConfig.markup_percent}
+                       onChange={(e) => setPricingConfig(prev => ({ ...prev, markup_percent: parseFloat(e.target.value) || 0 }))}
+                       className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                       placeholder="0"
+                     />
+                     <span className="absolute left-1.5 top-1.5 h-3 w-3 text-gray-400 text-xs">%</span>
                    </div>
                  </div>
                   <div>

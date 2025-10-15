@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, memo } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useEffect, memo } from 'react'
+import ProductSelector from '@/components/common/ProductSelector';
 
 interface Product {
   id: string
@@ -11,7 +11,6 @@ interface Product {
   category?: string | null
   sub_category?: string | null
 }
-
 
 interface ProductSelectionSectionProps {
   formData: {
@@ -52,15 +51,15 @@ function ProductSelectionSection({
   setFormData,
   products,
   loadProductChoices,
-  getDynamicPricingForOption,
-  t,
-  layout = 'modal'
+  t
 }: ProductSelectionSectionProps) {
-  const [isExpanded, setIsExpanded] = useState(layout === 'modal')
   
   // formData 변경 추적을 위한 로그
   console.log('ProductSelectionSection 렌더링:', {
     productId: formData.productId,
+    selectedProductCategory: formData.selectedProductCategory,
+    selectedProductSubCategory: formData.selectedProductSubCategory,
+    productSearch: formData.productSearch,
     productChoicesLength: formData.productChoices?.length || 0,
     selectedChoicesKeys: Object.keys(formData.selectedChoices || {}),
     choiceTotal: formData.choiceTotal
@@ -75,137 +74,49 @@ function ProductSelectionSection({
   
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <label className="block text-sm font-medium text-gray-700">{t('form.product')}</label>
-        <button
-          type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center text-gray-500 hover:text-gray-700"
-        >
-          {isExpanded ? (
-            <ChevronDown className="w-4 h-4" />
-          ) : (
-            <ChevronRight className="w-4 h-4" />
-          )}
-        </button>
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          {t('form.productSelection')}
+        </h3>
+        
+        {/* 새로운 ProductSelector 사용 */}
+        <ProductSelector
+          selectedProductId={formData.productId}
+          onProductSelect={(product) => {
+            if (product) {
+              setFormData({
+                ...formData,
+                productId: product.id,
+                selectedProductCategory: product.category || '',
+                selectedProductSubCategory: product.sub_category || '',
+                productSearch: '',
+                selectedOptions: {},
+                requiredOptions: {},
+                selectedOptionPrices: {},
+                productChoices: [],
+                selectedChoices: {},
+                choiceTotal: 0
+              });
+            } else {
+              setFormData({
+                ...formData,
+                productId: '',
+                selectedProductCategory: '',
+                selectedProductSubCategory: '',
+                productSearch: '',
+                selectedOptions: {},
+                requiredOptions: {},
+                selectedOptionPrices: {},
+                productChoices: [],
+                selectedChoices: {},
+                choiceTotal: 0
+              });
+            }
+          }}
+          showChoices={false}
+          className="mb-4"
+        />
       </div>
-      
-      {/* 상품명 검색 - 아코디언이 펼쳐졌을 때만 표시 */}
-      {isExpanded && (
-        <div className="mb-3">
-          <input
-            type="text"
-            placeholder="상품명 검색..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            onChange={(e) => setFormData((prev: any) => ({ ...prev, productSearch: e.target.value }))} // eslint-disable-line @typescript-eslint/no-explicit-any
-          />
-        </div>
-      )}
-      
-      {/* 상품 선택 리스트 - 아코디언이 펼쳐졌을 때만 표시 */}
-      {isExpanded && (
-        <div className="border border-gray-300 rounded-lg overflow-hidden">
-        {/* 상품 카테고리별 탭 */}
-        <div className="flex bg-gray-50">
-          {Array.from(new Set(products.map(p => p.category))).filter(Boolean).map((category) => (
-            <button
-              key={category}
-              type="button"
-              onClick={() => setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                ...prev, 
-                selectedProductCategory: category || '',
-                selectedProductSubCategory: '' // 카테고리 변경 시 서브카테고리 초기화
-              }))}
-              className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                (formData.selectedProductCategory || '') === category
-                  ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-            >
-              {category}
-            </button>
-          ))}
-        </div>
-        
-        {/* 서브카테고리 선택 (카테고리가 선택된 경우에만 표시) */}
-        {formData.selectedProductCategory && (
-          <div className="flex bg-gray-100 border-b border-gray-200">
-            <button
-              type="button"
-              onClick={() => setFormData((prev: any) => ({ ...prev, selectedProductSubCategory: '' }))} // eslint-disable-line @typescript-eslint/no-explicit-any
-              className={`px-3 py-2 text-sm font-medium transition-colors ${
-                !formData.selectedProductSubCategory
-                  ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-            >
-              {t('form.allCategories')}
-            </button>
-            {Array.from(new Set(
-              products
-                .filter(p => p.category === formData.selectedProductCategory && p.sub_category)
-                .map(p => p.sub_category)
-            )).filter(Boolean).map((subCategory) => (
-              <button
-                key={subCategory}
-                type="button"
-                onClick={() => setFormData((prev: any) => ({ ...prev, selectedProductSubCategory: subCategory || '' }))} // eslint-disable-line @typescript-eslint/no-explicit-any
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
-                  formData.selectedProductSubCategory === subCategory
-                    ? 'bg-white text-blue-600 border-b-2 border-blue-600'
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                }`}
-              >
-                {subCategory}
-              </button>
-            ))}
-          </div>
-        )}
-        
-        {/* 상품 선택 리스트 */}
-        <div className={`overflow-y-auto ${formData.productId ? 'h-[320px]' : 'h-[770px]'}`}>
-          {products
-            .filter(product => {
-              const matchesCategory = !formData.selectedProductCategory || product.category === formData.selectedProductCategory
-              const matchesSubCategory = !formData.selectedProductSubCategory || product.sub_category === formData.selectedProductSubCategory
-              const displayName = (product.name || product.name_ko || product.name_en || '')?.toLowerCase()
-              const matchesSearch = !formData.productSearch || 
-                displayName.includes(formData.productSearch.toLowerCase()) ||
-                (product.sub_category || '').toLowerCase().includes(formData.productSearch.toLowerCase())
-              return matchesCategory && matchesSubCategory && matchesSearch
-            })
-            .map(product => (
-              <div
-                key={product.id}
-                onClick={async () => {
-                  const newProductId = formData.productId === product.id ? '' : product.id
-                  setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                    ...prev, 
-                    productId: newProductId,
-                    selectedOptions: {} // 상품 변경 시 선택된 옵션 초기화
-                  }))
-                  
-                  // 상품 선택 시 초이스 자동 로드
-                  if (newProductId) {
-                    await loadProductChoices(newProductId)
-                  } else {
-                    setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                      ...prev, 
-                      requiredOptions: {},
-                      selectedOptions: {} // 상품 변경 시 선택된 옵션도 초기화
-                    }))
-                  }
-                }}
-                className={`p-3 cursor-pointer border-b border-gray-100 last:border-b-0 hover:bg-gray-50 ${
-                  formData.productId === product.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-                }`}
-              >
-                <div className="text-sm text-gray-900">{product.name || product.name_ko || product.name_en}</div>
-              </div>
-            ))}
-        </div>
-        </div>
-      )}
       
       {/* 선택된 상품 정보 표시 */}
       {formData.productId && (
@@ -216,7 +127,6 @@ function ProductSelectionSection({
             return selectedProduct ? (
               <div className="space-y-2">
                 <div className="font-medium text-gray-900">{selectedProduct.name || selectedProduct.name_ko || selectedProduct.name_en}</div>
-
               </div>
             ) : null
           })()}
@@ -227,111 +137,69 @@ function ProductSelectionSection({
       {formData.productId && formData.productChoices && formData.productChoices.length > 0 && (
         <div className="mt-4">
           <div className="space-y-4">
-            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-              <h4 className="text-sm font-semibold text-gray-800 mb-3 border-b pb-2">
-                {t('form.requiredChoices')}
-              </h4>
-              <div className="space-y-3">
-                {formData.productChoices.map((choice) => {
-                  // choiceGroupId를 동적으로 찾기 (reservation.choices.required에서)
-                  // choice.id가 selectedChoices의 키에 있는지 확인
-                  const choiceGroupId = Object.keys(formData.selectedChoices).find(key => 
-                    formData.selectedChoices[key]?.selected === choice.id
-                  ) || 'canyon_choice' // fallback
-                  
-                  // isSelected는 choice.id가 선택된 옵션 ID와 일치하는지 확인
-                  const isSelected = Object.values(formData.selectedChoices).some(choiceData => 
-                    choiceData?.selected === choice.id
-                  )
-                  
-                  console.log('ProductSelectionSection: choiceGroupId 찾기:', {
-                    choiceId: choice.id,
-                    choiceGroupId,
-                    selectedChoicesKeys: Object.keys(formData.selectedChoices),
-                    selectedChoicesValues: Object.values(formData.selectedChoices),
-                    isSelected
-                  })
-                  
-                  console.log('ProductSelectionSection: choice 렌더링:', {
-                    choiceId: choice.id,
-                    choiceName: choice.name_ko || choice.name,
-                    choiceGroupId,
-                    selectedChoices: formData.selectedChoices,
-                    selectedChoicesKeys: Object.keys(formData.selectedChoices),
-                    selectedChoicesValues: Object.values(formData.selectedChoices),
-                    isSelected
-                  })
-                  
-                  return (
-                    <div 
-                      key={choice.id} 
-                      className={`border rounded-lg p-3 cursor-pointer transition-all duration-200 ${
-                        isSelected
-                          ? 'border-blue-500 bg-blue-50 shadow-md'
-                          : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300'
-                      }`}
-                      onClick={async () => {
-                        // dynamic_pricing에서 가격을 가져오고, 없으면 기본 가격 사용
-                        const dynamicPricing = await getDynamicPricingForOption(choice.id)
-                        
-                        const selectedChoice = {
-                          selected: choice.id,
-                          timestamp: new Date().toISOString()
-                        }
-                        
-                        setFormData((prev: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
-                          ...prev,
-                          selectedChoices: {
-                            ...prev.selectedChoices,
-                            [choiceGroupId]: selectedChoice
-                          },
-                          // choiceTotal 계산 (동적 가격 우선, 없으면 기본 가격)
-                          choiceTotal: (dynamicPricing?.adult ?? choice.adult_price) * prev.adults + 
-                                     (dynamicPricing?.child ?? choice.child_price) * prev.child + 
-                                     (dynamicPricing?.infant ?? choice.infant_price) * prev.infant,
-                          // choices 데이터도 업데이트 (가격 계산을 위해)
-                          choices: {
-                            ...prev.choices,
-                            [choice.id]: {
-                              adult_price: dynamicPricing?.adult ?? choice.adult_price,
-                              child_price: dynamicPricing?.child ?? choice.child_price,
-                              infant_price: dynamicPricing?.infant ?? choice.infant_price
-                            }
+            <div className="space-y-3">
+              {formData.productChoices.map((choice) => {
+                // choiceGroupId를 동적으로 찾기 (reservation.choices.required에서)
+                const choiceGroupId = Object.keys(formData.selectedChoices || {}).find(key => 
+                  formData.selectedChoices[key]?.selected === choice.id
+                );
+                
+                const isSelected = choiceGroupId ? formData.selectedChoices[choiceGroupId]?.selected === choice.id : false;
+                
+                return (
+                  <div
+                    key={choice.id}
+                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                    onClick={() => {
+                      if (choiceGroupId) {
+                        const newSelectedChoices = {
+                          ...formData.selectedChoices,
+                          [choiceGroupId]: {
+                            selected: choice.id,
+                            timestamp: new Date().toISOString()
                           }
-                        }))
+                        };
                         
-                        // 가격 업데이트는 formData 변경으로 자동 처리됨
-                      }}
-                    >
-                      <div className="flex items-center space-x-3 mb-2">
-                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                          isSelected
-                            ? 'border-blue-500 bg-blue-500'
-                            : 'border-gray-300'
-                        }`}>
-                          {isSelected && (
-                            <div className="w-2 h-2 bg-white rounded-full"></div>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-sm font-medium text-gray-900">
-                            {choice.name_ko || choice.name}
-                          </div>
-                          {choice.description && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              {choice.description}
-                            </div>
-                          )}
-                        </div>
+                        setFormData({
+                          ...formData,
+                          selectedChoices: newSelectedChoices,
+                          choiceTotal: choice.adult_price + choice.child_price + choice.infant_price
+                        });
+                      }
+                    }}
+                  >
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-500'
+                          : 'border-gray-300'
+                      }`}>
+                        {isSelected && (
+                          <div className="w-2 h-2 bg-white rounded-full"></div>
+                        )}
                       </div>
-                      
-                      <div className="text-xs text-gray-500 mt-2">
-                        성인: ${choice.adult_price} | 아동: ${choice.child_price} | 유아: ${choice.infant_price}
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-gray-900">
+                          {choice.name_ko || choice.name}
+                        </div>
+                        {choice.description && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            {choice.description}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )
-                })}
-              </div>
+                    
+                    <div className="text-xs text-gray-500 mt-2">
+                      성인: ${choice.adult_price} | 아동: ${choice.child_price} | 유아: ${choice.infant_price}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
@@ -349,13 +217,4 @@ function ProductSelectionSection({
   )
 }
 
-export default memo(ProductSelectionSection, (prevProps, nextProps) => {
-  // 필요한 props만 비교하여 불필요한 재렌더링 방지
-  return (
-    prevProps.formData.productId === nextProps.formData.productId &&
-    prevProps.formData.productChoices?.length === nextProps.formData.productChoices?.length &&
-    JSON.stringify(prevProps.formData.selectedChoices) === JSON.stringify(nextProps.formData.selectedChoices) &&
-    prevProps.formData.choiceTotal === nextProps.formData.choiceTotal &&
-    prevProps.layout === nextProps.layout
-  )
-})
+export default memo(ProductSelectionSection)

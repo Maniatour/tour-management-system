@@ -830,14 +830,6 @@ export interface Database {
         }
       }
     }
-    Functions: {
-      [key: string]: {
-        Args: {
-          [key: string]: unknown
-        }
-        Returns: unknown
-      }
-    }
     Enums: {
       [key: string]: string
     }
@@ -1919,13 +1911,148 @@ export interface Database {
           updated_at?: string | null
         }
       }
+      dynamic_pricing: {
+        Row: {
+          id: string
+          product_id: string
+          channel_id: string
+          date: string
+          adult_price: number
+          child_price: number
+          infant_price: number
+          options_pricing: Record<string, unknown> | null
+          commission_percent: number | null
+          markup_amount: number | null
+          markup_percent: number | null
+          coupon_percent: number | null
+          is_sale_available: boolean | null
+          not_included_price: number | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          channel_id: string
+          date: string
+          adult_price: number
+          child_price: number
+          infant_price: number
+          options_pricing?: any | null
+          commission_percent?: number | null
+          markup_amount?: number | null
+          markup_percent?: number | null
+          coupon_percent?: number | null
+          is_sale_available?: boolean | null
+          not_included_price?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          channel_id?: string
+          date?: string
+          adult_price?: number
+          child_price?: number
+          infant_price?: number
+          options_pricing?: any | null
+          commission_percent?: number | null
+          markup_amount?: number | null
+          markup_percent?: number | null
+          coupon_percent?: number | null
+          is_sale_available?: boolean | null
+          not_included_price?: number | null
+          created_at?: string | null
+        }
+      }
+      supplier_products: {
+        Row: {
+          id: string
+          supplier_id: string
+          product_id: string | null
+          option_id: string | null
+          choice_id: string | null
+          choice_option_id: string | null
+          ticket_name: string
+          regular_price: number
+          supplier_price: number
+          season_dates: Record<string, unknown> | null
+          season_price: number | null
+          entry_time: string | null
+          entry_times: string[] | null
+          markup_percent: number | null
+          markup_amount: number | null
+          adult_supplier_price: number | null
+          child_supplier_price: number | null
+          infant_supplier_price: number | null
+          adult_season_price: number | null
+          child_season_price: number | null
+          infant_season_price: number | null
+          is_active: boolean
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          supplier_id: string
+          product_id?: string | null
+          option_id?: string | null
+          choice_id?: string | null
+          choice_option_id?: string | null
+          ticket_name: string
+          regular_price: number
+          supplier_price: number
+          season_dates?: any | null
+          season_price?: number | null
+          entry_time?: string | null
+          entry_times?: string[] | null
+          markup_percent?: number | null
+          markup_amount?: number | null
+          adult_supplier_price?: number | null
+          child_supplier_price?: number | null
+          infant_supplier_price?: number | null
+          adult_season_price?: number | null
+          child_season_price?: number | null
+          infant_season_price?: number | null
+          is_active?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          supplier_id?: string
+          product_id?: string | null
+          option_id?: string | null
+          choice_id?: string | null
+          choice_option_id?: string | null
+          ticket_name?: string
+          regular_price?: number
+          supplier_price?: number
+          season_dates?: any | null
+          season_price?: number | null
+          entry_time?: string | null
+          entry_times?: string[] | null
+          markup_percent?: number | null
+          markup_amount?: number | null
+          adult_supplier_price?: number | null
+          child_supplier_price?: number | null
+          infant_supplier_price?: number | null
+          adult_season_price?: number | null
+          child_season_price?: number | null
+          infant_season_price?: number | null
+          is_active?: boolean
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
     }
     Functions: {
-      increment_template_usage: {
+      [key: string]: {
         Args: {
-          template_id: string
+          [key: string]: unknown
         }
-        Returns: undefined
+        Returns: unknown
       }
     }
     CompositeTypes: {
