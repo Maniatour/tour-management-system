@@ -314,6 +314,16 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               {/* 데스크톱 전용 빠른 이동 */}
               <div className="hidden lg:flex items-center space-x-2">
                 <Link
+                  href={`/${locale}/admin/consultation`}
+                  className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    router.push(`/${locale}/admin/consultation`)
+                  }}
+                >
+                  상담 관리
+                </Link>
+                <Link
                   href={`/${locale}/admin/customers`}
                   className="px-3 py-1.5 text-sm border rounded-md text-teal-600 border-teal-600 hover:bg-teal-600 hover:text-white transition-colors cursor-pointer relative z-10"
                   onClick={(e) => {
