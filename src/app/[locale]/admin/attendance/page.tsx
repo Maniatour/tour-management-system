@@ -433,15 +433,18 @@ export default function AttendancePage() {
     return `${year}년 ${month}월 ${day}일 (${weekday})`
   }
 
-  // 날짜 문자열에서 요일 추출 (date 필드용)
+  // 날짜 문자열에서 요일 추출 (date 필드용) - 라스베가스 현지 시간 기준
   const formatDateWithWeekday = (dateString: string) => {
     if (!dateString) return '-'
     
-    const date = new Date(dateString + 'T00:00:00')
-    const year = date.getFullYear()
-    const month = date.getMonth() + 1
-    const day = date.getDate()
-    const weekday = date.toLocaleDateString('ko-KR', { weekday: 'short' })
+    // UTC 날짜를 라스베가스 현지 시간으로 변환
+    const utcDate = new Date(dateString + 'T00:00:00')
+    const lasVegasDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+    
+    const year = lasVegasDate.getFullYear()
+    const month = lasVegasDate.getMonth() + 1
+    const day = lasVegasDate.getDate()
+    const weekday = lasVegasDate.toLocaleDateString('ko-KR', { weekday: 'short' })
     
     return `${year}년 ${month}월 ${day}일 (${weekday})`
   }
@@ -817,7 +820,7 @@ export default function AttendancePage() {
                       </td>
                     )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatDateWithWeekday(record.date)}
+                      {record.check_in_time ? formatDateFromUTC(record.check_in_time) : formatDateWithWeekday(record.date)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatTime(record.check_in_time)}
