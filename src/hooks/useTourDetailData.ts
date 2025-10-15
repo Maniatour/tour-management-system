@@ -46,7 +46,7 @@ export function useTourDetailData() {
   const [showAssignmentStatusDropdown, setShowAssignmentStatusDropdown] = useState(false)
   
   // 아코디언 상태 관리
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['team-composition', 'vehicle-assignment', 'pickup-schedule', 'assignment-management']))
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['team-composition', 'vehicle-assignment', 'team-vehicle-assignment', 'pickup-schedule', 'assignment-management']))
 
   // 데이터 상태들
   const [product, setProduct] = useState<ProductRow | null>(null)
@@ -324,6 +324,16 @@ export function useTourDetailData() {
         // vehicle_status 필터가 실패하면 전체 차량 가져오기 시도
         if (vehiclesError) {
           console.log('vehicle_status 필터 실패, 전체 차량 가져오기 시도:', vehiclesError.message)
+          console.log('차량 목록 오류 상세:', {
+            message: vehiclesError.message,
+            details: vehiclesError.details,
+            hint: vehiclesError.hint,
+            code: vehiclesError.code
+          })
+          console.log('차량 목록 오류 전체 객체:', JSON.stringify(vehiclesError, null, 2))
+          console.log('차량 목록 오류 타입:', typeof vehiclesError)
+          console.log('차량 목록 오류 키들:', Object.keys(vehiclesError))
+          
           const { data: allVehiclesFallback, error: vehiclesErrorFallback } = await supabase
             .from('vehicles')
             .select('*')
@@ -336,7 +346,9 @@ export function useTourDetailData() {
               hint: vehiclesErrorFallback.hint,
               code: vehiclesErrorFallback.code
             })
-            setVehiclesError(vehiclesErrorFallback.message)
+            console.log('차량 목록 Fallback 오류 전체 객체:', JSON.stringify(vehiclesErrorFallback, null, 2))
+            setVehiclesError(vehiclesErrorFallback.message || '차량 목록을 불러올 수 없습니다.')
+            setVehicles([]) // 빈 배열로 초기화
           } else {
             console.log('차량 목록 가져오기 성공 (전체):', allVehiclesFallback?.length || 0)
             setVehicles(allVehiclesFallback || [])
@@ -349,26 +361,75 @@ export function useTourDetailData() {
         }
       } catch (error) {
         console.error('차량 목록 가져오기 중 예외 발생:', error)
+        console.log('차량 목록 예외 상세:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        })
         setVehiclesError('차량 목록을 가져오는 중 오류가 발생했습니다.')
+        setVehicles([]) // 빈 배열로 초기화
       }
 
       // 차량 배정 정보 가져오기 (tour_car_id는 vehicles 테이블의 id를 참조)
       if (tourData.tour_car_id) {
-        console.log('차량 배정 정보 가져오기 시작:', tourData.tour_car_id)
+        console.log('차량 배정 정보 가져오기 시작:', {
+          tourCarId: tourData.tour_car_id,
+          tourCarIdType: typeof tourData.tour_car_id,
+          tourCarIdLength: tourData.tour_car_id?.length,
+          tourCarIdValue: tourData.tour_car_id
+        })
         
-        const { data: vehicleData, error: vehicleError } = await supabase
-          .from('vehicles')
-          .select('*')
-          .eq('id', tourData.tour_car_id)
-          .single()
-        
-        if (vehicleError) {
-          console.error('차량 정보 가져오기 오류:', vehicleError)
-        } else {
-          console.log('차량 정보 가져오기 성공:', vehicleData)
-          setSelectedVehicleId(tourData.tour_car_id)
-          setAssignedVehicle(vehicleData)
+        try {
+          console.log('Supabase 쿼리 시작 - vehicles 테이블 조회 (단일 차량)')
+          
+          // tour_car_id 유효성 검사
+          if (!tourData.tour_car_id || tourData.tour_car_id.trim() === '') {
+            console.log('차량 ID가 비어있거나 유효하지 않음:', tourData.tour_car_id)
+            setSelectedVehicleId(null)
+            setAssignedVehicle(null)
+            return
+          }
+          
+          const { data: vehicleData, error: vehicleError } = await supabase
+            .from('vehicles')
+            .select('*')
+            .eq('id', tourData.tour_car_id)
+            .single()
+          
+          if (vehicleError) {
+            console.error('차량 정보 가져오기 오류:', vehicleError)
+            console.log('차량 오류 상세:', {
+              message: vehicleError.message,
+              details: vehicleError.details,
+              hint: vehicleError.hint,
+              code: vehicleError.code
+            })
+            console.log('차량 오류 전체 객체:', JSON.stringify(vehicleError, null, 2))
+            console.log('차량 오류 타입:', typeof vehicleError)
+            console.log('차량 오류 키들:', Object.keys(vehicleError))
+            
+            // 차량을 찾을 수 없는 경우 상태 초기화
+            setSelectedVehicleId(null)
+            setAssignedVehicle(null)
+          } else {
+            console.log('차량 정보 가져오기 성공:', vehicleData)
+            setSelectedVehicleId(tourData.tour_car_id)
+            setAssignedVehicle(vehicleData)
+          }
+        } catch (vehicleFetchError) {
+          console.error('차량 정보 가져오기 중 예외 발생:', vehicleFetchError)
+          console.log('차량 예외 상세:', {
+            message: vehicleFetchError.message,
+            stack: vehicleFetchError.stack,
+            name: vehicleFetchError.name
+          })
+          
+          // 예외 발생 시 상태 초기화
+          setSelectedVehicleId(null)
+          setAssignedVehicle(null)
         }
+      } else {
+        console.log('차량 배정 정보 없음 - tour_car_id가 비어있음')
       }
 
       // 예약 분류 계산
@@ -421,11 +482,13 @@ export function useTourDetailData() {
           })()
           
           // 3. 배정 대기 중인 예약 (tour_date와 product_id가 같고, tour_id가 empty 또는 null인 예약)
+          // 단, 다른 투어에 배정된 예약은 제외
           const pendingReservations = reservationsData.filter(r => 
             r.product_id === tourData.product_id && 
             r.tour_date === tourData.tour_date &&
             (!r.tour_id || r.tour_id === '') &&
-            !assignedReservationIds.includes(r.id)
+            !assignedReservationIds.includes(r.id) &&
+            !otherToursAssignedReservations.some(ot => ot.id === r.id)
           )
           
           // 4. 다른 상태의 예약 (tour_date와 product_id가 같고, status가 confirmed 또는 recruiting이 아닌 예약)

@@ -19,25 +19,29 @@ export default function ProtectedRoute({
   fallback,
   redirectTo = '/'
 }: ProtectedRouteProps) {
-  const { user, userRole, permissions, loading, hasPermission } = useAuth()
+  const { user, userRole, permissions, loading, hasPermission, isSimulating, simulatedUser } = useAuth()
   const router = useRouter()
+
+  // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
+  const currentUser = isSimulating && simulatedUser ? simulatedUser : user
+  const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
 
   useEffect(() => {
     if (loading) return
 
-    // 로그인하지 않은 경우
-    if (!user) {
+    // 로그인하지 않은 경우 (시뮬레이션 중이 아닌 경우에만)
+    if (!currentUser && !isSimulating) {
       router.push('/ko/auth')
       return
     }
 
     // 권한이 필요한 경우
-    if (requiredPermission && userRole && !hasPermission(requiredPermission)) {
+    if (requiredPermission && currentUserRole && !hasPermission(requiredPermission)) {
       if (fallback) return
       router.push(redirectTo)
       return
     }
-  }, [user, userRole, requiredPermission, loading, router, fallback, redirectTo, hasPermission])
+  }, [currentUser, currentUserRole, requiredPermission, loading, router, fallback, redirectTo, hasPermission, isSimulating])
 
   if (loading) {
     return (
@@ -47,11 +51,11 @@ export default function ProtectedRoute({
     )
   }
 
-  if (!user) {
+  if (!currentUser && !isSimulating) {
     return null
   }
 
-  if (requiredPermission && userRole && !hasPermission(requiredPermission)) {
+  if (requiredPermission && currentUserRole && !hasPermission(requiredPermission)) {
     if (fallback) {
       return <>{fallback}</>
     }

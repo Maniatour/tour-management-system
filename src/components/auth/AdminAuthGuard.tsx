@@ -78,7 +78,7 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
     )
   }
 
-  if (userRole === 'customer') {
+  if (currentUserRole === 'customer') {
     console.log('AdminAuthGuard: No access, showing access denied')
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">

@@ -270,9 +270,9 @@ export default function GuideDashboard() {
           return extendedTour
         })
 
-        // 투어 분류
+        // 투어 분류 - 오늘 투어는 두 탭 모두에 표시
         const upcomingToursList = extendedTours.filter(tour => tour.tour_date >= today)
-        const pastToursList = extendedTours.filter(tour => tour.tour_date < today)
+        const pastToursList = extendedTours.filter(tour => tour.tour_date <= today)
 
         setUpcomingTours(upcomingToursList.slice(0, 5)) // 최대 5개만 표시
         setPastTours(pastToursList.slice(0, 10)) // 최대 10개만 표시

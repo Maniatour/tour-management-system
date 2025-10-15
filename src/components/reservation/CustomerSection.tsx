@@ -32,6 +32,12 @@ export default function CustomerSection({
   setShowCustomerForm,
   t
 }: CustomerSectionProps) {
+  console.log('CustomerSection 렌더링:', {
+    customerSearch: formData.customerSearch,
+    customerId: formData.customerId,
+    customersLength: customers.length
+  })
+  
   return (
     <div className="grid grid-cols-2 gap-4">
       <div>
@@ -83,7 +89,7 @@ export default function CustomerSection({
                     }}
                     className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
                   >
-                    <div className="font-medium text-gray-900">{customer.name}</div>
+                    <div className="font-medium text-gray-900">{customer.name || '이름 없음'}</div>
                     {customer.email && (
                       <div className="text-sm text-gray-500">{customer.email}</div>
                     )}
@@ -107,7 +113,7 @@ export default function CustomerSection({
           {/* 선택된 고객 표시 */}
           {formData.customerId && !formData.showCustomerDropdown && (
             <div className="mt-1 text-xs text-gray-600">
-              선택된 고객: {customers.find(c => c.id === formData.customerId)?.name}
+              선택된 고객: {customers.find(c => c.id === formData.customerId)?.name || '알 수 없음'}
             </div>
           )}
         </div>

@@ -164,9 +164,19 @@ export default function ReservationForm({
     onSiteBalanceAmount: number
     productRequiredOptions: ProductOption[]
   }>({
-    customerId: reservation?.customerId || rez.customer_id || '',
-    customerSearch: reservation?.customerId ? 
-      customers.find(c => c.id === reservation.customerId)?.name || '' : (rez.customer_id ? (customers.find(c => c.id === rez.customer_id)?.name || '') : ''),
+    customerId: reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || '',
+    customerSearch: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return customer?.name || ''
+      }
+      if (rez.customer_id && customers.length > 0) {
+        const customer = customers.find(c => c.id === rez.customer_id)
+        return customer?.name || ''
+      }
+      return ''
+    })(),
     showCustomerDropdown: false,
     productId: reservation?.productId || rez.product_id || '',
     selectedProductCategory: '',
@@ -282,6 +292,128 @@ export default function ReservationForm({
     
     getCurrentUser()
   }, [reservation])
+
+  // reservation_id로 reservations 테이블에서 직접 데이터 가져오기
+  useEffect(() => {
+    const fetchReservationData = async () => {
+      if (!reservation?.id) {
+        console.log('ReservationForm: reservation 또는 reservation.id가 없음:', {
+          hasReservation: !!reservation,
+          reservationId: reservation?.id,
+          reservationKeys: reservation ? Object.keys(reservation) : []
+        })
+        return
+      }
+
+      console.log('ReservationForm: reservation_id로 데이터 조회 시작:', {
+        reservationId: reservation.id,
+        reservationIdType: typeof reservation.id,
+        reservationIdLength: reservation.id?.length,
+        reservationIdValue: reservation.id,
+        allReservationFields: Object.keys(reservation).map(key => ({
+          key,
+          value: (reservation as any)[key],
+          type: typeof (reservation as any)[key]
+        }))
+      })
+      
+      try {
+        console.log('ReservationForm: Supabase 쿼리 시작 - reservations 테이블 조회')
+        
+        // reservations 테이블에서 customer_id 등 정보 조회
+        const { data: reservationData, error: reservationError } = await (supabase as any)
+          .from('reservations')
+          .select('id, customer_id, product_id, status')
+          .eq('id', reservation.id)
+          .single()
+
+        if (reservationError) {
+          console.error('ReservationForm: 예약 데이터 조회 오류:', reservationError)
+          console.log('예약 오류 상세:', {
+            message: reservationError.message,
+            details: reservationError.details,
+            hint: reservationError.hint,
+            code: reservationError.code
+          })
+          return
+        }
+
+        if (reservationData) {
+          console.log('ReservationForm: 예약 데이터 조회 성공:', reservationData)
+          
+          // customer_id로 customers 테이블에서 고객 정보 조회
+          if (reservationData.customer_id) {
+            const { data: customerData, error: customerError } = await (supabase as any)
+              .from('customers')
+              .select('id, name, email, phone')
+              .eq('id', reservationData.customer_id)
+              .single()
+
+            if (customerError) {
+              console.error('ReservationForm: 고객 데이터 조회 오류:', customerError)
+              console.log('고객 오류 상세:', {
+                message: customerError.message,
+                details: customerError.details,
+                hint: customerError.hint,
+                code: customerError.code
+              })
+            } else if (customerData) {
+              console.log('ReservationForm: 고객 데이터 조회 성공:', customerData)
+              
+              // formData 업데이트 (기본 필드만)
+              setFormData(prev => ({
+                ...prev,
+                customerId: customerData.id,
+                customerSearch: customerData.name || '',
+                productId: reservationData.product_id || '',
+                status: reservationData.status || 'pending'
+              }))
+            }
+          }
+        }
+      } catch (error) {
+        console.error('ReservationForm: 데이터 조회 중 예외 발생:', error)
+      }
+    }
+
+    fetchReservationData()
+  }, [reservation?.id])
+
+  // customers 데이터가 로드된 후 고객 이름 설정 (fallback)
+  useEffect(() => {
+    console.log('ReservationForm: customers 데이터 로드 확인:', {
+      customersLength: customers.length,
+      hasReservation: !!reservation,
+      customerId: reservation?.customerId,
+      customer_id: (reservation as any)?.customer_id,
+      currentCustomerSearch: formData.customerSearch,
+      reservationKeys: reservation ? Object.keys(reservation) : [],
+      customersSample: customers.slice(0, 3).map(c => ({ id: c.id, name: c.name }))
+    })
+    
+    // 이미 formData에 고객 정보가 있으면 건너뛰기
+    if (formData.customerSearch) return
+    
+    if (customers.length > 0 && reservation) {
+      // customerId 또는 customer_id 필드에서 고객 ID 가져오기 (fallback)
+      const customerId = reservation.customerId || (reservation as any).customer_id
+      console.log('ReservationForm: 사용할 고객 ID (fallback):', customerId)
+      
+      if (customerId) {
+        const customer = customers.find(c => c.id === customerId)
+        console.log('ReservationForm: 찾은 고객 (fallback):', customer)
+        console.log('ReservationForm: 고객 이름 (fallback):', customer?.name || '이름 없음')
+        
+        if (customer && customer.name) {
+          console.log('ReservationForm: 고객 이름 설정 (fallback):', customer.name)
+          setFormData(prev => ({
+            ...prev,
+            customerSearch: customer.name
+          }))
+        }
+      }
+    }
+  }, [customers, reservation, formData.customerSearch])
 
   // 예약 데이터에서 choices 선택 복원
   useEffect(() => {
@@ -1056,6 +1188,11 @@ export default function ReservationForm({
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 space-y-3 sm:space-y-0">
           <h2 className="text-lg sm:text-xl font-bold">
             {reservation ? t('form.editTitle') : t('form.title')}
+            {reservation && (
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                (ID: {reservation.id})
+              </span>
+            )}
           </h2>
           <div className="w-full sm:w-auto">
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>

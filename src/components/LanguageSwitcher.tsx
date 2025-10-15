@@ -69,9 +69,27 @@ const LanguageSwitcher = () => {
     // 시뮬레이션 중일 때는 약간의 지연 후 라우팅 (상태 저장 완료 보장)
     if (simulationData) {
       console.log('LanguageSwitcher: Using delayed router.push for simulation safety')
+      
+      // 시뮬레이션 상태를 여러 번 저장하여 확실히 보존
+      const saveSimulationData = () => {
+        localStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+        sessionStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+        document.cookie = `simulation_active=true; path=/; max-age=3600; SameSite=Lax`
+        document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulationData))}; path=/; max-age=3600; SameSite=Lax`
+      }
+      
+      // 즉시 저장
+      saveSimulationData()
+      
+      // 50ms 후 다시 저장
+      setTimeout(saveSimulationData, 50)
+      
+      // 100ms 후 라우팅
       setTimeout(() => {
+        // 라우팅 직전에 한 번 더 저장
+        saveSimulationData()
         router.push(newPath)
-      }, 100) // 100ms 지연으로 상태 저장 완료 보장
+      }, 100)
     } else {
       // 일반 사용자는 즉시 라우팅
       router.push(newPath)

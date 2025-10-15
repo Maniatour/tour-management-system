@@ -168,19 +168,27 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                     </div>
                     
                     {/* 두 번째 줄: 카테고리, 시간, 인원, RN# */}
-                    <div className="flex items-center space-x-2 text-xs text-gray-500">
-                      <span className="font-medium text-gray-700">
-                        {booking.category || 'N/A'}
-                      </span>
-                      <span>
-                        {booking.time ? booking.time.substring(0, 5) : 'N/A'}
-                      </span>
-                      <span>
-                        {booking.ea || 0}명
-                      </span>
-                      {booking.rn_number && (
+                    <div className="flex items-center justify-between text-xs text-gray-500">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium text-gray-700">
+                          {booking.category || 'N/A'}
+                        </span>
                         <span>
-                          #{booking.rn_number}
+                          {booking.time ? booking.time.substring(0, 5) : 'N/A'}
+                        </span>
+                        <span>
+                          {booking.ea || 0}명
+                        </span>
+                        {booking.rn_number && (
+                          <span>
+                            #{booking.rn_number}
+                          </span>
+                        )}
+                      </div>
+                      {/* 오른쪽 아래: 금액 */}
+                      {booking.expense && booking.expense > 0 && (
+                        <span className="font-semibold text-green-600">
+                          ${booking.expense.toFixed(2)}
                         </span>
                       )}
                     </div>
@@ -228,11 +236,19 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                       </div>
                       
                       {/* 상태 */}
-                      <div className="flex items-center space-x-2">
-                        <span className="text-gray-500">상태:</span>
-                        <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(booking.status)}`}>
-                          {getHotelStatusText(booking.status)}
-                        </span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-500">상태:</span>
+                          <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(booking.status)}`}>
+                            {getHotelStatusText(booking.status)}
+                          </span>
+                        </div>
+                        {/* 오른쪽 아래: 금액 */}
+                        {booking.total_cost && booking.total_cost > 0 && (
+                          <span className="font-semibold text-green-600">
+                            ${booking.total_cost.toFixed(2)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

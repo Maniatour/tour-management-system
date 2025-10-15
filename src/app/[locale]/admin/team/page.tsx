@@ -204,9 +204,9 @@ export default function AdminTeam() {
 
   // 검색된 팀원 목록
   const filteredMembers = teamMembers.filter(member => {
-    // 상태 필터 적용
-    if (statusFilter === 'active' && !member.is_active) return false
-    if (statusFilter === 'inactive' && member.is_active) return false
+    // 상태 필터 적용 (대소문자 구별 없이)
+    if (statusFilter === 'active' && String(member.is_active).toLowerCase() !== 'true') return false
+    if (statusFilter === 'inactive' && String(member.is_active).toLowerCase() === 'true') return false
     
     // 검색어 필터 적용
     return (
@@ -214,7 +214,7 @@ export default function AdminTeam() {
       member.name_en?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (member.is_active ? '활성' : '비활성').includes(searchTerm.toLowerCase())
+      (String(member.is_active).toLowerCase() === 'true' ? '활성' : '비활성').includes(searchTerm.toLowerCase())
     )
   })
 

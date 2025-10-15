@@ -57,11 +57,26 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   safeJsonParse,
   pickupHotels = []
 }) => {
+  // 총 인원 계산
+  const totalPeople = reservations.reduce((sum, reservation) => {
+    const adults = reservation.adults || 0
+    const children = reservation.children || 0
+    const infants = reservation.infants || 0
+    return sum + adults + children + infants
+  }, 0)
+
   return (
     <div className="mb-4">
-      <h3 className="text-sm font-medium text-gray-700 mb-2">
-        {title} ({reservations.length})
-      </h3>
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-sm font-medium text-gray-700">
+          {title} ({reservations.length})
+        </h3>
+        {totalPeople > 0 && (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            👥 {totalPeople}명
+          </span>
+        )}
+      </div>
       <div className="space-y-2">
         {reservations.length === 0 ? (
           <div className="text-center py-4 text-gray-500">

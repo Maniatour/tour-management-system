@@ -51,11 +51,10 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
     setError('')
     
     try {
-      // 클라이언트에서 직접 supabase 사용
-      const { data: teamMembers, error } = await supabase
+      // 모든 팀원을 가져온 후 클라이언트에서 활성 멤버만 필터링 (대소문자 구별 없이)
+      const { data: allTeamMembers, error } = await supabase
         .from('team')
         .select('email, name_ko, position, is_active')
-        .eq('is_active', true)
         .order('name_ko')
 
       if (error) {
@@ -64,8 +63,13 @@ export default function SimulationModal({ isOpen, onClose }: SimulationModalProp
         return
       }
 
-      setTeamMembers(teamMembers || [])
-      setFilteredMembers(teamMembers || [])
+      // 활성 멤버만 필터링 (대소문자 구별 없이)
+      const activeMembers = (allTeamMembers || []).filter(member => 
+        String(member.is_active).toLowerCase() === 'true'
+      )
+
+      setTeamMembers(activeMembers)
+      setFilteredMembers(activeMembers)
     } catch (err) {
       console.error('Error fetching team members:', err)
       setError('팀원 목록을 가져오는데 실패했습니다.')

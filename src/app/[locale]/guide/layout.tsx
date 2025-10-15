@@ -42,6 +42,16 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
   const [documentUploadType, setDocumentUploadType] = useState<'medical' | 'cpr'>('medical')
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
   const [uncompletedReportCount, setUncompletedReportCount] = useState(0)
+  const [isInitializing, setIsInitializing] = useState(true)
+
+  // 초기 로딩 시간 추가 (시뮬레이션 상태 복원 대기)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitializing(false)
+    }, 500) // 500ms 대기
+    
+    return () => clearTimeout(timer)
+  }, [])
 
   // 문서 업로드 모달 열기 함수
   const openDocumentUploadModal = (type: 'medical' | 'cpr') => {
@@ -62,12 +72,25 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       userRole, 
       isLoading,
       isSimulating,
-      simulatedUser: !!simulatedUser
+      simulatedUser: !!simulatedUser,
+      isInitializing
     })
+    
+    // 초기화 중이면 기다림
+    if (isInitializing) {
+      console.log('GuideLayout: Initializing, waiting for simulation state...')
+      return
+    }
     
     // 시뮬레이션 상태가 복원되는 동안 충분히 기다림
     if (isLoading) {
       console.log('GuideLayout: Still loading, waiting...')
+      return
+    }
+    
+    // 시뮬레이션 상태가 복원 중이면 더 오래 기다림
+    if (isSimulating && !simulatedUser) {
+      console.log('GuideLayout: Simulation in progress but no simulatedUser yet, waiting longer...')
       return
     }
     
@@ -83,10 +106,19 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
       isLoading
     })
     
-    // 시뮬레이션 상태가 복원 중이면 잠시 더 기다림
+    // 시뮬레이션 상태가 복원 중이면 더 오래 기다림
     if (isSimulating && !simulatedUser) {
-      console.log('GuideLayout: Simulation in progress but no simulatedUser yet, waiting...')
+      console.log('GuideLayout: Simulation in progress but no simulatedUser yet, waiting longer...')
       return
+    }
+    
+    // 시뮬레이션 상태가 복원되었는지 확인하는 추가 체크
+    if (isSimulating && simulatedUser) {
+      console.log('GuideLayout: Simulation state confirmed:', {
+        simulatedUser: simulatedUser.email,
+        role: simulatedUser.role,
+        isSimulating
+      })
     }
     
     // 시뮬레이션이 아닌 경우에만 일반 사용자 인증 체크
@@ -129,7 +161,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     
      // 메디컬 리포트 상태 확인 (비활성화)
      // checkMedicalReportStatus()
-  }, [user, userRole, isLoading, router, isSimulating, simulatedUser])
+   }, [user, userRole, isLoading, router, isSimulating, simulatedUser, isInitializing])
 
   // 시뮬레이션 상태 변화 감지 (언어 전환 시 시뮬레이션 상태 복원 확인)
   useEffect(() => {
@@ -369,7 +401,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
     }
   }
 
-  if (isLoading) {
+  if (isLoading || isInitializing) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

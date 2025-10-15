@@ -3,6 +3,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
@@ -12,8 +13,7 @@ import TourWeather from '@/components/TourWeather'
 import { useAuth } from '@/contexts/AuthContext'
 import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { SkeletonCard, SkeletonText } from '@/components/tour/TourUIComponents'
-import { TeamComposition } from '@/components/tour/TeamComposition'
-import { VehicleAssignment } from '@/components/tour/VehicleAssignment'
+import { TeamAndVehicleAssignment } from '@/components/tour/TeamAndVehicleAssignment'
 import { TourInfo } from '@/components/tour/TourInfo'
 import { BookingManagement } from '@/components/tour/BookingManagement'
 import { PickupSchedule } from '@/components/tour/PickupSchedule'
@@ -41,9 +41,6 @@ import {
   openGoogleMaps,
   safeJsonParse
 } from '@/utils/tourStatusUtils'
-import {
-  fetchBookings
-} from '@/hooks/useTourData'
 
 // 로컬 폼 전달용 간략 타입
 type LocalTicketBooking = {
@@ -77,6 +74,7 @@ const TourHotelBookingFormAny = TourHotelBookingForm as any
 
 export default function TourDetailPage() {
   console.log('TourDetailPage 렌더링 시작')
+  const router = useRouter()
   
   const { hasPermission, loading } = useAuth()
   const { openChat } = useFloatingChat()
@@ -97,8 +95,8 @@ export default function TourDetailPage() {
   console.log('useTourHandlers 완료')
   
   // 부킹 관련 상태 (로컬 상태로 유지)
-  const [ticketBookings] = useState<LocalTicketBooking[]>([])
-  const [tourHotelBookings] = useState<LocalTourHotelBooking[]>([])
+  const [ticketBookings, setTicketBookings] = useState<LocalTicketBooking[]>([])
+  const [tourHotelBookings, setTourHotelBookings] = useState<LocalTourHotelBooking[]>([])
   const [showTicketBookingForm, setShowTicketBookingForm] = useState<boolean>(false)
   const [showTourHotelBookingForm, setShowTourHotelBookingForm] = useState<boolean>(false)
   const [editingTicketBooking, setEditingTicketBooking] = useState<LocalTicketBooking | null>(null)
@@ -106,9 +104,18 @@ export default function TourDetailPage() {
   const [showTicketBookingDetails, setShowTicketBookingDetails] = useState<boolean>(false)
   const [editingReservation, setEditingReservation] = useState<any>(null)
   
+  // 마일리지 관련 상태
+  const [startMileage, setStartMileage] = useState<number>(0)
+  const [endMileage, setEndMileage] = useState<number>(0)
+  const [isMileageLoading, setIsMileageLoading] = useState<boolean>(false)
+
   // 팀 수수료 관련 상태
   const [guideFee, setGuideFee] = useState<number>(0)
   const [assistantFee, setAssistantFee] = useState<number>(0)
+  const [isGuideFeeFromTour, setIsGuideFeeFromTour] = useState<boolean>(false)
+  const [isAssistantFeeFromTour, setIsAssistantFeeFromTour] = useState<boolean>(false)
+  const [isGuideFeeFromDefault, setIsGuideFeeFromDefault] = useState<boolean>(false)
+  const [isAssistantFeeFromDefault, setIsAssistantFeeFromDefault] = useState<boolean>(false)
 
   // 핸들러 함수들
   const handlePrivateTourToggle = () => {
@@ -155,7 +162,10 @@ export default function TourDetailPage() {
       }
       // 투어 데이터도 업데이트
       tourData.setTour(prev => prev ? { ...prev, team_type: type } : null)
-      console.log('로컬 상태 업데이트 완료')
+      
+      // 팀 타입 변경 시에는 수수료 상태를 초기화하지 않음
+      // 저장된 수수료가 있으면 그대로 유지
+      console.log('로컬 상태 업데이트 완료, 기존 수수료 유지')
     } else {
       console.log('팀 타입 변경 실패')
     }
@@ -163,14 +173,34 @@ export default function TourDetailPage() {
 
   const handleGuideSelect = async (guideEmail: string) => {
     if (!tourData.tour) return
-    tourData.setSelectedGuide(guideEmail)
-    await tourHandlers.handleGuideSelect(tourData.tour, guideEmail, tourData.teamType)
+    
+    console.log('가이드 선택:', guideEmail)
+    const success = await tourHandlers.handleGuideSelect(tourData.tour, guideEmail, tourData.teamType)
+    
+    if (success) {
+      tourData.setSelectedGuide(guideEmail)
+      console.log('가이드 배정 성공')
+      
+      // 가이드 배정 후에는 수수료 상태를 초기화하지 않음
+      // 저장된 수수료가 있으면 그대로 유지
+      console.log('가이드 배정 완료, 기존 수수료 유지')
+    }
   }
 
   const handleAssistantSelect = async (assistantEmail: string) => {
     if (!tourData.tour) return
-    tourData.setSelectedAssistant(assistantEmail)
-    await tourHandlers.handleAssistantSelect(tourData.tour, assistantEmail)
+    
+    console.log('어시스턴트 선택:', assistantEmail)
+    const success = await tourHandlers.handleAssistantSelect(tourData.tour, assistantEmail)
+    
+    if (success) {
+      tourData.setSelectedAssistant(assistantEmail)
+      console.log('어시스턴트 배정 성공')
+      
+      // 어시스턴트 배정 후에는 수수료 상태를 초기화하지 않음
+      // 저장된 수수료가 있으면 그대로 유지
+      console.log('어시스턴트 배정 완료, 기존 수수료 유지')
+    }
   }
 
   const handleTourNoteChange = async (note: string) => {
@@ -179,44 +209,258 @@ export default function TourDetailPage() {
     await tourHandlers.handleTourNoteChange(tourData.tour, note)
   }
 
-  // 가이드비 로드
-  const loadGuideCosts = useCallback(async () => {
-    if (!tourData.tour?.product_id || !tourData.teamType) return
+  // 부킹 데이터 로드
+  const loadBookings = useCallback(async () => {
+    if (!tourData.tour?.id) return
 
     try {
+      console.log('부킹 데이터 로드 시작:', tourData.tour.id)
+      
+      // 티켓 부킹 로드
+      const { data: ticketBookingsData, error: ticketError } = await supabase
+        .from('ticket_bookings')
+        .select('*')
+        .eq('tour_id', tourData.tour.id)
+        .order('check_in_date', { ascending: false })
+
+      if (ticketError) {
+        console.error('티켓 부킹 로드 오류:', ticketError)
+      } else {
+        setTicketBookings(ticketBookingsData || [])
+        console.log('티켓 부킹 로드됨:', ticketBookingsData?.length || 0, '건')
+      }
+
+      // 투어 호텔 부킹 로드
+      const { data: tourHotelBookingsData, error: tourHotelError } = await supabase
+        .from('tour_hotel_bookings')
+        .select('*')
+        .eq('tour_id', tourData.tour.id)
+        .order('check_in_date', { ascending: false })
+
+      if (tourHotelError) {
+        console.error('투어 호텔 부킹 로드 오류:', tourHotelError)
+      } else {
+        setTourHotelBookings(tourHotelBookingsData || [])
+        console.log('투어 호텔 부킹 로드됨:', tourHotelBookingsData?.length || 0, '건')
+      }
+    } catch (error) {
+      console.error('부킹 데이터 로드 오류:', error)
+    }
+  }, [tourData.tour?.id])
+
+  // 투어별 저장된 수수료 로드
+  const loadTourFees = useCallback(async () => {
+    if (!tourData.tour?.id) return
+
+    try {
+      const { data: tour, error } = await supabase
+        .from('tours')
+        .select('guide_fee, assistant_fee')
+        .eq('id', tourData.tour.id)
+        .single()
+
+      if (error) {
+        console.error('투어 수수료 로드 오류:', error)
+        return
+      }
+
+      if (tour) {
+        // 저장된 수수료가 있으면 사용
+        const tourData = tour as { 
+          guide_fee: number | null; 
+          assistant_fee: number | null; 
+        }
+        if (tourData.guide_fee !== null && tourData.guide_fee !== undefined) {
+          setGuideFee(tourData.guide_fee)
+          setIsGuideFeeFromTour(true)
+        }
+        if (tourData.assistant_fee !== null && tourData.assistant_fee !== undefined) {
+          setAssistantFee(tourData.assistant_fee)
+          setIsAssistantFeeFromTour(true)
+        }
+        console.log('투어 수수료 로드됨:', tourData)
+      }
+    } catch (error) {
+      console.error('투어 수수료 로드 오류:', error)
+    }
+  }, [tourData.tour?.id])
+
+  // 가이드비 관리에서 기본값 로드 (팀 타입별)
+  const loadGuideCosts = useCallback(async () => {
+    if (!tourData.tour?.product_id || !tourData.teamType) {
+      console.log('loadGuideCosts 조건 불만족:', {
+        productId: tourData.tour?.product_id,
+        teamType: tourData.teamType
+      })
+      return
+    }
+
+    // 팀 타입 불일치 방지
+    if (tourData.tour?.team_type && tourData.teamType !== tourData.tour.team_type) {
+      console.log('⚠️ loadGuideCosts: 팀 타입 불일치로 중단:', {
+        localTeamType: tourData.teamType,
+        tourTeamType: tourData.tour.team_type
+      })
+      return
+    }
+
+    try {
+      // 팀 타입별 매핑
       const teamTypeMap: Record<string, string> = {
         '1guide': '1_guide',
-        '2guide': '2_guides',
+        '2guide': '2_guides', 
         'guide+driver': 'guide_driver'
       }
 
       const mappedTeamType = teamTypeMap[tourData.teamType]
-      if (!mappedTeamType) return
+      if (!mappedTeamType) {
+        console.warn('알 수 없는 팀 타입:', tourData.teamType)
+        return
+      }
+
+      console.log(`가이드비 로드 시작 - 팀 타입: ${tourData.teamType} (${mappedTeamType}), 상품 ID: ${tourData.tour.product_id}`)
 
       const response = await fetch(`/api/guide-costs?product_id=${tourData.tour.product_id}&team_type=${mappedTeamType}`)
       const data = await response.json()
 
       if (data.guideCost) {
-        setGuideFee(data.guideCost.guide_fee)
-        setAssistantFee(data.guideCost.assistant_fee)
-        console.log('가이드비 로드됨:', data.guideCost)
+        console.log(`가이드비 데이터 수신됨 (${mappedTeamType}):`, data.guideCost)
+        
+        // 팀 타입별로 올바른 수수료 설정
+        if (tourData.teamType === '1guide') {
+          // 1가이드 타입: 가이드 수수료만 설정
+          if (!isGuideFeeFromTour) {
+            setGuideFee(data.guideCost.guide_fee)
+            setIsGuideFeeFromDefault(true)
+            console.log(`✅ 1가이드 기본 수수료 설정됨 (${mappedTeamType}):`, data.guideCost.guide_fee)
+          } else {
+            console.log(`⏭️ 1가이드 수수료는 이미 투어에서 로드됨, 기본값 사용 안함`)
+          }
+        } else if (tourData.teamType === '2guide') {
+          // 2가이드 타입: 가이드와 어시스턴트 수수료 모두 설정
+          if (!isGuideFeeFromTour) {
+            setGuideFee(data.guideCost.guide_fee)
+            setIsGuideFeeFromDefault(true)
+            console.log(`✅ 2가이드 - 가이드 기본 수수료 설정됨 (${mappedTeamType}):`, data.guideCost.guide_fee)
+          } else {
+            console.log(`⏭️ 2가이드 - 가이드 수수료는 이미 투어에서 로드됨, 기본값 사용 안함`)
+          }
+          
+          if (!isAssistantFeeFromTour) {
+            setAssistantFee(data.guideCost.assistant_fee)
+            setIsAssistantFeeFromDefault(true)
+            console.log(`✅ 2가이드 - 2차 가이드 기본 수수료 설정됨 (${mappedTeamType}):`, data.guideCost.assistant_fee)
+          } else {
+            console.log(`⏭️ 2가이드 - 2차 가이드 수수료는 이미 투어에서 로드됨, 기본값 사용 안함`)
+          }
+        } else if (tourData.teamType === 'guide+driver') {
+          // 가이드+드라이버 타입: 가이드와 드라이버 수수료 설정
+          if (!isGuideFeeFromTour) {
+            setGuideFee(data.guideCost.guide_fee)
+            setIsGuideFeeFromDefault(true)
+            console.log(`✅ 가이드+드라이버 - 가이드 기본 수수료 설정됨 (${mappedTeamType}):`, data.guideCost.guide_fee)
+          } else {
+            console.log(`⏭️ 가이드+드라이버 - 가이드 수수료는 이미 투어에서 로드됨, 기본값 사용 안함`)
+          }
+          
+          if (!isAssistantFeeFromTour) {
+            setAssistantFee(data.guideCost.driver_fee)
+            setIsAssistantFeeFromDefault(true)
+            console.log(`✅ 가이드+드라이버 - 드라이버 기본 수수료 설정됨 (${mappedTeamType}) → assistant_fee:`, data.guideCost.driver_fee)
+          } else {
+            console.log(`⏭️ 가이드+드라이버 - 드라이버 수수료는 이미 투어에서 로드됨, 기본값 사용 안함`)
+          }
+        }
+      } else {
+        console.log(`❌ 팀 타입 ${mappedTeamType}에 대한 가이드비 설정이 없습니다.`)
       }
     } catch (error) {
       console.error('가이드비 로드 오류:', error)
     }
-  }, [tourData.tour?.product_id, tourData.teamType])
+  }, [tourData.tour?.product_id, tourData.teamType, tourData.tour?.team_type, isGuideFeeFromTour, isAssistantFeeFromTour])
 
-  // 팀 수수료 변경 핸들러
-  const handleGuideFeeChange = async (fee: number) => {
+  // 팀 수수료 변경 핸들러 (자동 저장 제거)
+  const handleGuideFeeChange = (fee: number) => {
     setGuideFee(fee)
-    // TODO: 서버에 가이드 수수료 저장
-    console.log('가이드 수수료 변경:', fee)
+    setIsGuideFeeFromTour(true)
+    setIsGuideFeeFromDefault(false)
   }
 
-  const handleAssistantFeeChange = async (fee: number) => {
+  const handleAssistantFeeChange = (fee: number) => {
     setAssistantFee(fee)
-    // TODO: 서버에 어시스턴트 수수료 저장
-    console.log('어시스턴트 수수료 변경:', fee)
+    setIsAssistantFeeFromTour(true)
+    setIsAssistantFeeFromDefault(false)
+  }
+
+  // 통합 저장 함수
+  const handleTeamAndVehicleSave = async () => {
+    if (!tourData.tour?.id) return
+
+    try {
+      const updateData: any = {
+        team_type: tourData.teamType,
+        guide_fee: guideFee,
+        assistant_fee: assistantFee
+      }
+
+      // 가이드 배정
+      if (tourData.selectedGuide) {
+        updateData.tour_guide_id = tourData.selectedGuide
+      }
+
+      // 어시스턴트 배정
+      if (tourData.selectedAssistant) {
+        updateData.assistant_id = tourData.selectedAssistant
+      } else if (tourData.teamType === '1guide') {
+        updateData.assistant_id = null
+      }
+
+      // 차량 배정
+      if (tourData.selectedVehicleId) {
+        updateData.tour_car_id = tourData.selectedVehicleId
+      }
+
+      const { error } = await (supabase as any)
+        .from('tours')
+        .update(updateData)
+        .eq('id', tourData.tour.id)
+
+      if (error) {
+        console.error('팀 구성 및 차량 배정 저장 오류:', error)
+        alert('저장 중 오류가 발생했습니다.')
+        return
+      }
+
+      // 상태 업데이트
+      setIsGuideFeeFromTour(true)
+      setIsAssistantFeeFromTour(true)
+      setIsGuideFeeFromDefault(false)
+      setIsAssistantFeeFromDefault(false)
+
+      // 투어 데이터 업데이트
+      tourData.setTour(prev => prev ? { ...prev, ...updateData } : null)
+
+      console.log('팀 구성 및 차량 배정 저장 완료:', updateData)
+      alert('저장되었습니다.')
+    } catch (error) {
+      console.error('팀 구성 및 차량 배정 저장 오류:', error)
+      alert('저장 중 오류가 발생했습니다.')
+    }
+  }
+
+
+
+
+  // 차량 이름 가져오기 함수
+  const getVehicleName = (vehicleId: string) => {
+    if (!vehicleId) return '차량 미선택'
+    
+    const vehicle = tourData.vehicles.find((v) => v.id === vehicleId)
+    if (!vehicle) {
+      return vehicleId
+    }
+    
+    return `${vehicle.vehicle_number || '번호 없음'} - ${vehicle.vehicle_type || '타입 없음'}`
   }
 
   // 채널 정보 가져오기 함수
@@ -245,12 +489,105 @@ export default function TourDetailPage() {
     }
   }
 
-  // 가이드비 로드 useEffect
-  useEffect(() => {
-    if (tourData.tour?.product_id && tourData.teamType) {
-      loadGuideCosts()
+  // 마일리지 로드 함수
+  const loadMileage = useCallback(async (vehicleId: string) => {
+    if (!vehicleId) {
+      setStartMileage(0)
+      setEndMileage(0)
+      return
     }
-  }, [tourData.tour?.product_id, tourData.teamType, loadGuideCosts])
+
+    setIsMileageLoading(true)
+    try {
+      // 차량의 current_mileage 사용 (이전 투어 조회 제거)
+      console.log('차량 마일리지 조회 시작')
+      const { data: vehicle, error: vehicleError } = await (supabase as any)
+        .from('vehicles')
+        .select('current_mileage')
+        .eq('id', vehicleId)
+        .single()
+
+      console.log('차량 조회 결과:', { vehicle, vehicleError })
+
+      let startMileageValue = 0
+
+      if (vehicleError) {
+        console.error('차량 마일리지 조회 오류:', vehicleError)
+        console.log('차량 오류 상세:', {
+          message: vehicleError.message,
+          details: vehicleError.details,
+          hint: vehicleError.hint,
+          code: vehicleError.code
+        })
+      } else if (vehicle && (vehicle as any).current_mileage) {
+        startMileageValue = (vehicle as any).current_mileage
+        console.log('차량 현재 마일리지 사용:', startMileageValue)
+      } else {
+        console.log('차량 마일리지가 없거나 0입니다.')
+      }
+
+      setStartMileage(startMileageValue)
+      setEndMileage(startMileageValue) // 종료 마일리지는 시작 마일리지로 초기화
+
+    } catch (error) {
+      console.error('마일리지 로드 오류:', error)
+    } finally {
+      setIsMileageLoading(false)
+    }
+  }, [])
+
+  // 차량 선택 변경 핸들러
+  const handleVehicleSelect = (vehicleId: string) => {
+    tourData.setSelectedVehicleId(vehicleId)
+    loadMileage(vehicleId)
+  }
+
+  // 차량 선택 시 마일리지 로드
+  useEffect(() => {
+    if (tourData.selectedVehicleId) {
+      loadMileage(tourData.selectedVehicleId)
+    }
+  }, [tourData.selectedVehicleId, loadMileage])
+
+  // 투어 수수료 및 가이드비 로드 useEffect
+  useEffect(() => {
+    if (tourData.tour?.id) {
+      // 먼저 투어별 저장된 수수료 로드
+      loadTourFees()
+      // 부킹 데이터 로드
+      loadBookings()
+    }
+  }, [tourData.tour?.id, loadTourFees, loadBookings])
+
+  useEffect(() => {
+    // teamType과 tour.team_type이 일치할 때만 가이드 수수료 로딩
+    if (tourData.tour?.product_id && tourData.teamType && tourData.tour?.team_type) {
+      console.log('팀 타입 로딩 완료, 가이드 수수료 로딩 시작:', {
+        teamType: tourData.teamType,
+        tourTeamType: tourData.tour.team_type,
+        isGuideFeeFromTour,
+        isAssistantFeeFromTour
+      })
+      
+      // teamType과 tour.team_type이 일치하는지 확인
+      if (tourData.teamType !== tourData.tour.team_type) {
+        console.log('⚠️ 팀 타입 불일치 감지, 기본값 로드하지 않음:', {
+          localTeamType: tourData.teamType,
+          tourTeamType: tourData.tour.team_type
+        })
+        return
+      }
+      
+      // 저장된 수수료가 없을 때만 기본값 로드
+      if (!isGuideFeeFromTour && !isAssistantFeeFromTour) {
+        setTimeout(() => {
+          loadGuideCosts()
+        }, 100)
+      } else {
+        console.log('저장된 수수료가 있으므로 기본값 로드하지 않음')
+      }
+    }
+  }, [tourData.tour?.product_id, tourData.teamType, tourData.tour?.team_type, loadGuideCosts, isGuideFeeFromTour, isAssistantFeeFromTour])
 
 
   const handleUnassignReservation = async (reservationId: string) => {
@@ -374,39 +711,52 @@ export default function TourDetailPage() {
   }
 
   // 부킹 관련 핸들러들
-  const handleAddTicketBooking = () => {
+  const handleAddTicketBooking = async () => {
     setEditingTicketBooking(null)
     setShowTicketBookingForm(true)
+    // 부킹 데이터 새로고침
+    await loadBookings()
   }
 
-  const handleEditTicketBooking = (booking: LocalTicketBooking) => {
+  const handleEditTicketBooking = async (booking: LocalTicketBooking) => {
     setEditingTicketBooking(booking)
     setShowTicketBookingForm(true)
+    // 부킹 데이터 새로고침
+    await loadBookings()
   }
 
-  const handleCloseTicketBookingForm = () => {
+  const handleCloseTicketBookingForm = async () => {
     setShowTicketBookingForm(false)
     setEditingTicketBooking(null)
+    // 부킹 데이터 새로고침
+    await loadBookings()
   }
 
-  const handleAddTourHotelBooking = () => {
+  const handleAddTourHotelBooking = async () => {
     setEditingTourHotelBooking(null)
     setShowTourHotelBookingForm(true)
+    // 부킹 데이터 새로고침
+    await loadBookings()
   }
 
-  const handleEditTourHotelBooking = (booking: LocalTourHotelBooking) => {
+  const handleEditTourHotelBooking = async (booking: LocalTourHotelBooking) => {
     setEditingTourHotelBooking(booking)
     setShowTourHotelBookingForm(true)
+    // 부킹 데이터 새로고침
+    await loadBookings()
   }
 
-  const handleCloseTourHotelBookingForm = () => {
+  const handleCloseTourHotelBookingForm = async () => {
     setShowTourHotelBookingForm(false)
     setEditingTourHotelBooking(null)
+    // 부킹 데이터 새로고침
+    await loadBookings()
   }
 
   const handleBookingSubmit = async (booking: LocalTicketBooking | LocalTourHotelBooking) => {
     if (tourData.tour) {
-      await fetchBookings(tourData.tour.id)
+      // 부킹 데이터 새로고침
+      await loadBookings()
     }
     console.log('부킹이 저장되었습니다:', booking)
   }
@@ -594,13 +944,13 @@ export default function TourDetailPage() {
         />
 
             {/* 옵션 관리 */}
-            <OptionManagement />
+            <OptionManagement reservationIds={tourData.tour?.reservation_ids || []} />
           </div>
 
-          {/* 2열: 팀 구성, 배정 관리 */}
+          {/* 2열: 팀 구성 & 차량 배정, 배정 관리 */}
           <div className="space-y-6">
-            {/* 팀 구성 */}
-            <TeamComposition
+            {/* 팀 구성 & 차량 배정 통합 */}
+            <TeamAndVehicleAssignment
               teamMembers={tourData.teamMembers.map(member => ({
                 id: member.email, // email을 id로 사용
                 name_ko: member.name_ko,
@@ -608,35 +958,41 @@ export default function TourDetailPage() {
                 position: 'guide', // 기본값 설정
                 is_active: true // 기본값 설정
               }))}
+              vehicles={tourData.vehicles}
+              vehiclesLoading={tourData.vehiclesLoading}
+              vehiclesError={tourData.vehiclesError}
               teamType={tourData.teamType}
               selectedGuide={tourData.selectedGuide}
               selectedAssistant={tourData.selectedAssistant}
+              selectedVehicleId={tourData.selectedVehicleId}
               guideFee={guideFee}
               assistantFee={assistantFee}
+              isGuideFeeFromTour={isGuideFeeFromTour}
+              isAssistantFeeFromTour={isAssistantFeeFromTour}
+              isGuideFeeFromDefault={isGuideFeeFromDefault}
+              isAssistantFeeFromDefault={isAssistantFeeFromDefault}
               expandedSections={tourData.expandedSections}
-              connectionStatus={{ team: tourData.connectionStatus.team }}
+              connectionStatus={{ 
+                team: tourData.connectionStatus.team, 
+                vehicles: tourData.connectionStatus.vehicles 
+              }}
               onToggleSection={tourData.toggleSection}
               onTeamTypeChange={handleTeamTypeChange}
               onGuideSelect={handleGuideSelect}
               onAssistantSelect={handleAssistantSelect}
+              onVehicleSelect={handleVehicleSelect}
               onGuideFeeChange={handleGuideFeeChange}
               onAssistantFeeChange={handleAssistantFeeChange}
+              startMileage={startMileage}
+              endMileage={endMileage}
+              isMileageLoading={isMileageLoading}
+              onStartMileageChange={setStartMileage}
+              onEndMileageChange={setEndMileage}
+              onSave={handleTeamAndVehicleSave}
               onLoadTeamMembersFallback={() => {}}
-              getTeamMemberName={tourData.getTeamMemberName}
-            />
-
-            {/* 차량 배정 */}
-            <VehicleAssignment
-              vehicles={tourData.vehicles}
-              vehiclesLoading={tourData.vehiclesLoading}
-              vehiclesError={tourData.vehiclesError}
-              selectedVehicleId={tourData.selectedVehicleId}
-              assignedVehicle={tourData.assignedVehicle}
-              expandedSections={tourData.expandedSections}
-              connectionStatus={{ vehicles: tourData.connectionStatus.vehicles }}
-              onToggleSection={tourData.toggleSection}
-              onVehicleSelect={() => {}}
               onFetchVehicles={() => {}}
+              getTeamMemberName={tourData.getTeamMemberName}
+              getVehicleName={getVehicleName}
             />
 
             {/* 배정 관리 */}
@@ -654,6 +1010,9 @@ export default function TourDetailPage() {
               onEditReservationClick={handleEditReservationClick}
               onUnassignReservation={handleUnassignReservation}
               onReassignFromOtherTour={() => {}}
+              onNavigateToTour={(tourId: string) => {
+                router.push(`/admin/tours/${tourId}`)
+              }}
               onEditPickupTime={handleEditReservationClick}
               onEditPickupHotel={handleEditReservationClick}
               getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}

@@ -20,7 +20,11 @@ const Navigation = () => {
   const pathname = usePathname()
   const locale = useLocale()
   const router = useRouter()
-  const { user, userRole, loading, signOut, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
+  const { userRole, loading, signOut, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
+  
+  // 시뮬레이션 상태에서 현재 사용자와 역할 결정
+  const currentUser = isSimulating && simulatedUser ? simulatedUser : authUser
+  const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   
@@ -110,7 +114,7 @@ const Navigation = () => {
                 <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-2" />
                 Loading...
               </div>
-            ) : user ? (
+            ) : currentUser ? (
               <div className="flex items-center space-x-4">
                 {/* 사용자 드롭다운 메뉴 */}
                 <div className="relative">
@@ -120,17 +124,17 @@ const Navigation = () => {
                   >
                     <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                       <span className="text-white text-sm font-medium">
-                        {(authUser?.name || authUser?.email?.split('@')[0] || 'U').charAt(0).toUpperCase()}
+                        {((currentUser as any)?.name_ko || (currentUser as any)?.name_en || (currentUser as any)?.name || currentUser?.email?.split('@')[0] || 'U').charAt(0).toUpperCase()}
                       </span>
                     </div>
                     <div className="hidden sm:block text-left">
                       <div className="text-sm font-medium text-gray-900">
-                        {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
+                        {(currentUser as any)?.name_ko || (currentUser as any)?.name_en || (currentUser as any)?.name || currentUser?.email?.split('@')[0] || t('user')}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {userRole === 'admin' ? t('admin') : 
-                         userRole === 'manager' ? t('manager') : 
-                         userRole === 'team_member' ? t('teamMember') : t('customer')}
+                        {currentUserRole === 'admin' ? t('admin') : 
+                         currentUserRole === 'manager' ? t('manager') : 
+                         currentUserRole === 'team_member' ? t('teamMember') : t('customer')}
                       </div>
                     </div>
                     <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -149,14 +153,14 @@ const Navigation = () => {
                         <div className="py-1">
                           <div className="px-4 py-2 border-b border-gray-100">
                             <p className="text-sm font-medium text-gray-900">
-                              {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
+                              {(currentUser as any)?.name_ko || (currentUser as any)?.name_en || (currentUser as any)?.name || currentUser?.email?.split('@')[0] || t('user')}
                             </p>
-                            <p className="text-xs text-gray-500">{authUser?.email || t('noEmail')}</p>
-                            {userRole && (
+                            <p className="text-xs text-gray-500">{currentUser?.email || t('noEmail')}</p>
+                            {currentUserRole && (
                               <p className="text-xs text-blue-600 font-medium mt-1">
-                                {userRole === 'admin' ? t('admin') : 
-                                 userRole === 'manager' ? t('manager') : 
-                                 userRole === 'team_member' ? t('teamMember') : t('customer')}
+                                {currentUserRole === 'admin' ? t('admin') : 
+                                 currentUserRole === 'manager' ? t('manager') : 
+                                 currentUserRole === 'team_member' ? t('teamMember') : t('customer')}
                               </p>
                             )}
                           </div>
@@ -188,7 +192,7 @@ const Navigation = () => {
                             </Link>
                             
                             {/* 관리자 페이지 (관리자/매니저/팀원) */}
-                            {userRole && userRole !== 'customer' && (
+                            {currentUserRole && currentUserRole !== 'customer' && (
                               <Link
                                 href={`/${locale}/admin`}
                                 onClick={handleUserMenuClick}
@@ -200,7 +204,7 @@ const Navigation = () => {
                             )}
                             
                             {/* 가이드 페이지 (팀원만) */}
-                            {userRole === 'team_member' && (
+                            {currentUserRole === 'team_member' && (
                               <Link
                                 href={`/${locale}/guide`}
                                 onClick={handleUserMenuClick}
@@ -213,7 +217,7 @@ const Navigation = () => {
                           </div>
                           
                           {/* 개인 메뉴 (고객용) */}
-                          {userRole === 'customer' && (
+                          {currentUserRole === 'customer' && (
                             <>
                               <div className="px-4 py-2 border-t border-gray-100">
                                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
@@ -240,7 +244,7 @@ const Navigation = () => {
                           )}
                           
                           {/* 문서 업로드 메뉴 (팀원만) */}
-                          {userRole === 'team_member' && (
+                          {currentUserRole === 'team_member' && (
                             <>
                               <button
                                 onClick={() => {
@@ -269,8 +273,24 @@ const Navigation = () => {
                             </>
                           )}
                           
+                          {/* 시뮬레이션 중지 버튼 (시뮬레이션 중일 때) */}
+                          {isSimulating && (
+                            <div className="px-4 py-2 border-t border-gray-100">
+                              <button
+                                onClick={() => {
+                                  handleUserMenuClick()
+                                  handleStopSimulation()
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center"
+                              >
+                                <ArrowLeft className="w-4 h-4 mr-2" />
+                                관리자로 돌아가기
+                              </button>
+                            </div>
+                          )}
+                          
                           {/* 시뮬레이션 메뉴 (관리자만) */}
-                          {userRole === 'admin' && (
+                          {currentUserRole === 'admin' && !isSimulating && (
                             <div className="px-4 py-2 border-t border-gray-100">
                               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
                                 시뮬레이션
@@ -367,29 +387,29 @@ const Navigation = () => {
                   <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-2" />
                   Loading...
                 </div>
-              ) : user ? (
+              ) : currentUser ? (
                 <div className="px-2 py-2 space-y-2">
                   {/* 사용자 정보 표시 */}
                   <div className="flex items-center space-x-3 p-2 bg-gray-50 rounded-lg">
                     <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                       <span className="text-white text-sm font-medium">
-                        {(authUser?.name || authUser?.email?.split('@')[0] || 'U').charAt(0).toUpperCase()}
+                        {((currentUser as any)?.name_ko || (currentUser as any)?.name_en || (currentUser as any)?.name || currentUser?.email?.split('@')[0] || 'U').charAt(0).toUpperCase()}
                       </span>
                     </div>
                     <div>
                       <div className="text-sm font-medium text-gray-900">
-                        {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
+                        {(currentUser as any)?.name_ko || (currentUser as any)?.name_en || (currentUser as any)?.name || currentUser?.email?.split('@')[0] || t('user')}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {userRole === 'admin' ? t('admin') : 
-                         userRole === 'manager' ? t('manager') : 
-                         userRole === 'team_member' ? t('teamMember') : t('customer')}
+                        {currentUserRole === 'admin' ? t('admin') : 
+                         currentUserRole === 'manager' ? t('manager') : 
+                         currentUserRole === 'team_member' ? t('teamMember') : t('customer')}
                       </div>
                     </div>
                   </div>
                   
                   {/* 고객용 메뉴 */}
-                  {userRole === 'customer' && (
+                  {currentUserRole === 'customer' && (
                     <>
                       <Link
                         href={`/${locale}/dashboard`}
@@ -419,7 +439,7 @@ const Navigation = () => {
                   )}
                   
                   {/* 관리자 페이지 링크 (관리자/매니저/팀원만) */}
-                  {userRole && userRole !== 'customer' && (
+                  {currentUserRole && currentUserRole !== 'customer' && (
                     <Link
                       href={`/${locale}/admin`}
                       className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
@@ -431,7 +451,7 @@ const Navigation = () => {
                   )}
                   
                   {/* 가이드 페이지 링크 (팀원만) */}
-                  {userRole === 'team_member' && (
+                  {currentUserRole === 'team_member' && (
                     <Link
                       href={`/${locale}/guide`}
                       className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
@@ -443,7 +463,7 @@ const Navigation = () => {
                   )}
                   
                   {/* 문서 업로드 메뉴 (팀원만) */}
-                  {userRole === 'team_member' && (
+                  {currentUserRole === 'team_member' && (
                     <>
                       <button
                         onClick={() => {
@@ -470,6 +490,20 @@ const Navigation = () => {
                         {t('cprCertificate')}
                       </button>
                     </>
+                  )}
+                  
+                  {/* 시뮬레이션 중지 버튼 (시뮬레이션 중일 때) */}
+                  {isSimulating && (
+                    <button
+                      onClick={() => {
+                        handleStopSimulation()
+                        setIsMobileMenuOpen(false)
+                      }}
+                      className="flex items-center w-full text-red-600 hover:text-red-700 transition-colors px-2 py-2"
+                    >
+                      <ArrowLeft className="w-4 h-4 mr-3" />
+                      관리자로 돌아가기
+                    </button>
                   )}
                   
                   {/* 로그아웃 버튼 */}

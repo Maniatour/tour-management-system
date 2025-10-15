@@ -88,14 +88,20 @@ export default function GuideTours({ params }: GuideToursProps) {
 
   const { data: employeesData, loading: employeesLoading } = useOptimizedData({
     fetchFn: async () => {
-      const { data, error } = await supabase
+      // 모든 팀원을 가져온 후 클라이언트에서 활성 멤버만 필터링 (대소문자 구별 없이)
+      const { data: allEmployees, error } = await supabase
         .from('team')
         .select('*')
-        .eq('is_active', true)
         .order('name_ko')
       
       if (error) throw error
-      return data || []
+      
+      // 활성 멤버만 필터링 (대소문자 구별 없이)
+      const activeEmployees = (allEmployees || []).filter((employee: any) => 
+        String(employee.is_active).toLowerCase() === 'true'
+      )
+      
+      return activeEmployees
     },
     cacheKey: 'employees',
     cacheTime: 10 * 60 * 1000 // 10분 캐시

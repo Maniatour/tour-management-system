@@ -459,7 +459,7 @@ export default function GuideTourDetailPage() {
           <h1 className="text-2xl font-bold text-gray-900 mb-4">{locale === 'ko' ? '오류' : 'Error'}</h1>
           <p className="text-gray-600 mb-4">{error}</p>
           <button 
-            onClick={() => router.push('/${locale}/guide/tours')}
+            onClick={() => router.push(`/${locale}/guide/tours`)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             {t('backToTourList')}
@@ -475,7 +475,7 @@ export default function GuideTourDetailPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">{locale === 'ko' ? '투어를 찾을 수 없습니다' : 'Tour not found'}</h1>
           <button 
-            onClick={() => router.push('/${locale}/guide/tours')}
+            onClick={() => router.push(`/${locale}/guide/tours`)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
             {t('backToTourList')}
@@ -490,7 +490,7 @@ export default function GuideTourDetailPage() {
       {/* 헤더 - 모바일 최적화 */}
       <div className="mb-6">
         <button
-          onClick={() => router.push('/${locale}/guide/tours')}
+          onClick={() => router.push(`/${locale}/guide/tours`)}
           className="flex items-center text-gray-600 hover:text-gray-900 mb-4 text-sm sm:text-base"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />

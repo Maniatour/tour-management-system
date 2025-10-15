@@ -241,6 +241,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
     
+    // 언어 전환 시 시뮬레이션 상태가 일시적으로 초기화될 수 있으므로 
+    // 저장된 시뮬레이션 데이터가 있는지 먼저 확인
+    console.log('AuthContext: Checking for saved simulation data...', {
+      currentSimulatedUser: simulatedUser?.email,
+      currentIsSimulating: isSimulating,
+      timestamp: new Date().toISOString()
+    })
+    
     // localStorage에서 시뮬레이션 정보 확인
     let simulationData = null
     const savedSimulation = localStorage.getItem('positionSimulation')
@@ -296,6 +304,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (simulationData) {
       // 시뮬레이션 데이터 유효성 검사
       if (simulationData.email && simulationData.role) {
+        console.log('AuthContext: Valid simulation data found, restoring...', simulationData)
+        
         // 상태 설정 (동기적으로 즉시 설정)
         setSimulatedUser(simulationData)
         setIsSimulating(true)
@@ -303,6 +313,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsInitialized(true) // 시뮬레이션 복원 시 초기화 완료
         
         console.log('AuthContext: Simulation restored successfully:', simulationData)
+        
+        // 언어 전환 시 시뮬레이션 상태가 보존되었음을 확인
+        console.log('AuthContext: Simulation state preserved during language switch')
+        
+        // 추가 안전장치: 시뮬레이션 상태를 다시 한 번 저장하여 지속성 보장
+        localStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+        sessionStorage.setItem('positionSimulation', JSON.stringify(simulationData))
+        document.cookie = `simulation_active=true; path=/; max-age=3600; SameSite=Lax`
+        document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulationData))}; path=/; max-age=3600; SameSite=Lax`
+        
+        // 시뮬레이션 상태가 복원되었음을 전역적으로 알림
+        window.dispatchEvent(new CustomEvent('simulationRestored', { detail: simulationData }))
         
         return // 시뮬레이션 복원 시 다른 초기화 건너뛰기
       } else {
@@ -316,13 +338,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       console.log('AuthContext: No saved simulation data found')
     }
-  }, []) // 의존성 배열을 빈 배열로 변경하여 컴포넌트 마운트 시 한 번만 실행
+  }, [isSimulating, simulatedUser]) // 시뮬레이션 상태 변화 감지
+
+  // 시뮬레이션 상태 지속성 확인 (언어 전환 시 안정성 보장)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    // 시뮬레이션 중일 때만 실행
+    if (!isSimulating || !simulatedUser) return
+    
+    console.log('AuthContext: Setting up simulation persistence check for:', simulatedUser.email)
+    
+    // 주기적으로 시뮬레이션 상태 확인 (3초마다 - 더 자주 체크)
+    const interval = setInterval(() => {
+      const savedSimulation = localStorage.getItem('positionSimulation')
+      if (!savedSimulation) {
+        console.warn('AuthContext: Simulation data lost from localStorage, restoring...')
+        // 시뮬레이션 데이터가 사라진 경우 다시 저장
+        localStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
+        sessionStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
+        document.cookie = `simulation_active=true; path=/; max-age=3600; SameSite=Lax`
+        document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulatedUser))}; path=/; max-age=3600; SameSite=Lax`
+      } else {
+        // 저장된 데이터가 현재 상태와 다른지 확인
+        try {
+          const parsedSaved = JSON.parse(savedSimulation)
+          if (parsedSaved.email !== simulatedUser.email) {
+            console.warn('AuthContext: Simulation data mismatch, updating...')
+            localStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
+            sessionStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
+            document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulatedUser))}; path=/; max-age=3600; SameSite=Lax`
+          }
+        } catch (error) {
+          console.error('AuthContext: Error parsing saved simulation data:', error)
+        }
+      }
+    }, 3000) // 3초마다 체크
+    
+    return () => {
+      clearInterval(interval)
+    }
+  }, [isSimulating, simulatedUser])
 
   // 인증 상태 관리 (시뮬레이션이 복원되지 않은 경우에만 실행)
   useEffect(() => {
-    // 시뮬레이션이 이미 복원된 경우 건너뛰기
+    // 시뮬레이션이 이미 복원된 경우 완전히 건너뛰기
     if (isSimulating && simulatedUser) {
-      console.log('AuthContext: Simulation already restored, skipping authentication initialization')
+      console.log('AuthContext: Simulation active, completely skipping authentication initialization', {
+        simulatedUser: simulatedUser.email,
+        isSimulating
+      })
+      return
+    }
+    
+    // 시뮬레이션 중이지만 simulatedUser가 없는 경우 잠시 기다림
+    if (isSimulating && !simulatedUser) {
+      console.log('AuthContext: Simulation in progress but no simulatedUser yet, waiting...')
       return
     }
     

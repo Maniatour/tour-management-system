@@ -1414,7 +1414,9 @@
       "approved": "승인됨",
       "rejected": "거부됨"
     },
-    "delete": "삭제"
+    "selectPaidTo": "지급 대상 선택",
+    "directInput": "직접 입력",
+    "enterNewPaidTo": "새 지급 대상명을 입력하세요"
   },
   "tourReportForm": {
     "title": "투어 리포트 작성",

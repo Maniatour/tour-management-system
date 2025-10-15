@@ -481,7 +481,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
                 {hasData ? lastUpdated : 'N/A'}
               </span>
             </div>
-            {t('subtitle') && <p className="text-xs text-purple-600">{t('subtitle')}</p>}
+            {t('subtitle') && t('subtitle').trim() !== '' && <p className="text-xs text-purple-600">{t('subtitle')}</p>}
           </div>
         </div>
         <button
