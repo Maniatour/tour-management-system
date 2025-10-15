@@ -55,6 +55,11 @@ interface TableScheduleAddProps {
   onClose: () => void
   saving: boolean
   productId: string
+  teamMembers?: Array<{
+    email: string
+    name_ko: string
+    position: string
+  }>
 }
 
 export default function TableScheduleAdd({ 
@@ -63,7 +68,8 @@ export default function TableScheduleAdd({
   onSave, 
   onClose, 
   saving, 
-  productId
+  productId,
+  teamMembers: _teamMembers = []
 }: TableScheduleAddProps) {
   const [showLocationPicker, setShowLocationPicker] = useState(false)
   const [locationPickerIndex, setLocationPickerIndex] = useState<number | null>(null)
@@ -157,7 +163,7 @@ export default function TableScheduleAdd({
       }, 100)
       
       // Supabase에 즉시 저장 (실시간 동기화)
-      console.log('좌표 저장 시도 - schedule ID:', schedules[mapModalIndex!].id)
+      console.log('좌표 저장 시도 - schedule ID:', schedules[mapModalIndex!]?.id)
       console.log('저장할 좌표:', { lat, lng, address, googleMapsLink: mapsLink })
       
       if (schedules[mapModalIndex!].id) {
@@ -1011,6 +1017,7 @@ export default function TableScheduleAdd({
           })
         })
         
+        return
       }
       
       // 드래그 이벤트 추가
@@ -1197,7 +1204,13 @@ export default function TableScheduleAdd({
   const updateSchedule = useCallback((index: number, field: keyof ScheduleItem, value: unknown) => {
     const updatedSchedules = [...schedules]
     updatedSchedules[index] = { ...updatedSchedules[index], [field]: value }
-    console.log(`🔄 ${field} 업데이트:`, { index, field, value, updatedSchedule: updatedSchedules[index] })
+    console.log(`🔄 ${field} 업데이트:`, { 
+      index, 
+      field, 
+      value, 
+      updatedSchedule: updatedSchedules[index],
+      allSchedules: updatedSchedules 
+    })
     onSchedulesChange(updatedSchedules)
   }, [schedules, onSchedulesChange])
 
@@ -1495,8 +1508,13 @@ export default function TableScheduleAdd({
         id: undefined, // 새 ID 생성
         product_id: selectedProductId,
         created_at: undefined,
-        updated_at: undefined
+        updated_at: undefined,
+        // 가이드 역할 정보도 함께 복사 (빈 문자열은 null로 변환)
+        two_guide_schedule: schedule.two_guide_schedule === '' ? null : schedule.two_guide_schedule,
+        guide_driver_schedule: schedule.guide_driver_schedule === '' ? null : schedule.guide_driver_schedule
       }))
+
+      console.log('복사할 일정 데이터:', copiedSchedules)
 
       // Supabase에 복사된 일정들 저장
       const { error } = await supabase
@@ -1505,7 +1523,7 @@ export default function TableScheduleAdd({
 
       if (error) {
         console.error('일정 복사 오류:', error)
-        alert('일정 복사 중 오류가 발생했습니다.')
+        alert(`일정 복사 중 오류가 발생했습니다: ${error.message}`)
         return
       }
 
@@ -1711,6 +1729,12 @@ export default function TableScheduleAdd({
                 ...schedule,
                 order_index: index + 1
               }))
+              console.log('저장 버튼 클릭 - 현재 스케줄 데이터:', updatedSchedules)
+              console.log('가이드 역할 정보 확인:', updatedSchedules.map(s => ({
+                id: s.id,
+                two_guide_schedule: s.two_guide_schedule,
+                guide_driver_schedule: s.guide_driver_schedule
+              })))
               onSchedulesChange(updatedSchedules)
               onSave()
             }}
@@ -2040,14 +2064,20 @@ export default function TableScheduleAdd({
                   type="button"
                   onClick={() => {
                     const currentValue = schedule.two_guide_schedule || ''
-                    let nextValue = ''
-                    if (currentValue === '') {
+                    let nextValue: string | null = null
+                    if (currentValue === '' || currentValue === null) {
                       nextValue = 'guide'
                     } else if (currentValue === 'guide') {
                       nextValue = 'assistant'
                     } else {
-                      nextValue = ''
+                      nextValue = null
                     }
+                    console.log('2가이드 역할 변경:', { 
+                      index, 
+                      currentValue, 
+                      nextValue, 
+                      scheduleId: schedule.id 
+                    })
                     updateSchedule(index, 'two_guide_schedule', nextValue)
                   }}
                   className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
@@ -2072,14 +2102,20 @@ export default function TableScheduleAdd({
                   type="button"
                   onClick={() => {
                     const currentValue = schedule.guide_driver_schedule || ''
-                    let nextValue = ''
-                    if (currentValue === '') {
+                    let nextValue: string | null = null
+                    if (currentValue === '' || currentValue === null) {
                       nextValue = 'guide'
                     } else if (currentValue === 'guide') {
                       nextValue = 'assistant'
                     } else {
-                      nextValue = ''
+                      nextValue = null
                     }
+                    console.log('가이드+드라이버 역할 변경:', { 
+                      index, 
+                      currentValue, 
+                      nextValue, 
+                      scheduleId: schedule.id 
+                    })
                     updateSchedule(index, 'guide_driver_schedule', nextValue)
                   }}
                   className={`w-full h-8 px-1 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium transition-colors ${
@@ -2268,9 +2304,9 @@ export default function TableScheduleAdd({
       {/* 지도 위치 선택 모달 */}
         {showLocationPicker && locationPickerIndex !== null && (
         <LocationPickerModal
-          currentLat={schedules[locationPickerIndex!]?.latitude ?? undefined}
-          currentLng={schedules[locationPickerIndex!]?.longitude ?? undefined}
-          scheduleId={schedules[locationPickerIndex!]?.id} // 스케줄 ID 전달
+          currentLat={schedules[locationPickerIndex!]?.latitude ?? 0}
+          currentLng={schedules[locationPickerIndex!]?.longitude ?? 0}
+          scheduleId={schedules[locationPickerIndex!]?.id || ''} // 스케줄 ID 전달
           onLocationSelect={(lat, lng, address) => {
             const updatedSchedules = [...schedules]
             updatedSchedules[locationPickerIndex!] = {

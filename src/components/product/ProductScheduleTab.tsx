@@ -298,17 +298,31 @@ export default function ProductScheduleTab({
       // 업데이트할 일정들 (기존에 있던 것들)
       const schedulesToUpdate = tableSchedules.filter(schedule => schedule.id && existingScheduleIds.includes(schedule.id))
       
+      console.log('업데이트할 일정들:', schedulesToUpdate)
+      console.log('가이드 역할 정보 확인:', schedulesToUpdate.map(s => ({
+        id: s.id,
+        two_guide_schedule: s.two_guide_schedule,
+        guide_driver_schedule: s.guide_driver_schedule
+      })))
+      
       // 업데이트 실행
       for (const schedule of schedulesToUpdate) {
         const { id, ...scheduleData } = schedule
+        console.log(`일정 업데이트 중: ${id}`, {
+          two_guide_schedule: scheduleData.two_guide_schedule,
+          guide_driver_schedule: scheduleData.guide_driver_schedule
+        })
         const { error: updateError } = await supabase
           .from('product_schedules')
           .update({
             ...scheduleData,
             product_id: productId,
-            is_tour: schedule.is_tour ?? false
-          })
-          .eq('id', id)
+            is_tour: schedule.is_tour ?? false,
+            // 빈 문자열을 null로 변환
+            two_guide_schedule: scheduleData.two_guide_schedule === '' ? null : scheduleData.two_guide_schedule,
+            guide_driver_schedule: scheduleData.guide_driver_schedule === '' ? null : scheduleData.guide_driver_schedule
+          } as any)
+          .eq('id', id!)
 
         if (updateError) {
           console.error('일정 업데이트 오류:', updateError)
@@ -319,16 +333,27 @@ export default function ProductScheduleTab({
       // 추가할 일정들 (새로 생성된 것들)
       const schedulesToInsert = tableSchedules.filter(schedule => !schedule.id)
       
+      console.log('추가할 일정들:', schedulesToInsert)
+      console.log('새 일정 가이드 역할 정보:', schedulesToInsert.map(s => ({
+        two_guide_schedule: s.two_guide_schedule,
+        guide_driver_schedule: s.guide_driver_schedule
+      })))
+      
       if (schedulesToInsert.length > 0) {
         const insertData = schedulesToInsert.map(schedule => ({
           ...schedule,
           product_id: productId,
-          is_tour: schedule.is_tour ?? false
+          is_tour: schedule.is_tour ?? false,
+          // 빈 문자열을 null로 변환
+          two_guide_schedule: schedule.two_guide_schedule === '' ? null : schedule.two_guide_schedule,
+          guide_driver_schedule: schedule.guide_driver_schedule === '' ? null : schedule.guide_driver_schedule
         }))
+
+        console.log('삽입할 데이터:', insertData)
 
         const { error: insertError } = await supabase
           .from('product_schedules')
-          .insert(insertData)
+          .insert(insertData as any)
 
         if (insertError) {
           console.error('일정 추가 오류:', insertError)

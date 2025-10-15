@@ -73,6 +73,9 @@ export default function GuideDashboard() {
   
   // 오늘 날짜 (컴포넌트 레벨에서 정의)
   const today = new Date().toISOString().split('T')[0]
+  
+  // 디버깅을 위한 로그
+  console.log('Today date:', today)
 
   // 날짜에 요일 추가하는 함수
   const formatDateWithDay = (dateString: string) => {
@@ -105,27 +108,67 @@ export default function GuideDashboard() {
     const loadTours = async () => {
       try {
         setLoading(true)
+        console.log('Starting to load tours for user:', currentUserEmail)
 
-        if (!currentUserEmail) return
+        if (!currentUserEmail) {
+          console.log('No current user email, skipping tour load')
+          return
+        }
         
 
-        // 투어 가이드가 배정된 투어 가져오기 (최근 30일)
+        // 투어 가이드가 배정된 투어 가져오기 (최근 30일 + 미래 30일)
         const thirtyDaysAgo = new Date()
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
         const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
+        
+        const thirtyDaysLater = new Date()
+        thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30)
+        const thirtyDaysLaterStr = thirtyDaysLater.toISOString().split('T')[0]
 
-        const { data: toursData, error } = await supabase
+        console.log('Tour query date range:', { 
+          from: thirtyDaysAgoStr, 
+          to: thirtyDaysLaterStr, 
+          today: today,
+          currentUserEmail,
+          userRole,
+          isSimulating
+        })
+
+        // 사용자 역할에 따라 투어 쿼리 조건 설정
+        let tourQuery = supabase
           .from('tours')
           .select('*')
-          .or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
           .gte('tour_date', thirtyDaysAgoStr)
+          .lte('tour_date', thirtyDaysLaterStr)
           .order('tour_date', { ascending: true })
-          .limit(50) as { data: Tour[] | null; error: Error | null }
+          .limit(100)
+
+        // 일반 가이드는 배정된 투어만, 관리자/매니저는 모든 투어
+        if (userRole === 'admin' || userRole === 'manager') {
+          console.log('Admin/Manager: Loading all tours')
+        } else {
+          console.log('Guide: Loading assigned tours only')
+          tourQuery = tourQuery.or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
+        }
+
+        const { data: toursData, error } = await tourQuery as { data: Tour[] | null; error: Error | null }
 
         if (error) {
           console.error('Error loading tours:', error)
           return
         }
+
+        console.log('Raw tours data from database:', toursData)
+        
+        // 오늘 날짜의 투어가 있는지 확인
+        const todayTours = (toursData || []).filter(tour => tour.tour_date === today)
+        console.log('Today tours in raw data:', todayTours.map(t => ({ 
+          id: t.id, 
+          tour_date: t.tour_date, 
+          product_id: t.product_id,
+          tour_guide_id: t.tour_guide_id,
+          assistant_id: t.assistant_id
+        })))
 
         // 상품 정보 가져오기
         const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter(Boolean))]
@@ -271,11 +314,42 @@ export default function GuideDashboard() {
         })
 
         // 투어 분류 - 오늘 투어는 두 탭 모두에 표시
+        console.log('All tours before filtering:', extendedTours.map(t => ({ 
+          id: t.id, 
+          tour_date: t.tour_date, 
+          product_id: t.product_id,
+          tour_guide_id: t.tour_guide_id,
+          assistant_id: t.assistant_id
+        })))
+        
+        // 오늘 날짜의 투어가 확장된 데이터에 있는지 확인
+        const todayToursExtended = extendedTours.filter(tour => tour.tour_date === today)
+        console.log('Today tours in extended data:', todayToursExtended.map(t => ({ 
+          id: t.id, 
+          tour_date: t.tour_date, 
+          product_id: t.product_id,
+          tour_guide_id: t.tour_guide_id,
+          assistant_id: t.assistant_id
+        })))
+        
         const upcomingToursList = extendedTours.filter(tour => tour.tour_date >= today)
         const pastToursList = extendedTours.filter(tour => tour.tour_date <= today)
+        
+        console.log('Filtered tours:', {
+          today,
+          upcomingToursList: upcomingToursList.map(t => ({ id: t.id, tour_date: t.tour_date })),
+          pastToursList: pastToursList.map(t => ({ id: t.id, tour_date: t.tour_date }))
+        })
 
         setUpcomingTours(upcomingToursList.slice(0, 5)) // 최대 5개만 표시
         setPastTours(pastToursList.slice(0, 10)) // 최대 10개만 표시
+        
+        console.log('Final tour state set:', {
+          upcomingToursCount: upcomingToursList.slice(0, 5).length,
+          pastToursCount: pastToursList.slice(0, 10).length,
+          todayToursInUpcoming: upcomingToursList.filter(t => t.tour_date === today).length,
+          todayToursInPast: pastToursList.filter(t => t.tour_date === today).length
+        })
 
         // 오프 스케줄 데이터 로드 (모든 오프 스케줄)
         const { data: offSchedulesData, error: offSchedulesError } = await supabase
@@ -299,7 +373,7 @@ export default function GuideDashboard() {
     }
 
     loadTours()
-  }, [currentUserEmail, supabase, today])
+  }, [currentUserEmail, supabase, today, userRole, isSimulating])
 
   // 탭 변경 시 해당 데이터 로드 (team-board 탭은 제거됨)
   // useEffect(() => {
@@ -487,13 +561,19 @@ export default function GuideDashboard() {
           {activeTab === 'upcoming' && (
             <div className="space-y-2">
               {upcomingTours.length > 0 ? (
-                        upcomingTours.map((tour) => (
-                          <TourCard key={tour.id} tour={tour} onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)} locale={locale} />
-                        ))
+                <>
+                  {(() => {
+                    console.log('About to render upcoming tours:', upcomingTours.map(t => ({ id: t.id, tour_date: t.tour_date, product_id: t.product_id })))
+                    return upcomingTours.map((tour) => {
+                      console.log('Rendering TourCard for:', tour.id, 'date:', tour.tour_date)
+                      return <TourCard key={tour.id} tour={tour} onClick={() => router.push(`/${locale}/guide/tours/${tour.id}`)} locale={locale} />
+                    })
+                  })()}
+                </>
               ) : (
                 <div className="text-center text-gray-500 py-8">
                   <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                          <p>{t('tours.noUpcoming')}</p>
+                  <p>{t('tours.noUpcoming')}</p>
                 </div>
               )}
             </div>
@@ -709,7 +789,14 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
   const t = useTranslations('guide')
   
   // 디버깅을 위한 로그
-  console.log('TourCard received locale:', locale, 'type:', typeof locale)
+  console.log('TourCard component called:', {
+    tourId: tour.id,
+    tourDate: tour.tour_date,
+    productId: tour.product_id,
+    locale,
+    assignmentStatus: tour.assignment_status,
+    allTourData: tour
+  })
   
   // 투어 이름 매핑 함수
   const getTourDisplayName = (tour: ExtendedTour, locale: string) => {
@@ -750,10 +837,46 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
     }
   }
 
+  // 오늘 날짜인지 확인
+  const today = new Date().toISOString().split('T')[0]
+  const isToday = tour.tour_date === today
+  
+  console.log('TourCard date check:', {
+    tourId: tour.id,
+    tourDate: tour.tour_date,
+    today,
+    isToday,
+    comparison: `${tour.tour_date} === ${today}`,
+    comparisonResult: tour.tour_date === today
+  })
+  
+  // 렌더링 전 로그
+  console.log('TourCard DOM rendering for tour:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
+  
+  // 실제 DOM 렌더링 로그
+  console.log('TourCard about to render DOM for:', tour.id)
+  
+  // DOM 요소 생성 로그
+  console.log('TourCard DOM element created for:', tour.id, 'date:', tour.tour_date)
+  
+  // 투어 카드 렌더링 시작 로그
+  console.log('TourCard rendering started for:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
+  
+  // 투어 카드 렌더링 완료 로그
+  console.log('TourCard rendering completed for:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
+  
+  // 투어 카드 렌더링 최종 로그
+  console.log('TourCard final rendering for:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
+  
+  // 투어 카드 렌더링 최종 최종 로그
+  console.log('TourCard ultimate rendering for:', tour.id, 'date:', tour.tour_date, 'isToday:', isToday)
+
   return (
     <div
       onClick={onClick}
-      className="border border-gray-200 rounded-lg p-2 sm:p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+      className={`border rounded-lg p-2 sm:p-3 hover:bg-gray-50 cursor-pointer transition-colors ${
+        isToday ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200'
+      }`}
     >
       <div className="space-y-2">
         {/* 첫번째 줄: 투어명 */}
@@ -767,9 +890,12 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
         <div className="flex flex-wrap gap-1 justify-between items-center">
           <div className="flex flex-wrap gap-1">
             {/* 날짜 배지 */}
-            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+              isToday ? 'bg-blue-200 text-blue-900 font-bold' : 'bg-blue-100 text-blue-800'
+            }`}>
               <Calendar className="w-3 h-3 mr-1" />
               {tour.tour_date}
+              {isToday && <span className="ml-1 text-xs">(오늘)</span>}
             </span>
 
             {/* 인원 배지 */}
