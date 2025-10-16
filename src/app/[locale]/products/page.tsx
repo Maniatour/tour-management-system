@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { Search, Users, Calendar, Heart, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
 
@@ -35,6 +36,7 @@ interface Product {
   use_common_details: boolean
   choices: Record<string, unknown> | null
   tour_departure_times: Record<string, unknown> | null
+  primary_image?: string | null
 }
 
 export default function ProductsPage() {
@@ -67,7 +69,91 @@ export default function ProductsPage() {
           return
         }
         
-        setProducts(data || [])
+        // 각 상품의 대표사진 가져오기
+        const productsWithImages = await Promise.all(
+          (data || []).map(async (product: Product) => {
+            try {
+              // 1. product_media에서 대표사진 찾기
+              const { data: mediaData } = await supabase
+                .from('product_media')
+                .select('file_url')
+                .eq('product_id', product.id)
+                .eq('file_type', 'image')
+                .eq('is_active', true)
+                .eq('is_primary', true)
+                .single()
+              
+              if (mediaData && 'file_url' in mediaData) {
+                return { ...product, primary_image: (mediaData as any).file_url }
+              }
+              
+              // 2. product_media에서 첫 번째 이미지 찾기
+              const { data: firstMediaData } = await supabase
+                .from('product_media')
+                .select('file_url')
+                .eq('product_id', product.id)
+                .eq('file_type', 'image')
+                .eq('is_active', true)
+                .order('order_index', { ascending: true })
+                .limit(1)
+                .single()
+              
+              if (firstMediaData && 'file_url' in firstMediaData) {
+                return { ...product, primary_image: (firstMediaData as any).file_url }
+              }
+              
+              // 3. 투어 코스 사진에서 대표사진 찾기
+              const { data: tourCoursesData } = await supabase
+                .from('product_tour_courses')
+                .select(`
+                  tour_course:tour_courses(*)
+                `)
+                .eq('product_id', product.id)
+              
+              if (tourCoursesData && tourCoursesData.length > 0) {
+                const courseIds = tourCoursesData.map(tc => (tc as { tour_course?: { id: string } }).tour_course?.id).filter(Boolean)
+                if (courseIds.length > 0) {
+                  const { data: photoData } = await supabase
+                    .from('tour_course_photos')
+                    .select('photo_url')
+                    .in('course_id', courseIds)
+                    .eq('is_primary', true)
+                    .single()
+                  
+                  if (photoData && 'photo_url' in photoData) {
+                    return { 
+                      ...product, 
+                      primary_image: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${(photoData as any).photo_url}` 
+                    }
+                  }
+                  
+                  // 4. 투어 코스 사진에서 첫 번째 사진 찾기
+                  const { data: firstPhotoData } = await supabase
+                    .from('tour_course_photos')
+                    .select('photo_url')
+                    .in('course_id', courseIds)
+                    .order('sort_order', { ascending: true })
+                    .limit(1)
+                    .single()
+                  
+                  if (firstPhotoData && 'photo_url' in firstPhotoData) {
+                    return { 
+                      ...product, 
+                      primary_image: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${(firstPhotoData as any).photo_url}` 
+                    }
+                  }
+                }
+              }
+              
+              return { ...product, primary_image: null }
+            } catch (err) {
+              console.error(`Error fetching image for product ${product.id}:`, err)
+              return { ...product, primary_image: null }
+            }
+          })
+        )
+        
+        setProducts(productsWithImages)
       } catch (err) {
         console.error('Error fetching products:', err)
         setError('제품을 불러오는 중 오류가 발생했습니다.')
@@ -225,6 +311,27 @@ export default function ProductsPage() {
               <div key={product.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
                 {/* 상품 이미지 */}
                 <div className="relative h-48 bg-gray-200">
+                  {product.primary_image ? (
+                    <Image
+                      src={product.primary_image}
+                      alt={getProductDisplayName(product)}
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="text-4xl mb-2">🏔️</div>
+                        <div className="text-sm font-medium text-gray-600">
+                          {getProductDisplayName(product)}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          이미지 준비 중
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
                   <div className="absolute top-3 right-3">
                     <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">

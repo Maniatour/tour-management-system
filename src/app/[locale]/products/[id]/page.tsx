@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import ProductFaqDisplay from '@/components/ProductFaqDisplay'
-import ProductMediaDisplay from '@/components/ProductMediaDisplay'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { supabase } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
@@ -84,6 +84,21 @@ interface ProductTourCourse {
   tour_course: TourCourse
 }
 
+interface ChoiceGroup {
+  choice_id: string
+  choice_name: string
+  choice_name_ko: string | null
+  choice_type: string
+  choice_description: string | null
+  options: Array<{
+    option_id: string
+    option_name: string
+    option_name_ko: string | null
+    option_price: number | null
+    is_default: boolean | null
+  }>
+}
+
 interface ProductChoice {
   product_id: string
   product_name: string
@@ -108,10 +123,37 @@ export default function ProductDetailPage() {
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
   const [tourCourses, setTourCourses] = useState<ProductTourCourse[]>([])
   const [productChoices, setProductChoices] = useState<ProductChoice[]>([])
+  const [tourCoursePhotos, setTourCoursePhotos] = useState<Array<{
+    id: string
+    course_id: string
+    photo_url: string
+    photo_alt_ko: string | null
+    photo_alt_en: string | null
+    display_order: number
+    is_primary: boolean
+    sort_order: number
+    thumbnail_url: string | null
+    uploaded_by: string | null
+  }>>([])
+  const [productMedia, setProductMedia] = useState<Array<{
+    id: string
+    product_id: string
+    file_name: string
+    file_url: string
+    file_type: 'image' | 'video' | 'document'
+    file_size: number
+    mime_type: string
+    alt_text: string
+    caption: string
+    order_index: number
+    is_primary: boolean
+    is_active: boolean
+  }>>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [activeTab, setActiveTab] = useState('overview')
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({})
 
   // 실제 데이터 로드
   useEffect(() => {
@@ -169,6 +211,35 @@ export default function ProductDetailPage() {
         
         if (!choicesError && choicesData) {
           setProductChoices(choicesData)
+        }
+        
+        // 5. 상품 미디어 가져오기
+        const { data: mediaData, error: mediaError } = await supabase
+          .from('product_media')
+          .select('*')
+          .eq('product_id', productId)
+          .eq('is_active', true)
+          .order('order_index', { ascending: true })
+        
+        if (!mediaError && mediaData) {
+          setProductMedia(mediaData)
+        }
+
+        // 6. 투어 코스 사진 가져오기
+        if (tourCoursesData && tourCoursesData.length > 0) {
+          const courseIds = tourCoursesData.map(tc => (tc as { tour_course?: { id: string } }).tour_course?.id).filter(Boolean)
+          if (courseIds.length > 0) {
+            const { data: photosData, error: photosError } = await supabase
+              .from('tour_course_photos')
+              .select('*')
+              .in('course_id', courseIds)
+              .order('is_primary', { ascending: false })
+              .order('sort_order', { ascending: true })
+            
+            if (!photosError && photosData) {
+              setTourCoursePhotos(photosData)
+            }
+          }
         }
         
       } catch (error) {
@@ -230,13 +301,139 @@ export default function ProductDetailPage() {
     return product.customer_name_ko || product.name_ko || product.name
   }
 
+  // 시간 형식을 일수 형식으로 변환 (예: 36:00:00 → 1박 2일)
+  const formatDuration = (duration: string | null) => {
+    if (!duration) return '미정'
+    
+    // HH:MM:SS 형식인지 확인
+    const timeMatch = duration.match(/^(\d+):(\d+):(\d+)$/)
+    if (timeMatch) {
+      const hours = parseInt(timeMatch[1], 10)
+      const minutes = parseInt(timeMatch[2], 10)
+      const seconds = parseInt(timeMatch[3], 10)
+      
+      // 총 시간을 시간 단위로 계산
+      const totalHours = hours + (minutes / 60) + (seconds / 3600)
+      
+      // 일수 계산 (24시간 = 1일)
+      const days = Math.ceil(totalHours / 24)
+      
+      if (days === 1) {
+        // 당일 투어는 시간으로 표시
+        if (hours === 0 && minutes > 0) {
+          return `${minutes}분`
+        } else if (hours > 0 && minutes === 0) {
+          return `${hours}시간`
+        } else if (hours > 0 && minutes > 0) {
+          return `${hours}시간 ${minutes}분`
+        } else {
+          return `${Math.round(totalHours * 10) / 10}시간`
+        }
+      } else if (days === 2) {
+        return '1박 2일'
+      } else if (days === 3) {
+        return '2박 3일'
+      } else if (days === 4) {
+        return '3박 4일'
+      } else if (days === 5) {
+        return '4박 5일'
+      } else if (days === 6) {
+        return '5박 6일'
+      } else if (days === 7) {
+        return '6박 7일'
+      } else {
+        return `${days - 1}박 ${days}일`
+      }
+    }
+    
+    // 다른 형식이면 그대로 반환
+    return duration
+  }
+
+  // 선택 옵션을 그룹별로 정리
+  const groupedChoices = productChoices.reduce((groups, choice) => {
+    const groupKey = choice.choice_id
+    if (!groups[groupKey]) {
+      groups[groupKey] = {
+        choice_id: choice.choice_id,
+        choice_name: choice.choice_name,
+        choice_name_ko: choice.choice_name_ko,
+        choice_type: choice.choice_type,
+        choice_description: choice.choice_description,
+        options: []
+      }
+    }
+    groups[groupKey].options.push({
+      option_id: choice.option_id,
+      option_name: choice.option_name,
+      option_name_ko: choice.option_name_ko,
+      option_price: choice.option_price,
+      is_default: choice.is_default
+    })
+    return groups
+  }, {} as Record<string, ChoiceGroup>)
+
+  // 기본 옵션 설정
+  useEffect(() => {
+    if (productChoices.length === 0) return
+    
+    const defaultOptions: Record<string, string> = {}
+    
+    // productChoices를 직접 사용하여 그룹화
+    const tempGroups = productChoices.reduce((groups, choice) => {
+      const groupKey = choice.choice_id
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          choice_id: choice.choice_id,
+          options: []
+        }
+      }
+      groups[groupKey].options.push({
+        option_id: choice.option_id,
+        is_default: choice.is_default
+      })
+      return groups
+    }, {} as Record<string, { choice_id: string; options: Array<{ option_id: string; is_default: boolean | null }> }>)
+    
+    Object.values(tempGroups).forEach((group) => {
+      const defaultOption = group.options.find((option) => option.is_default)
+      if (defaultOption) {
+        defaultOptions[group.choice_id] = defaultOption.option_id
+      } else if (group.options.length > 0) {
+        defaultOptions[group.choice_id] = group.options[0].option_id
+      }
+    })
+    
+    setSelectedOptions(defaultOptions)
+  }, [productChoices])
+
+  const handleOptionChange = (choiceId: string, optionId: string) => {
+    setSelectedOptions(prev => ({
+      ...prev,
+      [choiceId]: optionId
+    }))
+  }
+
+  const getSelectedOptionPrice = () => {
+    let totalPrice = product?.base_price || 0
+    Object.values(groupedChoices).forEach((group: ChoiceGroup) => {
+      const selectedOptionId = selectedOptions[group.choice_id]
+      if (selectedOptionId) {
+        const option = group.options.find((opt) => opt.option_id === selectedOptionId)
+        if (option && option.option_price) {
+          totalPrice += option.option_price
+        }
+      }
+    })
+    return totalPrice
+  }
+
   const tabs = [
     { id: 'overview', label: '개요' },
-    { id: 'itinerary', label: '일정' },
+    { id: 'itinerary', label: '투어 코스' },
     { id: 'tour-schedule', label: '투어 스케줄' },
     { id: 'details', label: '상세정보' },
-    { id: 'faq', label: 'FAQ' },
-    { id: 'media', label: '미디어' }
+    { id: 'faq', label: 'FAQ' }
   ]
 
   const detailTabs = [
@@ -316,35 +513,103 @@ export default function ProductDetailPage() {
           <div className="lg:col-span-2 space-y-8">
             {/* 이미지 갤러리 */}
             <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-              <div className="relative h-96 bg-gray-200">
-                <div className="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="text-6xl mb-4">🏔️</div>
-                    <div className="text-lg font-medium text-gray-600">
-                      {getProductDisplayName(product)}
-                    </div>
-                    <div className="text-sm text-gray-500 mt-2">
-                      이미지 준비 중
+              {(() => {
+                // 모든 이미지 통합 (미디어 우선, 투어 코스 사진 추가)
+                const mediaImages = productMedia.filter(item => item.file_type === 'image')
+                const tourCourseImages = tourCoursePhotos.map(photo => ({
+                  id: `tour-course-${photo.id}`,
+                  file_url: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.photo_url}`,
+                  alt_text: photo.photo_alt_ko || photo.photo_alt_en || 'Tour course photo',
+                  caption: photo.photo_alt_ko || photo.photo_alt_en || '',
+                  file_name: photo.photo_url,
+                  is_primary: photo.is_primary,
+                  order_index: photo.sort_order
+                }))
+                
+                const allImages = [...mediaImages, ...tourCourseImages]
+                
+                return allImages.length > 0 ? (
+                <>
+                  {/* 메인 이미지 */}
+                  <div className="relative h-96 bg-gray-200">
+                    <Image
+                      src={allImages[0].file_url}
+                      alt={allImages[0].alt_text || allImages[0].file_name}
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      priority
+                      className="object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                    <div className="absolute top-4 right-4 flex space-x-2">
+                      <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
+                        <Heart size={20} className="text-gray-600" />
+                      </button>
+                      <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
+                        <Share2 size={20} className="text-gray-600" />
+                      </button>
                     </div>
                   </div>
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-                <div className="absolute top-4 right-4 flex space-x-2">
-                  <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
-                    <Heart size={20} className="text-gray-600" />
-                  </button>
-                  <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
-                    <Share2 size={20} className="text-gray-600" />
-                  </button>
-                </div>
-              </div>
-              <div className="p-4">
-                <div className="flex space-x-2 overflow-x-auto">
-                  <div className="flex-shrink-0 w-20 h-20 rounded-lg bg-gray-200 flex items-center justify-center text-gray-500 text-xs">
-                    이미지 없음
+                  
+                  {/* 썸네일 갤러리 */}
+                  <div className="p-4">
+                    <div className="flex space-x-2 overflow-x-auto">
+                      {allImages.slice(0, 8).map((image, index) => (
+                        <div key={image.id} className="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-gray-200 relative">
+                          <Image
+                            src={image.file_url}
+                            alt={image.alt_text || image.file_name}
+                            fill
+                            sizes="80px"
+                            className="object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => {
+                              // 메인 이미지와 썸네일 순서 바꾸기
+                              const newImages = [...allImages]
+                              const selectedImage = newImages.splice(index, 1)[0]
+                              newImages.unshift(selectedImage)
+                              // 상태 업데이트는 실제로는 필요하지 않지만, 구조를 유지하기 위해
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </div>
+                </>
+              ) : (
+                <>
+                  {/* 사진이 없을 때 플레이스홀더 */}
+                  <div className="relative h-96 bg-gray-200">
+                    <div className="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="text-6xl mb-4">🏔️</div>
+                        <div className="text-lg font-medium text-gray-600">
+                          {getProductDisplayName(product)}
+                        </div>
+                        <div className="text-sm text-gray-500 mt-2">
+                          이미지 준비 중
+                        </div>
+                      </div>
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                    <div className="absolute top-4 right-4 flex space-x-2">
+                      <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
+                        <Heart size={20} className="text-gray-600" />
+                      </button>
+                      <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
+                        <Share2 size={20} className="text-gray-600" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex space-x-2 overflow-x-auto">
+                      <div className="flex-shrink-0 w-20 h-20 rounded-lg bg-gray-200 flex items-center justify-center text-gray-500 text-xs">
+                        이미지 없음
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )
+              })()}
             </div>
 
             {/* 탭 네비게이션 */}
@@ -411,7 +676,7 @@ export default function ProductDetailPage() {
                           <Calendar className="h-5 w-5 text-blue-500" />
                           <div>
                             <span className="text-sm text-gray-600">기간</span>
-                            <p className="font-medium">{product.duration || '미정'}</p>
+                            <p className="font-medium">{formatDuration(product.duration)}</p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-3">
@@ -605,7 +870,7 @@ export default function ProductDetailPage() {
                               </div>
                               <div className="flex justify-between">
                                 <dt className="text-gray-600">기간</dt>
-                                <dd className="text-gray-900">{product.duration || '미정'}</dd>
+                                <dd className="text-gray-900">{formatDuration(product.duration)}</dd>
                               </div>
                               <div className="flex justify-between">
                                 <dt className="text-gray-600">최대 참가자</dt>
@@ -748,7 +1013,7 @@ export default function ProductDetailPage() {
                     {/* 운영정보 탭 */}
                     {activeDetailTab === 'logistics' && (
                       <div className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-6">
                           {productDetails?.pickup_drop_info && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">픽업/드롭 정보</h4>
@@ -863,11 +1128,6 @@ export default function ProductDetailPage() {
                 {activeTab === 'faq' && (
                   <ProductFaqDisplay productId={productId} />
                 )}
-
-                {/* 미디어 탭 */}
-                {activeTab === 'media' && (
-                  <ProductMediaDisplay productId={productId} />
-                )}
               </div>
             </div>
           </div>
@@ -878,9 +1138,11 @@ export default function ProductDetailPage() {
             <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-6">
               <div className="text-center mb-6">
                 <div className="text-3xl font-bold text-gray-900">
-                  ${product.base_price || 0}
+                  ${getSelectedOptionPrice()}
                 </div>
-                <div className="text-sm text-gray-600">기본 가격</div>
+                <div className="text-sm text-gray-600">
+                  {Object.keys(groupedChoices).length > 0 ? '선택 옵션 포함' : '기본 가격'}
+                </div>
               </div>
 
               <div className="space-y-4 mb-6">
@@ -890,7 +1152,7 @@ export default function ProductDetailPage() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">기간</span>
-                  <span className="font-medium">{product.duration || '미정'}</span>
+                  <span className="font-medium">{formatDuration(product.duration)}</span>
                 </div>
                 {product.group_size && (
                   <div className="flex justify-between text-sm">
@@ -901,28 +1163,31 @@ export default function ProductDetailPage() {
               </div>
 
               {/* 선택 옵션 */}
-              {productChoices.length > 0 && (
+              {Object.keys(groupedChoices).length > 0 && (
                 <div className="mb-6">
                   <h4 className="font-medium text-gray-900 mb-3">선택 옵션</h4>
-                  <div className="space-y-3">
-                    {productChoices.map((choice, index) => (
-                      <div key={index} className="border rounded-lg p-3">
-                        <div className="font-medium text-sm text-gray-900 mb-2">
-                          {locale === 'en' && choice.choice_name_ko ? choice.choice_name_ko : choice.choice_name}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {locale === 'en' && choice.option_name_ko ? choice.option_name_ko : choice.option_name}
-                          {choice.option_price && (
-                            <span className="ml-2 font-medium text-blue-600">
-                              +${choice.option_price}
-                            </span>
-                          )}
-                          {choice.is_default && (
-                            <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                              기본
-                            </span>
-                          )}
-                        </div>
+                  <div className="space-y-4">
+                    {Object.values(groupedChoices).map((group: ChoiceGroup) => (
+                      <div key={group.choice_id}>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {locale === 'en' && group.choice_name_ko ? group.choice_name_ko : group.choice_name}
+                        </label>
+                        <select
+                          value={selectedOptions[group.choice_id] || ''}
+                          onChange={(e) => handleOptionChange(group.choice_id, e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          {group.options.map((option) => (
+                            <option key={option.option_id} value={option.option_id}>
+                              {locale === 'en' && option.option_name_ko ? option.option_name_ko : option.option_name}
+                              {option.option_price ? ` (+$${option.option_price})` : ''}
+                              {option.is_default ? ' (기본)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {group.choice_description && (
+                          <p className="text-xs text-gray-500 mt-1">{group.choice_description}</p>
+                        )}
                       </div>
                     ))}
                   </div>
