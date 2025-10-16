@@ -35,7 +35,10 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  GitBranch
+  GitBranch,
+  Maximize2,
+  Minimize2,
+  X
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
@@ -76,6 +79,7 @@ export default function ConsultationManagementPage() {
   const [showWorkflowDiagram, setShowWorkflowDiagram] = useState(false)
   const [selectedWorkflowForDiagram, setSelectedWorkflowForDiagram] = useState<any>(null)
   const [workflowDiagramMode, setWorkflowDiagramMode] = useState<'diagram' | 'manual' | 'edit'>('manual')
+  const [isWorkflowModalFullscreen, setIsWorkflowModalFullscreen] = useState(false)
   const [savedWorkflowSettings, setSavedWorkflowSettings] = useState<{[workflowId: string]: {
     zoom: number
     backgroundSize: { width: number; height: number }
@@ -196,6 +200,7 @@ export default function ConsultationManagementPage() {
             id, workflow_id, step_name_ko, step_name_en, step_description_ko, step_description_en,
             step_order, step_type, action_type, template_id, condition_type, condition_value,
             next_step_id, alternative_step_id, timeout_minutes, is_active, is_required,
+            node_color, text_color, node_shape, position, group_id,
             created_at, updated_at,
             template:consultation_templates(id, question_ko, question_en, answer_ko, answer_en)
           `)
@@ -1208,9 +1213,36 @@ export default function ConsultationManagementPage() {
 
                       {/* 설정 버튼 */}
                       <button
-                        onClick={() => {
-                          setEditingWorkflow(workflow)
-                          setShowWorkflowModal(true)
+                        onClick={async () => {
+                          try {
+                            // 해당 워크플로우의 단계들을 불러오기
+                            const { data: steps, error } = await supabase
+                              .from('consultation_workflow_steps')
+                              .select(`
+                                id, workflow_id, step_name_ko, step_name_en, step_description_ko, step_description_en,
+                                step_order, step_type, action_type, template_id, condition_type, condition_value,
+                                next_step_id, alternative_step_id, timeout_minutes, is_active, is_required,
+                                node_color, text_color, node_shape, position, group_id,
+                                created_at, updated_at,
+                                template:consultation_templates(id, question_ko, question_en, answer_ko, answer_en)
+                              `)
+                              .eq('workflow_id', workflow.id)
+                              .order('step_order', { ascending: true })
+                            
+                            if (error) {
+                              console.warn('워크플로우 단계 불러오기 실패:', error)
+                            }
+                            
+                            setEditingWorkflow({
+                              ...workflow,
+                              steps: steps || []
+                            })
+                            setShowWorkflowModal(true)
+                          } catch (error) {
+                            console.error('워크플로우 편집 모달 열기 실패:', error)
+                            setEditingWorkflow(workflow)
+                            setShowWorkflowModal(true)
+                          }
                         }}
                         className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
                         title="워크플로우 설정"
@@ -1378,15 +1410,19 @@ export default function ConsultationManagementPage() {
           products={products || []}
           channels={channels || []}
           templates={templates || []}
+          isFullscreen={isWorkflowModalFullscreen}
+          onToggleFullscreen={() => setIsWorkflowModalFullscreen(!isWorkflowModalFullscreen)}
           onClose={() => {
             setShowWorkflowModal(false)
             setEditingWorkflow(null)
+            setIsWorkflowModalFullscreen(false)
           }}
           onSave={() => {
             refetchWorkflows()
             refetchWorkflowSteps()
             setShowWorkflowModal(false)
             setEditingWorkflow(null)
+            setIsWorkflowModalFullscreen(false)
           }}
         />
       )}
@@ -1991,6 +2027,8 @@ function WorkflowModal({
   products, 
   channels, 
   templates, 
+  isFullscreen,
+  onToggleFullscreen,
   onClose, 
   onSave 
 }: {
@@ -1999,6 +2037,8 @@ function WorkflowModal({
   products: any[]
   channels: any[]
   templates: any[]
+  isFullscreen: boolean
+  onToggleFullscreen: () => void
   onClose: () => void
   onSave: () => void
 }) {
@@ -2033,7 +2073,12 @@ function WorkflowModal({
       condition_value: '',
       timeout_minutes: 0,
       is_active: true,
-      is_required: true
+      is_required: true,
+      node_color: '#3b82f6',
+      text_color: '#ffffff',
+      node_shape: 'rectangle',
+      position: null,
+      group_id: null
     }
     setSteps([...steps, newStep])
   }
@@ -2136,7 +2181,12 @@ function WorkflowModal({
           condition_value: step.condition_value || null,
           timeout_minutes: step.timeout_minutes,
           is_active: step.is_active,
-          is_required: step.is_required
+          is_required: step.is_required,
+          node_color: step.node_color || null,
+          text_color: step.text_color || null,
+          node_shape: step.node_shape || 'rectangle',
+          position: step.position || null,
+          group_id: step.group_id || null
         }))
 
         const { error: stepsError } = await supabase
@@ -2161,16 +2211,37 @@ function WorkflowModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <h2 className="text-xl font-semibold mb-4">
+    <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 ${isFullscreen ? 'p-0' : 'p-4'}`}>
+      <div className={`bg-white shadow-xl w-full overflow-hidden ${isFullscreen ? 'h-full rounded-none' : 'max-w-6xl max-h-[90vh] rounded-lg'}`}>
+        {/* 헤더 */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-900">
             {workflow ? '워크플로우 편집' : '새 워크플로우 추가'}
           </h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onToggleFullscreen}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+              title={isFullscreen ? '축소' : '전체화면'}
+            >
+              {isFullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* 콘텐츠 */}
+        <div className={`${isFullscreen ? 'h-[calc(100vh-80px)] overflow-y-auto' : 'max-h-[calc(90vh-80px)] overflow-y-auto'}`}>
+          <div className="p-6">
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* 기본 정보 */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${isFullscreen ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">🇰🇷 워크플로우 이름 (한국어)</label>
                 <input
@@ -2281,9 +2352,9 @@ function WorkflowModal({
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className={`space-y-4 ${isFullscreen ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : ''}`}>
                 {steps.map((step, index) => (
-                  <div key={step.id} className="border border-gray-200 rounded-lg p-4">
+                  <div key={step.id} className={`border border-gray-200 rounded-lg p-4 ${isFullscreen ? '' : ''}`}>
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-medium text-gray-900">단계 {index + 1}</h4>
                       <button
@@ -2295,7 +2366,7 @@ function WorkflowModal({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 mb-3">
+                    <div className={`grid gap-4 mb-3 ${isFullscreen ? 'grid-cols-3' : 'grid-cols-2'}`}>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">단계 이름 (한국어)</label>
                         <input
