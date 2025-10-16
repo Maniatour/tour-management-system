@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { ArrowLeft, Hotel, MapPin, Clock, Users, Camera, MessageSquare, FileText, Calculator, ChevronDown, ChevronUp, Calendar, Phone, Mail } from 'lucide-react'
-// import ReactCountryFlag from 'react-country-flag'
+import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -54,6 +54,11 @@ export default function GuideTourDetailPage() {
   const [tourHotelBookings, setTourHotelBookings] = useState<TourHotelBooking[]>([])
   const [ticketBookings, setTicketBookings] = useState<TicketBooking[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [channels, setChannels] = useState<Array<{ id: string; name: string; favicon_url?: string }>>([])
+  const [reservationPricing, setReservationPricing] = useState<Array<{
+    reservation_id: string
+    balance_amount: number
+  }>>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
@@ -76,6 +81,17 @@ export default function GuideTourDetailPage() {
     chat: ['chat'],
     expenses: ['expenses'],
     report: ['report']
+  }
+
+  // balance 정보를 가져오는 함수
+  const getReservationBalance = (reservationId: string) => {
+    const pricing = reservationPricing.find(p => p.reservation_id === reservationId)
+    return pricing?.balance_amount || 0
+  }
+
+  // 총 balance 계산 함수
+  const getTotalBalance = () => {
+    return reservationPricing.reduce((total, pricing) => total + (pricing.balance_amount || 0), 0)
   }
 
   // 투어 데이터 로드
@@ -144,6 +160,14 @@ export default function GuideTourDetailPage() {
 
           const reservationsList = (reservationsData || []) as ReservationRow[]
           
+          // 예약별 balance 정보 가져오기
+          const { data: pricingData } = await supabase
+            .from('reservation_pricing')
+            .select('reservation_id, balance_amount')
+            .in('reservation_id', reservationIds)
+          
+          setReservationPricing(pricingData || [])
+          
           // 픽업 시간으로 정렬
           const sortedReservations = reservationsList.sort((a, b) => {
             const timeA = (a as ReservationRow).pickup_time || '00:00'
@@ -206,6 +230,12 @@ export default function GuideTourDetailPage() {
         .select('email, name_ko, name_en, phone')
       setTeamMembers(teamData || [])
 
+      // 채널 정보 가져오기
+      const { data: channelsData } = await supabase
+        .from('channels')
+        .select('id, name, favicon_url')
+      setChannels(channelsData || [])
+
     } catch (err) {
       console.error('Error loading tour data:', err)
       setError(locale === 'ko' ? '데이터를 불러오는 중 오류가 발생했습니다.' : 'An error occurred while loading data.')
@@ -222,6 +252,17 @@ export default function GuideTourDetailPage() {
   const getCustomerInfo = (customerId: string) => {
     return customers.find(c => c.id === customerId)
   }
+
+  // 언어별 국기 코드 반환 함수
+  const getLanguageFlag = (language: string) => {
+    const lang = language.toLowerCase()
+    if (lang === 'kr' || lang === 'ko' || lang === '한국어') return 'KR'
+    if (lang === 'en' || lang === '영어') return 'US'
+    if (lang === 'jp' || lang === '일본어') return 'JP'
+    if (lang === 'cn' || lang === '중국어') return 'CN'
+    return 'US' // 기본값
+  }
+
 
   // 총 인원 계산
   const totalPeople = reservations.reduce((sum, reservation) => sum + (reservation.total_people || 0), 0)
@@ -622,9 +663,17 @@ export default function GuideTourDetailPage() {
             {expandedSections.has('tour-info') && (
               <div className="px-3 sm:px-4 pb-3 sm:pb-4">
                 <div className="space-y-2">
-                  {/* 투어 제목 */}
-                  <div className="text-lg font-semibold text-gray-900">
-                    {getProductName()}
+                  {/* 투어 제목과 총 balance */}
+                  <div className="flex items-center justify-between">
+                    <div className="text-lg font-semibold text-gray-900">
+                      {getProductName()}
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-gray-600">총 Balance</div>
+                      <div className="text-lg font-bold text-green-600">
+                        ${getTotalBalance().toLocaleString()}
+                      </div>
+                    </div>
                   </div>
             
             {/* 날짜, 인원, 차량 - 뱃지 스타일 */}
@@ -839,26 +888,50 @@ export default function GuideTourDetailPage() {
                           return (
                             <div key={reservation.id}>
                               <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
-                                {/* 상단: 국기, 이름, 인원 */}
+                                {/* 상단: 언어 아이콘, 채널 아이콘, 이름, 인원 */}
                                 <div className="flex items-center space-x-2 mb-2">
                                   {/* 언어별 국기 아이콘 */}
-                                  {(() => {
-                                    if (!customer?.language) return null;
-                                    
-                                    const language = customer.language.toLowerCase();
-                                    if (language === 'kr' || language === 'ko' || language === '한국어') {
-                                      return <span className="mr-1 text-sm">🇰🇷</span>;
-                                    } else if (language === 'en' || language === '영어') {
-                                      return <span className="mr-1 text-sm">🇺🇸</span>;
-                                    } else if (language === 'jp' || language === '일본어') {
-                                      return <span className="mr-1 text-sm">🇯🇵</span>;
-                                    } else if (language === 'cn' || language === '중국어') {
-                                      return <span className="mr-1 text-sm">🇨🇳</span>;
-                                    }
-                                    return null;
+                                  {customer?.language && (
+                                    <ReactCountryFlag
+                                      countryCode={getLanguageFlag(customer.language)}
+                                      svg
+                                      style={{
+                                        width: '16px',
+                                        height: '12px',
+                                        borderRadius: '2px'
+                                      }}
+                                    />
+                                  )}
+                                  
+                                  {/* 채널 아이콘 */}
+                                  {reservation.channel_id && (() => {
+                                    const channel = channels.find(c => c.id === reservation.channel_id)
+                                    return channel?.favicon_url ? (
+                                      <img 
+                                        src={channel.favicon_url} 
+                                        alt={`${channel.name} favicon`} 
+                                        className="h-4 w-4 rounded flex-shrink-0"
+                                        onError={(e) => {
+                                          const target = e.target as HTMLImageElement
+                                          target.style.display = 'none'
+                                          const parent = target.parentElement
+                                          if (parent) {
+                                            const fallback = document.createElement('div')
+                                            fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
+                                            fallback.innerHTML = '🌐'
+                                            parent.appendChild(fallback)
+                                          }
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                                        🌐
+                                      </div>
+                                    )
                                   })()}
+                                  
                                   <div className="font-medium text-gray-900">
-                                    {formatCustomerNameEnhanced(customer, locale)}
+                                    {formatCustomerNameEnhanced(customer as any, locale)}
                                   </div>
                                   <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                     <Users className="w-3 h-3 mr-1" />
@@ -905,6 +978,14 @@ export default function GuideTourDetailPage() {
                                     })()}
                                   </div>
                                   <div className="flex items-center space-x-3">
+                                    {/* Balance 표시 */}
+                                    <div className="text-right">
+                                      <div className="text-xs text-gray-500">Balance</div>
+                                      <div className="text-sm font-semibold text-green-600">
+                                        ${getReservationBalance(reservation.id).toLocaleString()}
+                                      </div>
+                                    </div>
+                                    
                                     {customer?.phone && (
                                       <a 
                                         href={`tel:${customer.phone}`}

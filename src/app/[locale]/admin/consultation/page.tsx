@@ -26,10 +26,21 @@ import {
   ChevronRight,
   Tag,
   Globe,
-  Clock
+  Clock,
+  Workflow,
+  Play,
+  Pause,
+  Square,
+  ArrowRight,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  GitBranch
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
+import WorkflowDiagram from '@/components/WorkflowDiagram'
+import WorkflowTemplateModal from '@/components/WorkflowTemplateModal'
 import type { 
   ConsultationCategory, 
   ConsultationTemplateWithRelations, 
@@ -40,7 +51,7 @@ import type {
 
 export default function ConsultationManagementPage() {
   const { locale } = useParams()
-  const [activeTab, setActiveTab] = useState<'templates' | 'logs' | 'stats'>('templates')
+  const [activeTab, setActiveTab] = useState<'templates' | 'workflows' | 'logs' | 'stats'>('templates')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
@@ -56,6 +67,21 @@ export default function ConsultationManagementPage() {
   const [editingTemplate, setEditingTemplate] = useState<ConsultationTemplateWithRelations | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<ConsultationTemplateWithRelations | null>(null)
+  
+  // 워크플로우 모달 상태
+  const [showWorkflowModal, setShowWorkflowModal] = useState(false)
+  const [editingWorkflow, setEditingWorkflow] = useState<any>(null)
+  const [showWorkflowDeleteModal, setShowWorkflowDeleteModal] = useState(false)
+  const [workflowToDelete, setWorkflowToDelete] = useState<any>(null)
+  const [showWorkflowDiagram, setShowWorkflowDiagram] = useState(false)
+  const [selectedWorkflowForDiagram, setSelectedWorkflowForDiagram] = useState<any>(null)
+  const [workflowDiagramMode, setWorkflowDiagramMode] = useState<'diagram' | 'manual' | 'edit'>('manual')
+  const [savedWorkflowSettings, setSavedWorkflowSettings] = useState<{[workflowId: string]: {
+    zoom: number
+    backgroundSize: { width: number; height: number }
+    nodeSize: { width: number; height: number }
+    panelPosition: { x: number; y: number }
+  }}>({})
 
   // 데이터 로딩
   const { data: categories, loading: categoriesLoading, refetch: refetchCategories } = useOptimizedData<ConsultationCategory>({
@@ -124,6 +150,69 @@ export default function ConsultationManagementPage() {
       return data || []
     },
     cacheKey: 'channels_active',
+    dependencies: []
+  })
+
+  // 워크플로우 데이터 로딩 (임시로 비활성화)
+  const { data: workflows, loading: workflowsLoading, refetch: refetchWorkflows } = useOptimizedData({
+    fetchFn: async () => {
+      // 테이블이 존재하지 않을 경우 빈 배열 반환
+      try {
+        const { data, error } = await supabase
+          .from('consultation_workflows')
+          .select(`
+            id, name_ko, name_en, description_ko, description_en,
+            category_id, product_id, channel_id, is_active, is_default,
+            tags, created_by, updated_by, created_at, updated_at,
+            category:consultation_categories(id, name_ko, name_en, icon, color),
+            product:products(id, name, name_ko, name_en),
+            channel:channels(id, name)
+          `)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: false })
+        
+        if (error) {
+          console.warn('워크플로우 테이블이 존재하지 않습니다. 데이터베이스에 테이블을 생성해주세요.')
+          return []
+        }
+        return data || []
+      } catch (error) {
+        console.warn('워크플로우 테이블 접근 오류:', error)
+        return []
+      }
+    },
+    cacheKey: 'consultation_workflows',
+    dependencies: []
+  })
+
+  // 워크플로우 단계 데이터 로딩 (임시로 비활성화)
+  const { data: workflowSteps, loading: workflowStepsLoading, refetch: refetchWorkflowSteps } = useOptimizedData({
+    fetchFn: async () => {
+      // 테이블이 존재하지 않을 경우 빈 배열 반환
+      try {
+        const { data, error } = await supabase
+          .from('consultation_workflow_steps')
+          .select(`
+            id, workflow_id, step_name_ko, step_name_en, step_description_ko, step_description_en,
+            step_order, step_type, action_type, template_id, condition_type, condition_value,
+            next_step_id, alternative_step_id, timeout_minutes, is_active, is_required,
+            created_at, updated_at,
+            template:consultation_templates(id, question_ko, question_en, answer_ko, answer_en)
+          `)
+          .order('workflow_id', { ascending: true })
+          .order('step_order', { ascending: true })
+        
+        if (error) {
+          console.warn('워크플로우 단계 테이블이 존재하지 않습니다.')
+          return []
+        }
+        return data || []
+      } catch (error) {
+        console.warn('워크플로우 단계 테이블 접근 오류:', error)
+        return []
+      }
+    },
+    cacheKey: 'consultation_workflow_steps',
     dependencies: []
   })
 
@@ -278,6 +367,219 @@ export default function ConsultationManagementPage() {
     }
   }, [templateToDelete, refetchTemplates])
 
+  // 워크플로우 활성화/비활성화 토글
+  const toggleWorkflowActive = useCallback(async (workflow: any) => {
+    try {
+      const { error } = await supabase
+        .from('consultation_workflows')
+        .update({ is_active: !workflow.is_active })
+        .eq('id', workflow.id)
+      
+      if (error) throw error
+      
+      refetchWorkflows()
+    } catch (error) {
+      console.error('워크플로우 활성화 상태 업데이트 실패:', error)
+    }
+  }, [refetchWorkflows])
+
+  // 워크플로우 다이어그램 보기
+  const showWorkflowDiagramModal = (workflow: any, mode: 'diagram' | 'manual' | 'edit' = 'manual') => {
+    const workflowSteps = groupedWorkflowSteps[workflow.id] || []
+    
+    // 저장된 설정 불러오기
+    const savedSettings = localStorage.getItem(`workflow_settings_${workflow.id}`)
+    let initialSettings = undefined
+    if (savedSettings) {
+      try {
+        initialSettings = JSON.parse(savedSettings)
+      } catch (error) {
+        console.error('저장된 설정 파싱 실패:', error)
+      }
+    }
+    
+    setSelectedWorkflowForDiagram({
+      ...workflow,
+      steps: workflowSteps,
+      initialSettings
+    })
+    setWorkflowDiagramMode(mode)
+    setShowWorkflowDiagram(true)
+  }
+
+  // 워크플로우 저장
+  const handleWorkflowSave = async (data: { 
+    steps: any[]
+    zoom: number
+    backgroundSize: { width: number; height: number }
+    nodeSize: { width: number; height: number }
+    panelPosition: { x: number; y: number }
+  }) => {
+    try {
+      if (!selectedWorkflowForDiagram) return
+
+      // 단계들 저장
+      const { steps } = data
+      for (const step of steps) {
+        const { error } = await supabase
+          .from('consultation_workflow_steps')
+          .upsert({
+            id: step.id,
+            workflow_id: selectedWorkflowForDiagram.id,
+            step_name_ko: step.step_name_ko,
+            step_name_en: step.step_name_en,
+            step_type: step.step_type,
+            step_order: step.step_order,
+            description_ko: step.description_ko,
+            description_en: step.description_en,
+            node_shape: step.node_shape,
+            node_color: step.node_color,
+            text_color: step.text_color,
+            next_step_id: step.next_step_id,
+            alternative_step_id: step.alternative_step_id,
+            group_id: step.group_id,
+            position: step.position
+          })
+
+        if (error) {
+          console.error('워크플로우 단계 저장 실패:', error)
+          return
+        }
+      }
+
+      // 설정 저장 (로컬 스토리지에)
+      if (selectedWorkflowForDiagram.id) {
+        setSavedWorkflowSettings(prev => ({
+          ...prev,
+          [selectedWorkflowForDiagram.id]: {
+            zoom: data.zoom,
+            backgroundSize: data.backgroundSize,
+            nodeSize: data.nodeSize,
+            panelPosition: data.panelPosition
+          }
+        }))
+        
+        // 로컬 스토리지에도 저장
+        localStorage.setItem(`workflow_settings_${selectedWorkflowForDiagram.id}`, JSON.stringify({
+          zoom: data.zoom,
+          backgroundSize: data.backgroundSize,
+          nodeSize: data.nodeSize,
+          panelPosition: data.panelPosition
+        }))
+      }
+
+      await refetchWorkflows()
+      alert('워크플로우가 저장되었습니다.')
+    } catch (error) {
+      console.error('워크플로우 저장 실패:', error)
+      alert('워크플로우 저장에 실패했습니다.')
+    }
+  }
+
+  // 템플릿 선택 핸들러
+  const handleTemplateSelect = async (template: any) => {
+    try {
+      // 템플릿을 기반으로 새 워크플로우 생성
+      const newWorkflow = {
+        name_ko: template.name,
+        name_en: template.name,
+        description_ko: template.description,
+        description_en: template.description,
+        category_id: categories?.[0]?.id, // 첫 번째 카테고리 사용
+        is_active: true,
+        is_default: false,
+        steps: template.steps.map((step: any, index: number) => ({
+          ...step,
+          step_order: index + 1,
+          id: `step_${Date.now()}_${index}`,
+        }))
+      }
+
+      // 워크플로우 생성
+      const { data: workflowData, error: workflowError } = await supabase
+        .from('consultation_workflows')
+        .insert([{
+          name_ko: newWorkflow.name_ko,
+          name_en: newWorkflow.name_en,
+          description_ko: newWorkflow.description_ko,
+          description_en: newWorkflow.description_en,
+          category_id: newWorkflow.category_id,
+          is_active: newWorkflow.is_active,
+          is_default: newWorkflow.is_default,
+        }])
+        .select()
+        .single()
+
+      if (workflowError) throw workflowError
+
+      // 워크플로우 단계 생성
+      const stepsToInsert = newWorkflow.steps.map((step: any) => ({
+        workflow_id: workflowData.id,
+        step_name_ko: step.step_name_ko,
+        step_name_en: step.step_name_en,
+        step_description_ko: step.step_description_ko,
+        step_description_en: step.step_description_en,
+        step_order: step.step_order,
+        step_type: step.step_type,
+        action_type: step.action_type,
+        condition_type: step.condition_type,
+        condition_value: step.condition_value,
+        next_step_id: step.next_step_id,
+        alternative_step_id: step.alternative_step_id,
+        is_active: step.is_active,
+        is_required: step.is_required,
+        node_shape: step.node_shape,
+        node_color: step.node_color,
+        text_color: step.text_color,
+      }))
+
+      const { error: stepsError } = await supabase
+        .from('consultation_workflow_steps')
+        .insert(stepsToInsert)
+
+      if (stepsError) throw stepsError
+
+      // 데이터 새로고침
+      await refetchWorkflows()
+      await refetchWorkflowSteps()
+      
+      setShowTemplateModal(false)
+      alert('템플릿이 성공적으로 적용되었습니다!')
+    } catch (error) {
+      console.error('템플릿 적용 실패:', error)
+      alert('템플릿 적용에 실패했습니다.')
+    }
+  }
+
+  // 워크플로우 삭제
+  const deleteWorkflow = useCallback(async () => {
+    if (!workflowToDelete) return
+    
+    try {
+      const { error } = await supabase
+        .from('consultation_workflows')
+        .delete()
+        .eq('id', workflowToDelete.id)
+      
+      if (error) throw error
+      
+      setShowWorkflowDeleteModal(false)
+      setWorkflowToDelete(null)
+      refetchWorkflows()
+    } catch (error) {
+      console.error('워크플로우 삭제 실패:', error)
+    }
+  }, [workflowToDelete, refetchWorkflows])
+
+  // 워크플로우 단계 그룹화 함수
+  const groupedWorkflowSteps = workflowSteps?.reduce((acc, step) => {
+    if (!acc[step.workflow_id]) {
+      acc[step.workflow_id] = []
+    }
+    acc[step.workflow_id].push(step)
+    return acc
+  }, {} as Record<string, any[]>) || {}
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* 헤더 */}
@@ -287,13 +589,35 @@ export default function ConsultationManagementPage() {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">상담 관리</h1>
             <p className="text-gray-600">FAQ 템플릿과 상담 안내를 관리하세요</p>
           </div>
-          <button
-            onClick={() => setShowTemplateModal(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-          >
-            <Plus size={20} />
-            새 템플릿 추가
-          </button>
+          <div className="flex gap-3">
+            {activeTab === 'templates' && (
+              <button
+                onClick={() => setShowTemplateModal(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Plus size={20} />
+                새 템플릿 추가
+              </button>
+            )}
+            {activeTab === 'workflows' && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowTemplateModal(true)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                >
+                  <FileText size={20} />
+                  템플릿 사용
+                </button>
+                <button
+                  onClick={() => setShowWorkflowModal(true)}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
+                >
+                  <Plus size={20} />
+                  새 워크플로우 추가
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -303,6 +627,7 @@ export default function ConsultationManagementPage() {
           <nav className="-mb-px flex space-x-8">
             {[
               { id: 'templates', name: '템플릿 관리', icon: MessageCircle },
+              { id: 'workflows', name: '워크플로우', icon: Workflow },
               { id: 'logs', name: '상담 로그', icon: Clock },
               { id: 'stats', name: '통계', icon: BarChart3 }
             ].map((tab) => (
@@ -786,6 +1111,216 @@ export default function ConsultationManagementPage() {
         </div>
       )}
 
+      {/* 워크플로우 탭 */}
+      {activeTab === 'workflows' && (
+        <div className="space-y-6">
+          {/* 워크플로우 목록 */}
+          <div className="space-y-4">
+            {workflows?.map(workflow => {
+              const steps = groupedWorkflowSteps[workflow.id] || []
+              return (
+                <div
+                  key={workflow.id}
+                  className={`bg-white p-6 rounded-lg shadow-sm border ${
+                    !workflow.is_active ? 'opacity-60' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      {/* 카테고리 아이콘 */}
+                      {workflow.category && (
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
+                          style={{ backgroundColor: workflow.category.color }}
+                        >
+                          <Workflow size={16} />
+                        </div>
+                      )}
+                      
+                      <div className="flex-1">
+                        {/* 제목줄 */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="font-semibold text-gray-900 text-base">
+                            {workflow.name_ko}
+                          </h3>
+                          {workflow.is_default && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                              기본 워크플로우
+                            </span>
+                          )}
+                          {!workflow.is_active && (
+                            <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                              비활성
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          {workflow.category && (
+                            <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded-full">
+                              {workflow.category.name_ko}
+                            </span>
+                          )}
+                          {workflow.product && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                              {workflow.product.name_ko}
+                            </span>
+                          )}
+                          {workflow.channel && (
+                            <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs font-medium rounded-full">
+                              {workflow.channel.name}
+                            </span>
+                          )}
+                          <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                            {steps.length}단계
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* 활성화/비활성화 버튼 */}
+                      <button
+                        onClick={() => toggleWorkflowActive(workflow)}
+                        className={`p-2 rounded-lg hover:bg-gray-100 ${
+                          workflow.is_active ? 'text-green-500' : 'text-gray-400'
+                        }`}
+                      >
+                        {workflow.is_active ? <Play size={16} /> : <Pause size={16} />}
+                      </button>
+
+                      {/* 메뉴얼 보기 버튼 */}
+                      <button
+                        onClick={() => showWorkflowDiagramModal(workflow, 'manual')}
+                        className="p-2 rounded-lg hover:bg-gray-100 text-blue-500"
+                        title="워크플로우 메뉴얼 보기"
+                      >
+                        <GitBranch size={16} />
+                      </button>
+
+                      {/* 편집 버튼 */}
+                      <button
+                        onClick={() => showWorkflowDiagramModal(workflow, 'edit')}
+                        className="p-2 rounded-lg hover:bg-gray-100 text-green-500"
+                        title="워크플로우 편집"
+                      >
+                        <Edit size={16} />
+                      </button>
+
+                      {/* 설정 버튼 */}
+                      <button
+                        onClick={() => {
+                          setEditingWorkflow(workflow)
+                          setShowWorkflowModal(true)
+                        }}
+                        className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+                        title="워크플로우 설정"
+                      >
+                        <Settings size={16} />
+                      </button>
+
+                      {/* 삭제 버튼 */}
+                      <button
+                        onClick={() => {
+                          setWorkflowToDelete(workflow)
+                          setShowWorkflowDeleteModal(true)
+                        }}
+                        className="p-2 rounded-lg hover:bg-gray-100 text-red-500"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 워크플로우 설명 */}
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-600">{workflow.description_ko}</p>
+                  </div>
+
+                  {/* 워크플로우 단계 표시 */}
+                  {steps.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">워크플로우 단계</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {steps.map((step, index) => (
+                          <div
+                            key={step.id}
+                            className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg text-sm"
+                          >
+                            <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-medium">
+                              {step.step_order}
+                            </span>
+                            <span className="text-gray-700">{step.step_name_ko}</span>
+                            <div className="flex items-center gap-1">
+                              {step.step_type === 'action' && <CheckCircle size={14} className="text-green-500" />}
+                              {step.step_type === 'decision' && <AlertCircle size={14} className="text-yellow-500" />}
+                              {step.step_type === 'condition' && <XCircle size={14} className="text-red-500" />}
+                            </div>
+                            {index < steps.length - 1 && (
+                              <ArrowRight size={14} className="text-gray-400" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 태그 */}
+                  {workflow.tags && workflow.tags.length > 0 && (
+                    <div className="flex items-center gap-2 mt-3">
+                      <Tag size={14} className="text-gray-400" />
+                      <div className="flex gap-1">
+                        {workflow.tags.map(tag => (
+                          <span
+                            key={tag}
+                            className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {workflows?.length === 0 && (
+              <div className="text-center py-12">
+                <Workflow size={48} className="mx-auto text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">워크플로우 기능 설정 필요</h3>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-4 max-w-2xl mx-auto">
+                  <h4 className="text-md font-semibold text-yellow-800 mb-2">📋 데이터베이스 테이블 생성 필요</h4>
+                  <p className="text-yellow-700 text-sm mb-4">
+                    워크플로우 기능을 사용하려면 먼저 데이터베이스에 필요한 테이블들을 생성해야 합니다.
+                  </p>
+                  <div className="text-left bg-white p-4 rounded border text-xs text-gray-600 mb-4">
+                    <p className="font-medium mb-2">Supabase 대시보드에서 다음 SQL을 실행하세요:</p>
+                    <ol className="list-decimal list-inside space-y-1">
+                      <li>Supabase 대시보드 → SQL Editor로 이동</li>
+                      <li>프로젝트 루트의 <code className="bg-gray-100 px-1 rounded">create_consultation_workflow_schema.sql</code> 파일 내용 복사</li>
+                      <li>SQL Editor에 붙여넣기 후 실행</li>
+                      <li>페이지 새로고침</li>
+                    </ol>
+                  </div>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 mr-2"
+                  >
+                    페이지 새로고침
+                  </button>
+                  <button
+                    onClick={() => setShowWorkflowModal(true)}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+                  >
+                    워크플로우 추가 시도
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 상담 로그 탭 */}
       {activeTab === 'logs' && (
         <div className="bg-white p-6 rounded-lg shadow-sm border">
@@ -832,6 +1367,62 @@ export default function ConsultationManagementPage() {
             setTemplateToDelete(null)
           }}
           onConfirm={deleteTemplate}
+        />
+      )}
+
+      {/* 워크플로우 추가/편집 모달 */}
+      {showWorkflowModal && (
+        <WorkflowModal
+          workflow={editingWorkflow}
+          categories={categories || []}
+          products={products || []}
+          channels={channels || []}
+          templates={templates || []}
+          onClose={() => {
+            setShowWorkflowModal(false)
+            setEditingWorkflow(null)
+          }}
+          onSave={() => {
+            refetchWorkflows()
+            refetchWorkflowSteps()
+            setShowWorkflowModal(false)
+            setEditingWorkflow(null)
+          }}
+        />
+      )}
+
+      {/* 워크플로우 삭제 확인 모달 */}
+      {showWorkflowDeleteModal && workflowToDelete && (
+        <WorkflowDeleteModal
+          workflow={workflowToDelete}
+          onClose={() => {
+            setShowWorkflowDeleteModal(false)
+            setWorkflowToDelete(null)
+          }}
+          onConfirm={deleteWorkflow}
+        />
+      )}
+
+      {/* 워크플로우 다이어그램 모달 */}
+      {showWorkflowDiagram && selectedWorkflowForDiagram && (
+        <WorkflowDiagram
+          steps={selectedWorkflowForDiagram.steps || []}
+          workflowName={selectedWorkflowForDiagram.name_ko}
+          mode={workflowDiagramMode}
+          onClose={() => {
+            setShowWorkflowDiagram(false)
+            setSelectedWorkflowForDiagram(null)
+          }}
+          onSave={handleWorkflowSave}
+          initialSettings={selectedWorkflowForDiagram.initialSettings}
+        />
+      )}
+
+      {/* 워크플로우 템플릿 모달 */}
+      {showTemplateModal && (
+        <WorkflowTemplateModal
+          onSelectTemplate={handleTemplateSelect}
+          onClose={() => setShowTemplateModal(false)}
         />
       )}
     </div>
@@ -1371,6 +1962,629 @@ function DeleteModal({
             <div>
               <p className="text-sm font-medium text-green-800">🇺🇸 {template.question_en}</p>
             </div>
+          </div>
+          <p className="text-sm text-red-600 mt-2">이 작업은 되돌릴 수 없습니다.</p>
+        </div>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+          >
+            취소
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          >
+            삭제
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 워크플로우 모달 컴포넌트
+function WorkflowModal({ 
+  workflow, 
+  categories, 
+  products, 
+  channels, 
+  templates, 
+  onClose, 
+  onSave 
+}: {
+  workflow?: any
+  categories: ConsultationCategory[]
+  products: any[]
+  channels: any[]
+  templates: any[]
+  onClose: () => void
+  onSave: () => void
+}) {
+  const [formData, setFormData] = useState({
+    name_ko: workflow?.name_ko || '',
+    name_en: workflow?.name_en || '',
+    description_ko: workflow?.description_ko || '',
+    description_en: workflow?.description_en || '',
+    category_id: workflow?.category_id || '',
+    product_id: workflow?.product_id || '',
+    channel_id: workflow?.channel_id || '',
+    is_active: workflow?.is_active ?? true,
+    is_default: workflow?.is_default ?? false,
+    tags: workflow?.tags?.join(', ') || ''
+  })
+
+  const [steps, setSteps] = useState<any[]>(workflow?.steps || [])
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const addStep = () => {
+    const newStep = {
+      id: `temp_${Date.now()}`,
+      step_name_ko: '',
+      step_name_en: '',
+      step_description_ko: '',
+      step_description_en: '',
+      step_order: steps.length + 1,
+      step_type: 'action',
+      action_type: 'send_template',
+      template_id: '',
+      condition_type: '',
+      condition_value: '',
+      timeout_minutes: 0,
+      is_active: true,
+      is_required: true
+    }
+    setSteps([...steps, newStep])
+  }
+
+  const updateStep = (index: number, field: string, value: any) => {
+    const updatedSteps = [...steps]
+    updatedSteps[index] = { ...updatedSteps[index], [field]: value }
+    setSteps(updatedSteps)
+  }
+
+  const removeStep = (index: number) => {
+    const updatedSteps = steps.filter((_, i) => i !== index)
+    // 단계 순서 재정렬
+    updatedSteps.forEach((step, i) => {
+      step.step_order = i + 1
+    })
+    setSteps(updatedSteps)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+
+    try {
+      const submitData = {
+        name_ko: formData.name_ko,
+        name_en: formData.name_en,
+        description_ko: formData.description_ko,
+        description_en: formData.description_en,
+        category_id: formData.category_id || null,
+        product_id: formData.product_id || null,
+        channel_id: formData.channel_id || null,
+        is_active: formData.is_active,
+        is_default: formData.is_default,
+        tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean) : []
+      }
+
+      let workflowId: string
+
+      if (workflow) {
+        // 편집
+        const { data, error } = await supabase
+          .from('consultation_workflows')
+          .update(submitData)
+          .eq('id', workflow.id)
+          .select()
+          .single()
+        
+        if (error) {
+          if (error.code === 'PGRST205') {
+            alert('워크플로우 테이블이 존재하지 않습니다. 먼저 데이터베이스에 테이블을 생성해주세요.')
+            return
+          }
+          throw error
+        }
+        workflowId = data.id
+      } else {
+        // 새로 추가
+        const { data, error } = await supabase
+          .from('consultation_workflows')
+          .insert(submitData)
+          .select()
+          .single()
+        
+        if (error) {
+          if (error.code === 'PGRST205') {
+            alert('워크플로우 테이블이 존재하지 않습니다. 먼저 데이터베이스에 테이블을 생성해주세요.')
+            return
+          }
+          throw error
+        }
+        workflowId = data.id
+      }
+
+      // 기존 단계 삭제 (편집 시)
+      if (workflow) {
+        const { error: deleteError } = await supabase
+          .from('consultation_workflow_steps')
+          .delete()
+          .eq('workflow_id', workflowId)
+        
+        if (deleteError && deleteError.code !== 'PGRST205') {
+          console.warn('단계 삭제 오류:', deleteError)
+        }
+      }
+
+      // 새 단계 추가
+      if (steps.length > 0) {
+        const stepsToInsert = steps.map((step, index) => ({
+          workflow_id: workflowId,
+          step_name_ko: step.step_name_ko,
+          step_name_en: step.step_name_en,
+          step_description_ko: step.step_description_ko,
+          step_description_en: step.step_description_en,
+          step_order: index + 1,
+          step_type: step.step_type,
+          action_type: step.action_type,
+          template_id: step.template_id || null,
+          condition_type: step.condition_type || null,
+          condition_value: step.condition_value || null,
+          timeout_minutes: step.timeout_minutes,
+          is_active: step.is_active,
+          is_required: step.is_required
+        }))
+
+        const { error: stepsError } = await supabase
+          .from('consultation_workflow_steps')
+          .insert(stepsToInsert)
+        
+        if (stepsError) {
+          if (stepsError.code === 'PGRST205') {
+            alert('워크플로우 단계 테이블이 존재하지 않습니다. 데이터베이스에 테이블을 생성해주세요.')
+            return
+          }
+          throw stepsError
+        }
+      }
+
+      onSave()
+    } catch (error) {
+      console.error('워크플로우 저장 실패:', error)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <h2 className="text-xl font-semibold mb-4">
+            {workflow ? '워크플로우 편집' : '새 워크플로우 추가'}
+          </h2>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* 기본 정보 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🇰🇷 워크플로우 이름 (한국어)</label>
+                <input
+                  type="text"
+                  value={formData.name_ko}
+                  onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🇺🇸 워크플로우 이름 (English)</label>
+                <input
+                  type="text"
+                  value={formData.name_en}
+                  onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🇰🇷 설명 (한국어)</label>
+                <textarea
+                  value={formData.description_ko}
+                  onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🇺🇸 설명 (English)</label>
+                <textarea
+                  value={formData.description_en}
+                  onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            {/* 카테고리 및 필터 */}
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
+                <select
+                  value={formData.category_id}
+                  onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="">카테고리 선택</option>
+                  {categories.map(category => (
+                    <option key={category.id} value={category.id}>
+                      {category.name_ko}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">상품</label>
+                <select
+                  value={formData.product_id}
+                  onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="">상품 선택</option>
+                  {products.map(product => (
+                    <option key={product.id} value={product.id}>
+                      {product.name_ko}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">채널</label>
+                <select
+                  value={formData.channel_id}
+                  onChange={(e) => setFormData({ ...formData, channel_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="">채널 선택</option>
+                  {channels.map(channel => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* 워크플로우 단계 */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900">워크플로우 단계</h3>
+                <button
+                  type="button"
+                  onClick={addStep}
+                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
+                >
+                  <Plus size={16} />
+                  단계 추가
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {steps.map((step, index) => (
+                  <div key={step.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-medium text-gray-900">단계 {index + 1}</h4>
+                      <button
+                        type="button"
+                        onClick={() => removeStep(index)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mb-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">단계 이름 (한국어)</label>
+                        <input
+                          type="text"
+                          value={step.step_name_ko}
+                          onChange={(e) => updateStep(index, 'step_name_ko', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">단계 이름 (English)</label>
+                        <input
+                          type="text"
+                          value={step.step_name_en}
+                          onChange={(e) => updateStep(index, 'step_name_en', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">단계 타입</label>
+                        <select
+                          value={step.step_type}
+                          onChange={(e) => updateStep(index, 'step_type', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          <option value="action">액션</option>
+                          <option value="decision">결정</option>
+                          <option value="condition">조건</option>
+                          <option value="template">템플릿</option>
+                          <option value="manual">수동</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">액션 타입</label>
+                        <select
+                          value={step.action_type}
+                          onChange={(e) => updateStep(index, 'action_type', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          <option value="send_template">템플릿 전송</option>
+                          <option value="ask_question">질문하기</option>
+                          <option value="wait_response">응답 대기</option>
+                          <option value="escalate">에스컬레이션</option>
+                          <option value="close">상담 종료</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">템플릿</label>
+                        <select
+                          value={step.template_id}
+                          onChange={(e) => updateStep(index, 'template_id', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          <option value="">템플릿 선택</option>
+                          {templates.map(template => (
+                            <option key={template.id} value={template.id}>
+                              {template.question_ko}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* 조건문 설정 섹션 */}
+                    {step.step_type === 'condition' && (
+                      <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <h5 className="text-sm font-semibold text-blue-800 mb-3">🔍 조건문 설정</h5>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">조건 타입</label>
+                            <select
+                              value={step.condition_type || ''}
+                              onChange={(e) => updateStep(index, 'condition_type', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            >
+                              <option value="">조건 타입 선택</option>
+                              <option value="customer_response">고객 응답</option>
+                              <option value="time_elapsed">시간 경과</option>
+                              <option value="product_match">상품 매칭</option>
+                              <option value="channel_match">채널 매칭</option>
+                              <option value="category_match">카테고리 매칭</option>
+                              <option value="language_preference">언어 선호도</option>
+                              <option value="escalation_needed">에스컬레이션 필요</option>
+                              <option value="custom_field">사용자 정의 필드</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">조건 값</label>
+                            <input
+                              type="text"
+                              value={step.condition_value || ''}
+                              onChange={(e) => updateStep(index, 'condition_value', e.target.value)}
+                              placeholder="조건 값 입력 (예: 예, 아니오, 30분)"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">조건 설명</label>
+                          <textarea
+                            value={step.step_description_ko || ''}
+                            onChange={(e) => updateStep(index, 'step_description_ko', e.target.value)}
+                            placeholder="조건문이 무엇을 확인하는지 설명하세요"
+                            rows={2}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 결정문 설정 섹션 */}
+                    {step.step_type === 'decision' && (
+                      <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <h5 className="text-sm font-semibold text-yellow-800 mb-3">🤔 결정문 설정</h5>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">결정 기준</label>
+                            <select
+                              value={step.condition_type || ''}
+                              onChange={(e) => updateStep(index, 'condition_type', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                            >
+                              <option value="">결정 기준 선택</option>
+                              <option value="customer_choice">고객 선택</option>
+                              <option value="response_analysis">응답 분석</option>
+                              <option value="time_based">시간 기반</option>
+                              <option value="priority_based">우선순위 기반</option>
+                              <option value="escalation_check">에스컬레이션 확인</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">결정 옵션</label>
+                            <input
+                              type="text"
+                              value={step.condition_value || ''}
+                              onChange={(e) => updateStep(index, 'condition_value', e.target.value)}
+                              placeholder="결정 옵션 (예: 예/아니오, 계속/중단)"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">결정 설명</label>
+                          <textarea
+                            value={step.step_description_ko || ''}
+                            onChange={(e) => updateStep(index, 'step_description_ko', e.target.value)}
+                            placeholder="어떤 기준으로 결정을 내리는지 설명하세요"
+                            rows={2}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 다음 단계 설정 */}
+                    <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                      <h5 className="text-sm font-semibold text-gray-800 mb-3">➡️ 다음 단계 설정</h5>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">성공 시 다음 단계</label>
+                          <select
+                            value={step.next_step_id || ''}
+                            onChange={(e) => updateStep(index, 'next_step_id', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                          >
+                            <option value="">다음 단계 선택</option>
+                            {steps.map((s, i) => (
+                              i > index && (
+                                <option key={s.id} value={s.id}>
+                                  단계 {i + 1}: {s.step_name_ko || '이름 없음'}
+                                </option>
+                              )
+                            ))}
+                            <option value="end">워크플로우 종료</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">실패 시 다음 단계</label>
+                          <select
+                            value={step.alternative_step_id || ''}
+                            onChange={(e) => updateStep(index, 'alternative_step_id', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                          >
+                            <option value="">대안 단계 선택</option>
+                            {steps.map((s, i) => (
+                              i > index && (
+                                <option key={s.id} value={s.id}>
+                                  단계 {i + 1}: {s.step_name_ko || '이름 없음'}
+                                </option>
+                              )
+                            ))}
+                            <option value="escalate">에스컬레이션</option>
+                            <option value="end">워크플로우 종료</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 기타 설정 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">태그 (쉼표로 구분)</label>
+                <input
+                  type="text"
+                  value={formData.tags}
+                  onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                  placeholder="예: 일반문의, 예약문의"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            {/* 체크박스 */}
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.is_active}
+                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                  className="rounded"
+                />
+                활성화
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.is_default}
+                  onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
+                  className="rounded"
+                />
+                기본 워크플로우
+              </label>
+            </div>
+
+            {/* 버튼 */}
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                {isSubmitting ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 워크플로우 삭제 확인 모달 컴포넌트
+function WorkflowDeleteModal({ 
+  workflow, 
+  onClose, 
+  onConfirm 
+}: {
+  workflow: any
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-md w-full p-6">
+        <h2 className="text-xl font-semibold mb-4">워크플로우 삭제</h2>
+        <div className="text-gray-600 mb-6">
+          <p className="mb-2">다음 워크플로우를 삭제하시겠습니까?</p>
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <p className="text-sm font-medium text-gray-900">{workflow.name_ko}</p>
+            <p className="text-xs text-gray-500 mt-1">{workflow.description_ko}</p>
           </div>
           <p className="text-sm text-red-600 mt-2">이 작업은 되돌릴 수 없습니다.</p>
         </div>
