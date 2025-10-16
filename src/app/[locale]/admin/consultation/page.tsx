@@ -2238,8 +2238,7 @@ function WorkflowModal({
         {/* 콘텐츠 */}
         <div className={`${isFullscreen ? 'h-[calc(100vh-80px)] overflow-y-auto' : 'max-h-[calc(90vh-80px)] overflow-y-auto'}`}>
           <div className="p-6">
-
-          <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
             {/* 기본 정보 */}
             <div className={`grid gap-4 ${isFullscreen ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <div>
@@ -2631,6 +2630,7 @@ function WorkflowModal({
               </button>
             </div>
           </form>
+          </div>
         </div>
       </div>
     </div>
