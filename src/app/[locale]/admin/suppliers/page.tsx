@@ -19,6 +19,11 @@ interface Supplier {
   updated_at: string;
 }
 
+interface SeasonDate {
+  start: string;
+  end: string;
+}
+
 interface SupplierProduct {
   id: string;
   supplier_id: string;
@@ -29,7 +34,7 @@ interface SupplierProduct {
   ticket_name: string;
   regular_price: number;
   supplier_price: number;
-  season_dates: any;
+  season_dates: SeasonDate[] | null;
   season_price: number | null;
   entry_times: string[] | null;
   markup_percent: number;
@@ -45,6 +50,13 @@ interface SupplierProduct {
   updated_at: string;
 }
 
+interface Choice {
+  id: string;
+  name: string;
+  name_ko: string;
+  options: ChoiceOption[];
+}
+
 interface Product {
   id: string;
   name: string;
@@ -52,7 +64,10 @@ interface Product {
   category: string | null;
   sub_category: string | null;
   base_price: number | null;
-  choices: any;
+  choices: {
+    required?: Choice[];
+    optional?: Choice[];
+  } | null;
 }
 
 interface ChoiceOption {
@@ -89,9 +104,7 @@ export default function SuppliersPage() {
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
-  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
-  const [editingProduct, setEditingProduct] = useState<SupplierProduct | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -149,7 +162,7 @@ export default function SuppliersPage() {
     try {
       const { data, error } = await supabase
         .from('suppliers')
-        .insert([supplierData])
+        .insert([supplierData] as any)
         .select()
         .single();
 
@@ -166,7 +179,7 @@ export default function SuppliersPage() {
     try {
       const { data, error } = await supabase
         .from('suppliers')
-        .update(supplierData)
+        .update(supplierData as never)
         .eq('id', id)
         .select()
         .single();
@@ -209,8 +222,8 @@ export default function SuppliersPage() {
       if (product) {
         if (supplierProduct.choice_id && supplierProduct.choice_option_id) {
           // 선택 옵션이 있는 경우
-          const choice = product.choices?.required?.find((c: any) => c.id === supplierProduct.choice_id);
-          const choiceOption = choice?.options?.find((o: any) => o.id === supplierProduct.choice_option_id);
+          const choice = product.choices?.required?.find((c: Choice) => c.id === supplierProduct.choice_id);
+          const choiceOption = choice?.options?.find((o: ChoiceOption) => o.id === supplierProduct.choice_option_id);
           if (choiceOption) {
             return `${product.name_ko || product.name} - ${choiceOption.name_ko || choiceOption.name}`;
           }
@@ -576,6 +589,10 @@ function ProductModal({
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<SupplierProduct | null>(null);
 
+  const getProductName = (supplierProduct: SupplierProduct) => {
+    return supplierProduct.ticket_name;
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -636,7 +653,7 @@ function ProductModal({
                   )}
                   {product.season_dates && Array.isArray(product.season_dates) && product.season_dates.length > 0 && (
                     <div className="text-sm text-gray-500 mt-1">
-                      시즌 기간: {product.season_dates.map((period: any) => `${period.start} ~ ${period.end}`).join(', ')}
+                      시즌 기간: {product.season_dates.map((period: SeasonDate) => `${period.start} ~ ${period.end}`).join(', ')}
                     </div>
                   )}
                 </div>
@@ -714,7 +731,7 @@ function ProductFormModal({
     } else if (product?.choice_id) {
       setSupplyType('choice');
     }
-  }, []);
+  }, [product?.product_id, product?.choice_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -724,7 +741,7 @@ function ProductFormModal({
         ...formData,
         supplier_id: supplier.id,
         product_id: supplyType === 'product' ? selectedProduct?.id || null : null,
-        choice_id: supplyType === 'choice' ? selectedChoice?.id || null : null,
+        choice_id: supplyType === 'choice' ? selectedChoiceOption?.id || null : null,
         choice_option_id: supplyType === 'choice' ? selectedChoiceOption?.id || null : null,
         // 기존 필드들은 호환성을 위해 유지
         regular_price: formData.adult_supplier_price || 0,
@@ -737,12 +754,12 @@ function ProductFormModal({
       if (product) {
         await supabase
           .from('supplier_products')
-          .update(productData)
+          .update(productData as never)
           .eq('id', product.id);
       } else {
         await supabase
           .from('supplier_products')
-          .insert([productData]);
+          .insert([productData] as any);
       }
 
       // 공급 업체 상품이 실제 상품과 연결된 경우 동적 가격 업데이트
@@ -750,7 +767,7 @@ function ProductFormModal({
         try {
           // 모든 채널에 대해 현재 날짜부터 30일간 동적 가격 업데이트
           const channels = await supabase.from('channels').select('id');
-          if (channels.data) {
+          if (channels.data && channels.data.length > 0) {
             const today = new Date();
             for (let i = 0; i < 30; i++) {
               const date = new Date(today);
@@ -760,7 +777,7 @@ function ProductFormModal({
               for (const channel of channels.data) {
                 await updateDynamicPricingWithSupplierPrices(
                   selectedProduct.id,
-                  channel.id,
+                  (channel as any).id,
                   dateString
                 );
               }
@@ -793,10 +810,10 @@ function ProductFormModal({
                 상품 선택 {supplyType ? '*' : ''}
               </label>
               <ProductSelector
-                selectedProductId={selectedProduct?.id}
-                selectedChoiceId={supplyType === 'choice' ? selectedChoiceOption?.id : undefined}
+                selectedProductId={selectedProduct?.id || ''}
+                selectedChoiceId={supplyType === 'choice' ? selectedChoiceOption?.id || '' : ''}
                 onProductSelect={(product) => {
-                  setSelectedProduct(product);
+                  setSelectedProduct(product as Product);
                   if (product) {
                     setFormData(prev => ({
                       ...prev,
@@ -806,7 +823,7 @@ function ProductFormModal({
                 }}
                 onChoiceSelect={(choice) => {
                   if (choice) {
-                    setSelectedChoiceOption(choice);
+                    setSelectedChoiceOption(choice as unknown as ChoiceOption);
                     setFormData(prev => ({
                       ...prev,
                       ticket_name: `${selectedProduct?.name_ko || selectedProduct?.name} - ${choice.name_ko || choice.name}`
@@ -1023,7 +1040,7 @@ function ProductFormModal({
                   시즌 기간들
                 </label>
                 <div className="space-y-2">
-                  {formData.season_dates.map((period: any, index: number) => (
+                  {formData.season_dates.map((period: SeasonDate, index: number) => (
                     <div key={index} className="flex gap-2">
                       <input
                         type="date"
@@ -1051,7 +1068,7 @@ function ProductFormModal({
                       <button
                         type="button"
                         onClick={() => {
-                          const newDates = formData.season_dates.filter((_: { start?: string; end?: string }, i: number) => i !== index);
+                          const newDates = formData.season_dates.filter((_: SeasonDate, i: number) => i !== index);
                           setFormData({...formData, season_dates: newDates});
                         }}
                         className="px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600"
@@ -1096,7 +1113,7 @@ function ProductFormModal({
                 </button>
                 <button
                   type="button"
-                  onClick={onCancel}
+                  onClick={onClose}
                   className="flex-1 bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600"
                 >
                   취소
