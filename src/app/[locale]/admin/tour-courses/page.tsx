@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { 
   Search, 
   Edit, 
@@ -20,6 +20,20 @@ import LocationPickerModal from '@/components/LocationPickerModal'
 import TourCourseEditModal from '@/components/TourCourseEditModal'
 
 // 타입 정의
+interface TourCoursePhoto {
+  id: string
+  course_id: string
+  photo_url: string
+  photo_alt_ko?: string
+  photo_alt_en?: string
+  display_order?: number
+  is_primary: boolean
+  sort_order?: number
+  thumbnail_url?: string
+  uploaded_by?: string
+  created_at: string
+}
+
 interface TourCourse {
   id: string
   name_ko: string
@@ -101,6 +115,7 @@ export default function TourCoursesPage() {
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedCourse, setSelectedCourse] = useState<TourCourse | null>(null)
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
+  const [coursePhotos, setCoursePhotos] = useState<TourCoursePhoto[]>([])
 
   // 데이터 로드
   const { 
@@ -135,6 +150,36 @@ export default function TourCoursesPage() {
     },
     cacheKey: 'tour_course_categories'
   })
+
+  // 선택된 코스의 사진 가져오기
+  useEffect(() => {
+    const fetchCoursePhotos = async () => {
+      if (!selectedCourse) {
+        setCoursePhotos([])
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('tour_course_photos')
+          .select('*')
+          .eq('course_id', selectedCourse.id)
+          .order('sort_order', { ascending: true })
+
+        if (error) {
+          console.error('사진 가져오기 오류:', error)
+          setCoursePhotos([])
+        } else {
+          setCoursePhotos(data || [])
+        }
+      } catch (error) {
+        console.error('사진 가져오기 오류:', error)
+        setCoursePhotos([])
+      }
+    }
+
+    fetchCoursePhotos()
+  }, [selectedCourse])
 
   // 편집 시작
   const startEdit = (course: TourCourse) => {
@@ -537,6 +582,47 @@ export default function TourCoursesPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* 사진 섹션 */}
+                  <div className="text-sm">
+                    <div className="font-medium text-gray-700 mb-2 flex items-center">
+                      <ImageIcon className="w-4 h-4 mr-1" />
+                      사진 ({coursePhotos.length}장)
+                    </div>
+                    {coursePhotos.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {coursePhotos.map((photo) => (
+                          <div key={photo.id} className="relative group">
+                            <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                              <img
+                                src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.photo_url}`}
+                                alt={photo.photo_alt_ko || photo.photo_alt_en || 'Tour course photo'}
+                                className="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
+                              />
+                            </div>
+                            
+                            {/* 대표 사진 표시 */}
+                            {photo.is_primary && (
+                              <div className="absolute top-1 left-1 bg-yellow-500 text-white px-1 py-0.5 rounded text-xs font-medium">
+                                대표
+                              </div>
+                            )}
+                            
+                            {/* 파일명 표시 */}
+                            <div className="mt-1 text-xs text-gray-500 truncate">
+                              {photo.photo_alt_ko || photo.photo_alt_en || 'Photo'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 text-xs bg-gray-50 p-3 rounded text-center">
+                        등록된 사진이 없습니다.
+                        <br />
+                        편집 버튼을 눌러 사진을 추가해보세요.
+                      </div>
+                    )}
+                  </div>
 
                   {/* 상세 정보 */}
                   <div className="grid grid-cols-2 gap-2 text-sm">

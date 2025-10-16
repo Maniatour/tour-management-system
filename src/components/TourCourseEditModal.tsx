@@ -1,12 +1,10 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { 
   X, 
   Globe, 
   MapPin, 
-  Clock, 
-  Settings,
   ChevronRight,
   ChevronDown,
   Folder,
@@ -14,8 +12,7 @@ import {
   Upload,
   Image as ImageIcon,
   Trash2,
-  Star,
-  RotateCcw
+  Star
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -23,32 +20,35 @@ interface TourCourse {
   id: string
   name_ko: string
   name_en: string
-  team_name_ko?: string
-  team_name_en?: string
-  customer_name_ko?: string
-  customer_name_en?: string
-  team_description_ko?: string
-  team_description_en?: string
-  customer_description_ko?: string
-  customer_description_en?: string
-  internal_note?: string
-  location?: string
-  category?: string
-  category_id?: string
-  point_name?: string
-  start_latitude?: number
-  start_longitude?: number
-  end_latitude?: number
-  end_longitude?: number
-  duration_hours?: number
+  team_name_ko?: string | null
+  team_name_en?: string | null
+  customer_name_ko?: string | null
+  customer_name_en?: string | null
+  team_description_ko?: string | null
+  team_description_en?: string | null
+  customer_description_ko?: string | null
+  customer_description_en?: string | null
+  internal_note?: string | null
+  location?: string | null
+  category?: string | null
+  category_id?: string | null
+  point_name?: string | null
+  start_latitude?: number | null
+  start_longitude?: number | null
+  end_latitude?: number | null
+  end_longitude?: number | null
+  duration_hours?: number | null
   difficulty_level?: 'easy' | 'medium' | 'hard'
-  price_adult?: number
-  price_child?: number
-  price_infant?: number
+  price_adult?: number | null
+  price_child?: number | null
+  price_infant?: number | null
   is_active: boolean
-  parent_id?: string
+  parent_id?: string | null
   children?: TourCourse[]
   level?: number
+  parent?: TourCourse
+  description_ko?: string | null
+  description_en?: string | null
 }
 
 interface TourCourseCategory {
@@ -68,17 +68,15 @@ interface TourCourseCategory {
 interface TourCoursePhoto {
   id: string
   course_id: string
-  file_name: string
-  file_path: string
-  file_size: number
-  file_type: string
-  mime_type: string
-  thumbnail_url?: string
+  photo_url: string
+  photo_alt_ko?: string
+  photo_alt_en?: string
+  display_order?: number
   is_primary: boolean
   sort_order?: number
+  thumbnail_url?: string
   uploaded_by?: string
   created_at: string
-  updated_at: string
 }
 
 interface TourCourseEditModalProps {
@@ -87,12 +85,6 @@ interface TourCourseEditModalProps {
   course: TourCourse | null
   onSave: (course: TourCourse) => void
 }
-
-const DIFFICULTY_LEVELS = [
-  { value: 'easy', label: '쉬움', color: 'text-green-600' },
-  { value: 'medium', label: '보통', color: 'text-yellow-600' },
-  { value: 'hard', label: '어려움', color: 'text-red-600' }
-]
 
 // 계층적 구조를 위한 함수들
 const buildHierarchy = (courses: TourCourse[]): TourCourse[] => {
@@ -145,8 +137,8 @@ const ParentSelectionTreeItem = ({
   course: TourCourse
   level?: number
   expandedNodes: Set<string>
-  selectedParentId?: string | null
-  currentCourseId?: string | null
+  selectedParentId?: string | null | undefined
+  currentCourseId?: string | null | undefined
   onToggle: (id: string) => void
   onSelect: (id: string | null) => void
 }) => {
@@ -328,7 +320,6 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       if (!course?.id) return
       
       try {
-        console.log('사진 로드 시작:', course.id)
         const { data, error } = await supabase
           .from('tour_course_photos')
           .select('*')
@@ -336,19 +327,12 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           .order('created_at', { ascending: true })
 
         if (error) {
-          console.error('Supabase 오류:', error)
           throw error
         }
 
-        console.log('로드된 사진:', data)
         setPhotos(data || [])
       } catch (error) {
         console.error('사진 로드 오류:', error)
-        console.error('오류 상세:', {
-          message: error instanceof Error ? error.message : 'Unknown error',
-          courseId: course?.id,
-          error
-        })
         // 오류가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
         setPhotos([])
       }
@@ -397,10 +381,9 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
     }
   }, [course])
 
-  // 모든 노드를 기본적으로 확장
+  // 모든 노드를 기본적으로 확장 (한 번만 실행)
   useEffect(() => {
     if (tourCourses.length > 0 && expandedNodes.size === 0) {
-      const courses = buildHierarchy(tourCourses)
       const allNodeIds = new Set<string>()
       const collectAllNodeIds = (courseList: TourCourse[]) => {
         courseList.forEach(course => {
@@ -410,33 +393,37 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           }
         })
       }
-      collectAllNodeIds(courses)
+      collectAllNodeIds(tourCourses)
       setExpandedNodes(allNodeIds)
     }
-  }, [tourCourses, expandedNodes.size])
+  }, [tourCourses, expandedNodes.size]) // 필요한 의존성 모두 포함
 
-  // 트리 노드 토글 함수
-  const toggleNode = (nodeId: string) => {
-    const newExpanded = new Set(expandedNodes)
-    if (newExpanded.has(nodeId)) {
-      newExpanded.delete(nodeId)
-    } else {
-      newExpanded.add(nodeId)
-    }
-    setExpandedNodes(newExpanded)
-  }
+  // 트리 노드 토글 함수를 useCallback으로 최적화
+  const toggleNode = useCallback((nodeId: string) => {
+    setExpandedNodes(prev => {
+      const newExpanded = new Set(prev)
+      if (newExpanded.has(nodeId)) {
+        newExpanded.delete(nodeId)
+      } else {
+        newExpanded.add(nodeId)
+      }
+      return newExpanded
+    })
+  }, [])
+
+  // 폼 데이터 업데이트 함수들을 useCallback으로 최적화
+  const updateFormData = useCallback((updates: Partial<typeof formData>) => {
+    setFormData(prev => ({ ...prev, ...updates }))
+  }, [])
 
   // 사진 업로드 처리
   const handleFileUpload = async (files: FileList) => {
     if (!files.length || !course?.id) return
 
-    console.log('파일 업로드 시작:', files.length, '개 파일')
     setUploading(true)
     
     const uploadPromises = Array.from(files).map(async (file) => {
       try {
-        console.log('파일 처리 중:', file.name, file.size, file.type)
-        
         // 파일 크기 체크 (10MB 제한)
         if (file.size > 10 * 1024 * 1024) {
           throw new Error(`파일 ${file.name}이 너무 큽니다. (최대 10MB)`)
@@ -452,7 +439,6 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
         const filePath = `tour-courses/${course.id}/${fileName}`
 
-        console.log('Storage 업로드 시작:', filePath)
 
         // Supabase Storage에 업로드
         const { error: uploadError } = await supabase.storage
@@ -464,18 +450,19 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           throw uploadError
         }
 
-        console.log('데이터베이스 저장 시작')
 
         // 데이터베이스에 메타데이터 저장
-        const { data, error: insertError } = await supabase
+        const { data, error: insertError } = await (supabase as any)
           .from('tour_course_photos')
           .insert({
+            id: crypto.randomUUID(),
             course_id: course.id,
-            file_name: file.name,
-            file_path: filePath,
-            file_size: file.size,
-            file_type: fileExt || '',
-            mime_type: file.type,
+            photo_url: filePath,
+            photo_alt_ko: file.name,
+            photo_alt_en: file.name,
+            display_order: 0,
+            is_primary: false,
+            sort_order: 0,
             uploaded_by: (await supabase.auth.getUser()).data.user?.email || 'unknown'
           })
           .select()
@@ -486,7 +473,6 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           throw insertError
         }
 
-        console.log('파일 업로드 성공:', data)
         return data
       } catch (error) {
         console.error('파일 업로드 오류:', file.name, error)
@@ -495,9 +481,9 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       }
     })
 
-    const uploadedPhotos = (await Promise.all(uploadPromises)).filter(Boolean)
+    const results = await Promise.all(uploadPromises)
+    const uploadedPhotos = results.filter((photo) => photo !== null) as TourCoursePhoto[]
     if (uploadedPhotos.length > 0) {
-      console.log('업로드 완료:', uploadedPhotos.length, '개 파일')
       setPhotos(prev => [...prev, ...uploadedPhotos])
     }
 
@@ -515,12 +501,11 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         return
       }
 
-      console.log('사진 삭제 시작:', photo.file_name)
 
       // Storage에서 파일 삭제
       const { error: storageError } = await supabase.storage
         .from('tour-course-photos')
-        .remove([photo.file_path])
+        .remove([photo.photo_url])
 
       if (storageError) {
         console.error('Storage 삭제 오류:', storageError)
@@ -538,7 +523,6 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         throw deleteError
       }
 
-      console.log('사진 삭제 성공:', photo.file_name)
       setPhotos(prev => prev.filter(p => p.id !== photoId))
     } catch (error) {
       console.error('사진 삭제 오류:', error)
@@ -549,13 +533,12 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
   // 대표 사진 설정
   const handleSetPrimary = async (photoId: string) => {
     try {
-      console.log('대표 사진 설정 시작:', photoId)
 
       // 기존 대표 사진 해제
-      const { error: unsetError } = await supabase
+      const { error: unsetError } = await (supabase as any)
         .from('tour_course_photos')
         .update({ is_primary: false })
-        .eq('course_id', course?.id)
+        .eq('course_id', course?.id || '')
 
       if (unsetError) {
         console.error('기존 대표 사진 해제 오류:', unsetError)
@@ -563,7 +546,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       }
 
       // 새로운 대표 사진 설정
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('tour_course_photos')
         .update({ is_primary: true })
         .eq('id', photoId)
@@ -573,7 +556,6 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         throw error
       }
 
-      console.log('대표 사진 설정 성공:', photoId)
       setPhotos(prev => prev.map(photo => ({
         ...photo,
         is_primary: photo.id === photoId
@@ -605,52 +587,19 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
     }
   }
 
-  // 투어 코스 수정
+  // 투어 코스 저장 (생성 또는 수정)
   const handleSave = async () => {
     if (!course) return
 
+    // 필수 필드 검증
+    if (!formData.team_name_ko.trim()) {
+      alert('팀원용 한국어 이름을 입력해주세요.')
+      return
+    }
+
     setLoading(true)
     try {
-      const { error } = await supabase
-        .from('tour_courses')
-        .update({
-          parent_id: formData.parent_id || null,
-          customer_name_ko: formData.customer_name_ko || null,
-          customer_name_en: formData.customer_name_en || null,
-          customer_description_ko: formData.customer_description_ko || null,
-          customer_description_en: formData.customer_description_en || null,
-          team_name_ko: formData.team_name_ko,
-          team_name_en: formData.team_name_en,
-          team_description_ko: formData.team_description_ko || null,
-          team_description_en: formData.team_description_en || null,
-          internal_note: formData.internal_note || null,
-          // 기존 필드들 (하위 호환성)
-          name_ko: formData.team_name_ko,
-          name_en: formData.team_name_en,
-          description_ko: formData.team_description_ko || null,
-          description_en: formData.team_description_en || null,
-          category: formData.category || '기타',
-          category_id: formData.category_id || null,
-          point_name: formData.point_name || null,
-          location: formData.location || null,
-          start_latitude: formData.start_latitude ? parseFloat(formData.start_latitude) : null,
-          start_longitude: formData.start_longitude ? parseFloat(formData.start_longitude) : null,
-          end_latitude: formData.end_latitude ? parseFloat(formData.end_latitude) : null,
-          end_longitude: formData.end_longitude ? parseFloat(formData.end_longitude) : null,
-          duration_hours: formData.duration_hours,
-          difficulty_level: formData.difficulty_level,
-          price_adult: formData.price_adult || null,
-          price_child: formData.price_child || null,
-          price_infant: formData.price_infant || null,
-          is_active: formData.is_active
-        })
-        .eq('id', course.id)
-
-      if (error) throw error
-
-      // 업데이트된 코스 정보를 부모에게 전달
-      const updatedCourse = {
-        ...course,
+      const courseData = {
         parent_id: formData.parent_id || null,
         customer_name_ko: formData.customer_name_ko || null,
         customer_name_en: formData.customer_name_en || null,
@@ -661,6 +610,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         team_description_ko: formData.team_description_ko || null,
         team_description_en: formData.team_description_en || null,
         internal_note: formData.internal_note || null,
+        // 기존 필드들 (하위 호환성)
         name_ko: formData.team_name_ko,
         name_en: formData.team_name_en,
         description_ko: formData.team_description_ko || null,
@@ -681,28 +631,60 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         is_active: formData.is_active
       }
 
-      onSave(updatedCourse)
+      let result
+      let savedCourse: TourCourse
+
+      if (course.id && course.id !== '') {
+        // 기존 코스 수정
+        const { data, error } = await (supabase as any)
+          .from('tour_courses')
+          .update(courseData)
+          .eq('id', course.id)
+          .select()
+          .single()
+
+        if (error) throw error
+        result = data
+        savedCourse = { ...course, ...result }
+      } else {
+        // 새 코스 생성
+        const { data, error } = await (supabase as any)
+          .from('tour_courses')
+          .insert({
+            ...courseData,
+            id: crypto.randomUUID() // UUID 자동 생성
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+        result = data
+        savedCourse = { ...course, ...result }
+      }
+
+      onSave(savedCourse)
       onClose()
     } catch (error) {
-      console.error('투어 코스 수정 오류:', error)
-      alert('투어 코스 수정 중 오류가 발생했습니다.')
+      console.error('투어 코스 저장 오류:', error)
+      alert('투어 코스 저장 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
     }
   }
 
+  // 계층적 구조를 useMemo로 최적화
+  const hierarchicalCourses = useMemo(() => {
+    return buildHierarchy(tourCourses)
+  }, [tourCourses])
+
   if (!isOpen) return null
-
-  console.log('TourCourseEditModal 렌더링:', { isOpen, activeTab, course: course?.id })
-
-  const hierarchicalCourses = buildHierarchy(tourCourses)
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-7xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900">
-            투어 코스 수정
+            {course?.id && course.id !== '' ? '투어 코스 수정' : '새 투어 코스 추가'}
           </h2>
           <button
             onClick={onClose}
@@ -715,10 +697,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         {/* 탭 네비게이션 */}
         <div className="flex space-x-1 mb-6">
           <button
-            onClick={() => {
-              console.log('기본 정보 탭 클릭')
-              setActiveTab('basic')
-            }}
+            onClick={() => setActiveTab('basic')}
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               activeTab === 'basic'
                 ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -728,10 +707,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             기본 정보
           </button>
           <button
-            onClick={() => {
-              console.log('사진 관리 탭 클릭')
-              setActiveTab('photos')
-            }}
+            onClick={() => setActiveTab('photos')}
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               activeTab === 'photos'
                 ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -762,7 +738,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     name="parent_course"
                     value=""
                     checked={!formData.parent_id}
-                    onChange={() => setFormData({ ...formData, parent_id: '' })}
+                    onChange={() => updateFormData({ parent_id: '' })}
                     className="w-4 h-4 text-blue-600"
                   />
                   <Globe className="w-4 h-4 text-green-500" />
@@ -781,7 +757,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     selectedParentId={formData.parent_id}
                     currentCourseId={course?.id}
                     onToggle={toggleNode}
-                    onSelect={(id) => setFormData({ ...formData, parent_id: id || '' })}
+                    onSelect={(id) => updateFormData({ parent_id: id || '' })}
                   />
                 ))}
               </div>
@@ -803,7 +779,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   <input
                     type="text"
                     value={formData.team_name_ko}
-                    onChange={(e) => setFormData({ ...formData, team_name_ko: e.target.value })}
+                    onChange={(e) => updateFormData({ team_name_ko: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="예: 그랜드캐년, 사우스림, 마더포인트"
                   />
@@ -815,7 +791,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   <input
                     type="text"
                     value={formData.team_name_en}
-                    onChange={(e) => setFormData({ ...formData, team_name_en: e.target.value })}
+                    onChange={(e) => updateFormData({ team_name_en: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="예: Grand Canyon, South Rim, Mather Point"
                   />
@@ -1130,45 +1106,52 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         {activeTab === 'photos' && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900">사진 관리</h3>
-            <div className="text-sm text-gray-500 mb-4">
-              디버그: activeTab = {activeTab}, courseId = {course?.id}, photos.length = {photos.length}
-            </div>
+            
+            {(!course?.id || course.id === '') && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-yellow-800 text-sm">
+                  투어 코스를 먼저 저장한 후 사진을 업로드할 수 있습니다.
+                </p>
+              </div>
+            )}
             
             {/* 업로드 영역 */}
-            <div
-              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                dragActive
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-300 hover:border-gray-400'
-              }`}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-            >
-              <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600 mb-2">
-                사진을 드래그하여 업로드하거나 클릭하여 선택하세요
-              </p>
-              <p className="text-sm text-gray-500 mb-4">
-                JPG, PNG, GIF 파일 (최대 10MB)
-              </p>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            {course?.id && course.id !== '' && (
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  dragActive
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-300 hover:border-gray-400'
+                }`}
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
               >
-                {uploading ? '업로드 중...' : '파일 선택'}
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
-                className="hidden"
-              />
-            </div>
+                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600 mb-2">
+                  사진을 드래그하여 업로드하거나 클릭하여 선택하세요
+                </p>
+                <p className="text-sm text-gray-500 mb-4">
+                  JPG, PNG, GIF 파일 (최대 10MB)
+                </p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {uploading ? '업로드 중...' : '파일 선택'}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+                  className="hidden"
+                />
+              </div>
+            )}
 
             {/* 사진 목록 */}
             {photos.length > 0 && (
@@ -1177,8 +1160,8 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   <div key={photo.id} className="relative group">
                     <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
                       <img
-                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.file_path}`}
-                        alt={photo.file_name}
+                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.photo_url}`}
+                        alt={photo.photo_alt_ko || photo.photo_alt_en || 'Tour course photo'}
                         className="w-full h-full object-cover"
                       />
                     </div>
@@ -1214,7 +1197,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     
                     {/* 파일 정보 */}
                     <div className="mt-2 text-xs text-gray-500 truncate">
-                      {photo.file_name}
+                      {photo.photo_alt_ko || photo.photo_alt_en || 'Photo'}
                     </div>
                   </div>
                 ))}
@@ -1237,7 +1220,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? '저장 중...' : '저장'}
+            {loading ? '저장 중...' : (course?.id && course.id !== '' ? '수정' : '추가')}
           </button>
           <button
             onClick={onClose}
