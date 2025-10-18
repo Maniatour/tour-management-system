@@ -20,6 +20,7 @@ interface EmployeeData {
   attendancePay: number
   guideFee: number
   assistantFee: number
+  prepaidTip: number
   totalPay: number
   hasWarning: boolean
   attendanceRecords: Array<{
@@ -37,6 +38,7 @@ interface EmployeeData {
     team_type: string
     guide_fee: number
     assistant_fee: number
+    prepaid_tip: number
     total_fee: number
     has_warning: boolean
   }>
@@ -49,6 +51,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
   const [totalAttendancePay, setTotalAttendancePay] = useState<number>(0)
   const [totalGuideFee, setTotalGuideFee] = useState<number>(0)
   const [totalAssistantFee, setTotalAssistantFee] = useState<number>(0)
+  const [totalPrepaidTip, setTotalPrepaidTip] = useState<number>(0)
   const [totalPay, setTotalPay] = useState<number>(0)
   const [loading, setLoading] = useState(false)
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set())
@@ -144,7 +147,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
         return
       }
 
-      // 투어 fee 조회
+      // 투어 fee 조회 (reservation_ids 포함)
       const { data: tourData, error: tourError } = await supabase
         .from('tours')
         .select(`
@@ -156,6 +159,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           assistant_fee,
           team_type,
           product_id,
+          reservation_ids,
           products!inner(name_ko, name_en)
         `)
         .gte('tour_date', startDate)
@@ -183,7 +187,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
       }) || []
 
       // 직원별 데이터 처리
-      const processedEmployeeData: EmployeeData[] = teamData?.map(employee => {
+      const processedEmployeeData: EmployeeData[] = await Promise.all(
+        teamData?.map(async (employee) => {
         // 출퇴근 기록 필터링
         const employeeAttendanceRecords = filteredAttendanceData.filter(record => 
           record.employee_email === employee.email
@@ -206,34 +211,43 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
 
         const attendancePay = actualTotalHours * hourlyRate
 
-        // 투어 fee 필터링
-        const employeeTourFees = tourData?.filter(tour => 
+        // 투어 fee 필터링 및 prepaid 팁 계산
+        const filteredTours = tourData?.filter(tour => 
           tour.tour_guide_id === employee.email || tour.assistant_id === employee.email
-        ).map(tour => {
-          const isGuide = tour.tour_guide_id === employee.email
-          const isAssistant = tour.assistant_id === employee.email
-          const guideFee = isGuide ? (tour.guide_fee || 0) : 0
-          const assistantFee = isAssistant ? (tour.assistant_fee || 0) : 0
-          
-          // 경고 표시가 필요한지 확인
-          const hasWarning = (isGuide && guideFee === 0) || (isAssistant && assistantFee === 0)
-          
-          return {
-            id: tour.id,
-            tour_id: tour.id,
-            tour_name: getTourNameForEmployee(tour, employee.languages),
-            date: tour.tour_date,
-            team_type: tour.team_type || '',
-            guide_fee: guideFee,
-            assistant_fee: assistantFee,
-            total_fee: guideFee + assistantFee,
-            has_warning: hasWarning
-          }
-        }) || []
+        ) || []
+        
+        const employeeTourFees = await Promise.all(
+          filteredTours.map(async (tour) => {
+            const isGuide = tour.tour_guide_id === employee.email
+            const isAssistant = tour.assistant_id === employee.email
+            const guideFee = isGuide ? (tour.guide_fee || 0) : 0
+            const assistantFee = isAssistant ? (tour.assistant_fee || 0) : 0
+            
+            // prepaid 팁 계산
+            const prepaidTip = await calculatePrepaidTip(tour, employee.email)
+            
+            // 경고 표시가 필요한지 확인
+            const hasWarning = (isGuide && guideFee === 0) || (isAssistant && assistantFee === 0)
+            
+            return {
+              id: tour.id,
+              tour_id: tour.id,
+              tour_name: getTourNameForEmployee(tour, employee.languages),
+              date: tour.tour_date,
+              team_type: tour.team_type || '',
+              guide_fee: guideFee,
+              assistant_fee: assistantFee,
+              prepaid_tip: prepaidTip,
+              total_fee: guideFee + assistantFee + prepaidTip,
+              has_warning: hasWarning
+            }
+          })
+        )
 
         const guideFee = employeeTourFees.reduce((sum, tour) => sum + tour.guide_fee, 0)
         const assistantFee = employeeTourFees.reduce((sum, tour) => sum + tour.assistant_fee, 0)
-        const totalPay = attendancePay + guideFee + assistantFee
+        const prepaidTip = employeeTourFees.reduce((sum, tour) => sum + tour.prepaid_tip, 0)
+        const totalPay = attendancePay + guideFee + assistantFee + prepaidTip
         
         // 직원에게 경고가 필요한지 확인 (투어 fee 중 하나라도 $0이면 경고)
         const hasWarning = employeeTourFees.some(tour => tour.has_warning)
@@ -247,6 +261,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           attendancePay,
           guideFee,
           assistantFee,
+          prepaidTip,
           totalPay,
           hasWarning,
           attendanceRecords: employeeAttendanceRecords.map(record => ({
@@ -258,7 +273,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           })),
           tourFees: employeeTourFees
         }
-      }) || []
+        }) || []
 
       setEmployeeData(processedEmployeeData)
 
@@ -266,11 +281,13 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
       const totalAttendance = processedEmployeeData.reduce((sum, emp) => sum + emp.attendancePay, 0)
       const totalGuide = processedEmployeeData.reduce((sum, emp) => sum + emp.guideFee, 0)
       const totalAssistant = processedEmployeeData.reduce((sum, emp) => sum + emp.assistantFee, 0)
+      const totalPrepaid = processedEmployeeData.reduce((sum, emp) => sum + emp.prepaidTip, 0)
       const total = processedEmployeeData.reduce((sum, emp) => sum + emp.totalPay, 0)
 
       setTotalAttendancePay(totalAttendance)
       setTotalGuideFee(totalGuide)
       setTotalAssistantFee(totalAssistant)
+      setTotalPrepaidTip(totalPrepaid)
       setTotalPay(total)
 
     } catch (error) {
@@ -284,6 +301,46 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
   const getEmployeePrimaryLanguage = (employeeLanguages: string[]) => {
     if (!employeeLanguages || employeeLanguages.length === 0) return 'KR'
     return employeeLanguages[0] || 'KR'
+  }
+
+  // 투어의 prepaid 팁을 계산하는 함수
+  const calculatePrepaidTip = async (tour: any, employeeEmail: string) => {
+    if (!tour.reservation_ids || tour.reservation_ids.length === 0) {
+      return 0
+    }
+
+    try {
+      // reservation_pricing에서 prepayment_tip 조회
+      const { data: pricingData, error: pricingError } = await supabase
+        .from('reservation_pricing')
+        .select('prepayment_tip')
+        .in('reservation_id', tour.reservation_ids)
+
+      if (pricingError) {
+        console.error('Reservation pricing 조회 오류:', pricingError)
+        return 0
+      }
+
+      // 총 prepayment_tip 합계
+      const totalTip = pricingData?.reduce((sum, pricing) => sum + (pricing.prepayment_tip || 0), 0) || 0
+
+      // 팀 타입에 따른 팁 분배
+      const isGuide = tour.tour_guide_id === employeeEmail
+      const isAssistant = tour.assistant_id === employeeEmail
+
+      if (tour.team_type === '1guide' && isGuide) {
+        return totalTip // 가이드가 모두 가져감
+      } else if (tour.team_type === '2guide' && (isGuide || isAssistant)) {
+        return totalTip / 2 // 가이드와 어시스턴트가 절반씩
+      } else if ((tour.team_type === 'guide+driver' || tour.team_type === 'guide + driver') && isGuide) {
+        return totalTip // 가이드가 모두 가져감
+      }
+
+      return 0
+    } catch (error) {
+      console.error('Prepaid tip 계산 오류:', error)
+      return 0
+    }
   }
 
   // 개별 직원 프린트 함수
@@ -338,6 +395,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           attendanceSubtotal: '출퇴근 소계',
           guideFee: '가이드 Fee',
           assistantFee: '어시스턴트 Fee',
+          prepaidTip: 'Prepaid 팁',
           totalPay: '총 급여',
           attendanceRecords: '출퇴근 기록',
           tourFee: '투어 Fee',
@@ -366,6 +424,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           attendanceSubtotal: 'Attendance Subtotal',
           guideFee: 'Guide Fee',
           assistantFee: 'Assistant Fee',
+          prepaidTip: 'Prepaid Tip',
           totalPay: 'Total Pay',
           attendanceRecords: 'Attendance Records',
           tourFee: 'Tour Fee',
@@ -436,6 +495,10 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
               <div class="amount">$${formatCurrency(employee.assistantFee)}</div>
             </div>
             <div class="summary-card">
+              <h3>${t.prepaidTip}</h3>
+              <div class="amount">$${formatCurrency(employee.prepaidTip)}</div>
+            </div>
+            <div class="summary-card">
               <h3>${t.totalPay}</h3>
               <div class="amount">$${formatCurrency(employee.totalPay)}</div>
             </div>
@@ -477,6 +540,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                   <th>${t.teamType}</th>
                   <th>${t.guideFeeCol}</th>
                   <th>${t.assistantFeeCol}</th>
+                  <th>${t.prepaidTip}</th>
                   <th>${t.totalFee}</th>
                 </tr>
               </thead>
@@ -488,11 +552,12 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                     <td>${formatTeamTypeForPrint(tour.team_type)}</td>
                     <td style="${tour.guide_fee === 0 ? 'color: #9ca3af;' : ''}">$${formatCurrencyForPrint(tour.guide_fee)}</td>
                     <td style="${tour.assistant_fee === 0 ? 'color: #9ca3af;' : ''}">$${formatCurrencyForPrint(tour.assistant_fee)}</td>
+                    <td style="${tour.prepaid_tip === 0 ? 'color: #9ca3af;' : ''}">$${formatCurrencyForPrint(tour.prepaid_tip)}</td>
                     <td style="${tour.total_fee === 0 ? 'color: #9ca3af;' : ''}">$${formatCurrencyForPrint(tour.total_fee)}</td>
                   </tr>
                 `).join('')}
                 <tr class="total-row">
-                  <td colspan="5">${t.total}</td>
+                  <td colspan="6">${t.total}</td>
                   <td>$${formatCurrencyForPrint(employee.tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}</td>
                 </tr>
               </tbody>
@@ -735,7 +800,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           </div>
 
           {/* 통계 요약 */}
-          <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-5 gap-4 mb-6">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="text-sm font-medium text-gray-700 mb-1">출퇴근 소계</div>
               <div className="text-2xl font-bold text-blue-600">
@@ -752,6 +817,12 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
               <div className="text-sm font-medium text-gray-700 mb-1">어시스턴트 Fee</div>
               <div className="text-2xl font-bold text-green-600">
                 ${formatCurrency(totalAssistantFee)}
+              </div>
+            </div>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="text-sm font-medium text-gray-700 mb-1">Prepaid 팁</div>
+              <div className="text-2xl font-bold text-yellow-600">
+                ${formatCurrency(totalPrepaidTip)}
               </div>
             </div>
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
@@ -784,6 +855,9 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       어시스턴트 Fee
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Prepaid 팁
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       투어 횟수
@@ -821,6 +895,9 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                           {formatCurrencyWithStyle(employee.assistantFee)}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                          {formatCurrencyWithStyle(employee.prepaidTip)}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                           {employee.tourFees.length}회
@@ -932,6 +1009,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                                           <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">팀 타입</th>
                                           <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">가이드 Fee</th>
                                           <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">어시스턴트 Fee</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Prepaid 팁</th>
                                           <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">총 Fee</th>
                                         </tr>
                                       </thead>
@@ -958,6 +1036,9 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                                             </td>
                                             <td className="px-2 py-1 text-gray-900">
                                               {formatCurrencyWithStyle(tour.assistant_fee)}
+                                            </td>
+                                            <td className="px-2 py-1 text-gray-900">
+                                              {formatCurrencyWithStyle(tour.prepaid_tip)}
                                             </td>
                                             <td className="px-2 py-1 text-gray-900 font-medium">
                                               {formatCurrencyWithStyle(tour.total_fee)}
