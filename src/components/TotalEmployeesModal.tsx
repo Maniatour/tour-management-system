@@ -189,91 +189,92 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
       // 직원별 데이터 처리
       const processedEmployeeData: EmployeeData[] = await Promise.all(
         teamData?.map(async (employee) => {
-        // 출퇴근 기록 필터링
-        const employeeAttendanceRecords = filteredAttendanceData.filter(record => 
-          record.employee_email === employee.email
-        )
+          // 출퇴근 기록 필터링
+          const employeeAttendanceRecords = filteredAttendanceData.filter(record => 
+            record.employee_email === employee.email
+          )
 
-        // 시급 설정
-        let hourlyRate = 15 // 기본값
-        if (employee.position === 'office manager') {
-          hourlyRate = 17
-        }
-
-        // 실제 근무시간 계산 (식사시간 차감 포함)
-        const actualTotalHours = employeeAttendanceRecords.reduce((sum, record) => {
-          let workHours = record.work_hours || 0
-          if (workHours > 8) {
-            workHours = workHours - 0.5
+          // 시급 설정
+          let hourlyRate = 15 // 기본값
+          if (employee.position === 'office manager') {
+            hourlyRate = 17
           }
-          return sum + workHours
-        }, 0)
 
-        const attendancePay = actualTotalHours * hourlyRate
-
-        // 투어 fee 필터링 및 prepaid 팁 계산
-        const filteredTours = tourData?.filter(tour => 
-          tour.tour_guide_id === employee.email || tour.assistant_id === employee.email
-        ) || []
-        
-        const employeeTourFees = await Promise.all(
-          filteredTours.map(async (tour) => {
-            const isGuide = tour.tour_guide_id === employee.email
-            const isAssistant = tour.assistant_id === employee.email
-            const guideFee = isGuide ? (tour.guide_fee || 0) : 0
-            const assistantFee = isAssistant ? (tour.assistant_fee || 0) : 0
-            
-            // prepaid 팁 계산
-            const prepaidTip = await calculatePrepaidTip(tour, employee.email)
-            
-            // 경고 표시가 필요한지 확인
-            const hasWarning = (isGuide && guideFee === 0) || (isAssistant && assistantFee === 0)
-            
-            return {
-              id: tour.id,
-              tour_id: tour.id,
-              tour_name: getTourNameForEmployee(tour, employee.languages),
-              date: tour.tour_date,
-              team_type: tour.team_type || '',
-              guide_fee: guideFee,
-              assistant_fee: assistantFee,
-              prepaid_tip: prepaidTip,
-              total_fee: guideFee + assistantFee + prepaidTip,
-              has_warning: hasWarning
+          // 실제 근무시간 계산 (식사시간 차감 포함)
+          const actualTotalHours = employeeAttendanceRecords.reduce((sum, record) => {
+            let workHours = record.work_hours || 0
+            if (workHours > 8) {
+              workHours = workHours - 0.5
             }
-          })
-        )
+            return sum + workHours
+          }, 0)
 
-        const guideFee = employeeTourFees.reduce((sum, tour) => sum + tour.guide_fee, 0)
-        const assistantFee = employeeTourFees.reduce((sum, tour) => sum + tour.assistant_fee, 0)
-        const prepaidTip = employeeTourFees.reduce((sum, tour) => sum + tour.prepaid_tip, 0)
-        const totalPay = attendancePay + guideFee + assistantFee + prepaidTip
-        
-        // 직원에게 경고가 필요한지 확인 (투어 fee 중 하나라도 $0이면 경고)
-        const hasWarning = employeeTourFees.some(tour => tour.has_warning)
+          const attendancePay = actualTotalHours * hourlyRate
 
-        return {
-          email: employee.email,
-          name: employee.name_ko,
-          name_en: employee.name_en,
-          position: employee.position,
-          language: employee.languages,
-          attendancePay,
-          guideFee,
-          assistantFee,
-          prepaidTip,
-          totalPay,
-          hasWarning,
-          attendanceRecords: employeeAttendanceRecords.map(record => ({
-            date: record.date,
-            check_in_time: record.check_in_time,
-            check_out_time: record.check_out_time,
-            work_hours: record.work_hours || 0,
-            status: record.status
-          })),
-          tourFees: employeeTourFees
-        }
-      }) || []
+          // 투어 fee 필터링 및 prepaid 팁 계산
+          const filteredTours = tourData?.filter(tour => 
+            tour.tour_guide_id === employee.email || tour.assistant_id === employee.email
+          ) || []
+          
+          const employeeTourFees = await Promise.all(
+            filteredTours.map(async (tour) => {
+              const isGuide = tour.tour_guide_id === employee.email
+              const isAssistant = tour.assistant_id === employee.email
+              const guideFee = isGuide ? (tour.guide_fee || 0) : 0
+              const assistantFee = isAssistant ? (tour.assistant_fee || 0) : 0
+              
+              // prepaid 팁 계산
+              const prepaidTip = await calculatePrepaidTip(tour, employee.email)
+              
+              // 경고 표시가 필요한지 확인
+              const hasWarning = (isGuide && guideFee === 0) || (isAssistant && assistantFee === 0)
+              
+              return {
+                id: tour.id,
+                tour_id: tour.id,
+                tour_name: getTourNameForEmployee(tour, employee.languages),
+                date: tour.tour_date,
+                team_type: tour.team_type || '',
+                guide_fee: guideFee,
+                assistant_fee: assistantFee,
+                prepaid_tip: prepaidTip,
+                total_fee: guideFee + assistantFee + prepaidTip,
+                has_warning: hasWarning
+              }
+            })
+          )
+
+          const guideFee = employeeTourFees.reduce((sum, tour) => sum + tour.guide_fee, 0)
+          const assistantFee = employeeTourFees.reduce((sum, tour) => sum + tour.assistant_fee, 0)
+          const prepaidTip = employeeTourFees.reduce((sum, tour) => sum + tour.prepaid_tip, 0)
+          const totalPay = attendancePay + guideFee + assistantFee + prepaidTip
+          
+          // 직원에게 경고가 필요한지 확인 (투어 fee 중 하나라도 $0이면 경고)
+          const hasWarning = employeeTourFees.some(tour => tour.has_warning)
+
+          return {
+            email: employee.email,
+            name: employee.name_ko,
+            name_en: employee.name_en,
+            position: employee.position,
+            language: employee.languages,
+            attendancePay,
+            guideFee,
+            assistantFee,
+            prepaidTip,
+            totalPay,
+            hasWarning,
+            attendanceRecords: employeeAttendanceRecords.map(record => ({
+              date: record.date,
+              check_in_time: record.check_in_time,
+              check_out_time: record.check_out_time,
+              work_hours: record.work_hours || 0,
+              status: record.status
+            })),
+            tourFees: employeeTourFees
+          }
+        }) || []
+      )
 
       setEmployeeData(processedEmployeeData)
 
