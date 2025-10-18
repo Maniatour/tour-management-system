@@ -273,7 +273,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           })),
           tourFees: employeeTourFees
         }
-        }) || []
+      }) || []
 
       setEmployeeData(processedEmployeeData)
 
