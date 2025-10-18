@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
-import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft } from 'lucide-react'
+import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft, X } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import ProductFaqDisplay from '@/components/ProductFaqDisplay'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
+import BookingFlow from '@/components/booking/BookingFlow'
+import { CartProvider, CartIcon, CartSidebar } from '@/components/cart/CartProvider'
+import PaymentProcessor from '@/components/payment/PaymentProcessor'
 import { supabase } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
 
@@ -154,6 +157,13 @@ export default function ProductDetailPage() {
 
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({})
+  
+  // 부킹 시스템 상태
+  const [showBookingFlow, setShowBookingFlow] = useState(false)
+  const [showCart, setShowCart] = useState(false)
+  const [showPayment, setShowPayment] = useState(false)
+  const [paymentData, setPaymentData] = useState<any>(null)
+  const [cartItems, setCartItems] = useState<any[]>([])
 
   // 실제 데이터 로드
   useEffect(() => {
@@ -285,13 +295,6 @@ export default function ProductDetailPage() {
       outdoor: '야외활동'
     }
     return categoryLabels[category] || category
-  }
-
-  const getProductDisplayName = (product: Product) => {
-    if (locale === 'en' && product.name_en) {
-      return product.name_en
-    }
-    return product.name_ko || product.name
   }
 
   const getCustomerDisplayName = (product: Product) => {
@@ -428,6 +431,57 @@ export default function ProductDetailPage() {
     return totalPrice
   }
 
+  // 부킹 플로우 핸들러
+  const handleBookingComplete = (bookingData: any) => {
+    // 장바구니에 추가
+    const cartItem = {
+      productId: product?.id,
+      productName: product?.name,
+      productNameKo: product?.customer_name_ko,
+      tourDate: bookingData.tourDate,
+      departureTime: bookingData.departureTime,
+      participants: bookingData.participants,
+      selectedOptions: bookingData.selectedOptions,
+      basePrice: product?.base_price || 0,
+      totalPrice: bookingData.totalPrice,
+      customerInfo: bookingData.customerInfo
+    }
+    
+    setCartItems(prev => [...prev, cartItem])
+    setShowBookingFlow(false)
+    setShowCart(true)
+  }
+
+  const handleCheckout = () => {
+    if (cartItems.length === 0) return
+    
+    const totalAmount = cartItems.reduce((sum, item) => sum + item.totalPrice, 0)
+    const firstItem = cartItems[0]
+    
+    setPaymentData({
+      method: 'card',
+      amount: totalAmount,
+      currency: 'USD',
+      customerInfo: firstItem.customerInfo
+    })
+    
+    setShowCart(false)
+    setShowPayment(true)
+  }
+
+  const handlePaymentSuccess = (result: any) => {
+    console.log('결제 성공:', result)
+    setShowPayment(false)
+    setCartItems([])
+    // 성공 메시지 표시 또는 리다이렉트
+    alert('예약이 성공적으로 완료되었습니다!')
+  }
+
+  const handlePaymentError = (error: string) => {
+    console.error('결제 오류:', error)
+    alert(`결제 중 오류가 발생했습니다: ${error}`)
+  }
+
   const tabs = [
     { id: 'overview', label: '개요' },
     { id: 'itinerary', label: '투어 코스' },
@@ -480,32 +534,38 @@ export default function ProductDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* 헤더 */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center space-x-4">
-            <Link href="/ko/products" className="text-gray-500 hover:text-gray-700">
-              <ArrowLeft size={24} />
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {getProductDisplayName(product)}
-              </h1>
-              <div className="flex items-center space-x-4 text-sm text-gray-600">
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                  {getCategoryLabel(product.category || '')}
-                </span>
-                {product.tags && product.tags.length > 0 && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    {product.tags[0]}
-                  </span>
-                )}
+    <CartProvider>
+      <div className="min-h-screen bg-gray-50">
+        {/* 헤더 */}
+        <div className="bg-white shadow-sm border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <Link href="/ko/products" className="text-gray-500 hover:text-gray-700">
+                  <ArrowLeft size={24} />
+                </Link>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    {getCustomerDisplayName(product)}
+                  </h1>
+                  <div className="flex items-center space-x-4 text-sm text-gray-600">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      {getCategoryLabel(product.category || '')}
+                    </span>
+                    {product.tags && product.tags.length > 0 && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        {product.tags[0]}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
+              
+              {/* 장바구니 아이콘 */}
+              <CartIcon onClick={() => setShowCart(true)} />
             </div>
           </div>
         </div>
-      </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -583,7 +643,7 @@ export default function ProductDetailPage() {
                       <div className="text-center">
                         <div className="text-6xl mb-4">🏔️</div>
                         <div className="text-lg font-medium text-gray-600">
-                          {getProductDisplayName(product)}
+                          {getCustomerDisplayName(product)}
                         </div>
                         <div className="text-sm text-gray-500 mt-2">
                           이미지 준비 중
@@ -663,7 +723,7 @@ export default function ProductDetailPage() {
                     {/* 투어 소개 */}
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">투어 소개</h3>
-                      <p className="text-gray-700 leading-relaxed">
+                      <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
                         {productDetails?.description || product.description || getCustomerDisplayName(product)}
                       </p>
                     </div>
@@ -761,7 +821,7 @@ export default function ProductDetailPage() {
                             </h3>
                             
                             {tourCourse.description && (
-                              <p className="text-gray-700 mb-4">
+                              <p className="text-gray-700 mb-4 whitespace-pre-wrap">
                                 {tourCourse.description}
                               </p>
                             )}
@@ -1186,7 +1246,7 @@ export default function ProductDetailPage() {
                           ))}
                         </select>
                         {group.choice_description && (
-                          <p className="text-xs text-gray-500 mt-1">{group.choice_description}</p>
+                          <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{group.choice_description}</p>
                         )}
                       </div>
                     ))}
@@ -1194,7 +1254,10 @@ export default function ProductDetailPage() {
                 </div>
               )}
 
-              <button className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+              <button 
+                onClick={() => setShowBookingFlow(true)}
+                className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
                 예약하기
               </button>
 
@@ -1239,6 +1302,52 @@ export default function ProductDetailPage() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+
+      {/* 부킹 플로우 모달 */}
+      {showBookingFlow && product && (
+        <BookingFlow
+          product={product}
+          productChoices={productChoices}
+          onClose={() => setShowBookingFlow(false)}
+          onComplete={handleBookingComplete}
+        />
+      )}
+
+      {/* 장바구니 사이드바 */}
+      <CartSidebar
+        isOpen={showCart}
+        onClose={() => setShowCart(false)}
+        onCheckout={handleCheckout}
+      />
+
+      {/* 결제 처리 모달 */}
+      {showPayment && paymentData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">결제하기</h2>
+                <button
+                  onClick={() => setShowPayment(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[80vh]">
+              <PaymentProcessor
+                paymentData={paymentData}
+                cartItems={cartItems}
+                onSuccess={handlePaymentSuccess}
+                onError={handlePaymentError}
+                onCancel={() => setShowPayment(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </CartProvider>
   )
 }

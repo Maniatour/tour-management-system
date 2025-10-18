@@ -10,9 +10,8 @@ import React, { useState } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User, ArrowLeft } from 'lucide-react'
+import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User, ArrowLeft, Search } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
-import SunriseTime from './SunriseTime'
 import { useAuth } from '@/contexts/AuthContext'
 
 const Navigation = () => {
@@ -104,8 +103,20 @@ const Navigation = () => {
               <Calendar className="w-4 h-4 mr-2" />
               {t('products')}
             </Link>
-            {/* 일출 시간 표시 */}
-            <SunriseTime />
+            <Link 
+              href={`/${locale}/products/tags`}
+              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <span className="w-4 h-4 mr-2">🏷️</span>
+              태그별 모아보기
+            </Link>
+            <Link 
+              href={`/${locale}/reservation-check`}
+              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <Search className="w-4 h-4 mr-2" />
+              예약 확인
+            </Link>
             <LanguageSwitcher />
             
             {/* 인증 상태에 따른 메뉴 */}
@@ -379,6 +390,14 @@ const Navigation = () => {
               >
                 <Calendar className="w-4 h-4 mr-3" />
                 {t('products')}
+              </Link>
+              <Link 
+                href={`/${locale}/reservation-check`}
+                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <Search className="w-4 h-4 mr-3" />
+                예약 확인
               </Link>
               
               {/* 인증 상태에 따른 메뉴 */}

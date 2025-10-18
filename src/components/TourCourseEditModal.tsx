@@ -810,7 +810,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   <input
                     type="text"
                     value={formData.customer_name_ko}
-                    onChange={(e) => setFormData({ ...formData, customer_name_ko: e.target.value })}
+                    onChange={(e) => updateFormData({ customer_name_ko: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="고객에게 표시될 한국어 이름"
                   />
@@ -822,7 +822,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   <input
                     type="text"
                     value={formData.customer_name_en}
-                    onChange={(e) => setFormData({ ...formData, customer_name_en: e.target.value })}
+                    onChange={(e) => updateFormData({ customer_name_en: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="고객에게 표시될 영어 이름"
                   />
@@ -840,7 +840,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   </label>
                   <textarea
                     value={formData.team_description_ko}
-                    onChange={(e) => setFormData({ ...formData, team_description_ko: e.target.value })}
+                    onChange={(e) => updateFormData({ team_description_ko: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     rows={3}
                     placeholder="팀원용 한국어 설명"
@@ -852,7 +852,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   </label>
                   <textarea
                     value={formData.team_description_en}
-                    onChange={(e) => setFormData({ ...formData, team_description_en: e.target.value })}
+                    onChange={(e) => updateFormData({ team_description_en: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     rows={3}
                     placeholder="팀원용 영어 설명"
@@ -871,7 +871,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   </label>
                   <textarea
                     value={formData.customer_description_ko}
-                    onChange={(e) => setFormData({ ...formData, customer_description_ko: e.target.value })}
+                    onChange={(e) => updateFormData({ customer_description_ko: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     rows={3}
                     placeholder="고객에게 표시될 한국어 설명"
@@ -883,7 +883,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   </label>
                   <textarea
                     value={formData.customer_description_en}
-                    onChange={(e) => setFormData({ ...formData, customer_description_en: e.target.value })}
+                    onChange={(e) => updateFormData({ customer_description_en: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     rows={3}
                     placeholder="고객에게 표시될 영어 설명"
@@ -899,7 +899,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               </label>
               <textarea
                 value={formData.internal_note}
-                onChange={(e) => setFormData({ ...formData, internal_note: e.target.value })}
+                onChange={(e) => updateFormData({ internal_note: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 rows={3}
                 placeholder="관리자만 볼 수 있는 내부 노트"
@@ -918,7 +918,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               <input
                 type="text"
                 value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                onChange={(e) => updateFormData({ location: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="예: 그랜드캐년 국립공원, 애리조나"
               />
@@ -931,7 +931,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               <input
                 type="text"
                 value={formData.point_name}
-                onChange={(e) => setFormData({ ...formData, point_name: e.target.value })}
+                onChange={(e) => updateFormData({ point_name: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="예: 마더포인트, 야바파이 포인트"
               />
@@ -946,7 +946,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   type="number"
                   step="any"
                   value={formData.start_latitude}
-                  onChange={(e) => setFormData({ ...formData, start_latitude: e.target.value })}
+                  onChange={(e) => updateFormData({ start_latitude: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="36.1069"
                 />
@@ -959,7 +959,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   type="number"
                   step="any"
                   value={formData.start_longitude}
-                  onChange={(e) => setFormData({ ...formData, start_longitude: e.target.value })}
+                  onChange={(e) => updateFormData({ start_longitude: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="-112.1129"
                 />
@@ -975,7 +975,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   type="number"
                   step="any"
                   value={formData.end_latitude}
-                  onChange={(e) => setFormData({ ...formData, end_latitude: e.target.value })}
+                  onChange={(e) => updateFormData({ end_latitude: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="36.1069"
                 />
@@ -988,7 +988,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   type="number"
                   step="any"
                   value={formData.end_longitude}
-                  onChange={(e) => setFormData({ ...formData, end_longitude: e.target.value })}
+                  onChange={(e) => updateFormData({ end_longitude: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="-112.1129"
                 />
@@ -1002,7 +1002,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               <input
                 type="number"
                 value={formData.duration_hours}
-                onChange={(e) => setFormData({ ...formData, duration_hours: parseInt(e.target.value) || 0 })}
+                onChange={(e) => updateFormData({ duration_hours: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="60"
               />
@@ -1014,7 +1014,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               </label>
               <select
                 value={formData.difficulty_level}
-                onChange={(e) => setFormData({ ...formData, difficulty_level: e.target.value as 'easy' | 'medium' | 'hard' })}
+                onChange={(e) => updateFormData({ difficulty_level: e.target.value as 'easy' | 'medium' | 'hard' })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="easy">쉬움</option>
@@ -1031,8 +1031,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 value={formData.category_id}
                 onChange={(e) => {
                   const selectedCategory = categories.find(cat => cat.id === e.target.value)
-                  setFormData({ 
-                    ...formData, 
+                  updateFormData({ 
                     category_id: e.target.value,
                     category: selectedCategory?.name_ko || ''
                   })
@@ -1056,7 +1055,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 <input
                   type="number"
                   value={formData.price_adult}
-                  onChange={(e) => setFormData({ ...formData, price_adult: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => updateFormData({ price_adult: parseInt(e.target.value) || 0 })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="0"
                 />
@@ -1068,7 +1067,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 <input
                   type="number"
                   value={formData.price_child}
-                  onChange={(e) => setFormData({ ...formData, price_child: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => updateFormData({ price_child: parseInt(e.target.value) || 0 })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="0"
                 />
@@ -1080,7 +1079,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 <input
                   type="number"
                   value={formData.price_infant}
-                  onChange={(e) => setFormData({ ...formData, price_infant: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => updateFormData({ price_infant: parseInt(e.target.value) || 0 })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="0"
                 />
@@ -1091,7 +1090,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               <input
                 type="checkbox"
                 checked={formData.is_active}
-                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                onChange={(e) => updateFormData({ is_active: e.target.checked })}
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
               <label className="ml-2 text-sm font-medium text-gray-700">

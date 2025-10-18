@@ -1,9 +1,9 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database, X } from 'lucide-react'
+import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database, X, Zap } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
-import WeatherDataCollector from '@/components/WeatherDataCollector'
+import PerformanceMonitor from '@/components/data-sync/PerformanceMonitor'
 
 interface SheetInfo {
   name: string
@@ -16,6 +16,7 @@ interface SheetInfo {
 interface SyncResult {
   success: boolean
   message: string
+  count?: number
   data?: {
     inserted?: number
     updated?: number
@@ -81,6 +82,18 @@ export default function DataSyncPage() {
   const [showFullLogs, setShowFullLogs] = useState(false)
   const [cleanupLoading, setCleanupLoading] = useState(false)
   const [cleanupResult, setCleanupResult] = useState<SyncResult | null>(null)
+  const [performanceMetrics, setPerformanceMetrics] = useState<{
+    dataReadTime: number
+    dataTransformTime: number
+    dataValidationTime: number
+    databaseWriteTime: number
+    totalTime: number
+    rowsPerSecond: number
+    cacheStats: {
+      size: number
+      hitRate: number
+    }
+  } | null>(null)
   const [cleanupStatus, setCleanupStatus] = useState<{
     reservations: Array<{ product_id: string; choices?: Record<string, unknown>; created_at: string }>
     products: Array<{ id: string; choices?: Record<string, unknown> }>
@@ -940,6 +953,104 @@ export default function DataSyncPage() {
     }
   }
 
+  // 최적화된 동기화 함수 추가
+  const handleOptimizedSync = async () => {
+    const supabase = createClientSupabase()
+    const { data: { session } } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
+    
+    if (!accessToken) {
+      alert('로그인 정보가 확인되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.')
+      setLoading(false)
+      return
+    }
+    
+    if (!spreadsheetId.trim() || !selectedSheet || !selectedTable) {
+      alert('스프레드시트 ID, 시트, 테이블을 모두 선택해주세요.')
+      return
+    }
+
+    if (Object.keys(columnMapping).length === 0) {
+      alert('컬럼 매핑을 설정해주세요.')
+      return
+    }
+
+    setLoading(true)
+    setSyncResult(null)
+    setProgress(1)
+    setSyncLogs([])
+    setRealTimeStats({ processed: 0, inserted: 0, updated: 0, errors: 0 })
+    
+    const startTs = Date.now()
+    setEtaMs(null) // 최적화된 동기화는 정확한 예측이 어려움
+
+    try {
+      const response = await fetch('/api/sync/optimized', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          spreadsheetId,
+          sheetName: selectedSheet,
+          targetTable: selectedTable,
+          columnMapping
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const result = await response.json()
+      
+      if (result.success) {
+        setSyncResult({
+          success: true,
+          message: result.message,
+          data: result.data,
+          count: result.count
+        })
+        setLastSyncTime(new Date().toISOString())
+        
+        // 성능 메트릭 저장
+        if (result.performanceMetrics) {
+          setPerformanceMetrics(result.performanceMetrics)
+        }
+        
+        const durationMs = Date.now() - startTs
+        const rowsProcessed = result.count || 0
+        const msPerRow = rowsProcessed > 0 ? Math.round(durationMs / rowsProcessed) : 0
+        
+        setSyncLogs(prev => [...prev, `✅ 최적화된 동기화 완료: ${rowsProcessed}개 행 처리 (${msPerRow}ms/행)`])
+        
+        // 성능 개선 로그
+        if (msPerRow < 10) {
+          setSyncLogs(prev => [...prev, `🚀 우수한 성능: ${msPerRow}ms/행 (목표: <10ms/행)`])
+        } else if (msPerRow < 50) {
+          setSyncLogs(prev => [...prev, `⚡ 양호한 성능: ${msPerRow}ms/행 (목표: <50ms/행)`])
+        } else {
+          setSyncLogs(prev => [...prev, `⚠️ 성능 개선 필요: ${msPerRow}ms/행`])
+        }
+      } else {
+        setSyncResult({ success: false, message: result.message })
+        setSyncLogs(prev => [...prev, `❌ 동기화 실패: ${result.message}`])
+      }
+    } catch (error) {
+      console.error('최적화된 동기화 오류:', error)
+      setSyncResult({
+        success: false,
+        message: '최적화된 동기화 중 오류가 발생했습니다.'
+      })
+      setSyncLogs(prev => [...prev, `❌ 오류: ${error}`])
+    } finally {
+      setProgress(100)
+      setEtaMs(0)
+      setLoading(false)
+    }
+  }
+
   // 유연한 데이터 동기화
   const handleFlexibleSync = async () => {
     const supabase = createClientSupabase()
@@ -1180,10 +1291,10 @@ export default function DataSyncPage() {
         </p>
       </div>
 
-      {/* 날씨 데이터 수집 섹션 */}
-      <div className="mb-6">
+      {/* 날씨 데이터 수집 섹션 - 임시 비활성화 */}
+      {/* <div className="mb-6">
         <WeatherDataCollector />
-      </div>
+      </div> */}
 
       {/* 예약 데이터 정리 섹션 */}
       <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
@@ -1551,6 +1662,15 @@ export default function DataSyncPage() {
             >
               <Upload className="h-4 w-4 mr-2" />
               {truncateTable ? '데이터 삭제 후 동기화 실행' : '동기화 실행'}
+            </button>
+            
+            <button
+              onClick={handleOptimizedSync}
+              disabled={loading}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            >
+              <Zap className="h-4 w-4 mr-2" />
+              🚀 최적화된 동기화 실행
             </button>
           </div>
 
@@ -2027,6 +2147,19 @@ export default function DataSyncPage() {
           )}
         </div>
       )}
+
+      {/* 성능 모니터링 */}
+      <div className="mt-6">
+        <PerformanceMonitor 
+          metrics={performanceMetrics}
+          onRefreshCache={() => {
+            setSyncLogs(prev => [...prev, '🔄 캐시 새로고침 완료'])
+          }}
+          onClearCache={() => {
+            setSyncLogs(prev => [...prev, '🧹 캐시 삭제 완료'])
+          }}
+        />
+      </div>
 
     </div>
   )

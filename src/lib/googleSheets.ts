@@ -6,7 +6,7 @@ const SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
 // 시트 정보 캐시 (메모리 캐시)
 const sheetInfoCache = new Map<string, { data: unknown, timestamp: number }>()
-const CACHE_DURATION = 30 * 60 * 1000 // 30분으로 증가 (API 호출 대폭 감소)
+const CACHE_DURATION = 2 * 60 * 60 * 1000 // 2시간으로 증가 (API 호출 대폭 감소)
 
 // 서비스 계정 인증을 위한 설정
 const getAuthClient = () => {
@@ -113,9 +113,10 @@ const readGoogleSheetInChunks = async (
         console.log(`🎯 청크 ${i + 2}/${totalChunks + 1} 읽기: ${chunkRange}`)
         
         try {
-          // API 할당량을 고려한 지연
+          // 최적화된 지연 시간 (청크 크기에 비례하여 조정)
           if (i > 0) {
-            await sleep(1000) // 1초 지연
+            const delayMs = Math.min(500, Math.max(100, Math.floor(chunkSize / 20)))
+            await sleep(delayMs)
           }
           
           const chunkResponse = await sheets.spreadsheets.values.get({
@@ -237,8 +238,8 @@ export const readSheetData = async (spreadsheetId: string, sheetName: string) =>
     const usedRange = await getSheetUsedRange(spreadsheetId, sheetName)
     const rowCount = usedRange.rowCount || 0
     
-    // 대용량 데이터인 경우 청크 단위로 읽기
-    const chunkSize = rowCount > 5000 ? 2000 : undefined
+    // 최적화된 청크 크기 설정 (더 큰 청크로 성능 향상)
+    const chunkSize = rowCount > 10000 ? 5000 : rowCount > 5000 ? 3000 : undefined
     
     if (chunkSize) {
       console.log(`📊 readSheetData: 대용량 데이터 감지 (${rowCount}행) - 청크 단위 읽기 사용`)
@@ -419,9 +420,9 @@ export const readSheetDataDynamic = async (spreadsheetId: string, sheetName: str
     const range = `${sheetName}!A:${columnRange}`
     console.log(`Reading range: ${range}`)
     
-    // 대용량 데이터인 경우 청크 단위로 읽기 (5000행 이상)
+    // 최적화된 청크 크기 설정 (더 큰 청크로 성능 향상)
     const rowCount = usedRange.rowCount || 0
-    const chunkSize = rowCount > 5000 ? 2000 : undefined // 5000행 이상이면 2000행씩 청크 처리
+    const chunkSize = rowCount > 10000 ? 5000 : rowCount > 5000 ? 3000 : undefined
     
     if (chunkSize) {
       console.log(`📊 대용량 데이터 감지 (${rowCount}행) - 청크 단위 읽기 사용`)

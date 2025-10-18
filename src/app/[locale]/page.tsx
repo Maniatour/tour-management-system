@@ -117,6 +117,189 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
         </div>
       </section>
 
+      {/* 태그 아이콘 섹션 - 모바일 최적화 */}
+      <section className="py-8 sm:py-12 lg:py-16 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-8 sm:mb-12">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
+              카테고리별 투어 찾기
+            </h2>
+            <p className="text-lg sm:text-xl text-gray-600">
+              관심 있는 카테고리를 선택하여 맞춤형 투어를 찾아보세요
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 sm:gap-6">
+            {/* 앤텔롭 캐년 */}
+            <Link
+              href="/ko/products?tag=앤텔롭"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl hover:from-yellow-100 hover:to-orange-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🏜️
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                앤텔롭 캐년
+              </h3>
+            </Link>
+
+            {/* 그랜드캐년 */}
+            <Link
+              href="/ko/products?tag=그랜드캐년"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-orange-50 to-red-50 rounded-xl hover:from-orange-100 hover:to-red-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🏔️
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                그랜드캐년
+              </h3>
+            </Link>
+
+            {/* 근교투어 */}
+            <Link
+              href="/ko/products?tag=근교"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl hover:from-green-100 hover:to-emerald-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🗺️
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                근교투어
+              </h3>
+            </Link>
+
+            {/* 당일투어 */}
+            <Link
+              href="/ko/products?tag=당일"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl hover:from-blue-100 hover:to-cyan-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🛣️
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                당일투어
+              </h3>
+            </Link>
+
+            {/* 숙박투어 */}
+            <Link
+              href="/ko/products?tag=숙박"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl hover:from-purple-100 hover:to-pink-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🏕️
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                숙박투어
+              </h3>
+            </Link>
+
+            {/* 시티투어 */}
+            <Link
+              href="/ko/products?tag=시티"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl hover:from-indigo-100 hover:to-blue-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🏙️
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                시티투어
+              </h3>
+            </Link>
+
+            {/* 헬기 투어 */}
+            <Link
+              href="/ko/products?tag=헬기"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-red-50 to-pink-50 rounded-xl hover:from-red-100 hover:to-pink-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🚁
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                헬기 투어
+              </h3>
+            </Link>
+
+            {/* 경비행기 투어 */}
+            <Link
+              href="/ko/products?tag=경비행기"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-sky-50 to-blue-50 rounded-xl hover:from-sky-100 hover:to-blue-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                ✈️
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                경비행기 투어
+              </h3>
+            </Link>
+
+            {/* 버스투어 */}
+            <Link
+              href="/ko/products?tag=버스"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl hover:from-yellow-100 hover:to-orange-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🚌
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                버스투어
+              </h3>
+            </Link>
+
+            {/* 프리미엄 투어 */}
+            <Link
+              href="/ko/products?tag=프리미엄"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl hover:from-amber-100 hover:to-yellow-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                ⭐
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                프리미엄 투어
+              </h3>
+            </Link>
+
+            {/* 공연티켓 */}
+            <Link
+              href="/ko/products?tag=공연"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-orange-50 to-red-50 rounded-xl hover:from-orange-100 hover:to-red-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🎫
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                공연티켓
+              </h3>
+            </Link>
+
+            {/* 어트랙션 */}
+            <Link
+              href="/ko/products?tag=어트랙션"
+              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl hover:from-purple-100 hover:to-pink-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
+            >
+              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                🎪
+              </div>
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                어트랙션
+              </h3>
+            </Link>
+          </div>
+
+          {/* 더 많은 태그 보기 링크 */}
+          <div className="text-center mt-8 sm:mt-12">
+            <Link
+              href="/ko/products/tags"
+              className="inline-flex items-center px-6 py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-colors font-medium"
+            >
+              🏷️ 모든 태그 보기
+              <ArrowRight className="ml-2" size={20} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* 통계 섹션 - 모바일 최적화 */}
       <section className="py-8 sm:py-12 lg:py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

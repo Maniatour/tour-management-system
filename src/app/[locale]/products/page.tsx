@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
+import { useSearchParams } from 'next/navigation'
 
 interface Product {
   id: string
@@ -41,6 +42,7 @@ interface Product {
 
 export default function ProductsPage() {
   const locale = useLocale()
+  const searchParams = useSearchParams()
   
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,7 +50,16 @@ export default function ProductsPage() {
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedTag, setSelectedTag] = useState('all')
   const [priceRange, setPriceRange] = useState('all')
+
+  // URL 파라미터에서 태그 읽기
+  useEffect(() => {
+    const tagParam = searchParams.get('tag')
+    if (tagParam) {
+      setSelectedTag(tagParam)
+    }
+  }, [searchParams])
 
   // 제품 데이터 로드
   useEffect(() => {
@@ -166,7 +177,7 @@ export default function ProductsPage() {
   }, [])
 
   const filteredProducts = products.filter(product => {
-    const productName = locale === 'en' && product.name_en ? product.name_en : product.name_ko || product.name
+    const productName = locale === 'en' && product.customer_name_en ? product.customer_name_en : product.customer_name_ko || product.name_ko || product.name
     const productDescription = product.description || ''
     const productTags = product.tags || []
     
@@ -176,15 +187,17 @@ export default function ProductsPage() {
     
     const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory
     
-    // 난이도 필터는 제거 (데이터베이스에 없음)
-    const matchesDifficulty = true
+    const matchesTag = selectedTag === 'all' || 
+      (productTags && productTags.some(tag => 
+        tag.toLowerCase().includes(selectedTag.toLowerCase())
+      ))
     
     let matchesPrice = true
     if (priceRange === 'low') matchesPrice = product.base_price <= 150
     else if (priceRange === 'medium') matchesPrice = product.base_price > 150 && product.base_price <= 300
     else if (priceRange === 'high') matchesPrice = product.base_price > 300
     
-    return matchesSearch && matchesCategory && matchesDifficulty && matchesPrice
+    return matchesSearch && matchesCategory && matchesTag && matchesPrice
   })
 
   const getCategoryLabel = (category: string) => {
@@ -201,24 +214,37 @@ export default function ProductsPage() {
     return categoryLabels[category] || category
   }
 
-  const getProductDisplayName = (product: Product) => {
-    if (locale === 'en' && product.name_en) {
-      return product.name_en
+  const getCustomerDisplayName = (product: Product) => {
+    if (locale === 'en' && product.customer_name_en) {
+      return product.customer_name_en
     }
-    return product.name_ko || product.name
+    return product.customer_name_ko || product.name_ko || product.name
   }
 
-  const categories = [
-    { value: 'all', label: '전체' },
-    { value: 'city', label: '도시' },
-    { value: 'nature', label: '자연' },
-    { value: 'culture', label: '문화' },
-    { value: 'adventure', label: '모험' },
-    { value: 'food', label: '음식' },
-    { value: 'tour', label: '투어' },
-    { value: 'sightseeing', label: '관광' },
-    { value: 'outdoor', label: '야외활동' }
-  ]
+  // 실제 상품 데이터에서 카테고리 추출
+  const categories = React.useMemo(() => {
+    const uniqueCategories = Array.from(new Set(products.map(p => p.category).filter(Boolean)))
+    return [
+      { value: 'all', label: '전체' },
+      ...uniqueCategories.map(category => ({
+        value: category,
+        label: getCategoryLabel(category)
+      }))
+    ]
+  }, [products])
+
+  // 실제 상품 데이터에서 태그 추출
+  const tags = React.useMemo(() => {
+    const allTags = products.flatMap(p => p.tags || []).filter(Boolean)
+    const uniqueTags = Array.from(new Set(allTags))
+    return [
+      { value: 'all', label: '전체' },
+      ...uniqueTags.map(tag => ({
+        value: tag,
+        label: tag
+      }))
+    ]
+  }, [products])
 
   const priceRanges = [
     { value: 'all', label: '전체' },
@@ -242,7 +268,7 @@ export default function ProductsPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* 검색 및 필터 */}
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             {/* 검색 */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
@@ -268,6 +294,19 @@ export default function ProductsPage() {
               ))}
             </select>
 
+            {/* 태그 필터 */}
+            <select
+              value={selectedTag}
+              onChange={(e) => setSelectedTag(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              {tags.map(tag => (
+                <option key={tag.value} value={tag.value}>
+                  {tag.label}
+                </option>
+              ))}
+            </select>
+
             {/* 가격 범위 필터 */}
             <select
               value={priceRange}
@@ -280,6 +319,16 @@ export default function ProductsPage() {
                 </option>
               ))}
             </select>
+          </div>
+          
+          {/* 태그별 모아보기 링크 */}
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <Link
+              href="/ko/products/tags"
+              className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
+              🏷️ 태그별로 모아보기
+            </Link>
           </div>
         </div>
 
@@ -314,7 +363,7 @@ export default function ProductsPage() {
                   {product.primary_image ? (
                     <Image
                       src={product.primary_image}
-                      alt={getProductDisplayName(product)}
+                      alt={getCustomerDisplayName(product)}
                       fill
                       sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       className="object-cover"
@@ -324,7 +373,7 @@ export default function ProductsPage() {
                       <div className="text-center">
                         <div className="text-4xl mb-2">🏔️</div>
                         <div className="text-sm font-medium text-gray-600">
-                          {getProductDisplayName(product)}
+                          {getCustomerDisplayName(product)}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
                           이미지 준비 중
@@ -350,7 +399,7 @@ export default function ProductsPage() {
                   {/* 상품명 */}
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
                     <Link href={`/ko/products/${product.id}`} className="hover:text-blue-600">
-                      {getProductDisplayName(product)}
+                      {getCustomerDisplayName(product)}
                     </Link>
                   </h3>
 
