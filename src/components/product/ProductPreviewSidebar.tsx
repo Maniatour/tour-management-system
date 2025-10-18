@@ -1,7 +1,41 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, Eye, Smartphone } from 'lucide-react'
+import { X, Eye, Smartphone, Tablet, Monitor } from 'lucide-react'
+
+type DeviceSize = 'mobile' | 'tablet' | 'desktop'
+
+interface DeviceConfig {
+  name: string
+  icon: React.ComponentType<{ className?: string }>
+  width: number
+  height: number
+  label: string
+}
+
+const deviceConfigs: Record<DeviceSize, DeviceConfig> = {
+  mobile: {
+    name: 'mobile',
+    icon: Smartphone,
+    width: 320,
+    height: 600,
+    label: '핸드폰'
+  },
+  tablet: {
+    name: 'tablet',
+    icon: Tablet,
+    width: 768,
+    height: 1024,
+    label: '태블릿'
+  },
+  desktop: {
+    name: 'desktop',
+    icon: Monitor,
+    width: 1200,
+    height: 800,
+    label: '데스크탑'
+  }
+}
 
 interface ProductPreviewSidebarProps {
   isOpen: boolean
@@ -59,6 +93,7 @@ export default function ProductPreviewSidebar({
   currentLanguage
 }: ProductPreviewSidebarProps) {
   const [activeTab, setActiveTab] = useState<'card' | 'detail'>('card')
+  const [deviceSize, setDeviceSize] = useState<DeviceSize>('mobile')
 
   if (!isOpen) return null
 
@@ -92,32 +127,72 @@ export default function ProductPreviewSidebar({
       {/* 사이드바 */}
       <div className="absolute right-0 top-0 h-full w-96 bg-white shadow-xl">
         {/* 헤더 */}
-        <div className="flex items-center justify-between border-b border-gray-200 p-4">
-          <div className="flex items-center space-x-2">
-            <Eye className="h-5 w-5 text-blue-600" />
-            <span className="font-medium text-gray-900">고객 페이지 미리보기</span>
+        <div className="border-b border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-2">
+              <Eye className="h-5 w-5 text-blue-600" />
+              <span className="font-medium text-gray-900">고객 페이지 미리보기</span>
+            </div>
+            <button
+              onClick={onClose}
+              className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          
+          {/* 디바이스 크기 선택 */}
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-600">디바이스 크기:</span>
+            <div className="flex space-x-1">
+              {Object.entries(deviceConfigs).map(([key, config]) => {
+                const Icon = config.icon
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setDeviceSize(key as DeviceSize)}
+                    className={`flex items-center space-x-1 px-3 py-1 rounded-lg text-sm transition-colors ${
+                      deviceSize === key
+                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span>{config.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </div>
 
-        {/* 핸드폰 화면 */}
+        {/* 디바이스 화면 */}
         <div className="p-4">
-          <div className="mx-auto w-80 rounded-3xl bg-gray-900 p-2 shadow-2xl">
-            <div className="h-[600px] overflow-hidden rounded-2xl bg-white">
-              {/* 핸드폰 상단바 */}
+          <div 
+            className="mx-auto rounded-3xl bg-gray-900 p-2 shadow-2xl"
+            style={{
+              width: Math.min(deviceConfigs[deviceSize].width + 40, 400),
+              height: Math.min(deviceConfigs[deviceSize].height + 40, 700)
+            }}
+          >
+            <div 
+              className="overflow-hidden rounded-2xl bg-white"
+              style={{
+                width: deviceConfigs[deviceSize].width,
+                height: deviceConfigs[deviceSize].height
+              }}
+            >
+              {/* 디바이스 상단바 */}
               <div className="flex items-center justify-between bg-gray-100 px-4 py-2">
                 <div className="flex items-center space-x-2">
                   <div className="h-2 w-2 rounded-full bg-gray-400"></div>
                   <div className="h-2 w-2 rounded-full bg-gray-400"></div>
                   <div className="h-2 w-2 rounded-full bg-gray-400"></div>
                 </div>
-                <Smartphone className="h-4 w-4 text-gray-600" />
-                <div className="text-xs text-gray-600">100%</div>
+                {React.createElement(deviceConfigs[deviceSize].icon, { 
+                  className: "h-4 w-4 text-gray-600" 
+                })}
+                <div className="text-xs text-gray-600">{deviceConfigs[deviceSize].label}</div>
               </div>
 
               {/* 탭 헤더 */}
@@ -147,13 +222,19 @@ export default function ProductPreviewSidebar({
               </div>
 
               {/* 콘텐츠 영역 */}
-              <div className="h-[520px] overflow-y-auto bg-gray-50">
+              <div 
+                className="overflow-y-auto bg-gray-50"
+                style={{
+                  height: deviceConfigs[deviceSize].height - 100 // 상단바와 탭 헤더 높이 제외
+                }}
+              >
                 {activeTab === 'card' ? (
                   <CardViewPreview 
                     productData={productData}
                     currentDetails={currentDetails}
                     displayName={displayName}
                     displayDescription={displayDescription}
+                    deviceSize={deviceSize}
                   />
                 ) : (
                   <DetailViewPreview 
@@ -161,6 +242,7 @@ export default function ProductPreviewSidebar({
                     currentDetails={currentDetails}
                     displayName={displayName}
                     displayDescription={displayDescription}
+                    deviceSize={deviceSize}
                   />
                 )}
               </div>
@@ -177,75 +259,81 @@ function CardViewPreview({
   productData, 
   currentDetails, 
   displayName, 
-  displayDescription 
+  displayDescription,
+  deviceSize
 }: {
   productData: ProductPreviewSidebarProps['productData']
   currentDetails: ProductPreviewSidebarProps['productDetails'][string]
   displayName: string
   displayDescription: string
+  deviceSize: DeviceSize
 }) {
+  const isMobile = deviceSize === 'mobile'
+  const isTablet = deviceSize === 'tablet'
+  const isDesktop = deviceSize === 'desktop'
+
   return (
-    <div className="p-4">
+    <div className={`${isMobile ? 'p-2' : isTablet ? 'p-4' : 'p-6'}`}>
       {/* 상품 카드 */}
       <div className="rounded-lg bg-white shadow-sm">
         {/* 이미지 영역 */}
-        <div className="h-48 bg-gradient-to-br from-blue-400 to-purple-500 rounded-t-lg flex items-center justify-center">
+        <div className={`${isMobile ? 'h-32' : isTablet ? 'h-48' : 'h-64'} bg-gradient-to-br from-blue-400 to-purple-500 rounded-t-lg flex items-center justify-center`}>
           <div className="text-white text-center">
-            <div className="text-2xl mb-2">📸</div>
-            <div className="text-sm">상품 이미지</div>
+            <div className={`${isMobile ? 'text-xl' : isTablet ? 'text-2xl' : 'text-3xl'} mb-2`}>📸</div>
+            <div className={`${isMobile ? 'text-xs' : isTablet ? 'text-sm' : 'text-base'}`}>상품 이미지</div>
           </div>
         </div>
 
         {/* 카드 내용 */}
-        <div className="p-4">
+        <div className={`${isMobile ? 'p-3' : isTablet ? 'p-4' : 'p-6'}`}>
           {/* 슬로건 */}
           {currentDetails.slogan1 && (
-            <div className="text-xs text-blue-600 font-medium mb-1">
+            <div className={`${isMobile ? 'text-xs' : isTablet ? 'text-sm' : 'text-base'} text-blue-600 font-medium mb-1`}>
               {currentDetails.slogan1}
             </div>
           )}
           
           {/* 상품명 */}
-          <h3 className="font-bold text-gray-900 mb-2 line-clamp-2">
+          <h3 className={`${isMobile ? 'text-sm' : isTablet ? 'text-base' : 'text-lg'} font-bold text-gray-900 mb-2 line-clamp-2`}>
             {displayName}
           </h3>
 
           {/* 설명 */}
-          <p className="text-sm text-gray-600 mb-3 line-clamp-3">
+          <p className={`${isMobile ? 'text-xs' : isTablet ? 'text-sm' : 'text-base'} text-gray-600 mb-3 line-clamp-3`}>
             {displayDescription}
           </p>
 
           {/* 태그 */}
           {currentDetails.tags && currentDetails.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-3">
-              {currentDetails.tags.slice(0, 3).map((tag, index) => (
+              {currentDetails.tags.slice(0, isMobile ? 2 : 3).map((tag, index) => (
                 <span
                   key={index}
-                  className="inline-block px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full"
+                  className={`inline-block px-2 py-1 bg-gray-100 text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'} rounded-full`}
                 >
                   #{tag}
                 </span>
               ))}
-              {currentDetails.tags.length > 3 && (
-                <span className="inline-block px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
-                  +{currentDetails.tags.length - 3}
+              {currentDetails.tags.length > (isMobile ? 2 : 3) && (
+                <span className={`inline-block px-2 py-1 bg-gray-100 text-gray-600 ${isMobile ? 'text-xs' : 'text-sm'} rounded-full`}>
+                  +{currentDetails.tags.length - (isMobile ? 2 : 3)}
                 </span>
               )}
             </div>
           )}
 
           {/* 기본 정보 */}
-          <div className="space-y-2 text-sm text-gray-600">
+          <div className={`space-y-2 ${isMobile ? 'text-xs' : isTablet ? 'text-sm' : 'text-base'} text-gray-600`}>
             <div className="flex items-center">
-              <span className="w-16 text-gray-500">소요시간</span>
+              <span className={`${isMobile ? 'w-12' : 'w-16'} text-gray-500`}>소요시간</span>
               <span>{productData.duration}시간</span>
             </div>
             <div className="flex items-center">
-              <span className="w-16 text-gray-500">최대인원</span>
+              <span className={`${isMobile ? 'w-12' : 'w-16'} text-gray-500`}>최대인원</span>
               <span>{productData.maxParticipants}명</span>
             </div>
             <div className="flex items-center">
-              <span className="w-16 text-gray-500">출발지</span>
+              <span className={`${isMobile ? 'w-12' : 'w-16'} text-gray-500`}>출발지</span>
               <span>{productData.departureCity}</span>
             </div>
           </div>
@@ -253,10 +341,10 @@ function CardViewPreview({
           {/* 가격 및 예약 버튼 */}
           <div className="mt-4 pt-4 border-t border-gray-200">
             <div className="flex items-center justify-between">
-              <div className="text-lg font-bold text-blue-600">
+              <div className={`${isMobile ? 'text-sm' : isTablet ? 'text-base' : 'text-lg'} font-bold text-blue-600`}>
                 ₩0부터
               </div>
-              <button className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
+              <button className={`${isMobile ? 'px-2 py-1 text-xs' : isTablet ? 'px-3 py-2 text-sm' : 'px-4 py-2 text-base'} bg-blue-600 text-white rounded-lg hover:bg-blue-700`}>
                 예약하기
               </button>
             </div>
@@ -272,26 +360,31 @@ function DetailViewPreview({
   productData, 
   currentDetails, 
   displayName, 
-  displayDescription 
+  displayDescription,
+  deviceSize
 }: {
   productData: ProductPreviewSidebarProps['productData']
   currentDetails: ProductPreviewSidebarProps['productDetails'][string]
   displayName: string
   displayDescription: string
+  deviceSize: DeviceSize
 }) {
+  const isMobile = deviceSize === 'mobile'
+  const isTablet = deviceSize === 'tablet'
+  const isDesktop = deviceSize === 'desktop'
   return (
-    <div className="p-4">
+    <div className={`${isMobile ? 'p-2' : isTablet ? 'p-4' : 'p-6'}`}>
       {/* 상품 헤더 */}
       <div className="mb-4">
         {/* 슬로건 */}
         {currentDetails.slogan1 && (
-          <div className="text-sm text-blue-600 font-medium mb-2">
+          <div className={`${isMobile ? 'text-sm' : isTablet ? 'text-base' : 'text-lg'} text-blue-600 font-medium mb-2`}>
             {currentDetails.slogan1}
           </div>
         )}
         
         {/* 상품명 */}
-        <h1 className="text-xl font-bold text-gray-900 mb-2">
+        <h1 className={`${isMobile ? 'text-lg' : isTablet ? 'text-xl' : 'text-2xl'} font-bold text-gray-900 mb-2`}>
           {displayName}
         </h1>
 
@@ -301,7 +394,7 @@ function DetailViewPreview({
             {currentDetails.tags.map((tag, index) => (
               <span
                 key={index}
-                className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-full"
+                className={`inline-block px-3 py-1 bg-blue-100 text-blue-700 ${isMobile ? 'text-xs' : 'text-sm'} rounded-full`}
               >
                 #{tag}
               </span>
@@ -312,15 +405,15 @@ function DetailViewPreview({
 
       {/* 상품 설명 */}
       <div className="mb-4">
-        <h2 className="font-semibold text-gray-900 mb-2">상품 소개</h2>
-        <p className="text-sm text-gray-700 leading-relaxed">
+        <h2 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-gray-900 mb-2`}>상품 소개</h2>
+        <p className={`${isMobile ? 'text-xs' : isTablet ? 'text-sm' : 'text-base'} text-gray-700 leading-relaxed`}>
           {displayDescription}
         </p>
       </div>
 
       {/* 기본 정보 */}
       <div className="mb-4">
-        <h2 className="font-semibold text-gray-900 mb-2">투어 정보</h2>
+        <h2 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-gray-900 mb-2`}>투어 정보</h2>
         <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-600">소요시간</span>
@@ -344,18 +437,18 @@ function DetailViewPreview({
       {/* 포함/불포함 */}
       {(currentDetails.included || currentDetails.not_included) && (
         <div className="mb-4">
-          <h2 className="font-semibold text-gray-900 mb-2">포함/불포함 사항</h2>
+          <h2 className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-gray-900 mb-2`}>포함/불포함 사항</h2>
           <div className="space-y-3">
             {currentDetails.included && (
               <div>
-                <h3 className="text-sm font-medium text-green-700 mb-1">포함 사항</h3>
-                <p className="text-sm text-gray-700">{currentDetails.included}</p>
+                <h3 className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium text-green-700 mb-1`}>포함 사항</h3>
+                <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-700`}>{currentDetails.included}</p>
               </div>
             )}
             {currentDetails.not_included && (
               <div>
-                <h3 className="text-sm font-medium text-red-700 mb-1">불포함 사항</h3>
-                <p className="text-sm text-gray-700">{currentDetails.not_included}</p>
+                <h3 className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium text-red-700 mb-1`}>불포함 사항</h3>
+                <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-700`}>{currentDetails.not_included}</p>
               </div>
             )}
           </div>
@@ -364,7 +457,7 @@ function DetailViewPreview({
 
       {/* 예약 버튼 */}
       <div className="sticky bottom-0 bg-white pt-4 border-t border-gray-200">
-        <button className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700">
+        <button className={`w-full ${isMobile ? 'py-2 text-sm' : isTablet ? 'py-3 text-base' : 'py-4 text-lg'} bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700`}>
           지금 예약하기
         </button>
       </div>
