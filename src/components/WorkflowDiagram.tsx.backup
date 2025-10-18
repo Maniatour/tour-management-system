@@ -1,0 +1,2155 @@
+'use client'
+
+import React, { useMemo, useState, useCallback } from 'react'
+import { 
+  Play, 
+  Square, 
+  CheckCircle, 
+  AlertCircle, 
+  FileText,
+  User,
+  ArrowRight,
+  X,
+  Copy,
+  Save,
+  Plus,
+  Trash2,
+  Edit,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
+} from 'lucide-react'
+
+interface WorkflowStep {
+  id: string
+  step_name_ko: string
+  step_name_en: string
+  step_description_ko?: string
+  step_description_en?: string
+  step_order: number
+  step_type: 'action' | 'decision' | 'condition' | 'template' | 'manual' | 'start' | 'end'
+  action_type?: string
+  condition_type?: string
+  condition_value?: string
+  next_step_id?: string
+  alternative_step_id?: string
+  is_active: boolean
+  is_required: boolean
+  node_shape?: 'rectangle' | 'rounded' | 'diamond' | 'oval' | 'circle'
+  node_color?: string
+  text_color?: string
+  group_id?: string
+  position?: { x: number; y: number }
+  // 고급 편집 필드들
+  links?: Array<{ title: string; url: string; description?: string }>
+  images?: Array<{ url: string; alt: string; caption?: string }>
+  notes_ko?: string
+  notes_en?: string
+  tags?: string[]
+  priority?: 'low' | 'medium' | 'high'
+  estimated_time?: number // 분 단위
+  // 리치 텍스트 설명
+  rich_description_ko?: string
+  rich_description_en?: string
+}
+
+interface WorkflowDiagramProps {
+  steps: WorkflowStep[]
+  workflowName?: string
+  onClose?: () => void
+  mode?: 'diagram' | 'manual' | 'edit'
+  onSave?: (data: { 
+    steps: WorkflowStep[]
+    zoom: number
+    backgroundSize: { width: number; height: number }
+    nodeSize: { width: number; height: number }
+    panelPosition: { x: number; y: number }
+  }) => void
+  initialSettings?: {
+    zoom?: number
+    backgroundSize?: { width: number; height: number }
+    nodeSize?: { width: number; height: number }
+    panelPosition?: { x: number; y: number }
+  }
+}
+
+// 노드 타입별 기본 스타일 정의
+const getDefaultNodeStyle = (stepType: string, nodeShape?: string) => {
+  const baseStyle = {
+    fontSize: '14px',
+    fontWeight: '500',
+    textAlign: 'center' as const,
+    cursor: 'pointer',
+    minWidth: '120px',
+    minHeight: '60px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '2px solid',
+    color: '#1f2937',
+  }
+
+  // 도형별 기본 스타일
+  let shapeStyle = {}
+  switch (nodeShape) {
+    case 'oval':
+      shapeStyle = {
+        borderRadius: '50px',
+        width: '140px',
+        height: '60px',
+      }
+      break
+    case 'rounded':
+      shapeStyle = {
+        borderRadius: '12px',
+        width: '120px',
+        height: '60px',
+      }
+      break
+    case 'diamond':
+      shapeStyle = {
+        width: '120px',
+        height: '60px',
+        transform: 'rotate(45deg)',
+        borderRadius: '8px',
+      }
+      break
+    case 'circle':
+      shapeStyle = {
+        borderRadius: '50%',
+        width: '80px',
+        height: '80px',
+      }
+      break
+    default: // rectangle
+      shapeStyle = {
+        borderRadius: '4px',
+        width: '120px',
+        height: '60px',
+      }
+  }
+
+  // 타입별 색상
+  let colorStyle = {}
+  switch (stepType) {
+    case 'start':
+      colorStyle = {
+        backgroundColor: '#f0f9ff',
+        borderColor: '#0ea5e9',
+        color: '#0c4a6e',
+      }
+      break
+    case 'end':
+      colorStyle = {
+        backgroundColor: '#fef2f2',
+        borderColor: '#ef4444',
+        color: '#991b1b',
+      }
+      break
+    case 'action':
+      colorStyle = {
+        backgroundColor: '#f0f9ff',
+        borderColor: '#0ea5e9',
+        color: '#0c4a6e',
+      }
+      break
+    case 'condition':
+      colorStyle = {
+        backgroundColor: '#fef3c7',
+        borderColor: '#f59e0b',
+        color: '#92400e',
+      }
+      break
+    case 'decision':
+      colorStyle = {
+        backgroundColor: '#f3e8ff',
+        borderColor: '#8b5cf6',
+        color: '#5b21b6',
+      }
+      break
+    case 'template':
+      colorStyle = {
+        backgroundColor: '#ecfdf5',
+        borderColor: '#10b981',
+        color: '#064e3b',
+      }
+      break
+    case 'manual':
+      colorStyle = {
+        backgroundColor: '#fef2f2',
+        borderColor: '#ef4444',
+        color: '#991b1b',
+      }
+      break
+    default:
+      colorStyle = {
+        backgroundColor: '#f9fafb',
+        borderColor: '#6b7280',
+        color: '#374151',
+      }
+  }
+
+  return { ...baseStyle, ...shapeStyle, ...colorStyle }
+}
+
+// 노드 타입별 아이콘
+const getNodeIcon = (stepType: string) => {
+  switch (stepType) {
+    case 'start':
+      return <Play size={16} />
+    case 'end':
+      return <Square size={16} />
+    case 'action':
+      return <Play size={16} />
+    case 'condition':
+      return <AlertCircle size={16} />
+    case 'decision':
+      return <CheckCircle size={16} />
+    case 'template':
+      return <FileText size={16} />
+    case 'manual':
+      return <User size={16} />
+    default:
+      return <Square size={16} />
+  }
+}
+
+// SVG 노드 컴포넌트
+const SVGNode = ({ 
+  step, 
+  x, 
+  y, 
+  isSelected, 
+  onClick, 
+  onDoubleClick,
+  onMouseDown,
+  isDragging,
+  nodeSize
+}: {
+  step: WorkflowStep
+  x: number
+  y: number
+  isSelected: boolean
+  onClick?: (step: WorkflowStep) => void
+  onDoubleClick?: (step: WorkflowStep) => void
+  onMouseDown?: (step: WorkflowStep, e: React.MouseEvent) => void
+  isDragging?: boolean
+  nodeSize: { width: number; height: number }
+}) => {
+  const nodeStyle = getDefaultNodeStyle(step.step_type, step.node_shape)
+  const icon = getNodeIcon(step.step_type)
+  
+  const customStyle = {
+    backgroundColor: step.node_color || (nodeStyle as unknown as { backgroundColor: string }).backgroundColor,
+    borderColor: step.node_color || (nodeStyle as unknown as { borderColor: string }).borderColor,
+    color: step.text_color || (nodeStyle as unknown as { color: string }).color,
+  }
+
+  const handleClick = () => {
+    onClick?.(step)
+  }
+
+  const handleDoubleClick = () => {
+    onDoubleClick?.(step)
+  }
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    onMouseDown?.(step, e)
+  }
+
+  const width = nodeSize.width
+  const height = nodeSize.height
+
+  return (
+    <g>
+      {/* 노드 배경 */}
+      {step.node_shape === 'diamond' ? (
+        <polygon
+          points={`${x},${y-height/2} ${x+width/2},${y} ${x},${y+height/2} ${x-width/2},${y}`}
+          fill={customStyle.backgroundColor}
+          stroke={customStyle.borderColor}
+          strokeWidth="2"
+          className={`cursor-pointer hover:opacity-80 transition-opacity ${isDragging ? 'opacity-50' : ''}`}
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
+          onMouseDown={handleMouseDown}
+        />
+      ) : (
+        <rect
+          x={x - width/2}
+          y={y - height/2}
+          width={width}
+          height={height}
+          rx={step.node_shape === 'rounded' ? 12 : step.node_shape === 'oval' ? height/2 : 4}
+          fill={customStyle.backgroundColor}
+          stroke={customStyle.borderColor}
+          strokeWidth="2"
+          className={`cursor-pointer hover:opacity-80 transition-opacity ${isDragging ? 'opacity-50' : ''}`}
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
+          onMouseDown={handleMouseDown}
+        />
+      )}
+      
+      {/* 선택 표시 */}
+      {isSelected && (
+        <rect
+          x={x - width/2 - 4}
+          y={y - height/2 - 4}
+          width={width + 8}
+          height={height + 8}
+          rx={step.node_shape === 'rounded' ? 16 : step.node_shape === 'oval' ? (height+8)/2 : 8}
+          fill="none"
+          stroke="#3b82f6"
+          strokeWidth="4"
+          className="animate-pulse"
+        />
+      )}
+      
+      {/* 아이콘 */}
+      <foreignObject x={x - 12} y={y - 20} width="24" height="24">
+        <div className="flex items-center justify-center w-6 h-6 bg-white bg-opacity-80 rounded-full">
+          {icon}
+        </div>
+      </foreignObject>
+      
+      {/* 텍스트 */}
+      <text
+        x={x}
+        y={y + 8}
+        textAnchor="middle"
+        fontSize="12"
+        fontWeight="600"
+        fill={customStyle.color}
+        className="pointer-events-none"
+      >
+        {step.step_name_ko}
+      </text>
+      
+      {/* 편집 버튼들 제거됨 */}
+    </g>
+  )
+}
+
+export default function WorkflowDiagram({ steps, workflowName, onClose, mode = 'diagram', onSave, initialSettings }: WorkflowDiagramProps) {
+  const [selectedStep, setSelectedStep] = useState<WorkflowStep | null>(null)
+  const [showStepDetail, setShowStepDetail] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingStep, setEditingStep] = useState<WorkflowStep | null>(null)
+  const [localSteps, setLocalSteps] = useState<WorkflowStep[]>(steps)
+  const [selectedNodes, setSelectedNodes] = useState<string[]>([])
+  const [draggedNode, setDraggedNode] = useState<string | null>(null)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(initialSettings?.zoom || 1)
+  const [backgroundSize, setBackgroundSize] = useState(initialSettings?.backgroundSize || { width: 1200, height: 900 })
+  const [isResizingBackground, setIsResizingBackground] = useState(false)
+  const [nodeSize, setNodeSize] = useState(initialSettings?.nodeSize || { width: 120, height: 60 })
+  const [accordionOpen, setAccordionOpen] = useState({
+    boxSize: true,
+    zoom: false,
+    backgroundSize: false,
+    editTools: true,
+    selectedNode: true
+  })
+
+  // 노드 위치 계산
+  const nodePositions = useMemo(() => {
+    const sortedSteps = [...localSteps].sort((a, b) => a.step_order - b.step_order)
+    const positions: { [key: string]: { x: number; y: number } } = {}
+    
+    sortedSteps.forEach((step, index) => {
+      positions[step.id] = step.position || {
+        x: (index % 3) * 200 + 150,
+        y: Math.floor(index / 3) * 150 + 100,
+      }
+    })
+    
+    return positions
+  }, [localSteps])
+
+  // 연결선 계산
+  const connections = useMemo(() => {
+    const sortedSteps = [...localSteps].sort((a, b) => a.step_order - b.step_order)
+    const connections: Array<{
+      id: string
+      from: { x: number; y: number }
+      to: { x: number; y: number }
+      type: 'success' | 'failure'
+      label: string
+    }> = []
+    
+    sortedSteps.forEach((step) => {
+      const fromPos = nodePositions[step.id]
+      if (!fromPos) return
+      
+      // 다음 단계로의 연결
+      if (step.next_step_id) {
+        const toPos = nodePositions[step.next_step_id]
+        if (toPos) {
+          connections.push({
+            id: `${step.id}-${step.next_step_id}`,
+            from: fromPos,
+            to: toPos,
+            type: 'success',
+            label: 'YES'
+          })
+        }
+      }
+      
+      // 대안 단계로의 연결
+      if (step.alternative_step_id) {
+        const toPos = nodePositions[step.alternative_step_id]
+        if (toPos) {
+          connections.push({
+            id: `${step.id}-alt-${step.alternative_step_id}`,
+            from: fromPos,
+            to: toPos,
+            type: 'failure',
+            label: 'NO'
+          })
+        }
+      }
+    })
+    
+    return connections
+  }, [localSteps, nodePositions])
+
+  // 노드 클릭 핸들러 (한 번 클릭 - 선택)
+  const handleNodeClick = useCallback((step: WorkflowStep) => {
+    if (mode === 'edit') {
+      setSelectedNodes(prev => 
+        prev.includes(step.id) 
+          ? prev.filter(id => id !== step.id)
+          : [...prev, step.id]
+      )
+      setSelectedStep(step)
+    } else {
+      setSelectedStep(step)
+      setShowStepDetail(true)
+    }
+  }, [mode])
+
+  // 노드 더블클릭 핸들러 (두 번 클릭 - 편집)
+  const handleNodeDoubleClick = useCallback((step: WorkflowStep) => {
+    setEditingStep(step)
+    setShowEditModal(true)
+  }, [])
+
+  // 드래그 시작 핸들러
+  const handleMouseDown = useCallback((step: WorkflowStep, e: React.MouseEvent) => {
+    if (mode === 'edit') {
+      setDraggedNode(step.id)
+      // SVG 컨테이너를 찾아서 좌표 계산
+      const svgElement = (e.target as SVGElement).closest('svg')
+      if (svgElement) {
+        const svgRect = svgElement.getBoundingClientRect()
+        const nodePosition = nodePositions[step.id]
+        setDragOffset({
+          x: e.clientX - svgRect.left - nodePosition.x,
+          y: e.clientY - svgRect.top - nodePosition.y
+        })
+      }
+    }
+  }, [mode, nodePositions])
+
+  // 드래그 중 핸들러
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (draggedNode && mode === 'edit') {
+      const svgRect = (e.currentTarget as SVGElement).getBoundingClientRect()
+      const newX = e.clientX - svgRect.left - dragOffset.x
+      const newY = e.clientY - svgRect.top - dragOffset.y
+      
+      setLocalSteps(prev => 
+        prev.map(step => 
+          step.id === draggedNode 
+            ? { ...step, position: { x: newX, y: newY } }
+            : step
+        )
+      )
+    }
+  }, [draggedNode, mode, dragOffset])
+
+
+  // 드래그 종료 핸들러
+  const handleMouseUp = useCallback(() => {
+    setDraggedNode(null)
+    setDragOffset({ x: 0, y: 0 })
+  }, [])
+
+  // 줌 핸들러들
+  const handleZoomIn = useCallback(() => {
+    setZoom(prev => Math.min(prev + 0.1, 3))
+  }, [])
+
+  const handleZoomOut = useCallback(() => {
+    setZoom(prev => Math.max(prev - 0.1, 0.1))
+  }, [])
+
+  const handleZoomReset = useCallback(() => {
+    setZoom(1)
+  }, [])
+
+  // 배경 리사이즈 핸들러들
+  const handleBackgroundResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsResizingBackground(true)
+  }, [])
+
+  const handleBackgroundResizeMove = useCallback((e: MouseEvent) => {
+    if (isResizingBackground) {
+      const newWidth = Math.max(400, e.clientX - 200)
+      const newHeight = Math.max(300, e.clientY - 200)
+      setBackgroundSize({ width: newWidth, height: newHeight })
+    }
+  }, [isResizingBackground])
+
+  const handleBackgroundResizeEnd = useCallback(() => {
+    setIsResizingBackground(false)
+  }, [])
+
+  // 배경 리사이즈 이벤트 리스너 등록
+  React.useEffect(() => {
+    if (isResizingBackground) {
+      document.addEventListener('mousemove', handleBackgroundResizeMove)
+      document.addEventListener('mouseup', handleBackgroundResizeEnd)
+      return () => {
+        document.removeEventListener('mousemove', handleBackgroundResizeMove)
+        document.removeEventListener('mouseup', handleBackgroundResizeEnd)
+      }
+    }
+    return undefined
+  }, [isResizingBackground, handleBackgroundResizeMove, handleBackgroundResizeEnd])
+
+  // 노드 복사 핸들러 제거됨 (사용하지 않음)
+
+  // 노드 상세보기 핸들러 제거됨 (클릭으로 대체)
+
+  // 성공 연결 추가 기능
+  const addSuccessConnection = useCallback(() => {
+    if (selectedNodes.length < 2) {
+      alert(`연결하려면 최소 2개의 박스를 선택해주세요. (현재 선택된 박스: ${selectedNodes.length}개)`)
+      return
+    }
+    
+    const [sourceId, targetId] = selectedNodes.slice(0, 2)
+    setLocalSteps(prev => 
+      prev.map(step => 
+        step.id === sourceId 
+          ? { ...step, next_step_id: targetId }
+          : step
+      )
+    )
+    setSelectedNodes([])
+    alert(`성공 연결이 추가되었습니다! (${sourceId} → ${targetId})`)
+  }, [selectedNodes])
+
+  // 실패 연결 추가 기능
+  const addFailureConnection = useCallback(() => {
+    if (selectedNodes.length < 2) {
+      alert(`연결하려면 최소 2개의 박스를 선택해주세요. (현재 선택된 박스: ${selectedNodes.length}개)`)
+      return
+    }
+    
+    const [sourceId, targetId] = selectedNodes.slice(0, 2)
+    setLocalSteps(prev => 
+      prev.map(step => 
+        step.id === sourceId 
+          ? { ...step, alternative_step_id: targetId }
+          : step
+      )
+    )
+    setSelectedNodes([])
+    alert(`실패 연결이 추가되었습니다! (${sourceId} → ${targetId})`)
+  }, [selectedNodes])
+
+  // 연결 해제 기능
+  const removeConnection = useCallback(() => {
+    if (selectedNodes.length !== 1) {
+      alert(`연결을 해제하려면 1개의 박스만 선택해주세요. (현재 선택된 박스: ${selectedNodes.length}개)`)
+      return
+    }
+    
+    const nodeId = selectedNodes[0]
+    const step = localSteps.find(s => s.id === nodeId)
+    if (!step) return
+    
+    const hasConnections = step.next_step_id || step.alternative_step_id
+    if (!hasConnections) {
+      alert('이 박스에는 연결된 다른 박스가 없습니다.')
+      return
+    }
+    
+    if (confirm(`"${step.step_name_ko}" 박스의 모든 연결을 해제하시겠습니까?`)) {
+      setLocalSteps(prev => 
+        prev.map(s => {
+          if (s.id === nodeId) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { next_step_id: _next_step_id, alternative_step_id: _alternative_step_id, ...rest } = s
+            return rest
+          }
+          return s
+        })
+      )
+      setSelectedNodes([])
+      alert('연결이 해제되었습니다!')
+    }
+  }, [selectedNodes, localSteps])
+
+  // 노드 추가 기능
+  const addNewNode = useCallback(() => {
+    const newNodeId = `step_${Date.now()}`
+    const newStep: WorkflowStep = {
+      id: newNodeId,
+      step_name_ko: '새 단계',
+      step_name_en: 'New Step',
+      step_description_ko: '새로운 단계입니다',
+      step_description_en: 'This is a new step',
+      step_order: localSteps.length + 1,
+      step_type: 'action',
+      is_active: true,
+      is_required: false,
+      node_shape: 'rectangle',
+      node_color: '#3b82f6',
+      text_color: '#ffffff',
+      position: {
+        x: Math.random() * 400 + 100,
+        y: Math.random() * 300 + 100,
+      }
+    }
+    
+    setLocalSteps(prev => [...prev, newStep])
+  }, [localSteps.length])
+
+  const handleSave = () => {
+    if (onSave) {
+      onSave({
+        steps: localSteps,
+        zoom,
+        backgroundSize,
+        nodeSize,
+        panelPosition: { x: 16, y: 16 }
+      })
+    }
+  }
+
+  const handleStepUpdate = (updatedStep: WorkflowStep) => {
+    setLocalSteps(prev => 
+      prev.map(step => step.id === updatedStep.id ? updatedStep : step)
+    )
+    setShowEditModal(false)
+    setEditingStep(null)
+  }
+
+  // 어코디언 토글 함수
+  const toggleAccordion = (key: keyof typeof accordionOpen) => {
+    setAccordionOpen(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }))
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div 
+        className="bg-white rounded-lg flex flex-col relative"
+        style={{ width: '90vw', height: '90vh' }}
+      >
+        {/* 헤더 */}
+        <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {mode === 'edit' ? '워크플로우 편집' : mode === 'manual' ? '워크플로우 메뉴얼' : '워크플로우 다이어그램'}
+            </h2>
+            {workflowName && (
+              <p className="text-sm text-gray-600 mt-1">{workflowName}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-green-500 rounded"></div>
+                <span>YES 연결</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-red-500 rounded border-2 border-dashed"></div>
+                <span>NO 연결</span>
+              </div>
+            </div>
+            {mode === 'edit' && (
+              <button
+                onClick={handleSave}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+              >
+                <Save size={16} />
+                저장
+              </button>
+            )}
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+              >
+                닫기
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 다이어그램 영역 */}
+        <div className="flex-1 bg-gray-50 relative overflow-hidden flex">
+          {/* 왼쪽 편집 영역 */}
+          <div className="flex-1 relative">
+            <svg 
+              width="100%" 
+              height="100%" 
+              viewBox={`0 0 ${backgroundSize.width} ${backgroundSize.height}`}
+              className="absolute inset-0"
+              style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+            >
+            {/* 배경 격자 */}
+            <defs>
+              <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e7eb" strokeWidth="1"/>
+              </pattern>
+              <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280" />
+              </marker>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+            
+            {/* 배경 리사이즈 핸들 */}
+            <rect
+              x={backgroundSize.width - 10}
+              y={backgroundSize.height - 10}
+              width="10"
+              height="10"
+              fill="#6b7280"
+              className="cursor-se-resize hover:fill-gray-500"
+              onMouseDown={handleBackgroundResizeStart}
+            />
+            
+            {/* 연결선 그리기 */}
+            {connections.map((connection) => (
+              <g key={connection.id}>
+                <path
+                  d={`M ${connection.from.x} ${connection.from.y} L ${connection.to.x} ${connection.to.y}`}
+                  stroke={connection.type === 'success' ? '#10b981' : '#ef4444'}
+                  strokeWidth="2"
+                  fill="none"
+                  strokeDasharray={connection.type === 'failure' ? '5,5' : '0'}
+                  markerEnd={`url(#arrow-${connection.type})`}
+                />
+                <text
+                  x={(connection.from.x + connection.to.x) / 2}
+                  y={(connection.from.y + connection.to.y) / 2 - 5}
+                  textAnchor="middle"
+                  fontSize="10"
+                  fill={connection.type === 'success' ? '#10b981' : '#ef4444'}
+                  fontWeight="bold"
+                >
+                  {connection.label}
+                </text>
+              </g>
+            ))}
+            
+            {/* 화살표 마커 정의 */}
+            <defs>
+              <marker
+                id="arrow-success"
+                markerWidth="10"
+                markerHeight="10"
+                refX="9"
+                refY="3"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path d="M0,0 L0,6 L9,3 z" fill="#10b981" />
+              </marker>
+              <marker
+                id="arrow-failure"
+                markerWidth="10"
+                markerHeight="10"
+                refX="9"
+                refY="3"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
+              </marker>
+            </defs>
+            
+            {/* 노드 그리기 */}
+            {localSteps.map((step) => {
+              const position = nodePositions[step.id]
+              if (!position) return null
+              
+              return (
+                <SVGNode
+                  key={step.id}
+                  step={step}
+                  x={position.x}
+                  y={position.y}
+                  isSelected={selectedNodes.includes(step.id)}
+                  onClick={handleNodeClick}
+                  onDoubleClick={handleNodeDoubleClick}
+                  onMouseDown={handleMouseDown}
+                  isDragging={draggedNode === step.id}
+                  nodeSize={nodeSize}
+                />
+              )
+            })}
+            </svg>
+          </div>
+
+          {/* 오른쪽 조정 도구들 */}
+          {mode === 'edit' && (
+            <div className="w-80 bg-white border-l border-gray-200 p-4 overflow-y-auto">
+              <h3 className="font-semibold text-gray-900 mb-4">편집 도구</h3>
+              
+              {/* 박스 사이즈 컨트롤 패널 */}
+              <div className="mb-2 border border-gray-200 rounded-lg">
+                <button
+                  onClick={() => toggleAccordion('boxSize')}
+                  className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50 rounded-t-lg"
+                >
+                  <h4 className="font-medium text-sm text-gray-700">박스 사이즈</h4>
+                  <div className={`transform transition-transform duration-200 ${accordionOpen.boxSize ? 'rotate-180' : ''}`}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </button>
+                {accordionOpen.boxSize && (
+                  <div className="px-3 pb-3 space-y-2">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">폭</label>
+                      <input
+                        type="range"
+                        min="80"
+                        max="200"
+                        value={nodeSize.width}
+                        onChange={(e) => setNodeSize(prev => ({ ...prev, width: parseInt(e.target.value) }))}
+                        className="w-full"
+                      />
+                      <div className="text-xs text-gray-500 text-center">{nodeSize.width}px</div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">높이</label>
+                      <input
+                        type="range"
+                        min="40"
+                        max="120"
+                        value={nodeSize.height}
+                        onChange={(e) => setNodeSize(prev => ({ ...prev, height: parseInt(e.target.value) }))}
+                        className="w-full"
+                      />
+                      <div className="text-xs text-gray-500 text-center">{nodeSize.height}px</div>
+                    </div>
+                    <button
+                      onClick={() => setNodeSize({ width: 120, height: 60 })}
+                      className="w-full px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
+                    >
+                      기본값으로 리셋
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 줌 컨트롤 */}
+              <div className="mb-2 border border-gray-200 rounded-lg">
+                <button
+                  onClick={() => toggleAccordion('zoom')}
+                  className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50 rounded-t-lg"
+                >
+                  <h4 className="font-medium text-sm text-gray-700">줌 컨트롤</h4>
+                  <div className={`transform transition-transform duration-200 ${accordionOpen.zoom ? 'rotate-180' : ''}`}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </button>
+                {accordionOpen.zoom && (
+                  <div className="px-3 pb-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleZoomOut}
+                        className="p-2 bg-gray-100 hover:bg-gray-200 rounded flex items-center gap-1"
+                        title="줌 아웃"
+                      >
+                        <ZoomOut size={16} />
+                      </button>
+                      <span className="text-sm font-medium min-w-[60px] text-center">
+                        {Math.round(zoom * 100)}%
+                      </span>
+                      <button
+                        onClick={handleZoomIn}
+                        className="p-2 bg-gray-100 hover:bg-gray-200 rounded flex items-center gap-1"
+                        title="줌 인"
+                      >
+                        <ZoomIn size={16} />
+                      </button>
+                      <button
+                        onClick={handleZoomReset}
+                        className="p-2 bg-gray-100 hover:bg-gray-200 rounded flex items-center gap-1"
+                        title="줌 리셋"
+                      >
+                        <RotateCcw size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 배경 사이즈 입력 패널 */}
+              <div className="mb-2 border border-gray-200 rounded-lg">
+                <button
+                  onClick={() => toggleAccordion('backgroundSize')}
+                  className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50 rounded-t-lg"
+                >
+                  <h4 className="font-medium text-sm text-gray-700">배경 크기</h4>
+                  <div className={`transform transition-transform duration-200 ${accordionOpen.backgroundSize ? 'rotate-180' : ''}`}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </button>
+                {accordionOpen.backgroundSize && (
+                  <div className="px-3 pb-3 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">폭</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="400"
+                            max="2000"
+                            value={backgroundSize.width}
+                            onChange={(e) => setBackgroundSize(prev => ({ 
+                              ...prev, 
+                              width: Math.max(400, Math.min(2000, parseInt(e.target.value) || 400))
+                            }))}
+                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <span className="text-xs text-gray-500">px</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">높이</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="300"
+                            max="1500"
+                            value={backgroundSize.height}
+                            onChange={(e) => setBackgroundSize(prev => ({ 
+                              ...prev, 
+                              height: Math.max(300, Math.min(1500, parseInt(e.target.value) || 300))
+                            }))}
+                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <span className="text-xs text-gray-500">px</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setBackgroundSize({ width: 1200, height: 900 })}
+                      className="w-full px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
+                    >
+                      기본값으로 리셋
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 편집 도구 패널 */}
+              <div className="mb-2 border border-gray-200 rounded-lg">
+                <button
+                  onClick={() => toggleAccordion('editTools')}
+                  className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50 rounded-t-lg"
+                >
+                  <h4 className="font-medium text-sm text-gray-700">편집 도구</h4>
+                  <div className={`transform transition-transform duration-200 ${accordionOpen.editTools ? 'rotate-180' : ''}`}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </button>
+                {accordionOpen.editTools && (
+                  <div className="px-3 pb-3 space-y-2">
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={addNewNode}
+                        className="flex-1 px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-2 text-sm"
+                      >
+                        <Plus size={14} />
+                        박스 추가
+                      </button>
+                      {selectedNodes.length > 0 && (
+                        <button 
+                          onClick={() => {
+                            const nodeIds = selectedNodes
+                            setLocalSteps(prev => prev.filter(step => !nodeIds.includes(step.id)))
+                            setSelectedNodes([])
+                          }}
+                          className="flex-1 px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 flex items-center gap-2 text-sm"
+                        >
+                          <Trash2 size={14} />
+                          삭제 ({selectedNodes.length})
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-2">
+                      <button 
+                        onClick={addSuccessConnection}
+                        className="px-2 py-2 bg-green-500 text-white rounded hover:bg-green-600 flex items-center justify-center gap-1 text-sm"
+                      >
+                        <ArrowRight size={12} />
+                        YES
+                      </button>
+                      <button 
+                        onClick={addFailureConnection}
+                        className="px-2 py-2 bg-red-500 text-white rounded hover:bg-red-600 flex items-center justify-center gap-1 text-sm"
+                      >
+                        <ArrowRight size={12} />
+                        NO
+                      </button>
+                      <button 
+                        onClick={removeConnection}
+                        className="px-2 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 flex items-center justify-center gap-1 text-sm"
+                      >
+                        <X size={12} />
+                        CANCEL
+                      </button>
+                    </div>
+                    
+                    {selectedNodes.length > 0 && (
+                      <div className="mt-3 pt-3 border-t">
+                        <p className="text-sm text-gray-600">
+                          {selectedNodes.length}개 박스 선택됨
+                        </p>
+                        {selectedNodes.length >= 2 && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            연결 추가 가능
+                          </p>
+                        )}
+                        {selectedNodes.length === 1 && (
+                          <div className="mt-1 space-y-1">
+                            {(() => {
+                              const selectedStep = localSteps.find(s => s.id === selectedNodes[0])
+                              const hasConnections = selectedStep?.next_step_id || selectedStep?.alternative_step_id
+                              return hasConnections ? (
+                                <p className="text-xs text-orange-600">
+                                  연결 해제 가능
+                                </p>
+                              ) : (
+                                <p className="text-xs text-gray-500">
+                                  연결된 박스가 없음
+                                </p>
+                              )
+                            })()}
+                          </div>
+                        )}
+                        {selectedNodes.length < 2 && selectedNodes.length !== 1 && (
+                          <p className="text-xs text-orange-600 mt-1">
+                            연결 추가를 위해 2개 이상 선택하세요
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 선택된 노드 상세 정보 */}
+              {selectedStep && (
+                <div className="mb-2 border border-gray-200 rounded-lg">
+                  <button
+                    onClick={() => toggleAccordion('selectedNode')}
+                    className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50 rounded-t-lg"
+                  >
+                    <h4 className="font-medium text-sm text-gray-700">선택된 박스</h4>
+                    <div className={`transform transition-transform duration-200 ${accordionOpen.selectedNode ? 'rotate-180' : ''}`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </button>
+                  {accordionOpen.selectedNode && (
+                    <div className="px-3 pb-3">
+                      <div className="bg-gray-50 p-3 rounded-lg">
+                        <h5 className="font-medium text-gray-900 mb-2">{selectedStep.step_name_ko}</h5>
+                        <div className="space-y-2 text-sm">
+                          <div>
+                            <span className="text-gray-600">타입:</span>
+                            <span className="ml-2 font-medium">{selectedStep.step_type}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">순서:</span>
+                            <span className="ml-2 font-medium">{selectedStep.step_order}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">상태:</span>
+                            <span className="ml-2 font-medium">{selectedStep.is_active ? '활성' : '비활성'}</span>
+                          </div>
+                          {selectedStep.step_description_ko && (
+                            <div>
+                              <span className="text-gray-600">설명:</span>
+                              <p className="mt-1 text-gray-700">{selectedStep.step_description_ko}</p>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="mt-3 pt-3 border-t">
+                          <button
+                            onClick={() => {
+                              setEditingStep(selectedStep)
+                              setShowEditModal(true)
+                            }}
+                            className="w-full px-3 py-2 bg-green-500 text-white rounded hover:bg-green-600 flex items-center justify-center gap-2 text-sm"
+                          >
+                            <Edit size={14} />
+                            수정
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 하단 정보 */}
+        <div className="p-4 border-t bg-white">
+          <div className="flex items-center justify-between text-sm text-gray-600">
+            <div>
+              총 {localSteps.length}개 박스
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                <span>YES 경로</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-red-500 rounded-full border-2 border-dashed"></div>
+                <span>NO 경로</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 단계 상세 정보 모달 */}
+      {showStepDetail && selectedStep && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {selectedStep.step_name_ko}
+                </h3>
+                <button
+                  onClick={() => setShowStepDetail(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* 기본 정보 */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-2">기본 정보</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">단계 번호:</span>
+                      <span className="ml-2 font-medium">{selectedStep.step_order}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">단계 타입:</span>
+                      <span className="ml-2 font-medium">{selectedStep.step_type}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">활성 상태:</span>
+                      <span className="ml-2 font-medium">{selectedStep.is_active ? '활성' : '비활성'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">필수 여부:</span>
+                      <span className="ml-2 font-medium">{selectedStep.is_required ? '필수' : '선택'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 설명 */}
+                {selectedStep.step_description_ko && (
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">설명</h4>
+                    <p className="text-gray-700">{selectedStep.step_description_ko}</p>
+                  </div>
+                )}
+
+                {/* 액션 정보 */}
+                {selectedStep.step_type === 'action' && selectedStep.action_type && (
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">수행할 작업</h4>
+                    <p className="text-gray-700">{selectedStep.action_type}</p>
+                  </div>
+                )}
+
+                {/* 조건 정보 */}
+                {selectedStep.step_type === 'condition' && selectedStep.condition_type && (
+                  <div className="bg-yellow-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">조건 확인</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-gray-600">조건 타입:</span>
+                        <span className="ml-2 font-medium">{selectedStep.condition_type}</span>
+                      </div>
+                      {selectedStep.condition_value && (
+                        <div>
+                          <span className="text-gray-600">조건 값:</span>
+                          <span className="ml-2 font-medium">{selectedStep.condition_value}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 다음 단계 정보 */}
+                {(selectedStep.next_step_id || selectedStep.alternative_step_id) && (
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">다음 단계</h4>
+                    <div className="space-y-2">
+                      {selectedStep.next_step_id && (
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                          <span className="text-sm">성공 시: 다음 단계로 이동</span>
+                        </div>
+                      )}
+                      {selectedStep.alternative_step_id && (
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 bg-red-500 rounded-full border-2 border-dashed"></div>
+                          <span className="text-sm">실패 시: 대안 단계로 이동</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end mt-6">
+                <button
+                  onClick={() => setShowStepDetail(false)}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 편집 모달 */}
+      {showEditModal && editingStep && (
+        <StepEditModal
+          step={editingStep}
+          onSave={handleStepUpdate}
+          onClose={() => {
+            setShowEditModal(false)
+            setEditingStep(null)
+          }}
+          localSteps={localSteps}
+          setLocalSteps={setLocalSteps}
+        />
+      )}
+    </div>
+  )
+}
+
+// 단계 편집 모달 컴포넌트
+function StepEditModal({ 
+  step, 
+  onSave, 
+  onClose, 
+  localSteps, 
+  setLocalSteps 
+}: { 
+  step: WorkflowStep, 
+  onSave: (step: WorkflowStep) => void, 
+  onClose: () => void,
+  localSteps: WorkflowStep[],
+  setLocalSteps: React.Dispatch<React.SetStateAction<WorkflowStep[]>>
+}) {
+  const [formData, setFormData] = useState({
+    step_name_ko: step.step_name_ko,
+    step_name_en: step.step_name_en,
+    step_description_ko: step.step_description_ko || '',
+    step_description_en: step.step_description_en || '',
+    step_type: step.step_type,
+    action_type: step.action_type || '',
+    condition_type: step.condition_type || '',
+    condition_value: step.condition_value || '',
+    node_shape: step.node_shape || 'rectangle',
+    node_color: step.node_color || '',
+    text_color: step.text_color || '',
+    is_active: step.is_active,
+    is_required: step.is_required,
+    // 고급 필드들
+    links: step.links || [],
+    images: step.images || [],
+    notes_ko: step.notes_ko || '',
+    notes_en: step.notes_en || '',
+    tags: step.tags || [],
+    priority: step.priority || 'medium',
+    estimated_time: step.estimated_time || 0,
+    // 리치 텍스트 설명
+    rich_description_ko: step.rich_description_ko || '',
+    rich_description_en: step.rich_description_en || '',
+  })
+
+  const [newTag, setNewTag] = useState('')
+
+  const handleSave = () => {
+    const updatedStep = {
+      ...step,
+      ...formData,
+    }
+    onSave(updatedStep)
+  }
+
+  // 태그 관리 함수들
+  const addTag = () => {
+    if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...prev.tags, newTag.trim()]
+      }))
+      setNewTag('')
+    }
+  }
+
+  const removeTag = (tag: string) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.filter(t => t !== tag)
+    }))
+  }
+
+  const shapeOptions = [
+    { name: '사각형', value: 'rectangle' },
+    { name: '둥근 사각형', value: 'rounded' },
+    { name: '마름모', value: 'diamond' },
+    { name: '타원', value: 'oval' },
+    { name: '원', value: 'circle' },
+  ]
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-2">
+      <div className="bg-white rounded-lg max-w-7xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+        {/* 헤더 */}
+        <div className="flex items-center justify-between p-3 border-b bg-gray-50">
+          <h3 className="text-lg font-semibold text-gray-900">
+            고급 단계 편집
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-gray-200 rounded-lg"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* 탭 내용 */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* 왼쪽: 기본 정보 + 리치 에디터 */}
+            <div className="space-y-4">
+              {/* 기본 정보 */}
+              <div className="bg-white border border-gray-200 rounded-lg p-3">
+                <h4 className="font-medium text-gray-900 mb-3 border-b pb-1">기본 정보</h4>
+                <div className="space-y-3">
+                  {/* 다국어 기본 정보 */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <h5 className="font-medium text-gray-900 border-b pb-1 text-sm">한국어</h5>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          단계 이름 (한국어)
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.step_name_ko}
+                          onChange={(e) => setFormData(prev => ({ ...prev, step_name_ko: e.target.value }))}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="한국어 단계 이름을 입력하세요"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h5 className="font-medium text-gray-900 border-b pb-1 text-sm">English</h5>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Step Name (English)
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.step_name_en}
+                          onChange={(e) => setFormData(prev => ({ ...prev, step_name_en: e.target.value }))}
+                          className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Enter English step name"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 단계 타입 및 설정 */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        단계 타입
+                      </label>
+                      <select
+                        value={formData.step_type}
+                        onChange={(e) => setFormData(prev => ({ ...prev, step_type: e.target.value as 'start' | 'action' | 'condition' | 'decision' | 'template' | 'manual' | 'end' }))}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="start">시작 (Start)</option>
+                        <option value="action">액션 (Action)</option>
+                        <option value="condition">조건 (Condition)</option>
+                        <option value="decision">결정 (Decision)</option>
+                        <option value="template">템플릿 (Template)</option>
+                        <option value="manual">수동 (Manual)</option>
+                        <option value="end">종료 (End)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        우선순위
+                      </label>
+                      <select
+                        value={formData.priority}
+                        onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as 'low' | 'medium' | 'high' }))}
+                        className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="low">낮음 (Low)</option>
+                        <option value="medium">보통 (Medium)</option>
+                        <option value="high">높음 (High)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 체크박스 설정 */}
+                  <div className="flex gap-4">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.is_active}
+                        onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
+                        className="mr-1.5"
+                      />
+                      <span className="text-xs text-gray-700">활성</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.is_required}
+                        onChange={(e) => setFormData(prev => ({ ...prev, is_required: e.target.checked }))}
+                        className="mr-1.5"
+                      />
+                      <span className="text-xs text-gray-700">필수</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* 리치 에디터 */}
+              <div className="bg-white border border-gray-200 rounded-lg p-3">
+                <div className="mb-3">
+                  <h4 className="font-medium text-blue-900 mb-1 text-sm">리치 텍스트 에디터</h4>
+                  <p className="text-xs text-blue-700">
+                    서식이 있는 텍스트로 단계 설명을 작성하세요. 굵게, 기울임, 목록 등을 사용할 수 있습니다.
+                  </p>
+                </div>
+
+                {/* 한국어 리치 에디터 */}
+                <div className="mb-4">
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">
+                    한국어 설명 (리치 텍스트)
+                  </label>
+                  <div className="border border-gray-300 rounded overflow-hidden">
+                    {/* 툴바 */}
+                    <div className="bg-gray-50 border-b border-gray-300 p-1.5 flex gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('bold')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100 font-bold"
+                        title="굵게"
+                      >
+                        B
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('italic')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100 italic"
+                        title="기울임"
+                      >
+                        I
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('underline')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100 underline"
+                        title="밑줄"
+                      >
+                        U
+                      </button>
+                      <div className="w-px bg-gray-300 mx-0.5"></div>
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('insertUnorderedList')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100"
+                        title="목록"
+                      >
+                        • 목록
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('insertOrderedList')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100"
+                        title="번호 목록"
+                      >
+                        1. 목록
+                      </button>
+                      <div className="w-px bg-gray-300 mx-0.5"></div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = prompt('링크 URL을 입력하세요:')
+                          if (url) {
+                            const editor = document.querySelector('[data-editor="ko"]') as HTMLElement
+                            if (editor) {
+                              editor.focus()
+                              
+                              // 현재 커서 위치를 찾거나 에디터 끝에 커서 설정
+                              let range: Range
+                              const selection = window.getSelection()
+                              
+                              if (selection && selection.rangeCount > 0) {
+                                range = selection.getRangeAt(0)
+                              } else {
+                                range = document.createRange()
+                                range.selectNodeContents(editor)
+                                range.collapse(false) // 끝으로 이동
+                              }
+                              
+                              // 링크 요소 생성
+                              const link = document.createElement('a')
+                              link.href = url
+                              link.textContent = url
+                              link.target = '_blank'
+                              link.rel = 'noopener noreferrer'
+                              link.style.color = '#2563eb'
+                              link.style.textDecoration = 'underline'
+                              
+                              // 링크 삽입
+                              range.insertNode(link)
+                              
+                              // 커서를 링크 뒤로 이동
+                              range.setStartAfter(link)
+                              range.collapse(true)
+                              
+                              // 선택 영역 업데이트
+                              if (selection) {
+                                selection.removeAllRanges()
+                                selection.addRange(range)
+                              }
+                              
+                              // 에디터 내용 업데이트를 위한 이벤트 발생
+                              const event = new Event('input', { bubbles: true })
+                              editor.dispatchEvent(event)
+                            }
+                          }
+                        }}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100"
+                        title="링크"
+                      >
+                        🔗 링크
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const input = document.createElement('input')
+                          input.type = 'file'
+                          input.accept = 'image/*'
+                          input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement).files?.[0]
+                            if (file) {
+                              const reader = new FileReader()
+                              reader.onload = (e) => {
+                                const result = e.target?.result as string
+                                // 현재 에디터에 포커스를 맞추고 이미지 삽입
+                                const editor = document.querySelector('[data-editor="ko"]') as HTMLElement
+                                if (editor) {
+                                  editor.focus()
+                                  
+                                  // 현재 커서 위치를 찾거나 에디터 끝에 커서 설정
+                                  let range: Range
+                                  const selection = window.getSelection()
+                                  
+                                  if (selection && selection.rangeCount > 0) {
+                                    range = selection.getRangeAt(0)
+                                  } else {
+                                    range = document.createRange()
+                                    range.selectNodeContents(editor)
+                                    range.collapse(false) // 끝으로 이동
+                                  }
+                                  
+                                  // 이미지 요소 생성
+                                  const img = document.createElement('img')
+                                  img.src = result
+                                  img.style.maxWidth = '100%'
+                                  img.style.height = 'auto'
+                                  img.style.display = 'block'
+                                  img.style.margin = '10px 0'
+                                  
+                                  // 이미지 삽입
+                                  range.insertNode(img)
+                                  
+                                  // 이미지 뒤에 줄바꿈 추가
+                                  const br = document.createElement('br')
+                                  range.insertNode(br)
+                                  
+                                  // 커서를 이미지 뒤로 이동
+                                  range.setStartAfter(br)
+                                  range.collapse(true)
+                                  
+                                  // 선택 영역 업데이트
+                                  if (selection) {
+                                    selection.removeAllRanges()
+                                    selection.addRange(range)
+                                  }
+                                  
+                                  // 에디터 내용 업데이트를 위한 이벤트 발생
+                                  const event = new Event('input', { bubbles: true })
+                                  editor.dispatchEvent(event)
+                                }
+                              }
+                              reader.readAsDataURL(file)
+                            }
+                          }
+                          input.click()
+                        }}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100"
+                        title="이미지 업로드"
+                      >
+                        🖼️ 이미지
+                      </button>
+                    </div>
+                    {/* 에디터 영역 */}
+                    <div
+                      contentEditable
+                      data-editor="ko"
+                      dangerouslySetInnerHTML={{ 
+                        __html: formData.rich_description_ko || '<p><br></p>' 
+                      }}
+                      onInput={(e) => {
+                        const content = e.currentTarget.innerHTML
+                        setFormData(prev => ({ ...prev, rich_description_ko: content }))
+                      }}
+                      onKeyDown={(e) => {
+                        // Enter 키 처리 - 일반적인 리치 에디터 동작
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          
+                          const selection = window.getSelection()
+                          if (selection && selection.rangeCount > 0) {
+                            const range = selection.getRangeAt(0)
+                            
+                            // 현재 위치에 줄바꿈 삽입
+                            const br = document.createElement('br')
+                            range.insertNode(br)
+                            
+                            // 커서를 줄바꿈 뒤로 이동
+                            range.setStartAfter(br)
+                            range.collapse(true)
+                            
+                            // 선택 영역 업데이트
+                            selection.removeAllRanges()
+                            selection.addRange(range)
+                            
+                            // 내용 업데이트
+                            const editor = e.currentTarget as HTMLElement
+                            const event = new Event('input', { bubbles: true })
+                            editor.dispatchEvent(event)
+                          }
+                        }
+                        
+                        // Ctrl+B: 굵게
+                        if (e.ctrlKey && e.key === 'b') {
+                          e.preventDefault()
+                          document.execCommand('bold')
+                        }
+                        
+                        // Ctrl+I: 기울임
+                        if (e.ctrlKey && e.key === 'i') {
+                          e.preventDefault()
+                          document.execCommand('italic')
+                        }
+                        
+                        // Ctrl+U: 밑줄
+                        if (e.ctrlKey && e.key === 'u') {
+                          e.preventDefault()
+                          document.execCommand('underline')
+                        }
+                      }}
+                      className="p-3 focus:outline-none resize-y overflow-y-auto text-sm min-h-[150px]"
+                      style={{ whiteSpace: 'pre-wrap' }}
+                    />
+                  </div>
+                </div>
+
+                {/* 영어 리치 에디터 */}
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">
+                    English Description (Rich Text)
+                  </label>
+                  <div className="border border-gray-300 rounded overflow-hidden">
+                    {/* 툴바 */}
+                    <div className="bg-gray-50 border-b border-gray-300 p-1.5 flex gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('bold')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100 font-bold"
+                        title="Bold"
+                      >
+                        B
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('italic')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100 italic"
+                        title="Italic"
+                      >
+                        I
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('underline')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100 underline"
+                        title="Underline"
+                      >
+                        U
+                      </button>
+                      <div className="w-px bg-gray-300 mx-0.5"></div>
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('insertUnorderedList')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100"
+                        title="List"
+                      >
+                        • List
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => document.execCommand('insertOrderedList')}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100"
+                        title="Numbered List"
+                      >
+                        1. List
+                      </button>
+                      <div className="w-px bg-gray-300 mx-0.5"></div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = prompt('Enter link URL:')
+                          if (url) {
+                            const editor = document.querySelector('[data-editor="en"]') as HTMLElement
+                            if (editor) {
+                              editor.focus()
+                              
+                              // 현재 커서 위치를 찾거나 에디터 끝에 커서 설정
+                              let range: Range
+                              const selection = window.getSelection()
+                              
+                              if (selection && selection.rangeCount > 0) {
+                                range = selection.getRangeAt(0)
+                              } else {
+                                range = document.createRange()
+                                range.selectNodeContents(editor)
+                                range.collapse(false) // 끝으로 이동
+                              }
+                              
+                              // 링크 요소 생성
+                              const link = document.createElement('a')
+                              link.href = url
+                              link.textContent = url
+                              link.target = '_blank'
+                              link.rel = 'noopener noreferrer'
+                              link.style.color = '#2563eb'
+                              link.style.textDecoration = 'underline'
+                              
+                              // 링크 삽입
+                              range.insertNode(link)
+                              
+                              // 커서를 링크 뒤로 이동
+                              range.setStartAfter(link)
+                              range.collapse(true)
+                              
+                              // 선택 영역 업데이트
+                              if (selection) {
+                                selection.removeAllRanges()
+                                selection.addRange(range)
+                              }
+                              
+                              // 에디터 내용 업데이트를 위한 이벤트 발생
+                              const event = new Event('input', { bubbles: true })
+                              editor.dispatchEvent(event)
+                            }
+                          }
+                        }}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100"
+                        title="Link"
+                      >
+                        🔗 Link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const input = document.createElement('input')
+                          input.type = 'file'
+                          input.accept = 'image/*'
+                          input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement).files?.[0]
+                            if (file) {
+                              const reader = new FileReader()
+                              reader.onload = (e) => {
+                                const result = e.target?.result as string
+                                // 현재 에디터에 포커스를 맞추고 이미지 삽입
+                                const editor = document.querySelector('[data-editor="en"]') as HTMLElement
+                                if (editor) {
+                                  editor.focus()
+                                  
+                                  // 현재 커서 위치를 찾거나 에디터 끝에 커서 설정
+                                  let range: Range
+                                  const selection = window.getSelection()
+                                  
+                                  if (selection && selection.rangeCount > 0) {
+                                    range = selection.getRangeAt(0)
+                                  } else {
+                                    range = document.createRange()
+                                    range.selectNodeContents(editor)
+                                    range.collapse(false) // 끝으로 이동
+                                  }
+                                  
+                                  // 이미지 요소 생성
+                                  const img = document.createElement('img')
+                                  img.src = result
+                                  img.style.maxWidth = '100%'
+                                  img.style.height = 'auto'
+                                  img.style.display = 'block'
+                                  img.style.margin = '10px 0'
+                                  
+                                  // 이미지 삽입
+                                  range.insertNode(img)
+                                  
+                                  // 이미지 뒤에 줄바꿈 추가
+                                  const br = document.createElement('br')
+                                  range.insertNode(br)
+                                  
+                                  // 커서를 이미지 뒤로 이동
+                                  range.setStartAfter(br)
+                                  range.collapse(true)
+                                  
+                                  // 선택 영역 업데이트
+                                  if (selection) {
+                                    selection.removeAllRanges()
+                                    selection.addRange(range)
+                                  }
+                                  
+                                  // 에디터 내용 업데이트를 위한 이벤트 발생
+                                  const event = new Event('input', { bubbles: true })
+                                  editor.dispatchEvent(event)
+                                }
+                              }
+                              reader.readAsDataURL(file)
+                            }
+                          }
+                          input.click()
+                        }}
+                        className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100"
+                        title="Image Upload"
+                      >
+                        🖼️ Image
+                      </button>
+                    </div>
+                    {/* 에디터 영역 */}
+                    <div
+                      contentEditable
+                      data-editor="en"
+                      dangerouslySetInnerHTML={{ 
+                        __html: formData.rich_description_en || '<p><br></p>' 
+                      }}
+                      onInput={(e) => {
+                        const content = e.currentTarget.innerHTML
+                        setFormData(prev => ({ ...prev, rich_description_en: content }))
+                      }}
+                      onKeyDown={(e) => {
+                        // Enter 키 처리 - 일반적인 리치 에디터 동작
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          
+                          const selection = window.getSelection()
+                          if (selection && selection.rangeCount > 0) {
+                            const range = selection.getRangeAt(0)
+                            
+                            // 현재 위치에 줄바꿈 삽입
+                            const br = document.createElement('br')
+                            range.insertNode(br)
+                            
+                            // 커서를 줄바꿈 뒤로 이동
+                            range.setStartAfter(br)
+                            range.collapse(true)
+                            
+                            // 선택 영역 업데이트
+                            selection.removeAllRanges()
+                            selection.addRange(range)
+                            
+                            // 내용 업데이트
+                            const editor = e.currentTarget as HTMLElement
+                            const event = new Event('input', { bubbles: true })
+                            editor.dispatchEvent(event)
+                          }
+                        }
+                        
+                        // Ctrl+B: 굵게
+                        if (e.ctrlKey && e.key === 'b') {
+                          e.preventDefault()
+                          document.execCommand('bold')
+                        }
+                        
+                        // Ctrl+I: 기울임
+                        if (e.ctrlKey && e.key === 'i') {
+                          e.preventDefault()
+                          document.execCommand('italic')
+                        }
+                        
+                        // Ctrl+U: 밑줄
+                        if (e.ctrlKey && e.key === 'u') {
+                          e.preventDefault()
+                          document.execCommand('underline')
+                        }
+                      }}
+                      className="p-3 focus:outline-none resize-y overflow-y-auto text-sm min-h-[150px]"
+                      style={{ whiteSpace: 'pre-wrap' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 오른쪽: 고급 설정 */}
+            <div className="space-y-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-3">
+                <h4 className="font-medium text-gray-900 mb-3 border-b pb-1 text-sm">고급 설정</h4>
+                <div className="space-y-3">
+                  {/* 노드 스타일 */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      노드 스타일
+                    </label>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">
+                          도형 모양
+                        </label>
+                        <div className="grid grid-cols-3 gap-1">
+                          {shapeOptions.map((shape) => (
+                            <button
+                              key={shape.value}
+                              onClick={() => setFormData(prev => ({ ...prev, node_shape: shape.value as 'rectangle' | 'rounded' | 'diamond' | 'oval' | 'circle' }))}
+                              className={`p-2 border rounded text-xs font-medium transition-colors ${
+                                formData.node_shape === shape.value
+                                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                  : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                              }`}
+                            >
+                              {shape.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            배경색
+                          </label>
+                          <input
+                            type="color"
+                            value={formData.node_color}
+                            onChange={(e) => setFormData(prev => ({ ...prev, node_color: e.target.value }))}
+                            className="w-full h-8 border border-gray-300 rounded"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            텍스트 색상
+                          </label>
+                          <input
+                            type="color"
+                            value={formData.text_color}
+                            onChange={(e) => setFormData(prev => ({ ...prev, text_color: e.target.value }))}
+                            className="w-full h-8 border border-gray-300 rounded"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 태그 */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      태그
+                    </label>
+                    <div className="flex gap-1 mb-1">
+                      <input
+                        type="text"
+                        value={newTag}
+                        onChange={(e) => setNewTag(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && addTag()}
+                        className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="태그를 입력하고 Enter를 누르세요"
+                      />
+                      <button
+                        onClick={addTag}
+                        className="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs"
+                      >
+                        추가
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {formData.tags.map((tag, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full"
+                        >
+                          {tag}
+                          <button
+                            onClick={() => removeTag(tag)}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 예상 소요 시간 */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      예상 소요 시간 (분)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formData.estimated_time}
+                      onChange={(e) => setFormData(prev => ({ ...prev, estimated_time: Number(e.target.value) }))}
+                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="예상 소요 시간을 입력하세요"
+                    />
+                  </div>
+
+                  {/* 메모 */}
+                  <div className="grid grid-cols-1 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        메모 (한국어)
+                      </label>
+                      <textarea
+                        value={formData.notes_ko}
+                        onChange={(e) => setFormData(prev => ({ ...prev, notes_ko: e.target.value }))}
+                        rows={2}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="추가 메모를 입력하세요"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Notes (English)
+                      </label>
+                      <textarea
+                        value={formData.notes_en}
+                        onChange={(e) => setFormData(prev => ({ ...prev, notes_en: e.target.value }))}
+                        rows={2}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Enter additional notes"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 푸터 버튼들 */}
+        <div className="flex items-center justify-between p-3 border-t bg-gray-50">
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                const newStep = { ...step, ...formData }
+                const stepIndex = localSteps.findIndex(s => s.id === step.id)
+                if (stepIndex !== -1) {
+                  const updatedSteps = [...localSteps]
+                  updatedSteps[stepIndex] = newStep
+                  setLocalSteps(updatedSteps)
+                }
+              }}
+              className="px-3 py-1.5 bg-gray-500 text-white rounded hover:bg-gray-600 flex items-center gap-1 text-sm"
+            >
+              <Copy size={14} />
+              복사
+            </button>
+            <button
+              onClick={() => {
+                if (confirm('이 단계를 삭제하시겠습니까?')) {
+                  setLocalSteps(prev => prev.filter(s => s.id !== step.id))
+                  onClose()
+                }
+              }}
+              className="px-3 py-1.5 bg-red-500 text-white rounded hover:bg-red-600 flex items-center gap-1 text-sm"
+            >
+              <Trash2 size={14} />
+              삭제
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-3 py-1.5 bg-green-500 text-white rounded hover:bg-green-600 flex items-center gap-1 text-sm"
+            >
+              <Save size={14} />
+              저장
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

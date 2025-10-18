@@ -2,6 +2,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
+
+// UUID 생성 함수
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0
+    const v = c === 'x' ? r : (r & 0x3 | 0x8)
+    return v.toString(16)
+  })
+}
 import { 
   Plus, 
   Search, 
@@ -36,8 +45,6 @@ import {
   XCircle,
   AlertCircle,
   GitBranch,
-  Maximize2,
-  Minimize2,
   X
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -71,8 +78,9 @@ export default function ConsultationManagementPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<ConsultationTemplateWithRelations | null>(null)
   
-  // 워크플로우 모달 상태
+  // Workflow modal state
   const [showWorkflowModal, setShowWorkflowModal] = useState(false)
+  const [showWorkflowTemplateModal, setShowWorkflowTemplateModal] = useState(false)
   const [editingWorkflow, setEditingWorkflow] = useState<any>(null)
   const [showWorkflowDeleteModal, setShowWorkflowDeleteModal] = useState(false)
   const [workflowToDelete, setWorkflowToDelete] = useState<any>(null)
@@ -157,10 +165,10 @@ export default function ConsultationManagementPage() {
     dependencies: []
   })
 
-  // 워크플로우 데이터 로딩 (임시로 비활성화)
+  // Workflow data loading (temporarily disabled)
   const { data: workflows, loading: workflowsLoading, refetch: refetchWorkflows } = useOptimizedData({
     fetchFn: async () => {
-      // 테이블이 존재하지 않을 경우 빈 배열 반환
+      // Return empty array if table doesn't exist
       try {
         const { data, error } = await supabase
           .from('consultation_workflows')
@@ -176,12 +184,12 @@ export default function ConsultationManagementPage() {
           .order('created_at', { ascending: false })
         
         if (error) {
-          console.warn('워크플로우 테이블이 존재하지 않습니다. 데이터베이스에 테이블을 생성해주세요.')
+          console.warn('Workflow table does not exist. Please create the table in the database.')
           return []
         }
         return data || []
       } catch (error) {
-        console.warn('워크플로우 테이블 접근 오류:', error)
+        console.warn('Workflow table access error:', error)
         return []
       }
     },
@@ -189,10 +197,10 @@ export default function ConsultationManagementPage() {
     dependencies: []
   })
 
-  // 워크플로우 단계 데이터 로딩 (임시로 비활성화)
+  // Workflow step data loading (temporarily disabled)
   const { data: workflowSteps, loading: workflowStepsLoading, refetch: refetchWorkflowSteps } = useOptimizedData({
     fetchFn: async () => {
-      // 테이블이 존재하지 않을 경우 빈 배열 반환
+      // Return empty array if table doesn't exist
       try {
         const { data, error } = await supabase
           .from('consultation_workflow_steps')
@@ -201,6 +209,8 @@ export default function ConsultationManagementPage() {
             step_order, step_type, action_type, template_id, condition_type, condition_value,
             next_step_id, alternative_step_id, timeout_minutes, is_active, is_required,
             node_color, text_color, node_shape, position, group_id,
+            rich_description_ko, rich_description_en, links, images, notes_ko, notes_en,
+            tags, priority, estimated_time,
             created_at, updated_at,
             template:consultation_templates(id, question_ko, question_en, answer_ko, answer_en)
           `)
@@ -208,12 +218,12 @@ export default function ConsultationManagementPage() {
           .order('step_order', { ascending: true })
         
         if (error) {
-          console.warn('워크플로우 단계 테이블이 존재하지 않습니다.')
+          console.warn('Workflow step table does not exist.')
           return []
         }
         return data || []
       } catch (error) {
-        console.warn('워크플로우 단계 테이블 접근 오류:', error)
+        console.warn('Workflow step table access error:', error)
         return []
       }
     },
@@ -276,51 +286,51 @@ export default function ConsultationManagementPage() {
            template.tags?.some(tag => tag.toLowerCase().includes(searchLower))
   }) || []
 
-  // 템플릿 복사 함수 (한국어 버전)
+  // Template copy function (Korean version)
   const copyTemplateKo = useCallback(async (template: ConsultationTemplateWithRelations) => {
     try {
       await navigator.clipboard.writeText(template.answer_ko)
       
-      // 사용 횟수 증가
+      // Increment usage count
       await supabase.rpc('increment_template_usage', { template_id: template.id })
       
-      // 템플릿 목록 새로고침
+      // Refresh template list
       refetchTemplates()
       
-      // 성공 알림
+      // Success notification
       const toast = document.createElement('div')
       toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50'
-      toast.textContent = '한국어 템플릿이 클립보드에 복사되었습니다!'
+      toast.textContent = 'Korean template copied to clipboard!'
       document.body.appendChild(toast)
       setTimeout(() => document.body.removeChild(toast), 3000)
     } catch (error) {
-      console.error('복사 실패:', error)
+      console.error('Copy failed:', error)
     }
   }, [refetchTemplates])
 
-  // 템플릿 복사 함수 (영어 버전)
+  // Template copy function (English version)
   const copyTemplateEn = useCallback(async (template: ConsultationTemplateWithRelations) => {
     try {
       await navigator.clipboard.writeText(template.answer_en)
       
-      // 사용 횟수 증가
+      // Increment usage count
       await supabase.rpc('increment_template_usage', { template_id: template.id })
       
-      // 템플릿 목록 새로고침
+      // Refresh template list
       refetchTemplates()
       
-      // 성공 알림
+      // Success notification
       const toast = document.createElement('div')
       toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50'
       toast.textContent = 'English template copied to clipboard!'
       document.body.appendChild(toast)
       setTimeout(() => document.body.removeChild(toast), 3000)
     } catch (error) {
-      console.error('복사 실패:', error)
+      console.error('Copy failed:', error)
     }
   }, [refetchTemplates])
 
-  // 템플릿 즐겨찾기 토글
+  // Template favorite toggle
   const toggleFavorite = useCallback(async (template: ConsultationTemplateWithRelations) => {
     try {
       const { error } = await supabase
@@ -332,11 +342,11 @@ export default function ConsultationManagementPage() {
       
       refetchTemplates()
     } catch (error) {
-      console.error('즐겨찾기 업데이트 실패:', error)
+      console.error('Favorite update failed:', error)
     }
   }, [refetchTemplates])
 
-  // 템플릿 활성화/비활성화 토글
+  // Template activation/deactivation toggle
   const toggleActive = useCallback(async (template: ConsultationTemplateWithRelations) => {
     try {
       const { error } = await supabase
@@ -348,11 +358,11 @@ export default function ConsultationManagementPage() {
       
       refetchTemplates()
     } catch (error) {
-      console.error('활성화 상태 업데이트 실패:', error)
+      console.error('Activation status update failed:', error)
     }
   }, [refetchTemplates])
 
-  // 템플릿 삭제
+  // Template deletion
   const deleteTemplate = useCallback(async () => {
     if (!templateToDelete) return
     
@@ -368,11 +378,11 @@ export default function ConsultationManagementPage() {
       setTemplateToDelete(null)
       refetchTemplates()
     } catch (error) {
-      console.error('템플릿 삭제 실패:', error)
+      console.error('Template deletion failed:', error)
     }
   }, [templateToDelete, refetchTemplates])
 
-  // 워크플로우 활성화/비활성화 토글
+  // Workflow activation/deactivation toggle
   const toggleWorkflowActive = useCallback(async (workflow: any) => {
     try {
       const { error } = await supabase
@@ -384,22 +394,22 @@ export default function ConsultationManagementPage() {
       
       refetchWorkflows()
     } catch (error) {
-      console.error('워크플로우 활성화 상태 업데이트 실패:', error)
+      console.error('Workflow activation status update failed:', error)
     }
   }, [refetchWorkflows])
 
-  // 워크플로우 다이어그램 보기
+  // Workflow diagram view
   const showWorkflowDiagramModal = (workflow: any, mode: 'diagram' | 'manual' | 'edit' = 'manual') => {
     const workflowSteps = groupedWorkflowSteps[workflow.id] || []
     
-    // 저장된 설정 불러오기
+    // Load saved settings
     const savedSettings = localStorage.getItem(`workflow_settings_${workflow.id}`)
     let initialSettings = undefined
     if (savedSettings) {
       try {
         initialSettings = JSON.parse(savedSettings)
       } catch (error) {
-        console.error('저장된 설정 파싱 실패:', error)
+        console.error('Failed to parse saved settings:', error)
       }
     }
     
@@ -412,7 +422,7 @@ export default function ConsultationManagementPage() {
     setShowWorkflowDiagram(true)
   }
 
-  // 워크플로우 저장
+  // Workflow save
   const handleWorkflowSave = async (data: { 
     steps: any[]
     zoom: number
@@ -423,7 +433,7 @@ export default function ConsultationManagementPage() {
     try {
       if (!selectedWorkflowForDiagram) return
 
-      // 단계들 저장
+      // Save steps
       const { steps } = data
       for (const step of steps) {
         const { error } = await supabase
@@ -447,12 +457,12 @@ export default function ConsultationManagementPage() {
           })
 
         if (error) {
-          console.error('워크플로우 단계 저장 실패:', error)
+          console.error('Failed to save workflow step:', error)
           return
         }
       }
 
-      // 설정 저장 (로컬 스토리지에)
+      // Save settings (to local storage)
       if (selectedWorkflowForDiagram.id) {
         setSavedWorkflowSettings(prev => ({
           ...prev,
@@ -464,7 +474,7 @@ export default function ConsultationManagementPage() {
           }
         }))
         
-        // 로컬 스토리지에도 저장
+        // Also save to local storage
         localStorage.setItem(`workflow_settings_${selectedWorkflowForDiagram.id}`, JSON.stringify({
           zoom: data.zoom,
           backgroundSize: data.backgroundSize,
@@ -474,23 +484,22 @@ export default function ConsultationManagementPage() {
       }
 
       await refetchWorkflows()
-      alert('워크플로우가 저장되었습니다.')
     } catch (error) {
-      console.error('워크플로우 저장 실패:', error)
-      alert('워크플로우 저장에 실패했습니다.')
+      console.error('Workflow save failed:', error)
+      alert('Failed to save workflow.')
     }
   }
 
-  // 템플릿 선택 핸들러
+  // Template selection handler
   const handleTemplateSelect = async (template: any) => {
     try {
-      // 템플릿을 기반으로 새 워크플로우 생성
+      // Create new workflow based on template
       const newWorkflow = {
         name_ko: template.name,
         name_en: template.name,
         description_ko: template.description,
         description_en: template.description,
-        category_id: categories?.[0]?.id, // 첫 번째 카테고리 사용
+        category_id: categories?.[0]?.id, // Use first category
         is_active: true,
         is_default: false,
         steps: template.steps.map((step: any, index: number) => ({
@@ -500,7 +509,7 @@ export default function ConsultationManagementPage() {
         }))
       }
 
-      // 워크플로우 생성
+      // Create workflow
       const { data: workflowData, error: workflowError } = await supabase
         .from('consultation_workflows')
         .insert([{
@@ -517,7 +526,7 @@ export default function ConsultationManagementPage() {
 
       if (workflowError) throw workflowError
 
-      // 워크플로우 단계 생성
+      // Create workflow steps
       const stepsToInsert = newWorkflow.steps.map((step: any) => ({
         workflow_id: workflowData.id,
         step_name_ko: step.step_name_ko,
@@ -544,19 +553,19 @@ export default function ConsultationManagementPage() {
 
       if (stepsError) throw stepsError
 
-      // 데이터 새로고침
+      // Refresh data
       await refetchWorkflows()
       await refetchWorkflowSteps()
       
-      setShowTemplateModal(false)
-      alert('템플릿이 성공적으로 적용되었습니다!')
+      setShowWorkflowTemplateModal(false)
+      alert('Template applied successfully!')
     } catch (error) {
-      console.error('템플릿 적용 실패:', error)
-      alert('템플릿 적용에 실패했습니다.')
+      console.error('Template application failed:', error)
+      alert('Failed to apply template.')
     }
   }
 
-  // 워크플로우 삭제
+  // Workflow deletion
   const deleteWorkflow = useCallback(async () => {
     if (!workflowToDelete) return
     
@@ -572,11 +581,11 @@ export default function ConsultationManagementPage() {
       setWorkflowToDelete(null)
       refetchWorkflows()
     } catch (error) {
-      console.error('워크플로우 삭제 실패:', error)
+      console.error('Workflow deletion failed:', error)
     }
   }, [workflowToDelete, refetchWorkflows])
 
-  // 워크플로우 단계 그룹화 함수
+  // Workflow step grouping function
   const groupedWorkflowSteps = workflowSteps?.reduce((acc, step) => {
     if (!acc[step.workflow_id]) {
       acc[step.workflow_id] = []
@@ -591,8 +600,12 @@ export default function ConsultationManagementPage() {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">상담 관리</h1>
-            <p className="text-gray-600">FAQ 템플릿과 상담 안내를 관리하세요</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              {locale === 'ko' ? '상담 관리' : 'Consultation Management'}
+            </h1>
+            <p className="text-gray-600">
+              {locale === 'ko' ? 'FAQ 템플릿과 상담 안내를 관리하세요' : 'Manage FAQ templates and consultation guides'}
+            </p>
           </div>
           <div className="flex gap-3">
             {activeTab === 'templates' && (
@@ -601,24 +614,27 @@ export default function ConsultationManagementPage() {
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
               >
                 <Plus size={20} />
-                새 템플릿 추가
+                {locale === 'ko' ? '새 Q & A 추가' : 'Add New Q & A'}
               </button>
             )}
             {activeTab === 'workflows' && (
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowTemplateModal(true)}
+                  onClick={() => setShowWorkflowTemplateModal(true)}
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
                 >
                   <FileText size={20} />
-                  템플릿 사용
+                  {locale === 'ko' ? '템플릿 사용' : 'Use Template'}
                 </button>
                 <button
-                  onClick={() => setShowWorkflowModal(true)}
+                  onClick={() => {
+                    setEditingWorkflow(null)
+                    setShowWorkflowModal(true)
+                  }}
                   className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
                 >
                   <Plus size={20} />
-                  새 워크플로우 추가
+                  {locale === 'ko' ? '새 워크플로우 추가' : 'Add New Workflow'}
                 </button>
               </div>
             )}
@@ -631,10 +647,10 @@ export default function ConsultationManagementPage() {
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
             {[
-              { id: 'templates', name: '템플릿 관리', icon: MessageCircle },
-              { id: 'workflows', name: '워크플로우', icon: Workflow },
-              { id: 'logs', name: '상담 로그', icon: Clock },
-              { id: 'stats', name: '통계', icon: BarChart3 }
+              { id: 'templates', name: locale === 'ko' ? 'Q & A' : 'Q & A', icon: MessageCircle },
+              { id: 'workflows', name: locale === 'ko' ? '워크플로우' : 'Workflows', icon: Workflow },
+              { id: 'logs', name: locale === 'ko' ? '상담 로그' : 'Consultation Logs', icon: Clock },
+              { id: 'stats', name: locale === 'ko' ? '통계' : 'Statistics', icon: BarChart3 }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -653,27 +669,29 @@ export default function ConsultationManagementPage() {
         </div>
       </div>
 
-      {/* 템플릿 관리 탭 */}
+      {/* Template Management Tab */}
       {activeTab === 'templates' && (
         <div className="space-y-6">
-          {/* 필터 및 검색 */}
+          {/* Filters and Search */}
           <div className="bg-white p-4 rounded-lg shadow-sm border">
             <div className="space-y-4 mb-4">
-              {/* 검색 */}
+              {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
                 <input
                   type="text"
-                  placeholder="템플릿 검색..."
+                  placeholder={locale === 'ko' ? '템플릿 검색...' : 'Search templates...'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
-               {/* 카테고리 탭 */}
+               {/* Category Tabs */}
                <div>
-                 <label className="block text-sm font-medium text-gray-700 mb-3">카테고리</label>
+                 <label className="block text-sm font-medium text-gray-700 mb-3">
+                   {locale === 'ko' ? '카테고리' : 'Category'}
+                 </label>
                  <div className="flex flex-wrap gap-2">
                    <button
                      onClick={() => setSelectedCategory('all')}
@@ -683,7 +701,7 @@ export default function ConsultationManagementPage() {
                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                      }`}
                    >
-                     모든 카테고리
+                     {locale === 'ko' ? '모든 카테고리' : 'All Categories'}
                    </button>
                    {categories?.map(category => (
                      <button
@@ -703,17 +721,19 @@ export default function ConsultationManagementPage() {
                          className="w-2 h-2 rounded-full"
                          style={{ backgroundColor: selectedCategory === category.id ? 'white' : category.color }}
                        />
-                       {category.name_ko}
+                       {locale === 'ko' ? category.name_ko : category.name_en}
                      </button>
                    ))}
                  </div>
                </div>
 
-               {/* 상품 그룹화 선택 */}
+               {/* Product Grouping Selection */}
                <div>
-                 <label className="block text-sm font-medium text-gray-700 mb-3">상품 선택</label>
+                 <label className="block text-sm font-medium text-gray-700 mb-3">
+                   {locale === 'ko' ? '상품 선택' : 'Product Selection'}
+                 </label>
                  
-                 {/* 카테고리 탭 */}
+                 {/* Category Tabs */}
                  <div className="mb-3">
                    <div className="flex flex-wrap gap-2">
                      <button
@@ -724,7 +744,7 @@ export default function ConsultationManagementPage() {
                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                        }`}
                      >
-                       모든 카테고리
+                       All Categories
                      </button>
                      {Object.keys(groupedProducts).map(category => (
                        <button
@@ -748,7 +768,7 @@ export default function ConsultationManagementPage() {
                    </div>
                  </div>
 
-                 {/* 서브카테고리 탭 */}
+                 {/* Subcategory Tabs */}
                  {expandedProductCategories.length > 0 && (
                    <div className="mb-3">
                      <div className="flex flex-wrap gap-2">
@@ -761,7 +781,7 @@ export default function ConsultationManagementPage() {
                                const allSelected = categoryProducts.every(product => selectedProducts.includes(product.id))
                                
                                if (allSelected) {
-                                 // 모든 상품이 선택되어 있으면 해제
+                                 // If all products are selected, deselect them
                                  setSelectedProducts(selectedProducts.filter(id => 
                                    !categoryProducts.some(product => product.id === id)
                                  ))
@@ -789,7 +809,7 @@ export default function ConsultationManagementPage() {
                    </div>
                  )}
 
-                 {/* 개별 상품 선택 */}
+                 {/* Individual Product Selection */}
                  {expandedProductCategories.length > 0 && (
                    <>
                      <div className="border-t border-gray-200 my-3"></div>
@@ -811,7 +831,7 @@ export default function ConsultationManagementPage() {
                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                              }`}
                            >
-                             {product.name_ko}
+                             {locale === 'ko' ? product.name_ko : product.name_en}
                            </button>
                          ))
                        )}
@@ -822,17 +842,19 @@ export default function ConsultationManagementPage() {
                  {selectedProducts.length > 0 && (
                    <div className="mt-3 p-2 bg-blue-50 rounded-lg">
                      <div className="text-xs text-blue-700 font-medium">
-                       선택됨: {selectedProducts.length}개 상품
+                       Selected: {selectedProducts.length} {locale === 'ko' ? '상품' : 'products'}
                      </div>
                    </div>
                  )}
                </div>
 
-               {/* 채널 그룹화 선택 */}
+               {/* Channel Grouping Selection */}
                <div>
-                 <label className="block text-sm font-medium text-gray-700 mb-3">채널 선택</label>
+                 <label className="block text-sm font-medium text-gray-700 mb-3">
+                   {locale === 'ko' ? '채널 선택' : 'Channel Selection'}
+                 </label>
                  
-                 {/* 채널 타입 탭 */}
+                 {/* Channel Type Tabs */}
                  <div className="mb-3">
                    <div className="flex flex-wrap gap-2">
                      <button
@@ -843,7 +865,7 @@ export default function ConsultationManagementPage() {
                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                        }`}
                      >
-                       모든 타입
+                       All Types
                      </button>
                      {Object.keys(groupedChannels).map(type => (
                        <button
@@ -867,7 +889,7 @@ export default function ConsultationManagementPage() {
                    </div>
                  </div>
 
-                 {/* 개별 채널 선택 */}
+                 {/* Individual Channel Selection */}
                  {expandedChannelTypes.length > 0 && (
                    <>
                      <div className="border-t border-gray-200 my-3"></div>
@@ -900,7 +922,7 @@ export default function ConsultationManagementPage() {
                  {selectedChannels.length > 0 && (
                    <div className="mt-3 p-2 bg-green-50 rounded-lg">
                      <div className="text-xs text-green-700 font-medium">
-                       선택됨: {selectedChannels.length}개 채널
+                       Selected: {selectedChannels.length} {locale === 'ko' ? '채널' : 'channels'}
                      </div>
                    </div>
                  )}
@@ -916,7 +938,7 @@ export default function ConsultationManagementPage() {
                   onChange={(e) => setShowInactive(e.target.checked)}
                   className="rounded"
                 />
-                비활성화된 항목 표시
+                {locale === 'ko' ? '비활성화된 항목 표시' : 'Show inactive items'}
               </label>
 
               <label className="flex items-center gap-2 text-sm">
@@ -926,12 +948,12 @@ export default function ConsultationManagementPage() {
                   onChange={(e) => setShowFavoritesOnly(e.target.checked)}
                   className="rounded"
                 />
-                즐겨찾기만 표시
+                {locale === 'ko' ? '즐겨찾기만 표시' : 'Show favorites only'}
               </label>
             </div>
           </div>
 
-          {/* 템플릿 목록 */}
+          {/* Template List */}
           <div className="space-y-4">
             {filteredTemplates.map(template => (
               <div
@@ -942,7 +964,7 @@ export default function ConsultationManagementPage() {
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    {/* 카테고리 아이콘 */}
+                    {/* Category Icon */}
                     {template.category && (
                       <div
                         className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
@@ -956,16 +978,16 @@ export default function ConsultationManagementPage() {
                       {/* 제목줄 */}
                       <div className="flex items-center gap-2 mb-2">
                         <h3 className="font-semibold text-gray-900 text-base">
-                          {template.category?.name_ko || '카테고리 없음'}
+                          {locale === 'ko' ? (template.category?.name_ko || 'No Category') : (template.category?.name_en || 'No Category')}
                         </h3>
                         {template.is_favorite && (
                           <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded-full">
-                            ⭐ 즐겨찾기
+                            ⭐ {locale === 'ko' ? '즐겨찾기' : 'Favorite'}
                           </span>
                         )}
                         {!template.is_active && (
                           <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
-                            비활성
+                            {locale === 'ko' ? '비활성' : 'Inactive'}
                           </span>
                         )}
                       </div>
@@ -981,14 +1003,14 @@ export default function ConsultationManagementPage() {
                           </span>
                         )}
                         {!template.product && !template.channel && (
-                          <span className="text-gray-400">상품/채널 미선택</span>
+                          <span className="text-gray-400">No Product/Channel Selected</span>
                         )}
                       </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* 즐겨찾기 버튼 */}
+                    {/* Favorite button */}
                     <button
                       onClick={() => toggleFavorite(template)}
                       className={`p-2 rounded-lg hover:bg-gray-100 ${
@@ -998,7 +1020,7 @@ export default function ConsultationManagementPage() {
                       {template.is_favorite ? <Star size={16} /> : <StarOff size={16} />}
                     </button>
 
-                    {/* 활성화/비활성화 버튼 */}
+                    {/* Activation/deactivation button */}
                     <button
                       onClick={() => toggleActive(template)}
                       className={`p-2 rounded-lg hover:bg-gray-100 ${
@@ -1008,12 +1030,12 @@ export default function ConsultationManagementPage() {
                       {template.is_active ? <Eye size={16} /> : <EyeOff size={16} />}
                     </button>
 
-                    {/* 복사 버튼들 */}
+                    {/* Copy buttons */}
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => copyTemplateKo(template)}
                         className="p-2 rounded-lg hover:bg-gray-100 text-blue-500"
-                        title="한국어 답변 복사"
+                        title="Copy Korean answer"
                       >
                         <Copy size={16} />
                       </button>
@@ -1031,7 +1053,7 @@ export default function ConsultationManagementPage() {
                       <span className="text-xs text-gray-400">EN</span>
                     </div>
 
-                    {/* 편집 버튼 */}
+                    {/* Edit button */}
                     <button
                       onClick={() => {
                         setEditingTemplate(template)
@@ -1042,7 +1064,7 @@ export default function ConsultationManagementPage() {
                       <Edit size={16} />
                     </button>
 
-                    {/* 삭제 버튼 */}
+                    {/* Delete button */}
                     <button
                       onClick={() => {
                         setTemplateToDelete(template)
@@ -1059,10 +1081,12 @@ export default function ConsultationManagementPage() {
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   {/* 한국어 질문 */}
                   <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+                    <div className="text-xs font-medium text-blue-600 mb-1">🇰🇷 한국어</div>
                     {template.question_ko || '질문이 없습니다.'}
                   </div>
                   {/* 영어 질문 */}
                   <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+                    <div className="text-xs font-medium text-green-600 mb-1">🇺🇸 English</div>
                     {template.question_en || 'No question available.'}
                   </div>
                 </div>
@@ -1071,11 +1095,12 @@ export default function ConsultationManagementPage() {
                 <div className="grid grid-cols-2 gap-4">
                   {/* 한국어 답변 */}
                   <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg border-l-4 border-blue-400">
+                    <div className="text-xs font-medium text-blue-600 mb-1">🇰🇷 한국어</div>
                     {template.answer_ko || '답변이 없습니다.'}
                   </div>
-
                   {/* 영어 답변 */}
                   <div className="text-sm text-gray-600 bg-green-50 p-3 rounded-lg border-l-4 border-green-400">
+                    <div className="text-xs font-medium text-green-600 mb-1">🇺🇸 English</div>
                     {template.answer_en || 'No answer available.'}
                   </div>
                 </div>
@@ -1102,13 +1127,17 @@ export default function ConsultationManagementPage() {
             {filteredTemplates.length === 0 && (
               <div className="text-center py-12">
                 <MessageCircle size={48} className="mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">템플릿이 없습니다</h3>
-                <p className="text-gray-500 mb-4">새로운 상담 템플릿을 추가해보세요.</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {locale === 'ko' ? '템플릿이 없습니다' : 'No Templates Found'}
+                </h3>
+                <p className="text-gray-500 mb-4">
+                  {locale === 'ko' ? '새로운 상담 템플릿을 추가해보세요.' : 'Add a new consultation template.'}
+                </p>
                 <button
                   onClick={() => setShowTemplateModal(true)}
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
                 >
-                  첫 번째 템플릿 추가
+                  {locale === 'ko' ? '첫 번째 템플릿 추가' : 'Add First Template'}
                 </button>
               </div>
             )}
@@ -1116,10 +1145,10 @@ export default function ConsultationManagementPage() {
         </div>
       )}
 
-      {/* 워크플로우 탭 */}
+      {/* Workflow Tab */}
       {activeTab === 'workflows' && (
         <div className="space-y-6">
-          {/* 워크플로우 목록 */}
+          {/* Workflow List */}
           <div className="space-y-4">
             {workflows?.map(workflow => {
               const steps = groupedWorkflowSteps[workflow.id] || []
@@ -1132,7 +1161,7 @@ export default function ConsultationManagementPage() {
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      {/* 카테고리 아이콘 */}
+                      {/* Category Icon */}
                       {workflow.category && (
                         <div
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
@@ -1146,23 +1175,23 @@ export default function ConsultationManagementPage() {
                         {/* 제목줄 */}
                         <div className="flex items-center gap-2 mb-2">
                           <h3 className="font-semibold text-gray-900 text-base">
-                            {workflow.name_ko}
+                            {locale === 'ko' ? workflow.name_ko : workflow.name_en}
                           </h3>
                           {workflow.is_default && (
                             <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-                              기본 워크플로우
+                              {locale === 'ko' ? '기본 워크플로우' : 'Default Workflow'}
                             </span>
                           )}
                           {!workflow.is_active && (
                             <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
-                              비활성
+                              {locale === 'ko' ? '비활성' : 'Inactive'}
                             </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-500">
                           {workflow.category && (
                             <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded-full">
-                              {workflow.category.name_ko}
+                              {locale === 'ko' ? workflow.category.name_ko : workflow.category.name_en}
                             </span>
                           )}
                           {workflow.product && (
@@ -1176,14 +1205,14 @@ export default function ConsultationManagementPage() {
                             </span>
                           )}
                           <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
-                            {steps.length}단계
+                            {steps.length} {locale === 'ko' ? '단계' : 'steps'}
                           </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {/* 활성화/비활성화 버튼 */}
+                      {/* Activation/deactivation button */}
                       <button
                         onClick={() => toggleWorkflowActive(workflow)}
                         className={`p-2 rounded-lg hover:bg-gray-100 ${
@@ -1193,29 +1222,29 @@ export default function ConsultationManagementPage() {
                         {workflow.is_active ? <Play size={16} /> : <Pause size={16} />}
                       </button>
 
-                      {/* 메뉴얼 보기 버튼 */}
+                      {/* Manual view button */}
                       <button
                         onClick={() => showWorkflowDiagramModal(workflow, 'manual')}
                         className="p-2 rounded-lg hover:bg-gray-100 text-blue-500"
-                        title="워크플로우 메뉴얼 보기"
+                        title="View workflow manual"
                       >
                         <GitBranch size={16} />
                       </button>
 
-                      {/* 편집 버튼 */}
+                      {/* Edit button */}
                       <button
                         onClick={() => showWorkflowDiagramModal(workflow, 'edit')}
                         className="p-2 rounded-lg hover:bg-gray-100 text-green-500"
-                        title="워크플로우 편집"
+                        title="Edit Workflow"
                       >
                         <Edit size={16} />
                       </button>
 
-                      {/* 설정 버튼 */}
+                      {/* Settings button */}
                       <button
                         onClick={async () => {
                           try {
-                            // 해당 워크플로우의 단계들을 불러오기
+                            // Load steps for the corresponding workflow
                             const { data: steps, error } = await supabase
                               .from('consultation_workflow_steps')
                               .select(`
@@ -1230,7 +1259,7 @@ export default function ConsultationManagementPage() {
                               .order('step_order', { ascending: true })
                             
                             if (error) {
-                              console.warn('워크플로우 단계 불러오기 실패:', error)
+                              console.warn('Failed to load workflow steps:', error)
                             }
                             
                             setEditingWorkflow({
@@ -1239,18 +1268,18 @@ export default function ConsultationManagementPage() {
                             })
                             setShowWorkflowModal(true)
                           } catch (error) {
-                            console.error('워크플로우 편집 모달 열기 실패:', error)
+                            console.error('Failed to open workflow edit modal:', error)
                             setEditingWorkflow(workflow)
                             setShowWorkflowModal(true)
                           }
                         }}
                         className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
-                        title="워크플로우 설정"
+                        title="Workflow settings"
                       >
                         <Settings size={16} />
                       </button>
 
-                      {/* 삭제 버튼 */}
+                      {/* Delete button */}
                       <button
                         onClick={() => {
                           setWorkflowToDelete(workflow)
@@ -1263,15 +1292,17 @@ export default function ConsultationManagementPage() {
                     </div>
                   </div>
 
-                  {/* 워크플로우 설명 */}
+                  {/* Workflow description */}
                   <div className="mb-4">
-                    <p className="text-sm text-gray-600">{workflow.description_ko}</p>
+                    <p className="text-sm text-gray-600">{locale === 'ko' ? workflow.description_ko : workflow.description_en}</p>
                   </div>
 
-                  {/* 워크플로우 단계 표시 */}
+                  {/* Workflow step display */}
                   {steps.length > 0 && (
                     <div className="space-y-2">
-                      <h4 className="text-sm font-medium text-gray-700 mb-2">워크플로우 단계</h4>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">
+                        {locale === 'ko' ? '워크플로우 단계' : 'Workflow Steps'}
+                      </h4>
                       <div className="flex flex-wrap gap-2">
                         {steps.map((step, index) => (
                           <div
@@ -1281,7 +1312,7 @@ export default function ConsultationManagementPage() {
                             <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-medium">
                               {step.step_order}
                             </span>
-                            <span className="text-gray-700">{step.step_name_ko}</span>
+                            <span className="text-gray-700">{locale === 'ko' ? step.step_name_ko : step.step_name_en}</span>
                             <div className="flex items-center gap-1">
                               {step.step_type === 'action' && <CheckCircle size={14} className="text-green-500" />}
                               {step.step_type === 'decision' && <AlertCircle size={14} className="text-yellow-500" />}
@@ -1319,19 +1350,26 @@ export default function ConsultationManagementPage() {
             {workflows?.length === 0 && (
               <div className="text-center py-12">
                 <Workflow size={48} className="mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">워크플로우 기능 설정 필요</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {locale === 'ko' ? '워크플로우 기능 설정 필요' : 'Workflow Feature Setup Required'}
+                </h3>
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-4 max-w-2xl mx-auto">
-                  <h4 className="text-md font-semibold text-yellow-800 mb-2">📋 데이터베이스 테이블 생성 필요</h4>
+                  <h4 className="text-md font-semibold text-yellow-800 mb-2">
+                    📋 {locale === 'ko' ? '데이터베이스 테이블 생성 필요' : 'Database Table Creation Required'}
+                  </h4>
                   <p className="text-yellow-700 text-sm mb-4">
-                    워크플로우 기능을 사용하려면 먼저 데이터베이스에 필요한 테이블들을 생성해야 합니다.
+                    {locale === 'ko' 
+                      ? '워크플로우 기능을 사용하려면 먼저 데이터베이스에 필요한 테이블들을 생성해야 합니다.'
+                      : 'To use the workflow feature, you must first create the necessary tables in the database.'
+                    }
                   </p>
                   <div className="text-left bg-white p-4 rounded border text-xs text-gray-600 mb-4">
-                    <p className="font-medium mb-2">Supabase 대시보드에서 다음 SQL을 실행하세요:</p>
+                    <p className="font-medium mb-2">Execute the following SQL in Supabase dashboard:</p>
                     <ol className="list-decimal list-inside space-y-1">
-                      <li>Supabase 대시보드 → SQL Editor로 이동</li>
-                      <li>프로젝트 루트의 <code className="bg-gray-100 px-1 rounded">create_consultation_workflow_schema.sql</code> 파일 내용 복사</li>
-                      <li>SQL Editor에 붙여넣기 후 실행</li>
-                      <li>페이지 새로고침</li>
+                      <li>Go to Supabase dashboard → SQL Editor</li>
+                      <li>Copy the contents of <code className="bg-gray-100 px-1 rounded">create_consultation_workflow_schema.sql</code> file from project root</li>
+                      <li>Paste into SQL Editor and execute</li>
+                      <li>Refresh the page</li>
                     </ol>
                   </div>
                   <button
@@ -1344,7 +1382,7 @@ export default function ConsultationManagementPage() {
                     onClick={() => setShowWorkflowModal(true)}
                     className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
                   >
-                    워크플로우 추가 시도
+                    Try Adding Workflow
                   </button>
                 </div>
               </div>
@@ -1353,25 +1391,33 @@ export default function ConsultationManagementPage() {
         </div>
       )}
 
-      {/* 상담 로그 탭 */}
+      {/* Consultation Logs Tab */}
       {activeTab === 'logs' && (
         <div className="bg-white p-6 rounded-lg shadow-sm border">
-          <h2 className="text-xl font-semibold mb-4">상담 로그</h2>
-          <p className="text-gray-500">상담 기록을 확인할 수 있습니다.</p>
-          {/* 상담 로그 구현 예정 */}
+          <h2 className="text-xl font-semibold mb-4">
+            {locale === 'ko' ? '상담 로그' : 'Consultation Logs'}
+          </h2>
+          <p className="text-gray-500">
+            {locale === 'ko' ? '상담 기록을 확인할 수 있습니다.' : 'You can view consultation records.'}
+          </p>
+          {/* Consultation logs implementation pending */}
         </div>
       )}
 
-      {/* 통계 탭 */}
+      {/* Statistics Tab */}
       {activeTab === 'stats' && (
         <div className="bg-white p-6 rounded-lg shadow-sm border">
-          <h2 className="text-xl font-semibold mb-4">상담 통계</h2>
-          <p className="text-gray-500">상담 통계를 확인할 수 있습니다.</p>
-          {/* 통계 구현 예정 */}
+          <h2 className="text-xl font-semibold mb-4">
+            {locale === 'ko' ? '상담 통계' : 'Consultation Statistics'}
+          </h2>
+          <p className="text-gray-500">
+            {locale === 'ko' ? '상담 통계를 확인할 수 있습니다.' : 'You can view consultation statistics.'}
+          </p>
+          {/* Statistics implementation pending */}
         </div>
       )}
 
-      {/* 템플릿 추가/편집 모달 */}
+      {/* Template Add/Edit Modal */}
       {showTemplateModal && (
         <TemplateModal
           template={editingTemplate}
@@ -1390,7 +1436,7 @@ export default function ConsultationManagementPage() {
         />
       )}
 
-      {/* 삭제 확인 모달 */}
+      {/* Delete confirmation modal */}
       {showDeleteModal && templateToDelete && (
         <DeleteModal
           template={templateToDelete}
@@ -1402,7 +1448,7 @@ export default function ConsultationManagementPage() {
         />
       )}
 
-      {/* 워크플로우 추가/편집 모달 */}
+      {/* Workflow Add/Edit Modal */}
       {showWorkflowModal && (
         <WorkflowModal
           workflow={editingWorkflow}
@@ -1424,6 +1470,7 @@ export default function ConsultationManagementPage() {
             setEditingWorkflow(null)
             setIsWorkflowModalFullscreen(false)
           }}
+          locale={locale}
         />
       )}
 
@@ -1439,11 +1486,12 @@ export default function ConsultationManagementPage() {
         />
       )}
 
-      {/* 워크플로우 다이어그램 모달 */}
+      {/* Workflow Diagram Modal */}
       {showWorkflowDiagram && selectedWorkflowForDiagram && (
         <WorkflowDiagram
           steps={selectedWorkflowForDiagram.steps || []}
-          workflowName={selectedWorkflowForDiagram.name_ko}
+          workflowName={locale === 'ko' ? selectedWorkflowForDiagram.name_ko : selectedWorkflowForDiagram.name_en}
+          workflowId={selectedWorkflowForDiagram.id}
           mode={workflowDiagramMode}
           onClose={() => {
             setShowWorkflowDiagram(false)
@@ -1454,18 +1502,18 @@ export default function ConsultationManagementPage() {
         />
       )}
 
-      {/* 워크플로우 템플릿 모달 */}
-      {showTemplateModal && (
+      {/* Workflow Template Modal */}
+      {showWorkflowTemplateModal && (
         <WorkflowTemplateModal
           onSelectTemplate={handleTemplateSelect}
-          onClose={() => setShowTemplateModal(false)}
+          onClose={() => setShowWorkflowTemplateModal(false)}
         />
       )}
     </div>
   )
 }
 
-// 템플릿 모달 컴포넌트
+// Template Modal Component
 function TemplateModal({ 
   template, 
   categories, 
@@ -1505,7 +1553,7 @@ function TemplateModal({
     setIsSubmitting(true)
 
     try {
-      // 다중 선택된 상품과 채널을 처리
+      // Handle multiple selected products and channels
       const submitData = {
         category_id: formData.category_id || null,
         product_id: formData.product_ids.length === 1 ? formData.product_ids[0] : null,
@@ -1529,9 +1577,9 @@ function TemplateModal({
         
         if (error) throw error
       } else {
-        // 새로 추가 - 다중 선택된 경우 각각의 조합으로 템플릿 생성
+        // Add new - Create templates for each combination when multiple selections
         if (formData.product_ids.length > 1 || formData.channel_ids.length > 1) {
-          // 다중 선택된 경우 각 조합으로 템플릿 생성
+          // Create templates for each combination when multiple selections
           const combinations = []
           const products = formData.product_ids.length > 0 ? formData.product_ids : [null]
           const channels = formData.channel_ids.length > 0 ? formData.channel_ids : [null]
@@ -1563,7 +1611,7 @@ function TemplateModal({
 
       onSave()
     } catch (error) {
-      console.error('템플릿 저장 실패:', error)
+      console.error('Template save failed:', error)
     } finally {
       setIsSubmitting(false)
     }
@@ -1574,13 +1622,13 @@ function TemplateModal({
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <h2 className="text-xl font-semibold mb-4">
-            {template ? '템플릿 편집' : '새 템플릿 추가'}
+            {template ? 'Edit Template' : 'Add New Template'}
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-             {/* 카테고리 탭 */}
+             {/* Category Tabs */}
              <div>
-               <label className="block text-sm font-medium text-gray-700 mb-3">카테고리</label>
+               <label className="block text-sm font-medium text-gray-700 mb-3">Category</label>
                <div className="flex flex-wrap gap-2">
                  <button
                    onClick={() => setFormData({ ...formData, category_id: '' })}
@@ -1590,7 +1638,7 @@ function TemplateModal({
                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                    }`}
                  >
-                   카테고리 선택 안함
+                   No Category Selected
                  </button>
                  {categories.map(category => (
                    <button
@@ -1610,19 +1658,19 @@ function TemplateModal({
                        className="w-1.5 h-1.5 rounded-full"
                        style={{ backgroundColor: formData.category_id === category.id ? 'white' : category.color }}
                      />
-                     {category.name_ko}
+                     {locale === 'ko' ? category.name_ko : category.name_en}
                    </button>
                  ))}
                </div>
              </div>
 
-             {/* 상품 및 채널 그룹화 선택 */}
+             {/* Product and Channel Grouping Selection */}
              <div className="space-y-6">
-               {/* 상품 그룹화 선택 */}
+               {/* Product Grouping Selection */}
                <div>
-                 <label className="block text-sm font-medium text-gray-700 mb-3">상품 선택</label>
+                 <label className="block text-sm font-medium text-gray-700 mb-3">Product Selection</label>
                  
-                 {/* 카테고리 탭 */}
+                 {/* Category Tabs */}
                  <div className="mb-3">
                    <div className="flex flex-wrap gap-2">
                      <button
@@ -1633,7 +1681,7 @@ function TemplateModal({
                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                        }`}
                      >
-                       모든 카테고리
+                       All Categories
                      </button>
                      {Object.keys(
                        products.reduce((acc, product) => {
@@ -1665,7 +1713,7 @@ function TemplateModal({
                    </div>
                  </div>
 
-                 {/* 서브카테고리 탭 */}
+                 {/* Subcategory Tabs */}
                  {expandedModalProductCategories.length > 0 && (
                    <div className="mb-3">
                      <div className="flex flex-wrap gap-2">
@@ -1722,7 +1770,7 @@ function TemplateModal({
                    </div>
                  )}
 
-                 {/* 개별 상품 선택 */}
+                 {/* Individual Product Selection */}
                  {expandedModalProductCategories.length > 0 && (
                    <>
                      <div className="border-t border-gray-200 my-3"></div>
@@ -1744,7 +1792,7 @@ function TemplateModal({
                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                              }`}
                            >
-                             {product.name_ko}
+                             {locale === 'ko' ? product.name_ko : product.name_en}
                            </button>
                          ))
                        )}
@@ -1761,11 +1809,13 @@ function TemplateModal({
                  )}
                </div>
 
-               {/* 채널 그룹화 선택 */}
+               {/* Channel Grouping Selection */}
                <div>
-                 <label className="block text-sm font-medium text-gray-700 mb-3">채널 선택</label>
+                 <label className="block text-sm font-medium text-gray-700 mb-3">
+                   {locale === 'ko' ? '채널 선택' : 'Channel Selection'}
+                 </label>
                  
-                 {/* 채널 타입 탭 */}
+                 {/* Channel Type Tabs */}
                  <div className="mb-3">
                    <div className="flex flex-wrap gap-2">
                      <button
@@ -1776,11 +1826,11 @@ function TemplateModal({
                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'
                        }`}
                      >
-                       모든 타입
+                       All Types
                      </button>
                      {Object.keys(
                        channels.reduce((acc, channel) => {
-                         const type = channel.type || '기타'
+                         const type = channel.type || 'Other'
                          if (!acc[type]) {
                            acc[type] = []
                          }
@@ -1809,7 +1859,7 @@ function TemplateModal({
                    </div>
                  </div>
 
-                 {/* 개별 채널 선택 */}
+                 {/* Individual Channel Selection */}
                  {expandedModalChannelTypes.length > 0 && (
                    <>
                      <div className="border-t border-gray-200 my-3"></div>
@@ -1902,27 +1952,27 @@ function TemplateModal({
             {/* 기타 설정 */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">템플릿 타입</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Template Type</label>
                 <select
-                  value={formData.template_type}
+                  value={formData.template_type || ''}
                   onChange={(e) => setFormData({ ...formData, template_type: e.target.value as TemplateType })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="faq">FAQ</option>
-                  <option value="greeting">인사말</option>
-                  <option value="closing">마무리</option>
-                  <option value="policy">정책</option>
-                  <option value="general">일반</option>
+                  <option value="greeting">Greeting</option>
+                  <option value="closing">Closing</option>
+                  <option value="policy">Policy</option>
+                  <option value="general">General</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">태그 (쉼표로 구분)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tags (comma separated)</label>
                 <input
                   type="text"
                   value={formData.tags}
                   onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-                  placeholder="예: 가격, 취소, 예약"
+                  placeholder="e.g., price, cancellation, reservation"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -1958,14 +2008,14 @@ function TemplateModal({
                 onClick={onClose}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
               >
-                취소
+                Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {isSubmitting ? '저장 중...' : '저장'}
+                {isSubmitting ? 'Saving...' : 'Save'}
               </button>
             </div>
           </form>
@@ -1975,7 +2025,7 @@ function TemplateModal({
   )
 }
 
-// 삭제 확인 모달 컴포넌트
+// Delete Confirmation Modal Component
 function DeleteModal({ 
   template, 
   onClose, 
@@ -1988,31 +2038,31 @@ function DeleteModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg max-w-md w-full p-6">
-        <h2 className="text-xl font-semibold mb-4">템플릿 삭제</h2>
+        <h2 className="text-xl font-semibold mb-4">Delete Template</h2>
         <div className="text-gray-600 mb-6">
-          <p className="mb-2">다음 템플릿을 삭제하시겠습니까?</p>
+          <p className="mb-2">Are you sure you want to delete the following template?</p>
           <div className="grid grid-cols-2 gap-3 bg-gray-50 p-3 rounded-lg">
             <div>
-              <p className="text-sm font-medium text-blue-800">🇰🇷 {template.question_ko}</p>
+              <p className="text-sm font-medium text-blue-800">🇰🇷 {locale === 'ko' ? template.question_ko : template.question_en}</p>
             </div>
             <div>
-              <p className="text-sm font-medium text-green-800">🇺🇸 {template.question_en}</p>
+              <p className="text-sm font-medium text-green-800">🇺🇸 {locale === 'ko' ? template.question_en : template.question_ko}</p>
             </div>
           </div>
-          <p className="text-sm text-red-600 mt-2">이 작업은 되돌릴 수 없습니다.</p>
+          <p className="text-sm text-red-600 mt-2">This action cannot be undone.</p>
         </div>
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
             className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
           >
-            취소
+            Cancel
           </button>
           <button
             onClick={onConfirm}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
-            삭제
+            Delete
           </button>
         </div>
       </div>
@@ -2026,11 +2076,12 @@ function WorkflowModal({
   categories, 
   products, 
   channels, 
-  templates, 
+  templates,
   isFullscreen,
   onToggleFullscreen,
   onClose, 
-  onSave 
+  onSave,
+  locale
 }: {
   workflow?: any
   categories: ConsultationCategory[]
@@ -2040,7 +2091,8 @@ function WorkflowModal({
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onClose: () => void
-  onSave: () => void
+  onSave: (data: any) => void
+  locale: string
 }) {
   const [formData, setFormData] = useState({
     name_ko: workflow?.name_ko || '',
@@ -2060,7 +2112,7 @@ function WorkflowModal({
 
   const addStep = () => {
     const newStep = {
-      id: `temp_${Date.now()}`,
+      id: generateUUID(),
       step_name_ko: '',
       step_name_en: '',
       step_description_ko: '',
@@ -2078,7 +2130,16 @@ function WorkflowModal({
       text_color: '#ffffff',
       node_shape: 'rectangle',
       position: null,
-      group_id: null
+      group_id: null,
+      rich_description_ko: '',
+      rich_description_en: '',
+      links: [],
+      images: [],
+      notes_ko: '',
+      notes_en: '',
+      tags: [],
+      priority: 'medium',
+      estimated_time: 0
     }
     setSteps([...steps, newStep])
   }
@@ -2186,7 +2247,16 @@ function WorkflowModal({
           text_color: step.text_color || null,
           node_shape: step.node_shape || 'rectangle',
           position: step.position || null,
-          group_id: step.group_id || null
+          group_id: step.group_id || null,
+          rich_description_ko: step.rich_description_ko || null,
+          rich_description_en: step.rich_description_en || null,
+          links: step.links || null,
+          images: step.images || null,
+          notes_ko: step.notes_ko || null,
+          notes_en: step.notes_en || null,
+          tags: step.tags || null,
+          priority: step.priority || 'medium',
+          estimated_time: step.estimated_time || 0
         }))
 
         const { error: stepsError } = await supabase
@@ -2211,433 +2281,360 @@ function WorkflowModal({
   }
 
   return (
-    <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 ${isFullscreen ? 'p-0' : 'p-4'}`}>
-      <div className={`bg-white shadow-xl w-full overflow-hidden ${isFullscreen ? 'h-full rounded-none' : 'max-w-6xl max-h-[90vh] rounded-lg'}`}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">
-            {workflow ? '워크플로우 편집' : '새 워크플로우 추가'}
-          </h2>
+        <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-2">
-            <button
-              onClick={onToggleFullscreen}
-              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
-              title={isFullscreen ? '축소' : '전체화면'}
-            >
-              {isFullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
-            >
-              <X size={20} />
-            </button>
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+              <Workflow className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {workflow ? 'Edit Workflow' : 'Add New Workflow'}
+              </h2>
+              <p className="text-xs text-gray-500">
+                {workflow ? 'Modify existing workflow' : 'Create a new workflow'}
+              </p>
+            </div>
           </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         {/* 콘텐츠 */}
-        <div className={`${isFullscreen ? 'h-[calc(100vh-80px)] overflow-y-auto' : 'max-h-[calc(90vh-80px)] overflow-y-auto'}`}>
-          <div className="p-6">
+        <div className="max-h-[calc(90vh-100px)] overflow-y-auto">
+          <div className="p-4">
             <form onSubmit={handleSubmit} className="space-y-6">
-            {/* 기본 정보 */}
-            <div className={`grid gap-4 ${isFullscreen ? 'grid-cols-3' : 'grid-cols-2'}`}>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">🇰🇷 워크플로우 이름 (한국어)</label>
-                <input
-                  type="text"
-                  value={formData.name_ko}
-                  onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">🇺🇸 워크플로우 이름 (English)</label>
-                <input
-                  type="text"
-                  value={formData.name_en}
-                  onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">🇰🇷 설명 (한국어)</label>
-                <textarea
-                  value={formData.description_ko}
-                  onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">🇺🇸 설명 (English)</label>
-                <textarea
-                  value={formData.description_en}
-                  onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-
-            {/* 카테고리 및 필터 */}
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
-                <select
-                  value={formData.category_id}
-                  onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value="">카테고리 선택</option>
-                  {categories.map(category => (
-                    <option key={category.id} value={category.id}>
-                      {category.name_ko}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">상품</label>
-                <select
-                  value={formData.product_id}
-                  onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value="">상품 선택</option>
-                  {products.map(product => (
-                    <option key={product.id} value={product.id}>
-                      {product.name_ko}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">채널</label>
-                <select
-                  value={formData.channel_id}
-                  onChange={(e) => setFormData({ ...formData, channel_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value="">채널 선택</option>
-                  {channels.map(channel => (
-                    <option key={channel.id} value={channel.id}>
-                      {channel.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* 워크플로우 단계 */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900">워크플로우 단계</h3>
-                <button
-                  type="button"
-                  onClick={addStep}
-                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
-                >
-                  <Plus size={16} />
-                  단계 추가
-                </button>
-              </div>
-
-              <div className={`space-y-4 ${isFullscreen ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : ''}`}>
-                {steps.map((step, index) => (
-                  <div key={step.id} className={`border border-gray-200 rounded-lg p-4 ${isFullscreen ? '' : ''}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-medium text-gray-900">단계 {index + 1}</h4>
-                      <button
-                        type="button"
-                        onClick={() => removeStep(index)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-
-                    <div className={`grid gap-4 mb-3 ${isFullscreen ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">단계 이름 (한국어)</label>
-                        <input
-                          type="text"
-                          value={step.step_name_ko}
-                          onChange={(e) => updateStep(index, 'step_name_ko', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">단계 이름 (English)</label>
-                        <input
-                          type="text"
-                          value={step.step_name_en}
-                          onChange={(e) => updateStep(index, 'step_name_en', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">단계 타입</label>
-                        <select
-                          value={step.step_type}
-                          onChange={(e) => updateStep(index, 'step_type', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        >
-                          <option value="action">액션</option>
-                          <option value="decision">결정</option>
-                          <option value="condition">조건</option>
-                          <option value="template">템플릿</option>
-                          <option value="manual">수동</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">액션 타입</label>
-                        <select
-                          value={step.action_type}
-                          onChange={(e) => updateStep(index, 'action_type', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        >
-                          <option value="send_template">템플릿 전송</option>
-                          <option value="ask_question">질문하기</option>
-                          <option value="wait_response">응답 대기</option>
-                          <option value="escalate">에스컬레이션</option>
-                          <option value="close">상담 종료</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">템플릿</label>
-                        <select
-                          value={step.template_id}
-                          onChange={(e) => updateStep(index, 'template_id', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        >
-                          <option value="">템플릿 선택</option>
-                          {templates.map(template => (
-                            <option key={template.id} value={template.id}>
-                              {template.question_ko}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* 조건문 설정 섹션 */}
-                    {step.step_type === 'condition' && (
-                      <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <h5 className="text-sm font-semibold text-blue-800 mb-3">🔍 조건문 설정</h5>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">조건 타입</label>
-                            <select
-                              value={step.condition_type || ''}
-                              onChange={(e) => updateStep(index, 'condition_type', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                              <option value="">조건 타입 선택</option>
-                              <option value="customer_response">고객 응답</option>
-                              <option value="time_elapsed">시간 경과</option>
-                              <option value="product_match">상품 매칭</option>
-                              <option value="channel_match">채널 매칭</option>
-                              <option value="category_match">카테고리 매칭</option>
-                              <option value="language_preference">언어 선호도</option>
-                              <option value="escalation_needed">에스컬레이션 필요</option>
-                              <option value="custom_field">사용자 정의 필드</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">조건 값</label>
-                            <input
-                              type="text"
-                              value={step.condition_value || ''}
-                              onChange={(e) => updateStep(index, 'condition_value', e.target.value)}
-                              placeholder="조건 값 입력 (예: 예, 아니오, 30분)"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            />
-                          </div>
-                        </div>
-                        <div className="mt-3">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">조건 설명</label>
-                          <textarea
-                            value={step.step_description_ko || ''}
-                            onChange={(e) => updateStep(index, 'step_description_ko', e.target.value)}
-                            placeholder="조건문이 무엇을 확인하는지 설명하세요"
-                            rows={2}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 결정문 설정 섹션 */}
-                    {step.step_type === 'decision' && (
-                      <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <h5 className="text-sm font-semibold text-yellow-800 mb-3">🤔 결정문 설정</h5>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">결정 기준</label>
-                            <select
-                              value={step.condition_type || ''}
-                              onChange={(e) => updateStep(index, 'condition_type', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                            >
-                              <option value="">결정 기준 선택</option>
-                              <option value="customer_choice">고객 선택</option>
-                              <option value="response_analysis">응답 분석</option>
-                              <option value="time_based">시간 기반</option>
-                              <option value="priority_based">우선순위 기반</option>
-                              <option value="escalation_check">에스컬레이션 확인</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">결정 옵션</label>
-                            <input
-                              type="text"
-                              value={step.condition_value || ''}
-                              onChange={(e) => updateStep(index, 'condition_value', e.target.value)}
-                              placeholder="결정 옵션 (예: 예/아니오, 계속/중단)"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                            />
-                          </div>
-                        </div>
-                        <div className="mt-3">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">결정 설명</label>
-                          <textarea
-                            value={step.step_description_ko || ''}
-                            onChange={(e) => updateStep(index, 'step_description_ko', e.target.value)}
-                            placeholder="어떤 기준으로 결정을 내리는지 설명하세요"
-                            rows={2}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 다음 단계 설정 */}
-                    <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                      <h5 className="text-sm font-semibold text-gray-800 mb-3">➡️ 다음 단계 설정</h5>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">성공 시 다음 단계</label>
-                          <select
-                            value={step.next_step_id || ''}
-                            onChange={(e) => updateStep(index, 'next_step_id', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
-                          >
-                            <option value="">다음 단계 선택</option>
-                            {steps.map((s, i) => (
-                              i > index && (
-                                <option key={s.id} value={s.id}>
-                                  단계 {i + 1}: {s.step_name_ko || '이름 없음'}
-                                </option>
-                              )
-                            ))}
-                            <option value="end">워크플로우 종료</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">실패 시 다음 단계</label>
-                          <select
-                            value={step.alternative_step_id || ''}
-                            onChange={(e) => updateStep(index, 'alternative_step_id', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
-                          >
-                            <option value="">대안 단계 선택</option>
-                            {steps.map((s, i) => (
-                              i > index && (
-                                <option key={s.id} value={s.id}>
-                                  단계 {i + 1}: {s.step_name_ko || '이름 없음'}
-                                </option>
-                              )
-                            ))}
-                            <option value="escalate">에스컬레이션</option>
-                            <option value="end">워크플로우 종료</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
+              {/* 기본 정보 */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-5 bg-gradient-to-b from-blue-500 to-indigo-600 rounded-full"></div>
+                  <h3 className="text-base font-semibold text-gray-900">기본 정보</h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      워크플로우 이름 (한국어)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.name_ko}
+                      onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      placeholder="워크플로우 이름을 입력하세요"
+                      required
+                    />
                   </div>
-                ))}
+
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      워크플로우 이름 (English)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.name_en}
+                      onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      placeholder="Enter workflow name"
+                      required
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* 기타 설정 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">태그 (쉼표로 구분)</label>
-                <input
-                  type="text"
-                  value={formData.tags}
-                  onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-                  placeholder="예: 일반문의, 예약문의"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
+              {/* 설명 */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-5 bg-gradient-to-b from-purple-500 to-pink-600 rounded-full"></div>
+                  <h3 className="text-base font-semibold text-gray-900">설명</h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      설명 (한국어)
+                    </label>
+                    <textarea
+                      value={formData.description_ko}
+                      onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-none"
+                      placeholder="워크플로우에 대한 설명을 입력하세요"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      설명 (English)
+                    </label>
+                    <textarea
+                      value={formData.description_en}
+                      onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-none"
+                      placeholder="Enter workflow description"
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* 체크박스 */}
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={formData.is_active}
-                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                  className="rounded"
-                />
-                활성화
-              </label>
+              {/* 카테고리 및 필터 */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-5 bg-gradient-to-b from-green-500 to-emerald-600 rounded-full"></div>
+                  <h3 className="text-base font-semibold text-gray-900">카테고리 및 필터</h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      카테고리
+                    </label>
+                    <select
+                      value={formData.category_id || ''}
+                      onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                    >
+                      <option value="">{locale === 'ko' ? '카테고리 선택' : 'Select Category'}</option>
+                      {categories.map(category => (
+                        <option key={category.id} value={category.id}>
+                          {locale === 'ko' ? category.name_ko : category.name_en}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={formData.is_default}
-                  onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
-                  className="rounded"
-                />
-                기본 워크플로우
-              </label>
-            </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      상품
+                    </label>
+                    <select
+                      value={formData.product_id || ''}
+                      onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                    >
+                      <option value="">{locale === 'ko' ? '상품 선택' : 'Select Product'}</option>
+                      {products.map(product => (
+                        <option key={product.id} value={product.id}>
+                          {locale === 'ko' ? product.name_ko : product.name_en}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-            {/* 버튼 */}
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-              >
-                취소
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-              >
-                {isSubmitting ? '저장 중...' : '저장'}
-              </button>
-            </div>
-          </form>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      채널
+                    </label>
+                    <select
+                      value={formData.channel_id || ''}
+                      onChange={(e) => setFormData({ ...formData, channel_id: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                    >
+                      <option value="">{locale === 'ko' ? '채널 선택' : 'Select Channel'}</option>
+                      {channels.map(channel => (
+                        <option key={channel.id} value={channel.id}>
+                          {channel.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 워크플로우 단계 */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1 h-5 bg-gradient-to-b from-orange-500 to-red-600 rounded-full"></div>
+                    <h3 className="text-base font-semibold text-gray-900">워크플로우 단계</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addStep}
+                    className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-3 py-1.5 rounded-lg hover:from-blue-600 hover:to-indigo-700 flex items-center gap-2 transition-all duration-200 shadow-lg hover:shadow-xl text-sm"
+                  >
+                    <Plus size={14} />
+                    단계 추가
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {steps.map((step, index) => (
+                    <div key={step.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all duration-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-md flex items-center justify-center text-white font-semibold text-xs">
+                            {index + 1}
+                          </div>
+                          <h4 className="font-semibold text-gray-900 text-sm">단계 {index + 1}</h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeStep(index)}
+                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-700">
+                            단계 이름 (한국어)
+                          </label>
+                          <input
+                            type="text"
+                            value={step.step_name_ko}
+                            onChange={(e) => updateStep(index, 'step_name_ko', e.target.value)}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                            placeholder="단계 이름을 입력하세요"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-700">
+                            단계 이름 (English)
+                          </label>
+                          <input
+                            type="text"
+                            value={step.step_name_en}
+                            onChange={(e) => updateStep(index, 'step_name_en', e.target.value)}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                            placeholder="Enter step name"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-700">
+                            단계 타입
+                          </label>
+                          <select
+                            value={step.step_type || ''}
+                            onChange={(e) => updateStep(index, 'step_type', e.target.value)}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                          >
+                            <option value="action">액션</option>
+                            <option value="decision">결정</option>
+                            <option value="condition">조건</option>
+                            <option value="template">템플릿</option>
+                            <option value="manual">수동</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-700">
+                            액션 타입
+                          </label>
+                          <select
+                            value={step.action_type || ''}
+                            onChange={(e) => updateStep(index, 'action_type', e.target.value)}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
+                          >
+                            <option value="send_template">템플릿 전송</option>
+                            <option value="ask_question">질문하기</option>
+                            <option value="wait_response">응답 대기</option>
+                            <option value="escalate">에스컬레이션</option>
+                            <option value="close">상담 종료</option>
+                          </select>
+                        </div>
+                      </div>
+
+
+
+
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 기타 설정 */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-1 h-6 bg-gradient-to-b from-gray-500 to-slate-600 rounded-full"></div>
+                  <h3 className="text-lg font-semibold text-gray-900">기타 설정</h3>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      태그 (쉼표로 구분)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.tags}
+                      onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                      placeholder="예: 일반문의, 예약문의"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.is_active}
+                        onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                      />
+                      <span className="text-sm font-medium text-gray-700">활성화</span>
+                    </label>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.is_default}
+                        onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                      />
+                      <span className="text-sm font-medium text-gray-700">기본 워크플로우</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </form>
           </div>
+        </div>
+
+        {/* 하단 버튼 */}
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-100 bg-gray-50">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 font-medium text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            onClick={handleSubmit}
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium shadow-lg hover:shadow-xl text-sm"
+          >
+            {isSubmitting ? (
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Saving...
+              </div>
+            ) : (
+              'Save'
+            )}
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
-// 워크플로우 삭제 확인 모달 컴포넌트
+// Workflow Delete Confirmation Modal Component
 function WorkflowDeleteModal({ 
   workflow, 
   onClose, 
@@ -2650,27 +2647,27 @@ function WorkflowDeleteModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg max-w-md w-full p-6">
-        <h2 className="text-xl font-semibold mb-4">워크플로우 삭제</h2>
+        <h2 className="text-xl font-semibold mb-4">Delete Workflow</h2>
         <div className="text-gray-600 mb-6">
-          <p className="mb-2">다음 워크플로우를 삭제하시겠습니까?</p>
+          <p className="mb-2">Are you sure you want to delete the following workflow?</p>
           <div className="bg-gray-50 p-3 rounded-lg">
-            <p className="text-sm font-medium text-gray-900">{workflow.name_ko}</p>
-            <p className="text-xs text-gray-500 mt-1">{workflow.description_ko}</p>
+            <p className="text-sm font-medium text-gray-900">{locale === 'ko' ? workflow.name_ko : workflow.name_en}</p>
+            <p className="text-xs text-gray-500 mt-1">{locale === 'ko' ? workflow.description_ko : workflow.description_en}</p>
           </div>
-          <p className="text-sm text-red-600 mt-2">이 작업은 되돌릴 수 없습니다.</p>
+          <p className="text-sm text-red-600 mt-2">This action cannot be undone.</p>
         </div>
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
             className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
           >
-            취소
+            Cancel
           </button>
           <button
             onClick={onConfirm}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
-            삭제
+            Delete
           </button>
         </div>
       </div>

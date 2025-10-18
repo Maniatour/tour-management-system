@@ -1,12 +1,14 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus } from 'lucide-react'
+import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import AddAttendanceForm from '@/components/AddAttendanceForm'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import AttendanceEditModal from '@/components/attendance/AttendanceEditModal'
+import BiweeklyCalculatorModal from '@/components/BiweeklyCalculatorModal'
+import { useParams } from 'next/navigation'
 
 interface AttendanceRecord {
   id: string
@@ -36,6 +38,8 @@ interface MonthlyStats {
 
 export default function AttendancePage() {
   const { authUser } = useAuth()
+  const params = useParams()
+  const locale = params.locale as string
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,6 +54,7 @@ export default function AttendancePage() {
   const [currentSessionForSelectedEmployee, setCurrentSessionForSelectedEmployee] = useState<AttendanceRecord | null>(null)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
   const [isAddFormOpen, setIsAddFormOpen] = useState(false)
+  const [isBiweeklyCalculatorOpen, setIsBiweeklyCalculatorOpen] = useState(false)
   
   // 어드민 권한 체크
   const checkAdminPermission = async () => {
@@ -566,13 +571,22 @@ export default function AttendancePage() {
           </div>
           <div className="flex space-x-3">
             {isAdmin && (
-              <button
-                onClick={() => setIsAddFormOpen(true)}
-                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                기록 추가
-              </button>
+              <>
+                <button
+                  onClick={() => setIsAddFormOpen(true)}
+                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  기록 추가
+                </button>
+                <button
+                  onClick={() => setIsBiweeklyCalculatorOpen(true)}
+                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <Calculator className="w-4 h-4 mr-2" />
+                  2주급 계산기
+                </button>
+              </>
             )}
             <button
               onClick={refreshData}
@@ -880,6 +894,13 @@ export default function AttendancePage() {
         onSuccess={refreshData}
         selectedEmployee={selectedEmployee}
         selectedMonth={selectedMonth}
+      />
+
+      {/* 2주급 계산기 모달 */}
+      <BiweeklyCalculatorModal
+        isOpen={isBiweeklyCalculatorOpen}
+        onClose={() => setIsBiweeklyCalculatorOpen(false)}
+        locale={locale}
       />
     </div>
   )
