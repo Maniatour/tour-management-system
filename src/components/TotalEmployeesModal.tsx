@@ -147,7 +147,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
         return
       }
 
-      // 투어 fee 조회 (reservation_ids 포함) - 날짜 범위를 더 넓게 조회 후 클라이언트에서 필터링
+      // 투어 fee 조회 (reservation_ids 포함)
       const { data: tourData, error: tourError } = await supabase
         .from('tours')
         .select(`
@@ -162,20 +162,14 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           reservation_ids,
           products!inner(name_ko, name_en)
         `)
-        .gte('tour_date', new Date(new Date(startDate).getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-        .lte('tour_date', new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+        .gte('tour_date', startDate)
+        .lte('tour_date', endDate)
         .order('tour_date', { ascending: true })
 
       if (tourError) {
         console.error('투어 fee 조회 오류:', tourError)
         return
       }
-
-      // 투어 데이터를 정확한 날짜 범위로 필터링
-      const filteredTourData = tourData?.filter(tour => {
-        const tourDate = tour.tour_date
-        return tourDate >= startDate && tourDate <= endDate
-      }) || []
 
       // 클라이언트 사이드에서 날짜 필터링
       const filteredAttendanceData = attendanceData?.filter(record => {
@@ -218,7 +212,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           const attendancePay = actualTotalHours * hourlyRate
 
           // 투어 fee 필터링 및 prepaid 팁 계산
-          const filteredTours = filteredTourData?.filter(tour => 
+          const filteredTours = tourData?.filter(tour => 
             tour.tour_guide_id === employee.email || tour.assistant_id === employee.email
           ) || []
           
