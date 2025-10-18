@@ -353,14 +353,13 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
       
       // 프린트용 헬퍼 함수들
       const formatTourDateForPrint = (dateString: string) => {
-        const date = new Date(dateString)
-        const year = date.getFullYear()
-        const month = String(date.getMonth() + 1).padStart(2, '0')
-        const day = String(date.getDate()).padStart(2, '0')
+        // 날짜 문자열을 직접 파싱하여 시간대 변환 방지
+        const [year, month, day] = dateString.split('-').map(Number)
+        const date = new Date(year, month - 1, day)
         const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
         const weekday = weekdays[date.getDay()]
         
-        return `${year}.${month}.${day} (${weekday})`
+        return `${year}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')} (${weekday})`
       }
 
       const formatTeamTypeForPrint = (teamType: string) => {
@@ -669,14 +668,13 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
 
   // 투어 날짜를 YYYY.MM.DD (Mon) 형식으로 포맷하는 함수
   const formatTourDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
+    // 날짜 문자열을 직접 파싱하여 시간대 변환 방지
+    const [year, month, day] = dateString.split('-').map(Number)
+    const date = new Date(year, month - 1, day)
     const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const weekday = weekdays[date.getDay()]
     
-    return `${year}.${month}.${day} (${weekday})`
+    return `${year}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')} (${weekday})`
   }
 
   // 팀 타입을 표시 형식으로 변환하는 함수
