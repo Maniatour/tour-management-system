@@ -431,10 +431,133 @@ export default function ProductDetailsTab({
     }
   }
 
+  // 상품 세부정보 로드 함수
+  const loadProductDetails = useCallback(async () => {
+    if (isNewProduct) return
+
+    try {
+      // 상품 기본 정보에서 공통 세부정보 사용 여부 확인
+      const { data: productData, error: productError } = await supabase
+        .from('products')
+        .select('use_common_details, sub_category')
+        .eq('id', productId)
+        .single()
+
+      if (productError) throw productError
+
+      let detailsData: unknown = null
+      let detailsError: { code?: string } | null = null
+
+      if (productData?.use_common_details) {
+        // 공통 세부정보 사용
+        const { data: commonData, error: commonError } = await supabase
+          .from('product_details_common_multilingual')
+          .select('*')
+          .eq('sub_category', productData.sub_category)
+          .maybeSingle()
+        detailsData = commonData
+        detailsError = commonError
+      } else {
+        // 개별 세부정보 사용
+        const { data: ownData, error: ownError } = await supabase
+          .from('product_details_multilingual')
+          .select('*')
+          .eq('product_id', productId)
+        detailsData = ownData
+        detailsError = ownError
+      }
+
+      if (detailsError && detailsError.code !== 'PGRST116') { // PGRST116은 데이터가 없을 때 발생
+        throw detailsError
+      }
+
+      // 다국어 데이터를 언어별로 매핑
+      const multilingualDetails: Record<string, ProductDetailsFields> = {}
+      
+      if (Array.isArray(detailsData) && detailsData.length > 0) {
+        // 여러 언어 데이터가 있는 경우
+        detailsData.forEach((item: any) => {
+          multilingualDetails[item.language_code || 'ko'] = {
+            slogan1: item.slogan1 || '',
+            slogan2: item.slogan2 || '',
+            slogan3: item.slogan3 || '',
+            description: item.description || '',
+            included: item.included || '',
+            not_included: item.not_included || '',
+            pickup_drop_info: item.pickup_drop_info || '',
+            luggage_info: item.luggage_info || '',
+            tour_operation_info: item.tour_operation_info || '',
+            preparation_info: item.preparation_info || '',
+            small_group_info: item.small_group_info || '',
+            notice_info: item.notice_info || '',
+            private_tour_info: item.private_tour_info || '',
+            cancellation_policy: item.cancellation_policy || '',
+            chat_announcement: item.chat_announcement || '',
+            tags: item.tags || []
+          }
+        })
+      } else if (detailsData) {
+        // 단일 언어 데이터가 있는 경우
+        multilingualDetails[(detailsData as any).language_code || 'ko'] = {
+          slogan1: (detailsData as any).slogan1 || '',
+          slogan2: (detailsData as any).slogan2 || '',
+          slogan3: (detailsData as any).slogan3 || '',
+          description: (detailsData as any).description || '',
+          included: (detailsData as any).included || '',
+          not_included: (detailsData as any).not_included || '',
+          pickup_drop_info: (detailsData as any).pickup_drop_info || '',
+          luggage_info: (detailsData as any).luggage_info || '',
+          tour_operation_info: (detailsData as any).tour_operation_info || '',
+          preparation_info: (detailsData as any).preparation_info || '',
+          small_group_info: (detailsData as any).small_group_info || '',
+          notice_info: (detailsData as any).notice_info || '',
+          private_tour_info: (detailsData as any).private_tour_info || '',
+          cancellation_policy: (detailsData as any).cancellation_policy || '',
+          chat_announcement: (detailsData as any).chat_announcement || '',
+          tags: (detailsData as any).tags || []
+        }
+      }
+
+      // 기본 한국어 데이터가 없으면 빈 데이터 추가
+      if (!multilingualDetails.ko) {
+        multilingualDetails.ko = {
+          slogan1: '',
+          slogan2: '',
+          slogan3: '',
+          description: '',
+          included: '',
+          not_included: '',
+          pickup_drop_info: '',
+          luggage_info: '',
+          tour_operation_info: '',
+          preparation_info: '',
+          small_group_info: '',
+          notice_info: '',
+          private_tour_info: '',
+          cancellation_policy: '',
+          chat_announcement: '',
+          tags: []
+        }
+      }
+
+      // formData 업데이트
+      setFormData(prev => ({
+        ...prev,
+        productDetails: multilingualDetails,
+        useCommonDetails: !!productData?.use_common_details
+      }))
+
+      console.log('상품 세부정보 로드 완료:', multilingualDetails)
+    } catch (error) {
+      console.error('상품 세부정보 로드 오류:', error)
+    }
+  }, [productId, isNewProduct, supabase, setFormData])
+
   // 초기 로드
   useEffect(() => {
     loadChannels()
-  }, [loadChannels])
+    loadProductDetails()
+  }, [loadChannels, loadProductDetails])
 
   // 채널 선택 변경 시 데이터 로드
   useEffect(() => {
