@@ -8,6 +8,7 @@ import AddAttendanceForm from '@/components/AddAttendanceForm'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import AttendanceEditModal from '@/components/attendance/AttendanceEditModal'
 import BiweeklyCalculatorModal from '@/components/BiweeklyCalculatorModal'
+import TotalEmployeesModal from '@/components/TotalEmployeesModal'
 import { useParams } from 'next/navigation'
 
 interface AttendanceRecord {
@@ -55,6 +56,7 @@ export default function AttendancePage() {
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
   const [isAddFormOpen, setIsAddFormOpen] = useState(false)
   const [isBiweeklyCalculatorOpen, setIsBiweeklyCalculatorOpen] = useState(false)
+  const [isTotalEmployeesModalOpen, setIsTotalEmployeesModalOpen] = useState(false)
   
   // 어드민 권한 체크
   const checkAdminPermission = async () => {
@@ -586,6 +588,13 @@ export default function AttendancePage() {
                   <Calculator className="w-4 h-4 mr-2" />
                   2주급 계산기
                 </button>
+                <button
+                  onClick={() => setIsTotalEmployeesModalOpen(true)}
+                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Users className="w-4 h-4 mr-2" />
+                  전체 직원 총합
+                </button>
               </>
             )}
             <button
@@ -900,6 +909,13 @@ export default function AttendancePage() {
       <BiweeklyCalculatorModal
         isOpen={isBiweeklyCalculatorOpen}
         onClose={() => setIsBiweeklyCalculatorOpen(false)}
+        locale={locale}
+      />
+
+      {/* 전체 직원 총합 모달 */}
+      <TotalEmployeesModal
+        isOpen={isTotalEmployeesModalOpen}
+        onClose={() => setIsTotalEmployeesModalOpen(false)}
         locale={locale}
       />
     </div>

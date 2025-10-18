@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, Calculator, Clock, DollarSign, Calendar, User } from 'lucide-react'
+import { X, Calculator, Clock, DollarSign, Calendar, User, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
@@ -155,6 +155,11 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     }
   }
 
+  // 총 급여 계산 함수
+  const calculateTotalPay = (attendanceSalary: number, tourSalary: number) => {
+    return attendanceSalary + tourSalary
+  }
+
   // 출퇴근 기록 조회
   const fetchAttendanceRecords = async () => {
     if (!selectedEmployee || !startDate || !endDate) {
@@ -200,13 +205,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         endDateISO: endDateObj.toISOString().split('T')[0]
       })
 
-      // 먼저 출퇴근 기록만 조회 - 종료일 포함
+      // 먼저 출퇴근 기록만 조회 - 더 넓은 범위로 조회 후 클라이언트에서 필터링
       const query = supabase
         .from('attendance_records')
         .select('id, employee_email, date, check_in_time, check_out_time, work_hours, status, notes, session_number')
         .eq('employee_email', selectedEmployee)
-        .gte('date', startDate)
-        .lte('date', endDate) // 종료일 포함
+        .gte('date', new Date(new Date(startDate).getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]) // 하루 전부터
+        .lte('date', new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]) // 하루 후까지
         .order('date', { ascending: true })
 
       console.log('실행할 쿼리:', {
@@ -231,18 +236,30 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       console.log('조회된 출퇴근 기록 (필터링 전):', attendanceData)
       console.log('조회된 기록 수 (필터링 전):', attendanceData?.length || 0)
       
-      // 클라이언트 사이드에서 추가 필터링 (Supabase 필터가 제대로 작동하지 않는 경우 대비)
+      // 클라이언트 사이드에서 check_in_time을 라스베가스 시간으로 변환하여 정확한 필터링
       const filteredData = attendanceData?.filter(record => {
-        const recordDate = record.date
-        const isInRange = recordDate >= startDate && recordDate <= endDate
+        if (!record.check_in_time) return false
         
-        console.log('날짜 필터링 체크:', {
-          recordDate,
+        // check_in_time을 라스베가스 시간으로 변환
+        const utcDate = new Date(record.check_in_time)
+        const lasVegasTime = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+        
+        // 라스베가스 시간에서 날짜 부분만 추출 (YYYY-MM-DD 형식)
+        const year = lasVegasTime.getFullYear()
+        const month = String(lasVegasTime.getMonth() + 1).padStart(2, '0')
+        const day = String(lasVegasTime.getDate()).padStart(2, '0')
+        const lasVegasDate = `${year}-${month}-${day}`
+        
+        const isInRange = lasVegasDate >= startDate && lasVegasDate <= endDate
+        
+        console.log('라스베가스 시간 필터링 체크:', {
+          originalCheckInTime: record.check_in_time,
+          lasVegasDate,
           startDate,
           endDate,
           isInRange,
-          gte: recordDate >= startDate,
-          lte: recordDate <= endDate
+          gte: lasVegasDate >= startDate,
+          lte: lasVegasDate <= endDate
         })
         
         return isInRange
@@ -299,10 +316,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       if (hourlyRate && !isNaN(Number(hourlyRate))) {
         const attendanceSalary = actualTotalHours * Number(hourlyRate)
         setAttendancePay(attendanceSalary)
-        setTotalPay(attendanceSalary + tourPay)
+        // 총 급여는 별도 useEffect에서 계산
       } else {
         setAttendancePay(0)
-        setTotalPay(tourPay)
+        // 총 급여는 별도 useEffect에서 계산
       }
     } catch (error) {
       console.error('출퇴근 기록 조회 오류:', error)
@@ -373,7 +390,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       // 투어 급여 계산
       const tourSalary = fees.reduce((sum, tour) => sum + tour.total_fee, 0)
       setTourPay(tourSalary)
-      setTotalPay(attendancePay + tourSalary)
+      // 총 급여는 별도 useEffect에서 계산
     } catch (error) {
       console.error('투어 fee 조회 오류:', error)
       setTourFees([])
@@ -386,6 +403,12 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       fetchAttendanceRecords()
     }
   }, [selectedEmployee, startDate, endDate])
+
+  // attendancePay와 tourPay가 변경될 때마다 총 급여 계산
+  useEffect(() => {
+    const total = calculateTotalPay(attendancePay, tourPay)
+    setTotalPay(total)
+  }, [attendancePay, tourPay])
 
   // 날짜나 직원이 변경될 때 투어 fee 조회
   useEffect(() => {
@@ -404,10 +427,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       if (value && !isNaN(Number(value)) && totalHours > 0) {
         const attendanceSalary = totalHours * Number(value)
         setAttendancePay(attendanceSalary)
-        setTotalPay(attendanceSalary + tourPay)
+        // 총 급여는 별도 useEffect에서 계산
       } else {
         setAttendancePay(0)
-        setTotalPay(tourPay)
+        // 총 급여는 별도 useEffect에서 계산
       }
     }
   }
@@ -456,6 +479,250 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     onClose()
   }
 
+  // 프린트 함수
+  const handlePrint = () => {
+    // 프린트용 새 창 열기
+    const printWindow = window.open('', '_blank', 'width=800,height=600')
+    
+    if (printWindow) {
+      // 프린트용 HTML 생성
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>2주급 계산기</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              margin: 20px;
+              color: #333;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+              border-bottom: 2px solid #e5e7eb;
+              padding-bottom: 20px;
+            }
+            .header h1 {
+              font-size: 24px;
+              font-weight: bold;
+              margin: 0 0 10px 0;
+            }
+            .header p {
+              font-size: 14px;
+              color: #666;
+              margin: 0;
+            }
+            .content {
+              display: flex;
+              gap: 30px;
+            }
+            .left-section {
+              flex: 1;
+            }
+            .right-section {
+              flex: 1;
+            }
+            .section-title {
+              font-size: 18px;
+              font-weight: 600;
+              margin-bottom: 15px;
+              color: #374151;
+            }
+            .info-row {
+              display: flex;
+              margin-bottom: 10px;
+            }
+            .info-label {
+              font-weight: 500;
+              min-width: 120px;
+              color: #6b7280;
+            }
+            .info-value {
+              font-weight: 600;
+              color: #111827;
+            }
+            .calculation-box {
+              background: #f9fafb;
+              border: 1px solid #e5e7eb;
+              border-radius: 8px;
+              padding: 20px;
+              margin-bottom: 20px;
+            }
+            .calculation-item {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 8px;
+              padding: 5px 0;
+            }
+            .calculation-item.total {
+              border-top: 1px solid #d1d5db;
+              padding-top: 10px;
+              margin-top: 10px;
+              font-weight: bold;
+              font-size: 16px;
+            }
+            .table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 15px;
+            }
+            .table th,
+            .table td {
+              border: 1px solid #d1d5db;
+              padding: 8px 12px;
+              text-align: left;
+            }
+            .table th {
+              background: #f9fafb;
+              font-weight: 600;
+              font-size: 14px;
+            }
+            .table td {
+              font-size: 13px;
+            }
+            .table tbody tr:nth-child(even) {
+              background: #f9fafb;
+            }
+            .tour-link {
+              color: #2563eb;
+              text-decoration: none;
+            }
+            .tour-link:hover {
+              text-decoration: underline;
+            }
+            @media print {
+              body { margin: 0; }
+              .content { display: block; }
+              .left-section, .right-section { flex: none; margin-bottom: 20px; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>2주급 계산기</h1>
+            <p>${selectedEmployee && teamMembers.find(m => m.email === selectedEmployee)?.name_ko || ''} | ${startDate} ~ ${endDate}</p>
+          </div>
+          
+          <div class="content">
+            <div class="left-section">
+              <div class="section-title">직원 정보</div>
+              <div class="info-row">
+                <span class="info-label">직원:</span>
+                <span class="info-value">${selectedEmployee && teamMembers.find(m => m.email === selectedEmployee)?.name_ko || ''}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">기간:</span>
+                <span class="info-value">${startDate} ~ ${endDate}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">시급:</span>
+                <span class="info-value">$${hourlyRate || '0'}</span>
+              </div>
+            </div>
+            
+            <div class="right-section">
+              <div class="section-title">급여 계산</div>
+              <div class="calculation-box">
+                <div class="calculation-item">
+                  <span>총 근무시간:</span>
+                  <span>${formatWorkHours(totalHours)}</span>
+                </div>
+                <div class="calculation-item">
+                  <span>출퇴근 기록 소계:</span>
+                  <span>$${formatCurrency(attendancePay)}</span>
+                </div>
+                <div class="calculation-item">
+                  <span>투어 Fee 소계:</span>
+                  <span>$${formatCurrency(tourPay)}</span>
+                </div>
+                <div class="calculation-item total">
+                  <span>총 급여:</span>
+                  <span>$${formatCurrency(totalPay)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          ${attendanceRecords.length > 0 ? `
+            <div class="section-title">출퇴근 기록 (${new Set(attendanceRecords.map(record => {
+              if (!record.check_in_time) return record.date
+              const utcDate = new Date(record.check_in_time)
+              const lasVegasTime = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+              return lasVegasTime.toISOString().split('T')[0]
+            })).size}일, 총 ${attendanceRecords.length}회)</div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>출근 날짜</th>
+                  <th>출근 시간</th>
+                  <th>퇴근 시간</th>
+                  <th>근무시간</th>
+                  <th>식사시간 차감 후</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${attendanceRecords.map(record => `
+                  <tr>
+                    <td>${getDateFromCheckInTime(record.check_in_time)}</td>
+                    <td>${formatTime(record.check_in_time)}</td>
+                    <td>${formatTime(record.check_out_time)}</td>
+                    <td>${formatWorkHours(record.work_hours || 0)}</td>
+                    <td>${formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
+                    <td>${record.status || '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : ''}
+          
+          ${tourFees.length > 0 ? `
+            <div class="section-title">투어 Fee</div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>투어 날짜</th>
+                  <th>투어명</th>
+                  <th>팀 타입</th>
+                  <th>가이드 Fee</th>
+                  <th>드라이버 Fee</th>
+                  <th>총 Fee</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tourFees.map(tour => `
+                  <tr>
+                    <td>${formatDate(tour.date)}</td>
+                    <td>${tour.tour_name}</td>
+                    <td>${tour.team_type}</td>
+                    <td>$${formatCurrency(tour.guide_fee)}</td>
+                    <td>$${formatCurrency(tour.driver_fee)}</td>
+                    <td>$${formatCurrency(tour.total_fee)}</td>
+                  </tr>
+                `).join('')}
+                <tr style="font-weight: bold; background: #f3f4f6;">
+                  <td colspan="5">총합</td>
+                  <td>$${formatCurrency(tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}</td>
+                </tr>
+              </tbody>
+            </table>
+          ` : ''}
+        </body>
+        </html>
+      `
+      
+      printWindow.document.write(printContent)
+      printWindow.document.close()
+      
+      // 프린트 대화상자 열기
+      printWindow.onload = () => {
+        printWindow.print()
+        printWindow.close()
+      }
+    }
+  }
+
   // 시간 포맷팅 함수
   const formatTime = (timeString: string | null) => {
     if (!timeString) return '-'
@@ -483,11 +750,18 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     // 라스베가스 시간대 (America/Los_Angeles)로 변환
     const lasVegasTime = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
     
-    return lasVegasTime.toLocaleDateString('ko-KR', {
+    // 날짜와 요일을 분리하여 포맷팅
+    const dateStr = lasVegasTime.toLocaleDateString('ko-KR', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
     })
+    
+    const weekdayStr = lasVegasTime.toLocaleDateString('ko-KR', {
+      weekday: 'short'
+    })
+    
+    return `${dateStr} (${weekdayStr})`
   }
 
   // 날짜 포맷팅 함수 (시간대 변환 없이)
@@ -512,150 +786,175 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     return formatted
   }
 
+  // 숫자 포맷팅 함수 (천 단위 구분 기호 추가)
+  const formatCurrency = (amount: number) => {
+    return amount.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })
+  }
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <>
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center">
             <Calculator className="w-6 h-6 text-blue-600 mr-2" />
             <h2 className="text-xl font-bold text-gray-900">2주급 계산기</h2>
           </div>
-          <button
-            onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handlePrint}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+              title="프린트"
+            >
+              <Printer className="w-6 h-6" />
+            </button>
+            <button
+              onClick={handleClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
         {/* 내용 */}
-        <div className="p-6 space-y-6">
-          {/* 직원 선택 */}
-          <div className="flex items-center space-x-4">
-            <label className="text-sm font-medium text-gray-700 w-20 flex-shrink-0">
-              <User className="w-4 h-4 inline mr-1" />
-              직원 선택
-            </label>
-            <select
-              value={selectedEmployee}
-              onChange={handleEmployeeChange}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">직원을 선택하세요</option>
-              {teamMembers.map((member) => (
-                <option key={member.email} value={member.email}>
-                  {member.name_ko} ({member.position}) - {member.email}
-                </option>
-              ))}
-            </select>
-            <div className="flex space-x-2">
-              <button
-                onClick={setCurrentPeriod}
-                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                이번
-              </button>
-              <button
-                onClick={setPreviousPeriod}
-                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                지난
-              </button>
-            </div>
-          </div>
+        <div className="p-6">
+          <div className="grid grid-cols-2 gap-8">
+            {/* 왼쪽: 입력 필드들 */}
+            <div className="space-y-4">
+              {/* 직원 선택 */}
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700 flex items-center">
+                  <User className="w-4 h-4 mr-1" />
+                  직원 선택
+                </label>
+                <div className="flex space-x-2">
+                  <select
+                    value={selectedEmployee}
+                    onChange={handleEmployeeChange}
+                    className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">직원을 선택하세요</option>
+                    {teamMembers.map((member) => (
+                      <option key={member.email} value={member.email}>
+                        {member.name_ko} ({member.position})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={setCurrentPeriod}
+                    className="px-2 py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    이번
+                  </button>
+                  <button
+                    onClick={setPreviousPeriod}
+                    className="px-2 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                  >
+                    지난
+                  </button>
+                </div>
+              </div>
 
-          {/* 입력 필드들 - 같은 줄에 배치 */}
-          <div className="flex items-center space-x-6">
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                <Calendar className="w-4 h-4 inline mr-1" />
-                시작일
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => handleDateChange('start', e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+              {/* 날짜 및 시급 입력 */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <Calendar className="w-4 h-4 inline mr-1" />
+                    시작일
+                  </label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => handleDateChange('start', e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <Calendar className="w-4 h-4 inline mr-1" />
+                    종료일
+                  </label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => handleDateChange('end', e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <DollarSign className="w-4 h-4 inline mr-1" />
+                    시급 ($)
+                  </label>
+                  <input
+                    type="text"
+                    value={hourlyRate}
+                    onChange={handleHourlyRateChange}
+                    placeholder="예: 15.00"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                <Calendar className="w-4 h-4 inline mr-1" />
-                종료일
-              </label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => handleDateChange('end', e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                <DollarSign className="w-4 h-4 inline mr-1" />
-                시급 ($)
-              </label>
-              <input
-                type="text"
-                value={hourlyRate}
-                onChange={handleHourlyRateChange}
-                placeholder="예: 15.00"
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-          </div>
 
-          {/* 계산 결과 */}
-          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">
-                <Clock className="w-4 h-4 inline mr-1" />
-                총 근무 시간:
-              </span>
-              <span className="text-lg font-bold text-blue-600">
-                {loading ? '계산 중...' : formatWorkHours(totalHours)}
-              </span>
+            {/* 오른쪽: 계산 결과 */}
+            <div className="space-y-2">
+              <div className="bg-gray-50 rounded-md p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-gray-600">
+                    <Clock className="w-3 h-3 inline mr-1" />
+                    총 근무 시간:
+                  </span>
+                  <span className="text-sm font-bold text-blue-600">
+                    {loading ? '계산 중...' : formatWorkHours(totalHours)}
+                  </span>
+                </div>
+                
+                {hourlyRate && !isNaN(Number(hourlyRate)) && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-600">
+                        <DollarSign className="w-3 h-3 inline mr-1" />
+                        출퇴근 기록 소계:
+                      </span>
+                      <span className="text-sm font-bold text-blue-600">
+                        ${formatCurrency(attendancePay)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-600">
+                        <DollarSign className="w-3 h-3 inline mr-1" />
+                        투어 Fee 소계:
+                      </span>
+                      <span className="text-sm font-bold text-purple-600">
+                        ${formatCurrency(tourPay)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between border-t pt-1">
+                      <span className="text-xs font-medium text-gray-700">
+                        <DollarSign className="w-3 h-3 inline mr-1" />
+                        총 급여:
+                      </span>
+                      <span className="text-base font-bold text-green-600">
+                        ${formatCurrency(totalPay)}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
-            
-            {hourlyRate && !isNaN(Number(hourlyRate)) && (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">
-                    <DollarSign className="w-4 h-4 inline mr-1" />
-                    출퇴근 기록 소계:
-                  </span>
-                  <span className="text-lg font-bold text-blue-600">
-                    ${attendancePay.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">
-                    <DollarSign className="w-4 h-4 inline mr-1" />
-                    투어 Fee 소계:
-                  </span>
-                  <span className="text-lg font-bold text-purple-600">
-                    ${tourPay.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between border-t pt-2">
-                  <span className="text-sm font-medium text-gray-700">
-                    <DollarSign className="w-4 h-4 inline mr-1" />
-                    총 급여:
-                  </span>
-                  <span className="text-xl font-bold text-green-600">
-                    ${totalPay.toFixed(2)}
-                  </span>
-                </div>
-              </>
-            )}
           </div>
 
           {/* 출퇴근 기록 테이블 */}
           {attendanceRecords.length > 0 && (
-            <div>
+            <div className="mt-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 출퇴근 기록 ({new Set(attendanceRecords.map(record => {
                   if (!record.check_in_time) return record.date
@@ -728,7 +1027,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
           {/* 투어 Fee 테이블 */}
           {tourFees.length > 0 && (
-            <div>
+            <div className="mt-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 투어 Fee ({tourFees.length}개 투어)
               </h3>
@@ -774,13 +1073,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                           {tour.team_type || '-'}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                          ${tour.guide_fee.toFixed(2)}
+                          ${formatCurrency(tour.guide_fee)}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                          ${tour.driver_fee.toFixed(2)}
+                          ${formatCurrency(tour.driver_fee)}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-green-600">
-                          ${tour.total_fee.toFixed(2)}
+                          ${formatCurrency(tour.total_fee)}
                         </td>
                       </tr>
                     ))}
@@ -791,7 +1090,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                         총합:
                       </td>
                       <td className="px-3 py-2 text-sm font-bold text-green-600">
-                        ${tourFees.reduce((sum, tour) => sum + tour.total_fee, 0).toFixed(2)}
+                        ${formatCurrency(tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}
                       </td>
                     </tr>
                   </tfoot>
@@ -800,22 +1099,12 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             </div>
           )}
 
-          {/* 안내 메시지 */}
-          <div className="text-xs text-gray-500 bg-blue-50 p-3 rounded-lg">
-            💡 실제 출퇴근 기록을 기반으로 근무시간을 계산합니다. 기록이 없는 날은 제외됩니다.
-          </div>
+
         </div>
 
-        {/* 푸터 */}
-        <div className="flex justify-end p-6 border-t border-gray-200">
-          <button
-            onClick={handleClose}
-            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-          >
-            닫기
-          </button>
-        </div>
       </div>
     </div>
+
+    </>
   )
 }

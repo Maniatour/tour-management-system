@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, Save, Clock, Calendar } from 'lucide-react'
+import { X, Save, Clock, Calendar, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface AttendanceRecord {
@@ -183,6 +183,39 @@ export default function AttendanceEditModal({
     }))
   }
 
+  const handleDelete = async () => {
+    if (!record) return
+
+    const confirmDelete = window.confirm(
+      `정말로 ${record.employee_name}의 ${record.date} 출퇴근 기록을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`
+    )
+
+    if (!confirmDelete) return
+
+    setIsLoading(true)
+    try {
+      const { error } = await supabase
+        .from('attendance_records')
+        .delete()
+        .eq('id', record.id)
+
+      if (error) {
+        console.error('출퇴근 기록 삭제 오류:', error)
+        alert('출퇴근 기록 삭제에 실패했습니다.')
+        return
+      }
+
+      alert('출퇴근 기록이 성공적으로 삭제되었습니다.')
+      onUpdate() // 부모 컴포넌트의 데이터 새로고침
+      onClose()
+    } catch (error) {
+      console.error('출퇴근 기록 삭제 중 오류:', error)
+      alert('출퇴근 기록 삭제 중 오류가 발생했습니다.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   if (!isOpen || !record) return null
 
   return (
@@ -317,6 +350,15 @@ export default function AttendanceEditModal({
               className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 transition-colors"
             >
               취소
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isLoading}
+              className="px-4 py-2 text-red-700 bg-red-100 border border-red-300 rounded-lg hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              삭제
             </button>
             <button
               type="submit"
