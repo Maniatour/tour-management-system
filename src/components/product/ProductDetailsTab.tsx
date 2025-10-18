@@ -1466,6 +1466,50 @@ export default function ProductDetailsTab({
                     />
                   </div>
                 </div>
+
+                {/* 상품 태그 */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-medium text-gray-900">상품 태그</h4>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      상품 태그
+                    </label>
+                    <div className="flex space-x-2 mb-2">
+                      <input
+                        type="text"
+                        value={newTag}
+                        onChange={(e) => setNewTag(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && addTag()}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="태그를 입력하고 Enter를 누르세요"
+                      />
+                      <button
+                        type="button"
+                        onClick={addTag}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        추가
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {getCurrentLanguageDetails().tags.map((tag, index) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm"
+                        >
+                          {tag}
+                          <button
+                            type="button"
+                            onClick={() => removeTag(tag)}
+                            className="ml-2 text-gray-500 hover:text-gray-700"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>

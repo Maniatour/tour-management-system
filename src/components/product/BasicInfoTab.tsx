@@ -47,6 +47,7 @@ interface SubCategoryItem {
       tourDepartureTimes?: string[]
       customerNameKo?: string
       customerNameEn?: string
+      tags?: string[]
     }
   setFormData: <T>(updater: React.SetStateAction<T>) => void
   productId: string
@@ -67,6 +68,7 @@ export default function BasicInfoTab({
   const [allSubCategories, setAllSubCategories] = useState<SubCategoryItem[]>([])
   const [newDepartureTime, setNewDepartureTime] = useState('')
   const [showCategoryModal, setShowCategoryModal] = useState(false)
+  const [newTag, setNewTag] = useState('')
 
   // 디버깅을 위한 로그
   console.log('BasicInfoTab - formData.tourDepartureTimes:', formData.tourDepartureTimes);
@@ -88,6 +90,24 @@ export default function BasicInfoTab({
     setFormData({
       ...formData,
       tourDepartureTimes: formData.tourDepartureTimes?.filter((_, i) => i !== index) || []
+    })
+  }
+
+  // 태그 관련 핸들러 함수들
+  const addTag = () => {
+    if (newTag.trim() && !formData.tags?.includes(newTag.trim())) {
+      setFormData({
+        ...formData,
+        tags: [...(formData.tags || []), newTag.trim()]
+      })
+      setNewTag('')
+    }
+  }
+
+  const removeTag = (tagToRemove: string) => {
+    setFormData({
+      ...formData,
+      tags: (formData.tags || []).filter(tag => tag !== tagToRemove)
     })
   }
 
@@ -515,6 +535,45 @@ export default function BasicInfoTab({
             placeholder="상품에 대한 간단한 설명을 입력하세요"
             rows={3}
           />
+        </div>
+
+        {/* 상품 태그 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">상품 태그</label>
+          <div className="flex space-x-2 mb-2">
+            <input
+              type="text"
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && addTag()}
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="태그를 입력하고 Enter를 누르세요"
+            />
+            <button
+              type="button"
+              onClick={addTag}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              추가
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(formData.tags || []).map((tag, index) => (
+              <span
+                key={index}
+                className="inline-flex items-center px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm"
+              >
+                {tag}
+                <button
+                  type="button"
+                  onClick={() => removeTag(tag)}
+                  className="ml-2 text-gray-500 hover:text-gray-700"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
