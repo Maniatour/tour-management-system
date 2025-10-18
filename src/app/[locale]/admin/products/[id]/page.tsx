@@ -14,7 +14,8 @@ import {
   Info,
   Settings,
   Trash2,
-  MapPin
+  MapPin,
+  Eye
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
@@ -33,6 +34,7 @@ import ProductMediaTab from '@/components/product/ProductMediaTab'
 import TourCoursesTab from '@/components/product/TourCoursesTab'
 import GlobalOptionModal from '@/components/product/GlobalOptionModal'
 import OptionsManualModal from '@/components/product/OptionsManualModal'
+import ProductPreviewSidebar from '@/components/product/ProductPreviewSidebar'
 
 // 타입 정의는 필요에 따라 추가
 
@@ -148,6 +150,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
   const [showAddOptionModal, setShowAddOptionModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const [productInfo, setProductInfo] = useState<{
     name: string
     productCode: string
@@ -185,6 +188,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     tourDepartureTimes?: string[]
     customerNameKo?: string
     customerNameEn?: string
+    tags?: string[]
     // 공통 세부정보 사용 여부
     useCommonDetails: boolean
     // 팀 타입
@@ -281,6 +285,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     tourDepartureTimes: [],
     customerNameKo: '',
     customerNameEn: '',
+    tags: [],
     // 공통 세부정보 사용 여부 초기값
     useCommonDetails: false,
     // 팀 타입 초기값
@@ -424,7 +429,6 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         ],
         maxParticipants: 10,
         status: 'active',
-        tags: [],
         productOptions: [],
         // 새로운 필드들
         departureCity: '',
@@ -440,7 +444,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         tourDepartureTime: '',
         tourDepartureTimes: [],
         customerNameKo: '',
-        customerNameEn: ''
+        customerNameEn: '',
+        tags: []
       }))
     }
   }, [isNewProduct])
@@ -603,6 +608,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
             })(),
             customerNameKo: productData.customer_name_ko || '',
             customerNameEn: productData.customer_name_en || '',
+            tags: productData.tags || [],
             useCommonDetails: !!productData.use_common_details,
             team_type: productData.team_type || null,
             // product_details 데이터 설정 (다국어 지원)
@@ -1072,15 +1078,27 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           </div>
         </div>
         
-        {/* 삭제 버튼 (기존 상품인 경우에만 표시) */}
+        {/* 액션 버튼들 */}
         {!isNewProduct && (
-          <button
-            onClick={() => setShowDeleteModal(true)}
-            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center space-x-2 transition-colors"
-          >
-            <Trash2 size={20} />
-            <span>상품 삭제</span>
-          </button>
+          <div className="flex items-center space-x-3">
+            {/* 미리보기 버튼 */}
+            <button
+              onClick={() => setShowPreview(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Eye className="h-4 w-4" />
+              <span>미리보기</span>
+            </button>
+            
+            {/* 삭제 버튼 */}
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center space-x-2 transition-colors"
+            >
+              <Trash2 size={20} />
+              <span>상품 삭제</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -1335,6 +1353,36 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           </div>
         </div>
       )}
+
+      {/* 미리보기 사이드바 */}
+      <ProductPreviewSidebar
+        isOpen={showPreview}
+        onClose={() => setShowPreview(false)}
+        productData={{
+          name: formData.name,
+          nameEn: formData.nameEn || undefined,
+          customerNameKo: formData.customerNameKo || undefined,
+          customerNameEn: formData.customerNameEn || undefined,
+          description: formData.description,
+          duration: formData.duration,
+          maxParticipants: formData.maxParticipants,
+          departureCity: formData.departureCity,
+          arrivalCity: formData.arrivalCity,
+          departureCountry: formData.departureCountry,
+          arrivalCountry: formData.arrivalCountry,
+          languages: formData.languages,
+          groupSize: formData.groupSize,
+          adultAge: formData.adultAge,
+          childAgeMin: formData.childAgeMin,
+          childAgeMax: formData.childAgeMax,
+          infantAge: formData.infantAge,
+          status: formData.status,
+          tourDepartureTimes: formData.tourDepartureTimes || undefined,
+          tags: formData.tags || undefined
+        }}
+        productDetails={formData.productDetails}
+        currentLanguage={formData.currentLanguage}
+      />
     </div>
   )
 }
