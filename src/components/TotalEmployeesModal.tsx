@@ -1068,6 +1068,9 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                     <td className="px-4 py-3 text-sm font-bold text-green-600">
                       ${formatCurrency(totalAssistantFee)}
                     </td>
+                    <td className="px-4 py-3 text-sm font-bold text-yellow-600">
+                      ${formatCurrency(totalPrepaidTip)}
+                    </td>
                     <td className="px-4 py-3 text-sm font-bold text-gray-600">
                       {employeeData.reduce((sum, emp) => sum + emp.tourFees.length, 0)}회
                     </td>
