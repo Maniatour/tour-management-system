@@ -4,10 +4,12 @@ import { SimplePricingRule, SimplePricingRuleDto } from '@/lib/types/dynamic-pri
 
 interface UseDynamicPricingProps {
   productId: string;
+  selectedChannelId?: string;
+  selectedChannelType?: string;
   onSave?: (rule: SimplePricingRule) => void;
 }
 
-export function useDynamicPricing({ productId, onSave }: UseDynamicPricingProps) {
+export function useDynamicPricing({ productId, selectedChannelId, selectedChannelType, onSave }: UseDynamicPricingProps) {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [dynamicPricingData, setDynamicPricingData] = useState<Array<{
@@ -17,11 +19,20 @@ export function useDynamicPricing({ productId, onSave }: UseDynamicPricingProps)
 
   const loadDynamicPricingData = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('dynamic_pricing')
         .select('*')
-        .eq('product_id', productId)
-        .order('date', { ascending: true });
+        .eq('product_id', productId);
+
+      // 채널 필터링
+      if (selectedChannelId) {
+        query = query.eq('channel_id', selectedChannelId);
+      } else if (selectedChannelType === 'SELF') {
+        // SELF 채널 타입의 경우 B로 시작하는 채널 ID들만 필터링
+        query = query.like('channel_id', 'B%');
+      }
+
+      const { data, error } = await query.order('date', { ascending: true });
 
       if (error) {
         console.error('동적 가격 데이터 로드 실패:', error);
@@ -45,12 +56,19 @@ export function useDynamicPricing({ productId, onSave }: UseDynamicPricingProps)
         rules
       }));
 
+      console.log('로드된 동적 가격 데이터:', {
+        selectedChannelId,
+        selectedChannelType,
+        dataCount: data.length,
+        formattedDataCount: formattedData.length
+      });
+
       setDynamicPricingData(formattedData);
     } catch (error) {
       console.error('동적 가격 데이터 로드 실패:', error);
       setDynamicPricingData([]);
     }
-  }, [productId]);
+  }, [productId, selectedChannelId, selectedChannelType]);
 
   const savePricingRule = useCallback(async (ruleData: SimplePricingRuleDto, showMessage: boolean = false) => {
     setSaving(true);

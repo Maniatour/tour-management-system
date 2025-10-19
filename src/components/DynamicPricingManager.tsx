@@ -57,7 +57,12 @@ export default function DynamicPricingManager({
     savePricingRule,
     deletePricingRule,
     setMessage
-  } = useDynamicPricing({ productId, onSave: onSave || (() => {}) });
+  } = useDynamicPricing({ 
+    productId, 
+    selectedChannelId: selectedChannel,
+    selectedChannelType: selectedChannelType,
+    onSave: onSave || (() => {}) 
+  });
 
   const {
     channelGroups,
