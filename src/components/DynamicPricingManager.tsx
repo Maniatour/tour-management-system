@@ -30,7 +30,7 @@ interface DynamicPricingManagerProps {
 }
 
 // 채널 타입 정의
-type ChannelType = 'OTA' | 'Self' | 'Partner';
+type ChannelType = 'OTA' | 'Self';
 
 // 초이스 조합 타입 정의
 interface ChoiceCombination {
@@ -1114,11 +1114,8 @@ export default function DynamicPricingManager({
         // OTA: type 컬럼이 'OTA'인 항목만 (대소문자 구별 없이)
         return channel.type && channel.type.toLowerCase() === 'ota';
       } else if (type === 'Self') {
-        // Self: OTA가 아닌 모든 항목
-        return !channel.type || channel.type.toLowerCase() !== 'ota';
-      } else if (type === 'Partner') {
-        // Partner: Partner 타입인 항목 (현재는 사용하지 않지만 유지)
-        return channel.type && channel.type.toLowerCase() === 'partner';
+        // Self: self와 partner 타입을 모두 포함 (자체 채널로 통합)
+        return channel.type && (channel.type.toLowerCase() === 'self' || channel.type.toLowerCase() === 'partner');
       }
       return false;
     });
@@ -1492,6 +1489,28 @@ export default function DynamicPricingManager({
       return
     }
 
+    // 자체 채널(self + partner)이 포함된 경우 통합 처리
+    const selfChannels = channelsToSave.filter(channelId => {
+      const channel = channels.find(c => c.id === channelId);
+      return channel && (channel.type?.toLowerCase() === 'self' || channel.type?.toLowerCase() === 'partner');
+    });
+
+    const otaChannels = channelsToSave.filter(channelId => {
+      const channel = channels.find(c => c.id === channelId);
+      return channel && channel.type?.toLowerCase() === 'ota';
+    });
+
+    // 자체 채널이 여러 개 선택된 경우 첫 번째 자체 채널만 사용하고 나머지는 동일한 가격으로 저장
+    const channelsToSaveProcessed = [...otaChannels];
+    if (selfChannels.length > 0) {
+      channelsToSaveProcessed.push(selfChannels[0]); // 첫 번째 자체 채널만 추가
+    }
+    
+    if (channelsToSaveProcessed.length === 0) {
+      setSaveMessage('채널을 선택해주세요.')
+      return
+    }
+
     setSaving(true)
     setSaveMessage('')
 
@@ -1528,21 +1547,26 @@ export default function DynamicPricingManager({
       });
       
       for (const channel of activeChannels) {
-        // 선택된 요일들에 대해 각각 가격 규칙 생성
-        for (const dayOfWeek of pricingConfig.selected_weekdays) {
-          // 시작일부터 종료일까지의 모든 날짜에 대해 가격 규칙 생성
-          const startDate = new Date(pricingConfig.start_date)
-          const endDate = new Date(pricingConfig.end_date)
-          
-          for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
-            // 해당 날짜가 선택된 요일인지 확인
-            if (date.getDay() === dayOfWeek) {
-              const rule: CreatePricingRuleDto = {
-                product_id: productId,
-                channel_id: channel.id,
-                rule_name: `${channel.name} ${DAY_NAMES[dayOfWeek]} 가격`,
-                start_date: date.toISOString().split('T')[0],
-                end_date: date.toISOString().split('T')[0],
+        // 자체 채널인 경우 모든 자체 채널에 동일한 가격 적용
+        const isSelfChannel = channel.type?.toLowerCase() === 'self' || channel.type?.toLowerCase() === 'partner';
+        const channelsToProcess = isSelfChannel ? selfChannels.map(id => channels.find(c => c.id === id)!).filter(Boolean) : [channel];
+        
+        for (const targetChannel of channelsToProcess) {
+          // 선택된 요일들에 대해 각각 가격 규칙 생성
+          for (const dayOfWeek of pricingConfig.selected_weekdays) {
+            // 시작일부터 종료일까지의 모든 날짜에 대해 가격 규칙 생성
+            const startDate = new Date(pricingConfig.start_date)
+            const endDate = new Date(pricingConfig.end_date)
+            
+            for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+              // 해당 날짜가 선택된 요일인지 확인
+              if (date.getDay() === dayOfWeek) {
+                const rule: CreatePricingRuleDto = {
+                  product_id: productId,
+                  channel_id: targetChannel.id,
+                  rule_name: `${targetChannel.name} ${DAY_NAMES[dayOfWeek]} 가격`,
+                  start_date: date.toISOString().split('T')[0],
+                  end_date: date.toISOString().split('T')[0],
                 weekday_pricing: [{
                   day_of_week: dayOfWeek,
                   adult_price: pricingConfig.adult_price,
@@ -1700,7 +1724,14 @@ export default function DynamicPricingManager({
 
       // 7. 성공 메시지
       const channelNames = activeChannels.map(c => c.name).join(', ');
-      setSaveMessage(`${channelNames} 채널의 가격 정보가 성공적으로 저장되었습니다!`)
+      const selfChannelCount = selfChannels.length;
+      let successMessage = `${channelNames} 채널의 가격 정보가 성공적으로 저장되었습니다!`;
+      
+      if (selfChannelCount > 1) {
+        successMessage += ` (자체 채널 ${selfChannelCount}개에 동일한 가격이 적용되었습니다)`;
+      }
+      
+      setSaveMessage(successMessage)
       setTimeout(() => setSaveMessage(''), 3000)
 
       // 6. onSave 콜백 호출 (부모 컴포넌트에 알림)
@@ -1854,53 +1885,11 @@ export default function DynamicPricingManager({
           </div>
         </div>
         
-        {/* 채널 타입 탭 - 모바일에서는 숨김 */}
-        <div className="hidden lg:flex space-x-1 mb-4 bg-gray-100 p-1 rounded-lg">
-          <button
-            type="button"
-            onClick={() => setSelectedChannelType('OTA')}
-            className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              selectedChannelType === 'OTA'
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <Globe className="h-4 w-4 mr-1" />
-            OTA
-            <span className="ml-1 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
-              {getChannelsByType('OTA').length}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedChannelType('Self')}
-            className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              selectedChannelType === 'Self'
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <Users className="h-4 w-4 mr-1" />
-            Self
-            <span className="ml-1 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
-              {getChannelsByType('Self').length}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedChannelType('Partner')}
-            className={`flex-1 flex items-center justify-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-              selectedChannelType === 'Partner'
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <Building className="h-4 w-4 mr-1" />
-            Partner
-            <span className="ml-1 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
-              {getChannelsByType('Partner').length}
-            </span>
-          </button>
+        {/* 채널 목록 - 탭 없이 모든 채널 표시 */}
+        <div className="hidden lg:block mb-4">
+          <div className="text-sm text-gray-600 mb-2">
+            OTA 채널과 자체 채널을 선택하여 가격을 설정하세요
+          </div>
         </div>
         
         {isLoadingChannels ? (
@@ -1909,88 +1898,169 @@ export default function DynamicPricingManager({
              <span className="ml-2 text-gray-600">Loading channels...</span>
            </div>
          ) : (
-           <div className="space-y-1 hidden lg:block">
-             {getChannelsByType(selectedChannelType).map(channel => (
-               <div
-                 key={channel.id}
-                 className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
-                   isMultiChannelMode 
-                     ? selectedChannels.includes(channel.id)
-                       ? 'border-blue-500 bg-blue-50'
-                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                     : selectedChannel === channel.id
-                       ? 'border-blue-500 bg-blue-50'
-                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                 }`}
-                 onClick={() => {
-                   if (isMultiChannelMode) {
-                     const newSelectedChannels = selectedChannels.includes(channel.id) 
-                       ? selectedChannels.filter(id => id !== channel.id)
-                       : [...selectedChannels, channel.id];
-                     
-                     setSelectedChannels(newSelectedChannels);
-                     
-                     // 다중 선택 모드에서 첫 번째 선택된 채널의 가격 설정 로드
-                     if (newSelectedChannels.length > 0 && dynamicPricingData.length > 0) {
-                       const firstChannelId = newSelectedChannels[0];
-                       const channelPricing = dynamicPricingData.find(data => 
-                         data.channel_id === firstChannelId
-                       );
-                       
-                       if (channelPricing) {
-                         console.log(`다중 선택 모드에서 첫 번째 채널 ${firstChannelId}의 가격 설정 로드:`, channelPricing);
-                         setPricingConfig(prev => ({
-                           ...prev,
-                           adult_price: channelPricing.adult_price || 0,
-                           child_price: channelPricing.child_price || 0,
-                           infant_price: channelPricing.infant_price || 0,
-                           commission_percent: channelPricing.commission_percent || 0,
-                           markup_amount: channelPricing.markup_amount || 0,
-                           coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
-                           is_sale_available: channelPricing.is_sale_available || false,
-                           not_included_price: channelPricing.not_included_price || 0,
-                           required_options: []
-                         }));
+           <div className="space-y-4 hidden lg:block">
+             {/* OTA 채널 섹션 */}
+             <div>
+               <div className="flex items-center mb-2">
+                 <Globe className="h-4 w-4 mr-2 text-blue-600" />
+                 <h4 className="text-sm font-medium text-gray-900">OTA 채널</h4>
+                 <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+                   {getChannelsByType('OTA').length}개
+                 </span>
+               </div>
+               <div className="space-y-1">
+                 {getChannelsByType('OTA').map(channel => (
+                   <div
+                     key={channel.id}
+                     className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
+                       isMultiChannelMode 
+                         ? selectedChannels.includes(channel.id)
+                           ? 'border-blue-500 bg-blue-50'
+                           : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                         : selectedChannel === channel.id
+                           ? 'border-blue-500 bg-blue-50'
+                           : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                     }`}
+                     onClick={() => {
+                       if (isMultiChannelMode) {
+                         const newSelectedChannels = selectedChannels.includes(channel.id) 
+                           ? selectedChannels.filter(id => id !== channel.id)
+                           : [...selectedChannels, channel.id];
+                         
+                         setSelectedChannels(newSelectedChannels);
+                         
+                         // 다중 선택 모드에서 첫 번째 선택된 채널의 가격 설정 로드
+                         if (newSelectedChannels.length > 0 && dynamicPricingData.length > 0) {
+                           const firstChannelId = newSelectedChannels[0];
+                           const channelPricing = dynamicPricingData.find(data => 
+                             data.channel_id === firstChannelId
+                           );
+                           
+                           if (channelPricing) {
+                             console.log(`다중 선택 모드에서 첫 번째 채널 ${firstChannelId}의 가격 설정 로드:`, channelPricing);
+                             setPricingConfig(prev => ({
+                               ...prev,
+                               adult_price: channelPricing.adult_price || 0,
+                               child_price: channelPricing.child_price || 0,
+                               infant_price: channelPricing.infant_price || 0,
+                               commission_percent: channelPricing.commission_percent || 0,
+                               markup_amount: channelPricing.markup_amount || 0,
+                               coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
+                               is_sale_available: channelPricing.is_sale_available || false,
+                               not_included_price: channelPricing.not_included_price || 0,
+                               required_options: []
+                             }));
+                           }
+                         }
+                       } else {
+                         handleChannelSelect(channel.id);
                        }
-                     }
-                   } else {
-                     handleChannelSelect(channel.id);
-                   }
-                 }}
-               >
-                 {/* 체크박스 (다중 선택 모드일 때만) */}
-                 {isMultiChannelMode && (
-                   <input
-                     type="checkbox"
-                     checked={selectedChannels.includes(channel.id)}
-                     onChange={() => {}} // onClick에서 처리
-                     className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                   />
-                 )}
-                 
-                 {/* 채널 이름 */}
-                 <div className={`text-sm font-medium ${
-                   isMultiChannelMode
-                     ? selectedChannels.includes(channel.id) ? 'text-blue-700' : 'text-gray-900'
-                     : selectedChannel === channel.id ? 'text-blue-700' : 'text-gray-900'
-                 }`}>
-                   {channel.name}
-                 </div>
-                 
+                     }}
+                   >
+                     {/* 체크박스 (다중 선택 모드일 때만) */}
+                     {isMultiChannelMode && (
+                       <input
+                         type="checkbox"
+                         checked={selectedChannels.includes(channel.id)}
+                         onChange={() => {}} // onClick에서 처리
+                         className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                       />
+                     )}
+                     
+                     {/* 채널 이름 */}
+                     <div className={`text-sm font-medium ${
+                       isMultiChannelMode
+                         ? selectedChannels.includes(channel.id) ? 'text-blue-700' : 'text-gray-900'
+                         : selectedChannel === channel.id ? 'text-blue-700' : 'text-gray-900'
+                     }`}>
+                       {channel.name}
+                     </div>
+                   </div>
+                 ))}
                </div>
-             ))}
-             
-             {/* 해당 타입에 채널이 없을 때 */}
-             {getChannelsByType(selectedChannelType).length === 0 && (
-               <div className="text-center py-8 text-gray-500">
-                 <div className="text-4xl mb-2">
-                   {selectedChannelType === 'OTA' && <Globe className="h-8 w-8 mx-auto text-gray-300" />}
-                   {selectedChannelType === 'Self' && <Users className="h-8 w-8 mx-auto text-gray-300" />}
-                   {selectedChannelType === 'Partner' && <Building className="h-8 w-8 mx-auto text-gray-300" />}
-                 </div>
-                 <p className="text-sm">해당 타입의 채널이 없습니다</p>
+             </div>
+
+             {/* 자체 채널 섹션 */}
+             <div>
+               <div className="flex items-center mb-2">
+                 <Users className="h-4 w-4 mr-2 text-green-600" />
+                 <h4 className="text-sm font-medium text-gray-900">자체 채널</h4>
+                 <span className="ml-2 text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">
+                   {getChannelsByType('Self').length}개
+                 </span>
                </div>
-             )}
+               <div className="space-y-1">
+                 {getChannelsByType('Self').map(channel => (
+                   <div
+                     key={channel.id}
+                     className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
+                       isMultiChannelMode 
+                         ? selectedChannels.includes(channel.id)
+                           ? 'border-green-500 bg-green-50'
+                           : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                         : selectedChannel === channel.id
+                           ? 'border-green-500 bg-green-50'
+                           : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                     }`}
+                     onClick={() => {
+                       if (isMultiChannelMode) {
+                         const newSelectedChannels = selectedChannels.includes(channel.id) 
+                           ? selectedChannels.filter(id => id !== channel.id)
+                           : [...selectedChannels, channel.id];
+                         
+                         setSelectedChannels(newSelectedChannels);
+                         
+                         // 다중 선택 모드에서 첫 번째 선택된 채널의 가격 설정 로드
+                         if (newSelectedChannels.length > 0 && dynamicPricingData.length > 0) {
+                           const firstChannelId = newSelectedChannels[0];
+                           const channelPricing = dynamicPricingData.find(data => 
+                             data.channel_id === firstChannelId
+                           );
+                           
+                           if (channelPricing) {
+                             console.log(`다중 선택 모드에서 첫 번째 채널 ${firstChannelId}의 가격 설정 로드:`, channelPricing);
+                             setPricingConfig(prev => ({
+                               ...prev,
+                               adult_price: channelPricing.adult_price || 0,
+                               child_price: channelPricing.child_price || 0,
+                               infant_price: channelPricing.infant_price || 0,
+                               commission_percent: channelPricing.commission_percent || 0,
+                               markup_amount: channelPricing.markup_amount || 0,
+                               coupon_percentage_discount: channelPricing.coupon_percentage_discount || 0,
+                               is_sale_available: channelPricing.is_sale_available || false,
+                               not_included_price: channelPricing.not_included_price || 0,
+                               required_options: []
+                             }));
+                           }
+                         }
+                       } else {
+                         handleChannelSelect(channel.id);
+                       }
+                     }}
+                   >
+                     {/* 체크박스 (다중 선택 모드일 때만) */}
+                     {isMultiChannelMode && (
+                       <input
+                         type="checkbox"
+                         checked={selectedChannels.includes(channel.id)}
+                         onChange={() => {}} // onClick에서 처리
+                         className="mr-2 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                       />
+                     )}
+                     
+                     {/* 채널 이름 */}
+                     <div className={`text-sm font-medium ${
+                       isMultiChannelMode
+                         ? selectedChannels.includes(channel.id) ? 'text-green-700' : 'text-gray-900'
+                         : selectedChannel === channel.id ? 'text-green-700' : 'text-gray-900'
+                     }`}>
+                       {channel.name}
+                       <span className="ml-2 text-xs text-gray-500">({channel.type})</span>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+             </div>
            </div>
          )}
         
