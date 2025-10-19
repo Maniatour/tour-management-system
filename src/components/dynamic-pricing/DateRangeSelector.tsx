@@ -89,6 +89,12 @@ export const DateRangeSelector = memo(function DateRangeSelector({
     }
   }, [startDate, endDate, selectedDays, onDateRangeSelect]);
 
+  // 날짜 포맷팅 함수 (시간대 변환 없이)
+  const formatDate = useCallback((dateString: string) => {
+    const [year, month, day] = dateString.split('-');
+    return `${year}. ${parseInt(month).toString().padStart(2, '0')}. ${parseInt(day).toString().padStart(2, '0')}.`;
+  }, []);
+
   // 월 변경
   const changeMonth = useCallback((direction: 'prev' | 'next') => {
     setCurrentMonth(prev => {
@@ -347,8 +353,8 @@ export const DateRangeSelector = memo(function DateRangeSelector({
           <div className="text-sm text-blue-600">
             {startDate && (
               <span>
-                {new Date(startDate).toLocaleDateString('ko-KR')}
-                {endDate ? ` ~ ${new Date(endDate).toLocaleDateString('ko-KR')}` : ' (종료일 선택 중...)'}
+                {formatDate(startDate)}
+                {endDate ? ` ~ ${formatDate(endDate)}` : ' (종료일 선택 중...)'}
               </span>
             )}
           </div>
