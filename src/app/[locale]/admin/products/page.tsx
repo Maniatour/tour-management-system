@@ -26,7 +26,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('all')
-  const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [selectedStatus, setSelectedStatus] = useState<string>('active')
   const [categories, setCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
@@ -46,7 +46,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
       const { data, error } = await supabase
         .from('products')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('name_ko', { ascending: true })
 
       if (error) {
         console.error('Products 데이터 조회 오류:', error)
@@ -187,13 +187,18 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     const matchesStatus = selectedStatus === 'all' || (product as any).status === selectedStatus
     
     return matchesSearch && matchesCategory && matchesSubCategory && matchesStatus
+  }).sort((a, b) => {
+    // name_ko가 있는 경우 name_ko로 정렬, 없는 경우 name으로 정렬
+    const nameA = a.name_ko || a.name || ''
+    const nameB = b.name_ko || b.name || ''
+    return nameA.localeCompare(nameB, 'ko', { numeric: true })
   })
 
   const clearFilters = () => {
     setSearchTerm('')
     setSelectedCategory('all')
     setSelectedSubCategory('all')
-    setSelectedStatus('all')
+    setSelectedStatus('active')
     setSubCategories(allSubCategories) // 서브카테고리를 전체 목록으로 복원
   }
 
