@@ -119,7 +119,21 @@ export const SaleStatusModal = memo(function SaleStatusModal({
             <DateRangeSelector
               initialSelection={dateRangeSelection}
               onDateRangeSelect={handleDateRangeSelection}
+              saleStatus={saleStatus}
+              showStatusOnCalendar={true}
             />
+            
+            {/* 상태 범례 */}
+            <div className="flex items-center space-x-4 text-sm text-gray-600">
+              <div className="flex items-center space-x-1">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span>판매중</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                <span>마감</span>
+              </div>
+            </div>
           </div>
 
           {/* 선택된 날짜 미리보기 */}

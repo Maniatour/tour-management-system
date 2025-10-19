@@ -5,11 +5,15 @@ import { DateRangeSelection, DAY_NAMES } from '@/lib/types/dynamic-pricing';
 interface DateRangeSelectorProps {
   onDateRangeSelect: (selection: DateRangeSelection) => void;
   initialSelection?: DateRangeSelection;
+  saleStatus?: 'sale' | 'closed';
+  showStatusOnCalendar?: boolean;
 }
 
 export const DateRangeSelector = memo(function DateRangeSelector({
   onDateRangeSelect,
-  initialSelection
+  initialSelection,
+  saleStatus = 'sale',
+  showStatusOnCalendar = false
 }: DateRangeSelectorProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [startDate, setStartDate] = useState<string>(initialSelection?.startDate || '');
@@ -222,7 +226,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
                 <button
                   key={index}
                   onClick={() => handleDateClick(date)}
-                  className={`h-8 text-sm rounded transition-colors ${
+                  className={`h-8 text-sm rounded transition-colors relative ${
                     !isCurrentMonth
                       ? 'text-gray-300 cursor-not-allowed'
                       : isStartDate || isEndDate
@@ -236,6 +240,12 @@ export const DateRangeSelector = memo(function DateRangeSelector({
                   disabled={!isCurrentMonth}
                 >
                   {date.getDate()}
+                  {/* 판매 상태 표시 */}
+                  {showStatusOnCalendar && isCurrentMonth && (
+                    <div className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${
+                      saleStatus === 'sale' ? 'bg-green-500' : 'bg-red-500'
+                    }`} />
+                  )}
                 </button>
               );
             })}
