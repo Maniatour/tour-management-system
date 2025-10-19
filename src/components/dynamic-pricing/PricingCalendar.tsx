@@ -55,6 +55,19 @@ export const PricingCalendar = memo(function PricingCalendar({
     };
   };
 
+  // 채널 ID 매핑 함수
+  const mapChannelId = (channelId: string): string => {
+    const channelMapping: Record<string, string> = {
+      'Partner5': 'B0004', // GetYourGuide
+      'Partner1': 'B0001', // 기타 파트너 채널들
+      'Partner2': 'B0002',
+      'Partner3': 'B0003',
+      // 필요에 따라 추가 매핑
+    };
+    
+    return channelMapping[channelId] || channelId;
+  };
+
   // 선택된 초이스의 가격 정보 가져오기
   const getChoicePriceForDate = (date: string) => {
     if (!selectedChoice) return null;
@@ -76,9 +89,13 @@ export const PricingCalendar = memo(function PricingCalendar({
     let rule: SimplePricingRule | undefined;
     
     if (selectedChannelId) {
+      // 채널 ID 매핑 적용
+      const mappedChannelId = mapChannelId(selectedChannelId);
+      console.log(`Mapped channel ID: ${selectedChannelId} -> ${mappedChannelId}`);
+      
       // 특정 채널이 선택된 경우
-      rule = dayData.rules.find(r => r.channel_id === selectedChannelId);
-      console.log(`Looking for channel ${selectedChannelId} on ${date}:`, rule);
+      rule = dayData.rules.find(r => r.channel_id === mappedChannelId);
+      console.log(`Looking for channel ${mappedChannelId} on ${date}:`, rule);
       
       // 만약 정확한 채널 ID를 찾지 못했다면, 모든 규칙을 확인
       if (!rule) {
