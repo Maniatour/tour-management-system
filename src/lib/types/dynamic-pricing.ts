@@ -114,6 +114,51 @@ export interface CreatePricingRuleDto {
   required_option_pricing: CreateRequiredOptionPricingDto[];
 }
 
+// 간단한 가격 규칙 DTO (기존 코드 호환용)
+export interface SimplePricingRuleDto {
+  product_id: string;
+  channel_id: string;
+  date: string;
+  adult_price: number;
+  child_price: number;
+  infant_price: number;
+  commission_percent: number;
+  markup_amount: number;
+  coupon_percent: number; // coupon_percentage_discount 대신 coupon_percent 사용
+  is_sale_available: boolean;
+  not_included_price?: number;
+  markup_percent?: number;
+  choices_pricing?: Record<string, {
+    adult_price: number;
+    child_price: number;
+    infant_price: number;
+  }>;
+}
+
+// 간단한 가격 규칙 (기존 코드 호환용)
+export interface SimplePricingRule {
+  id: string;
+  product_id: string;
+  channel_id: string;
+  date: string;
+  adult_price: number;
+  child_price: number;
+  infant_price: number;
+  commission_percent: number;
+  markup_amount: number;
+  coupon_percent: number; // coupon_percentage_discount 대신 coupon_percent 사용
+  is_sale_available: boolean;
+  not_included_price?: number;
+  markup_percent?: number;
+  options_pricing?: Record<string, {
+    adult_price: number;
+    child_price: number;
+    infant_price: number;
+  }>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CreateWeekdayPricingDto {
   day_of_week: number;
   adult_price: number;
@@ -233,3 +278,67 @@ export const DAY_COLORS: Record<number, string> = {
   5: 'text-gray-600', // 금요일
   6: 'text-blue-600'  // 토요일
 };
+
+// 실시간 가격 계산 결과
+export interface RealTimePriceCalculation {
+  basePrice: {
+    adult: number;
+    child: number;
+    infant: number;
+  };
+  markupPrice: {
+    adult: number;
+    child: number;
+    infant: number;
+  };
+  discountPrice: {
+    adult: number;
+    child: number;
+    infant: number;
+  };
+  finalPrice: {
+    adult: number;
+    child: number;
+    infant: number;
+  };
+  commission: {
+    adult: number;
+    child: number;
+    infant: number;
+  };
+  netPrice: {
+    adult: number;
+    child: number;
+    infant: number;
+  };
+}
+
+// 날짜 범위 선택
+export interface DateRangeSelection {
+  startDate: string;
+  endDate: string;
+  selectedDays: number[]; // 0=일요일, 1=월요일, ..., 6=토요일
+}
+
+// 초이스 가격 정보
+export interface ChoicePricing {
+  choiceId: string;
+  choiceName: string;
+  adult_price: number;
+  child_price: number;
+  infant_price: number;
+}
+
+// 가격 설정 상태
+export interface PricingConfig {
+  adult_price: number;
+  child_price: number;
+  infant_price: number;
+  commission_percent: number;
+  markup_amount: number;
+  markup_percent: number;
+  coupon_percent: number;
+  is_sale_available: boolean;
+  not_included_price: number;
+  choicePricing: Record<string, ChoicePricing>;
+}

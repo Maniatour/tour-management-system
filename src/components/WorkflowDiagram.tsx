@@ -246,7 +246,7 @@ const SVGNode = ({
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    onDoubleClick?.(step, e)
+    onDoubleClick?.(step)
   }
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -476,10 +476,8 @@ export default function WorkflowDiagram({ steps, workflowName, workflowId, onClo
   }, [mode, selectedNodes, isDoubleClick])
 
   // 노드 더블클릭 핸들러 (두 번 클릭 - 편집)
-  const handleNodeDoubleClick = useCallback((step: WorkflowStep, e: React.MouseEvent) => {
+  const handleNodeDoubleClick = useCallback((step: WorkflowStep) => {
     console.log('Node double clicked:', step.step_name_ko, 'mode:', mode)
-    e.preventDefault()
-    e.stopPropagation()
     setIsDoubleClick(true)
     setEditingStep(step)
     setShowEditModal(true)

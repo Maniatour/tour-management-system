@@ -3,7 +3,6 @@
 import React from 'react'
 import { Star, MapPin, Users, Calendar, ArrowRight, Play, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
-import { useAuth } from '@/contexts/AuthContext'
 
 interface FeaturedProduct {
   id: string
@@ -17,8 +16,6 @@ interface FeaturedProduct {
 }
 
 export default function HomePage({ params }: { params: Promise<{ locale: string }> }) {
-  const { user, userRole, loading } = useAuth()
-  
   // 자동 리다이렉트 기능 제거 - 사용자가 직접 메뉴에서 선택하도록 함
   const featuredProducts: FeaturedProduct[] = [
     {
