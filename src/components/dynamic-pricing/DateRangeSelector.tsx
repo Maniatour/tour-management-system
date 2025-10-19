@@ -9,6 +9,7 @@ interface DateRangeSelectorProps {
   showStatusOnCalendar?: boolean;
   onDateStatusToggle?: (date: string, status: 'sale' | 'closed') => void;
   dateStatusMap?: Record<string, 'sale' | 'closed'>;
+  disableDateSelection?: boolean;
 }
 
 export const DateRangeSelector = memo(function DateRangeSelector({
@@ -17,7 +18,8 @@ export const DateRangeSelector = memo(function DateRangeSelector({
   saleStatus = 'sale',
   showStatusOnCalendar = false,
   onDateStatusToggle,
-  dateStatusMap = {}
+  dateStatusMap = {},
+  disableDateSelection = false
 }: DateRangeSelectorProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [startDate, setStartDate] = useState<string>(initialSelection?.startDate || '');
@@ -46,6 +48,8 @@ export const DateRangeSelector = memo(function DateRangeSelector({
 
   // 날짜 클릭 핸들러 (달력 모드)
   const handleDateClick = useCallback((date: Date) => {
+    if (disableDateSelection) return; // 날짜 선택 비활성화 시 클릭 무시
+    
     const dateString = date.toISOString().split('T')[0];
     
     if (!isSelectingRange) {
@@ -71,7 +75,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
         setEndDate('');
       }
     }
-  }, [isSelectingRange, startDate, selectedDays, onDateRangeSelect]);
+  }, [isSelectingRange, startDate, selectedDays, onDateRangeSelect, disableDateSelection]);
 
   // 입력 모드에서 날짜 변경 핸들러
   const handleInputDateChange = useCallback(() => {
@@ -250,6 +254,8 @@ export const DateRangeSelector = memo(function DateRangeSelector({
                       ? dateStatus === 'sale'
                         ? 'bg-green-50 text-green-800 hover:bg-green-100'
                         : 'bg-red-50 text-red-800 hover:bg-red-100'
+                      : disableDateSelection
+                      ? 'text-gray-700 hover:bg-gray-50'
                       : isStartDate || isEndDate
                       ? 'bg-blue-500 text-white font-semibold'
                       : isInRange

@@ -132,6 +132,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
               showStatusOnCalendar={true}
               onDateStatusToggle={handleDateStatusToggle}
               dateStatusMap={dateStatusMap}
+              disableDateSelection={true}
             />
             
             {/* 상태 범례 */}
