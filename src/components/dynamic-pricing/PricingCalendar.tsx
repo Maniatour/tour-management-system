@@ -60,7 +60,10 @@ export const PricingCalendar = memo(function PricingCalendar({
     if (!selectedChoice) return null;
     
     const dayData = dynamicPricingData.find(d => d.date === date);
-    if (!dayData || dayData.rules.length === 0) return null;
+    if (!dayData || dayData.rules.length === 0) {
+      console.log(`No data found for date ${date}`);
+      return null;
+    }
     
     // 선택된 채널의 규칙 찾기
     let rule: SimplePricingRule | undefined;
@@ -68,6 +71,7 @@ export const PricingCalendar = memo(function PricingCalendar({
     if (selectedChannelId) {
       // 특정 채널이 선택된 경우
       rule = dayData.rules.find(r => r.channel_id === selectedChannelId);
+      console.log(`Looking for channel ${selectedChannelId} on ${date}:`, rule);
     } else if (selectedChannelType === 'SELF') {
       // 자체 채널 타입이 선택된 경우, 첫 번째 자체 채널 규칙 사용
       rule = dayData.rules.find(r => {
@@ -75,9 +79,13 @@ export const PricingCalendar = memo(function PricingCalendar({
         const channelType = r.channel_id?.startsWith('B') ? 'SELF' : 'OTA';
         return channelType === 'SELF';
       });
+      console.log(`Looking for SELF channel on ${date}:`, rule);
     }
     
-    if (!rule) return null;
+    if (!rule) {
+      console.log(`No rule found for date ${date}`);
+      return null;
+    }
     
     // choices_pricing에서 선택된 초이스의 가격 정보 가져오기
     let choicePricing: any = null;
@@ -88,26 +96,37 @@ export const PricingCalendar = memo(function PricingCalendar({
         ? JSON.parse(rule.choices_pricing) 
         : rule.choices_pricing;
       
+      console.log(`Choices data for ${date}:`, choicesData);
+      console.log(`Looking for choice: ${selectedChoice}`);
+      
       // canyon_choice.options에서 선택된 초이스 찾기
       if (choicesData.canyon_choice?.options) {
         choicePricing = choicesData.canyon_choice.options[selectedChoice];
+        console.log(`Found in canyon_choice.options:`, choicePricing);
       }
       
       // 직접적인 구조도 확인
       if (!choicePricing && choicesData[selectedChoice]) {
         choicePricing = choicesData[selectedChoice];
+        console.log(`Found in direct structure:`, choicePricing);
       }
     }
     
-    if (!choicePricing) return null;
+    if (!choicePricing) {
+      console.log(`No choice pricing found for ${selectedChoice} on ${date}`);
+      return null;
+    }
     
-    return calculateChoicePrice(
+    const calculatedPrice = calculateChoicePrice(
       choicePricing.adult_price,
       rule.markup_amount || 0,
       rule.markup_percent || 0,
       rule.coupon_percent || 0,
       rule.commission_percent || 0
     );
+    
+    console.log(`Calculated price for ${selectedChoice} on ${date}:`, calculatedPrice);
+    return calculatedPrice;
   };
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
