@@ -52,9 +52,11 @@ export function useDynamicPricing({ productId, onSave }: UseDynamicPricingProps)
     }
   }, [productId]);
 
-  const savePricingRule = useCallback(async (ruleData: SimplePricingRuleDto) => {
+  const savePricingRule = useCallback(async (ruleData: SimplePricingRuleDto, showMessage: boolean = false) => {
     setSaving(true);
-    setSaveMessage('');
+    if (showMessage) {
+      setSaveMessage('');
+    }
 
     try {
       const { data, error } = await supabase
@@ -65,17 +67,22 @@ export function useDynamicPricing({ productId, onSave }: UseDynamicPricingProps)
 
       if (error) throw error;
 
-      setSaveMessage('가격 규칙이 성공적으로 저장되었습니다.');
+      if (showMessage) {
+        setSaveMessage('가격 규칙이 성공적으로 저장되었습니다.');
+        setTimeout(() => setSaveMessage(''), 3000);
+      }
+      
       await loadDynamicPricingData();
       
       if (onSave && data) {
         onSave(data);
       }
-
-      setTimeout(() => setSaveMessage(''), 3000);
     } catch (error) {
       console.error('가격 규칙 저장 실패:', error);
-      setSaveMessage('가격 규칙 저장에 실패했습니다.');
+      if (showMessage) {
+        setSaveMessage('가격 규칙 저장에 실패했습니다.');
+      }
+      throw error; // 에러를 다시 던져서 상위에서 처리할 수 있도록 함
     } finally {
       setSaving(false);
     }
@@ -102,12 +109,18 @@ export function useDynamicPricing({ productId, onSave }: UseDynamicPricingProps)
     }
   }, [productId, loadDynamicPricingData]);
 
+  const setMessage = useCallback((message: string) => {
+    setSaveMessage(message);
+    setTimeout(() => setSaveMessage(''), 3000);
+  }, []);
+
   return {
     saving,
     saveMessage,
     dynamicPricingData,
     loadDynamicPricingData,
     savePricingRule,
-    deletePricingRule
+    deletePricingRule,
+    setMessage
   };
 }

@@ -54,7 +54,8 @@ export default function DynamicPricingManager({
     saveMessage,
     dynamicPricingData,
     savePricingRule,
-    deletePricingRule
+    deletePricingRule,
+    setMessage
   } = useDynamicPricing({ productId, onSave: onSave || (() => {}) });
 
   const {
@@ -248,13 +249,17 @@ export default function DynamicPricingManager({
       return;
     }
 
+    // 전체 저장 시작
+    const totalRules = channelIds.length * selectedDates.length;
+    let savedCount = 0;
+
     for (const channelId of channelIds) {
       for (const date of selectedDates) {
         const ruleData: SimplePricingRuleDto = {
-                  product_id: productId,
+          product_id: productId,
           channel_id: channelId,
           date,
-                  adult_price: pricingConfig.adult_price,
+          adult_price: pricingConfig.adult_price,
           child_price: pricingConfig.child_price,
           infant_price: pricingConfig.infant_price,
           commission_percent: pricingConfig.commission_percent,
@@ -264,23 +269,44 @@ export default function DynamicPricingManager({
           not_included_price: (pricingConfig as any).not_included_price || 0,
           markup_percent: (pricingConfig as any).markup_percent || 0,
           choices_pricing: Object.keys(calculationConfig.choicePricing).length > 0 
-            ? Object.fromEntries(
-                Object.entries(calculationConfig.choicePricing).map(([choiceId, choice]) => [
-                  choiceId,
-                  {
-                adult_price: choice.adult_price,
-                child_price: choice.child_price,
-                infant_price: choice.infant_price
-                  }
-                ])
-              )
+            ? {
+                canyon_choice: {
+                  name: "Canyon Choice",
+                  name_ko: "캐년 선택",
+                  options: Object.fromEntries(
+                    Object.entries(calculationConfig.choicePricing).map(([choiceId, choice]) => [
+                      choiceId.replace('canyon_choice_', ''), // canyon_choice_ 접두사 제거
+                      {
+                        name: choiceId.includes('antelope_x') ? "Antelope X Canyon" : "Lower Antelope Canyon",
+                        name_ko: choiceId.includes('antelope_x') ? "앤텔로프 X 캐년" : "로어 앤텔로프 캐년",
+                        adult_price: choice.adult_price,
+                        child_price: choice.child_price,
+                        infant_price: choice.infant_price
+                      }
+                    ])
+                  )
+                }
+              }
             : {} as Record<string, { adult_price: number; child_price: number; infant_price: number; }>
         };
 
-        await savePricingRule(ruleData);
+        try {
+          await savePricingRule(ruleData, false); // 개별 메시지 표시 안함
+          savedCount++;
+        } catch (error) {
+          console.error('가격 규칙 저장 실패:', error);
+          // 개별 저장 실패 시 전체 중단하지 않고 계속 진행
+        }
       }
     }
-  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule]);
+
+    // 전체 저장 완료 후 메시지 표시
+    if (savedCount === totalRules) {
+      setMessage(`전체 ${totalRules}개 가격 규칙이 성공적으로 저장되었습니다.`);
+    } else {
+      setMessage(`${savedCount}/${totalRules}개 가격 규칙이 저장되었습니다.`);
+    }
+  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, setMessage]);
 
   // 규칙 편집 핸들러
   const handleEditRule = useCallback((rule: SimplePricingRule) => {
