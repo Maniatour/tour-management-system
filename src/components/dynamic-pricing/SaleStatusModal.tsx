@@ -22,6 +22,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
 }: SaleStatusModalProps) {
   const [selectedDates, setSelectedDates] = useState<Date[]>(initialDates);
   const [saleStatus, setSaleStatus] = useState<'sale' | 'closed'>(initialStatus);
+  const [dateStatusMap, setDateStatusMap] = useState<Record<string, 'sale' | 'closed'>>({});
   const [dateRangeSelection, setDateRangeSelection] = useState<DateRangeSelection>({
     startDate: '',
     endDate: '',
@@ -43,6 +44,14 @@ export const SaleStatusModal = memo(function SaleStatusModal({
       
       setSelectedDates(dates);
     }
+  }, []);
+
+  // 날짜별 상태 토글 핸들러
+  const handleDateStatusToggle = useCallback((date: string, status: 'sale' | 'closed') => {
+    setDateStatusMap(prev => ({
+      ...prev,
+      [date]: status
+    }));
   }, []);
 
   // 저장 핸들러
@@ -121,17 +130,24 @@ export const SaleStatusModal = memo(function SaleStatusModal({
               onDateRangeSelect={handleDateRangeSelection}
               saleStatus={saleStatus}
               showStatusOnCalendar={true}
+              onDateStatusToggle={handleDateStatusToggle}
+              dateStatusMap={dateStatusMap}
             />
             
             {/* 상태 범례 */}
-            <div className="flex items-center space-x-4 text-sm text-gray-600">
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>판매중</span>
+            <div className="space-y-2">
+              <div className="flex items-center space-x-4 text-sm text-gray-600">
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span>판매중</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                  <span>마감</span>
+                </div>
               </div>
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                <span>마감</span>
+              <div className="text-xs text-gray-500">
+                💡 날짜를 더블클릭하여 판매/마감 상태를 토글할 수 있습니다
               </div>
             </div>
           </div>

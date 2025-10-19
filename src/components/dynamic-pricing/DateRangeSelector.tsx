@@ -7,13 +7,17 @@ interface DateRangeSelectorProps {
   initialSelection?: DateRangeSelection;
   saleStatus?: 'sale' | 'closed';
   showStatusOnCalendar?: boolean;
+  onDateStatusToggle?: (date: string, status: 'sale' | 'closed') => void;
+  dateStatusMap?: Record<string, 'sale' | 'closed'>;
 }
 
 export const DateRangeSelector = memo(function DateRangeSelector({
   onDateRangeSelect,
   initialSelection,
   saleStatus = 'sale',
-  showStatusOnCalendar = false
+  showStatusOnCalendar = false,
+  onDateStatusToggle,
+  dateStatusMap = {}
 }: DateRangeSelectorProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [startDate, setStartDate] = useState<string>(initialSelection?.startDate || '');
@@ -30,6 +34,15 @@ export const DateRangeSelector = memo(function DateRangeSelector({
         : [...prev, dayOfWeek].sort()
     );
   }, []);
+
+  // 날짜 더블클릭 핸들러 (판매 상태 토글)
+  const handleDateDoubleClick = useCallback((date: Date) => {
+    if (onDateStatusToggle) {
+      const dateString = date.toISOString().split('T')[0];
+      const newStatus = saleStatus === 'sale' ? 'closed' : 'sale';
+      onDateStatusToggle(dateString, newStatus);
+    }
+  }, [onDateStatusToggle, saleStatus]);
 
   // 날짜 클릭 핸들러 (달력 모드)
   const handleDateClick = useCallback((date: Date) => {
@@ -222,13 +235,21 @@ export const DateRangeSelector = memo(function DateRangeSelector({
               const isInRange = startDate && endDate && dateString >= startDate && dateString <= endDate;
               const isToday = dateString === new Date().toISOString().split('T')[0];
               
+              // 날짜별 상태 확인 (우선순위: 개별 설정 > 전역 설정)
+              const dateStatus = dateStatusMap[dateString] || saleStatus;
+              
               return (
                 <button
                   key={index}
                   onClick={() => handleDateClick(date)}
-                  className={`h-8 text-sm rounded transition-colors relative ${
+                  onDoubleClick={() => handleDateDoubleClick(date)}
+                  className={`h-12 text-sm transition-colors relative border border-gray-200 ${
                     !isCurrentMonth
-                      ? 'text-gray-300 cursor-not-allowed'
+                      ? 'text-gray-300 cursor-not-allowed bg-gray-50'
+                      : showStatusOnCalendar
+                      ? dateStatus === 'sale'
+                        ? 'bg-green-50 text-green-800 hover:bg-green-100'
+                        : 'bg-red-50 text-red-800 hover:bg-red-100'
                       : isStartDate || isEndDate
                       ? 'bg-blue-500 text-white font-semibold'
                       : isInRange
@@ -239,12 +260,20 @@ export const DateRangeSelector = memo(function DateRangeSelector({
                   }`}
                   disabled={!isCurrentMonth}
                 >
-                  {date.getDate()}
-                  {/* 판매 상태 표시 */}
+                  {/* 날짜를 우상단에 배치 */}
+                  <div className="absolute top-1 right-1 text-xs font-medium">
+                    {date.getDate()}
+                  </div>
+                  
+                  {/* 판매 상태 표시 (바탕색으로) */}
                   {showStatusOnCalendar && isCurrentMonth && (
-                    <div className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${
-                      saleStatus === 'sale' ? 'bg-green-500' : 'bg-red-500'
-                    }`} />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className={`text-xs font-medium ${
+                        dateStatus === 'sale' ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {dateStatus === 'sale' ? '판매' : '마감'}
+                      </div>
+                    </div>
                   )}
                 </button>
               );
