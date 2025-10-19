@@ -57,15 +57,18 @@ export const PricingCalendar = memo(function PricingCalendar({
 
   // 채널 ID 매핑 함수
   const mapChannelId = (channelId: string): string => {
+    console.log('mapChannelId 입력:', channelId);
+    
+    // 실제로는 매핑이 필요 없을 수도 있음 - 데이터베이스에서 이미 올바른 ID 사용
+    // 만약 UI에서 다른 ID를 사용한다면 여기서 매핑
     const channelMapping: Record<string, string> = {
-      'Partner5': 'B0004', // GetYourGuide
-      'Partner1': 'B0001', // 기타 파트너 채널들
-      'Partner2': 'B0002',
-      'Partner3': 'B0003',
-      // 필요에 따라 추가 매핑
+      // 'GetYourGuide': 'Partner5', // UI 이름 -> DB ID
+      // 'Partner5': 'Partner5', // 이미 올바른 ID
     };
     
-    return channelMapping[channelId] || channelId;
+    const mappedId = channelMapping[channelId] || channelId;
+    console.log('mapChannelId 출력:', mappedId);
+    return mappedId;
   };
 
   // 선택된 초이스의 가격 정보 가져오기

@@ -48,6 +48,9 @@ export default function DynamicPricingManager({
   // 판매 상태 모달 상태
   const [isSaleStatusModalOpen, setIsSaleStatusModalOpen] = useState(false);
 
+  console.log('DynamicPricingManager: selectedChannel', selectedChannel);
+  console.log('DynamicPricingManager: selectedChannelType', selectedChannelType);
+
   // 커스텀 훅들
   const {
     channelGroups,

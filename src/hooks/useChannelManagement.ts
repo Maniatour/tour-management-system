@@ -66,6 +66,7 @@ export function useChannelManagement() {
         return;
       }
       
+      console.log('로드된 채널 데이터:', data);
       setChannels(data || []);
     } catch (error) {
       console.error('채널 로드 실패:', error);
@@ -83,6 +84,7 @@ export function useChannelManagement() {
   }, []);
 
   const handleChannelSelect = useCallback(async (channelId: string) => {
+    console.log('채널 선택됨:', channelId);
     setSelectedChannel(channelId);
     setSelectedChannelType(''); // 채널 타입 선택 해제
     setIsMultiChannelMode(false);
