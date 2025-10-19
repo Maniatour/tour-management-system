@@ -59,11 +59,18 @@ export const PricingCalendar = memo(function PricingCalendar({
   const getChoicePriceForDate = (date: string) => {
     if (!selectedChoice) return null;
     
+    console.log(`=== Processing date ${date} ===`);
+    console.log(`Selected choice: ${selectedChoice}`);
+    console.log(`Selected channel ID: ${selectedChannelId}`);
+    console.log(`Selected channel type: ${selectedChannelType}`);
+    
     const dayData = dynamicPricingData.find(d => d.date === date);
     if (!dayData || dayData.rules.length === 0) {
       console.log(`No data found for date ${date}`);
       return null;
     }
+    
+    console.log(`Found day data for ${date}:`, dayData);
     
     // 선택된 채널의 규칙 찾기
     let rule: SimplePricingRule | undefined;

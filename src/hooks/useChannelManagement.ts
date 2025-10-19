@@ -67,6 +67,7 @@ export function useChannelManagement() {
       }
       
       setChannels(data || []);
+      console.log('로드된 채널 데이터:', data);
     } catch (error) {
       console.error('채널 로드 실패:', error);
       setChannels([]);
