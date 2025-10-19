@@ -564,9 +564,9 @@ export default function DynamicPricingManager({
                      </div>
                    </div>
 
-              {/* 세일 진행 중 체크박스 */}
+              {/* 판매중 체크박스 */}
               <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                <label className="text-sm font-medium text-gray-700">세일 진행 중</label>
+                <label className="text-sm font-medium text-gray-700">판매중</label>
                                   <input
                   type="checkbox"
                   checked={pricingConfig.is_sale_available}

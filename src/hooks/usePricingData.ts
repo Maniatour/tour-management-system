@@ -48,7 +48,7 @@ export function usePricingData(productId: string) {
     commission_percent: 0,
     markup_amount: 0,
     coupon_percent: 0,
-    is_sale_available: false
+    is_sale_available: true
   });
 
   const loadPriceHistory = useCallback(async (channelId?: string) => {

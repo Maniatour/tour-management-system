@@ -25,7 +25,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
   const [dateRangeSelection, setDateRangeSelection] = useState<DateRangeSelection>({
     startDate: '',
     endDate: '',
-    selectedDays: []
+    selectedDays: [0, 1, 2, 3, 4, 5, 6]
   });
 
   // 날짜 범위 선택 핸들러

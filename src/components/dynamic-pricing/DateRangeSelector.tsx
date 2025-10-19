@@ -14,7 +14,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [startDate, setStartDate] = useState<string>(initialSelection?.startDate || '');
   const [endDate, setEndDate] = useState<string>(initialSelection?.endDate || '');
-  const [selectedDays, setSelectedDays] = useState<number[]>(initialSelection?.selectedDays || []);
+  const [selectedDays, setSelectedDays] = useState<number[]>(initialSelection?.selectedDays || [0, 1, 2, 3, 4, 5, 6]);
   const [isSelectingRange, setIsSelectingRange] = useState(false);
   const [selectionMode, setSelectionMode] = useState<'calendar' | 'input'>('calendar');
 
