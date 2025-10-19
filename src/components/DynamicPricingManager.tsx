@@ -1511,12 +1511,12 @@ export default function DynamicPricingManager({
     }
     
     if (channelsToSaveProcessed.length === 0) {
-      setSaveMessage('채널을 선택해주세요.')
-      return
+      setSaveMessage('채널을 선택해주세요.');
+      return;
     }
 
-    setSaving(true)
-    setSaveMessage('')
+    setSaving(true);
+    setSaveMessage('');
 
     try {
       // 1. 선택된 채널(들)에 대해 가격 규칙 생성
@@ -1539,7 +1539,7 @@ export default function DynamicPricingManager({
       });
 
       // 3. pricingConfig를 기반으로 pricingRules 생성
-      const generatedPricingRules: CreatePricingRuleDto[] = []
+      const generatedPricingRules: CreatePricingRuleDto[] = [];
       
       // 선택된 채널들에 대해 가격 규칙 생성
       const activeChannels = channelsToSave.map(channelId => {
@@ -1559,8 +1559,8 @@ export default function DynamicPricingManager({
           // 선택된 요일들에 대해 각각 가격 규칙 생성
           for (const dayOfWeek of pricingConfig.selected_weekdays) {
             // 시작일부터 종료일까지의 모든 날짜에 대해 가격 규칙 생성
-            const startDate = new Date(pricingConfig.start_date)
-            const endDate = new Date(pricingConfig.end_date)
+            const startDate = new Date(pricingConfig.start_date);
+            const endDate = new Date(pricingConfig.end_date);
             
             for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
               // 해당 날짜가 선택된 요일인지 확인
@@ -1718,11 +1718,11 @@ export default function DynamicPricingManager({
             .insert(combinationData as never)
 
           if (combinationsError) {
-            console.error('초이스 조합 저장 오류:', combinationsError)
-            throw combinationsError
+            console.error('초이스 조합 저장 오류:', combinationsError);
+            throw combinationsError;
           }
           
-          console.log('초이스 조합 저장 성공:', combinationData.length, '개')
+          console.log('초이스 조합 저장 성공:', combinationData.length, '개');
         }
       }
 
