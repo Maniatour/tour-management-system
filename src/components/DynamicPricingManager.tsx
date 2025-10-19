@@ -50,6 +50,20 @@ export default function DynamicPricingManager({
 
   // 커스텀 훅들
   const {
+    channelGroups,
+    isLoadingChannels,
+    selectedChannelType,
+    selectedChannel,
+    isMultiChannelMode,
+    selectedChannels,
+    handleChannelTypeSelect,
+    handleChannelSelect,
+    handleMultiChannelToggle,
+    handleChannelToggle,
+    handleSelectAllChannelsInType
+  } = useChannelManagement();
+
+  const {
     saving,
     saveMessage,
     dynamicPricingData,
@@ -63,20 +77,6 @@ export default function DynamicPricingManager({
     selectedChannelType: selectedChannelType,
     onSave: onSave || (() => {}) 
   });
-
-  const {
-    channelGroups,
-    isLoadingChannels,
-    selectedChannelType,
-    selectedChannel,
-    isMultiChannelMode,
-    selectedChannels,
-    handleChannelTypeSelect,
-    handleChannelSelect,
-    handleMultiChannelToggle,
-    handleChannelToggle,
-    handleSelectAllChannelsInType
-  } = useChannelManagement();
 
   const {
     choiceCombinations,
