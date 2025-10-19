@@ -396,6 +396,7 @@ export default function DynamicPricingManager({
               onDateRangeSelect={handleDateRangeSelect}
               choiceCombinations={choiceCombinations}
               selectedChannelId={selectedChannel}
+              selectedChannelType={selectedChannelType}
             />
           ) : (
             <PricingListView

@@ -21,6 +21,7 @@ interface PricingCalendarProps {
     infant_price: number;
   }>;
   selectedChannelId?: string;
+  selectedChannelType?: 'OTA' | 'SELF' | '';
 }
 
 export const PricingCalendar = memo(function PricingCalendar({
@@ -31,7 +32,8 @@ export const PricingCalendar = memo(function PricingCalendar({
   onDateSelect,
   onDateRangeSelect,
   choiceCombinations = [],
-  selectedChannelId
+  selectedChannelId,
+  selectedChannelType
 }: PricingCalendarProps) {
   const [selectedChoice, setSelectedChoice] = useState<string>('');
 
@@ -55,26 +57,68 @@ export const PricingCalendar = memo(function PricingCalendar({
 
   // 선택된 초이스의 가격 정보 가져오기
   const getChoicePriceForDate = (date: string) => {
-    if (!selectedChoice || !selectedChannelId) return null;
+    if (!selectedChoice) return null;
     
     const dayData = dynamicPricingData.find(d => d.date === date);
     if (!dayData || dayData.rules.length === 0) return null;
     
     // 선택된 채널의 규칙 찾기
-    const rule = dayData.rules.find(r => r.channel_id === selectedChannelId);
+    let rule: SimplePricingRule | undefined;
+    
+    if (selectedChannelId) {
+      // 특정 채널이 선택된 경우
+      rule = dayData.rules.find(r => r.channel_id === selectedChannelId);
+    } else if (selectedChannelType === 'SELF') {
+      // 자체 채널 타입이 선택된 경우, 첫 번째 자체 채널 규칙 사용
+      rule = dayData.rules.find(r => {
+        // 자체 채널인지 확인 (type이 'self' 또는 'partner'인 경우)
+        const channelType = r.channel_id?.startsWith('B') ? 'SELF' : 'OTA';
+        return channelType === 'SELF';
+      });
+    }
+    
     if (!rule) return null;
     
     // choices_pricing에서 선택된 초이스의 가격 정보 가져오기
-    const choicePricing = rule.choices_pricing?.[selectedChoice];
-    if (!choicePricing) return null;
+    let choicePricing: any = null;
     
-    return calculateChoicePrice(
+    if (rule.choices_pricing) {
+      // 중첩된 구조에서 선택된 초이스 찾기
+      const choicesData = typeof rule.choices_pricing === 'string' 
+        ? JSON.parse(rule.choices_pricing) 
+        : rule.choices_pricing;
+      
+      console.log('Choices data structure:', choicesData);
+      console.log('Selected choice:', selectedChoice);
+      
+      // canyon_choice.options에서 선택된 초이스 찾기
+      if (choicesData.canyon_choice?.options) {
+        choicePricing = choicesData.canyon_choice.options[selectedChoice];
+        console.log('Found in canyon_choice.options:', choicePricing);
+      }
+      
+      // 직접적인 구조도 확인
+      if (!choicePricing && choicesData[selectedChoice]) {
+        choicePricing = choicesData[selectedChoice];
+        console.log('Found in direct structure:', choicePricing);
+      }
+    }
+    
+    if (!choicePricing) {
+      console.log('No choice pricing found for:', selectedChoice);
+      return null;
+    }
+    
+    const calculatedPrice = calculateChoicePrice(
       choicePricing.adult_price,
       rule.markup_amount || 0,
       rule.markup_percent || 0,
       rule.coupon_percent || 0,
       rule.commission_percent || 0
     );
+    
+    console.log('Calculated price:', calculatedPrice);
+    return calculatedPrice;
   };
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -172,7 +216,7 @@ export const PricingCalendar = memo(function PricingCalendar({
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">
       {/* 초이스 선택 드롭다운 */}
-      {choiceCombinations.length > 0 && selectedChannelId && (
+      {choiceCombinations.length > 0 && (selectedChannelId || selectedChannelType) && (
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium text-gray-700">초이스 선택:</label>
