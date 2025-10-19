@@ -189,8 +189,8 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     return matchesSearch && matchesCategory && matchesSubCategory && matchesStatus
   }).sort((a, b) => {
     // name_ko가 있는 경우 name_ko로 정렬, 없는 경우 name으로 정렬
-    const nameA = a.name_ko || a.name || ''
-    const nameB = b.name_ko || b.name || ''
+    const nameA = (a as any).name_ko || a.name || ''
+    const nameB = (b as any).name_ko || b.name || ''
     return nameA.localeCompare(nameB, 'ko', { numeric: true })
   })
 

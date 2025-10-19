@@ -355,7 +355,7 @@ export default function DynamicPricingManager({
                     ])
                   )
                 }
-              }
+              } as any
             : {} as Record<string, { adult_price: number; child_price: number; infant_price: number; }>
         };
         
