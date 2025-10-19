@@ -553,11 +553,13 @@ export default function ProductDetailsTab({
     }
   }, [productId, isNewProduct, supabase, setFormData])
 
-  // 초기 로드
+  // 초기 로드 (한 번만 실행)
   useEffect(() => {
     loadChannels()
-    loadProductDetails()
-  }, [loadChannels, loadProductDetails])
+    if (!isNewProduct) {
+      loadProductDetails()
+    }
+  }, []) // 의존성 배열을 비워서 한 번만 실행
 
   // 채널 선택 변경 시 데이터 로드
   useEffect(() => {
