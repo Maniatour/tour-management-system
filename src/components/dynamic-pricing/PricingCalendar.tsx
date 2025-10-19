@@ -74,6 +74,7 @@ export const PricingCalendar = memo(function PricingCalendar({
     
     const dayData = dynamicPricingData.find(d => d.date === date);
     if (!dayData || dayData.rules.length === 0) {
+      console.log(`No data found for date ${date}`);
       return null;
     }
     
@@ -83,6 +84,8 @@ export const PricingCalendar = memo(function PricingCalendar({
     if (selectedChannelId) {
       // 채널 ID 매핑 적용
       const mappedChannelId = mapChannelId(selectedChannelId);
+      console.log(`Looking for channel ${selectedChannelId} (mapped to ${mappedChannelId}) on ${date}:`, 
+        dayData.rules.find(r => r.channel_id === mappedChannelId));
       
       // 특정 채널이 선택된 경우
       rule = dayData.rules.find(r => r.channel_id === mappedChannelId);
@@ -93,9 +96,13 @@ export const PricingCalendar = memo(function PricingCalendar({
         const channelType = r.channel_id?.startsWith('B') ? 'SELF' : 'OTA';
         return channelType === 'SELF';
       });
+      console.log(`Looking for SELF channel on ${date}:`, rule);
     }
     
-    if (!rule) return null;
+    if (!rule) {
+      console.log(`No rule found for date ${date}`);
+      return null;
+    }
     
     // choices_pricing에서 선택된 초이스의 가격 정보 가져오기
     let choicePricing: any = null;

@@ -60,7 +60,8 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         selectedChannelId,
         selectedChannelType,
         dataCount: data.length,
-        formattedDataCount: formattedData.length
+        formattedDataCount: formattedData.length,
+        sampleData: data.slice(0, 3) // 처음 3개 데이터 샘플
       });
 
       setDynamicPricingData(formattedData);

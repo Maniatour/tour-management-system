@@ -86,7 +86,7 @@ export default function DynamicPricingManager({
   const {
     pricingConfig,
     updatePricingConfig
-  } = usePricingData(productId);
+  } = usePricingData(productId, selectedChannel, selectedChannelType);
 
   const {
     pricingConfig: calculationConfig,

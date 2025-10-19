@@ -38,7 +38,7 @@ interface PriceHistory {
   }>;
 }
 
-export function usePricingData(productId: string) {
+export function usePricingData(productId: string, selectedChannelId?: string, selectedChannelType?: string) {
   const [priceHistory, setPriceHistory] = useState<PriceHistory['byChannel']>({});
   const [showDetailedPrices, setShowDetailedPrices] = useState(false);
   const [pricingConfig, setPricingConfig] = useState({
@@ -67,13 +67,19 @@ export function usePricingData(productId: string) {
           markup_amount,
           coupon_percent,
           is_sale_available,
+          choices_pricing,
           created_at,
           updated_at
         `)
         .eq('product_id', productId);
 
+      // 채널 필터링
       if (channelId) {
         query = query.eq('channel_id', channelId);
+      } else if (selectedChannelId) {
+        query = query.eq('channel_id', selectedChannelId);
+      } else if (selectedChannelType === 'SELF') {
+        query = query.like('channel_id', 'B%');
       }
 
       const { data, error } = await query.order('updated_at', { ascending: false });
@@ -94,7 +100,7 @@ export function usePricingData(productId: string) {
               infant_price: item.infant_price,
               commission_percent: item.commission_percent,
               markup_amount: item.markup_amount,
-              coupon_percentage_discount: item.coupon_percent,
+              coupon_percent: item.coupon_percent,
               is_sale_available: item.is_sale_available
             },
             priceHistory: []
@@ -108,7 +114,7 @@ export function usePricingData(productId: string) {
           infant_price: item.infant_price,
           commission_percent: item.commission_percent,
           markup_amount: item.markup_amount,
-          coupon_percentage_discount: item.coupon_percent,
+          coupon_percent: item.coupon_percent,
           is_sale_available: item.is_sale_available
         });
 
@@ -116,10 +122,30 @@ export function usePricingData(productId: string) {
       }, {} as PriceHistory['byChannel']);
 
       setPriceHistory(groupedData);
+      
+      // 최신 가격 데이터를 pricingConfig에 설정
+      if (data.length > 0) {
+        const latestData = data[0]; // updated_at으로 정렬했으므로 첫 번째가 최신
+        setPricingConfig({
+          adult_price: latestData.adult_price,
+          child_price: latestData.child_price,
+          infant_price: latestData.infant_price,
+          commission_percent: latestData.commission_percent,
+          markup_amount: latestData.markup_amount,
+          coupon_percent: latestData.coupon_percent,
+          is_sale_available: latestData.is_sale_available
+        });
+        
+        console.log('최신 가격 데이터 로드됨:', {
+          selectedChannelId,
+          selectedChannelType,
+          latestData: latestData
+        });
+      }
     } catch (error) {
       console.error('가격 히스토리 로드 실패:', error);
     }
-  }, [productId]);
+  }, [productId, selectedChannelId, selectedChannelType]);
 
   const updatePricingConfig = useCallback((updates: Partial<typeof pricingConfig>) => {
     setPricingConfig(prev => ({ ...prev, ...updates }));
@@ -133,7 +159,7 @@ export function usePricingData(productId: string) {
     if (productId) {
       loadPriceHistory();
     }
-  }, [productId, loadPriceHistory]);
+  }, [productId, selectedChannelId, selectedChannelType, loadPriceHistory]);
 
   return {
     priceHistory,
