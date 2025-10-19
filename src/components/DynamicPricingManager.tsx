@@ -13,7 +13,8 @@ import {
   TrendingUp,
   Globe,
   Users,
-  Building
+  Building,
+  Calendar
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -22,6 +23,7 @@ import {
   DAY_NAMES
 } from '@/lib/types/dynamic-pricing';
 import ChangeHistory from './ChangeHistory';
+import AvailabilityModal from './AvailabilityModal';
 
 interface DynamicPricingManagerProps {
   productId: string; // text 타입 (데이터베이스에서 uuid -> text로 변경됨)
@@ -246,6 +248,9 @@ export default function DynamicPricingManager({
 
   // 선택된 채널 타입 탭
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType>('OTA');
+
+  // 판매 가능 여부 모달 상태
+  const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
 
   // 옵션 목록 (실제 상품 옵션에서 가져옴)
   const [options, setOptions] = useState<Array<{
@@ -2492,9 +2497,22 @@ export default function DynamicPricingManager({
       {/* 3. 가운데 가격 설정 섹션 */}
       <div id="pricing-section" className="w-full lg:w-[30%] bg-white p-4 lg:p-6 overflow-y-auto h-[60vh] lg:h-auto">
         <div className="max-w-none mx-auto">
-                                 <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">
               {selectedChannel ? `${channels.find(c => c.id === selectedChannel)?.name} 가격 설정` : '가격 설정'}
             </h2>
+            
+            {/* 판매 가능 여부 모달 버튼 */}
+            {selectedChannel && (
+              <button
+                onClick={() => setShowAvailabilityModal(true)}
+                className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+              >
+                <Calendar className="h-4 w-4" />
+                <span>판매 가능 여부</span>
+              </button>
+            )}
+          </div>
            
            {!selectedChannel && !isMultiChannelMode ? (
              <div className="text-center py-12">
@@ -3347,5 +3365,14 @@ export default function DynamicPricingManager({
     
 
      </div>
+
+     {/* 판매 가능 여부 모달 */}
+     <AvailabilityModal
+       isOpen={showAvailabilityModal}
+       onClose={() => setShowAvailabilityModal(false)}
+       productId={productId}
+       selectedChannel={selectedChannel}
+       channelName={channels.find(c => c.id === selectedChannel)?.name || ''}
+     />
    );
  }
