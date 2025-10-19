@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { X, Save, AlertCircle, Globe } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -48,12 +48,12 @@ export default function CommonDetailsModal({
   const supabase = createClientSupabase()
   const { user } = useAuth()
 
-  const availableLanguages = [
+  const availableLanguages = useMemo(() => [
     { code: 'ko', name: '한국어' },
     { code: 'en', name: 'English' },
     { code: 'ja', name: '日本語' },
     { code: 'zh', name: '中文' }
-  ]
+  ], [])
 
   // 현재 언어의 데이터 가져오기
   const getCurrentLanguageData = (): ProductDetailsFields => {
@@ -174,12 +174,12 @@ export default function CommonDetailsModal({
     }
   }, [subCategory, supabase, availableLanguages])
 
-  // 데이터 로드
+  // 데이터 로드 (모달이 열릴 때만)
   useEffect(() => {
     if (isOpen && subCategory) {
       loadCommonDetails()
     }
-  }, [isOpen, subCategory, loadCommonDetails])
+  }, [isOpen, subCategory]) // loadCommonDetails 제거
 
   // 저장 핸들러
   const handleSave = async () => {
