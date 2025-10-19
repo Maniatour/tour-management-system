@@ -72,18 +72,10 @@ export const PricingCalendar = memo(function PricingCalendar({
   const getChoicePriceForDate = (date: string) => {
     if (!selectedChoice) return null;
     
-    console.log(`=== Processing date ${date} ===`);
-    console.log(`Selected choice: ${selectedChoice}`);
-    console.log(`Selected channel ID: ${selectedChannelId}`);
-    console.log(`Selected channel type: ${selectedChannelType}`);
-    
     const dayData = dynamicPricingData.find(d => d.date === date);
     if (!dayData || dayData.rules.length === 0) {
-      console.log(`No data found for date ${date}`);
       return null;
     }
-    
-    console.log(`Found day data for ${date}:`, dayData);
     
     // 선택된 채널의 규칙 찾기
     let rule: SimplePricingRule | undefined;
@@ -91,17 +83,9 @@ export const PricingCalendar = memo(function PricingCalendar({
     if (selectedChannelId) {
       // 채널 ID 매핑 적용
       const mappedChannelId = mapChannelId(selectedChannelId);
-      console.log(`Mapped channel ID: ${selectedChannelId} -> ${mappedChannelId}`);
       
       // 특정 채널이 선택된 경우
       rule = dayData.rules.find(r => r.channel_id === mappedChannelId);
-      console.log(`Looking for channel ${mappedChannelId} on ${date}:`, rule);
-      
-      // 만약 정확한 채널 ID를 찾지 못했다면, 모든 규칙을 확인
-      if (!rule) {
-        console.log(`Available channel IDs for ${date}:`, dayData.rules.map(r => r.channel_id));
-        console.log(`All rules for ${date}:`, dayData.rules);
-      }
     } else if (selectedChannelType === 'SELF') {
       // 자체 채널 타입이 선택된 경우, 첫 번째 자체 채널 규칙 사용
       rule = dayData.rules.find(r => {
@@ -109,13 +93,9 @@ export const PricingCalendar = memo(function PricingCalendar({
         const channelType = r.channel_id?.startsWith('B') ? 'SELF' : 'OTA';
         return channelType === 'SELF';
       });
-      console.log(`Looking for SELF channel on ${date}:`, rule);
     }
     
-    if (!rule) {
-      console.log(`No rule found for date ${date}`);
-      return null;
-    }
+    if (!rule) return null;
     
     // choices_pricing에서 선택된 초이스의 가격 정보 가져오기
     let choicePricing: any = null;
@@ -126,37 +106,26 @@ export const PricingCalendar = memo(function PricingCalendar({
         ? JSON.parse(rule.choices_pricing) 
         : rule.choices_pricing;
       
-      console.log(`Choices data for ${date}:`, choicesData);
-      console.log(`Looking for choice: ${selectedChoice}`);
-      
       // canyon_choice.options에서 선택된 초이스 찾기
       if (choicesData.canyon_choice?.options) {
         choicePricing = choicesData.canyon_choice.options[selectedChoice];
-        console.log(`Found in canyon_choice.options:`, choicePricing);
       }
       
       // 직접적인 구조도 확인
       if (!choicePricing && choicesData[selectedChoice]) {
         choicePricing = choicesData[selectedChoice];
-        console.log(`Found in direct structure:`, choicePricing);
       }
     }
     
-    if (!choicePricing) {
-      console.log(`No choice pricing found for ${selectedChoice} on ${date}`);
-      return null;
-    }
+    if (!choicePricing) return null;
     
-    const calculatedPrice = calculateChoicePrice(
+    return calculateChoicePrice(
       choicePricing.adult_price,
       rule.markup_amount || 0,
       rule.markup_percent || 0,
       rule.coupon_percent || 0,
       rule.commission_percent || 0
     );
-    
-    console.log(`Calculated price for ${selectedChoice} on ${date}:`, calculatedPrice);
-    return calculatedPrice;
   };
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -212,7 +181,8 @@ export const PricingCalendar = memo(function PricingCalendar({
           isSelected ? 'bg-blue-100 border-blue-300' : ''
         } ${isToday ? 'ring-2 ring-blue-500' : ''}`}
       >
-        <div className="text-sm font-medium text-gray-900">{day}</div>
+        {/* 날짜를 오른쪽 상단에 작은 글씨로 표시 */}
+        <div className="absolute top-1 right-1 text-xs text-gray-500">{day}</div>
         
         {/* 초이스별 가격 표시 */}
         {selectedChoice && choicePrice && (
@@ -220,6 +190,13 @@ export const PricingCalendar = memo(function PricingCalendar({
             <div className="text-green-600 font-semibold">${choicePrice.markupPrice}</div>
             <div className="text-blue-600">${choicePrice.discountPrice}</div>
             <div className="text-purple-600">${choicePrice.netPrice}</div>
+          </div>
+        )}
+        
+        {/* 데이터가 없을 때 표시 */}
+        {selectedChoice && !choicePrice && (
+          <div className="absolute bottom-1 left-1 text-xs text-gray-400">
+            데이터 없음
           </div>
         )}
         
