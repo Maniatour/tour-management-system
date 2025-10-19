@@ -13,7 +13,6 @@ import {
   TrendingUp,
   Globe,
   Users,
-  Building,
   Calendar
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -246,8 +245,8 @@ export default function DynamicPricingManager({
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
 
-  // 선택된 채널 타입 탭
-  const [selectedChannelType, setSelectedChannelType] = useState<ChannelType>('OTA');
+  // 선택된 채널 타입 탭 (더 이상 사용하지 않음)
+  // const [selectedChannelType, setSelectedChannelType] = useState<ChannelType>('OTA');
 
   // 판매 가능 여부 모달 상태
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
@@ -1736,8 +1735,8 @@ export default function DynamicPricingManager({
         successMessage += ` (자체 채널 ${selfChannelCount}개에 동일한 가격이 적용되었습니다)`;
       }
       
-      setSaveMessage(successMessage)
-      setTimeout(() => setSaveMessage(''), 3000)
+      setSaveMessage(successMessage);
+      setTimeout(() => setSaveMessage(''), 3000);
 
       // 6. onSave 콜백 호출 (부모 컴포넌트에 알림)
       if (onSave) {
@@ -1755,12 +1754,12 @@ export default function DynamicPricingManager({
       }
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
-      console.error('통합 저장 오류:', errorMessage)
-      setSaveMessage(`저장에 실패했습니다: ${errorMessage}`)
-      setTimeout(() => setSaveMessage(''), 3000)
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
+      console.error('통합 저장 오류:', errorMessage);
+      setSaveMessage(`저장에 실패했습니다: ${errorMessage}`);
+      setTimeout(() => setSaveMessage(''), 3000);
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
   };
 
@@ -3360,19 +3359,17 @@ export default function DynamicPricingManager({
 
           </div>
         )}
-             </div>
 
-    
+      </div>
 
-     </div>
-
-     {/* 판매 가능 여부 모달 */}
-     <AvailabilityModal
-       isOpen={showAvailabilityModal}
-       onClose={() => setShowAvailabilityModal(false)}
-       productId={productId}
-       selectedChannel={selectedChannel}
-       channelName={channels.find(c => c.id === selectedChannel)?.name || ''}
-     />
-   );
- }
+      {/* 판매 가능 여부 모달 */}
+      <AvailabilityModal
+        isOpen={showAvailabilityModal}
+        onClose={() => setShowAvailabilityModal(false)}
+        productId={productId}
+        selectedChannel={selectedChannel}
+        channelName={channels.find(c => c.id === selectedChannel)?.name || ''}
+      />
+    </div>
+  );
+}
