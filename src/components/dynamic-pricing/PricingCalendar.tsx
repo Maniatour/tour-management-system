@@ -79,6 +79,12 @@ export const PricingCalendar = memo(function PricingCalendar({
       // 특정 채널이 선택된 경우
       rule = dayData.rules.find(r => r.channel_id === selectedChannelId);
       console.log(`Looking for channel ${selectedChannelId} on ${date}:`, rule);
+      
+      // 만약 정확한 채널 ID를 찾지 못했다면, 모든 규칙을 확인
+      if (!rule) {
+        console.log(`Available channel IDs for ${date}:`, dayData.rules.map(r => r.channel_id));
+        console.log(`All rules for ${date}:`, dayData.rules);
+      }
     } else if (selectedChannelType === 'SELF') {
       // 자체 채널 타입이 선택된 경우, 첫 번째 자체 채널 규칙 사용
       rule = dayData.rules.find(r => {
