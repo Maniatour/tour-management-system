@@ -53,6 +53,7 @@ export default function DynamicPricingManager({
     saving,
     saveMessage,
     dynamicPricingData,
+    loadDynamicPricingData,
     savePricingRule,
     deletePricingRule,
     setMessage
