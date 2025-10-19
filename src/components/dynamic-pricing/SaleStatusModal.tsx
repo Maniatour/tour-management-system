@@ -47,16 +47,19 @@ export const SaleStatusModal = memo(function SaleStatusModal({
   }, []);
 
   // 날짜별 상태 토글 핸들러 (즉시 저장)
-  const handleDateStatusToggle = useCallback(async (date: string, status: 'sale' | 'closed') => {
+  const handleDateStatusToggle = useCallback(async (date: string, currentStatus: 'sale' | 'closed') => {
+    // 현재 상태의 반대로 토글
+    const newStatus = currentStatus === 'sale' ? 'closed' : 'sale';
+    
     setDateStatusMap(prev => ({
       ...prev,
-      [date]: status
+      [date]: newStatus
     }));
 
     // 즉시 저장
     try {
       const dateObj = new Date(date);
-      await onSave([dateObj], status);
+      await onSave([dateObj], newStatus);
     } catch (error) {
       console.error('상태 저장 실패:', error);
     }

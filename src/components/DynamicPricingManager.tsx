@@ -222,21 +222,27 @@ export default function DynamicPricingManager({
   }, []);
 
   const handleSaveSaleStatus = useCallback(async (dates: Date[], status: 'sale' | 'closed') => {
-    if (dates.length === 0 || (!selectedChannelType && !selectedChannel)) {
+    if (dates.length === 0) {
       return;
     }
 
     let channelIds: string[] = [];
     
-    if (selectedChannelType === 'SELF') {
-      // 자체 채널 타입 선택: 해당 타입의 모든 채널 사용
-      const currentGroup = channelGroups.find(group => group.type === 'SELF');
-      if (currentGroup) {
-        channelIds = currentGroup.channels.map(channel => channel.id);
+    if (status === 'closed') {
+      // 마감 처리 시: 모든 채널 처리
+      channelIds = channelGroups.flatMap(group => group.channels.map(channel => channel.id));
+    } else {
+      // 판매중 처리 시: 선택된 채널만 처리
+      if (selectedChannelType === 'SELF') {
+        // 자체 채널 타입 선택: 해당 타입의 모든 채널 사용
+        const currentGroup = channelGroups.find(group => group.type === 'SELF');
+        if (currentGroup) {
+          channelIds = currentGroup.channels.map(channel => channel.id);
+        }
+      } else if (selectedChannel) {
+        // 개별 OTA 채널 선택: 해당 채널만 사용
+        channelIds = [selectedChannel];
       }
-    } else if (selectedChannel) {
-      // 개별 OTA 채널 선택: 해당 채널만 사용
-      channelIds = [selectedChannel];
     }
     
     if (channelIds.length === 0) {

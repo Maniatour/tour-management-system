@@ -41,10 +41,11 @@ export const DateRangeSelector = memo(function DateRangeSelector({
   const handleDateDoubleClick = useCallback((date: Date) => {
     if (onDateStatusToggle) {
       const dateString = date.toISOString().split('T')[0];
-      const newStatus = saleStatus === 'sale' ? 'closed' : 'sale';
-      onDateStatusToggle(dateString, newStatus);
+      // 해당 날짜의 현재 상태를 확인 (dateStatusMap에서 우선, 없으면 기본값 사용)
+      const currentStatus = dateStatusMap[dateString] || saleStatus;
+      onDateStatusToggle(dateString, currentStatus);
     }
-  }, [onDateStatusToggle, saleStatus]);
+  }, [onDateStatusToggle, saleStatus, dateStatusMap]);
 
   // 날짜 클릭 핸들러 (달력 모드)
   const handleDateClick = useCallback((date: Date) => {
