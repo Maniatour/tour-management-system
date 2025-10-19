@@ -20,6 +20,7 @@ interface PricingCalendarProps {
     child_price: number;
     infant_price: number;
   }>;
+  selectedChannelId?: string;
 }
 
 export const PricingCalendar = memo(function PricingCalendar({
@@ -29,7 +30,8 @@ export const PricingCalendar = memo(function PricingCalendar({
   onMonthChange,
   onDateSelect,
   onDateRangeSelect,
-  choiceCombinations = []
+  choiceCombinations = [],
+  selectedChannelId
 }: PricingCalendarProps) {
   const [selectedChoice, setSelectedChoice] = useState<string>('');
 
@@ -53,14 +55,17 @@ export const PricingCalendar = memo(function PricingCalendar({
 
   // 선택된 초이스의 가격 정보 가져오기
   const getChoicePriceForDate = (date: string) => {
-    if (!selectedChoice) return null;
+    if (!selectedChoice || !selectedChannelId) return null;
     
     const dayData = dynamicPricingData.find(d => d.date === date);
     if (!dayData || dayData.rules.length === 0) return null;
     
-    const rule = dayData.rules[0]; // 첫 번째 규칙 사용
-    const choicePricing = rule.choices_pricing?.[selectedChoice];
+    // 선택된 채널의 규칙 찾기
+    const rule = dayData.rules.find(r => r.channel_id === selectedChannelId);
+    if (!rule) return null;
     
+    // choices_pricing에서 선택된 초이스의 가격 정보 가져오기
+    const choicePricing = rule.choices_pricing?.[selectedChoice];
     if (!choicePricing) return null;
     
     return calculateChoicePrice(
@@ -167,7 +172,7 @@ export const PricingCalendar = memo(function PricingCalendar({
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">
       {/* 초이스 선택 드롭다운 */}
-      {choiceCombinations.length > 0 && (
+      {choiceCombinations.length > 0 && selectedChannelId && (
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium text-gray-700">초이스 선택:</label>
