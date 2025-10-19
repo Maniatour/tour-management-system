@@ -66,12 +66,15 @@ export function useChoiceManagement(productId: string) {
           : choicesPricing;
 
         console.log('데이터베이스에서 로드된 choices_pricing:', choicesData);
+        console.log('canyon_choice 구조:', choicesData.canyon_choice);
+        console.log('canyon_choice.options:', choicesData.canyon_choice?.options);
 
         const combinations: ChoiceCombination[] = [];
 
         // canyon_choice.options에서 초이스 조합 생성
         if (choicesData.canyon_choice?.options) {
           Object.entries(choicesData.canyon_choice.options).forEach(([key, option]: [string, any]) => {
+            console.log(`초이스 조합 생성: ${key} ->`, option);
             combinations.push({
               id: key,
               combination_key: key,

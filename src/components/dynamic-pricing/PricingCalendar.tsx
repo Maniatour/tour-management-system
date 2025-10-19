@@ -111,20 +111,30 @@ export const PricingCalendar = memo(function PricingCalendar({
     let choicePricing: any = null;
     
     if (rule.choices_pricing) {
+      console.log(`choices_pricing 원본 데이터 (${date}):`, rule.choices_pricing);
+      
       // 중첩된 구조에서 선택된 초이스 찾기
       const choicesData = typeof rule.choices_pricing === 'string' 
         ? JSON.parse(rule.choices_pricing) 
         : rule.choices_pricing;
       
+      console.log(`파싱된 choicesData (${date}):`, choicesData);
+      console.log(`선택된 초이스: ${selectedChoice}`);
+      
       // canyon_choice.options에서 선택된 초이스 찾기
       if (choicesData.canyon_choice?.options) {
+        console.log(`canyon_choice.options:`, choicesData.canyon_choice.options);
         choicePricing = choicesData.canyon_choice.options[selectedChoice];
+        console.log(`canyon_choice에서 찾은 choicePricing:`, choicePricing);
       }
       
       // 직접적인 구조도 확인
       if (!choicePricing && choicesData[selectedChoice]) {
         choicePricing = choicesData[selectedChoice];
+        console.log(`직접 구조에서 찾은 choicePricing:`, choicePricing);
       }
+      
+      console.log(`최종 choicePricing (${date}):`, choicePricing);
     }
     
     if (!choicePricing) return null;
