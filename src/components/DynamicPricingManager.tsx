@@ -309,10 +309,15 @@ export default function DynamicPricingManager({
   const canSave = useMemo(() => {
     const hasSelectedDates = selectedDates.length > 0;
     const hasSelectedChannels = Boolean(selectedChannelType) || Boolean(selectedChannel);
-    const hasValidPrices = pricingConfig.adult_price > 0 || pricingConfig.child_price > 0 || pricingConfig.infant_price > 0;
     
-    return hasSelectedDates && hasSelectedChannels && hasValidPrices;
-  }, [selectedDates, selectedChannelType, selectedChannel, pricingConfig]);
+    // 기본 가격 또는 초이스별 가격이 있는지 확인
+    const hasValidPrices = pricingConfig.adult_price > 0 || pricingConfig.child_price > 0 || pricingConfig.infant_price > 0;
+    const hasChoicePrices = choiceCombinations.some(choice => 
+      choice.adult_price > 0 || choice.child_price > 0 || choice.infant_price > 0
+    );
+    
+    return hasSelectedDates && hasSelectedChannels && (hasValidPrices || hasChoicePrices);
+  }, [selectedDates, selectedChannelType, selectedChannel, pricingConfig, choiceCombinations]);
 
   // 현재 월의 데이터 필터링
   const currentMonthData = useMemo(() => {
