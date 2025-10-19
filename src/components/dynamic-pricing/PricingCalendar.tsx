@@ -88,37 +88,26 @@ export const PricingCalendar = memo(function PricingCalendar({
         ? JSON.parse(rule.choices_pricing) 
         : rule.choices_pricing;
       
-      console.log('Choices data structure:', choicesData);
-      console.log('Selected choice:', selectedChoice);
-      
       // canyon_choice.options에서 선택된 초이스 찾기
       if (choicesData.canyon_choice?.options) {
         choicePricing = choicesData.canyon_choice.options[selectedChoice];
-        console.log('Found in canyon_choice.options:', choicePricing);
       }
       
       // 직접적인 구조도 확인
       if (!choicePricing && choicesData[selectedChoice]) {
         choicePricing = choicesData[selectedChoice];
-        console.log('Found in direct structure:', choicePricing);
       }
     }
     
-    if (!choicePricing) {
-      console.log('No choice pricing found for:', selectedChoice);
-      return null;
-    }
+    if (!choicePricing) return null;
     
-    const calculatedPrice = calculateChoicePrice(
+    return calculateChoicePrice(
       choicePricing.adult_price,
       rule.markup_amount || 0,
       rule.markup_percent || 0,
       rule.coupon_percent || 0,
       rule.commission_percent || 0
     );
-    
-    console.log('Calculated price:', calculatedPrice);
-    return calculatedPrice;
   };
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
