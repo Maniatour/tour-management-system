@@ -408,7 +408,26 @@ export default function DynamicPricingManager({
       choice.adult_price > 0 || choice.child_price > 0 || choice.infant_price > 0
     );
     
-    return hasSelectedDates && hasSelectedChannels && (hasValidPrices || hasChoicePrices);
+    const canSaveResult = hasSelectedDates && hasSelectedChannels && (hasValidPrices || hasChoicePrices);
+    
+    console.log('canSave 계산:', {
+      hasSelectedDates,
+      hasSelectedChannels,
+      hasValidPrices,
+      hasChoicePrices,
+      selectedDates: selectedDates.length,
+      selectedChannelType,
+      selectedChannel,
+      pricingConfig: {
+        adult_price: pricingConfig.adult_price,
+        child_price: pricingConfig.child_price,
+        infant_price: pricingConfig.infant_price
+      },
+      choiceCombinations: choiceCombinations.length,
+      canSaveResult
+    });
+    
+    return canSaveResult;
   }, [selectedDates, selectedChannelType, selectedChannel, pricingConfig, choiceCombinations]);
 
   // 현재 월의 데이터 필터링
@@ -513,7 +532,7 @@ export default function DynamicPricingManager({
             <h4 className="text-md font-semibold text-gray-900 mb-4">날짜 및 요일 선택</h4>
             <DateRangeSelector
               onDateRangeSelect={handleDateRangeSelection}
-              initialSelection={dateRangeSelection || { startDate: '', endDate: '', selectedDays: [] }}
+              initialSelection={dateRangeSelection || { startDate: '', endDate: '', selectedDays: [0, 1, 2, 3, 4, 5, 6] }}
             />
              </div>
 
