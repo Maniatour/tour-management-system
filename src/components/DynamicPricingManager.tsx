@@ -1481,16 +1481,16 @@ export default function DynamicPricingManager({
     // 통합 저장 함수 - 선택된 채널(들)에 가격 관련 데이터 저장
   const handleUnifiedSave = async () => {
     if (isNewProduct) {
-      setSaveMessage('새 상품은 전체 저장을 사용해주세요.')
-      return
+      setSaveMessage('새 상품은 전체 저장을 사용해주세요.');
+      return;
     }
 
     // 다중 선택 모드일 때는 선택된 채널들, 단일 모드일 때는 선택된 채널
     const channelsToSave = isMultiChannelMode ? selectedChannels : (selectedChannel ? [selectedChannel] : []);
     
     if (channelsToSave.length === 0) {
-      setSaveMessage('채널을 선택해주세요.')
-      return
+      setSaveMessage('채널을 선택해주세요.');
+      return;
     }
 
     // 자체 채널(self + partner)이 포함된 경우 통합 처리
