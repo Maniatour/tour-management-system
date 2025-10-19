@@ -1,5 +1,5 @@
-import React, { memo } from 'react';
-import { ChevronLeft, ChevronRight, Calendar, DollarSign } from 'lucide-react';
+import React, { memo, useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, Calendar, DollarSign, ChevronDown } from 'lucide-react';
 import { SimplePricingRule } from '@/lib/types/dynamic-pricing';
 
 interface PricingCalendarProps {
@@ -12,6 +12,14 @@ interface PricingCalendarProps {
   onMonthChange: (month: Date) => void;
   onDateSelect: (date: string) => void;
   onDateRangeSelect: (startIndex: number, endIndex: number) => void;
+  choiceCombinations?: Array<{
+    id: string;
+    combination_name: string;
+    combination_name_ko?: string;
+    adult_price: number;
+    child_price: number;
+    infant_price: number;
+  }>;
 }
 
 export const PricingCalendar = memo(function PricingCalendar({
@@ -20,8 +28,49 @@ export const PricingCalendar = memo(function PricingCalendar({
   selectedDates,
   onMonthChange,
   onDateSelect,
-  onDateRangeSelect
+  onDateRangeSelect,
+  choiceCombinations = []
 }: PricingCalendarProps) {
+  const [selectedChoice, setSelectedChoice] = useState<string>('');
+
+  // 초이스별 가격 계산 함수
+  const calculateChoicePrice = (basePrice: number, markupAmount: number, markupPercent: number, couponPercent: number, commissionPercent: number) => {
+    // 최대 판매가 (기본 가격 + 마크업)
+    const markupPrice = basePrice + markupAmount + (basePrice * markupPercent / 100);
+    
+    // 할인 가격 (최대 판매가 × 쿠폰 할인)
+    const discountPrice = markupPrice * (1 - couponPercent / 100);
+    
+    // Net Price (할인 가격 - 수수료)
+    const netPrice = discountPrice - (discountPrice * commissionPercent / 100);
+    
+    return {
+      markupPrice: Math.round(markupPrice * 100) / 100,
+      discountPrice: Math.round(discountPrice * 100) / 100,
+      netPrice: Math.round(netPrice * 100) / 100
+    };
+  };
+
+  // 선택된 초이스의 가격 정보 가져오기
+  const getChoicePriceForDate = (date: string) => {
+    if (!selectedChoice) return null;
+    
+    const dayData = dynamicPricingData.find(d => d.date === date);
+    if (!dayData || dayData.rules.length === 0) return null;
+    
+    const rule = dayData.rules[0]; // 첫 번째 규칙 사용
+    const choicePricing = rule.choices_pricing?.[selectedChoice];
+    
+    if (!choicePricing) return null;
+    
+    return calculateChoicePrice(
+      choicePricing.adult_price,
+      rule.markup_amount || 0,
+      rule.markup_percent || 0,
+      rule.coupon_percent || 0,
+      rule.commission_percent || 0
+    );
+  };
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -65,6 +114,7 @@ export const PricingCalendar = memo(function PricingCalendar({
     const pricingRules = getPricingForDate(dateString);
     const isSelected = isDateSelected(dateString);
     const isToday = new Date().toDateString() === new Date(dateString).toDateString();
+    const choicePrice = getChoicePriceForDate(dateString);
 
     return (
       <button
@@ -76,12 +126,23 @@ export const PricingCalendar = memo(function PricingCalendar({
         } ${isToday ? 'ring-2 ring-blue-500' : ''}`}
       >
         <div className="text-sm font-medium text-gray-900">{day}</div>
-        {pricingRules.length > 0 && (
+        
+        {/* 초이스별 가격 표시 */}
+        {selectedChoice && choicePrice && (
+          <div className="absolute bottom-1 left-1 text-xs">
+            <div className="text-green-600 font-semibold">${choicePrice.markupPrice}</div>
+            <div className="text-blue-600">${choicePrice.discountPrice}</div>
+            <div className="text-purple-600">${choicePrice.netPrice}</div>
+          </div>
+        )}
+        
+        {/* 기존 가격 표시 아이콘 */}
+        {pricingRules.length > 0 && !selectedChoice && (
           <div className="absolute bottom-1 right-1">
             <DollarSign className="h-3 w-3 text-green-600" />
           </div>
         )}
-        {pricingRules.length > 1 && (
+        {pricingRules.length > 1 && !selectedChoice && (
           <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
             {pricingRules.length}
           </div>
@@ -105,6 +166,48 @@ export const PricingCalendar = memo(function PricingCalendar({
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      {/* 초이스 선택 드롭다운 */}
+      {choiceCombinations.length > 0 && (
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700">초이스 선택:</label>
+            <div className="relative">
+              <select
+                value={selectedChoice}
+                onChange={(e) => setSelectedChoice(e.target.value)}
+                className="appearance-none bg-white border border-gray-300 rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">초이스를 선택하세요</option>
+                {choiceCombinations.map((choice) => (
+                  <option key={choice.id} value={choice.id}>
+                    {choice.combination_name_ko || choice.combination_name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
+          
+          {/* 가격 범례 */}
+          {selectedChoice && (
+            <div className="mt-3 flex items-center space-x-4 text-xs">
+              <div className="flex items-center space-x-1">
+                <div className="w-3 h-3 bg-green-600 rounded"></div>
+                <span className="text-gray-600">최대 판매가</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <div className="w-3 h-3 bg-blue-600 rounded"></div>
+                <span className="text-gray-600">할인 가격</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <div className="w-3 h-3 bg-purple-600 rounded"></div>
+                <span className="text-gray-600">Net Price</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 헤더 */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <button

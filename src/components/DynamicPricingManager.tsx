@@ -2,7 +2,6 @@
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
-  DollarSign, 
   Calendar,
   List
 } from 'lucide-react';
@@ -291,7 +290,7 @@ export default function DynamicPricingManager({
       infant_price: rule.infant_price,
       commission_percent: rule.commission_percent,
       markup_amount: rule.markup_amount,
-      coupon_percentage_discount: rule.coupon_percent,
+      coupon_percent: rule.coupon_percent,
       is_sale_available: rule.is_sale_available
     });
     
@@ -395,6 +394,7 @@ export default function DynamicPricingManager({
               onMonthChange={handleMonthChange}
               onDateSelect={handleDateSelect}
               onDateRangeSelect={handleDateRangeSelect}
+              choiceCombinations={choiceCombinations}
             />
           ) : (
             <PricingListView
