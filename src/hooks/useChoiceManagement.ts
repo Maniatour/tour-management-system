@@ -131,37 +131,6 @@ export function useChoiceManagement(productId: string) {
     }
   }, [productId]);
 
-  const generateChoiceCombinations = useCallback(() => {
-    if (choiceGroups.length === 0) {
-      setChoiceCombinations([]);
-      return;
-    }
-
-    const combinations: ChoiceCombination[] = [];
-    
-    // 각 초이스 그룹의 옵션들을 개별 조합으로 생성
-    choiceGroups.forEach(group => {
-      group.options.forEach(option => {
-        const combinationKey = `${group.id}_${option.id}`;
-        const combinationName = `${group.name} - ${option.name}`;
-        const combinationNameKo = `${group.name_ko || group.name} - ${option.name_ko || option.name}`;
-        
-        combinations.push({
-          id: combinationKey,
-          combination_key: combinationKey,
-          combination_name: combinationName,
-          combination_name_ko: combinationNameKo,
-          adult_price: option.adult_price,
-          child_price: option.child_price,
-          infant_price: option.infant_price,
-          is_active: true
-        });
-      });
-    });
-
-    console.log('생성된 초이스 조합:', combinations);
-    setChoiceCombinations(combinations);
-  }, [choiceGroups]);
 
   const updateChoiceCombinationPrice = useCallback((
     combinationId: string, 
@@ -188,18 +157,13 @@ export function useChoiceManagement(productId: string) {
     }
   }, [productId, loadChoiceGroups, loadChoiceCombinationsFromPricing]);
 
-  useEffect(() => {
-    if (choiceGroups.length > 0) {
-      generateChoiceCombinations();
-    }
-  }, [choiceGroups, generateChoiceCombinations]);
+  // generateChoiceCombinations는 제거 - 데이터베이스에서 로드한 초이스 조합만 사용
 
   return {
     choiceGroups,
     choiceCombinations,
     showCombinationPricing,
     loadChoiceGroups,
-    generateChoiceCombinations,
     updateChoiceCombinationPrice,
     toggleCombinationPricing
   };
