@@ -47,6 +47,9 @@ export default function DynamicPricingManager({
   
   // 판매 상태 모달 상태
   const [isSaleStatusModalOpen, setIsSaleStatusModalOpen] = useState(false);
+  
+  // 배치 저장 진행률 상태
+  const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
 
   // 커스텀 훅들
   const {
@@ -72,6 +75,7 @@ export default function DynamicPricingManager({
     dynamicPricingData,
     loadDynamicPricingData,
     savePricingRule,
+    savePricingRulesBatch,
     deletePricingRule,
     setMessage
   } = useDynamicPricing({ 
@@ -315,10 +319,9 @@ export default function DynamicPricingManager({
       return;
     }
 
-    // 전체 저장 시작
-    const totalRules = channelIds.length * selectedDates.length;
-    let savedCount = 0;
-
+    // 배치 저장을 위한 규칙 데이터 생성
+    const rulesData: SimplePricingRuleDto[] = [];
+    
     for (const channelId of channelIds) {
       for (const date of selectedDates) {
         const ruleData: SimplePricingRuleDto = {
@@ -355,24 +358,47 @@ export default function DynamicPricingManager({
               }
             : {} as Record<string, { adult_price: number; child_price: number; infant_price: number; }>
         };
-
-        try {
-          await savePricingRule(ruleData, false); // 개별 메시지 표시 안함
-          savedCount++;
-        } catch (error) {
-          console.error('가격 규칙 저장 실패:', error);
-          // 개별 저장 실패 시 전체 중단하지 않고 계속 진행
-        }
+        
+        rulesData.push(ruleData);
       }
     }
 
-    // 전체 저장 완료 후 메시지 표시
-    if (savedCount === totalRules) {
-      setMessage(`전체 ${totalRules}개 가격 규칙이 성공적으로 저장되었습니다.`);
+    // 자체 채널인 경우 배치 저장 사용, 그 외에는 개별 저장
+    if (selectedChannelType === 'SELF' && rulesData.length > 10) {
+      console.log(`자체 채널 배치 저장 시작: ${rulesData.length}개 규칙`);
+      
+      try {
+        await savePricingRulesBatch(rulesData, (completed, total) => {
+          setBatchProgress({ completed, total });
+        });
+        
+        setBatchProgress(null); // 진행률 초기화
+      } catch (error) {
+        console.error('배치 저장 실패:', error);
+        setBatchProgress(null);
+        throw error;
+      }
     } else {
-      setMessage(`${savedCount}/${totalRules}개 가격 규칙이 저장되었습니다.`);
+      // 개별 저장 (OTA 채널이거나 규칙이 적은 경우)
+      console.log(`개별 저장 시작: ${rulesData.length}개 규칙`);
+      
+      let savedCount = 0;
+      for (const ruleData of rulesData) {
+        try {
+          await savePricingRule(ruleData, false);
+          savedCount++;
+        } catch (error) {
+          console.error('가격 규칙 저장 실패:', error);
+        }
+      }
+      
+      if (savedCount === rulesData.length) {
+        setMessage(`전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+      } else {
+        setMessage(`${savedCount}/${rulesData.length}개 가격 규칙이 저장되었습니다.`);
+      }
     }
-  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, setMessage]);
+  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage]);
 
   // 규칙 편집 핸들러
   const handleEditRule = useCallback((rule: SimplePricingRule) => {
@@ -750,6 +776,7 @@ export default function DynamicPricingManager({
             saveMessage={saveMessage}
             onSave={handleSavePricingRule}
             canSave={canSave}
+            batchProgress={batchProgress}
           />
               </div>
 

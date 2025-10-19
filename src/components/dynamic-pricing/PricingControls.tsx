@@ -7,6 +7,7 @@ interface PricingControlsProps {
   onSave: () => void;
   onCancel?: () => void;
   canSave?: boolean;
+  batchProgress?: { completed: number; total: number } | null;
 }
 
 export const PricingControls = memo(function PricingControls({
@@ -14,7 +15,8 @@ export const PricingControls = memo(function PricingControls({
   saveMessage,
   onSave,
   onCancel,
-  canSave = true
+  canSave = true,
+  batchProgress
 }: PricingControlsProps) {
   const getMessageIcon = () => {
     if (saveMessage.includes('성공')) {
@@ -44,6 +46,31 @@ export const PricingControls = memo(function PricingControls({
           <div className="flex items-center space-x-2">
             {getMessageIcon()}
             <span className="text-sm font-medium">{saveMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 배치 저장 진행률 */}
+      {batchProgress && (
+        <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-blue-700">
+              배치 저장 진행 중...
+            </span>
+            <span className="text-sm text-blue-600">
+              {batchProgress.completed}/{batchProgress.total}
+            </span>
+          </div>
+          <div className="w-full bg-blue-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+              style={{ 
+                width: `${(batchProgress.completed / batchProgress.total) * 100}%` 
+              }}
+            />
+          </div>
+          <div className="mt-1 text-xs text-blue-600">
+            {Math.round((batchProgress.completed / batchProgress.total) * 100)}% 완료
           </div>
         </div>
       )}
