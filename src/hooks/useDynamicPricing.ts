@@ -59,13 +59,39 @@ export function useDynamicPricing({ productId, onSave }: UseDynamicPricingProps)
     }
 
     try {
-      const { data, error } = await supabase
+      // 먼저 기존 레코드가 있는지 확인
+      const { data: existingData, error: selectError } = await supabase
         .from('dynamic_pricing')
-        .upsert(ruleData)
-        .select()
+        .select('id')
+        .eq('product_id', ruleData.product_id)
+        .eq('channel_id', ruleData.channel_id)
+        .eq('date', ruleData.date)
         .single();
 
-      if (error) throw error;
+      let result;
+      
+      if (existingData && !selectError) {
+        // 기존 레코드가 있으면 업데이트
+        const { data, error } = await supabase
+          .from('dynamic_pricing')
+          .update(ruleData)
+          .eq('id', existingData.id)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        result = data;
+      } else {
+        // 기존 레코드가 없으면 삽입
+        const { data, error } = await supabase
+          .from('dynamic_pricing')
+          .insert(ruleData)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        result = data;
+      }
 
       if (showMessage) {
         setSaveMessage('가격 규칙이 성공적으로 저장되었습니다.');
@@ -74,8 +100,8 @@ export function useDynamicPricing({ productId, onSave }: UseDynamicPricingProps)
       
       await loadDynamicPricingData();
       
-      if (onSave && data) {
-        onSave(data);
+      if (onSave && result) {
+        onSave(result);
       }
     } catch (error) {
       console.error('가격 규칙 저장 실패:', error);
