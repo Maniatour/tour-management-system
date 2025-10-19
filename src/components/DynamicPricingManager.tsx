@@ -84,7 +84,7 @@ export default function DynamicPricingManager({
   const {
     choiceCombinations,
     updateChoiceCombinationPrice
-  } = useChoiceManagement(productId);
+  } = useChoiceManagement(productId, selectedChannel, selectedChannelType);
 
   const {
     pricingConfig,

@@ -34,7 +34,7 @@ interface ChoiceCombination {
   is_active: boolean;
 }
 
-export function useChoiceManagement(productId: string) {
+export function useChoiceManagement(productId: string, selectedChannelId?: string, selectedChannelType?: string) {
   const [choiceGroups, setChoiceGroups] = useState<ChoiceGroup[]>([]);
   const [choiceCombinations, setChoiceCombinations] = useState<ChoiceCombination[]>([]);
   const [showCombinationPricing, setShowCombinationPricing] = useState(false);
@@ -47,17 +47,31 @@ export function useChoiceManagement(productId: string) {
       }
 
       // dynamic_pricing 테이블에서 choices_pricing 데이터 가져오기
-      const { data, error } = await supabase
+      let query = supabase
         .from('dynamic_pricing')
         .select('choices_pricing')
         .eq('product_id', productId)
-        .not('choices_pricing', 'is', null)
-        .limit(1);
+        .not('choices_pricing', 'is', null);
+
+      // 채널 필터링
+      if (selectedChannelId) {
+        query = query.eq('channel_id', selectedChannelId);
+      } else if (selectedChannelType === 'SELF') {
+        query = query.like('channel_id', 'B%');
+      }
+
+      const { data, error } = await query.limit(1);
 
       if (error) {
         console.error('초이스 가격 데이터 로드 실패:', error);
         return;
       }
+
+      console.log('초이스 조합 로드 쿼리 결과:', {
+        selectedChannelId,
+        selectedChannelType,
+        dataCount: data?.length || 0
+      });
 
       if (data && data.length > 0) {
         const choicesPricing = data[0].choices_pricing;
@@ -90,11 +104,14 @@ export function useChoiceManagement(productId: string) {
 
         console.log('데이터베이스에서 생성된 초이스 조합:', combinations);
         setChoiceCombinations(combinations);
+      } else {
+        console.log('선택된 채널에 대한 초이스 데이터가 없습니다.');
+        setChoiceCombinations([]);
       }
     } catch (error) {
       console.error('초이스 조합 로드 실패:', error);
     }
-  }, [productId]);
+  }, [productId, selectedChannelId, selectedChannelType]);
 
   const loadChoiceGroups = useCallback(async () => {
     try {
