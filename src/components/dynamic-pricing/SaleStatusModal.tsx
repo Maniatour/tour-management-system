@@ -46,13 +46,21 @@ export const SaleStatusModal = memo(function SaleStatusModal({
     }
   }, []);
 
-  // 날짜별 상태 토글 핸들러
-  const handleDateStatusToggle = useCallback((date: string, status: 'sale' | 'closed') => {
+  // 날짜별 상태 토글 핸들러 (즉시 저장)
+  const handleDateStatusToggle = useCallback(async (date: string, status: 'sale' | 'closed') => {
     setDateStatusMap(prev => ({
       ...prev,
       [date]: status
     }));
-  }, []);
+
+    // 즉시 저장
+    try {
+      const dateObj = new Date(date);
+      await onSave([dateObj], status);
+    } catch (error) {
+      console.error('상태 저장 실패:', error);
+    }
+  }, [onSave]);
 
   // 저장 핸들러
   const handleSave = useCallback(() => {
@@ -148,7 +156,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
                 </div>
               </div>
               <div className="text-xs text-gray-500">
-                💡 날짜를 더블클릭하여 판매/마감 상태를 토글할 수 있습니다
+                💡 날짜를 더블클릭하여 판매/마감 상태를 토글하고 즉시 저장됩니다
               </div>
             </div>
           </div>
@@ -179,16 +187,9 @@ export const SaleStatusModal = memo(function SaleStatusModal({
         <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 transition-colors"
           >
-            취소
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={selectedDates.length === 0}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-          >
-            저장
+            닫기
           </button>
         </div>
       </div>

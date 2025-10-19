@@ -220,11 +220,62 @@ export default function DynamicPricingManager({
     setIsSaleStatusModalOpen(false);
   }, []);
 
-  const handleSaveSaleStatus = useCallback((dates: Date[], status: 'sale' | 'closed') => {
-    // 판매 상태 저장 로직 (필요시 구현)
-    console.log('판매 상태 저장:', { dates, status });
-    setIsSaleStatusModalOpen(false);
-  }, []);
+  const handleSaveSaleStatus = useCallback(async (dates: Date[], status: 'sale' | 'closed') => {
+    if (dates.length === 0 || (!selectedChannelType && !selectedChannel)) {
+      return;
+    }
+
+    let channelIds: string[] = [];
+    
+    if (selectedChannelType === 'SELF') {
+      // 자체 채널 타입 선택: 해당 타입의 모든 채널 사용
+      const currentGroup = channelGroups.find(group => group.type === 'SELF');
+      if (currentGroup) {
+        channelIds = currentGroup.channels.map(channel => channel.id);
+      }
+    } else if (selectedChannel) {
+      // 개별 OTA 채널 선택: 해당 채널만 사용
+      channelIds = [selectedChannel];
+    }
+    
+    if (channelIds.length === 0) {
+      return;
+    }
+
+    try {
+      // 각 날짜와 채널에 대해 판매 상태 저장
+      for (const channelId of channelIds) {
+        for (const date of dates) {
+          const ruleData: SimplePricingRuleDto = {
+            product_id: productId,
+            channel_id: channelId,
+            date: date.toISOString().split('T')[0],
+            adult_price: 0,
+            child_price: 0,
+            infant_price: 0,
+            commission_percent: 0,
+            markup_amount: 0,
+            coupon_percent: 0,
+            is_sale_available: status === 'sale',
+            not_included_price: 0,
+            markup_percent: 0,
+            choices_pricing: {}
+          };
+
+          await savePricingRule(ruleData, false); // 개별 메시지 표시 안함
+        }
+      }
+
+      // 성공 메시지 표시
+      setMessage(`${dates.length}개 날짜의 판매 상태가 ${status === 'sale' ? '판매중' : '마감'}으로 저장되었습니다.`);
+      
+      // 데이터 새로고침
+      await loadDynamicPricingData();
+    } catch (error) {
+      console.error('판매 상태 저장 실패:', error);
+      setMessage('판매 상태 저장에 실패했습니다.');
+    }
+  }, [selectedChannelType, selectedChannel, channelGroups, productId, savePricingRule, setMessage, loadDynamicPricingData]);
 
   // 가격 규칙 저장 핸들러
   const handleSavePricingRule = useCallback(async () => {
