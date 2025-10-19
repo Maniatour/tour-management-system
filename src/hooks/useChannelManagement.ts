@@ -85,11 +85,33 @@ export function useChannelManagement() {
 
   const handleChannelSelect = useCallback(async (channelId: string) => {
     console.log('채널 선택됨:', channelId);
+    
+    // 선택된 채널의 타입 자동 감지
+    const selectedChannelData = channels.find(channel => channel.id === channelId);
+    let channelType: 'OTA' | 'SELF' | '' = '';
+    
+    if (selectedChannelData) {
+      // 채널 타입 결정 로직
+      if (selectedChannelData.type.toLowerCase() === 'ota' || selectedChannelData.category === 'OTA') {
+        channelType = 'OTA';
+      } else if (
+        selectedChannelData.type.toLowerCase() === 'self' || 
+        selectedChannelData.type.toLowerCase() === 'partner' || 
+        selectedChannelData.category === 'Own' ||
+        selectedChannelData.category === 'Self' ||
+        selectedChannelData.category === 'Partner'
+      ) {
+        channelType = 'SELF';
+      }
+    }
+    
+    console.log('감지된 채널 타입:', channelType);
+    
     setSelectedChannel(channelId);
-    setSelectedChannelType(''); // 채널 타입 선택 해제
+    setSelectedChannelType(channelType); // 감지된 채널 타입 설정
     setIsMultiChannelMode(false);
     setSelectedChannels([]);
-  }, []);
+  }, [channels]);
 
   const handleMultiChannelToggle = useCallback(() => {
     setIsMultiChannelMode(!isMultiChannelMode);
