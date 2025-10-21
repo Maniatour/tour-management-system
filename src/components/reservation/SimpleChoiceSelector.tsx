@@ -42,6 +42,7 @@ interface SimpleChoiceSelectorProps {
   children: number;
   infants: number;
   onSelectionChange: (selections: SelectedChoice[]) => void;
+  onPeopleChange?: (adults: number, children: number, infants: number) => void;
   initialSelections?: SelectedChoice[];
 }
 
@@ -51,6 +52,7 @@ export default function SimpleChoiceSelector({
   children,
   infants,
   onSelectionChange,
+  onPeopleChange,
   initialSelections = []
 }: SimpleChoiceSelectorProps) {
   const [selections, setSelections] = useState<SelectedChoice[]>(initialSelections);
@@ -211,6 +213,17 @@ export default function SimpleChoiceSelector({
                           newQuantity,
                           calculatePrice(option, newQuantity, adults, children, infants)
                         );
+                      } else if (choice.choice_type === 'quantity') {
+                        // 수량 선택: 현재 옵션의 수량 증가
+                        const newQuantity = currentQuantity + 1;
+                        handleSelectionChange(
+                          choice.id,
+                          option.id,
+                          option.option_key,
+                          option.option_name_ko,
+                          newQuantity,
+                          calculatePrice(option, newQuantity, adults, children, infants)
+                        );
                       }
                     }}
                   >
@@ -232,120 +245,62 @@ export default function SimpleChoiceSelector({
                               </span>
                             )}
                           </div>
-                          <span className="text-xs text-gray-500">
-                            {option.capacity}명
-                          </span>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-500">
+                              {option.capacity}명
+                            </span>
+                            <div className="text-sm font-medium text-gray-900">
+                              ${totalPrice.toLocaleString()}
+                            </div>
+                          </div>
                         </div>
                         
-                        <div className="flex items-center space-x-3 text-xs text-gray-600">
-                          <span>성인: ${option.adult_price.toLocaleString()}</span>
-                          <span>아동: ${option.child_price.toLocaleString()}</span>
-                          <span>유아: ${option.infant_price.toLocaleString()}</span>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center space-x-3">
-                        {choice.choice_type === 'quantity' ? (
-                          <>
+                        <div className="flex items-center justify-between text-xs text-gray-600">
+                          <div className="flex items-center space-x-3">
+                            <span>성인: ${option.adult_price.toLocaleString()}</span>
+                            <span>아동: ${option.child_price.toLocaleString()}</span>
+                            <span>유아: ${option.infant_price.toLocaleString()}</span>
+                          </div>
+                          {/* 인원 수 수정 버튼 */}
+                          {onPeopleChange && (
                             <div className="flex items-center space-x-1">
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleSelectionChange(
-                                    choice.id,
-                                    option.id,
-                                    option.option_key,
-                                    option.option_name_ko,
-                                    Math.max(0, currentQuantity - 1),
-                                    calculatePrice(option, Math.max(0, currentQuantity - 1), adults, children, infants)
-                                  );
+                                  onPeopleChange(Math.max(0, adults - 1), children, infants);
                                 }}
-                                className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
-                                disabled={currentQuantity === 0}
+                                className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
+                                disabled={adults <= 0}
                               >
                                 −
                               </button>
-                              <span className="w-6 text-center font-medium text-sm">
-                                {currentQuantity}
+                              <span className="text-xs font-medium min-w-[20px] text-center">
+                                성인: {adults}
                               </span>
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleSelectionChange(
-                                    choice.id,
-                                    option.id,
-                                    option.option_key,
-                                    option.option_name_ko,
-                                    currentQuantity + 1,
-                                    calculatePrice(option, currentQuantity + 1, adults, children, infants)
-                                  );
+                                  onPeopleChange(adults + 1, children, infants);
                                 }}
-                                className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
+                                className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
                               >
                                 +
                               </button>
                             </div>
-                            <div className="text-sm font-medium text-gray-900 min-w-[80px] text-right">
-                              ${totalPrice.toLocaleString()}
-                            </div>
-                          </>
-                        ) : choice.choice_type === 'multiple' ? (
-                          <>
-                            {/* 다중 선택 시 수량 입력 */}
-                            {currentQuantity > 0 && (
-                              <div className="flex items-center space-x-1">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSelectionChange(
-                                      choice.id,
-                                      option.id,
-                                      option.option_key,
-                                      option.option_name_ko,
-                                      Math.max(1, currentQuantity - 1),
-                                      calculatePrice(option, Math.max(1, currentQuantity - 1), adults, children, infants)
-                                    );
-                                  }}
-                                  className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
-                                >
-                                  −
-                                </button>
-                                <span className="w-6 text-center font-medium text-sm">
-                                  {currentQuantity}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSelectionChange(
-                                      choice.id,
-                                      option.id,
-                                      option.option_key,
-                                      option.option_name_ko,
-                                      currentQuantity + 1,
-                                      calculatePrice(option, currentQuantity + 1, adults, children, infants)
-                                    );
-                                  }}
-                                  className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            )}
-                            <div className="text-sm font-medium text-gray-900 min-w-[80px] text-right">
-                              ${totalPrice.toLocaleString()}
-                            </div>
-                          </>
-                        ) : (
-                          // 단일 선택
-                          <div className="text-sm font-medium text-gray-900 min-w-[80px] text-right">
-                            ${totalPrice.toLocaleString()}
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
+                      
+                      {/* 수량 표시 (선택된 경우에만) */}
+                      {currentQuantity > 0 && (
+                        <div className="flex items-center space-x-1">
+                          <span className="text-sm font-medium text-blue-600">
+                            수량: {currentQuantity}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
