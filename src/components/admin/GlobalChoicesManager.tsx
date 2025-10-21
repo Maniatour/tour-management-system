@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Edit, Trash2, Settings, Copy } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Settings, Copy, Upload } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ChoiceTemplate {
@@ -38,6 +38,7 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<ChoiceTemplate | null>(null)
+  const [showImportChoicesModal, setShowImportChoicesModal] = useState(false)
 
   useEffect(() => {
     fetchTemplates()
@@ -170,6 +171,101 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
     }
   }
 
+  // 기존 상품 초이스를 템플릿으로 가져오기
+  const importChoicesAsTemplates = async (productId: string) => {
+    try {
+      // 상품 초이스 가져오기
+      const { data: productChoices, error: choicesError } = await supabase
+        .from('product_choices')
+        .select(`
+          *,
+          options:choice_options(*)
+        `)
+        .eq('product_id', productId)
+
+      if (choicesError) {
+        console.error('Error fetching product choices:', choicesError)
+        return
+      }
+
+      if (!productChoices || productChoices.length === 0) {
+        alert('해당 상품에 등록된 초이스가 없습니다.')
+        return
+      }
+
+      // 상품 정보 가져오기
+      const { data: product, error: productError } = await supabase
+        .from('products')
+        .select('name, name_ko')
+        .eq('id', productId)
+        .single()
+
+      if (productError) {
+        console.error('Error fetching product:', productError)
+        return
+      }
+
+      // 각 초이스 그룹을 템플릿으로 변환
+      for (const choice of productChoices) {
+        const templateGroup = `${product.name_ko || product.name} - ${choice.choice_group_ko}`
+        const templateGroupKo = `${product.name_ko || product.name} - ${choice.choice_group_ko}`
+
+        // 템플릿 그룹이 이미 존재하는지 확인
+        const { data: existingTemplate } = await supabase
+          .from('options')
+          .select('id')
+          .eq('is_choice_template', true)
+          .eq('template_group', templateGroup)
+          .limit(1)
+
+        if (existingTemplate && existingTemplate.length > 0) {
+          continue // 이미 존재하는 템플릿 그룹은 건너뛰기
+        }
+
+        // 각 옵션을 템플릿으로 변환
+        for (const option of choice.options || []) {
+          const newTemplate = {
+            id: crypto.randomUUID(),
+            name: option.option_name,
+            name_ko: option.option_name_ko,
+            description: `${product.name_ko || product.name}에서 가져온 초이스`,
+            category: 'imported',
+            adult_price: option.adult_price || 0,
+            child_price: option.child_price || 0,
+            infant_price: option.infant_price || 0,
+            price_type: 'per_person',
+            status: 'active',
+            tags: ['imported', product.name],
+            is_choice_template: true,
+            choice_type: choice.choice_type,
+            min_selections: choice.min_selections,
+            max_selections: choice.max_selections,
+            template_group: templateGroup,
+            template_group_ko: templateGroupKo,
+            is_required: choice.is_required,
+            sort_order: option.sort_order || 0
+          }
+
+          const { error } = await supabase
+            .from('options')
+            .insert([newTemplate])
+
+          if (error) {
+            console.error('Error importing template:', error)
+          }
+        }
+      }
+
+      // 템플릿 목록 새로고침
+      await fetchTemplates()
+      setShowImportChoicesModal(false)
+      alert('초이스가 템플릿으로 성공적으로 가져와졌습니다.')
+    } catch (error) {
+      console.error('Error importing choices:', error)
+      alert('초이스 가져오기 중 오류가 발생했습니다.')
+    }
+  }
+
   const getCategoryColor = (category: string) => {
     const categoryColors: Record<string, string> = {
       'accommodation': 'bg-blue-100 text-blue-800',
@@ -273,6 +369,13 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
             </option>
           ))}
         </select>
+        <button
+          onClick={() => setShowImportChoicesModal(true)}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+        >
+          <Upload size={20} />
+          <span>기존 초이스 가져오기</span>
+        </button>
         <button
           onClick={() => setShowAddForm(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
@@ -403,6 +506,14 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
             setShowAddForm(false)
             setEditingTemplate(null)
           }}
+        />
+      )}
+
+      {/* 기존 초이스 가져오기 모달 */}
+      {showImportChoicesModal && (
+        <ImportChoicesModal
+          onImport={importChoicesAsTemplates}
+          onClose={() => setShowImportChoicesModal(false)}
         />
       )}
     </div>
@@ -702,6 +813,105 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// 기존 초이스 가져오기 모달 컴포넌트
+interface ImportChoicesModalProps {
+  onImport: (productId: string) => void
+  onClose: () => void
+}
+
+function ImportChoicesModal({ onImport, onClose }: ImportChoicesModalProps) {
+  const [products, setProducts] = useState<Array<{id: string, name: string, name_ko?: string}>>([])
+  const [selectedProductId, setSelectedProductId] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadProducts()
+  }, [])
+
+  const loadProducts = async () => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, name_ko')
+        .order('name_ko', { ascending: true })
+
+      if (error) {
+        console.error('Error loading products:', error)
+        return
+      }
+
+      setProducts(data || [])
+    } catch (error) {
+      console.error('Error loading products:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleImport = () => {
+    if (selectedProductId) {
+      onImport(selectedProductId)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-96">
+          <div className="text-center">로딩 중...</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">기존 초이스 가져오기</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              상품 선택
+            </label>
+            <select
+              value={selectedProductId}
+              onChange={(e) => setSelectedProductId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">상품을 선택하세요</option>
+              {products.map(product => (
+                <option key={product.id} value={product.id}>
+                  {product.name_ko || product.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="text-sm text-gray-600">
+            <p>선택한 상품의 초이스가 템플릿으로 변환됩니다.</p>
+            <p>이미 존재하는 템플릿 그룹은 건너뛰어집니다.</p>
+          </div>
+        </div>
+        <div className="flex justify-end space-x-3 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleImport}
+            disabled={!selectedProductId}
+            className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:opacity-50"
+          >
+            가져오기
+          </button>
+        </div>
       </div>
     </div>
   )
