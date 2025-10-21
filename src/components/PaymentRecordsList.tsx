@@ -197,7 +197,7 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-gray-900 flex items-center">
+        <h3 className="text-base font-semibold text-gray-900 flex items-center">
           <DollarSign size={16} className="mr-1" />
           입금 내역 ({paymentRecords.length})
         </h3>
