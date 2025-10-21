@@ -36,7 +36,14 @@ export default function CustomerSection({
   return (
     <div className="grid grid-cols-2 gap-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.customer')}</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium text-gray-700">{t('form.customer')}</label>
+          {formData.customerId && !formData.showCustomerDropdown && (
+            <span className="text-xs text-gray-600">
+              선택된 고객: {customers.find(c => c.id === formData.customerId)?.name || '알 수 없음'}
+            </span>
+          )}
+        </div>
         <div className="relative" ref={customerSearchRef}>
           <input
             type="text"
@@ -102,13 +109,6 @@ export default function CustomerSection({
                   검색 결과가 없습니다
                 </div>
               )}
-            </div>
-          )}
-          
-          {/* 선택된 고객 표시 */}
-          {formData.customerId && !formData.showCustomerDropdown && (
-            <div className="mt-1 text-xs text-gray-600">
-              선택된 고객: {customers.find(c => c.id === formData.customerId)?.name || '알 수 없음'}
             </div>
           )}
         </div>
