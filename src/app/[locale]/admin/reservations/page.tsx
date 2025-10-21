@@ -79,6 +79,97 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     
     return colorPalette[Math.abs(hash) % colorPalette.length]
   }
+
+  // 새로운 초이스 시스템에서 선택된 옵션을 가져오는 함수
+  const getSelectedChoicesFromNewSystem = useCallback(async (reservationId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('reservation_choices')
+        .select(`
+          choice_id,
+          option_id,
+          quantity,
+          choice_options!inner (
+            option_key,
+            option_name,
+            option_name_ko,
+            product_choices!inner (
+              choice_group_ko
+            )
+          )
+        `)
+        .eq('reservation_id', reservationId)
+
+      if (error) {
+        console.error('Error fetching reservation choices:', error)
+        return []
+      }
+
+      return data || []
+    } catch (error) {
+      console.error('Error in getSelectedChoicesFromNewSystem:', error)
+      return []
+    }
+  }, [])
+
+  // 새로운 초이스 시스템을 사용하는 Choices 표시 컴포넌트
+  const ChoicesDisplay = ({ reservation }: { reservation: Reservation }) => {
+    const [selectedChoices, setSelectedChoices] = useState<Array<{
+      choice_id: string
+      option_id: string
+      quantity: number
+      choice_options: {
+        option_key: string
+        option_name: string
+        option_name_ko: string
+        product_choices: {
+          choice_group_ko: string
+        }
+      }
+    }>>([])
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+      const loadChoices = async () => {
+        setLoading(true)
+        try {
+          const choices = await getSelectedChoicesFromNewSystem(reservation.id)
+          setSelectedChoices(choices)
+        } catch (error) {
+          console.error('Error loading choices:', error)
+        } finally {
+          setLoading(false)
+        }
+      }
+      
+      loadChoices()
+    }, [reservation.id])
+
+    if (loading) {
+      return null
+    }
+
+    if (selectedChoices.length === 0) {
+      return null
+    }
+
+    return (
+      <>
+        {selectedChoices.map((choice, index) => {
+          const optionName = choice.choice_options?.option_name_ko || choice.choice_options?.option_name || 'Unknown'
+          const groupName = choice.choice_options?.product_choices?.choice_group_ko || 'Unknown'
+          const badgeClass = getGroupColorClasses(choice.choice_id, groupName)
+          
+          return (
+            <span key={index} className={badgeClass}>
+              ✓ {optionName}
+            </span>
+          )
+        })}
+      </>
+    )
+  }
+
   const router = useRouter()
   const routeParams = useParams() as { locale?: string }
   const locale = routeParams?.locale || 'ko'
@@ -1502,114 +1593,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   <div className="flex items-center space-x-2 mb-2">
                     <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products || [])}</div>
                     
-                    {/* Choices 뱃지 표시 */}
-                    {(() => {
-                      // 디버깅을 위한 choices 데이터 로그
-                      console.log('Group Card - Reservation choices data:', reservation.choices);
-                      console.log('Group Card - Reservation choices type:', typeof reservation.choices);
-                      
-                      // choices 데이터 파싱 (문자열인 경우 JSON 파싱)
-                      let parsedChoices = reservation.choices;
-                      if (typeof reservation.choices === 'string') {
-                        try {
-                          parsedChoices = JSON.parse(reservation.choices);
-                          console.log('Group Card - Parsed choices:', parsedChoices);
-                        } catch (error) {
-                          console.error('Group Card - Error parsing choices:', error);
-                        }
-                      }
-                      
-                      // choices 데이터에서 선택된 옵션 찾기
-                      if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
-                        console.log('Group Card - Choices required array:', parsedChoices.required);
-                        
-                        const selectedOptions = parsedChoices.required
-                          .map((choice: Record<string, unknown>) => {
-                            console.log('Group Card - Processing choice:', choice);
-                            if (!choice || typeof choice !== 'object') return null;
-                            
-                            // 수량 기반 다중 선택인 경우
-                            if (choice.type === 'multiple_quantity' && choice.selections && Array.isArray(choice.selections)) {
-                              console.log('Group Card - Multiple quantity choice:', choice.selections);
-                              const selectionNames = choice.selections.map((selection: any) => {
-                                if (selection.option && selection.quantity > 0) {
-                                  return `${selection.option.name_ko || selection.option.name} × ${selection.quantity}`;
-                                }
-                                return null;
-                              }).filter(Boolean);
-                              return selectionNames.length > 0 ? selectionNames.join(', ') : null;
-                            }
-                            
-                            // 기존 단일 선택인 경우
-                            const selectedOption = choice.options && Array.isArray(choice.options) 
-                              ? choice.options.find((option: Record<string, unknown>) => {
-                                  console.log('Group Card - Checking option:', option, 'is_default:', option.is_default);
-                                  return option.is_default === true;
-                                })
-                              : null;
-                            
-                            console.log('Group Card - Selected option:', selectedOption);
-                            
-                            if (selectedOption) {
-                              const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
-                              console.log('Group Card - Selected option name:', optionName);
-                              return optionName;
-                            }
-                            
-                            // 선택된 옵션이 없으면 첫 번째 옵션
-                            if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
-                              const firstOption = choice.options[0] as Record<string, unknown>;
-                              const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
-                              console.log('Group Card - First option name:', optionName);
-                              return optionName;
-                            }
-                            
-                            return null;
-                          })
-                          .filter(Boolean);
-                        
-                        console.log('Group Card - Selected options:', selectedOptions);
-                        
-                        return selectedOptions.map((optionName: string, index: number) => {
-                          // 그룹 정보를 찾아서 색상 결정
-                          let groupId = 'default'
-                          let groupName = ''
-                          
-                          // parsedChoices에서 해당 옵션이 속한 그룹 찾기
-                          if (parsedChoices.required && Array.isArray(parsedChoices.required)) {
-                            for (const choice of parsedChoices.required) {
-                              if (choice.options && Array.isArray(choice.options)) {
-                                const foundOption = choice.options.find((opt: Record<string, unknown>) => 
-                                  opt.name === optionName || opt.name_ko === optionName
-                                )
-                                if (foundOption) {
-                                  groupId = choice.id || 'default'
-                                  groupName = choice.name || ''
-                                  break
-                                }
-                              }
-                            }
-                          }
-                          
-                          const badgeClass = getGroupColorClasses(groupId, groupName)
-                          
-                          return (
-                            <span key={index} className={badgeClass}>
-                              ✓ {String(optionName)}
-                            </span>
-                          );
-                        });
-                      }
-                      
-                      // choices 데이터가 없는 경우 뱃지 표시 안함
-                      if (!parsedChoices || Object.keys(parsedChoices).length === 0) {
-                        console.log('Group Card - No choices data, no badge shown');
-                        return null;
-                      }
-                      
-                      console.log('Group Card - Choices data exists but no required array');
-                      return null;
-                    })()}
+                    {/* 새로운 초이스 시스템 뱃지 표시 */}
+                    <ChoicesDisplay reservation={reservation} />
                   </div>
                   
                   {/* 기존 selectedOptions 표시 (필요한 경우) */}
@@ -1864,114 +1849,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     <div className="flex items-center space-x-2 mb-2">
                       <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products || [])}</div>
                       
-                      {/* Choices 뱃지 표시 */}
-                      {(() => {
-                        // 디버깅을 위한 choices 데이터 로그
-                        console.log('Reservation choices data:', reservation.choices);
-                        console.log('Reservation choices type:', typeof reservation.choices);
-                        
-                        // choices 데이터 파싱 (문자열인 경우 JSON 파싱)
-                        let parsedChoices = reservation.choices;
-                        if (typeof reservation.choices === 'string') {
-                          try {
-                            parsedChoices = JSON.parse(reservation.choices);
-                            console.log('Parsed choices:', parsedChoices);
-                          } catch (error) {
-                            console.error('Error parsing choices:', error);
-                          }
-                        }
-                        
-                        // choices 데이터에서 선택된 옵션 찾기
-                        if (parsedChoices && parsedChoices.required && Array.isArray(parsedChoices.required)) {
-                          console.log('Choices required array:', parsedChoices.required);
-                          
-                          const selectedOptions = parsedChoices.required
-                            .map((choice: Record<string, unknown>) => {
-                              console.log('Processing choice:', choice);
-                              if (!choice || typeof choice !== 'object') return null;
-                              
-                              // 수량 기반 다중 선택인 경우
-                              if (choice.type === 'multiple_quantity' && choice.selections && Array.isArray(choice.selections)) {
-                                console.log('Multiple quantity choice:', choice.selections);
-                                const selectionNames = choice.selections.map((selection: any) => {
-                                  if (selection.option && selection.quantity > 0) {
-                                    return `${selection.option.name_ko || selection.option.name} × ${selection.quantity}`;
-                                  }
-                                  return null;
-                                }).filter(Boolean);
-                                return selectionNames.length > 0 ? selectionNames.join(', ') : null;
-                              }
-                              
-                              // 기존 단일 선택인 경우
-                              const selectedOption = choice.options && Array.isArray(choice.options) 
-                                ? choice.options.find((option: Record<string, unknown>) => {
-                                    console.log('Checking option:', option, 'is_default:', option.is_default);
-                                    return option.is_default === true;
-                                  })
-                                : null;
-                              
-                              console.log('Selected option:', selectedOption);
-                              
-                              if (selectedOption) {
-                                const optionName = selectedOption.name || selectedOption.name_ko || selectedOption.id;
-                                console.log('Selected option name:', optionName);
-                                return optionName;
-                              }
-                              
-                              // 선택된 옵션이 없으면 첫 번째 옵션
-                              if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
-                                const firstOption = choice.options[0] as Record<string, unknown>;
-                                const optionName = firstOption.name || firstOption.name_ko || firstOption.id;
-                                console.log('First option name:', optionName);
-                                return optionName;
-                              }
-                              
-                              return null;
-                            })
-                            .filter(Boolean);
-                          
-                          console.log('Selected options:', selectedOptions);
-                          
-                          return selectedOptions.map((optionName: string, index: number) => {
-                            // 그룹 정보를 찾아서 색상 결정
-                            let groupId = 'default'
-                            let groupName = ''
-                            
-                            // parsedChoices에서 해당 옵션이 속한 그룹 찾기
-                            if (parsedChoices.required && Array.isArray(parsedChoices.required)) {
-                              for (const choice of parsedChoices.required) {
-                                if (choice.options && Array.isArray(choice.options)) {
-                                  const foundOption = choice.options.find((opt: Record<string, unknown>) => 
-                                    opt.name === optionName || opt.name_ko === optionName
-                                  )
-                                  if (foundOption) {
-                                    groupId = choice.id || 'default'
-                                    groupName = choice.name || ''
-                                    break
-                                  }
-                                }
-                              }
-                            }
-                            
-                            const badgeClass = getGroupColorClasses(groupId, groupName)
-                            
-                            return (
-                              <span key={index} className={badgeClass}>
-                                ✓ {String(optionName)}
-                              </span>
-                            );
-                          });
-                        }
-                        
-                        // choices 데이터가 없는 경우 뱃지 표시 안함
-                        if (!parsedChoices || Object.keys(parsedChoices).length === 0) {
-                          console.log('No choices data, no badge shown');
-                          return null;
-                        }
-                        
-                        console.log('Choices data exists but no required array');
-                        return null;
-                      })()}
+                      {/* 새로운 초이스 시스템 뱃지 표시 */}
+                      <ChoicesDisplay reservation={reservation} />
                     </div>
                     
                     {/* 기존 selectedOptions 표시 (필요한 경우) */}
