@@ -1919,7 +1919,7 @@ export default function ReservationForm({
     <div className={isModal ? "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4" : "w-full"}>
       <div className={isModal 
         ? "bg-white rounded-lg p-4 sm:p-6 w-full max-w-[95vw] sm:max-w-[80vw] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto"
-        : "bg-white rounded-lg p-4 sm:p-6 w-full"}
+        : "bg-white rounded-lg pt-0 pb-4 sm:pb-6 px-4 sm:px-6 w-full"}
       >
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 space-y-3 sm:space-y-0">
           <h2 className="text-lg sm:text-xl font-bold">
