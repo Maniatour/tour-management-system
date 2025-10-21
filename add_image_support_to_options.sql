@@ -44,12 +44,39 @@ SET
   END
 WHERE image_url IS NULL AND category IN ('accommodation', 'transportation', 'meal', 'activity', 'insurance', 'equipment');
 
--- 4. 이미지 관련 제약 조건 추가
-ALTER TABLE options ADD CONSTRAINT check_image_url_format 
-  CHECK (image_url IS NULL OR image_url ~ '^https?://.*\.(jpg|jpeg|png|gif|webp)$');
-
-ALTER TABLE options ADD CONSTRAINT check_thumbnail_url_format 
-  CHECK (thumbnail_url IS NULL OR thumbnail_url ~ '^https?://.*\.(jpg|jpeg|png|gif|webp)$');
+-- 4. 이미지 관련 제약 조건 추가 (기존 제약 조건 제거 후 추가)
+-- 주의: 기존 데이터에 문제가 있다면 제약 조건을 추가하지 않습니다
+DO $$
+BEGIN
+  -- 기존 제약 조건 제거
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'check_image_url_format') THEN
+    ALTER TABLE options DROP CONSTRAINT check_image_url_format;
+  END IF;
+  
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'check_thumbnail_url_format') THEN
+    ALTER TABLE options DROP CONSTRAINT check_thumbnail_url_format;
+  END IF;
+  
+  -- 기존 데이터 검증 후 제약 조건 추가
+  IF NOT EXISTS (
+    SELECT 1 FROM options 
+    WHERE image_url IS NOT NULL 
+    AND image_url !~ '^https?://.*\.(jpg|jpeg|png|gif|webp|webm|svg)(\?.*)?$'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM options 
+    WHERE thumbnail_url IS NOT NULL 
+    AND thumbnail_url !~ '^https?://.*\.(jpg|jpeg|png|gif|webp|webm|svg)(\?.*)?$'
+  ) THEN
+    -- 새로운 제약 조건 추가 (더 유연한 형식 허용)
+    ALTER TABLE options ADD CONSTRAINT check_image_url_format 
+      CHECK (image_url IS NULL OR image_url ~ '^https?://.*\.(jpg|jpeg|png|gif|webp|webm|svg)(\?.*)?$');
+      
+    ALTER TABLE options ADD CONSTRAINT check_thumbnail_url_format 
+      CHECK (thumbnail_url IS NULL OR thumbnail_url ~ '^https?://.*\.(jpg|jpeg|png|gif|webp|webm|svg)(\?.*)?$');
+  ELSE
+    RAISE NOTICE '기존 데이터에 형식이 맞지 않는 이미지 URL이 있어 제약 조건을 추가하지 않습니다.';
+  END IF;
+END $$;
 
 -- 5. 이미지 관련 함수 생성 (이미지 URL 검증)
 CREATE OR REPLACE FUNCTION validate_image_url(url TEXT)
@@ -59,8 +86,8 @@ BEGIN
     RETURN TRUE;
   END IF;
   
-  -- URL 형식 검증
-  IF url !~ '^https?://.*\.(jpg|jpeg|png|gif|webp)$' THEN
+  -- URL 형식 검증 (더 유연한 형식 허용)
+  IF url !~ '^https?://.*\.(jpg|jpeg|png|gif|webp|webm|svg)(\?.*)?$' THEN
     RETURN FALSE;
   END IF;
   
