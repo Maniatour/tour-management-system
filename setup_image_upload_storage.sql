@@ -13,16 +13,43 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Storage 정책 생성 - 모든 사용자가 이미지 업로드 가능
-CREATE POLICY IF NOT EXISTS "Allow public uploads" ON storage.objects
-FOR INSERT WITH CHECK (bucket_id = 'images');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE tablename = 'objects' 
+    AND policyname = 'Allow public uploads'
+  ) THEN
+    CREATE POLICY "Allow public uploads" ON storage.objects
+    FOR INSERT WITH CHECK (bucket_id = 'images');
+  END IF;
+END $$;
 
 -- 3. Storage 정책 생성 - 모든 사용자가 이미지 읽기 가능
-CREATE POLICY IF NOT EXISTS "Allow public access" ON storage.objects
-FOR SELECT USING (bucket_id = 'images');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE tablename = 'objects' 
+    AND policyname = 'Allow public access'
+  ) THEN
+    CREATE POLICY "Allow public access" ON storage.objects
+    FOR SELECT USING (bucket_id = 'images');
+  END IF;
+END $$;
 
 -- 4. Storage 정책 생성 - 모든 사용자가 이미지 삭제 가능
-CREATE POLICY IF NOT EXISTS "Allow public deletes" ON storage.objects
-FOR DELETE USING (bucket_id = 'images');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE tablename = 'objects' 
+    AND policyname = 'Allow public deletes'
+  ) THEN
+    CREATE POLICY "Allow public deletes" ON storage.objects
+    FOR DELETE USING (bucket_id = 'images');
+  END IF;
+END $$;
 
 -- 5. 이미지 업로드 통계를 위한 함수
 CREATE OR REPLACE FUNCTION get_storage_stats()
