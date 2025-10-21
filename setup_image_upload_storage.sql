@@ -134,7 +134,9 @@ CREATE TRIGGER auto_generate_thumbnail_trigger
   FOR EACH ROW
   EXECUTE FUNCTION auto_generate_thumbnail();
 
--- 9. 이미지 관련 뷰 생성
+-- 9. 이미지 관련 뷰 생성 (options 테이블에 이미지 컬럼이 추가된 후 실행)
+-- 먼저 add_image_support_to_options.sql을 실행해야 합니다
+/*
 CREATE OR REPLACE VIEW options_with_images AS
 SELECT 
   o.*,
@@ -148,8 +150,11 @@ SELECT
   END as display_image
 FROM options o
 ORDER BY o.category, o.sort_order, o.name;
+*/
 
--- 10. 이미지 통계 뷰
+-- 10. 이미지 통계 뷰 (options 테이블에 이미지 컬럼이 추가된 후 실행)
+-- 먼저 add_image_support_to_options.sql을 실행해야 합니다
+/*
 CREATE OR REPLACE VIEW image_statistics AS
 SELECT 
   'options' as table_name,
@@ -168,9 +173,11 @@ SELECT
   (SELECT COUNT(*) FROM storage.objects WHERE bucket_id = 'images') as records_with_images,
   0 as records_without_images,
   100.0 as image_coverage_percentage;
+*/
 
 -- 11. 완료 메시지
 SELECT '이미지 업로드 기능이 성공적으로 설정되었습니다!' as message;
 SELECT 'Storage 버킷: images' as bucket_info;
 SELECT '지원 형식: JPEG, PNG, GIF, WebP' as supported_formats;
 SELECT '최대 크기: 5MB' as max_size;
+SELECT '다음 단계: add_image_support_to_options.sql 실행 후 주석 처리된 뷰들을 활성화하세요' as next_step;
