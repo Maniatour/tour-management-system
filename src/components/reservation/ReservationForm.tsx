@@ -97,7 +97,6 @@ export default function ReservationForm({
   const tCommon = useTranslations('common')
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
-  const [showRawDetails, setShowRawDetails] = useState(false)
   const [channelAccordionExpanded, setChannelAccordionExpanded] = useState(layout === 'modal')
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
   
@@ -1961,17 +1960,6 @@ export default function ReservationForm({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:h-[940px]">
             {/* 1열: 고객, 투어 정보, 가격 정보 - 모바일에서는 전체 너비 */}
             <div className="col-span-1 lg:col-span-6 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600">모든 필드가 보이지 않나요?</div>
-                <button type="button" onClick={() => setShowRawDetails(!showRawDetails)} className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200">
-                  {showRawDetails ? '숨기기' : '전체 데이터 보기'}
-                </button>
-              </div>
-              {showRawDetails && (
-                <div className="p-2 bg-gray-50 rounded border overflow-x-auto">
-                  <pre className="text-xs whitespace-pre-wrap break-all">{JSON.stringify(reservation ?? rez, null, 2)}</pre>
-                </div>
-              )}
               <CustomerSection
                 formData={formData}
                 setFormData={setFormData}
