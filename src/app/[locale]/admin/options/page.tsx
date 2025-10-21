@@ -364,6 +364,20 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                 </span>
               </div>
 
+              {/* 이미지 */}
+              {(option as any).image_url && (
+                <div className="relative w-full h-24 bg-gray-100 rounded-lg overflow-hidden mb-3">
+                  <img
+                    src={(option as any).thumbnail_url || (option as any).image_url}
+                    alt={(option as any).image_alt || option.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }}
+                  />
+                </div>
+              )}
+
               {/* 설명 */}
               <div className="text-sm text-gray-700 line-clamp-2" title={option.description}>
                 {option.description}

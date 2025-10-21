@@ -17,6 +17,9 @@ interface ChoiceOption {
   is_default: boolean
   is_active: boolean
   sort_order: number
+  image_url?: string
+  image_alt?: string
+  thumbnail_url?: string
 }
 
 interface ProductChoice {
@@ -93,7 +96,10 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             capacity: 1,
             is_default: option.id === data[0].id, // 첫 번째 옵션을 기본값으로
             is_active: option.status === 'active',
-            sort_order: option.sort_order || 0
+            sort_order: option.sort_order || 0,
+            image_url: option.image_url,
+            image_alt: option.image_alt,
+            thumbnail_url: option.thumbnail_url
           }))
         }
 

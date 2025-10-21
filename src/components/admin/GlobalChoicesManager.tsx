@@ -24,6 +24,10 @@ interface ChoiceTemplate {
   template_group_ko?: string
   is_required: boolean
   sort_order: number
+  image_url?: string
+  image_alt?: string
+  thumbnail_url?: string
+  image_order?: number
   created_at: string
 }
 
@@ -88,7 +92,11 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
         template_group: template.template_group,
         template_group_ko: template.template_group_ko,
         is_required: template.is_required,
-        sort_order: template.sort_order
+        sort_order: template.sort_order,
+        image_url: template.image_url,
+        image_alt: template.image_alt,
+        thumbnail_url: template.thumbnail_url,
+        image_order: template.image_order
       }
 
       const { data, error } = await supabase
@@ -130,7 +138,11 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
           template_group: template.template_group,
           template_group_ko: template.template_group_ko,
           is_required: template.is_required,
-          sort_order: template.sort_order
+          sort_order: template.sort_order,
+          image_url: template.image_url,
+          image_alt: template.image_alt,
+          thumbnail_url: template.thumbnail_url,
+          image_order: template.image_order
         }
 
         const { error } = await supabase
@@ -436,6 +448,20 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
 
                 {/* 카드 본문 */}
                 <div className="p-4 space-y-3">
+                  {/* 이미지 */}
+                  {template.image_url && (
+                    <div className="relative w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
+                      <img
+                        src={template.thumbnail_url || template.image_url}
+                        alt={template.image_alt || template.name_ko || template.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {/* 카테고리와 타입 */}
                   <div className="flex items-center justify-between">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(template.category)}`}>
@@ -544,7 +570,11 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
     template_group: template?.template_group || '',
     template_group_ko: template?.template_group_ko || '',
     is_required: template?.is_required ?? true,
-    sort_order: template?.sort_order || 0
+    sort_order: template?.sort_order || 0,
+    image_url: template?.image_url || '',
+    image_alt: template?.image_alt || '',
+    thumbnail_url: template?.thumbnail_url || '',
+    image_order: template?.image_order || 0
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -760,6 +790,56 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               활성 상태
             </label>
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">이미지 URL</label>
+            <input
+              type="url"
+              value={formData.image_url}
+              onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="https://example.com/image.jpg"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">썸네일 URL</label>
+            <input
+              type="url"
+              value={formData.thumbnail_url}
+              onChange={(e) => setFormData({ ...formData, thumbnail_url: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="https://example.com/thumbnail.jpg"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">이미지 대체 텍스트</label>
+            <input
+              type="text"
+              value={formData.image_alt}
+              onChange={(e) => setFormData({ ...formData, image_alt: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="이미지 설명"
+            />
+          </div>
+
+          {/* 이미지 미리보기 */}
+          {formData.image_url && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">이미지 미리보기</label>
+              <div className="relative w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
+                <img
+                  src={formData.thumbnail_url || formData.image_url}
+                  alt={formData.image_alt || formData.name_ko || formData.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none'
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">태그</label>
