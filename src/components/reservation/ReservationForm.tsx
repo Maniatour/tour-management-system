@@ -1973,25 +1973,19 @@ export default function ReservationForm({
                 />
               </div>
               
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3">투어 정보</h3>
-                <TourInfoSection
-                  formData={formData}
-                  setFormData={setFormData}
-                  pickupHotels={pickupHotels}
-                  sanitizeTimeInput={sanitizeTimeInput}
-                  t={t}
-                />
-              </div>
+              <TourInfoSection
+                formData={formData}
+                setFormData={setFormData}
+                pickupHotels={pickupHotels}
+                sanitizeTimeInput={sanitizeTimeInput}
+                t={t}
+              />
               
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3">참가자</h3>
-                <ParticipantsSection
-                  formData={formData}
-                  setFormData={setFormData}
-                  t={t}
-                />
-              </div>
+              <ParticipantsSection
+                formData={formData}
+                setFormData={setFormData}
+                t={t}
+              />
 
                <PricingSection
                  formData={formData}
