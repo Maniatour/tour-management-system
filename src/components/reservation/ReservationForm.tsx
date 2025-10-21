@@ -186,6 +186,7 @@ export default function ReservationForm({
     isPrivateTour: boolean
     privateTourAdditionalCost: number
     commission_percent: number
+    commission_amount: number
     // OTA/현장 결제 분리
     onlinePaymentAmount: number
     onSiteBalanceAmount: number
@@ -268,6 +269,7 @@ export default function ReservationForm({
     isPrivateTour: (reservation?.isPrivateTour as boolean) || (rez as any).is_private_tour || false,
     privateTourAdditionalCost: 0,
     commission_percent: 0,
+    commission_amount: 0,
     onlinePaymentAmount: 0,
     onSiteBalanceAmount: 0,
     productRequiredOptions: []
@@ -1248,7 +1250,7 @@ export default function ReservationForm({
       if (reservationId) {
         const { data: existingPricing, error: existingError } = await (supabase as any)
           .from('reservation_pricing')
-          .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent')
+          .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount')
           .eq('reservation_id', reservationId)
           .maybeSingle()
 
@@ -1287,7 +1289,8 @@ export default function ReservationForm({
             balanceAmount: Number(existingPricing.balance_amount) || 0,
             isPrivateTour: reservation?.isPrivateTour || false,
             privateTourAdditionalCost: Number(existingPricing.private_tour_additional_cost) || 0,
-            commission_percent: Number((existingPricing as any).commission_percent) || 0
+            commission_percent: Number((existingPricing as any).commission_percent) || 0,
+            commission_amount: Number((existingPricing as any).commission_amount) || 0
           }))
           
           setIsExistingPricingLoaded(true)
@@ -1301,7 +1304,7 @@ export default function ReservationForm({
       
       const { data: pricingData, error } = await (supabase as any)
         .from('dynamic_pricing')
-        .select('adult_price, child_price, infant_price, commission_percent, options_pricing, not_included_price')
+        .select('adult_price, child_price, infant_price, commission_percent, commission_amount, options_pricing, not_included_price')
         .eq('product_id', productId)
         .eq('date', tourDate)
         .eq('channel_id', channelId)
@@ -1345,6 +1348,7 @@ export default function ReservationForm({
         childProductPrice: (pricing?.child_price as number) || 0,
         infantProductPrice: (pricing?.infant_price as number) || 0,
         commission_percent: (pricing?.commission_percent as number) || 0,
+        commission_amount: (pricing?.commission_amount as number) || 0,
         // Derive OTA per-adult amount when not_included_price is provided
         onlinePaymentAmount: pricing?.not_included_price != null
           ? Math.max(0, ((pricing?.adult_price || 0) - (pricing?.not_included_price || 0)) * (prev.adults || 0))
@@ -1730,7 +1734,8 @@ export default function ReservationForm({
         deposit_amount: formData.depositAmount,
         balance_amount: formData.balanceAmount,
         private_tour_additional_cost: formData.privateTourAdditionalCost,
-        commission_percent: formData.commission_percent
+        commission_percent: formData.commission_percent,
+        commission_amount: formData.commission_amount
       }
 
       let error: unknown
@@ -1854,7 +1859,8 @@ export default function ReservationForm({
           balanceAmount: formData.balanceAmount,
           isPrivateTour: formData.isPrivateTour,
           privateTourAdditionalCost: formData.privateTourAdditionalCost,
-          commission_percent: formData.commission_percent
+          commission_percent: formData.commission_percent,
+          commission_amount: formData.commission_amount
         }
       })
       

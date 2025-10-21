@@ -67,6 +67,7 @@ interface PricingSectionProps {
     depositAmount: number
     balanceAmount: number
     commission_percent: number
+    commission_amount: number
     onlinePaymentAmount?: number
     onSiteBalanceAmount?: number
   }
@@ -206,6 +207,7 @@ export default function PricingSection({
                 isPrivateTour: false,
                 privateTourAdditionalCost: 0,
                 commission_percent: 0,
+                commission_amount: 0,
                 productChoices: []
               }))
             }}
@@ -669,20 +671,38 @@ export default function PricingSection({
               {/* 커미션 퍼센트 입력 */}
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-700">커미션</span>
-                <div className="flex items-center space-x-1">
-                  <input
-                    type="number"
-                    value={formData.commission_percent}
-                    onChange={(e) => setFormData({ ...formData, commission_percent: Number(e.target.value) || 0 })}
-                    className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    placeholder="0"
-                  />
-                  <span className="text-xs text-gray-500">%</span>
+                <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-1">
+                    <input
+                      type="number"
+                      value={formData.commission_percent}
+                      onChange={(e) => setFormData({ ...formData, commission_percent: Number(e.target.value) || 0 })}
+                      className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      placeholder="0"
+                    />
+                    <span className="text-xs text-gray-500">%</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <span className="text-xs text-gray-500">또는</span>
+                    <input
+                      type="number"
+                      value={formData.commission_amount}
+                      onChange={(e) => setFormData({ ...formData, commission_amount: Number(e.target.value) || 0 })}
+                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      step="0.01"
+                      min="0"
+                      placeholder="0"
+                    />
+                    <span className="text-xs text-gray-500">$</span>
+                  </div>
                   <span className="text-sm font-medium text-red-600">
-                    -${(((formData.onlinePaymentAmount ?? formData.totalPrice) * (formData.commission_percent / 100)).toFixed(2))}
+                    -${formData.commission_amount > 0 
+                      ? formData.commission_amount.toFixed(2)
+                      : (((formData.onlinePaymentAmount ?? formData.totalPrice) * (formData.commission_percent / 100)).toFixed(2))
+                    }
                   </span>
                 </div>
               </div>
@@ -690,7 +710,10 @@ export default function PricingSection({
               <div className="flex justify-between items-center">
                 <span className="text-base font-bold text-green-800">Net 가격</span>
                 <span className="text-lg font-bold text-green-600">
-                  ${(((formData.onlinePaymentAmount ?? formData.totalPrice) * (1 - formData.commission_percent / 100)).toFixed(2))}
+                  ${formData.commission_amount > 0 
+                    ? ((formData.onlinePaymentAmount ?? formData.totalPrice) - formData.commission_amount).toFixed(2)
+                    : (((formData.onlinePaymentAmount ?? formData.totalPrice) * (1 - formData.commission_percent / 100)).toFixed(2))
+                  }
                 </span>
               </div>
             </div>
