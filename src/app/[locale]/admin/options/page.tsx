@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
+import GlobalChoicesManager from '@/components/admin/GlobalChoicesManager'
 
 type Option = Database['public']['Tables']['options']['Row']
 
@@ -19,6 +20,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
   const t = useTranslations('options')
   const tCommon = useTranslations('common')
   
+  const [activeTab, setActiveTab] = useState<'options' | 'choices'>('options')
   const [options, setOptions] = useState<Option[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -234,18 +236,49 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-        >
-          <Plus size={20} />
-          <span>{t('addOption')}</span>
-        </button>
+        {activeTab === 'options' && (
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+          >
+            <Plus size={20} />
+            <span>{t('addOption')}</span>
+          </button>
+        )}
       </div>
 
-      {/* 검색 */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+      {/* 탭 네비게이션 */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('options')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'options'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            옵션 관리
+          </button>
+          <button
+            onClick={() => setActiveTab('choices')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'choices'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            초이스 관리
+          </button>
+        </nav>
+      </div>
+
+      {/* 옵션 탭 콘텐츠 */}
+      {activeTab === 'options' && (
+        <>
+          {/* 검색 */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
         <input
           type="text"
           placeholder={t('searchPlaceholder')}
@@ -402,6 +435,13 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
            }}
          />
        )}
+        </>
+      )}
+
+      {/* 초이스 탭 콘텐츠 */}
+      {activeTab === 'choices' && (
+        <GlobalChoicesManager />
+      )}
     </div>
   )
 }
