@@ -993,7 +993,7 @@ export default function ReservationForm({
     if (reservation?.id) {
       // 새로운 reservation_choices 테이블에서 데이터 로드
       console.log('ReservationForm: 편집 모드 - 새로운 테이블에서 초이스 데이터 로드 시도:', reservation.id)
-      loadReservationChoicesFromNewTable(reservation.id, formData.productId)
+      loadReservationChoicesFromNewTable(reservation.id, reservation.productId)
     } else if (reservation && reservation.choices && reservation.choices.required && reservation.choices.required.length > 0) {
       console.log('ReservationForm: 복원할 choices 데이터:', reservation.choices)
       
@@ -1096,7 +1096,7 @@ export default function ReservationForm({
         }))
       }
     }
-  }, [reservation, loadReservationChoicesFromNewTable])
+  }, [reservation])
 
   // 새로운 간결한 초이스 시스템 사용
 
