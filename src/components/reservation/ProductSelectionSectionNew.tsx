@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, memo, useCallback, useState, useRef } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import ProductSelector from '@/components/common/ProductSelector';
 import SimpleChoiceSelector from '@/components/reservation/SimpleChoiceSelector';
 import { supabase } from '@/lib/supabase';
@@ -71,6 +72,7 @@ interface ProductSelectionSectionProps {
   getDynamicPricingForOption: (optionId: string) => Promise<{ adult: number; child: number; infant: number } | null>
   t: (key: string) => string
   layout?: 'modal' | 'page'
+  onAccordionToggle?: (isExpanded: boolean) => void
 }
 
 const ProductSelectionSection = memo(function ProductSelectionSection({
@@ -78,7 +80,9 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   setFormData,
   products,
   loadProductChoices,
-  t
+  t,
+  layout = 'modal',
+  onAccordionToggle
 }: ProductSelectionSectionProps) {
   
   // 이전 상품 ID를 추적하여 무한 루프 방지
@@ -86,6 +90,17 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   
   // 로딩 상태 추가
   const [isLoadingChoices, setIsLoadingChoices] = useState(false);
+  
+  // 어코디언 상태 추가
+  const [isExpanded, setIsExpanded] = useState(layout === 'modal');
+  
+  const handleToggle = () => {
+    const newExpanded = !isExpanded;
+    setIsExpanded(newExpanded);
+    if (onAccordionToggle) {
+      onAccordionToggle(newExpanded);
+    }
+  };
   
   // 새로운 간결한 초이스 시스템에서 초이스 로드
   const loadProductChoicesNew = useCallback(async (productId: string) => {
@@ -277,19 +292,34 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   
   return (
     <div>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-lg font-semibold text-gray-900">
           {t('form.productSelection')}
         </h3>
-        
-        {/* 새로운 ProductSelector 사용 */}
-        <ProductSelector
-          selectedProductId={formData.productId}
-          onProductSelect={handleProductSelect}
-          showChoices={false}
-          className="mb-4"
-        />
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="flex items-center text-gray-500 hover:text-gray-700"
+        >
+          {isExpanded ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
+        </button>
       </div>
+      
+      {isExpanded && !formData.productId && (
+        <div className="mb-4">
+          {/* 새로운 ProductSelector 사용 */}
+          <ProductSelector
+            selectedProductId={formData.productId}
+            onProductSelect={handleProductSelect}
+            showChoices={false}
+            className="mb-4"
+          />
+        </div>
+      )}
       
       {/* 새로운 간결한 초이스 선택기 */}
       {formData.productId && (

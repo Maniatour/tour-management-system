@@ -98,6 +98,7 @@ export default function ReservationForm({
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
   const [channelAccordionExpanded, setChannelAccordionExpanded] = useState(layout === 'modal')
+  const [productAccordionExpanded, setProductAccordionExpanded] = useState(layout === 'modal')
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
   
   const [formData, setFormData] = useState<{
@@ -2024,7 +2025,7 @@ export default function ReservationForm({
             </div>
 
             {/* 2열: 상품 선택 - 모바일에서는 전체 너비, 데스크톱에서는 25% */}
-            <div className="col-span-1 lg:col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-full">
+            <div className={`col-span-1 lg:col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 ${productAccordionExpanded ? 'lg:h-full' : 'lg:h-auto'}`}>
               <ProductSelectionSection
                 formData={formData}
                 setFormData={setFormData}
@@ -2033,6 +2034,7 @@ export default function ReservationForm({
                 getDynamicPricingForOption={getDynamicPricingForOption}
                 t={t}
                 layout={layout}
+                onAccordionToggle={setProductAccordionExpanded}
               />
 
               {/* 새로운 간결한 초이스 시스템이 ProductSelectionSection에서 처리됨 */}
