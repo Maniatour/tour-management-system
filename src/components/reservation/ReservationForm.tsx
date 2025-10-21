@@ -1503,15 +1503,13 @@ export default function ReservationForm({
       isEditMode: !!reservation?.id
     })
     
-    // 편집 모드에서는 상품이 변경될 때만 초이스 로드 (기존 데이터 보존)
+    // 상품이 변경될 때마다 초이스 로드 (편집 모드에서도 모든 옵션을 보여주기 위해)
     if (formData.productId && formData.productId !== prevProductId.current) {
       console.log('ReservationForm: 상품 변경 감지 - 새로운 테이블에서 초이스 로드:', formData.productId)
       prevProductId.current = formData.productId
       
-      // 편집 모드가 아닌 경우에만 기본 초이스 로드
-      if (!reservation?.id) {
-        loadProductChoices(formData.productId)
-      }
+      // 모든 경우에 초이스 로드 (편집 모드에서도 초이스 선택 섹션을 보여주기 위해)
+      loadProductChoices(formData.productId)
     }
   }, [formData.productId, loadProductChoices, reservation?.id])
 

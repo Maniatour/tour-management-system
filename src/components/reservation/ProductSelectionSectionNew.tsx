@@ -84,6 +84,9 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   // 이전 상품 ID를 추적하여 무한 루프 방지
   const prevProductIdRef = useRef<string | null>(null);
   
+  // 로딩 상태 추가
+  const [isLoadingChoices, setIsLoadingChoices] = useState(false);
+  
   // 새로운 간결한 초이스 시스템에서 초이스 로드
   const loadProductChoicesNew = useCallback(async (productId: string) => {
     if (!productId) {
@@ -96,6 +99,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       return;
     }
 
+    setIsLoadingChoices(true);
     try {
       const { data, error } = await supabase
         .from('product_choices')
@@ -165,6 +169,8 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         selectedChoices: [],
         choicesTotal: 0
       }));
+    } finally {
+      setIsLoadingChoices(false);
     }
   }, []);
   
@@ -286,23 +292,35 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       </div>
       
       {/* 새로운 간결한 초이스 선택기 */}
-      {formData.productId && formData.productChoices.length > 0 && (
+      {formData.productId && (
         <div className="mt-4">
           <h4 className="text-md font-semibold text-gray-900 mb-3">초이스 선택</h4>
-          <SimpleChoiceSelector
-            choices={formData.productChoices}
-            adults={0}
-            children={0}
-            infants={0}
-            totalPeople={0}
-            onSelectionChange={handleSelectionChange}
-            initialSelections={formData.selectedChoices}
-          />
-          <div className="mt-4 text-right">
-            <span className="text-lg font-semibold text-gray-900">
-              초이스 총액: ₩{formData.choicesTotal.toLocaleString()}
-            </span>
-          </div>
+          {isLoadingChoices ? (
+            <div className="text-center py-8 text-gray-500">
+              <p className="text-sm">초이스 데이터를 불러오는 중...</p>
+            </div>
+          ) : formData.productChoices.length > 0 ? (
+            <>
+              <SimpleChoiceSelector
+                choices={formData.productChoices}
+                adults={0}
+                children={0}
+                infants={0}
+                totalPeople={0}
+                onSelectionChange={handleSelectionChange}
+                initialSelections={formData.selectedChoices}
+              />
+              <div className="mt-4 text-right">
+                <span className="text-lg font-semibold text-gray-900">
+                  초이스 총액: ₩{formData.choicesTotal.toLocaleString()}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <p className="text-sm">이 상품에는 선택 가능한 초이스가 없습니다.</p>
+            </div>
+          )}
         </div>
       )}
     </div>
