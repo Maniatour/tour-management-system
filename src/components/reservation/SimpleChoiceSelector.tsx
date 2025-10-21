@@ -41,7 +41,6 @@ interface SimpleChoiceSelectorProps {
   adults: number;
   children: number;
   infants: number;
-  totalPeople: number;
   onSelectionChange: (selections: SelectedChoice[]) => void;
   initialSelections?: SelectedChoice[];
 }
@@ -51,7 +50,6 @@ export default function SimpleChoiceSelector({
   adults,
   children,
   infants,
-  totalPeople,
   onSelectionChange,
   initialSelections = []
 }: SimpleChoiceSelectorProps) {
@@ -93,7 +91,6 @@ export default function SimpleChoiceSelector({
     children: number,
     infants: number
   ) => {
-    const totalPeople = adults + children + infants;
     const pricePerPerson = (adults * option.adult_price) + 
                           (children * option.child_price) + 
                           (infants * option.infant_price);
@@ -127,6 +124,7 @@ export default function SimpleChoiceSelector({
           return total + (option ? option.capacity * selection.quantity : 0);
         }, 0);
         
+        const totalPeople = adults + children + infants;
         if (totalCapacity < totalPeople) {
           newErrors.push(`${choice.choice_group_ko} 총 수용 인원이 부족합니다. (필요: ${totalPeople}명, 선택: ${totalCapacity}명)`);
         }
@@ -135,7 +133,7 @@ export default function SimpleChoiceSelector({
     
     setErrors(newErrors);
     return newErrors.length === 0;
-  }, [selections, choices, totalPeople]);
+  }, [selections, choices, adults, children, infants]);
 
   // 선택사항 변경 시 부모 컴포넌트에 알림
   useEffect(() => {
@@ -182,27 +180,67 @@ export default function SimpleChoiceSelector({
                 return (
                   <div 
                     key={option.id}
-                    className={`border rounded-lg p-3 transition-colors ${
+                    className={`border rounded-lg p-3 transition-all duration-200 cursor-pointer ${
                       currentQuantity > 0 
                         ? 'border-blue-500 bg-blue-50' 
-                        : 'border-gray-200 hover:border-gray-300'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
+                    onClick={() => {
+                      if (choice.choice_type === 'single') {
+                        // 단일 선택: 다른 옵션들을 모두 해제하고 현재 옵션만 선택
+                        const newSelections = selections.filter(s => s.choice_id !== choice.id);
+                        if (currentQuantity === 0) {
+                          newSelections.push({
+                            choice_id: choice.id,
+                            option_id: option.id,
+                            option_key: option.option_key,
+                            option_name_ko: option.option_name_ko,
+                            quantity: 1,
+                            total_price: calculatePrice(option, 1, adults, children, infants)
+                          });
+                        }
+                        onSelectionChange(newSelections);
+                      } else if (choice.choice_type === 'multiple') {
+                        // 다중 선택: 현재 옵션의 선택 상태 토글
+                        const newQuantity = currentQuantity > 0 ? 0 : 1;
+                        handleSelectionChange(
+                          choice.id,
+                          option.id,
+                          option.option_key,
+                          option.option_name_ko,
+                          newQuantity,
+                          calculatePrice(option, newQuantity, adults, children, infants)
+                        );
+                      }
+                    }}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-1">
-                          <h4 className="font-medium text-gray-900 text-sm">
-                            {option.option_name_ko}
-                          </h4>
+                          <div className="flex items-center space-x-2">
+                            <h4 className="font-medium text-gray-900 text-sm">
+                              {option.option_name_ko}
+                            </h4>
+                            {option.is_default && (
+                              <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                                기본
+                              </span>
+                            )}
+                            {currentQuantity > 0 && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                선택됨
+                              </span>
+                            )}
+                          </div>
                           <span className="text-xs text-gray-500">
                             {option.capacity}명
                           </span>
                         </div>
                         
                         <div className="flex items-center space-x-3 text-xs text-gray-600">
-                          <span>성인: ₩{option.adult_price.toLocaleString()}</span>
-                          <span>아동: ₩{option.child_price.toLocaleString()}</span>
-                          <span>유아: ₩{option.infant_price.toLocaleString()}</span>
+                          <span>성인: ${option.adult_price.toLocaleString()}</span>
+                          <span>아동: ${option.child_price.toLocaleString()}</span>
+                          <span>유아: ${option.infant_price.toLocaleString()}</span>
                         </div>
                       </div>
                       
@@ -212,14 +250,17 @@ export default function SimpleChoiceSelector({
                             <div className="flex items-center space-x-1">
                               <button
                                 type="button"
-                                onClick={() => handleSelectionChange(
-                                  choice.id,
-                                  option.id,
-                                  option.option_key,
-                                  option.option_name_ko,
-                                  Math.max(0, currentQuantity - 1),
-                                  calculatePrice(option, Math.max(0, currentQuantity - 1), adults, children, infants)
-                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectionChange(
+                                    choice.id,
+                                    option.id,
+                                    option.option_key,
+                                    option.option_name_ko,
+                                    Math.max(0, currentQuantity - 1),
+                                    calculatePrice(option, Math.max(0, currentQuantity - 1), adults, children, infants)
+                                  );
+                                }}
                                 className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
                                 disabled={currentQuantity === 0}
                               >
@@ -230,50 +271,79 @@ export default function SimpleChoiceSelector({
                               </span>
                               <button
                                 type="button"
-                                onClick={() => handleSelectionChange(
-                                  choice.id,
-                                  option.id,
-                                  option.option_key,
-                                  option.option_name_ko,
-                                  currentQuantity + 1,
-                                  calculatePrice(option, currentQuantity + 1, adults, children, infants)
-                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectionChange(
+                                    choice.id,
+                                    option.id,
+                                    option.option_key,
+                                    option.option_name_ko,
+                                    currentQuantity + 1,
+                                    calculatePrice(option, currentQuantity + 1, adults, children, infants)
+                                  );
+                                }}
                                 className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
                               >
                                 +
                               </button>
                             </div>
                             <div className="text-sm font-medium text-gray-900 min-w-[80px] text-right">
-                              ₩{totalPrice.toLocaleString()}
+                              ${totalPrice.toLocaleString()}
+                            </div>
+                          </>
+                        ) : choice.choice_type === 'multiple' ? (
+                          <>
+                            {/* 다중 선택 시 수량 입력 */}
+                            {currentQuantity > 0 && (
+                              <div className="flex items-center space-x-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSelectionChange(
+                                      choice.id,
+                                      option.id,
+                                      option.option_key,
+                                      option.option_name_ko,
+                                      Math.max(1, currentQuantity - 1),
+                                      calculatePrice(option, Math.max(1, currentQuantity - 1), adults, children, infants)
+                                    );
+                                  }}
+                                  className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
+                                >
+                                  −
+                                </button>
+                                <span className="w-6 text-center font-medium text-sm">
+                                  {currentQuantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSelectionChange(
+                                      choice.id,
+                                      option.id,
+                                      option.option_key,
+                                      option.option_name_ko,
+                                      currentQuantity + 1,
+                                      calculatePrice(option, currentQuantity + 1, adults, children, infants)
+                                    );
+                                  }}
+                                  className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 text-xs"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
+                            <div className="text-sm font-medium text-gray-900 min-w-[80px] text-right">
+                              ${totalPrice.toLocaleString()}
                             </div>
                           </>
                         ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newQuantity = currentQuantity > 0 ? 0 : 1;
-                                handleSelectionChange(
-                                  choice.id,
-                                  option.id,
-                                  option.option_key,
-                                  option.option_name_ko,
-                                  newQuantity,
-                                  calculatePrice(option, newQuantity, adults, children, infants)
-                                );
-                              }}
-                              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                                currentQuantity > 0
-                                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                              }`}
-                            >
-                              {currentQuantity > 0 ? '선택됨' : '선택'}
-                            </button>
-                            <div className="text-sm font-medium text-gray-900 min-w-[80px] text-right">
-                              ₩{totalPrice.toLocaleString()}
-                            </div>
-                          </>
+                          // 단일 선택
+                          <div className="text-sm font-medium text-gray-900 min-w-[80px] text-right">
+                            ${totalPrice.toLocaleString()}
+                          </div>
                         )}
                       </div>
                     </div>
