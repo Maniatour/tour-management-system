@@ -1931,38 +1931,30 @@ export default function ReservationForm({
               </span>
             )}
           </h2>
-          <div className="w-full sm:w-auto">
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
-            <select
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' })}
-              className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+          <div className="w-full sm:w-auto flex items-end space-x-2">
+            <div className="flex-1 sm:flex-none">
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' })}
+                className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              >
+                <option value="pending">{t('status.pending')}</option>
+                <option value="confirmed">{t('status.confirmed')}</option>
+                <option value="completed">{t('status.completed')}</option>
+                <option value="cancelled">{t('status.cancelled')}</option>
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className="px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 text-sm"
             >
-              <option value="pending">{t('status.pending')}</option>
-              <option value="confirmed">{t('status.confirmed')}</option>
-              <option value="completed">{t('status.completed')}</option>
-              <option value="cancelled">{t('status.cancelled')}</option>
-            </select>
+              목록으로
+            </button>
           </div>
         </div>
         
-        {/* 가격 자동 입력 알림 */}
-        {priceAutoFillMessage && (
-          <div className="mb-4 p-3 bg-green-100 border border-green-200 rounded-lg">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-green-800">
-                  {priceAutoFillMessage}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
         
         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
           {/* 메인 레이아웃 - 모바일 최적화 */}
@@ -2016,6 +2008,7 @@ export default function ReservationForm({
                  t={t}
                  autoSelectCoupon={autoSelectCoupon}
                  reservationOptionsTotalPrice={reservationOptionsTotalPrice}
+                 isExistingPricingLoaded={isExistingPricingLoaded}
                />
 
               {/* 입금 내역과 예약 옵션을 2열 그리드로 배치 - 예약이 있을 때만 표시 */}

@@ -351,17 +351,6 @@ export default function ReservationDetailsPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <h1 className="text-2xl font-bold">{t('title')}</h1>
-          {reservation && (
-            <span className="text-sm text-gray-500">ID: {reservation.id}</span>
-          )}
-        </div>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => router.push(`/${params?.locale || 'ko'}/admin/reservations`)}
-            className="px-3 py-2 rounded bg-gray-100 hover:bg-gray-200"
-          >
-            목록으로
-          </button>
         </div>
       </div>
       

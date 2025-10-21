@@ -89,6 +89,7 @@ interface PricingSectionProps {
   t: (key: string) => string
   autoSelectCoupon: () => void
   reservationOptionsTotalPrice?: number
+  isExistingPricingLoaded?: boolean
 }
 
 export default function PricingSection({
@@ -100,7 +101,8 @@ export default function PricingSection({
   calculateCouponDiscount,
   coupons,
   autoSelectCoupon,
-  reservationOptionsTotalPrice = 0
+  reservationOptionsTotalPrice = 0,
+  isExistingPricingLoaded
 }: PricingSectionProps) {
   const [showHelp, setShowHelp] = useState(false)
   return (
@@ -111,6 +113,12 @@ export default function PricingSection({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-3">
           <h3 className="text-base font-semibold text-gray-900">가격 정보</h3>
+          {/* 기존 가격 정보 표시 */}
+          {isExistingPricingLoaded && (
+            <span className="px-2 py-1 bg-green-100 border border-green-300 rounded text-xs text-green-700">
+              기존 가격
+            </span>
+          )}
           {/* 매핑 필드 상태 버튼들 */}
           <div className="flex items-center space-x-1">
             {!formData.productId && (
