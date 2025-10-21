@@ -133,26 +133,30 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       const defaultChoices: ReservationChoice[] = [];
       
       // 기존 선택이 없는 경우에만 기본값 설정
-      if (!formData.selectedChoices || formData.selectedChoices.length === 0) {
-        data?.forEach(choice => {
-          const defaultOption = choice.options?.find(opt => opt.is_default);
-          if (defaultOption) {
-            defaultChoices.push({
-              choice_id: choice.id,
-              option_id: defaultOption.id,
-              quantity: 1,
-              total_price: defaultOption.adult_price
-            });
-          }
-        });
-      }
+      setFormData(prev => {
+        const hasExistingChoices = prev.selectedChoices && prev.selectedChoices.length > 0;
+        
+        if (!hasExistingChoices) {
+          data?.forEach(choice => {
+            const defaultOption = choice.options?.find(opt => opt.is_default);
+            if (defaultOption) {
+              defaultChoices.push({
+                choice_id: choice.id,
+                option_id: defaultOption.id,
+                quantity: 1,
+                total_price: defaultOption.adult_price
+              });
+            }
+          });
+        }
 
-      setFormData(prev => ({
-        ...prev,
-        productChoices: data || [],
-        selectedChoices: (formData.selectedChoices && formData.selectedChoices.length > 0) ? prev.selectedChoices : defaultChoices,
-        choicesTotal: (formData.selectedChoices && formData.selectedChoices.length > 0) ? prev.choicesTotal : defaultChoices.reduce((sum, choice) => sum + choice.total_price, 0)
-      }));
+        return {
+          ...prev,
+          productChoices: data || [],
+          selectedChoices: hasExistingChoices ? prev.selectedChoices : defaultChoices,
+          choicesTotal: hasExistingChoices ? prev.choicesTotal : defaultChoices.reduce((sum, choice) => sum + choice.total_price, 0)
+        };
+      });
     } catch (error) {
       console.error('초이스 로드 오류:', error);
       setFormData(prev => ({
@@ -162,7 +166,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         choicesTotal: 0
       }));
     }
-  }, [setFormData]);
+  }, []);
   
   // 상품 선택 핸들러 (폼 제출 방지)
   const handleProductSelect = useCallback((product: any, event?: Event) => {
@@ -201,7 +205,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         choicesTotal: 0
       }));
     }
-  }, [setFormData]);
+  }, []);
 
   // 초이스 선택 변경 핸들러
   const handleChoiceChange = useCallback((choiceId: string, optionId: string, quantity: number = 1) => {
@@ -235,7 +239,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         choicesTotal
       };
     });
-  }, [setFormData]);
+  }, []);
 
   // 초이스 선택 변경 핸들러 - useCallback으로 최적화
   const handleSelectionChange = useCallback((selections: any[]) => {
@@ -245,7 +249,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       selectedChoices: selections,
       choicesTotal
     }));
-  }, [setFormData]);
+  }, []);
   
   // 상품이 변경될 때 choice 데이터 로드 (편집 모드에서는 기존 데이터 보존)
   useEffect(() => {
