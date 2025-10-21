@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database, X, Zap } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import PerformanceMonitor from '@/components/data-sync/PerformanceMonitor'
+import WeatherDataCollector from '@/components/WeatherDataCollector'
 
 interface SheetInfo {
   name: string
@@ -1291,10 +1292,10 @@ export default function DataSyncPage() {
         </p>
       </div>
 
-      {/* 날씨 데이터 수집 섹션 - 임시 비활성화 */}
-      {/* <div className="mb-6">
+      {/* 날씨 데이터 수집 섹션 */}
+      <div className="mb-6">
         <WeatherDataCollector />
-      </div> */}
+      </div>
 
       {/* 예약 데이터 정리 섹션 */}
       <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">

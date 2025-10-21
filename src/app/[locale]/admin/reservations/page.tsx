@@ -9,7 +9,7 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
-import ReservationForm from '@/components/reservation/ReservationForm'
+import ReservationForm from '@/components/reservation/ReservationFormFinal'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import { createTourPhotosBucket } from '@/lib/tourPhotoBucket'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
@@ -414,7 +414,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }))
   }, [filteredReservations, products, customers, channels, optionChoices])
 
-  const handleAddReservation = async (reservation: Omit<Reservation, 'id'>) => {
+  const handleAddReservation = useCallback(async (reservation: Omit<Reservation, 'id'>) => {
     try {
       // Supabase에 저장할 데이터 준비
       // tour_id는 먼저 null로 설정하고, 투어 생성 후 업데이트
@@ -494,9 +494,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       console.error('Error adding reservation:', error)
       alert('예약 추가 중 오류가 발생했습니다.')
     }
-  }
+  }, [refreshReservations])
 
-  const handleEditReservation = async (reservation: Omit<Reservation, 'id'>) => {
+  const handleEditReservation = useCallback(async (reservation: Omit<Reservation, 'id'>) => {
     if (editingReservation) {
       try {
         // Supabase에 저장할 데이터 준비
@@ -622,12 +622,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         alert('예약 수정 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'))
       }
     }
-  }
+  }, [editingReservation, refreshReservations])
 
   // 예약 편집 모달 열기
-  const handleEditReservationClick = (reservation: Reservation) => {
+  const handleEditReservationClick = useCallback((reservation: Reservation) => {
     setEditingReservation(reservation)
-  }
+  }, [])
 
 
   // 투어 존재 여부 확인 함수
@@ -711,7 +711,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     setPricingModalReservation(null)
   }
 
-  const handleDeleteReservation = async (id: string) => {
+  const handleDeleteReservation = useCallback(async (id: string) => {
     if (confirm(t('deleteConfirm'))) {
       try {
         const { error } = await supabase
@@ -733,7 +733,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         alert('예약 삭제 중 오류가 발생했습니다.')
       }
     }
-  }
+  }, [t, refreshReservations])
 
   // 고객 추가 함수
   const handleAddCustomer = useCallback(async (customerData: Database['public']['Tables']['customers']['Insert']) => {
@@ -1528,7 +1528,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                             console.log('Group Card - Processing choice:', choice);
                             if (!choice || typeof choice !== 'object') return null;
                             
-                            // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                            // 수량 기반 다중 선택인 경우
+                            if (choice.type === 'multiple_quantity' && choice.selections && Array.isArray(choice.selections)) {
+                              console.log('Group Card - Multiple quantity choice:', choice.selections);
+                              const selectionNames = choice.selections.map((selection: any) => {
+                                if (selection.option && selection.quantity > 0) {
+                                  return `${selection.option.name_ko || selection.option.name} × ${selection.quantity}`;
+                                }
+                                return null;
+                              }).filter(Boolean);
+                              return selectionNames.length > 0 ? selectionNames.join(', ') : null;
+                            }
+                            
+                            // 기존 단일 선택인 경우
                             const selectedOption = choice.options && Array.isArray(choice.options) 
                               ? choice.options.find((option: Record<string, unknown>) => {
                                   console.log('Group Card - Checking option:', option, 'is_default:', option.is_default);
@@ -1878,7 +1890,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                               console.log('Processing choice:', choice);
                               if (!choice || typeof choice !== 'object') return null;
                               
-                              // 선택된 옵션 찾기 (is_default가 true인 옵션)
+                              // 수량 기반 다중 선택인 경우
+                              if (choice.type === 'multiple_quantity' && choice.selections && Array.isArray(choice.selections)) {
+                                console.log('Multiple quantity choice:', choice.selections);
+                                const selectionNames = choice.selections.map((selection: any) => {
+                                  if (selection.option && selection.quantity > 0) {
+                                    return `${selection.option.name_ko || selection.option.name} × ${selection.quantity}`;
+                                  }
+                                  return null;
+                                }).filter(Boolean);
+                                return selectionNames.length > 0 ? selectionNames.join(', ') : null;
+                              }
+                              
+                              // 기존 단일 선택인 경우
                               const selectedOption = choice.options && Array.isArray(choice.options) 
                                 ? choice.options.find((option: Record<string, unknown>) => {
                                     console.log('Checking option:', option, 'is_default:', option.is_default);

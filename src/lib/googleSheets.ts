@@ -35,6 +35,46 @@ const getAuthClient = () => {
 // 재시도 로직을 위한 헬퍼 함수
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+// 지수 백오프 재시도 함수
+const retryWithBackoff = async <T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000,
+  maxDelay: number = 10000
+): Promise<T> => {
+  let lastError: Error
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error as Error
+      
+      // 마지막 시도인 경우 에러 던지기
+      if (attempt === maxRetries) {
+        throw lastError
+      }
+      
+      // 중단 오류나 네트워크 오류인 경우에만 재시도
+      if (error instanceof Error && (
+        error.message.includes('aborted') ||
+        error.message.includes('ECONNRESET') ||
+        error.message.includes('ETIMEDOUT') ||
+        error.message.includes('timeout')
+      )) {
+        const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay)
+        console.log(`🔄 재시도 ${attempt + 1}/${maxRetries} - ${delay}ms 대기 후 재시도`)
+        await sleep(delay)
+      } else {
+        // 재시도할 수 없는 오류인 경우 즉시 던지기
+        throw error
+      }
+    }
+  }
+  
+  throw lastError!
+}
+
 // 청크 단위로 Google Sheets 데이터 읽기
 const readGoogleSheetInChunks = async (
   spreadsheetId: string, 
@@ -71,12 +111,14 @@ const readGoogleSheetInChunks = async (
     const firstChunkRange = `${sheetName}!${startCol}1:${endCol}${Math.min(chunkSize, totalRows)}`
     console.log(`🎯 첫 번째 청크 읽기: ${firstChunkRange}`)
     
-    const firstResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: firstChunkRange,
-      valueRenderOption: 'UNFORMATTED_VALUE',
-      dateTimeRenderOption: 'FORMATTED_STRING'
-    })
+    const firstResponse = await retryWithBackoff(async () => {
+      return await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: firstChunkRange,
+        valueRenderOption: 'UNFORMATTED_VALUE',
+        dateTimeRenderOption: 'FORMATTED_STRING'
+      })
+    }, 3, 2000, 8000)
     
     if (!firstResponse.data.values || firstResponse.data.values.length === 0) {
       console.log(`❌ 첫 번째 청크에서 데이터 없음`)
@@ -113,18 +155,20 @@ const readGoogleSheetInChunks = async (
         console.log(`🎯 청크 ${i + 2}/${totalChunks + 1} 읽기: ${chunkRange}`)
         
         try {
-          // 최적화된 지연 시간 (청크 크기에 비례하여 조정)
+          // 최적화된 지연 시간 (더 짧게 조정)
           if (i > 0) {
             const delayMs = Math.min(500, Math.max(100, Math.floor(chunkSize / 20)))
             await sleep(delayMs)
           }
           
-          const chunkResponse = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: chunkRange,
-            valueRenderOption: 'UNFORMATTED_VALUE',
-            dateTimeRenderOption: 'FORMATTED_STRING'
-          })
+          const chunkResponse = await retryWithBackoff(async () => {
+            return await sheets.spreadsheets.values.get({
+              spreadsheetId,
+              range: chunkRange,
+              valueRenderOption: 'UNFORMATTED_VALUE',
+              dateTimeRenderOption: 'FORMATTED_STRING'
+            })
+          }, 2, 1500, 6000)
           
           if (chunkResponse.data.values && chunkResponse.data.values.length > 0) {
             const chunkData = chunkResponse.data.values.map((row: string[]) => {
@@ -161,7 +205,7 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
     const sheets = google.sheets({ 
       version: 'v4', 
       auth,
-      timeout: 60000, // 60초로 증가
+      timeout: 120000, // 120초로 증가 (대용량 데이터 처리)
     })
 
     // 청크 단위 처리 여부 확인
@@ -169,12 +213,14 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
       return await readGoogleSheetInChunks(spreadsheetId, range, chunkSize, sheets)
     }
 
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range,
-      valueRenderOption: 'UNFORMATTED_VALUE',
-      dateTimeRenderOption: 'FORMATTED_STRING'
-    })
+    const response = await retryWithBackoff(async () => {
+      return await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range,
+        valueRenderOption: 'UNFORMATTED_VALUE',
+        dateTimeRenderOption: 'FORMATTED_STRING'
+      })
+    }, 3, 2000, 8000)
 
     console.log(`🔍 Raw response for ${range}:`, {
       status: response.status,
@@ -229,34 +275,37 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
   }
 }
 
-// 구글 시트에서 특정 시트의 모든 데이터 읽기 (청크 단위 처리 지원)
+// 구글 시트에서 특정 시트의 모든 데이터 읽기 (청크 단위 처리 지원) - 최적화된 버전
 export const readSheetData = async (spreadsheetId: string, sheetName: string) => {
-  const range = `${sheetName}!A:ZZ` // A부터 ZZ열까지 읽기 (최대 702개 컬럼)
-  
   try {
-    // 먼저 시트 크기 확인
-    const usedRange = await getSheetUsedRange(spreadsheetId, sheetName)
-    const rowCount = usedRange.rowCount || 0
+    console.log(`📊 readSheetData 시작: ${sheetName}`)
     
-    // 최적화된 청크 크기 설정 (더 큰 청크로 성능 향상)
-    const chunkSize = rowCount > 10000 ? 5000 : rowCount > 5000 ? 3000 : undefined
+    // 실제 사용된 컬럼 수를 빠르게 파악
+    const actualColumnCount = await getQuickColumnCount(spreadsheetId, sheetName)
+    const columnRange = getColumnRange(actualColumnCount)
     
-    if (chunkSize) {
-      console.log(`📊 readSheetData: 대용량 데이터 감지 (${rowCount}행) - 청크 단위 읽기 사용`)
-    }
+    const range = `${sheetName}!A:${columnRange}`
+    console.log(`📊 읽기 범위: ${range}`)
+    
+    // 간단한 청크 크기 설정
+    const chunkSize = 1000 // 고정된 작은 청크 크기
+    
+    console.log(`📊 청크 단위 읽기 사용: ${chunkSize}행씩`)
     
     return await readGoogleSheet(spreadsheetId, range, chunkSize)
   } catch (error) {
     console.error('readSheetData error:', error)
     
-    // 중단 오류인 경우 재시도
+    // 중단 오류인 경우 간단한 폴백 재시도
     if (error instanceof Error && error.message.includes('aborted')) {
-      console.log(`🔄 readSheetData: API 중단 오류 감지 - 재시도 중...`)
+      console.log(`🔄 readSheetData: API 중단 오류 감지 - 폴백 재시도 중...`)
+      
       try {
         await sleep(2000)
-        return await readGoogleSheet(spreadsheetId, range, 1000) // 더 작은 청크로 재시도
+        console.log(`🔄 폴백: 500행 청크로 재시도`)
+        return await readGoogleSheet(spreadsheetId, range, 500)
       } catch (retryError) {
-        console.error('readSheetData 재시도 실패:', retryError)
+        console.error('폴백 재시도 실패:', retryError)
         throw retryError
       }
     }
@@ -304,13 +353,13 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
     const sheets = google.sheets({ 
       version: 'v4', 
       auth,
-      timeout: 30000 // 30초로 단축
+      timeout: 60000 // 60초로 증가 (안정성 향상)
     })
     console.log('Google Sheets client created')
 
-    // 타임아웃 설정 (30초로 단축)
+    // 타임아웃 설정 (60초로 증가)
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Google Sheets API timeout after 30 seconds')), 30000)
+      setTimeout(() => reject(new Error('Google Sheets API timeout after 60 seconds')), 60000)
     })
 
     console.log('Making API request to Google Sheets...')
@@ -362,7 +411,7 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
     // 구체적인 에러 메시지 제공
     if (error instanceof Error) {
       if (error.message.includes('timeout')) {
-        throw new Error('구글 시트 API 응답 시간 초과 (30초). 네트워크 연결을 확인하고 다시 시도해주세요.')
+        throw new Error('구글 시트 API 응답 시간 초과 (60초). 네트워크 연결을 확인하고 다시 시도해주세요.')
       } else if (error.message.includes('403')) {
         throw new Error('구글 시트 접근 권한이 없습니다. 시트 공유 설정을 확인해주세요')
       } else if (error.message.includes('404')) {
@@ -378,28 +427,67 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
   }
 }
 
-// 시트의 실제 사용된 범위 확인
+// 시트의 실제 사용된 범위 확인 (정확한 방법)
 export const getSheetUsedRange = async (spreadsheetId: string, sheetName: string) => {
   try {
     const auth = getAuthClient()
     const sheets = google.sheets({ version: 'v4', auth })
 
+    // 실제 사용된 범위를 정확히 파악하기 위해 시트 메타데이터 조회
     const response = await sheets.spreadsheets.get({
       spreadsheetId,
       includeGridData: false
     })
 
     const sheet = response.data.sheets?.find(s => s.properties?.title === sheetName)
-    const gridProperties = sheet?.properties?.gridProperties
     
-    if (gridProperties) {
+    if (sheet?.properties?.gridProperties) {
+      const gridProperties = sheet.properties.gridProperties
+      
+      // 기본값: 시트의 전체 크기
+      let rowCount = gridProperties.rowCount || 1000
+      let columnCount = gridProperties.columnCount || 26
+      
+      // 실제 사용된 범위가 있는 경우 더 정확한 값 사용
+      if (sheet.properties.sheetType === 'GRID' && sheet.properties.gridProperties) {
+        // 시트의 실제 데이터 범위를 확인하기 위해 첫 번째 행 읽기 시도
+        try {
+          const firstRowResponse = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetName}!1:1`,
+            valueRenderOption: 'UNFORMATTED_VALUE'
+          })
+          
+          if (firstRowResponse.data.values && firstRowResponse.data.values[0]) {
+            // 첫 번째 행에서 실제 데이터가 있는 마지막 컬럼 찾기
+            const firstRow = firstRowResponse.data.values[0]
+            let actualColumnCount = 0
+            
+            for (let i = firstRow.length - 1; i >= 0; i--) {
+              if (firstRow[i] && firstRow[i].toString().trim() !== '') {
+                actualColumnCount = i + 1
+                break
+              }
+            }
+            
+            // 실제 컬럼 수가 발견된 경우 사용 (최소 26개)
+            if (actualColumnCount > 0) {
+              columnCount = Math.max(26, actualColumnCount)
+              console.log(`📊 ${sheetName} 실제 컬럼 수: ${columnCount}개`)
+            }
+          }
+        } catch (firstRowError) {
+          console.warn(`첫 번째 행 읽기 실패, 기본값 사용:`, firstRowError)
+        }
+      }
+      
       return {
-        rowCount: gridProperties.rowCount || 0,
-        columnCount: gridProperties.columnCount || 0
+        rowCount,
+        columnCount
       }
     }
     
-    return { rowCount: 0, columnCount: 0 }
+    return { rowCount: 1000, columnCount: 26 }
   } catch (error) {
     console.error('Error getting sheet used range:', error)
     // 에러 발생 시 기본값 반환
@@ -407,44 +495,95 @@ export const getSheetUsedRange = async (spreadsheetId: string, sheetName: string
   }
 }
 
-// 동적으로 시트의 실제 사용된 범위로 데이터 읽기 (청크 단위 처리 지원)
-export const readSheetDataDynamic = async (spreadsheetId: string, sheetName: string) => {
+// 빠른 컬럼 수 파악 함수 (캐시 활용)
+const getQuickColumnCount = async (spreadsheetId: string, sheetName: string): Promise<number> => {
+  const cacheKey = `columnCount_${spreadsheetId}_${sheetName}`
+  const cached = sheetInfoCache.get(cacheKey)
+  
+  if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+    return cached.data as number
+  }
+  
   try {
-    const usedRange = await getSheetUsedRange(spreadsheetId, sheetName)
-    console.log(`Sheet ${sheetName} used range:`, usedRange)
+    const auth = getAuthClient()
+    const sheets = google.sheets({ version: 'v4', auth })
     
-    // 실제 사용된 컬럼 수에 맞춰 범위 설정 (최소 26개, 최대 702개)
-    const columnCount = Math.max(26, Math.min(usedRange.columnCount || 26, 702))
-    const columnRange = getColumnRange(columnCount)
+    // 첫 번째 행의 처음 50개 컬럼만 빠르게 확인
+    const firstRowResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A1:AX1`, // A부터 AX까지 (50개 컬럼)
+      valueRenderOption: 'UNFORMATTED_VALUE'
+    })
     
-    const range = `${sheetName}!A:${columnRange}`
-    console.log(`Reading range: ${range}`)
-    
-    // 최적화된 청크 크기 설정 (더 큰 청크로 성능 향상)
-    const rowCount = usedRange.rowCount || 0
-    const chunkSize = rowCount > 10000 ? 5000 : rowCount > 5000 ? 3000 : undefined
-    
-    if (chunkSize) {
-      console.log(`📊 대용량 데이터 감지 (${rowCount}행) - 청크 단위 읽기 사용`)
+    if (firstRowResponse.data.values && firstRowResponse.data.values[0]) {
+      const firstRow = firstRowResponse.data.values[0]
+      let actualColumnCount = 0
+      
+      // 뒤에서부터 실제 데이터가 있는 마지막 컬럼 찾기
+      for (let i = firstRow.length - 1; i >= 0; i--) {
+        if (firstRow[i] && firstRow[i].toString().trim() !== '') {
+          actualColumnCount = i + 1
+          break
+        }
+      }
+      
+      const columnCount = Math.max(26, Math.min(actualColumnCount, 50))
+      
+      // 캐시에 저장
+      sheetInfoCache.set(cacheKey, {
+        data: columnCount,
+        timestamp: Date.now()
+      })
+      
+      console.log(`⚡ ${sheetName} 빠른 컬럼 수 파악: ${columnCount}개`)
+      return columnCount
     }
     
+    return 26
+  } catch (error) {
+    console.warn(`빠른 컬럼 수 파악 실패, 기본값 사용:`, error)
+    return 26
+  }
+}
+
+// 동적으로 시트의 실제 사용된 범위로 데이터 읽기 (청크 단위 처리 지원) - 최적화된 버전
+export const readSheetDataDynamic = async (spreadsheetId: string, sheetName: string) => {
+  try {
+    console.log(`📊 readSheetDataDynamic 시작: ${sheetName}`)
+    
+    // 실제 사용된 컬럼 수를 빠르게 파악
+    const actualColumnCount = await getQuickColumnCount(spreadsheetId, sheetName)
+    const columnRange = getColumnRange(actualColumnCount)
+    
+    const range = `${sheetName}!A:${columnRange}`
+    console.log(`📊 읽기 범위: ${range}`)
+    
+    // 간단한 청크 크기 설정 (더 작게 조정)
+    const chunkSize = 1000 // 고정된 작은 청크 크기
+    
+    console.log(`📊 청크 단위 읽기 사용: ${chunkSize}행씩`)
+    
     const data = await readGoogleSheet(spreadsheetId, range, chunkSize)
-    console.log(`Sheet ${sheetName} data length:`, data.length)
-    console.log(`Sheet ${sheetName} first row keys:`, data.length > 0 ? Object.keys(data[0]) : 'No data')
+    console.log(`✅ ${sheetName} 데이터 읽기 완료: ${data.length}개 행`)
     return data
   } catch (error) {
     console.error('Error reading sheet data dynamically:', error)
     
-    // 중단 오류인 경우 재시도 로직
+    // 중단 오류인 경우 간단한 폴백 재시도
     if (error instanceof Error && error.message.includes('aborted')) {
-      console.log(`🔄 API 중단 오류 감지 - 재시도 중...`)
+      console.log(`🔄 API 중단 오류 감지 - 폴백 재시도 중...`)
+      
       try {
-        await sleep(2000) // 2초 대기
-        const retryData = await readGoogleSheet(spreadsheetId, `${sheetName}!A:ZZ`, 1000) // 더 작은 청크로 재시도
-        console.log(`✅ 재시도 성공: ${retryData.length}개 행`)
+        await sleep(2000)
+        console.log(`🔄 폴백: 500행 청크로 재시도`)
+        const actualColumnCount = await getQuickColumnCount(spreadsheetId, sheetName)
+        const columnRange = getColumnRange(actualColumnCount)
+        const retryRange = `${sheetName}!A:${columnRange}`
+        const retryData = await readGoogleSheet(spreadsheetId, retryRange, 500)
+        console.log(`✅ 폴백 재시도 성공: ${retryData.length}개 행`)
         return retryData
       } catch (retryError) {
-        console.error('재시도 실패:', retryError)
+        console.error('폴백 재시도 실패:', retryError)
       }
     }
     
@@ -468,7 +607,7 @@ const getColumnRange = (columnCount: number): string => {
   }
 }
 
-// 시트의 샘플 데이터 가져오기 (단순화된 버전)
+// 시트의 샘플 데이터 가져오기 (최적화된 버전)
 export const getSheetSampleData = async (spreadsheetId: string, sheetName: string, maxRows: number = 5) => {
   try {
     // 캐시 확인
@@ -481,33 +620,36 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
 
     console.log(`📊 Reading sheet: ${sheetName}`)
     
-    // 단순하게 A1:Z1 범위만 시도 (첫 번째 행의 26개 컬럼)
-    const range = `${sheetName}!A1:Z1`
-    console.log(`🎯 Trying range: ${range}`)
+    // 실제 사용된 컬럼 수를 빠르게 파악
+    const actualColumnCount = await getQuickColumnCount(spreadsheetId, sheetName)
+    const columnRange = getColumnRange(actualColumnCount)
     
-    const data = await readGoogleSheet(spreadsheetId, range)
+    // 첫 번째 행만 읽어서 헤더 정보 가져오기
+    const headerRange = `${sheetName}!A1:${columnRange}1`
+    console.log(`🎯 Reading headers: ${headerRange}`)
     
-    console.log(`📋 Raw data received:`, data)
-    console.log(`📊 Data length:`, data.length)
+    const headerData = await readGoogleSheet(spreadsheetId, headerRange)
     
-    if (data.length === 0) {
-      console.log(`❌ No data found in ${sheetName}`)
+    if (headerData.length === 0) {
+      console.log(`❌ No headers found in ${sheetName}`)
       return { columns: [], sampleData: [] }
     }
     
-    // 첫 번째 행을 헤더로 사용
-    const columns = Object.keys(data[0]).filter(col => col && col.trim() !== '')
-    const sampleData = data.slice(0, maxRows)
+    // 헤더 추출
+    const columns = Object.keys(headerData[0]).filter(col => col && col.trim() !== '')
+    
+    // 샘플 데이터가 필요한 경우에만 추가로 읽기
+    let sampleData = []
+    if (maxRows > 0) {
+      const sampleRange = `${sheetName}!A1:${columnRange}${Math.min(maxRows + 1, 6)}` // 헤더 포함 최대 6행
+      console.log(`🎯 Reading sample data: ${sampleRange}`)
+      
+      const fullSampleData = await readGoogleSheet(spreadsheetId, sampleRange)
+      sampleData = fullSampleData.slice(1) // 헤더 제외
+    }
     
     console.log(`✅ Found ${columns.length} columns in ${sheetName}:`, columns)
-    console.log(`📄 Sample data:`, sampleData)
-    
-    // 헤더만 있고 데이터가 없는 경우도 유효한 것으로 처리
-    if (columns.length > 0) {
-      console.log(`✅ Sheet ${sheetName} has valid headers: ${columns.length} columns`)
-    } else {
-      console.log(`❌ No valid headers found in ${sheetName}`)
-    }
+    console.log(`📄 Sample data rows:`, sampleData.length)
     
     const result = { columns, sampleData }
     

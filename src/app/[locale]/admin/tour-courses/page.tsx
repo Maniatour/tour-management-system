@@ -56,6 +56,7 @@ interface TourCourse {
   end_latitude?: number
   end_longitude?: number
   duration_hours?: number
+  distance?: number
   difficulty_level?: 'easy' | 'medium' | 'hard'
   price_adult?: number
   price_child?: number

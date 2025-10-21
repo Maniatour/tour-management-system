@@ -73,7 +73,7 @@ export default function ReservationDetailsPage() {
       try {
         const { data, error } = await supabase
           .from('reservations')
-          .select('*, choices')
+          .select('*')
           .eq('id', reservationId)
           .single()
 
@@ -172,7 +172,8 @@ export default function ReservationDetailsPage() {
         status: payload.status,
         selected_options: payload.selectedOptions,
         selected_option_prices: payload.selectedOptionPrices,
-        is_private_tour: payload.isPrivateTour || false
+        is_private_tour: payload.isPrivateTour || false,
+        choices: payload.choices
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

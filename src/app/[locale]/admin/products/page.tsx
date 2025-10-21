@@ -46,7 +46,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
       const { data, error } = await supabase
         .from('products')
         .select('*')
-        .order('name_ko', { ascending: true })
+        .order('name', { ascending: true })
 
       if (error) {
         console.error('Products 데이터 조회 오류:', error)
@@ -188,9 +188,9 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     
     return matchesSearch && matchesCategory && matchesSubCategory && matchesStatus
   }).sort((a, b) => {
-    // name_ko가 있는 경우 name_ko로 정렬, 없는 경우 name으로 정렬
-    const nameA = (a as any).name_ko || a.name || ''
-    const nameB = (b as any).name_ko || b.name || ''
+    // name 컬럼으로 정렬
+    const nameA = a.name || ''
+    const nameB = b.name || ''
     return nameA.localeCompare(nameB, 'ko', { numeric: true })
   })
 

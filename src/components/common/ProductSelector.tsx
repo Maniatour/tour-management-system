@@ -282,7 +282,13 @@ export default function ProductSelector({
     return grouped;
   }, [filteredProducts, selectedCategory]);
 
-  const handleProductClick = (product: Product) => {
+  const handleProductClick = (product: Product, event?: React.MouseEvent) => {
+    // 폼 제출 방지
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
     setSelectedProduct(product);
     onProductSelect(product);
     
@@ -297,13 +303,25 @@ export default function ProductSelector({
     }
   };
 
-  const toggleCategory = (category: string) => {
+  const toggleCategory = (category: string, event?: React.MouseEvent) => {
+    // 폼 제출 방지
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
     // 선택된 카테고리만 표시하되 다른 탭들은 숨기지 않음
     setSelectedCategory(category);
     setSelectedSubCategory('');
   };
 
-  const toggleSubCategory = (subCategory: string) => {
+  const toggleSubCategory = (subCategory: string, event?: React.MouseEvent) => {
+    // 폼 제출 방지
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
     // 선택된 서브카테고리만 표시하되 다른 탭들은 숨기지 않음
     setSelectedSubCategory(subCategory);
   };
@@ -369,7 +387,7 @@ export default function ProductSelector({
                 {allCategories.map(category => (
                   <button
                     key={category}
-                    onClick={() => toggleCategory(category)}
+                    onClick={(e) => toggleCategory(category, e)}
                     className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
                       selectedCategory === category
                         ? 'border-blue-500 text-blue-600 bg-white'
@@ -390,7 +408,7 @@ export default function ProductSelector({
                   {selectedCategorySubCategories.map(subCategory => (
                     <button
                       key={subCategory}
-                      onClick={() => toggleSubCategory(subCategory)}
+                      onClick={(e) => toggleSubCategory(subCategory, e)}
                       className={`px-2 py-1.5 text-xs font-medium border-b-2 transition-colors ${
                         selectedSubCategory === subCategory
                           ? 'border-green-500 text-green-600 bg-white'
@@ -419,7 +437,7 @@ export default function ProductSelector({
                           ? 'border-blue-500 bg-blue-50' 
                           : 'border-transparent hover:border-blue-200'
                       }`}
-                      onClick={() => handleProductClick(product)}
+                      onClick={(e) => handleProductClick(product, e)}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
@@ -445,7 +463,7 @@ export default function ProductSelector({
                           ? 'border-blue-500 bg-blue-50' 
                           : 'border-transparent hover:border-blue-200'
                       }`}
-                      onClick={() => handleProductClick(product)}
+                      onClick={(e) => handleProductClick(product, e)}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
@@ -471,7 +489,7 @@ export default function ProductSelector({
                           ? 'border-blue-500 bg-blue-50' 
                           : 'border-transparent hover:border-blue-200'
                       }`}
-                      onClick={() => handleProductClick(product)}
+                      onClick={(e) => handleProductClick(product, e)}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">

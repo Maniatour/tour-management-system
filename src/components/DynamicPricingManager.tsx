@@ -338,24 +338,26 @@ export default function DynamicPricingManager({
           not_included_price: (pricingConfig as any).not_included_price || 0,
           markup_percent: (pricingConfig as any).markup_percent || 0,
           choices_pricing: Object.keys(calculationConfig.choicePricing).length > 0 
-            ? {
-                canyon_choice: {
-                  name: "Canyon Choice",
-                  name_ko: "캐년 선택",
-                  options: Object.fromEntries(
-                    Object.entries(calculationConfig.choicePricing).map(([choiceId, choice]) => [
-                      choiceId.replace('canyon_choice_', ''), // canyon_choice_ 접두사 제거
-                      {
-                        name: choiceId.includes('antelope_x') ? "Antelope X Canyon" : "Lower Antelope Canyon",
-                        name_ko: choiceId.includes('antelope_x') ? "앤텔로프 X 캐년" : "로어 앤텔로프 캐년",
-                        adult_price: choice.adult_price,
-                        child_price: choice.child_price,
-                        infant_price: choice.infant_price
-                      }
-                    ])
-                  )
-                }
-              } as any
+            ? (() => {
+                // 조합별 가격 저장 구조
+                const choicesPricing: any = {
+                  combinations: {}
+                };
+                
+                Object.entries(calculationConfig.choicePricing).forEach(([choiceId, choice]) => {
+                  // choiceId는 조합 ID (예: "combination_0", "combination_1")
+                  choicesPricing.combinations[choiceId] = {
+                    combination_key: choiceId,
+                    combination_name: choice.choiceName,
+                    combination_name_ko: choice.choiceName,
+                    adult_price: choice.adult_price,
+                    child_price: choice.child_price,
+                    infant_price: choice.infant_price
+                  };
+                });
+                
+                return choicesPricing;
+              })()
             : {} as Record<string, { adult_price: number; child_price: number; infant_price: number; }>
         };
         
@@ -567,45 +569,47 @@ export default function DynamicPricingManager({
             <h4 className="text-md font-semibold text-gray-900 mb-4">기본 가격</h4>
             
              <div className="space-y-4">
-              {/* 기본 가격 - 한 줄에 3개 */}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    성인 가격
-                  </label>
-                  <input
-                    type="number"
-                    value={pricingConfig.adult_price}
-                    onChange={(e) => handlePricingConfigUpdate({ adult_price: Number(e.target.value) })}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="0"
-                  />
+              {/* 기본 가격 - 초이스가 없을 때만 표시 */}
+              {choiceCombinations.length === 0 && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      성인 가격
+                    </label>
+                    <input
+                      type="number"
+                      value={pricingConfig.adult_price}
+                      onChange={(e) => handlePricingConfigUpdate({ adult_price: Number(e.target.value) })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      아동 가격
+                    </label>
+                    <input
+                      type="number"
+                      value={pricingConfig.child_price}
+                      onChange={(e) => handlePricingConfigUpdate({ child_price: Number(e.target.value) })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      유아 가격
+                    </label>
+                    <input
+                      type="number"
+                      value={pricingConfig.infant_price}
+                      onChange={(e) => handlePricingConfigUpdate({ infant_price: Number(e.target.value) })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="0"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    아동 가격
-                  </label>
-                                          <input
-                        type="number"
-                    value={pricingConfig.child_price}
-                    onChange={(e) => handlePricingConfigUpdate({ child_price: Number(e.target.value) })}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="0"
-                      />
-                 </div>
-                 <div>
-                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    유아 가격
-                   </label>
-                                          <input
-                        type="number"
-                    value={pricingConfig.infant_price}
-                    onChange={(e) => handlePricingConfigUpdate({ infant_price: Number(e.target.value) })}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="0"
-                      />
-                   </div>
-                 </div>
+              )}
 
               {/* 수수료 및 마크업 - 한 줄에 3개 */}
               <div className="grid grid-cols-3 gap-3">
@@ -699,14 +703,30 @@ export default function DynamicPricingManager({
                     key={combination.id}
                     className="p-3 border border-gray-200 rounded-lg bg-gray-50"
                   >
-                                    <div className="mb-3">
+                    <div className="mb-3">
                       <h5 className="text-sm font-semibold text-gray-900 mb-1">
                         {combination.combination_name_ko || combination.combination_name}
-                                      </h5>
+                      </h5>
                       <p className="text-xs text-gray-600">
                         {combination.combination_name}
-                                        </p>
-                                    </div>
+                      </p>
+                      {/* 조합 구성 요소 표시 */}
+                      {combination.combination_details && combination.combination_details.length > 1 && (
+                        <div className="mt-2">
+                          <p className="text-xs text-gray-500 mb-1">구성 요소:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {combination.combination_details.map((detail, index) => (
+                              <span
+                                key={index}
+                                className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded"
+                              >
+                                {detail.groupNameKo || detail.groupName}: {detail.optionNameKo || detail.optionName}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                                     
                     <div className="grid grid-cols-3 gap-2">
                       <div>

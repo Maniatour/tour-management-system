@@ -38,6 +38,7 @@ interface TourCourse {
   end_latitude?: number | null
   end_longitude?: number | null
   duration_hours?: number | null
+  distance?: number | null
   difficulty_level?: 'easy' | 'medium' | 'hard'
   price_adult?: number | null
   price_child?: number | null
@@ -267,6 +268,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
     end_latitude: '',
     end_longitude: '',
     duration_hours: 60,
+    distance: 0,
     difficulty_level: 'easy' as 'easy' | 'medium' | 'hard',
     price_adult: 0,
     price_child: 0,
@@ -372,6 +374,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         end_latitude: course.end_latitude?.toString() || '',
         end_longitude: course.end_longitude?.toString() || '',
         duration_hours: course.duration_hours || 60,
+        distance: course.distance || 0,
         difficulty_level: course.difficulty_level || 'easy',
         price_adult: course.price_adult || 0,
         price_child: course.price_child || 0,
@@ -624,6 +627,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         end_latitude: formData.end_latitude ? parseFloat(formData.end_latitude) : null,
         end_longitude: formData.end_longitude ? parseFloat(formData.end_longitude) : null,
         duration_hours: formData.duration_hours,
+        distance: formData.distance || null,
         difficulty_level: formData.difficulty_level,
         price_adult: formData.price_adult || null,
         price_child: formData.price_child || null,
@@ -995,17 +999,32 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                소요 시간 (분)
-              </label>
-              <input
-                type="number"
-                value={formData.duration_hours}
-                onChange={(e) => updateFormData({ duration_hours: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="60"
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  소요 시간 (분)
+                </label>
+                <input
+                  type="number"
+                  value={formData.duration_hours}
+                  onChange={(e) => updateFormData({ duration_hours: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="60"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  거리 (km)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.distance}
+                  onChange={(e) => updateFormData({ distance: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="5.2"
+                />
+              </div>
             </div>
 
             <div>

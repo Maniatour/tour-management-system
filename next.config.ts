@@ -76,6 +76,13 @@ const nextConfig = {
 							priority: 15,
 							chunks: 'all',
 						},
+						styles: {
+							name: 'styles',
+							test: /\.(css|scss|sass)$/,
+							chunks: 'all',
+							enforce: true,
+							priority: 10,
+						},
 					},
 				}
 			}

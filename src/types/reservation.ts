@@ -33,6 +33,8 @@ export interface PricingInfo {
   requiredOptionTotal: number
   choices: { [key: string]: unknown }
   choicesTotal: number
+  quantityBasedChoices: { [key: string]: unknown }
+  quantityBasedChoiceTotal: number
   subtotal: number
   couponCode: string
   couponDiscount: number
@@ -86,6 +88,8 @@ export interface Reservation {
   requiredOptionTotal?: number
   choices?: { [key: string]: unknown }
   choicesTotal?: number
+  quantityBasedChoices?: { [key: string]: unknown }
+  quantityBasedChoiceTotal?: number
   selectedChoices?: { [key: string]: { selected: string; timestamp: string } }
   choiceTotal?: number
   subtotal?: number

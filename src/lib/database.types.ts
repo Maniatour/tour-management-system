@@ -1503,6 +1503,7 @@ export interface Database {
           end_google_maps_url: string | null
           end_place_id: string | null
           duration_hours: number
+          distance: number | null
           difficulty_level: 'easy' | 'medium' | 'hard'
           max_participants: number
           min_participants: number
@@ -1534,6 +1535,7 @@ export interface Database {
           end_google_maps_url?: string | null
           end_place_id?: string | null
           duration_hours: number
+          distance?: number | null
           difficulty_level: 'easy' | 'medium' | 'hard'
           max_participants: number
           min_participants: number
@@ -1565,6 +1567,7 @@ export interface Database {
           end_google_maps_url?: string | null
           end_place_id?: string | null
           duration_hours?: number
+          distance?: number | null
           difficulty_level?: 'easy' | 'medium' | 'hard'
           max_participants?: number
           min_participants?: number

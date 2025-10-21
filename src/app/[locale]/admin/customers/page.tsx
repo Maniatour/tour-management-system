@@ -281,52 +281,6 @@ export default function AdminCustomers() {
     setShowReservationForm(true)
   }
 
-  // 예약 저장 함수
-  const handleSaveReservation = async (reservationData: Omit<Reservation, 'id'>) => {
-    try {
-      const { error } = await (supabase as unknown as { from: (table: string) => { insert: (data: unknown[]) => Promise<{ error: unknown }> } })
-        .from('reservations')
-        .insert([reservationData])
-
-      if (error) {
-        console.error('Error saving reservation:', error)
-        alert('예약 저장 중 오류가 발생했습니다: ' + (error as Error).message)
-        return
-      }
-
-      // 성공 시 예약 정보 새로고침
-      await fetchReservationInfo()
-      setShowReservationForm(false)
-      setSelectedCustomerForReservation(null)
-      alert('예약이 성공적으로 추가되었습니다!')
-    } catch (error) {
-      console.error('Error saving reservation:', error)
-      alert('예약 저장 중 오류가 발생했습니다.')
-    }
-  }
-
-  // 예약 삭제 함수
-  const handleDeleteReservation = async (reservationId: string) => {
-    try {
-      const { error } = await supabase
-        .from('reservations')
-        .delete()
-        .eq('id', reservationId)
-
-      if (error) {
-        console.error('Error deleting reservation:', error)
-        alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
-        return
-      }
-
-      // 성공 시 예약 정보 새로고침
-      await fetchReservationInfo()
-      alert('예약이 성공적으로 삭제되었습니다!')
-    } catch (error) {
-      console.error('Error deleting reservation:', error)
-      alert('예약 삭제 중 오류가 발생했습니다.')
-    }
-  }
 
   // 폼 닫기 함수
   const closeForm = () => {
@@ -337,7 +291,7 @@ export default function AdminCustomers() {
   // 고객 목록 불러오기 (모든 고객을 가져오기 위해 페이지네이션 사용)
 
   // 고객별 예약 정보 가져오기
-  const fetchReservationInfo = async () => {
+  const fetchReservationInfo = useCallback(async () => {
     try {
       console.log('Fetching reservation info...')
       
@@ -414,7 +368,54 @@ export default function AdminCustomers() {
       console.error('Error fetching reservation info:', error)
       setReservationInfo({})
     }
-  }
+  }, [])
+
+  // 예약 저장 함수
+  const handleSaveReservation = useCallback(async (reservationData: Omit<Reservation, 'id'>) => {
+    try {
+      const { error } = await (supabase as unknown as { from: (table: string) => { insert: (data: unknown[]) => Promise<{ error: unknown }> } })
+        .from('reservations')
+        .insert([reservationData])
+
+      if (error) {
+        console.error('Error saving reservation:', error)
+        alert('예약 저장 중 오류가 발생했습니다: ' + (error as Error).message)
+        return
+      }
+
+      // 성공 시 예약 정보 새로고침
+      await fetchReservationInfo()
+      setShowReservationForm(false)
+      setSelectedCustomerForReservation(null)
+      alert('예약이 성공적으로 추가되었습니다!')
+    } catch (error) {
+      console.error('Error saving reservation:', error)
+      alert('예약 저장 중 오류가 발생했습니다.')
+    }
+  }, [fetchReservationInfo])
+
+  // 예약 삭제 함수
+  const handleDeleteReservation = useCallback(async (reservationId: string) => {
+    try {
+      const { error } = await supabase
+        .from('reservations')
+        .delete()
+        .eq('id', reservationId)
+
+      if (error) {
+        console.error('Error deleting reservation:', error)
+        alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+
+      // 성공 시 예약 정보 새로고침
+      await fetchReservationInfo()
+      alert('예약이 성공적으로 삭제되었습니다!')
+    } catch (error) {
+      console.error('Error deleting reservation:', error)
+      alert('예약 삭제 중 오류가 발생했습니다.')
+    }
+  }, [fetchReservationInfo])
 
   // 새 고객 추가
   const handleAddCustomer = async (customerData: CustomerInsert) => {
@@ -537,7 +538,7 @@ export default function AdminCustomers() {
   // 컴포넌트 마운트 시 예약 정보 불러오기
   useEffect(() => {
     fetchReservationInfo()
-  }, [])
+  }, [fetchReservationInfo])
 
   // 검색된 고객 목록
   const filteredCustomers = (customers || []).filter(customer => {

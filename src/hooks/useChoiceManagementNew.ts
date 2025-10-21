@@ -1,26 +1,31 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
+// 새로운 간결한 초이스 시스템 타입 정의
 interface ChoiceOption {
   id: string;
-  name: string;
-  name_ko?: string;
-  is_default: boolean;
+  option_key: string;
+  option_name: string;
+  option_name_ko: string;
   adult_price: number;
   child_price: number;
   infant_price: number;
+  capacity: number;
+  is_default: boolean;
+  is_active: boolean;
+  sort_order: number;
 }
 
-interface ChoiceGroup {
+interface ProductChoice {
   id: string;
-  name: string;
-  name_ko?: string;
-  description?: string;
+  choice_group: string;
+  choice_group_ko: string;
+  choice_type: 'single' | 'multiple' | 'quantity';
+  is_required: boolean;
+  min_selections: number;
+  max_selections: number;
+  sort_order: number;
   options: ChoiceOption[];
-}
-
-interface ProductChoices {
-  required: ChoiceGroup[];
 }
 
 interface ChoiceCombination {
@@ -46,10 +51,11 @@ interface ChoiceCombination {
 }
 
 export function useChoiceManagement(productId: string, selectedChannelId?: string, selectedChannelType?: string) {
-  const [choiceGroups, setChoiceGroups] = useState<ChoiceGroup[]>([]);
+  const [productChoices, setProductChoices] = useState<ProductChoice[]>([]);
   const [choiceCombinations, setChoiceCombinations] = useState<ChoiceCombination[]>([]);
   const [showCombinationPricing, setShowCombinationPricing] = useState(false);
 
+  // 새로운 간결한 초이스 시스템에서 초이스 조합 로드
   const loadChoiceCombinationsFromPricing = useCallback(async () => {
     try {
       if (!productId) {
@@ -57,36 +63,58 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
         return;
       }
 
-      // 먼저 products 테이블에서 choices 데이터 가져오기
-      const { data: productData, error: productError } = await supabase
-        .from('products')
-        .select('choices')
-        .eq('id', productId)
-        .single();
+      // 새로운 간결한 초이스 시스템에서 초이스 데이터 가져오기
+      const { data: choicesData, error: choicesError } = await supabase
+        .from('product_choices')
+        .select(`
+          id,
+          choice_group,
+          choice_group_ko,
+          choice_type,
+          is_required,
+          min_selections,
+          max_selections,
+          sort_order,
+          options:choice_options (
+            id,
+            option_key,
+            option_name,
+            option_name_ko,
+            adult_price,
+            child_price,
+            infant_price,
+            capacity,
+            is_default,
+            is_active,
+            sort_order
+          )
+        `)
+        .eq('product_id', productId)
+        .order('sort_order');
 
-      if (productError) {
-        console.error('상품 초이스 데이터 로드 실패:', productError);
+      if (choicesError) {
+        console.error('상품 초이스 데이터 로드 실패:', choicesError);
         return;
       }
 
-      console.log('상품에서 로드된 choices 데이터:', productData?.choices);
+      console.log('새로운 시스템에서 로드된 초이스 데이터:', choicesData);
 
-      if (productData?.choices?.required) {
+      if (choicesData && choicesData.length > 0) {
         const combinations: ChoiceCombination[] = [];
 
         // 모든 그룹의 경우의 수를 생성하는 함수
-        const generateAllCombinations = (groups: any[]) => {
-          if (groups.length === 0) return [];
+        const generateAllCombinations = (choices: ProductChoice[]) => {
+          if (choices.length === 0) return [];
           
           // 각 그룹의 옵션들을 배열로 변환
-          const groupOptions = groups.map(group => 
-            group.options?.map((option: any) => ({
-              groupId: group.id,
-              groupName: group.name,
-              groupNameKo: group.name_ko,
-              optionId: option.id,
-              optionName: option.name,
-              optionNameKo: option.name_ko,
+          const groupOptions = choices.map(choice => 
+            choice.options?.map(option => ({
+              groupId: choice.choice_group,
+              groupName: choice.choice_group,
+              groupNameKo: choice.choice_group_ko,
+              optionId: option.option_key,
+              optionName: option.option_name,
+              optionNameKo: option.option_name_ko,
               adult_price: option.adult_price || 0,
               child_price: option.child_price || 0,
               infant_price: option.infant_price || 0
@@ -139,13 +167,13 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           });
         };
 
-        const allCombinations = generateAllCombinations(productData.choices.required);
-        console.log('상품에서 생성된 모든 초이스 조합:', allCombinations);
+        const allCombinations = generateAllCombinations(choicesData);
+        console.log('새로운 시스템에서 생성된 모든 초이스 조합:', allCombinations);
         setChoiceCombinations(allCombinations);
         return;
       }
 
-      // products 테이블에 choices가 없으면 dynamic_pricing 테이블에서 확인
+      // 새로운 시스템에 데이터가 없으면 기존 dynamic_pricing 테이블에서 확인
       const { data, error } = await supabase
         .from('dynamic_pricing')
         .select('choices_pricing')
@@ -223,44 +251,56 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
     }
   }, [productId]);
 
+  // 새로운 간결한 초이스 시스템에서 초이스 그룹 로드
   const loadChoiceGroups = useCallback(async () => {
     try {
       if (!productId) {
-        setChoiceGroups([]);
+        setProductChoices([]);
         return;
       }
 
-      // products 테이블에서 choices 컬럼 데이터 가져오기
+      // 새로운 간결한 초이스 시스템에서 초이스 데이터 가져오기
       const { data, error } = await supabase
-        .from('products')
-        .select('choices')
-        .eq('id', productId)
-        .single();
+        .from('product_choices')
+        .select(`
+          id,
+          choice_group,
+          choice_group_ko,
+          choice_type,
+          is_required,
+          min_selections,
+          max_selections,
+          sort_order,
+          options:choice_options (
+            id,
+            option_key,
+            option_name,
+            option_name_ko,
+            adult_price,
+            child_price,
+            infant_price,
+            capacity,
+            is_default,
+            is_active,
+            sort_order
+          )
+        `)
+        .eq('product_id', productId)
+        .order('sort_order');
 
       if (error) {
         console.error('초이스 데이터 로드 실패:', error);
-        setChoiceGroups([]);
+        setProductChoices([]);
         return;
       }
 
-      if (!data?.choices) {
-        setChoiceGroups([]);
-        return;
-      }
-
-      const productChoices: ProductChoices = data.choices;
-      
-      // required 초이스 그룹들을 변환
-      const choiceGroups: ChoiceGroup[] = productChoices.required || [];
-      
-      console.log('로드된 초이스 그룹:', choiceGroups);
-      setChoiceGroups(choiceGroups);
+      console.log('새로운 시스템에서 로드된 초이스 그룹:', data);
+      setProductChoices(data || []);
     } catch (error) {
       console.error('초이스 그룹 로드 실패:', error);
-      setChoiceGroups([]);
+      setProductChoices([]);
     }
   }, [productId]);
-
 
   const updateChoiceCombinationPrice = useCallback((
     combinationId: string, 
@@ -283,14 +323,27 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
   useEffect(() => {
     if (productId) {
       loadChoiceGroups();
-      loadChoiceCombinationsFromPricing(); // 데이터베이스에서 초이스 조합 로드
+      loadChoiceCombinationsFromPricing();
     }
   }, [productId, loadChoiceGroups, loadChoiceCombinationsFromPricing]);
 
-  // generateChoiceCombinations는 제거 - 데이터베이스에서 로드한 초이스 조합만 사용
-
   return {
-    choiceGroups,
+    productChoices, // 새로운 시스템의 초이스 그룹
+    choiceGroups: productChoices.map(pc => ({
+      id: pc.choice_group,
+      name: pc.choice_group,
+      name_ko: pc.choice_group_ko,
+      description: '',
+      options: pc.options.map(opt => ({
+        id: opt.option_key,
+        name: opt.option_name,
+        name_ko: opt.option_name_ko,
+        is_default: opt.is_default,
+        adult_price: opt.adult_price,
+        child_price: opt.child_price,
+        infant_price: opt.infant_price
+      }))
+    })), // 하위 호환성을 위한 변환
     choiceCombinations,
     showCombinationPricing,
     loadChoiceGroups,

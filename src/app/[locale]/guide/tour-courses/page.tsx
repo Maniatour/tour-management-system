@@ -64,6 +64,7 @@ interface TourCourse {
   end_latitude: number | null
   end_longitude: number | null
   duration_hours: number
+  distance: number | null
   difficulty_level: 'easy' | 'medium' | 'hard'
   max_participants: number
   min_participants: number

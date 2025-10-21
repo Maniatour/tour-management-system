@@ -13,7 +13,12 @@ import { headers } from 'next/headers';
 // duplicate import removed
 import { createServerSupabase } from '@/lib/supabase-server';
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ 
+  subsets: ["latin"],
+  display: 'swap',
+  preload: true,
+  fallback: ['system-ui', 'arial']
+});
 
 // Use generateMetadata instead of static metadata to inject dynamic favicon
 
@@ -38,6 +43,9 @@ export async function generateMetadata(): Promise<Metadata> {
         icon: [{ url: faviconUrl }],
         shortcut: [{ url: faviconUrl }],
         apple: [{ url: faviconUrl }]
+      },
+      other: {
+        'preload-css': 'true'
       }
     };
   } catch {

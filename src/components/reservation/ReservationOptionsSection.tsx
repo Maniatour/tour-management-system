@@ -373,7 +373,7 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
                   <div className="flex-1">
                     <div className="text-sm">
                       <div className="font-medium text-gray-900">
-                        {option.option_name || option.option_id} ${option.price.toFixed(2)} × {option.ea} = ${option.total_price.toFixed(2)}
+                        {option.option_name || option.option_id} ${(option.price || 0).toFixed(2)} × {option.ea} = ${(option.total_price || 0).toFixed(2)}
                       </div>
                       <div className="mt-1">
                         <span className={`px-2 py-1 rounded-full text-xs ${

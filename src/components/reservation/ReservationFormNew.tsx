@@ -1,0 +1,499 @@
+'use client'
+
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { Trash2 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
+import { sanitizeTimeInput } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
+import type { Database } from '@/lib/supabase'
+import CustomerForm from '@/components/CustomerForm'
+import CustomerSection from '@/components/reservation/CustomerSection'
+import TourInfoSection from '@/components/reservation/TourInfoSection'
+import ParticipantsSection from '@/components/reservation/ParticipantsSection'
+import PricingSection from '@/components/reservation/PricingSection'
+import ProductSelectionSection from '@/components/reservation/ProductSelectionSection'
+import ChannelSection from '@/components/reservation/ChannelSection'
+import TourConnectionSection from '@/components/reservation/TourConnectionSection'
+import PaymentRecordsList from '@/components/PaymentRecordsList'
+import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
+import SimpleChoiceSelector from '@/components/reservation/SimpleChoiceSelector'
+import { getRequiredOptionsForProduct, getOptionalOptionsForProduct } from '@/utils/reservationUtils'
+import type { 
+  Customer, 
+  Product, 
+  Channel, 
+  ProductOption, 
+  Option, 
+  PickupHotel, 
+  Reservation 
+} from '@/types/reservation'
+
+// 새로운 간결한 초이스 시스템 타입 정의
+interface ChoiceOption {
+  id: string
+  option_key: string
+  option_name: string
+  option_name_ko: string
+  adult_price: number
+  child_price: number
+  infant_price: number
+  capacity: number
+  is_default: boolean
+  is_active: boolean
+  sort_order: number
+}
+
+interface ProductChoice {
+  id: string
+  choice_group: string
+  choice_group_ko: string
+  choice_type: 'single' | 'multiple' | 'quantity'
+  is_required: boolean
+  min_selections: number
+  max_selections: number
+  sort_order: number
+  options: ChoiceOption[]
+}
+
+interface ReservationChoice {
+  choice_id: string
+  option_id: string
+  quantity: number
+  total_price: number
+}
+
+type CouponRow = {
+  id: string
+  coupon_code: string
+  discount_type: 'percentage' | 'fixed'
+  percentage_value?: number | null
+  fixed_value?: number | null
+  status?: string | null
+  channel_id?: string | null
+  product_id?: string | null
+  start_date?: string | null
+  end_date?: string | null
+}
+
+interface ReservationFormProps {
+  reservation?: Reservation | null
+  customers: Customer[]
+  products: Product[]
+  channels: Channel[]
+  productOptions: ProductOption[]
+  options: Option[]
+  pickupHotels: PickupHotel[]
+  coupons: CouponRow[]
+  onSubmit: (reservation: Omit<Reservation, 'id'>) => void
+  onCancel: () => void
+  onRefreshCustomers: () => Promise<void>
+  onDelete: (id: string) => void
+  layout?: 'modal' | 'page'
+}
+
+type RezLike = Partial<Reservation> & {
+  customer_id?: string
+  product_id?: string
+  tour_date?: string
+  tour_time?: string
+  event_note?: string
+  pickup_hotel?: string
+  pickup_time?: string
+  total_people?: number
+  channel_id?: string
+  channel_rn?: string
+  added_by?: string
+  created_at?: string
+  tour_id?: string
+  selected_options?: { [optionId: string]: string[] }
+  selected_option_prices?: { [key: string]: number }
+  is_private_tour?: boolean
+}
+
+export default function ReservationFormNew({ 
+  reservation, 
+  customers, 
+  products, 
+  channels, 
+  productOptions, 
+  options, 
+  pickupHotels, 
+  coupons, 
+  onSubmit, 
+  onCancel, 
+  onRefreshCustomers, 
+  onDelete,
+  layout = 'modal'
+}: ReservationFormProps) {
+  const [showCustomerForm, setShowCustomerForm] = useState(false)
+  const t = useTranslations('reservations')
+  const tCommon = useTranslations('common')
+  const customerSearchRef = useRef<HTMLDivElement | null>(null)
+  const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
+  const [showRawDetails, setShowRawDetails] = useState(false)
+
+  // 새로운 간결한 초이스 시스템 상태
+  const [productChoices, setProductChoices] = useState<ProductChoice[]>([])
+  const [selectedChoices, setSelectedChoices] = useState<ReservationChoice[]>([])
+  const [choicesTotal, setChoicesTotal] = useState(0)
+
+  // 기존 상태들
+  const [formData, setFormData] = useState<RezLike>({
+    customer_id: rez.customer_id || '',
+    product_id: rez.product_id || '',
+    tour_date: rez.tour_date || '',
+    tour_time: rez.tour_time || '',
+    event_note: rez.event_note || '',
+    pickup_hotel: rez.pickup_hotel || '',
+    pickup_time: rez.pickup_time || '',
+    total_people: rez.total_people || 0,
+    channel_id: rez.channel_id || '',
+    channel_rn: rez.channel_rn || '',
+    added_by: rez.added_by || '',
+    tour_id: rez.tour_id || '',
+    selected_options: rez.selected_options || {},
+    selected_option_prices: rez.selected_option_prices || {},
+    is_private_tour: rez.is_private_tour || false
+  })
+
+  // 상품 선택 시 초이스 로드
+  const loadProductChoices = useCallback(async (productId: string) => {
+    if (!productId) {
+      setProductChoices([])
+      setSelectedChoices([])
+      setChoicesTotal(0)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('product_choices')
+        .select(`
+          id,
+          choice_group,
+          choice_group_ko,
+          choice_type,
+          is_required,
+          min_selections,
+          max_selections,
+          sort_order,
+          options:choice_options (
+            id,
+            option_key,
+            option_name,
+            option_name_ko,
+            adult_price,
+            child_price,
+            infant_price,
+            capacity,
+            is_default,
+            is_active,
+            sort_order
+          )
+        `)
+        .eq('product_id', productId)
+        .order('sort_order')
+
+      if (error) throw error
+
+      console.log('예약 폼에서 로드된 초이스:', data)
+      setProductChoices(data || [])
+
+      // 기본값으로 설정
+      const defaultChoices: ReservationChoice[] = []
+      data?.forEach(choice => {
+        const defaultOption = choice.options?.find(opt => opt.is_default)
+        if (defaultOption) {
+          defaultChoices.push({
+            choice_id: choice.id,
+            option_id: defaultOption.id,
+            quantity: 1,
+            total_price: defaultOption.adult_price
+          })
+        }
+      })
+      setSelectedChoices(defaultChoices)
+      calculateChoicesTotal(defaultChoices)
+    } catch (error) {
+      console.error('초이스 로드 오류:', error)
+    }
+  }, [])
+
+  // 초이스 선택 변경
+  const handleChoiceChange = useCallback((choiceId: string, optionId: string, quantity: number = 1) => {
+    setSelectedChoices(prev => {
+      const existingIndex = prev.findIndex(c => c.choice_id === choiceId)
+      const choice = productChoices.find(c => c.id === choiceId)
+      const option = choice?.options?.find(o => o.id === optionId)
+      
+      if (!option) return prev
+
+      const newChoice: ReservationChoice = {
+        choice_id: choiceId,
+        option_id: optionId,
+        quantity,
+        total_price: option.adult_price * quantity
+      }
+
+      if (existingIndex >= 0) {
+        const updated = [...prev]
+        updated[existingIndex] = newChoice
+        return updated
+      } else {
+        return [...prev, newChoice]
+      }
+    })
+  }, [productChoices])
+
+  // 초이스 총액 계산
+  const calculateChoicesTotal = useCallback((choices: ReservationChoice[]) => {
+    const total = choices.reduce((sum, choice) => sum + choice.total_price, 0)
+    setChoicesTotal(total)
+  }, [])
+
+  // 초이스 변경 시 총액 업데이트
+  useEffect(() => {
+    calculateChoicesTotal(selectedChoices)
+  }, [selectedChoices, calculateChoicesTotal])
+
+  // 상품 변경 시 초이스 로드
+  useEffect(() => {
+    if (formData.product_id) {
+      loadProductChoices(formData.product_id)
+    }
+  }, [formData.product_id, loadProductChoices])
+
+  // 기존 예약 데이터 로드 시 초이스 복원
+  useEffect(() => {
+    if (reservation?.id) {
+      loadReservationChoices(reservation.id)
+    }
+  }, [reservation?.id])
+
+  // 기존 예약의 초이스 데이터 로드
+  const loadReservationChoices = useCallback(async (reservationId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('reservation_choices')
+        .select(`
+          choice_id,
+          option_id,
+          quantity,
+          total_price
+        `)
+        .eq('reservation_id', reservationId)
+
+      if (error) throw error
+
+      console.log('기존 예약의 초이스:', data)
+      setSelectedChoices(data || [])
+      calculateChoicesTotal(data || [])
+    } catch (error) {
+      console.error('예약 초이스 로드 오류:', error)
+    }
+  }, [calculateChoicesTotal])
+
+  // 폼 제출 처리
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    try {
+      // 예약 데이터 준비
+      const reservationData = {
+        ...formData,
+        choices_total: choicesTotal,
+        // 기타 필요한 필드들...
+      }
+
+      // 예약 저장
+      let savedReservation
+      if (reservation?.id) {
+        // 업데이트
+        const { data, error } = await supabase
+          .from('reservations')
+          .update(reservationData)
+          .eq('id', reservation.id)
+          .select()
+          .single()
+
+        if (error) throw error
+        savedReservation = data
+      } else {
+        // 새로 생성
+        const { data, error } = await supabase
+          .from('reservations')
+          .insert(reservationData)
+          .select()
+          .single()
+
+        if (error) throw error
+        savedReservation = data
+      }
+
+      // 초이스 저장
+      if (savedReservation && selectedChoices.length > 0) {
+        // 기존 초이스 삭제
+        await supabase
+          .from('reservation_choices')
+          .delete()
+          .eq('reservation_id', savedReservation.id)
+
+        // 새로운 초이스 저장
+        const choicesToInsert = selectedChoices.map(choice => ({
+          reservation_id: savedReservation.id,
+          choice_id: choice.choice_id,
+          option_id: choice.option_id,
+          quantity: choice.quantity,
+          total_price: choice.total_price
+        }))
+
+        const { error: choicesError } = await supabase
+          .from('reservation_choices')
+          .insert(choicesToInsert)
+
+        if (choicesError) throw choicesError
+      }
+
+      onSubmit(savedReservation)
+    } catch (error) {
+      console.error('예약 저장 오류:', error)
+    }
+  }, [formData, choicesTotal, selectedChoices, reservation?.id, onSubmit])
+
+  // 기존 폼 필드 핸들러들 (간소화)
+  const handleInputChange = useCallback((field: keyof RezLike, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }, [])
+
+  // 기존 컴포넌트들 렌더링 (간소화)
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* 고객 섹션 */}
+      <CustomerSection
+        customers={customers}
+        selectedCustomerId={formData.customer_id}
+        onCustomerChange={(customerId) => handleInputChange('customer_id', customerId)}
+        onShowCustomerForm={() => setShowCustomerForm(true)}
+      />
+
+      {/* 상품 선택 섹션 */}
+      <ProductSelectionSection
+        products={products}
+        selectedProductId={formData.product_id}
+        onProductChange={(productId) => handleInputChange('product_id', productId)}
+      />
+
+      {/* 새로운 간결한 초이스 선택기 */}
+      {formData.product_id && productChoices.length > 0 && (
+        <div className="bg-white p-4 rounded-lg border">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 선택</h3>
+          <SimpleChoiceSelector
+            choices={productChoices}
+            selectedChoices={selectedChoices}
+            onChoiceChange={handleChoiceChange}
+          />
+          <div className="mt-4 text-right">
+            <span className="text-lg font-semibold">
+              초이스 총액: ₩{choicesTotal.toLocaleString()}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 투어 정보 섹션 */}
+      <TourInfoSection
+        tourDate={formData.tour_date}
+        tourTime={formData.tour_time}
+        eventNote={formData.event_note}
+        onTourDateChange={(date) => handleInputChange('tour_date', date)}
+        onTourTimeChange={(time) => handleInputChange('tour_time', time)}
+        onEventNoteChange={(note) => handleInputChange('event_note', note)}
+      />
+
+      {/* 참가자 섹션 */}
+      <ParticipantsSection
+        totalPeople={formData.total_people}
+        onTotalPeopleChange={(people) => handleInputChange('total_people', people)}
+      />
+
+      {/* 채널 섹션 */}
+      <ChannelSection
+        channels={channels}
+        selectedChannelId={formData.channel_id}
+        onChannelChange={(channelId) => handleInputChange('channel_id', channelId)}
+      />
+
+      {/* 픽업 호텔 섹션 */}
+      <TourConnectionSection
+        pickupHotels={pickupHotels}
+        selectedPickupHotel={formData.pickup_hotel}
+        pickupTime={formData.pickup_time}
+        onPickupHotelChange={(hotel) => handleInputChange('pickup_hotel', hotel)}
+        onPickupTimeChange={(time) => handleInputChange('pickup_time', time)}
+      />
+
+      {/* 옵션 섹션 */}
+      <ReservationOptionsSection
+        productOptions={productOptions}
+        options={options}
+        selectedOptions={formData.selected_options || {}}
+        selectedOptionPrices={formData.selected_option_prices || {}}
+        onOptionChange={(optionId, values) => {
+          setFormData(prev => ({
+            ...prev,
+            selected_options: { ...prev.selected_options, [optionId]: values }
+          }))
+        }}
+        onOptionPriceChange={(key, price) => {
+          setFormData(prev => ({
+            ...prev,
+            selected_option_prices: { ...prev.selected_option_prices, [key]: price }
+          }))
+        }}
+      />
+
+      {/* 가격 섹션 */}
+      <PricingSection
+        basePrice={0} // 상품 기본 가격
+        choicesTotal={choicesTotal}
+        optionsTotal={0} // 옵션 총액
+        discountTotal={0} // 할인 총액
+        finalTotal={choicesTotal} // 최종 총액
+        coupons={coupons}
+        onCouponApply={() => {}} // 쿠폰 적용 로직
+      />
+
+      {/* 버튼들 */}
+      <div className="flex justify-end space-x-3">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+        >
+          취소
+        </button>
+        <button
+          type="submit"
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+        >
+          {reservation ? '수정' : '생성'}
+        </button>
+      </div>
+
+      {/* 고객 폼 모달 */}
+      {showCustomerForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <CustomerForm
+              onClose={() => setShowCustomerForm(false)}
+              onSuccess={() => {
+                setShowCustomerForm(false)
+                onRefreshCustomers()
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </form>
+  )
+}

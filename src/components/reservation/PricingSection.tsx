@@ -421,6 +421,12 @@ export default function PricingSection({
                     )
                   })}
                 </select>
+                {/* 선택된 쿠폰 정보 표시 */}
+                {formData.couponCode && (
+                  <div className="mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                    선택된 쿠폰: {formData.couponCode} (할인: ${formData.couponDiscount.toFixed(2)})
+                  </div>
+                )}
               </div>
 
               {/* 추가 할인 및 비용 */}
@@ -553,7 +559,9 @@ export default function PricingSection({
               <div className="space-y-1 mb-2">
                 {formData.couponDiscount > 0 && (
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-red-600">쿠폰 할인</span>
+                    <span className="text-xs text-red-600">
+                      쿠폰 할인 {formData.couponCode && `(${formData.couponCode})`}
+                    </span>
                     <span className="text-xs text-red-600">-${formData.couponDiscount.toFixed(2)}</span>
                   </div>
                 )}
