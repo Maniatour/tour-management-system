@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import GlobalChoicesManager from '@/components/admin/GlobalChoicesManager'
+import ImageUpload from '@/components/common/ImageUpload'
 
 type Option = Database['public']['Tables']['options']['Row']
 
@@ -80,7 +81,10 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
         infant_price: option.infant_price || 0,
         price_type: option.price_type,
         status: option.status,
-        tags: option.tags
+        tags: option.tags,
+        image_url: (option as any).image_url,
+        image_alt: (option as any).image_alt,
+        thumbnail_url: (option as any).thumbnail_url
       }
 
       const { data, error } = await supabase
@@ -114,7 +118,10 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
           infant_price: option.infant_price || 0,
           price_type: option.price_type,
           status: option.status,
-          tags: option.tags
+          tags: option.tags,
+          image_url: (option as any).image_url,
+          image_alt: (option as any).image_alt,
+          thumbnail_url: (option as any).thumbnail_url
         }
 
         const { error } = await supabase
@@ -480,7 +487,10 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
     infant_price: option?.infant_price || 0,
     price_type: option?.price_type || 'perPerson' as 'perPerson' | 'perTour' | 'perHour' | 'fixed',
     status: option?.status || 'active' as 'active' | 'inactive' | 'seasonal',
-    tags: option?.tags || []
+    tags: option?.tags || [],
+    image_url: (option as any)?.image_url || '',
+    image_alt: (option as any)?.image_alt || '',
+    thumbnail_url: (option as any)?.thumbnail_url || ''
   })
 
   const [showCategorySuggestions, setShowCategorySuggestions] = useState(false)
@@ -762,6 +772,34 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
               <option value="inactive">{t('status.inactive')}</option>
               <option value="seasonal">{t('status.seasonal')}</option>
             </select>
+          </div>
+
+          {/* 이미지 업로드 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">이미지</label>
+            <ImageUpload
+              imageUrl={formData.image_url}
+              thumbnailUrl={formData.thumbnail_url}
+              imageAlt={formData.image_alt}
+              onImageChange={(imageUrl, thumbnailUrl, imageAlt) => {
+                setFormData({ ...formData, image_url: imageUrl, thumbnail_url: thumbnailUrl, image_alt: imageAlt })
+              }}
+              onImageRemove={() => {
+                setFormData({ ...formData, image_url: '', thumbnail_url: '', image_alt: '' })
+              }}
+              folder="options"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">이미지 대체 텍스트</label>
+            <input
+              type="text"
+              value={formData.image_alt}
+              onChange={(e) => setFormData({ ...formData, image_alt: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="이미지 설명"
+            />
           </div>
 
           {/* 태그 관리 */}

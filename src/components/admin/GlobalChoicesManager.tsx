@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, Edit, Trash2, Settings, Copy, Upload } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import ImageUpload from '@/components/common/ImageUpload'
 
 interface ChoiceTemplate {
   id: string
@@ -792,24 +793,18 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">이미지 URL</label>
-            <input
-              type="url"
-              value={formData.image_url}
-              onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="https://example.com/image.jpg"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">썸네일 URL</label>
-            <input
-              type="url"
-              value={formData.thumbnail_url}
-              onChange={(e) => setFormData({ ...formData, thumbnail_url: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="https://example.com/thumbnail.jpg"
+            <label className="block text-sm font-medium text-gray-700 mb-1">이미지</label>
+            <ImageUpload
+              imageUrl={formData.image_url}
+              thumbnailUrl={formData.thumbnail_url}
+              imageAlt={formData.image_alt}
+              onImageChange={(imageUrl, thumbnailUrl, imageAlt) => {
+                setFormData({ ...formData, image_url: imageUrl, thumbnail_url: thumbnailUrl, image_alt: imageAlt })
+              }}
+              onImageRemove={() => {
+                setFormData({ ...formData, image_url: '', thumbnail_url: '', image_alt: '' })
+              }}
+              folder="choices"
             />
           </div>
 
@@ -823,23 +818,6 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               placeholder="이미지 설명"
             />
           </div>
-
-          {/* 이미지 미리보기 */}
-          {formData.image_url && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">이미지 미리보기</label>
-              <div className="relative w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
-                <img
-                  src={formData.thumbnail_url || formData.image_url}
-                  alt={formData.image_alt || formData.name_ko || formData.name}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
-              </div>
-            </div>
-          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">태그</label>
