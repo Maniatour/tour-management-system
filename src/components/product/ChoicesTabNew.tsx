@@ -698,89 +698,29 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       {/* 복사 모달 */}
       {showCopyModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 복사</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  복사할 상품 선택
-                </label>
-                <select
-                  value={selectedProductId}
-                  onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">상품을 선택하세요</option>
-                  {products.map(product => (
-                    <option key={product.id} value={product.id}>
-                      {product.name_ko || product.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowCopyModal(false)
-                  setSelectedProductId('')
-                }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
-              >
-                취소
-              </button>
-              <button
-                onClick={copyChoicesFromProduct}
-                disabled={!selectedProductId}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >
-                복사
-              </button>
-            </div>
-          </div>
-        </div>
+        <CopyToModal
+          products={products}
+          selectedTargetProductId={selectedProductId}
+          setSelectedTargetProductId={setSelectedProductId}
+          onCopyTo={copyChoicesFromProduct}
+          onClose={() => {
+            setShowCopyModal(false)
+            setSelectedProductId('')
+          }}
+        />
       )}
 
       {/* 가져오기 모달 */}
       {showImportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 가져오기</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  JSON 데이터
-                </label>
-                <textarea
-                  value={importData}
-                  onChange={(e) => setImportData(e.target.value)}
-                  rows={8}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="초이스 JSON 데이터를 붙여넣으세요..."
-                />
-              </div>
-            </div>
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowImportModal(false)
-                  setImportData('')
-                }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
-              >
-                취소
-              </button>
-              <button
-                onClick={importChoices}
-                disabled={!importData.trim()}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >
-                가져오기
-              </button>
-            </div>
-          </div>
-        </div>
+        <ImportModal
+          importData={importData}
+          setImportData={setImportData}
+          onImport={importChoices}
+          onClose={() => {
+            setShowImportModal(false)
+            setImportData('')
+          }}
+        />
       )}
 
       {/* 템플릿 모달 */}
@@ -893,6 +833,129 @@ function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
           >
             취소
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 복사 모달 컴포넌트
+interface CopyModalProps {
+  onCopy: () => void
+  onClose: () => void
+}
+
+function CopyModal({ onCopy, onClose }: CopyModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 복사</h3>
+        <p className="text-sm text-gray-600 mb-6">
+          현재 상품의 초이스를 다른 상품으로 복사하시겠습니까?
+        </p>
+        <div className="flex justify-end space-x-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+          >
+            취소
+          </button>
+          <button
+            onClick={onCopy}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+          >
+            복사
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 가져오기 모달 컴포넌트
+interface ImportModalProps {
+  importData: string
+  setImportData: (data: string) => void
+  onImport: () => void
+  onClose: () => void
+}
+
+function ImportModal({ importData, setImportData, onImport, onClose }: ImportModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 가져오기</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          JSON 형식의 초이스 데이터를 붙여넣으세요.
+        </p>
+        <textarea
+          value={importData}
+          onChange={(e) => setImportData(e.target.value)}
+          className="w-full h-32 p-3 border border-gray-300 rounded-md resize-none"
+          placeholder="JSON 데이터를 여기에 붙여넣으세요..."
+        />
+        <div className="flex justify-end space-x-3 mt-4">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+          >
+            취소
+          </button>
+          <button
+            onClick={onImport}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+          >
+            가져오기
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 복사 대상 선택 모달 컴포넌트
+interface CopyToModalProps {
+  products: Array<{id: string, name: string, name_ko?: string}>
+  selectedTargetProductId: string
+  setSelectedTargetProductId: (id: string) => void
+  onCopyTo: () => void
+  onClose: () => void
+}
+
+function CopyToModal({ products, selectedTargetProductId, setSelectedTargetProductId, onCopyTo, onClose }: CopyToModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">복사 대상 선택</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          초이스를 복사할 상품을 선택하세요.
+        </p>
+        <select
+          value={selectedTargetProductId}
+          onChange={(e) => setSelectedTargetProductId(e.target.value)}
+          className="w-full p-3 border border-gray-300 rounded-md"
+        >
+          <option value="">상품을 선택하세요</option>
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>
+              {product.name_ko || product.name}
+            </option>
+          ))}
+        </select>
+        <div className="flex justify-end space-x-3 mt-4">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+          >
+            취소
+          </button>
+          <button
+            onClick={onCopyTo}
+            disabled={!selectedTargetProductId}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            복사
           </button>
         </div>
       </div>
