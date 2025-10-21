@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Save, Copy, Download, Upload } from 'lucide-react'
+import { Plus, Trash2, Save, Copy, Download, Upload, Template } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // 새로운 간결한 초이스 시스템 타입 정의
@@ -44,10 +44,66 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [showCopyToModal, setShowCopyToModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [products, setProducts] = useState<Array<{id: string, name: string, name_ko?: string}>>([])
   const [selectedProductId, setSelectedProductId] = useState('')
   const [selectedTargetProductId, setSelectedTargetProductId] = useState('')
   const [importData, setImportData] = useState('')
+
+  // 템플릿에서 초이스 불러오기
+  const loadFromTemplate = useCallback(async (templateGroup: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('options')
+        .select('*')
+        .eq('is_choice_template', true)
+        .eq('template_group', templateGroup)
+        .order('sort_order', { ascending: true })
+
+      if (error) {
+        console.error('Error loading template:', error)
+        return
+      }
+
+      if (data && data.length > 0) {
+        // 템플릿을 초이스 그룹으로 변환
+        const templateGroupName = data[0].template_group_ko || data[0].template_group || '템플릿'
+        const choiceType = data[0].choice_type || 'single'
+        const isRequired = data[0].is_required || false
+        const minSelections = data[0].min_selections || 1
+        const maxSelections = data[0].max_selections || 1
+
+        const newChoice: ProductChoice = {
+          id: crypto.randomUUID(),
+          choice_group: templateGroup,
+          choice_group_ko: templateGroupName,
+          choice_type: choiceType as 'single' | 'multiple' | 'quantity',
+          is_required: isRequired,
+          min_selections: minSelections,
+          max_selections: maxSelections,
+          sort_order: productChoices.length,
+          options: data.map(option => ({
+            id: crypto.randomUUID(),
+            option_key: option.id,
+            option_name: option.name,
+            option_name_ko: option.name_ko || option.name,
+            adult_price: option.adult_price || 0,
+            child_price: option.child_price || 0,
+            infant_price: option.infant_price || 0,
+            capacity: 1,
+            is_default: option.id === data[0].id, // 첫 번째 옵션을 기본값으로
+            is_active: option.status === 'active',
+            sort_order: option.sort_order || 0
+          }))
+        }
+
+        setProductChoices(prev => [...prev, newChoice])
+        setShowTemplateModal(false)
+      }
+    } catch (error) {
+      console.error('Error loading template:', error)
+    }
+  }, [productChoices.length])
 
   // 상품 목록 로드
   const loadProducts = useCallback(async () => {
@@ -423,6 +479,13 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         </div>
         <div className="flex space-x-2">
           <button
+            onClick={() => setShowTemplateModal(true)}
+            className="flex items-center px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            <Template className="w-4 h-4 mr-2" />
+            템플릿 불러오기
+          </button>
+          <button
             onClick={() => setShowCopyModal(true)}
             className="flex items-center px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
           >
@@ -713,6 +776,120 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           </div>
         </div>
       )}
+
+      {/* 템플릿 모달 */}
+      {showTemplateModal && (
+        <TemplateModal
+          onSelectTemplate={loadFromTemplate}
+          onClose={() => setShowTemplateModal(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// 템플릿 선택 모달 컴포넌트
+interface TemplateModalProps {
+  onSelectTemplate: (templateGroup: string) => void
+  onClose: () => void
+}
+
+function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
+  const [templates, setTemplates] = useState<Array<{template_group: string, template_group_ko: string, count: number}>>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadTemplateGroups()
+  }, [])
+
+  const loadTemplateGroups = async () => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('options')
+        .select('template_group, template_group_ko')
+        .eq('is_choice_template', true)
+        .not('template_group', 'is', null)
+
+      if (error) {
+        console.error('Error loading template groups:', error)
+        return
+      }
+
+      // 그룹별로 카운트
+      const groupCounts = data?.reduce((acc, item) => {
+        const group = item.template_group
+        if (!acc[group]) {
+          acc[group] = {
+            template_group: group,
+            template_group_ko: item.template_group_ko || group,
+            count: 0
+          }
+        }
+        acc[group].count++
+        return acc
+      }, {} as Record<string, {template_group: string, template_group_ko: string, count: number}>)
+
+      setTemplates(Object.values(groupCounts || {}))
+    } catch (error) {
+      console.error('Error loading template groups:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-96">
+          <div className="text-center">로딩 중...</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">템플릿 불러오기</h3>
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {templates.length === 0 ? (
+            <div className="text-center py-4 text-gray-500">
+              사용 가능한 템플릿이 없습니다.
+            </div>
+          ) : (
+            templates.map((template) => (
+              <button
+                key={template.template_group}
+                onClick={() => onSelectTemplate(template.template_group)}
+                className="w-full text-left p-3 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-blue-300 transition-colors"
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="font-medium text-gray-900">
+                      {template.template_group_ko}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {template.template_group}
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {template.count}개 옵션
+                  </div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+        <div className="flex justify-end mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+          >
+            취소
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
