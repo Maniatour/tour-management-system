@@ -64,16 +64,14 @@ BEGIN
     COUNT(*) as total_files,
     SUM(COALESCE(metadata->>'size', '0')::BIGINT) as total_size,
     jsonb_object_agg(
-      COALESCE((name_split[1]), 'root'),
+      COALESCE(split_part(name, '/', 1), 'root'),
       jsonb_build_object(
         'count', COUNT(*),
         'size', SUM(COALESCE(metadata->>'size', '0')::BIGINT)
       )
     ) as files_by_folder
   FROM storage.objects
-  WHERE bucket_id = 'images'
-  AND name ~ '^[^/]+/'
-  CROSS JOIN LATERAL string_to_array(name, '/') AS name_split;
+  WHERE bucket_id = 'images';
 END;
 $$ LANGUAGE plpgsql;
 
