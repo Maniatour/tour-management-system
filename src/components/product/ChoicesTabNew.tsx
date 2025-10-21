@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Save, Copy, Download, Upload, Template } from 'lucide-react'
+import { Plus, Trash2, Save, Copy, Download, Upload, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // 새로운 간결한 초이스 시스템 타입 정의
@@ -488,7 +488,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             onClick={() => setShowTemplateModal(true)}
             className="flex items-center px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
           >
-            <Template className="w-4 h-4 mr-2" />
+            <FileText className="w-4 h-4 mr-2" />
             템플릿 불러오기
           </button>
           <button

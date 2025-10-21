@@ -188,7 +188,88 @@ export default function ReservationDetailsPage() {
         return
       }
 
+      // 새로운 초이스 시스템: reservation_choices 테이블에 저장
+      if (payload.choices && payload.choices.required && Array.isArray(payload.choices.required)) {
+        // 기존 reservation_choices 삭제
+        await supabase
+          .from('reservation_choices')
+          .delete()
+          .eq('reservation_id', reservation.id)
+
+        // 새로운 초이스 데이터 저장
+        const choicesToInsert = payload.choices.required.map((choice: any) => ({
+          reservation_id: reservation.id,
+          choice_id: choice.choice_id,
+          option_id: choice.option_id,
+          quantity: choice.quantity,
+          total_price: choice.total_price
+        }))
+
+        if (choicesToInsert.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error: choicesError } = await (supabase as any)
+            .from('reservation_choices')
+            .insert(choicesToInsert)
+
+          if (choicesError) {
+            console.error('초이스 저장 오류:', choicesError)
+            alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
+            return
+          }
+        }
+      }
+
       await refreshReservations()
+      
+      // 저장된 예약 데이터를 다시 로드하여 초이스 정보 업데이트
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: updatedReservation, error: loadError } = await (supabase as any)
+        .from('reservations')
+        .select('*')
+        .eq('id', reservation.id)
+        .single()
+      
+      if (!loadError && updatedReservation) {
+        // 예약 데이터를 다시 매핑하여 상태 업데이트
+        const mapped = {
+          id: updatedReservation.id,
+          customerId: updatedReservation.customer_id || '',
+          customerSearch: '',
+          showCustomerDropdown: false,
+          productId: updatedReservation.product_id || '',
+          selectedProductCategory: '',
+          selectedProductSubCategory: '',
+          productSearch: '',
+          showProductDropdown: false,
+          tourDate: updatedReservation.tour_date || '',
+          tourTime: updatedReservation.tour_time || '',
+          eventNote: updatedReservation.event_note || '',
+          pickUpHotel: updatedReservation.pickup_hotel || '',
+          pickUpTime: updatedReservation.pickup_time || '',
+          adults: updatedReservation.adults || 0,
+          child: updatedReservation.child || 0,
+          infant: updatedReservation.infant || 0,
+          totalPeople: updatedReservation.total_people || 0,
+          channelId: updatedReservation.channel_id || '',
+          channelRN: updatedReservation.channel_rn || '',
+          addedBy: updatedReservation.added_by || '',
+          addedTime: updatedReservation.created_at || '',
+          tourId: updatedReservation.tour_id || '',
+          status: (updatedReservation.status as Reservation['status']) || 'pending',
+          selectedOptions: (typeof updatedReservation.selected_options === 'string'
+            ? (() => { try { return JSON.parse(updatedReservation.selected_options as unknown as string) } catch { return {} } })()
+            : (updatedReservation.selected_options as { [optionId: string]: string[] }) || {}),
+          selectedOptionPrices: (typeof updatedReservation.selected_option_prices === 'string'
+            ? (() => { try { return JSON.parse(updatedReservation.selected_option_prices as unknown as string) } catch { return {} } })()
+            : (updatedReservation.selected_option_prices as { [key: string]: number }) || {}),
+          choices: (typeof updatedReservation.choices === 'string'
+            ? (() => { try { return JSON.parse(updatedReservation.choices as unknown as string) } catch { return {} } })()
+            : (updatedReservation.choices as { [key: string]: unknown }) || {}),
+          hasExistingTour: false
+        }
+        setReservation(mapped)
+      }
+      
       alert('예약이 수정되었습니다.')
       // 투어가 생성되었다면 투어 섹션도 새로고침
       if (tourCreated) {

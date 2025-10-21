@@ -18,7 +18,7 @@ import TourConnectionSection from '@/components/reservation/TourConnectionSectio
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import QuantityBasedAccommodationSelector from '@/components/reservation/QuantityBasedAccommodationSelector'
-import { getRequiredOptionsForProduct, getOptionalOptionsForProduct } from '@/utils/reservationUtils'
+import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import type { 
   Customer, 
   Product, 
@@ -559,7 +559,7 @@ export default function ReservationForm({
   }, [customers, reservation?.id]) // formData.customerSearch 제거하여 무한 루프 방지
 
   // 새로운 reservation_choices 테이블에서 초이스 데이터 로드
-  const loadReservationChoicesFromNewTable = useCallback(async (reservationId: string) => {
+  const loadReservationChoicesFromNewTable = useCallback(async (reservationId: string, productId?: string) => {
     try {
       console.log('ReservationForm: 새로운 테이블에서 초이스 데이터 로드 시작:', reservationId)
       
@@ -673,6 +673,58 @@ export default function ReservationForm({
           choicesData,
           choicesTotal
         })
+
+        // 편집 모드에서는 해당 상품의 모든 초이스 옵션을 로드하여 모든 옵션을 표시
+        if (productId) {
+          console.log('ReservationForm: 편집 모드 - 상품의 모든 초이스 옵션 로드:', productId)
+          try {
+            const { data: allChoicesData, error: allChoicesError } = await supabase
+              .from('product_choices')
+              .select(`
+                id,
+                choice_group,
+                choice_group_ko,
+                choice_type,
+                is_required,
+                min_selections,
+                max_selections,
+                sort_order,
+                options:choice_options (
+                  id,
+                  option_key,
+                  option_name,
+                  option_name_ko,
+                  adult_price,
+                  child_price,
+                  infant_price,
+                  capacity,
+                  is_default,
+                  is_active,
+                  sort_order
+                )
+              `)
+              .eq('product_id', productId)
+              .order('sort_order')
+
+            if (allChoicesError) {
+              console.error('ReservationForm: 모든 초이스 옵션 로드 오류:', allChoicesError)
+            } else {
+              console.log('ReservationForm: 로드된 모든 초이스 옵션:', allChoicesData)
+              setFormData(prev => ({
+                ...prev,
+                selectedChoices,
+                productChoices: allChoicesData || [],
+                choices: choicesData,
+                choicesTotal,
+                quantityBasedChoices: {},
+                quantityBasedChoiceTotal: 0
+              }))
+              return
+            }
+          } catch (error) {
+            console.error('ReservationForm: 모든 초이스 옵션 로드 중 예외:', error)
+          }
+        }
 
         setFormData(prev => ({
           ...prev,
@@ -941,7 +993,7 @@ export default function ReservationForm({
     if (reservation?.id) {
       // 새로운 reservation_choices 테이블에서 데이터 로드
       console.log('ReservationForm: 편집 모드 - 새로운 테이블에서 초이스 데이터 로드 시도:', reservation.id)
-      loadReservationChoicesFromNewTable(reservation.id)
+      loadReservationChoicesFromNewTable(reservation.id, formData.productId)
     } else if (reservation && reservation.choices && reservation.choices.required && reservation.choices.required.length > 0) {
       console.log('ReservationForm: 복원할 choices 데이터:', reservation.choices)
       
@@ -1669,17 +1721,21 @@ export default function ReservationForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // 필수 옵션이 모두 선택되었는지 확인 (카테고리별로 하나씩)
-    const requiredOptions = getRequiredOptionsForProduct(formData.productId, productOptions, options)
-    const missingCategories = Object.entries(requiredOptions).filter(([, options]) => {
-      // 해당 카테고리에서 선택된 옵션이 있는지 확인
-      return !(options as ProductOption[]).some((option: ProductOption) => 
-        formData.selectedOptions[option.id] && formData.selectedOptions[option.id].length > 0
+    // 새로운 간결한 초이스 시스템에서 필수 초이스 검증
+    const missingRequiredChoices = formData.productChoices.filter(choice => {
+      if (!choice.is_required) return false
+      
+      // 해당 초이스에서 선택된 옵션이 있는지 확인
+      const hasSelection = formData.selectedChoices.some(selectedChoice => 
+        selectedChoice.choice_id === choice.id
       )
+      
+      return !hasSelection
     })
     
-    if (missingCategories.length > 0) {
-      alert(`다음 카테고리에서 필수 옵션을 선택해주세요:\n${missingCategories.map(([category]) => category).join('\n')}`)
+    if (missingRequiredChoices.length > 0) {
+      const missingChoiceNames = missingRequiredChoices.map(choice => choice.choice_group_ko || choice.choice_group).join('\n')
+      alert(`다음 카테고리에서 필수 옵션을 선택해주세요:\n${missingChoiceNames}`)
       return
     }
     

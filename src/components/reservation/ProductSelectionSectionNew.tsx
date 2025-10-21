@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, memo, useCallback, useState } from 'react'
+import { useEffect, memo, useCallback, useState, useRef } from 'react'
 import ProductSelector from '@/components/common/ProductSelector';
 import SimpleChoiceSelector from '@/components/reservation/SimpleChoiceSelector';
 import { supabase } from '@/lib/supabase';
@@ -80,6 +80,9 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   loadProductChoices,
   t
 }: ProductSelectionSectionProps) {
+  
+  // 이전 상품 ID를 추적하여 무한 루프 방지
+  const prevProductIdRef = useRef<string | null>(null);
   
   // 새로운 간결한 초이스 시스템에서 초이스 로드
   const loadProductChoicesNew = useCallback(async (productId: string) => {
@@ -248,17 +251,19 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   useEffect(() => {
     console.log('ProductSelectionSection: 상품 변경 useEffect 실행:', {
       productId: formData.productId,
+      prevProductId: prevProductIdRef.current,
       hasSelectedChoices: formData.selectedChoices?.length > 0,
       isEditMode: formData.selectedChoices?.length > 0
     });
     
-    if (formData.productId) {
-      // 편집 모드가 아닌 경우에만 초이스 로드
-      if (!formData.selectedChoices || formData.selectedChoices.length === 0) {
-        loadProductChoicesNew(formData.productId);
-      }
+    // 상품 ID가 실제로 변경된 경우에만 실행
+    if (formData.productId && formData.productId !== prevProductIdRef.current) {
+      prevProductIdRef.current = formData.productId;
+      
+      // 상품이 변경되면 항상 초이스 로드 (편집 모드에서도 모든 옵션을 보여주기 위해)
+      loadProductChoicesNew(formData.productId);
     }
-  }, [formData.productId, loadProductChoicesNew, formData.selectedChoices]);
+  }, [formData.productId, loadProductChoicesNew]);
   
   return (
     <div>

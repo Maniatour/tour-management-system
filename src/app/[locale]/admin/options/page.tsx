@@ -40,6 +40,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
       const { data, error } = await supabase
         .from('options')
         .select('*')
+        .eq('is_choice_template', false) // 초이스 템플릿이 아닌 옵션만 가져오기
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -390,22 +391,14 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                 {option.description}
               </div>
 
-              {/* 가격 정보 */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center space-x-1">
-                    <DollarSign className="h-3 w-3 text-gray-400" />
-                    <span className="text-gray-600">성인</span>
+              {/* 가격 정보 - 한 줄에 표시 */}
+              <div className="text-sm text-gray-600">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <span>성인: ${option.adult_price.toLocaleString()}</span>
+                    <span>아동: ${option.child_price.toLocaleString()}</span>
+                    <span>유아: ${option.infant_price.toLocaleString()}</span>
                   </div>
-                  <span className="font-medium text-gray-900">${option.adult_price}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">아동</span>
-                  <span className="font-medium text-gray-900">${option.child_price}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">유아</span>
-                  <span className="font-medium text-gray-900">${option.infant_price}</span>
                 </div>
               </div>
 

@@ -122,6 +122,17 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
   const handleEditTemplate = async (template: Omit<ChoiceTemplate, 'id' | 'created_at'>) => {
     if (editingTemplate) {
       try {
+        // 이미지 URL 유효성 검사 및 정리
+        const isValidUrl = (url: string | null | undefined): string | null => {
+          if (!url || url.trim() === '') return null
+          try {
+            new URL(url)
+            return url.trim()
+          } catch {
+            return null
+          }
+        }
+
         const updatedTemplate = {
           name: template.name,
           name_ko: template.name_ko,
@@ -140,10 +151,10 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
           template_group_ko: template.template_group_ko,
           is_required: template.is_required,
           sort_order: template.sort_order,
-          image_url: template.image_url,
-          image_alt: template.image_alt,
-          thumbnail_url: template.thumbnail_url,
-          image_order: template.image_order
+          image_url: isValidUrl(template.image_url),
+          image_alt: template.image_alt || null,
+          thumbnail_url: isValidUrl(template.thumbnail_url),
+          image_order: template.image_order || null
         }
 
         const { error } = await supabase

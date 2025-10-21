@@ -33,6 +33,10 @@ interface Tour {
     name_ko: string
     name_en: string | null
   }
+  // 차량 정보
+  vehicle?: {
+    vehicle_number: string
+  }
 }
 
 interface TourConnectionSectionProps {
@@ -82,6 +86,29 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
     }
   }
 
+  // 차량 정보를 가져오는 함수
+  const fetchVehicleInfo = async (vehicleId: string | null) => {
+    if (!vehicleId) return null
+    
+    try {
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select('vehicle_number')
+        .eq('id', vehicleId)
+        .single()
+      
+      if (error) {
+        console.error('Error fetching vehicle info:', error)
+        return null
+      }
+      
+      return data
+    } catch (error) {
+      console.error('Error fetching vehicle info:', error)
+      return null
+    }
+  }
+
   // 같은 날짜, 같은 상품의 투어들 가져오기
   useEffect(() => {
     const fetchTours = async () => {
@@ -119,17 +146,19 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
 
         console.log('Fetched tours:', data)
         
-        // 가이드 정보를 추가로 가져오기
+        // 가이드 정보와 차량 정보를 추가로 가져오기
         if (data && data.length > 0) {
           const toursWithGuides = await Promise.all(
             data.map(async (tour) => {
               const guide = await fetchGuideInfo(tour.tour_guide_id)
               const assistant = await fetchGuideInfo(tour.assistant_id)
+              const vehicle = await fetchVehicleInfo(tour.tour_car_id)
               
               return {
                 ...tour,
                 guide,
-                assistant
+                assistant,
+                vehicle
               }
             })
           )
@@ -185,16 +214,18 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
           if (error) {
             console.error('Error refreshing tours after creation:', error)
           } else if (data && data.length > 0) {
-            // 가이드 정보를 추가로 가져오기
+            // 가이드 정보와 차량 정보를 추가로 가져오기
             const toursWithGuides = await Promise.all(
               data.map(async (tour) => {
                 const guide = await fetchGuideInfo(tour.tour_guide_id)
                 const assistant = await fetchGuideInfo(tour.assistant_id)
+                const vehicle = await fetchVehicleInfo(tour.tour_car_id)
                 
                 return {
                   ...tour,
                   guide,
-                  assistant
+                  assistant,
+                  vehicle
                 }
               })
             )
@@ -361,9 +392,6 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
-                    <h4 className="text-sm font-medium text-gray-900">
-                      {tour.id}
-                    </h4>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTourStatusColor(tour.tour_status)}`}>
                       {getTourStatusText(tour.tour_status)}
                     </span>
@@ -381,49 +409,54 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                <div className="space-y-2 text-xs text-gray-600">
                   <div className="flex items-center">
-                    <Calendar className="w-3 h-3 mr-1 text-gray-400" />
+                    <Calendar className="w-3 h-3 mr-2 text-gray-400" />
                     <span>{tour.tour_date}</span>
-                  </div>
-                  
-                  {tour.tour_start_datetime && (
-                    <div className="flex items-center">
-                      <Clock className="w-3 h-3 mr-1 text-gray-400" />
-                      <span>
-                        {new Date(tour.tour_start_datetime).toLocaleTimeString('ko-KR', {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center">
-                    <Users className="w-3 h-3 mr-1 text-gray-400" />
-                    <span>{tour.reservation_ids?.length || 0}명</span>
+                    {tour.tour_start_datetime && (
+                      <>
+                        <Clock className="w-3 h-3 ml-3 mr-1 text-gray-400" />
+                        <span>
+                          {new Date(tour.tour_start_datetime).toLocaleTimeString('ko-KR', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </>
+                    )}
                   </div>
 
-                  {tour.tour_car_id && (
-                    <div className="flex items-center">
-                      <MapPin className="w-3 h-3 mr-1 text-gray-400" />
-                      <span>{tour.tour_car_id}</span>
-                    </div>
-                  )}
-
-                  {tour.guide && (
+                  <div className="grid grid-cols-2 gap-2">
                     <div className="flex items-center">
                       <Users className="w-3 h-3 mr-1 text-gray-400" />
-                      <span>{tour.guide.name_ko}</span>
+                      <span className="font-medium">총인원:</span>
+                      <span className="ml-1">{tour.reservation_ids?.length || 0}명</span>
                     </div>
-                  )}
 
-                  {tour.assistant && (
-                    <div className="flex items-center">
-                      <Users className="w-3 h-3 mr-1 text-gray-400" />
-                      <span>{tour.assistant.name_ko}</span>
-                    </div>
-                  )}
+                    {tour.guide && (
+                      <div className="flex items-center">
+                        <Users className="w-3 h-3 mr-1 text-gray-400" />
+                        <span className="font-medium">가이드:</span>
+                        <span className="ml-1">{tour.guide.name_ko}</span>
+                      </div>
+                    )}
+
+                    {tour.assistant && (
+                      <div className="flex items-center">
+                        <Users className="w-3 h-3 mr-1 text-gray-400" />
+                        <span className="font-medium">어시스턴트:</span>
+                        <span className="ml-1">{tour.assistant.name_ko}</span>
+                      </div>
+                    )}
+
+                    {tour.vehicle && (
+                      <div className="flex items-center">
+                        <MapPin className="w-3 h-3 mr-1 text-gray-400" />
+                        <span className="font-medium">차량:</span>
+                        <span className="ml-1">{tour.vehicle.vehicle_number}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {tour.tour_note && (
