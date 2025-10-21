@@ -348,12 +348,6 @@ export default function ReservationDetailsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <h1 className="text-2xl font-bold">{t('title')}</h1>
-        </div>
-      </div>
-      
       {/* 초기화가 완료되지 않았을 때 로딩 화면 표시 */}
       {!isInitialized ? (
         <div className="min-h-screen flex items-center justify-center">
