@@ -125,7 +125,7 @@ export default function SimpleChoiceSelector({
       // 수용 인원 검사 (quantity 타입인 경우)
       if (choice.choice_type === 'quantity') {
         const totalCapacity = choiceSelections.reduce((total, selection) => {
-          const option = choice.options.find(o => o.id === selection.option_id);
+          const option = (choice.options || []).find(o => o.id === selection.option_id);
           return total + (option ? option.capacity * selection.quantity : 0);
         }, 0);
         
@@ -172,7 +172,7 @@ export default function SimpleChoiceSelector({
           </div>
           
           <div className="space-y-2">
-            {choice.options
+            {(choice.options || [])
               .filter(option => option.is_active)
               .sort((a, b) => a.sort_order - b.sort_order)
               .map(option => {
