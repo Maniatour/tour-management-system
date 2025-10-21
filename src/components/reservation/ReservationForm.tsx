@@ -743,16 +743,68 @@ export default function ReservationForm({
           // 기존 choices 데이터 처리 로직 실행
           processExistingChoicesData(reservation.choices)
         } else {
-          // 데이터가 없으면 빈 상태로 설정
-          setFormData(prev => ({
-            ...prev,
-            selectedChoices: [],
-            productChoices: [],
-            choices: {},
-            choicesTotal: 0,
-            quantityBasedChoices: {},
-            quantityBasedChoiceTotal: 0
-          }))
+          // 예약에 선택된 초이스가 없어도 상품의 사용 가능한 초이스는 로드해야 함
+          console.log('ReservationForm: 예약에 선택된 초이스가 없음 - 상품 초이스 로드 시도')
+          if (productId) {
+            // 직접 상품 초이스 로드
+            try {
+              const { data: productChoicesData, error: productChoicesError } = await supabase
+                .from('product_choices')
+                .select(`
+                  id,
+                  choice_group,
+                  choice_group_ko,
+                  choice_type,
+                  is_required,
+                  min_selections,
+                  max_selections,
+                  sort_order,
+                  options:choice_options (
+                    id,
+                    option_key,
+                    option_name,
+                    option_name_ko,
+                    adult_price,
+                    child_price,
+                    infant_price,
+                    capacity,
+                    is_default,
+                    is_active,
+                    sort_order
+                  )
+                `)
+                .eq('product_id', productId)
+                .order('sort_order');
+
+              if (productChoicesError) {
+                console.error('ReservationForm: 상품 초이스 로드 오류:', productChoicesError);
+              } else {
+                console.log('ReservationForm: 상품 초이스 로드 성공:', productChoicesData);
+                setFormData(prev => ({
+                  ...prev,
+                  selectedChoices: [],
+                  productChoices: productChoicesData || [],
+                  choices: {},
+                  choicesTotal: 0,
+                  quantityBasedChoices: {},
+                  quantityBasedChoiceTotal: 0
+                }));
+              }
+            } catch (error) {
+              console.error('ReservationForm: 상품 초이스 로드 중 예외:', error);
+            }
+          } else {
+            // productId가 없으면 빈 상태로 설정
+            setFormData(prev => ({
+              ...prev,
+              selectedChoices: [],
+              productChoices: [],
+              choices: {},
+              choicesTotal: 0,
+              quantityBasedChoices: {},
+              quantityBasedChoiceTotal: 0
+            }))
+          }
         }
       }
     } catch (error) {
@@ -1180,7 +1232,7 @@ export default function ReservationForm({
       console.error('초이스 로드 오류:', error);
       setFormData(prev => ({ ...prev, productChoices: [], selectedChoices: [], choicesTotal: 0 }));
     }
-  }, []);
+  }, [reservation?.id]);
 
   // 가격 정보 조회 함수 (reservation_pricing 우선, 없으면 dynamic_pricing)
   const loadPricingInfo = useCallback(async (productId: string, tourDate: string, channelId: string, reservationId?: string) => {
