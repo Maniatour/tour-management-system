@@ -293,7 +293,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <h3 className="text-lg font-semibold text-gray-900">
+        <h3 className="text-base font-semibold text-gray-900">
           {t('form.productSelection')}
         </h3>
         <button

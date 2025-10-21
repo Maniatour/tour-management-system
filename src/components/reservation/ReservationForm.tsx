@@ -1961,28 +1961,37 @@ export default function ReservationForm({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:h-[940px]">
             {/* 1열: 고객, 투어 정보, 가격 정보 - 모바일에서는 전체 너비 */}
             <div className="col-span-1 lg:col-span-6 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4">
-              <CustomerSection
-                formData={formData}
-                setFormData={setFormData}
-                customers={customers}
-                customerSearchRef={customerSearchRef}
-                setShowCustomerForm={setShowCustomerForm}
-                t={t}
-              />
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 mb-3">고객 정보</h3>
+                <CustomerSection
+                  formData={formData}
+                  setFormData={setFormData}
+                  customers={customers}
+                  customerSearchRef={customerSearchRef}
+                  setShowCustomerForm={setShowCustomerForm}
+                  t={t}
+                />
+              </div>
               
-              <TourInfoSection
-                formData={formData}
-                setFormData={setFormData}
-                pickupHotels={pickupHotels}
-                sanitizeTimeInput={sanitizeTimeInput}
-                t={t}
-              />
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 mb-3">투어 정보</h3>
+                <TourInfoSection
+                  formData={formData}
+                  setFormData={setFormData}
+                  pickupHotels={pickupHotels}
+                  sanitizeTimeInput={sanitizeTimeInput}
+                  t={t}
+                />
+              </div>
               
-              <ParticipantsSection
-                formData={formData}
-                setFormData={setFormData}
-                t={t}
-              />
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 mb-3">참가자</h3>
+                <ParticipantsSection
+                  formData={formData}
+                  setFormData={setFormData}
+                  t={t}
+                />
+              </div>
 
                <PricingSection
                  formData={formData}

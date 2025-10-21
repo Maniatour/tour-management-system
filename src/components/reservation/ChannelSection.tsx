@@ -44,7 +44,7 @@ export default function ChannelSection({
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <label className="block text-sm font-medium text-gray-700">{t('form.channel')}</label>
+        <label className="block text-base font-semibold text-gray-900">{t('form.channel')}</label>
         <button
           type="button"
           onClick={handleToggle}
