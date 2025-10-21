@@ -347,7 +347,7 @@ export default function ReservationDetailsPage() {
   }, [loading, loadingReservation, reservation, customers, products, channels, productOptions, options, pickupHotels, coupons, handleSubmit, handleDelete, params?.locale, router, refreshCustomers])
 
   return (
-    <div className="space-y-4">
+    <div>
       {/* 초기화가 완료되지 않았을 때 로딩 화면 표시 */}
       {!isInitialized ? (
         <div className="min-h-screen flex items-center justify-center">
