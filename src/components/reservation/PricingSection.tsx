@@ -588,6 +588,14 @@ export default function PricingSection({
               </span>
             </div>
             
+            {/* 총 가격 */}
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-gray-700">총 가격</span>
+              <span className="text-sm font-semibold text-gray-900">
+                ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost).toFixed(2)}
+              </span>
+            </div>
+            
             {/* 커미션 */}
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium text-gray-700">커미션</span>
@@ -630,14 +638,6 @@ export default function PricingSection({
                   </div>
                 </div>
               </div>
-            </div>
-            
-            {/* 총 가격 */}
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-700">총 가격</span>
-              <span className="text-sm font-semibold text-gray-900">
-                ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost).toFixed(2)}
-              </span>
             </div>
             
             {/* Net 가격 */}
