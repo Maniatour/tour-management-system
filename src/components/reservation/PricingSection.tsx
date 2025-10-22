@@ -556,6 +556,38 @@ export default function PricingSection({
               <span className="text-sm font-medium text-gray-900">${formData.subtotal.toFixed(2)}</span>
             </div>
             
+            {/* 할인 및 추가 비용 */}
+            {(formData.couponDiscount > 0 || formData.additionalDiscount > 0 || formData.additionalCost > 0) && (
+              <div className="space-y-1 mb-2">
+                {formData.couponDiscount > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-600">쿠폰 할인</span>
+                    <span className="text-xs text-green-600">-${formData.couponDiscount.toFixed(2)}</span>
+                  </div>
+                )}
+                {formData.additionalDiscount > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-600">추가 할인</span>
+                    <span className="text-xs text-green-600">-${formData.additionalDiscount.toFixed(2)}</span>
+                  </div>
+                )}
+                {formData.additionalCost > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-600">추가 비용</span>
+                    <span className="text-xs text-red-600">+${formData.additionalCost.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Grand Total */}
+            <div className="flex justify-between items-center mb-2 border-t border-gray-200 pt-2">
+              <span className="text-sm font-medium text-gray-700">Grand Total</span>
+              <span className="text-sm font-semibold text-gray-900">
+                ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost).toFixed(2)}
+              </span>
+            </div>
+            
             {/* 예약 옵션 총 가격 */}
             {reservationOptionsTotalPrice > 0 && (
               <div className="flex justify-between items-center mb-2">
@@ -714,10 +746,14 @@ export default function PricingSection({
               <div className="flex justify-between items-center">
                 <span className="text-base font-bold text-green-800">Net 가격</span>
                 <span className="text-lg font-bold text-green-600">
-                  ${formData.commission_amount > 0 
-                    ? ((formData.onlinePaymentAmount ?? formData.totalPrice) - formData.commission_amount).toFixed(2)
-                    : (((formData.onlinePaymentAmount ?? formData.totalPrice) * (1 - formData.commission_percent / 100)).toFixed(2))
-                  }
+                  ${(() => {
+                    const grandTotal = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
+                    if (formData.commission_amount > 0) {
+                      return (grandTotal - formData.commission_amount).toFixed(2)
+                    } else {
+                      return (grandTotal * (1 - formData.commission_percent / 100)).toFixed(2)
+                    }
+                  })()}
                 </span>
               </div>
             </div>
