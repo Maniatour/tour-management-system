@@ -690,17 +690,17 @@ export default function PricingSection({
             {/* 보증금 */}
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium text-gray-700">보증금</span>
-              <div className="flex items-center space-x-1">
+              <div className="relative">
+                <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                 <input
                   type="number"
                   value={formData.depositAmount}
                   onChange={(e) => setFormData({ ...formData, depositAmount: Number(e.target.value) || 0 })}
-                  className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                  className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
                   step="0.01"
                   min="0"
                   placeholder="0"
                 />
-                <span className="text-xs text-gray-500">$</span>
               </div>
             </div>
           </div>
