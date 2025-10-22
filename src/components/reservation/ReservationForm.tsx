@@ -1418,6 +1418,14 @@ export default function ReservationForm({
 
   // 새로운 간결한 초이스 시스템에서는 formData.choicesTotal을 직접 사용
 
+  const calculateOptionTotal = useCallback(() => {
+    let total = 0
+    Object.values(formData.selectedOptionalOptions).forEach(option => {
+      total += option.price * option.quantity
+    })
+    return total
+  }, [formData.selectedOptionalOptions])
+
   const calculateSubtotal = useCallback(() => {
     // 새로운 간결한 초이스 시스템 사용
     const choicesTotal = formData.choicesTotal || 0;
@@ -1431,14 +1439,6 @@ export default function ReservationForm({
     
     return calculateProductPriceTotal() + optionTotal + optionalOptionTotal;
   }, [formData.choicesTotal, calculateRequiredOptionTotal, calculateProductPriceTotal, calculateOptionTotal]);
-
-  const calculateOptionTotal = useCallback(() => {
-    let total = 0
-    Object.values(formData.selectedOptionalOptions).forEach(option => {
-      total += option.price * option.quantity
-    })
-    return total
-  }, [formData.selectedOptionalOptions])
 
   const calculateTotalPrice = useCallback(() => {
     const subtotal = calculateSubtotal()
