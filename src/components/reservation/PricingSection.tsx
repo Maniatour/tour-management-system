@@ -695,16 +695,18 @@ export default function PricingSection({
                   </div>
                   <div className="flex items-center space-x-1">
                     <span className="text-xs text-gray-500">=</span>
-                    <input
-                      type="number"
-                      value={formData.commission_amount}
-                      onChange={(e) => setFormData({ ...formData, commission_amount: Number(e.target.value) || 0 })}
-                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                      step="0.01"
-                      min="0"
-                      placeholder="0"
-                    />
-                    <span className="text-xs text-gray-500">$</span>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={formData.commission_amount}
+                        onChange={(e) => setFormData({ ...formData, commission_amount: Number(e.target.value) || 0 })}
+                        className="w-16 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        step="0.01"
+                        min="0"
+                        placeholder="0"
+                      />
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
+                    </div>
                   </div>
                 </div>
               </div>
