@@ -706,12 +706,6 @@ export default function PricingSection({
                     />
                     <span className="text-xs text-gray-500">$</span>
                   </div>
-                  <span className="text-sm font-medium text-red-600">
-                    -${formData.commission_amount > 0 
-                      ? formData.commission_amount.toFixed(2)
-                      : (((formData.onlinePaymentAmount ?? formData.totalPrice) * (formData.commission_percent / 100)).toFixed(2))
-                    }
-                  </span>
                 </div>
               </div>
               
