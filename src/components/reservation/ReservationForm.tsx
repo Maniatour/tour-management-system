@@ -1426,8 +1426,11 @@ export default function ReservationForm({
     // 우선순위: 새로운 초이스 시스템 > 기존 requiredOptions
     const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal;
     
-    return calculateProductPriceTotal() + optionTotal;
-  }, [formData.choicesTotal, calculateRequiredOptionTotal, calculateProductPriceTotal]);
+    // 선택 옵션(optional options)도 포함
+    const optionalOptionTotal = calculateOptionTotal();
+    
+    return calculateProductPriceTotal() + optionTotal + optionalOptionTotal;
+  }, [formData.choicesTotal, calculateRequiredOptionTotal, calculateProductPriceTotal, calculateOptionTotal]);
 
   const calculateOptionTotal = useCallback(() => {
     let total = 0
@@ -1441,14 +1444,14 @@ export default function ReservationForm({
     const subtotal = calculateSubtotal()
     const totalDiscount = formData.couponDiscount + formData.additionalDiscount
     const totalAdditional = formData.additionalCost + formData.cardFee + formData.tax +
-      formData.prepaymentCost + formData.prepaymentTip + calculateOptionTotal() +
+      formData.prepaymentCost + formData.prepaymentTip +
       (formData.isPrivateTour ? formData.privateTourAdditionalCost : 0) +
       reservationOptionsTotalPrice
 
     // 총 가격(고객 총지불 기준, balance는 별도로 표시만 함)
     const grossTotal = Math.max(0, subtotal - totalDiscount + totalAdditional)
     return grossTotal
-  }, [calculateSubtotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.cardFee, formData.tax, formData.prepaymentCost, formData.prepaymentTip, calculateOptionTotal, formData.isPrivateTour, formData.privateTourAdditionalCost, reservationOptionsTotalPrice])
+  }, [calculateSubtotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.cardFee, formData.tax, formData.prepaymentCost, formData.prepaymentTip, formData.isPrivateTour, formData.privateTourAdditionalCost, reservationOptionsTotalPrice])
 
   const calculateBalance = useCallback(() => {
     return Math.max(0, formData.totalPrice - formData.depositAmount)
