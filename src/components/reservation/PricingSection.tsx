@@ -676,7 +676,15 @@ export default function PricingSection({
                     <input
                       type="number"
                       value={formData.commission_percent}
-                      onChange={(e) => setFormData({ ...formData, commission_percent: Number(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        const percent = Number(e.target.value) || 0
+                        const calculatedAmount = ((formData.onlinePaymentAmount ?? formData.totalPrice) * (percent / 100))
+                        setFormData({ 
+                          ...formData, 
+                          commission_percent: percent,
+                          commission_amount: calculatedAmount
+                        })
+                      }}
                       className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                       step="0.01"
                       min="0"
@@ -686,7 +694,7 @@ export default function PricingSection({
                     <span className="text-xs text-gray-500">%</span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <span className="text-xs text-gray-500">또는</span>
+                    <span className="text-xs text-gray-500">=</span>
                     <input
                       type="number"
                       value={formData.commission_amount}
