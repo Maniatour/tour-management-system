@@ -546,14 +546,20 @@ export default function AdminCustomers() {
     if (statusFilter === 'active' && customer.status !== 'active') return false
     if (statusFilter === 'inactive' && customer.status === 'active') return false
     
-    // 검색어 필터 적용
-    return (
-      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (customer.email && customer.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (customer.phone && customer.phone.includes(searchTerm)) ||
-      customer.emergency_contact?.includes(searchTerm) ||
-      customer.special_requests?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    // 검색어 필터 적용 (ID 검색 추가)
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase()
+      return (
+        customer.id.toLowerCase().includes(searchLower) ||
+        customer.name.toLowerCase().includes(searchLower) ||
+        (customer.email && customer.email.toLowerCase().includes(searchLower)) ||
+        (customer.phone && customer.phone.includes(searchTerm)) ||
+        customer.emergency_contact?.includes(searchTerm) ||
+        customer.special_requests?.toLowerCase().includes(searchLower)
+      )
+    }
+    
+    return true
   })
 
   // 검색어나 필터 변경 시 페이지 리셋
@@ -658,7 +664,7 @@ export default function AdminCustomers() {
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
         <input
           type="text"
-            placeholder="이름, 이메일, 전화번호, 다른 이름(영문명 등), 특별요청으로 검색..."
+            placeholder="ID, 이름, 이메일, 전화번호, 다른 이름(영문명 등), 특별요청으로 검색..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1450,14 +1456,16 @@ function CustomerForm({
     return 'ota' // 기본값
   }, [channels])
 
-  // 고객 검색 필터링 함수
+  // 고객 검색 필터링 함수 (ID 검색 추가)
   const filteredCustomers = useMemo(() => {
     if (!customerSearch.trim()) return []
     
+    const searchLower = customerSearch.toLowerCase()
     return customers.filter(customer => 
-      customer.name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
-      customer.email?.toLowerCase().includes(customerSearch.toLowerCase()) ||
-      customer.phone?.toLowerCase().includes(customerSearch.toLowerCase())
+      customer.id.toLowerCase().includes(searchLower) ||
+      customer.name?.toLowerCase().includes(searchLower) ||
+      customer.email?.toLowerCase().includes(searchLower) ||
+      customer.phone?.toLowerCase().includes(searchLower)
     ).slice(0, 10) // 최대 10개만 표시
   }, [customers, customerSearch])
 
@@ -1626,7 +1634,7 @@ function CustomerForm({
                     onChange={(e) => handleCustomerSearchChange(e.target.value)}
                     onFocus={() => setShowCustomerDropdown(customerSearch.length > 0)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="고객 이름, 이메일, 전화번호로 검색..."
+                    placeholder="고객 ID, 이름, 이메일, 전화번호로 검색..."
                     required
                   />
                   
@@ -1639,7 +1647,10 @@ function CustomerForm({
                           onClick={() => handleCustomerSelect(customer)}
                           className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
                         >
-                          <div className="font-medium text-gray-900">{customer.name}</div>
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium text-gray-900">{customer.name}</div>
+                            <div className="text-xs text-gray-400 font-mono">{customer.id}</div>
+                          </div>
                           {customer.email && (
                             <div className="text-sm text-gray-500">{customer.email}</div>
                           )}

@@ -35,6 +35,8 @@
     "dayjs": "^1.11.18",
     "google-auth-library": "^10.3.0",
     "googleapis": "^159.0.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.3",
     "lucide-react": "^0.542.0",
     "multer": "^2.0.2",
     "next": "15.5.2",
@@ -46,6 +48,7 @@
     "react-icons": "^5.5.0",
     "react-textarea-autosize": "^8.5.9",
     "reactflow": "^11.11.4",
+    "recharts": "^3.3.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "zod": "^4.1.4"

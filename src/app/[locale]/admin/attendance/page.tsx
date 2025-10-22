@@ -77,7 +77,7 @@ export default function AttendancePage() {
       }
       
       const position = (teamData as any).position?.toLowerCase()
-      const isAdminUser = position === 'super' || position === 'admin' || position === 'op'
+      const isAdminUser = position === 'super'
       
       setIsAdmin(isAdminUser)
       setCanEditAttendance(position === 'super')

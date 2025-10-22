@@ -387,33 +387,33 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
       // 언어별 텍스트 정의
       const texts = {
         ko: {
-          title: `${employee.name_en} 급여 상세 내역`,
-          period: `기간: ${startDate} ~ ${endDate}`,
-          employeeInfo: '직원 정보',
-          name: '이름:',
-          position: '직책:',
-          attendanceSubtotal: '출퇴근 소계',
-          guideFee: '가이드 Fee',
-          assistantFee: '어시스턴트 Fee',
-          prepaidTip: 'Prepaid 팁',
-          totalPay: '총 급여',
-          attendanceRecords: '출퇴근 기록',
-          tourFee: '투어 Fee',
-          date: '날짜',
-          checkIn: '출근',
-          checkOut: '퇴근',
-          workHours: '근무시간',
-          status: '상태',
-          tourDate: '투어 날짜',
-          tourName: '투어명',
-          teamType: '팀 타입',
-          guideFeeCol: '가이드 Fee',
-          assistantFeeCol: '어시스턴트 Fee',
-          totalFee: '총 Fee',
-          total: '총합',
-          normal: '정상',
-          late: '지각',
-          absent: '결근'
+          title: `${employee.name_en} Payroll Details`,
+          period: `Period: ${startDate} ~ ${endDate}`,
+          employeeInfo: 'Employee Information',
+          name: 'Name:',
+          position: 'Position:',
+          attendanceSubtotal: 'Attendance Subtotal',
+          guideFee: 'Guide Fee',
+          assistantFee: 'Assistant Fee',
+          prepaidTip: 'Prepaid Tip',
+          totalPay: 'Total Pay',
+          attendanceRecords: 'Attendance Records',
+          tourFee: 'Tour Fee',
+          date: 'Date',
+          checkIn: 'Check In',
+          checkOut: 'Check Out',
+          workHours: 'Work Hours',
+          status: 'Status',
+          tourDate: 'Tour Date',
+          tourName: 'Tour Name',
+          teamType: 'Team Type',
+          guideFeeCol: 'Guide Fee',
+          assistantFeeCol: 'Assistant Fee',
+          totalFee: 'Total Fee',
+          total: 'Total',
+          normal: 'Normal',
+          late: 'Late',
+          absent: 'Absent'
         },
         en: {
           title: `${employee.name_en} Payroll Details`,
@@ -446,7 +446,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
         }
       }
       
-      const t = texts[isEnglish ? 'en' : 'ko']
+      const t = texts.en
       
       const printContent = `
         <!DOCTYPE html>
@@ -630,7 +630,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
   const formatWorkHours = (hours: number) => {
     const wholeHours = Math.floor(hours)
     const minutes = Math.round((hours - wholeHours) * 60)
-    return `${wholeHours}시간 ${minutes}분`
+    return `${wholeHours}hours ${minutes}min`
   }
 
   // check_in_time을 라스베가스 시간으로 변환하여 날짜 추출하는 함수
@@ -640,17 +640,15 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
     const utcDate = new Date(checkInTime)
     const lasVegasTime = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
     
-    const dateStr = lasVegasTime.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })
+    const year = lasVegasTime.getFullYear()
+    const month = String(lasVegasTime.getMonth() + 1).padStart(2, '0')
+    const day = String(lasVegasTime.getDate()).padStart(2, '0')
     
-    const weekdayStr = lasVegasTime.toLocaleDateString('ko-KR', {
+    const weekdayStr = lasVegasTime.toLocaleDateString('en-US', {
       weekday: 'short'
     })
     
-    return `${dateStr} (${weekdayStr})`
+    return `${year}-${month}-${day} (${weekdayStr})`
   }
 
   // 날짜 포맷팅 함수 (출퇴근 기록용)
@@ -739,7 +737,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center">
             <Calculator className="w-6 h-6 text-blue-600 mr-2" />
-            <h2 className="text-xl font-bold text-gray-900">전체 직원 총합</h2>
+            <h2 className="text-xl font-bold text-gray-900">Total Employees Summary</h2>
           </div>
           <button
             onClick={onClose}
@@ -807,13 +805,13 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
               </div>
             </div>
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <div className="text-sm font-medium text-gray-700 mb-1">가이드 Fee</div>
+              <div className="text-sm font-medium text-gray-700 mb-1">Guide Fee</div>
               <div className="text-2xl font-bold text-purple-600">
                 ${formatCurrency(totalGuideFee)}
               </div>
             </div>
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="text-sm font-medium text-gray-700 mb-1">어시스턴트 Fee</div>
+              <div className="text-sm font-medium text-gray-700 mb-1">Assistant Fee</div>
               <div className="text-2xl font-bold text-green-600">
                 ${formatCurrency(totalAssistantFee)}
               </div>
@@ -825,7 +823,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
               </div>
             </div>
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <div className="text-sm font-medium text-gray-700 mb-1">총 급여</div>
+              <div className="text-sm font-medium text-gray-700 mb-1">Total Pay</div>
               <div className="text-2xl font-bold text-orange-600">
                 ${formatCurrency(totalPay)}
               </div>
@@ -844,28 +842,28 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      직원명
+                      Employee Name
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      출퇴근 소계
+                      Attendance Subtotal
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      가이드 Fee
+                      Guide Fee
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      어시스턴트 Fee
+                      Assistant Fee
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Prepaid 팁
+                      Prepaid Tip
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      투어 횟수
+                      Tour Count
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      소계
+                      Subtotal
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      상세
+                      Details
                     </th>
                   </tr>
                 </thead>
@@ -935,7 +933,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                                 className="flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
                               >
                                 <Printer className="w-4 h-4 mr-1" />
-                                프린트
+                                Print
                               </button>
                             </div>
                             <div className="space-y-4">
@@ -944,17 +942,17 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                                 <div>
                                   <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center">
                                     <Clock className="w-4 h-4 mr-1" />
-                                    출퇴근 기록
+                                    Attendance Records
                                   </h4>
                                   <div className="overflow-x-auto">
                                     <table className="min-w-full text-sm">
                                       <thead className="bg-gray-100">
                                         <tr>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">날짜</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">출근</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">퇴근</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">근무시간</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Check In</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Check Out</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Work Hours</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-gray-200">
@@ -980,8 +978,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                                                   ? 'bg-yellow-100 text-yellow-800'
                                                   : 'bg-red-100 text-red-800'
                                               }`}>
-                                                {record.status === 'present' ? '정상' : 
-                                                 record.status === 'late' ? '지각' : '결근'}
+                                                {record.status === 'present' ? 'Normal' : 
+                                                 record.status === 'late' ? 'Late' : 'Absent'}
                                               </span>
                                             </td>
                                           </tr>
@@ -997,19 +995,19 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                                 <div>
                                   <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center">
                                     <DollarSign className="w-4 h-4 mr-1" />
-                                    투어 Fee
+                                    Tour Fee
                                   </h4>
                                   <div className="overflow-x-auto">
                                     <table className="min-w-full text-sm">
                                       <thead className="bg-gray-100">
                                         <tr>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">투어 날짜</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">투어명</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">팀 타입</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">가이드 Fee</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">어시스턴트 Fee</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Prepaid 팁</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">총 Fee</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Tour Date</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Tour Name</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Team Type</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Guide Fee</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Assistant Fee</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Prepaid Tip</th>
+                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Total Fee</th>
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-gray-200">
@@ -1058,7 +1056,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                 </tbody>
                 <tfoot className="bg-gray-50">
                   <tr>
-                    <td className="px-4 py-3 text-sm font-bold text-gray-900">총합</td>
+                    <td className="px-4 py-3 text-sm font-bold text-gray-900">Total</td>
                     <td className="px-4 py-3 text-sm font-bold text-blue-600">
                       ${formatCurrency(totalAttendancePay)}
                     </td>

@@ -180,10 +180,11 @@ export function useTourDetailData() {
                 // 예약 데이터에 고객 정보 매핑
                 const reservationsWithCustomers = reservationsData.map(reservation => {
                   const customer = customersData?.find(customer => customer.id === reservation.customer_id)
+                  
                   return {
                     ...reservation,
                     customers: customer,
-                    // 고객 정보를 직접 매핑
+                    // 고객 정보를 직접 매핑 (customer.name은 NOT NULL이므로 항상 존재)
                     customer_name: customer?.name || '정보 없음',
                     customer_email: customer?.email || '',
                     customer_language: customer?.language || 'Unknown'
@@ -213,18 +214,36 @@ export function useTourDetailData() {
           setPickupHotels(pickupHotelsData || [])
         }
 
-        // 전체 고객 데이터 가져오기 (폼에서 사용)
-        const { data: allCustomersData, error: allCustomersError } = await supabase
-          .from('customers')
-          .select('*')
-          .order('name')
+        // 전체 고객 데이터 가져오기 (폼에서 사용) - 페이지네이션 사용
+        console.log('전체 고객 데이터 가져오기 시작 (페이지네이션)')
+        let allCustomersData: CustomerRow[] = []
+        let hasMore = true
+        let page = 0
+        const pageSize = 1000
 
-        if (allCustomersError) {
-          console.error('전체 고객 데이터 가져오기 오류:', allCustomersError)
-        } else {
-          console.log('전체 고객 데이터 가져오기 성공:', allCustomersData?.length || 0)
-          setCustomers(allCustomersData || [])
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from('customers')
+            .select('*')
+            .order('name')
+            .range(page * pageSize, (page + 1) * pageSize - 1)
+
+          if (error) {
+            console.error('고객 데이터 가져오기 오류:', error)
+            break
+          }
+
+          if (data && data.length > 0) {
+            allCustomersData = [...allCustomersData, ...data]
+            page++
+            console.log(`고객 데이터 페이지 ${page} 로드됨: ${data.length}명`)
+          } else {
+            hasMore = false
+          }
         }
+
+        console.log('전체 고객 데이터 가져오기 성공:', allCustomersData.length, '명')
+        setCustomers(allCustomersData)
 
         // 상품 데이터 가져오기
         const { data: productsData, error: productsError } = await supabase
@@ -432,12 +451,58 @@ export function useTourDetailData() {
         console.log('차량 배정 정보 없음 - tour_car_id가 비어있음')
       }
 
-      // 예약 분류 계산
-        if (reservationsData && tourData) {
+      // 예약 분류 계산 (고객 데이터 로딩 완료 후)
+        if (reservationsData && tourData && allCustomersData.length > 0) {
           const assignedReservationIds = tourData.reservation_ids || []
           
           // 1. 이 투어에 배정된 예약 (reservation_ids 컬럼의 예약)
-          const assignedReservations = reservationsData.filter(r => assignedReservationIds.includes(r.id))
+          // reservation_ids에 있는 예약들을 직접 조회
+          let assignedReservations: ReservationRow[] = []
+          if (assignedReservationIds.length > 0) {
+            const { data: assignedReservationsData, error: assignedError } = await supabase
+              .from('reservations')
+              .select('*')
+              .in('id', assignedReservationIds)
+            
+            if (assignedError) {
+              console.error('배정된 예약 조회 오류:', assignedError)
+            } else {
+              console.log('배정된 예약 조회 성공:', assignedReservationsData?.length || 0)
+              assignedReservations = assignedReservationsData || []
+              
+              // 배정된 예약들에도 고객 정보 매핑
+              if (assignedReservations.length > 0) {
+                const customerIds = [...new Set(assignedReservations.map(r => r.customer_id).filter(Boolean))]
+                
+                if (customerIds.length > 0) {
+                  const { data: assignedCustomersData, error: assignedCustomersError } = await supabase
+                    .from('customers')
+                    .select('*')
+                    .in('id', customerIds)
+                  
+                  if (assignedCustomersError) {
+                    console.error('배정된 예약의 고객 정보 조회 오류:', assignedCustomersError)
+                  } else {
+                    console.log('배정된 예약의 고객 정보 조회 성공:', assignedCustomersData?.length || 0)
+                    
+                    // 배정된 예약 데이터에 고객 정보 매핑
+                    assignedReservations = assignedReservations.map(reservation => {
+                      const customer = assignedCustomersData?.find(customer => customer.id === reservation.customer_id)
+                      
+                      return {
+                        ...reservation,
+                        customers: customer,
+                        // 고객 정보를 직접 매핑 (customer.name은 NOT NULL이므로 항상 존재)
+                        customer_name: customer?.name || '정보 없음',
+                        customer_email: customer?.email || '',
+                        customer_language: customer?.language || 'Unknown'
+                      }
+                    })
+                  }
+                }
+              }
+            }
+          }
           
           // 2. 다른 투어에 배정된 예약 (같은 상품/날짜의 다른 투어들의 reservation_ids에 있는 예약들)
           const otherToursAssignedReservations = await (async () => {
@@ -467,11 +532,48 @@ export function useTourDetailData() {
 
               if (otherReservationIds.length === 0) return []
 
-              // 해당 예약들 필터링
-              const filteredReservations = reservationsData.filter(r => 
-                otherReservationIds.includes(r.id) &&
-                !assignedReservationIds.includes(r.id)
-              )
+              // 해당 예약들을 직접 조회
+              const { data: otherReservationsData, error: otherReservationsError } = await supabase
+                .from('reservations')
+                .select('*')
+                .in('id', otherReservationIds)
+
+              if (otherReservationsError) {
+                console.error('❌ Error loading other tours reservations:', otherReservationsError)
+                return []
+              }
+
+              let filteredReservations = otherReservationsData || []
+              
+              // 고객 정보 매핑
+              if (filteredReservations.length > 0) {
+                const customerIds = [...new Set(filteredReservations.map(r => r.customer_id).filter(Boolean))]
+                
+                if (customerIds.length > 0) {
+                  const { data: otherCustomersData, error: otherCustomersError } = await supabase
+                    .from('customers')
+                    .select('*')
+                    .in('id', customerIds)
+                  
+                  if (otherCustomersError) {
+                    console.error('다른 투어 예약의 고객 정보 조회 오류:', otherCustomersError)
+                  } else {
+                    // 다른 투어 예약 데이터에 고객 정보 매핑
+                    filteredReservations = filteredReservations.map(reservation => {
+                      const customer = otherCustomersData?.find(customer => customer.id === reservation.customer_id)
+                      
+                      return {
+                        ...reservation,
+                        customers: customer,
+                        // 고객 정보를 직접 매핑 (customer.name은 NOT NULL이므로 항상 존재)
+                        customer_name: customer?.name || '정보 없음',
+                        customer_email: customer?.email || '',
+                        customer_language: customer?.language || 'Unknown'
+                      }
+                    })
+                  }
+                }
+              }
 
               console.log('📊 Other tours assigned reservations found:', filteredReservations.length)
               return filteredReservations
@@ -516,10 +618,57 @@ export function useTourDetailData() {
             otherStatus: otherStatusReservations.length
           })
           
+          // 고객 이름이 "정보 없음"인 예약들 디버깅
+          const assignedWithNoName = assignedReservations.filter(r => r.customer_name === '정보 없음')
+          const pendingWithNoName = pendingReservations.filter(r => r.customer_name === '정보 없음')
+          const otherToursWithNoName = otherToursAssignedReservations.filter(r => r.customer_name === '정보 없음')
+          
+          if (assignedWithNoName.length > 0) {
+            console.log('⚠️ 배정된 예약 중 고객 이름이 없는 예약들:', assignedWithNoName.map(r => ({
+              id: r.id,
+              customer_id: r.customer_id,
+              customer_name: r.customer_name
+            })))
+          }
+          
+          if (pendingWithNoName.length > 0) {
+            console.log('⚠️ 대기 중인 예약 중 고객 이름이 없는 예약들:', pendingWithNoName.map(r => ({
+              id: r.id,
+              customer_id: r.customer_id,
+              customer_name: r.customer_name
+            })))
+          }
+          
+          if (otherToursWithNoName.length > 0) {
+            console.log('⚠️ 다른 투어 예약 중 고객 이름이 없는 예약들:', otherToursWithNoName.map(r => ({
+              id: r.id,
+              customer_id: r.customer_id,
+              customer_name: r.customer_name
+            })))
+          }
+          
           setAssignedReservations(assignedReservations)
           setPendingReservations(pendingReservations)
           setOtherToursAssignedReservations(otherToursAssignedReservations)
           setOtherStatusReservations(otherStatusReservations)
+        } else if (reservationsData && tourData) {
+          // 고객 데이터가 아직 로드되지 않은 경우 기본 예약 분류만 수행
+          console.log('⚠️ 고객 데이터가 아직 로드되지 않음, 기본 예약 분류만 수행')
+          const assignedReservationIds = tourData.reservation_ids || []
+          
+          // 기본 예약 분류 (고객 정보 없이)
+          const assignedReservations = reservationsData.filter(r => assignedReservationIds.includes(r.id))
+          const pendingReservations = reservationsData.filter(r => 
+            r.product_id === tourData.product_id && 
+            r.tour_date === tourData.tour_date &&
+            (!r.tour_id || r.tour_id === '') &&
+            !assignedReservationIds.includes(r.id)
+          )
+          
+          setAssignedReservations(assignedReservations)
+          setPendingReservations(pendingReservations)
+          setOtherToursAssignedReservations([])
+          setOtherStatusReservations([])
         }
 
       } catch (error) {
@@ -568,10 +717,16 @@ export function useTourDetailData() {
   // 유틸리티 함수들
   const getCustomerName = (customerId: string) => {
     console.log('🔍 getCustomerName called for customerId:', customerId)
+    console.log('📊 Total customers loaded:', customers.length)
+    
+    if (!customerId) {
+      console.log('❌ Customer ID is empty or null')
+      return '정보 없음'
+    }
     
     // 먼저 예약 데이터에서 직접 고객 이름 찾기
     const reservation = allReservations.find((r) => r.customer_id === customerId)
-    if (reservation && reservation.customer_name) {
+    if (reservation && reservation.customer_name && reservation.customer_name !== '정보 없음') {
       console.log('✅ Found customer name from reservation:', reservation.customer_name)
       return reservation.customer_name
     }
@@ -580,10 +735,26 @@ export function useTourDetailData() {
     const customer = customers.find((c) => c.id === customerId)
     if (customer) {
       console.log('✅ Found customer from customers array:', customer.name)
-      return formatCustomerNameEnhanced(customer, locale)
+      
+      // customer.name은 NOT NULL이므로 항상 존재함
+      return customer.name
     }
     
+    // 고객을 찾지 못한 경우 디버깅 정보 출력
     console.log('❌ Customer not found for ID:', customerId)
+    console.log('🔍 Available customer IDs (first 10):', customers.slice(0, 10).map(c => c.id))
+    console.log('🔍 Searching for similar IDs...')
+    
+    // 비슷한 ID가 있는지 확인
+    const similarCustomers = customers.filter(c => 
+      c.id.toLowerCase().includes(customerId.toLowerCase()) ||
+      customerId.toLowerCase().includes(c.id.toLowerCase())
+    )
+    
+    if (similarCustomers.length > 0) {
+      console.log('🔍 Similar customer IDs found:', similarCustomers.map(c => c.id))
+    }
+    
     return '정보 없음'
   }
 

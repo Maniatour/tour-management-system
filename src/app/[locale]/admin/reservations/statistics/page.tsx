@@ -9,6 +9,7 @@ import {
   getChannelName, 
   getStatusLabel 
 } from '@/utils/reservationUtils'
+import TourStatisticsTab from '@/components/statistics/TourStatisticsTab'
 
 interface AdminReservationStatisticsProps {
   params: Promise<{ locale: string }>
@@ -16,6 +17,7 @@ interface AdminReservationStatisticsProps {
 
 type TimeRange = 'daily' | 'monthly' | 'yearly'
 type ChartType = 'channel' | 'product' | 'trend'
+type TabType = 'reservations' | 'tours'
 
 interface StatisticsData {
   totalReservations: number
@@ -63,6 +65,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   } = useReservationData()
 
   // 상태 관리
+  const [activeTab, setActiveTab] = useState<TabType>('reservations')
   const [timeRange, setTimeRange] = useState<TimeRange>('daily')
   const [selectedChart, setSelectedChart] = useState<ChartType>('channel')
   const [dateRange, setDateRange] = useState<{start: string, end: string}>({
@@ -268,7 +271,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     <div className="space-y-6">
       {/* 헤더 */}
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900">예약 통계</h1>
+        <h1 className="text-3xl font-bold text-gray-900">통계 리포트</h1>
         <button
           onClick={refreshReservations}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
@@ -276,6 +279,31 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           <BarChart3 size={20} />
           <span>데이터 새로고침</span>
         </button>
+      </div>
+
+      {/* 탭 네비게이션 */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8 px-6">
+            {[
+              { key: 'reservations', label: '예약 통계', icon: BarChart3 },
+              { key: 'tours', label: '투어 통계', icon: TrendingUp }
+            ].map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key as TabType)}
+                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === key
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Icon size={20} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
       </div>
 
       {/* 필터 컨트롤 */}
@@ -320,6 +348,10 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           </div>
         </div>
       </div>
+
+      {/* 탭 내용 */}
+      {activeTab === 'reservations' && (
+        <>
 
       {/* 요약 통계 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -491,6 +523,13 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           </table>
         </div>
       </div>
+        </>
+      )}
+
+      {/* 투어 통계 탭 */}
+      {activeTab === 'tours' && (
+        <TourStatisticsTab dateRange={dateRange} />
+      )}
     </div>
   )
 }

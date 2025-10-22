@@ -272,9 +272,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
   // 초이스 옵션 추가
   const addChoiceOption = useCallback((groupIndex: number) => {
+    const existingOptions = productChoices[groupIndex]?.options || []
+    const nextOptionNumber = existingOptions.length + 1
     const newOption: ChoiceOption = {
       id: `temp_option_${Date.now()}`,
-      option_key: '',
+      option_key: `option_${nextOptionNumber}`,
       option_name: '',
       option_name_ko: '',
       adult_price: 0,
@@ -283,7 +285,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       capacity: 1,
       is_default: false,
       is_active: true,
-      sort_order: productChoices[groupIndex]?.options.length || 0
+      sort_order: existingOptions.length
     }
     
     setProductChoices(prev => prev.map((group, i) => 
@@ -616,58 +618,89 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                 </div>
 
                 {choice.options.map((option, optionIndex) => (
-                  <div key={option.id} className="grid grid-cols-1 md:grid-cols-6 gap-2 p-3 bg-gray-50 rounded-md">
-                    <input
-                      type="text"
-                      value={option.option_key}
-                      onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_key', e.target.value)}
-                      placeholder="옵션 키"
-                      className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <input
-                      type="text"
-                      value={option.option_name_ko}
-                      onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name_ko', e.target.value)}
-                      placeholder="옵션명 (한국어)"
-                      className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <input
-                      type="number"
-                      value={option.adult_price}
-                      onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'adult_price', parseInt(e.target.value) || 0)}
-                      placeholder="성인 가격"
-                      className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <input
-                      type="number"
-                      value={option.child_price}
-                      onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'child_price', parseInt(e.target.value) || 0)}
-                      placeholder="아동 가격"
-                      className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <input
-                      type="number"
-                      value={option.capacity}
-                      onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'capacity', parseInt(e.target.value) || 1)}
-                      placeholder="수용 인원"
-                      className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <div className="flex items-center space-x-2">
-                      <label className="flex items-center text-xs">
+                  <div key={option.id} className="p-3 bg-gray-50 rounded-md">
+                    <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">옵션 키</label>
                         <input
-                          type="checkbox"
-                          checked={option.is_default}
-                          onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'is_default', e.target.checked)}
-                          className="mr-1"
+                          type="text"
+                          value={option.option_key}
+                          onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_key', e.target.value)}
+                          placeholder="옵션 키"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-gray-50"
+                          title="옵션 키는 자동으로 생성됩니다. 필요시 수정 가능합니다."
                         />
-                        기본
-                      </label>
-                      <button
-                        onClick={() => removeChoiceOption(groupIndex, optionIndex)}
-                        className="p-1 text-red-600 hover:bg-red-100 rounded"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">옵션명 (한국어)</label>
+                        <input
+                          type="text"
+                          value={option.option_name_ko}
+                          onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name_ko', e.target.value)}
+                          placeholder="옵션명 (한국어)"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">성인 가격</label>
+                        <input
+                          type="number"
+                          value={option.adult_price}
+                          onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'adult_price', parseInt(e.target.value) || 0)}
+                          placeholder="성인 가격"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">아동 가격</label>
+                        <input
+                          type="number"
+                          value={option.child_price}
+                          onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'child_price', parseInt(e.target.value) || 0)}
+                          placeholder="아동 가격"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">유아 가격</label>
+                        <input
+                          type="number"
+                          value={option.infant_price}
+                          onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'infant_price', parseInt(e.target.value) || 0)}
+                          placeholder="유아 가격"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">수용 인원</label>
+                        <input
+                          type="number"
+                          value={option.capacity}
+                          onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'capacity', parseInt(e.target.value) || 1)}
+                          placeholder="수용 인원"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">기본 옵션</label>
+                        <div className="flex items-center space-x-2">
+                          <label className="flex items-center text-xs">
+                            <input
+                              type="checkbox"
+                              checked={option.is_default}
+                              onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'is_default', e.target.checked)}
+                              className="mr-1"
+                            />
+                            기본
+                          </label>
+                          <button
+                            onClick={() => removeChoiceOption(groupIndex, optionIndex)}
+                            className="p-1 text-red-600 hover:bg-red-100 rounded"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}

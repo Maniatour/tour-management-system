@@ -300,6 +300,8 @@ export default function BasicInfoTab({
       console.log('SubCategories from DB:', subCategoryList)
       console.log('Current formData.category:', formData.category)
       console.log('Current formData.subCategory:', formData.subCategory)
+      console.log('Raw categoriesResult.data:', categoriesResult.data)
+      console.log('Raw subCategoriesResult.data:', subCategoriesResult.data)
       
       setCategories(categoryList)
       setAllSubCategories(subCategoryList)
@@ -307,10 +309,25 @@ export default function BasicInfoTab({
       // 현재 선택된 카테고리에 해당하는 서브카테고리만 필터링
       if (formData.category) {
         const selectedCategory = categoryList.find(cat => cat.value === formData.category)
+        console.log('Selected category:', selectedCategory)
+        console.log('All subcategories:', subCategoryList)
+        
         const filteredSubCategories = subCategoryList.filter(sub => sub.categoryId === selectedCategory?.id)
+        console.log('Filtered subcategories:', filteredSubCategories)
+        
         setSubCategories(filteredSubCategories)
+        
+        // 현재 선택된 서브카테고리가 필터링된 목록에 없으면 초기화
+        if (formData.subCategory && !filteredSubCategories.some(sub => sub.value === formData.subCategory)) {
+          console.log('Current subcategory not found in filtered list, resetting...')
+          setFormData({ ...formData, subCategory: '' })
+        }
       } else {
         setSubCategories([])
+        // 카테고리가 선택되지 않았으면 서브카테고리도 초기화
+        if (formData.subCategory) {
+          setFormData({ ...formData, subCategory: '' })
+        }
       }
     } catch (error) {
       console.error('카테고리 및 서브카테고리 데이터 가져오기 오류:', error)
@@ -352,7 +369,14 @@ export default function BasicInfoTab({
 
         setCategories(categoryList)
         setAllSubCategories(subCategoryList)
-        setSubCategories(subCategoryList)
+        
+        // 현재 선택된 카테고리에 해당하는 서브카테고리만 필터링 (폴백 모드에서는 모든 서브카테고리 표시)
+        if (formData.category) {
+          // 폴백 모드에서는 카테고리별 필터링이 어려우므로 모든 서브카테고리 표시
+          setSubCategories(subCategoryList)
+        } else {
+          setSubCategories([])
+        }
       } catch (fallbackError) {
         console.error('폴백 카테고리 데이터 가져오기 오류:', fallbackError)
       }
@@ -502,16 +526,25 @@ export default function BasicInfoTab({
             <div className="flex gap-2">
               <select
                 value={formData.subCategory}
-                onChange={(e) => setFormData({ ...formData, subCategory: e.target.value })}
+                onChange={(e) => {
+                  console.log('서브카테고리 변경:', e.target.value)
+                  setFormData({ ...formData, subCategory: e.target.value })
+                }}
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               >
                 <option value="">서브카테고리 선택</option>
-                {subCategories.map((subCategory) => (
-                  <option key={subCategory.value} value={subCategory.value}>
-                    {subCategory.label} ({subCategory.count})
+                {subCategories.length === 0 ? (
+                  <option value="" disabled>
+                    {formData.category ? '해당 카테고리의 서브카테고리가 없습니다' : '카테고리를 먼저 선택하세요'}
                   </option>
-                ))}
+                ) : (
+                  subCategories.map((subCategory) => (
+                    <option key={subCategory.value} value={subCategory.value}>
+                      {subCategory.label} ({subCategory.count})
+                    </option>
+                  ))
+                )}
               </select>
               <button
                 type="button"
