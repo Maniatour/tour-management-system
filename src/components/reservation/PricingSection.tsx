@@ -588,193 +588,119 @@ export default function PricingSection({
               </span>
             </div>
             
-            {/* 예약 옵션 총 가격 */}
-            {reservationOptionsTotalPrice > 0 && (
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-700">예약 옵션</span>
-                <span className="text-sm font-medium text-gray-900">${reservationOptionsTotalPrice.toFixed(2)}</span>
-              </div>
-            )}
-            
-            {/* 할인 항목들 */}
-            {(formData.couponDiscount > 0 || formData.additionalDiscount > 0) && (
-              <div className="space-y-1 mb-2">
-                {formData.couponDiscount > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-red-600">
-                      쿠폰 할인 {formData.couponCode && `(${formData.couponCode})`}
-                    </span>
-                    <span className="text-xs text-red-600">-${formData.couponDiscount.toFixed(2)}</span>
-                  </div>
-                )}
-                {formData.additionalDiscount > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-red-600">추가 할인</span>
-                    <span className="text-xs text-red-600">-${formData.additionalDiscount.toFixed(2)}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* 추가 비용 항목들 */}
-            {(formData.additionalCost > 0 || formData.tax > 0 || formData.cardFee > 0 || formData.isPrivateTour || formData.prepaymentCost > 0 || formData.prepaymentTip > 0) && (
-              <div className="space-y-1 mb-2">
-                {formData.additionalCost > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-green-600">추가 비용</span>
-                    <span className="text-xs text-green-600">+${formData.additionalCost.toFixed(2)}</span>
-                  </div>
-                )}
-                {formData.tax > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-green-600">세금</span>
-                    <span className="text-xs text-green-600">+${formData.tax.toFixed(2)}</span>
-                  </div>
-                )}
-                {formData.cardFee > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-green-600">카드수수료</span>
-                    <span className="text-xs text-green-600">+${formData.cardFee.toFixed(2)}</span>
-                  </div>
-                )}
-                {formData.prepaymentCost > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-green-600">선결제 지출</span>
-                    <span className="text-xs text-green-600">+${formData.prepaymentCost.toFixed(2)}</span>
-                  </div>
-                )}
-                {formData.prepaymentTip > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-green-600">선결제 팁</span>
-                    <span className="text-xs text-green-600">+${formData.prepaymentTip.toFixed(2)}</span>
-                  </div>
-                )}
-                {formData.isPrivateTour && formData.privateTourAdditionalCost > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-green-600">단독투어 추가비용</span>
-                    <span className="text-xs text-green-600">+${formData.privateTourAdditionalCost.toFixed(2)}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* 구분선 */}
-            <div className="border-t border-gray-300 my-2"></div>
-            
-            {/* 총 가격, 커미션, NET 가격 */}
-            <div className="space-y-1 mb-3">
-              <div className="flex justify-between items-center">
-                <span className="text-base font-bold text-gray-900">총 가격</span>
-                <span className="text-lg font-bold text-blue-600">${formData.totalPrice.toFixed(2)}</span>
-              </div>
-              
-              {/* OTA/현장 분리 입력 - 같은 줄 배치 (라벨과 입력칸을 한 줄에) */}
-              <div className="flex flex-col gap-2 mb-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-600">OTA 판매가</span>
-                  <div className="relative">
-                    <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                    <input
-                      type="number"
-                      value={formData.onlinePaymentAmount || 0}
-                      onChange={(e) => setFormData({ ...formData, onlinePaymentAmount: Number(e.target.value) || 0 })}
-                      className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
-                      step="0.01"
-                      placeholder="220.00"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-600">balance</span>
-                  <div className="relative">
-                    <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                    <input
-                      type="number"
-                      value={formData.onSiteBalanceAmount || 0}
-                      onChange={(e) => setFormData({ ...formData, onSiteBalanceAmount: Number(e.target.value) || 0, balanceAmount: Number(e.target.value) || 0 })}
-                      className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
-                      step="0.01"
-                      placeholder="90.00"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 커미션 퍼센트 입력 */}
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700">커미션</span>
-                <div className="flex items-center space-x-2">
-                  <div className="flex items-center space-x-1">
-                    <input
-                      type="number"
-                      value={formData.commission_percent}
-                      onChange={(e) => {
-                        const percent = Number(e.target.value) || 0
-                        const calculatedAmount = ((formData.onlinePaymentAmount ?? formData.totalPrice) * (percent / 100))
-                        setFormData({ 
-                          ...formData, 
-                          commission_percent: percent,
-                          commission_amount: calculatedAmount
-                        })
-                      }}
-                      className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      placeholder="0"
-                    />
-                    <span className="text-xs text-gray-500">%</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <span className="text-xs text-gray-500">=</span>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={formData.commission_amount}
-                        onChange={(e) => setFormData({ ...formData, commission_amount: Number(e.target.value) || 0 })}
-                        className="w-16 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                        step="0.01"
-                        min="0"
-                        placeholder="0"
-                      />
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex justify-between items-center">
-                <span className="text-base font-bold text-green-800">Net 가격</span>
-                <span className="text-lg font-bold text-green-600">
-                  ${(() => {
-                    const grandTotal = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
-                    if (formData.commission_amount > 0) {
-                      return (grandTotal - formData.commission_amount).toFixed(2)
-                    } else {
-                      return (grandTotal * (1 - formData.commission_percent / 100)).toFixed(2)
-                    }
-                  })()}
-                </span>
-              </div>
-            </div>
-            
-            {/* 보증금 및 잔액 */}
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">보증금</span>
+            {/* 커미션 */}
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-gray-700">커미션</span>
+              <div className="flex items-center space-x-2">
                 <div className="flex items-center space-x-1">
                   <input
                     type="number"
-                    value={formData.depositAmount}
-                    onChange={(e) => setFormData({ ...formData, depositAmount: Number(e.target.value) || 0 })}
-                    className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                    value={formData.commission_percent}
+                    onChange={(e) => {
+                      const percent = Number(e.target.value) || 0
+                      const grandTotal = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
+                      const calculatedAmount = grandTotal * (percent / 100)
+                      setFormData({ 
+                        ...formData, 
+                        commission_percent: percent,
+                        commission_amount: calculatedAmount
+                      })
+                    }}
+                    className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                     step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="0"
                   />
+                  <span className="text-xs text-gray-500">%</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <span className="text-xs text-gray-500">=</span>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={formData.commission_amount}
+                      onChange={(e) => setFormData({ ...formData, commission_amount: Number(e.target.value) || 0 })}
+                      className="w-16 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      step="0.01"
+                      min="0"
+                      placeholder="0"
+                    />
+                    <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
+                  </div>
                 </div>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-600">잔액</span>
-                <span className="text-sm font-medium text-gray-900">${formData.balanceAmount.toFixed(2)}</span>
+            </div>
+            
+            {/* 총 가격 */}
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-gray-700">총 가격</span>
+              <span className="text-sm font-semibold text-gray-900">
+                ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost).toFixed(2)}
+              </span>
+            </div>
+            
+            {/* Net 가격 */}
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-base font-bold text-green-800">Net 가격</span>
+              <span className="text-lg font-bold text-green-600">
+                ${(() => {
+                  const grandTotal = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
+                  if (formData.commission_amount > 0) {
+                    return (grandTotal - formData.commission_amount).toFixed(2)
+                  } else {
+                    return (grandTotal * (1 - formData.commission_percent / 100)).toFixed(2)
+                  }
+                })()}
+              </span>
+            </div>
+            
+            {/* OTA 판매가 */}
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-gray-700">OTA 판매가</span>
+              <div className="relative">
+                <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                <input
+                  type="number"
+                  value={formData.onlinePaymentAmount || 0}
+                  onChange={(e) => setFormData({ ...formData, onlinePaymentAmount: Number(e.target.value) || 0 })}
+                  className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                  step="0.01"
+                  placeholder="220.00"
+                />
+              </div>
+            </div>
+            
+            {/* Balance */}
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-gray-700">Balance</span>
+              <div className="relative">
+                <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                <input
+                  type="number"
+                  value={formData.onSiteBalanceAmount || 0}
+                  onChange={(e) => setFormData({ ...formData, onSiteBalanceAmount: Number(e.target.value) || 0, balanceAmount: Number(e.target.value) || 0 })}
+                  className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                  step="0.01"
+                  placeholder="90.00"
+                />
+              </div>
+            </div>
+            
+            {/* 보증금 */}
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-gray-700">보증금</span>
+              <div className="flex items-center space-x-1">
+                <input
+                  type="number"
+                  value={formData.depositAmount}
+                  onChange={(e) => setFormData({ ...formData, depositAmount: Number(e.target.value) || 0 })}
+                  className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                  step="0.01"
+                  min="0"
+                  placeholder="0"
+                />
+                <span className="text-xs text-gray-500">$</span>
               </div>
             </div>
           </div>
