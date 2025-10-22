@@ -588,11 +588,21 @@ export default function PricingSection({
               </span>
             </div>
             
+            {/* 옵션 총합 */}
+            {formData.optionTotal > 0 && (
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-700">옵션 총합</span>
+                <span className="text-sm font-semibold text-gray-900">
+                  ${formData.optionTotal.toFixed(2)}
+                </span>
+              </div>
+            )}
+            
             {/* 총 가격 */}
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium text-gray-700">총 가격</span>
               <span className="text-sm font-semibold text-gray-900">
-                ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost).toFixed(2)}
+                ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal).toFixed(2)}
               </span>
             </div>
             
@@ -606,8 +616,8 @@ export default function PricingSection({
                     value={formData.commission_percent}
                     onChange={(e) => {
                       const percent = Number(e.target.value) || 0
-                      const grandTotal = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
-                      const calculatedAmount = grandTotal * (percent / 100)
+                      const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal
+                      const calculatedAmount = totalPrice * (percent / 100)
                       setFormData({ 
                         ...formData, 
                         commission_percent: percent,
@@ -645,11 +655,11 @@ export default function PricingSection({
               <span className="text-base font-bold text-green-800">Net 가격</span>
               <span className="text-lg font-bold text-green-600">
                 ${(() => {
-                  const grandTotal = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
+                  const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal
                   if (formData.commission_amount > 0) {
-                    return (grandTotal - formData.commission_amount).toFixed(2)
+                    return (totalPrice - formData.commission_amount).toFixed(2)
                   } else {
-                    return (grandTotal * (1 - formData.commission_percent / 100)).toFixed(2)
+                    return (totalPrice * (1 - formData.commission_percent / 100)).toFixed(2)
                   }
                 })()}
               </span>
