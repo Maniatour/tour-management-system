@@ -288,7 +288,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       // 상품이 변경되면 항상 초이스 로드 (편집 모드에서도 모든 옵션을 보여주기 위해)
       loadProductChoicesNew(formData.productId);
     }
-  }, [formData.productId, loadProductChoicesNew]);
+  }, [formData.productId]);
   
   return (
     <div>
