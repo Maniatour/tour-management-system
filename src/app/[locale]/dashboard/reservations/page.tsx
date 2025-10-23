@@ -1236,12 +1236,12 @@ export default function CustomerReservations() {
                     </div>
                   )}
 
-                  {/* 파트너 RN */}
+                  {/* 파트너 RN (Reservation Number) */}
                   {reservation.partner_rn && (
                     <div className="flex items-center text-gray-600">
-                      <User className="w-4 h-4 mr-2" />
+                      <CreditCard className="w-4 h-4 mr-2" />
                       <span className="text-sm">
-                        RN: <span className="font-semibold text-blue-600">{reservation.partner_rn}</span>
+                        예약번호: <span className="font-semibold text-blue-600">{reservation.partner_rn}</span>
                       </span>
                     </div>
                   )}
