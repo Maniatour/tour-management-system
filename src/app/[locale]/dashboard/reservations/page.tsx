@@ -32,6 +32,16 @@ interface Reservation {
     duration: number | null
     base_price: number | null
   }
+  pricing?: {
+    adult_product_price: number
+    child_product_price: number
+    infant_product_price: number
+    product_price_total: number
+    subtotal: number
+    total_price: number
+    deposit_amount: number
+    balance_amount: number
+  }
   multilingualDetails?: {
     description?: string
     slogan1?: string
@@ -462,6 +472,20 @@ export default function CustomerReservations() {
                   }
                 }
 
+                // 가격 정보 가져오기
+                let pricingInfo = null
+                try {
+                  const { data: pricingData } = await supabase
+                    .from('reservation_pricing')
+                    .select('adult_product_price, child_product_price, infant_product_price, product_price_total, subtotal, total_price, deposit_amount, balance_amount')
+                    .eq('reservation_id', reservation.id)
+                    .single()
+                  
+                  pricingInfo = pricingData
+                } catch (error) {
+                  console.warn('가격 정보 조회 실패:', error)
+                }
+
                 return {
                   ...reservation,
                   products: productData || { 
@@ -472,8 +496,9 @@ export default function CustomerReservations() {
                     base_price: null
                   },
                   multilingualDetails,
-                  pickupHotelInfo
-                } as Reservation
+                  pickupHotelInfo,
+                  pricing: pricingInfo
+                } as unknown as Reservation
               } catch (error) {
                 console.error('상품 정보 조회 중 예외:', error)
                 return {
@@ -484,8 +509,11 @@ export default function CustomerReservations() {
                     customer_name_en: null,
                     duration: null, 
                     base_price: null
-                  }
-                } as Reservation
+                  },
+                  multilingualDetails: null,
+                  pickupHotelInfo: null,
+                  pricing: null
+                } as unknown as Reservation
               }
             })
           )
@@ -1010,13 +1038,6 @@ export default function CustomerReservations() {
     }
   }
 
-  // 총 가격 계산
-  const calculateTotalPrice = (reservation: Reservation) => {
-    if (!reservation.products) return 0
-    
-    const basePrice = reservation.products.base_price || 0
-    return basePrice * reservation.total_people
-  }
 
   if (loading) {
     return (
@@ -1282,23 +1303,68 @@ export default function CustomerReservations() {
                 </div>
 
                 {/* 가격 정보 */}
-                {reservation.products && (
+                {reservation.pricing && (
                   <div className="border-t border-gray-200 pt-4">
                     <h4 className="text-sm font-medium text-gray-900 mb-2">{t('priceInfo')}</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1 text-sm text-gray-600">
-                          <div className="flex justify-between">
-                          <span>{t('totalPeople', { total: reservation.total_people, adults: reservation.adults, children: reservation.child, infants: reservation.infant })}</span>
-                          <span>${(reservation.products.base_price || 0).toLocaleString()} {t('perPerson')}</span>
+                    <div className="space-y-3">
+                      {/* 인원별 가격 */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        {reservation.adults > 0 && (
+                          <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                            <span className="text-gray-600">성인 {reservation.adults}명</span>
+                            <span className="font-semibold text-gray-900">
+                              ${(reservation.pricing.adult_product_price * reservation.adults).toLocaleString()}
+                            </span>
                           </div>
+                        )}
+                        {reservation.child > 0 && (
+                          <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                            <span className="text-gray-600">어린이 {reservation.child}명</span>
+                            <span className="font-semibold text-gray-900">
+                              ${(reservation.pricing.child_product_price * reservation.child).toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                        {reservation.infant > 0 && (
+                          <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                            <span className="text-gray-600">유아 {reservation.infant}명</span>
+                            <span className="font-semibold text-gray-900">
+                              ${(reservation.pricing.infant_product_price * reservation.infant).toLocaleString()}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center justify-between text-lg font-semibold text-gray-900 border-t border-gray-200 pt-2">
+                      
+                      {/* 총 가격 */}
+                      <div className="flex items-center justify-between text-lg font-semibold text-gray-900 border-t border-gray-200 pt-3">
                         <span>{t('totalAmount')}</span>
                         <span className="flex items-center">
                           <CreditCard className="w-4 h-4 mr-1" />
-                          ${calculateTotalPrice(reservation).toLocaleString()}
+                          ${reservation.pricing.total_price.toLocaleString()}
                         </span>
                       </div>
+                      
+                      {/* 예금 및 잔액 */}
+                      {(reservation.pricing.deposit_amount > 0 || reservation.pricing.balance_amount > 0) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                          {reservation.pricing.deposit_amount > 0 && (
+                            <div className="flex justify-between items-center bg-blue-50 p-3 rounded-lg">
+                              <span className="text-blue-700">예금</span>
+                              <span className="font-semibold text-blue-900">
+                                ${reservation.pricing.deposit_amount.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                          {reservation.pricing.balance_amount > 0 && (
+                            <div className="flex justify-between items-center bg-green-50 p-3 rounded-lg">
+                              <span className="text-green-700">잔액</span>
+                              <span className="font-semibold text-green-900">
+                                ${reservation.pricing.balance_amount.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
