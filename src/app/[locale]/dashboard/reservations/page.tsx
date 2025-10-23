@@ -757,6 +757,7 @@ export default function CustomerReservations() {
           reservationsData.map(async (reservation: SupabaseReservation) => {
             console.log('시뮬레이션 모드: 예약 처리 중:', reservation.id)
             try {
+              console.log('시뮬레이션 모드: 상품 정보 조회 시작, product_id:', reservation.product_id)
               const { data: productData, error: productError } = await supabase
                 .from('products')
                 .select('name, customer_name_ko, customer_name_en, duration, base_price')
@@ -764,18 +765,21 @@ export default function CustomerReservations() {
                 .single()
 
               if (productError) {
-                console.warn(t('simulationProductError'), {
+                console.warn('시뮬레이션 모드: 상품 정보 조회 오류:', {
                   error: productError,
                   message: productError?.message || 'Unknown error',
                   code: productError?.code || 'No code',
                   product_id: reservation.product_id,
                   reservation_id: reservation.id
                 })
+              } else {
+                console.log('시뮬레이션 모드: 상품 정보 조회 성공:', productData)
               }
 
               // 픽업 호텔 정보 가져오기
               let pickupHotelInfo = null
               if (reservation.pickup_hotel) {
+                console.log('시뮬레이션 모드: 픽업 호텔 정보 조회 시작, pickup_hotel:', reservation.pickup_hotel)
                 try {
                   const { data: hotelData } = await supabase
                     .from('pickup_hotels')
@@ -784,9 +788,77 @@ export default function CustomerReservations() {
                     .single()
                   
                   pickupHotelInfo = hotelData
+                  console.log('시뮬레이션 모드: 픽업 호텔 정보 조회 성공:', hotelData)
                 } catch (error) {
-                  console.warn('시뮬레이션 픽업 호텔 정보 조회 실패:', error)
+                  console.warn('시뮬레이션 모드: 픽업 호텔 정보 조회 실패:', error)
                 }
+              } else {
+                console.log('시뮬레이션 모드: 픽업 호텔 정보 없음')
+              }
+              
+              console.log('시뮬레이션 모드: 가격 정보 조회 시작 전')
+              
+              // 가격 정보 가져오기
+              let pricingInfo = null
+              try {
+                console.log('시뮬레이션 모드: 가격 정보 조회 시작:', { reservationId: reservation.id, reservationIdType: typeof reservation.id })
+                
+                const { data: pricingData, error: pricingError } = await supabase
+                  .from('reservation_pricing')
+                  .select('adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, private_tour_additional_cost, total_price, deposit_amount, balance_amount, commission_percent, commission_amount, choices, choices_total')
+                  .eq('reservation_id', reservation.id.toString())
+                  .single()
+                
+                if (pricingError) {
+                  console.warn('시뮬레이션 모드: 가격 정보 조회 오류:', pricingError)
+                } else {
+                  pricingInfo = pricingData
+                  console.log('시뮬레이션 모드: 가격 정보 로드됨:', pricingData)
+                }
+              } catch (error) {
+                console.warn('시뮬레이션 모드: 가격 정보 조회 실패:', error)
+              }
+
+              // 옵션 정보 가져오기
+              let optionsInfo = null
+              try {
+                console.log('시뮬레이션 모드: 옵션 정보 조회 시작:', { reservationId: reservation.id })
+                
+                const { data: optionsData, error: optionsError } = await supabase
+                  .from('reservation_options')
+                  .select('id, option_id, ea, price, total_price, status, note')
+                  .eq('reservation_id', reservation.id.toString())
+                  .eq('status', 'active')
+                
+                if (optionsError) {
+                  console.warn('시뮬레이션 모드: 옵션 정보 조회 오류:', optionsError)
+                } else {
+                  optionsInfo = optionsData
+                  console.log('시뮬레이션 모드: 옵션 정보 로드됨:', optionsData)
+                }
+              } catch (error) {
+                console.warn('시뮬레이션 모드: 옵션 정보 조회 실패:', error)
+              }
+
+              // 결제 정보 가져오기
+              let paymentsInfo = null
+              try {
+                console.log('시뮬레이션 모드: 결제 정보 조회 시작:', { reservationId: reservation.id })
+                
+                const { data: paymentsData, error: paymentsError } = await supabase
+                  .from('payment_records')
+                  .select('id, payment_status, amount, payment_method, note, submit_on, submit_by, confirmed_on, confirmed_by, amount_krw')
+                  .eq('reservation_id', reservation.id.toString())
+                  .order('submit_on', { ascending: false })
+                
+                if (paymentsError) {
+                  console.warn('시뮬레이션 모드: 결제 정보 조회 오류:', paymentsError)
+                } else {
+                  paymentsInfo = paymentsData
+                  console.log('시뮬레이션 모드: 결제 정보 로드됨:', paymentsData)
+                }
+              } catch (error) {
+                console.warn('시뮬레이션 모드: 결제 정보 조회 실패:', error)
               }
 
               return {
@@ -798,8 +870,13 @@ export default function CustomerReservations() {
                   duration: null, 
                   base_price: null
                   },
-                  pickupHotelInfo
-                } as Reservation
+                  pickupHotelInfo,
+                  pricing: pricingInfo,
+                  options: optionsInfo,
+                  payments: paymentsInfo,
+                  channel_id: null,
+                  channel_rn: null
+                } as unknown as Reservation
             } catch (error) {
               console.error('시뮬레이션 상품 정보 조회 중 예외:', error)
               return {
@@ -810,8 +887,13 @@ export default function CustomerReservations() {
                   customer_name_en: null,
                   duration: null, 
                   base_price: null
-                }
-              } as Reservation
+                },
+                pricing: null,
+                options: null,
+                payments: null,
+                channel_id: null,
+                channel_rn: null
+              } as unknown as Reservation
             }
           })
         )
