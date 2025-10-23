@@ -31,6 +31,18 @@ interface Reservation {
     customer_name_en: string | null
     duration: number | null
     base_price: number | null
+    choices?: {
+      required?: Array<{
+        id: string
+        name: string
+        name_ko: string
+        options?: Array<{
+          id: string
+          name: string
+          name_ko: string
+        }>
+      }>
+    }
   }
   pricing?: {
     adult_product_price: number
@@ -482,7 +494,7 @@ export default function CustomerReservations() {
               try {
                 const { data: productData, error: productError } = await supabase
                   .from('products')
-                  .select('name, customer_name_ko, customer_name_en, duration, base_price')
+                  .select('name, customer_name_ko, customer_name_en, duration, base_price, choices')
                   .eq('id', reservation.product_id)
                   .single()
 
@@ -669,23 +681,7 @@ export default function CustomerReservations() {
                    
                    const { data: choicesData, error: choicesError } = await supabase
                      .from('reservation_choices')
-                     .select(`
-                       id,
-                       choice_id,
-                       option_id,
-                       quantity,
-                       total_price,
-                       choice:choice_id (
-                         id,
-                         name_ko,
-                         name_en
-                       ),
-                       option:option_id (
-                         id,
-                         name_ko,
-                         name_en
-                       )
-                     `)
+                     .select('id, choice_id, option_id, quantity, total_price')
                      .eq('reservation_id', reservation.id.toString())
                    
                    if (choicesError) {
@@ -693,23 +689,7 @@ export default function CustomerReservations() {
                      // 재시도
                      const { data: retryData, error: retryError } = await supabase
                        .from('reservation_choices')
-                       .select(`
-                         id,
-                         choice_id,
-                         option_id,
-                         quantity,
-                         total_price,
-                         choice:choice_id (
-                           id,
-                           name_ko,
-                           name_en
-                         ),
-                         option:option_id (
-                           id,
-                           name_ko,
-                           name_en
-                         )
-                       `)
+                       .select('id, choice_id, option_id, quantity, total_price')
                        .eq('reservation_id', String(reservation.id))
                      
                      if (retryError) {
@@ -721,6 +701,58 @@ export default function CustomerReservations() {
                    } else {
                      reservationChoicesInfo = choicesData
                      console.log('예약 선택 옵션 로드됨:', choicesData)
+                   }
+                   
+                   // choice와 option 정보를 products.choices에서 가져와서 매핑
+                   // @ts-expect-error productData.choices는 동적으로 추가된 필드
+                   if (reservationChoicesInfo && reservationChoicesInfo.length > 0 && productData && productData.choices) {
+                     // @ts-expect-error productData.choices는 동적으로 추가된 필드
+                     const productChoices = productData.choices
+                     
+                     reservationChoicesInfo = reservationChoicesInfo.map((choice: {
+                       id: string
+                       choice_id: string
+                       option_id: string
+                       quantity: number
+                       total_price: number
+                     }) => {
+                       let choiceInfo = null
+                       let optionInfo = null
+                       
+                       // products.choices에서 choice 정보 찾기
+                       if (productChoices?.required) {
+                         for (const requiredChoice of productChoices.required) {
+                           if (requiredChoice.id === choice.choice_id) {
+                             choiceInfo = {
+                               id: requiredChoice.id,
+                               name_ko: requiredChoice.name_ko,
+                               name_en: requiredChoice.name
+                             }
+                             
+                             // 해당 choice의 option 정보 찾기
+                             if (requiredChoice.options) {
+                               for (const option of requiredChoice.options) {
+                                 if (option.id === choice.option_id) {
+                                   optionInfo = {
+                                     id: option.id,
+                                     name_ko: option.name_ko,
+                                     name_en: option.name
+                                   }
+                                   break
+                                 }
+                               }
+                             }
+                             break
+                           }
+                         }
+                       }
+                       
+                       return {
+                         ...choice,
+                         choice: choiceInfo,
+                         option: optionInfo
+                       }
+                     })
                    }
                  } catch (error) {
                    console.warn('예약 선택 옵션 조회 실패:', error)
@@ -842,7 +874,7 @@ export default function CustomerReservations() {
               console.log('시뮬레이션 모드: 상품 정보 조회 시작, product_id:', reservation.product_id)
               const { data: productData, error: productError } = await supabase
                 .from('products')
-                .select('name, customer_name_ko, customer_name_en, duration, base_price')
+                .select('name, customer_name_ko, customer_name_en, duration, base_price, choices')
                 .eq('id', reservation.product_id)
                 .single()
 
@@ -950,23 +982,7 @@ export default function CustomerReservations() {
                 
                 const { data: choicesData, error: choicesError } = await supabase
                   .from('reservation_choices')
-                  .select(`
-                    id,
-                    choice_id,
-                    option_id,
-                    quantity,
-                    total_price,
-                    choice:choice_id (
-                      id,
-                      name_ko,
-                      name_en
-                    ),
-                    option:option_id (
-                      id,
-                      name_ko,
-                      name_en
-                    )
-                  `)
+                  .select('id, choice_id, option_id, quantity, total_price')
                   .eq('reservation_id', reservation.id.toString())
                 
                 if (choicesError) {
@@ -974,6 +990,58 @@ export default function CustomerReservations() {
                 } else {
                   reservationChoicesInfo = choicesData
                   console.log('시뮬레이션 모드: 예약 선택 옵션 로드됨:', choicesData)
+                  
+                  // choice와 option 정보를 products.choices에서 가져와서 매핑
+                  // @ts-expect-error productData.choices는 동적으로 추가된 필드
+                  if (reservationChoicesInfo && reservationChoicesInfo.length > 0 && productData && productData.choices) {
+                    // @ts-expect-error productData.choices는 동적으로 추가된 필드
+                    const productChoices = productData.choices
+                    
+                    reservationChoicesInfo = reservationChoicesInfo.map((choice: {
+                      id: string
+                      choice_id: string
+                      option_id: string
+                      quantity: number
+                      total_price: number
+                    }) => {
+                      let choiceInfo = null
+                      let optionInfo = null
+                      
+                      // products.choices에서 choice 정보 찾기
+                      if (productChoices?.required) {
+                        for (const requiredChoice of productChoices.required) {
+                          if (requiredChoice.id === choice.choice_id) {
+                            choiceInfo = {
+                              id: requiredChoice.id,
+                              name_ko: requiredChoice.name_ko,
+                              name_en: requiredChoice.name
+                            }
+                            
+                            // 해당 choice의 option 정보 찾기
+                            if (requiredChoice.options) {
+                              for (const option of requiredChoice.options) {
+                                if (option.id === choice.option_id) {
+                                  optionInfo = {
+                                    id: option.id,
+                                    name_ko: option.name_ko,
+                                    name_en: option.name
+                                  }
+                                  break
+                                }
+                              }
+                            }
+                            break
+                          }
+                        }
+                      }
+                      
+                      return {
+                        ...choice,
+                        choice: choiceInfo,
+                        option: optionInfo
+                      }
+                    })
+                  }
                 }
               } catch (error) {
                 console.warn('시뮬레이션 모드: 예약 선택 옵션 조회 실패:', error)
