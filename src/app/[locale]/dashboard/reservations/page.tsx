@@ -510,14 +510,29 @@ export default function CustomerReservations() {
                 // 가격 정보 가져오기
                 let pricingInfo = null
                 try {
+                  console.log('가격 정보 조회 시작:', { reservationId: reservation.id, reservationIdType: typeof reservation.id })
+                  
                   const { data: pricingData, error: pricingError } = await supabase
                     .from('reservation_pricing')
                     .select('adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, is_private_tour, private_tour_additional_cost, total_price, deposit_amount, balance_amount')
-                    .eq('reservation_id', reservation.id)
+                    .eq('reservation_id', reservation.id.toString())
                     .single()
                   
                   if (pricingError) {
                     console.warn('가격 정보 조회 오류:', pricingError)
+                    // reservation_id가 TEXT 타입이므로 문자열로 변환해서 다시 시도
+                    const { data: retryData, error: retryError } = await supabase
+                      .from('reservation_pricing')
+                      .select('adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, is_private_tour, private_tour_additional_cost, total_price, deposit_amount, balance_amount')
+                      .eq('reservation_id', String(reservation.id))
+                      .single()
+                    
+                    if (retryError) {
+                      console.warn('재시도 가격 정보 조회 오류:', retryError)
+                    } else {
+                      pricingInfo = retryData
+                      console.log('재시도로 가격 정보 로드됨:', retryData)
+                    }
                   } else {
                     pricingInfo = pricingData
                     console.log('가격 정보 로드됨:', pricingData)
@@ -529,13 +544,33 @@ export default function CustomerReservations() {
                 // 옵션 정보 가져오기
                 let optionsInfo = null
                 try {
-                  const { data: optionsData } = await supabase
+                  console.log('옵션 정보 조회 시작:', { reservationId: reservation.id })
+                  
+                  const { data: optionsData, error: optionsError } = await supabase
                     .from('reservation_options')
                     .select('id, option_id, ea, price, total_price, status, note')
-                    .eq('reservation_id', reservation.id)
+                    .eq('reservation_id', reservation.id.toString())
                     .eq('status', 'active')
                   
-                  optionsInfo = optionsData
+                  if (optionsError) {
+                    console.warn('옵션 정보 조회 오류:', optionsError)
+                    // 재시도
+                    const { data: retryData, error: retryError } = await supabase
+                      .from('reservation_options')
+                      .select('id, option_id, ea, price, total_price, status, note')
+                      .eq('reservation_id', String(reservation.id))
+                      .eq('status', 'active')
+                    
+                    if (retryError) {
+                      console.warn('재시도 옵션 정보 조회 오류:', retryError)
+                    } else {
+                      optionsInfo = retryData
+                      console.log('재시도로 옵션 정보 로드됨:', retryData)
+                    }
+                  } else {
+                    optionsInfo = optionsData
+                    console.log('옵션 정보 로드됨:', optionsData)
+                  }
                 } catch (error) {
                   console.warn('옵션 정보 조회 실패:', error)
                 }
@@ -543,13 +578,33 @@ export default function CustomerReservations() {
                 // 결제 정보 가져오기
                 let paymentsInfo = null
                 try {
-                  const { data: paymentsData } = await supabase
+                  console.log('결제 정보 조회 시작:', { reservationId: reservation.id })
+                  
+                  const { data: paymentsData, error: paymentsError } = await supabase
                     .from('payment_records')
                     .select('id, payment_status, amount, payment_method, note, submit_on, submit_by, confirmed_on, confirmed_by, amount_krw')
-                    .eq('reservation_id', reservation.id)
+                    .eq('reservation_id', reservation.id.toString())
                     .order('submit_on', { ascending: false })
                   
-                  paymentsInfo = paymentsData
+                  if (paymentsError) {
+                    console.warn('결제 정보 조회 오류:', paymentsError)
+                    // 재시도
+                    const { data: retryData, error: retryError } = await supabase
+                      .from('payment_records')
+                      .select('id, payment_status, amount, payment_method, note, submit_on, submit_by, confirmed_on, confirmed_by, amount_krw')
+                      .eq('reservation_id', String(reservation.id))
+                      .order('submit_on', { ascending: false })
+                    
+                    if (retryError) {
+                      console.warn('재시도 결제 정보 조회 오류:', retryError)
+                    } else {
+                      paymentsInfo = retryData
+                      console.log('재시도로 결제 정보 로드됨:', retryData)
+                    }
+                  } else {
+                    paymentsInfo = paymentsData
+                    console.log('결제 정보 로드됨:', paymentsData)
+                  }
                 } catch (error) {
                   console.warn('결제 정보 조회 실패:', error)
                 }
