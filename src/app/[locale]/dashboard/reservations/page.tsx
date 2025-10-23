@@ -50,11 +50,14 @@ interface Reservation {
     prepayment_tip: number
     selected_options: Record<string, unknown>
     option_total: number
-    is_private_tour: boolean
     private_tour_additional_cost: number
     total_price: number
     deposit_amount: number
     balance_amount: number
+    commission_percent: number
+    commission_amount: number
+    choices: Record<string, unknown>
+    choices_total: number
   }
   options?: Array<{
     id: string
@@ -547,7 +550,7 @@ export default function CustomerReservations() {
                   
                   const { data: pricingData, error: pricingError } = await supabase
                     .from('reservation_pricing')
-                    .select('adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, is_private_tour, private_tour_additional_cost, total_price, deposit_amount, balance_amount')
+                    .select('adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, private_tour_additional_cost, total_price, deposit_amount, balance_amount, commission_percent, commission_amount, choices, choices_total')
                     .eq('reservation_id', reservation.id.toString())
                     .single()
                   
@@ -556,7 +559,7 @@ export default function CustomerReservations() {
                     // reservation_id가 TEXT 타입이므로 문자열로 변환해서 다시 시도
                     const { data: retryData, error: retryError } = await supabase
                       .from('reservation_pricing')
-                      .select('adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, is_private_tour, private_tour_additional_cost, total_price, deposit_amount, balance_amount')
+                      .select('adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, private_tour_additional_cost, total_price, deposit_amount, balance_amount, commission_percent, commission_amount, choices, choices_total')
                       .eq('reservation_id', String(reservation.id))
                       .single()
                     
@@ -747,7 +750,7 @@ export default function CustomerReservations() {
 
       if (reservationsData && reservationsData.length > 0) {
         console.log('시뮬레이션 모드: 예약 데이터 발견:', reservationsData.length, '개')
-        console.log('시뮬레이션 모드: 예약 ID들:', reservationsData.map(r => r.id))
+        console.log('시뮬레이션 모드: 예약 ID들:', reservationsData.map((r: SupabaseReservation) => r.id))
         
         // 각 예약에 대해 상품 정보를 별도로 조회
         const reservationsWithProducts = await Promise.all(
@@ -1645,7 +1648,7 @@ export default function CustomerReservations() {
                       )}
 
                       {/* 프라이빗 투어 */}
-                      {reservation.pricing && reservation.pricing.is_private_tour && reservation.pricing.private_tour_additional_cost > 0 && (
+                      {reservation.pricing && reservation.pricing.private_tour_additional_cost > 0 && (
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                           <h5 className="text-sm font-semibold text-gray-900 mb-3">프라이빗 투어</h5>
                           <div className="flex justify-between items-center text-sm">
