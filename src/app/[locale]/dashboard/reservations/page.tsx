@@ -23,7 +23,7 @@ interface Reservation {
   status: string
   event_note: string | null
   channel_id: string | null
-  partner_rn: string | null
+  channel_rn: string | null
   created_at: string
   products?: {
     name: string
@@ -1236,12 +1236,12 @@ export default function CustomerReservations() {
                     </div>
                   )}
 
-                  {/* 파트너 RN (Reservation Number) */}
-                  {reservation.partner_rn && (
+                  {/* 채널 RN (Reservation Number) */}
+                  {reservation.channel_rn && (
                     <div className="flex items-center text-gray-600">
                       <CreditCard className="w-4 h-4 mr-2" />
                       <span className="text-sm">
-                        예약번호: <span className="font-semibold text-blue-600">{reservation.partner_rn}</span>
+                        예약번호: <span className="font-semibold text-blue-600">{reservation.channel_rn}</span>
                       </span>
                     </div>
                   )}
