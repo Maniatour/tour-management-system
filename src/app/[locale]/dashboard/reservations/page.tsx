@@ -1555,16 +1555,12 @@ export default function CustomerReservations() {
                  {(reservation.pricing || reservation.products?.base_price) && (
                    <div className="border-t border-gray-200 pt-4">
                      <h4 className="text-sm font-medium text-gray-900 mb-3">{t('priceInfo')}</h4>
-                     <div className="bg-gradient-to-br from-slate-50 to-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
+                     <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
                        {reservation.pricing ? (
-                         <div className="space-y-3">
-                           {/* 상품 가격 섹션 */}
-                           <div className="bg-white rounded-lg p-3 border border-gray-100">
-                             <h5 className="text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                               <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                               상품 가격
-                             </h5>
-                             <div className="space-y-1 text-sm">
+                         <div className="divide-y divide-gray-200">
+                           {/* 상품 가격 */}
+                           <div className="p-4">
+                             <div className="space-y-2 text-sm">
                                {reservation.adults > 0 && (
                                  <div className="flex justify-between items-center">
                                    <span className="text-gray-600">성인 {reservation.adults}명</span>
@@ -1589,21 +1585,17 @@ export default function CustomerReservations() {
                                    </span>
                                  </div>
                                )}
-                               <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                                 <span className="font-semibold text-gray-800">상품 합계</span>
-                                 <span className="font-bold text-gray-900">${(reservation.pricing.product_price_total || 0).toFixed(2)}</span>
+                               <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-semibold">
+                                 <span className="text-gray-800">상품 합계</span>
+                                 <span className="text-gray-900">${(reservation.pricing.product_price_total || 0).toFixed(2)}</span>
                                </div>
                              </div>
                            </div>
 
-                           {/* 옵션 가격 섹션 */}
+                           {/* 옵션 가격 */}
                            {(reservation.pricing.required_option_total > 0 || reservation.pricing.option_total > 0) && (
-                             <div className="bg-white rounded-lg p-3 border border-gray-100">
-                               <h5 className="text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                                 <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                                 옵션 가격
-                               </h5>
-                               <div className="space-y-1 text-sm">
+                             <div className="p-4 bg-gray-50">
+                               <div className="space-y-2 text-sm">
                                  {reservation.pricing.required_option_total > 0 && (
                                    <div className="flex justify-between items-center">
                                      <span className="text-gray-600">필수 옵션</span>
@@ -1620,9 +1612,9 @@ export default function CustomerReservations() {
                                      </span>
                                    </div>
                                  )}
-                                 <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                                   <span className="font-semibold text-gray-800">옵션 합계</span>
-                                   <span className="font-bold text-gray-900">
+                                 <div className="flex justify-between items-center pt-2 border-t border-gray-200 font-semibold">
+                                   <span className="text-gray-800">옵션 합계</span>
+                                   <span className="text-gray-900">
                                      ${((reservation.pricing.required_option_total || 0) + (reservation.pricing.option_total || 0)).toFixed(2)}
                                    </span>
                                  </div>
@@ -1630,25 +1622,21 @@ export default function CustomerReservations() {
                              </div>
                            )}
 
-                           {/* 소계 섹션 */}
-                           <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                           {/* 소계 */}
+                           <div className="p-4 bg-blue-50">
                              <div className="flex justify-between items-center">
                                <span className="text-sm font-semibold text-blue-800">소계 (상품 + 옵션)</span>
                                <span className="text-lg font-bold text-blue-900">${(reservation.pricing.subtotal || 0).toFixed(2)}</span>
                              </div>
                            </div>
 
-                           {/* 할인 및 추가 비용 섹션 */}
+                           {/* 할인 및 추가 비용 */}
                            {(reservation.pricing.coupon_discount !== 0 || reservation.pricing.additional_discount !== 0 || 
                              reservation.pricing.additional_cost !== 0 || reservation.pricing.card_fee !== 0 || 
                              reservation.pricing.tax !== 0 || reservation.pricing.prepayment_cost !== 0 || 
                              reservation.pricing.prepayment_tip !== 0 || reservation.pricing.private_tour_additional_cost > 0) && (
-                             <div className="bg-white rounded-lg p-3 border border-gray-100">
-                               <h5 className="text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                                 <div className="w-2 h-2 bg-orange-500 rounded-full mr-2"></div>
-                                 할인 및 추가 비용
-                               </h5>
-                               <div className="space-y-1 text-sm">
+                             <div className="p-4">
+                               <div className="space-y-2 text-sm">
                                  {reservation.pricing.coupon_discount !== 0 && reservation.pricing.coupon_discount !== null && (
                                    <div className="flex justify-between items-center">
                                      <span className="text-gray-600">쿠폰 할인</span>
@@ -1719,34 +1707,27 @@ export default function CustomerReservations() {
                              </div>
                            )}
 
-                           {/* 결제 정보 섹션 */}
-                           <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-3 border border-indigo-200">
-                             <h5 className="text-sm font-semibold text-indigo-800 mb-2 flex items-center">
-                               <div className="w-2 h-2 bg-indigo-500 rounded-full mr-2"></div>
-                               결제 정보
-                             </h5>
-                             <div className="grid grid-cols-2 gap-3 text-sm">
-                               <div className="bg-white rounded-md p-2 text-center">
+                           {/* 결제 정보 */}
+                           <div className="p-4 bg-gray-50">
+                             <div className="grid grid-cols-2 gap-4 text-sm">
+                               <div className="text-center">
                                  <div className="text-xs text-gray-500 mb-1">예약금</div>
                                  <div className="font-bold text-indigo-600">${(reservation.pricing.deposit_amount || 0).toFixed(2)}</div>
                                </div>
-                               <div className="bg-white rounded-md p-2 text-center">
+                               <div className="text-center">
                                  <div className="text-xs text-gray-500 mb-1">잔금</div>
                                  <div className="font-bold text-purple-600">${(reservation.pricing.balance_amount || 0).toFixed(2)}</div>
                                </div>
                              </div>
                            </div>
 
-                           {/* 결제 내역 섹션 */}
+                           {/* 결제 내역 */}
                            {reservation.payments && reservation.payments.length > 0 && (
-                             <div className="bg-white rounded-lg p-3 border border-gray-100">
-                               <h5 className="text-sm font-semibold text-gray-800 mb-2 flex items-center">
-                                 <div className="w-2 h-2 bg-gray-500 rounded-full mr-2"></div>
-                                 결제 내역
-                               </h5>
-                               <div className="space-y-2">
+                             <div className="p-4">
+                               <div className="space-y-2 text-sm">
+                                 <div className="text-xs text-gray-500 mb-2">결제 내역</div>
                                  {reservation.payments.map((payment) => (
-                                   <div key={payment.id} className="flex justify-between items-center bg-gray-50 rounded-md p-2 text-sm">
+                                   <div key={payment.id} className="flex justify-between items-center">
                                      <div className="flex items-center space-x-2">
                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                          payment.payment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
@@ -1770,7 +1751,7 @@ export default function CustomerReservations() {
                            )}
                          </div>
                        ) : (
-                         <div className="bg-white rounded-lg p-3 border border-gray-100">
+                         <div className="p-4">
                            <div className="space-y-2 text-sm">
                              <div className="flex justify-between items-center">
                                <span className="text-gray-600">기본 가격</span>
@@ -1782,9 +1763,9 @@ export default function CustomerReservations() {
                                <span className="text-gray-600">총 인원</span>
                                <span className="font-medium text-gray-900">{reservation.total_people}명</span>
                              </div>
-                             <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                               <span className="font-semibold text-gray-800">예상 총액</span>
-                               <span className="font-bold text-gray-900">
+                             <div className="flex justify-between items-center pt-2 border-t border-gray-200 font-semibold">
+                               <span className="text-gray-800">예상 총액</span>
+                               <span className="text-gray-900">
                                  ${((reservation.products?.base_price || 0) * reservation.total_people).toFixed(2)}
                                </span>
                              </div>
