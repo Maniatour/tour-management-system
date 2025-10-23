@@ -80,6 +80,23 @@ interface Reservation {
     confirmed_by?: string
     amount_krw?: number
   }>
+  reservationChoices?: Array<{
+    id: string
+    choice_id: string
+    option_id: string
+    quantity: number
+    total_price: number
+    choice?: {
+      id: string
+      name_ko: string
+      name_en: string
+    }
+    option?: {
+      id: string
+      name_ko: string
+      name_en: string
+    }
+  }>
   multilingualDetails?: {
     description?: string
     slogan1?: string
@@ -611,39 +628,103 @@ export default function CustomerReservations() {
                   console.warn('옵션 정보 조회 실패:', error)
                 }
 
-                // 결제 정보 가져오기
-                let paymentsInfo = null
-                try {
-                  console.log('결제 정보 조회 시작:', { reservationId: reservation.id })
-                  
-                  const { data: paymentsData, error: paymentsError } = await supabase
-                    .from('payment_records')
-                    .select('id, payment_status, amount, payment_method, note, submit_on, submit_by, confirmed_on, confirmed_by, amount_krw')
-                    .eq('reservation_id', reservation.id.toString())
-                    .order('submit_on', { ascending: false })
-                  
-                  if (paymentsError) {
-                    console.warn('결제 정보 조회 오류:', paymentsError)
-                    // 재시도
-                    const { data: retryData, error: retryError } = await supabase
-                      .from('payment_records')
-                      .select('id, payment_status, amount, payment_method, note, submit_on, submit_by, confirmed_on, confirmed_by, amount_krw')
-                      .eq('reservation_id', String(reservation.id))
-                      .order('submit_on', { ascending: false })
-                    
-                    if (retryError) {
-                      console.warn('재시도 결제 정보 조회 오류:', retryError)
-                    } else {
-                      paymentsInfo = retryData
-                      console.log('재시도로 결제 정보 로드됨:', retryData)
-                    }
-                  } else {
-                    paymentsInfo = paymentsData
-                    console.log('결제 정보 로드됨:', paymentsData)
-                  }
-                } catch (error) {
-                  console.warn('결제 정보 조회 실패:', error)
-                }
+                 // 결제 정보 가져오기
+                 let paymentsInfo = null
+                 try {
+                   console.log('결제 정보 조회 시작:', { reservationId: reservation.id })
+                   
+                   const { data: paymentsData, error: paymentsError } = await supabase
+                     .from('payment_records')
+                     .select('id, payment_status, amount, payment_method, note, submit_on, submit_by, confirmed_on, confirmed_by, amount_krw')
+                     .eq('reservation_id', reservation.id.toString())
+                     .order('submit_on', { ascending: false })
+                   
+                   if (paymentsError) {
+                     console.warn('결제 정보 조회 오류:', paymentsError)
+                     // 재시도
+                     const { data: retryData, error: retryError } = await supabase
+                       .from('payment_records')
+                       .select('id, payment_status, amount, payment_method, note, submit_on, submit_by, confirmed_on, confirmed_by, amount_krw')
+                       .eq('reservation_id', String(reservation.id))
+                       .order('submit_on', { ascending: false })
+                     
+                     if (retryError) {
+                       console.warn('재시도 결제 정보 조회 오류:', retryError)
+                     } else {
+                       paymentsInfo = retryData
+                       console.log('재시도로 결제 정보 로드됨:', retryData)
+                     }
+                   } else {
+                     paymentsInfo = paymentsData
+                     console.log('결제 정보 로드됨:', paymentsData)
+                   }
+                 } catch (error) {
+                   console.warn('결제 정보 조회 실패:', error)
+                 }
+
+                 // 예약 선택 옵션 정보 가져오기
+                 let reservationChoicesInfo = null
+                 try {
+                   console.log('예약 선택 옵션 조회 시작:', { reservationId: reservation.id })
+                   
+                   const { data: choicesData, error: choicesError } = await supabase
+                     .from('reservation_choices')
+                     .select(`
+                       id,
+                       choice_id,
+                       option_id,
+                       quantity,
+                       total_price,
+                       choice:choice_id (
+                         id,
+                         name_ko,
+                         name_en
+                       ),
+                       option:option_id (
+                         id,
+                         name_ko,
+                         name_en
+                       )
+                     `)
+                     .eq('reservation_id', reservation.id.toString())
+                   
+                   if (choicesError) {
+                     console.warn('예약 선택 옵션 조회 오류:', choicesError)
+                     // 재시도
+                     const { data: retryData, error: retryError } = await supabase
+                       .from('reservation_choices')
+                       .select(`
+                         id,
+                         choice_id,
+                         option_id,
+                         quantity,
+                         total_price,
+                         choice:choice_id (
+                           id,
+                           name_ko,
+                           name_en
+                         ),
+                         option:option_id (
+                           id,
+                           name_ko,
+                           name_en
+                         )
+                       `)
+                       .eq('reservation_id', String(reservation.id))
+                     
+                     if (retryError) {
+                       console.warn('재시도 예약 선택 옵션 조회 오류:', retryError)
+                     } else {
+                       reservationChoicesInfo = retryData
+                       console.log('재시도로 예약 선택 옵션 로드됨:', retryData)
+                     }
+                   } else {
+                     reservationChoicesInfo = choicesData
+                     console.log('예약 선택 옵션 로드됨:', choicesData)
+                   }
+                 } catch (error) {
+                   console.warn('예약 선택 옵션 조회 실패:', error)
+                 }
 
                 return {
                   ...reservation,
@@ -658,7 +739,8 @@ export default function CustomerReservations() {
                   pickupHotelInfo,
                   pricing: pricingInfo,
                   options: optionsInfo,
-                  payments: paymentsInfo
+                  payments: paymentsInfo,
+                  reservationChoices: reservationChoicesInfo
                 } as unknown as Reservation
               } catch (error) {
                 console.error('상품 정보 조회 중 예외:', error)
@@ -861,6 +943,42 @@ export default function CustomerReservations() {
                 console.warn('시뮬레이션 모드: 결제 정보 조회 실패:', error)
               }
 
+              // 예약 선택 옵션 정보 가져오기
+              let reservationChoicesInfo = null
+              try {
+                console.log('시뮬레이션 모드: 예약 선택 옵션 조회 시작:', { reservationId: reservation.id })
+                
+                const { data: choicesData, error: choicesError } = await supabase
+                  .from('reservation_choices')
+                  .select(`
+                    id,
+                    choice_id,
+                    option_id,
+                    quantity,
+                    total_price,
+                    choice:choice_id (
+                      id,
+                      name_ko,
+                      name_en
+                    ),
+                    option:option_id (
+                      id,
+                      name_ko,
+                      name_en
+                    )
+                  `)
+                  .eq('reservation_id', reservation.id.toString())
+                
+                if (choicesError) {
+                  console.warn('시뮬레이션 모드: 예약 선택 옵션 조회 오류:', choicesError)
+                } else {
+                  reservationChoicesInfo = choicesData
+                  console.log('시뮬레이션 모드: 예약 선택 옵션 로드됨:', choicesData)
+                }
+              } catch (error) {
+                console.warn('시뮬레이션 모드: 예약 선택 옵션 조회 실패:', error)
+              }
+
               return {
                 ...reservation,
                 products: productData || { 
@@ -874,6 +992,7 @@ export default function CustomerReservations() {
                   pricing: pricingInfo,
                   options: optionsInfo,
                   payments: paymentsInfo,
+                  reservationChoices: reservationChoicesInfo,
                   channel_id: null,
                   channel_rn: null
                 } as unknown as Reservation
@@ -891,6 +1010,7 @@ export default function CustomerReservations() {
                 pricing: null,
                 options: null,
                 payments: null,
+                reservationChoices: null,
                 channel_id: null,
                 channel_rn: null
               } as unknown as Reservation
@@ -1429,41 +1549,34 @@ export default function CustomerReservations() {
               <div key={reservation.id} className="bg-white rounded-lg shadow-sm p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
-                    <div className="flex items-center flex-wrap gap-2 mb-2">
-                      <h3 className="text-xl font-semibold text-gray-900">
-                        {locale === 'ko' 
-                          ? (reservation.products?.customer_name_ko || reservation.products?.name || t('noProductName'))
-                          : (reservation.products?.customer_name_en || reservation.products?.name || t('noProductName'))
-                        }
-                      </h3>
-                      {/* Choice 옵션 뱃지 */}
-                      {reservation.pricing?.choices && typeof reservation.pricing.choices === 'object' && Object.keys(reservation.pricing.choices).length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {Object.entries(reservation.pricing.choices).map(([key, value]) => {
-                            if (value && typeof value === 'object' && 'name_ko' in value) {
-                              return (
-                                <span
-                                  key={key}
-                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                                >
-                                  {locale === 'ko' ? (value as any).name_ko : (value as any).name_en || (value as any).name_ko}
-                                </span>
-                              )
-                            } else if (typeof value === 'string' && value.trim()) {
-                              return (
-                                <span
-                                  key={key}
-                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                                >
-                                  {value}
-                                </span>
-                              )
-                            }
-                            return null
-                          })}
-                        </div>
-                      )}
-                    </div>
+                     <div className="flex items-center flex-wrap gap-2 mb-2">
+                       <h3 className="text-xl font-semibold text-gray-900">
+                         {locale === 'ko' 
+                           ? (reservation.products?.customer_name_ko || reservation.products?.name || t('noProductName'))
+                           : (reservation.products?.customer_name_en || reservation.products?.name || t('noProductName'))
+                         }
+                       </h3>
+                       {/* Choice 옵션 뱃지 */}
+                       {reservation.reservationChoices && reservation.reservationChoices.length > 0 && (
+                         <div className="flex flex-wrap gap-1">
+                           {reservation.reservationChoices.map((choice) => (
+                             <span
+                               key={choice.id}
+                               className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                             >
+                               {locale === 'ko' 
+                                 ? (choice.choice?.name_ko || choice.choice?.name_en || 'Unknown Choice')
+                                 : (choice.choice?.name_en || choice.choice?.name_ko || 'Unknown Choice')
+                               }: {locale === 'ko' 
+                                 ? (choice.option?.name_ko || choice.option?.name_en || 'Unknown Option')
+                                 : (choice.option?.name_en || choice.option?.name_ko || 'Unknown Option')
+                               }
+                               {choice.quantity > 1 && ` (${choice.quantity})`}
+                             </span>
+                           ))}
+                         </div>
+                       )}
+                     </div>
                   </div>
                   <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(reservation.status)}`}>
                     {getStatusText(reservation.status)}
