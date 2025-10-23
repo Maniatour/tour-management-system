@@ -50,7 +50,11 @@ export async function GET(request: NextRequest) {
 // 최적화된 동기화 실행
 export async function POST(request: NextRequest) {
   try {
+    console.log('📥 최적화된 동기화 API 요청 수신')
+    
     const body = await request.json()
+    console.log('📋 요청 본문:', JSON.stringify(body, null, 2))
+    
     const { 
       spreadsheetId, 
       sheetName, 
@@ -60,6 +64,7 @@ export async function POST(request: NextRequest) {
     } = body
 
     if (!spreadsheetId || !sheetName || !targetTable) {
+      console.log('❌ 필수 파라미터 누락:', { spreadsheetId: !!spreadsheetId, sheetName: !!sheetName, targetTable: !!targetTable })
       return NextResponse.json(
         { success: false, message: 'Spreadsheet ID, sheet name, and target table are required' },
         { status: 400 }
@@ -122,7 +127,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: result.message,
-        data: enhancedResult.details,
+        data: (result as { details?: unknown }).details || {},
         count: result.count,
         performanceMetrics: enhancedResult.performanceMetrics
       })
@@ -135,8 +140,25 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('최적화된 동기화 오류:', error)
+    
+    // 환경 변수 관련 오류인 경우 더 명확한 메시지 제공
+    let errorMessage = `최적화된 동기화 실패: ${error}`
+    if (error instanceof Error) {
+      if (error.message.includes('Google Sheets API 환경 변수가 설정되지 않았습니다')) {
+        errorMessage = `Google Sheets API 설정 오류: ${error.message}`
+      } else if (error.message.includes('timeout')) {
+        errorMessage = `Google Sheets API 타임아웃: 시트가 너무 크거나 네트워크 연결이 불안정합니다.`
+      } else if (error.message.includes('403')) {
+        errorMessage = `Google Sheets 접근 권한 오류: 스프레드시트 공유 설정을 확인해주세요.`
+      } else if (error.message.includes('404')) {
+        errorMessage = `Google Sheets를 찾을 수 없습니다: 스프레드시트 ID를 확인해주세요.`
+      } else {
+        errorMessage = `최적화된 동기화 실패: ${error.message}`
+      }
+    }
+    
     return NextResponse.json(
-      { success: false, message: `최적화된 동기화 실패: ${error}` },
+      { success: false, message: errorMessage },
       { status: 500 }
     )
   }

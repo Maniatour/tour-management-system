@@ -1419,6 +1419,357 @@
     "directInput": "직접 입력",
     "enterNewPaidTo": "새 지급 대상명을 입력하세요"
   },
+  "reservationExpense": {
+    "title": "예약 지출 관리",
+    "addExpense": "지출 추가",
+    "expenseList": "지출 목록",
+    "totalAmount": "총 금액",
+    "noExpenses": "등록된 예약 지출이 없습니다.",
+    "form": {
+      "paidTo": "결제처",
+      "paidFor": "결제내용",
+      "amount": "금액",
+      "paymentMethod": "결제 방법",
+      "note": "메모",
+      "image": "영수증 이미지",
+      "reservationId": "예약 ID",
+      "eventId": "이벤트 ID"
+    },
+    "paidTo": "결제처",
+    "paidFor": "결제내용",
+    "amount": "금액",
+    "memo": "메모",
+    "memoPlaceholder": "메모를 입력하세요",
+    "receiptPhoto": "영수증 사진",
+    "enterDirectly": "직접 입력",
+    "dragOrClickReceipt": "영수증을 드래그하거나 클릭하여 업로드하세요",
+    "mobileCameraInfo": "모바일에서는 카메라로 촬영할 수 있습니다",
+    "cameraOrFile": "카메라 또는 파일",
+    "cancel": "취소",
+    "selectOptions": {
+      "pleaseSelect": "선택해주세요"
+    },
+    "paymentMethods": {
+      "cash": "현금",
+      "creditCard": "신용카드",
+      "debitCard": "체크카드",
+      "mobilePayment": "모바일 결제",
+      "other": "기타"
+    },
+    "buttons": {
+      "register": "등록",
+      "cancel": "취소",
+      "edit": "수정",
+      "delete": "삭제",
+      "save": "저장"
+    },
+    "messages": {
+      "expenseAdded": "예약 지출이 등록되었습니다.",
+      "expenseUpdated": "예약 지출이 수정되었습니다.",
+      "expenseDeleted": "예약 지출이 삭제되었습니다.",
+      "confirmDelete": "정말로 이 예약 지출을 삭제하시겠습니까?"
+    },
+    "status": {
+      "pending": "대기중",
+      "approved": "승인됨",
+      "rejected": "거부됨"
+    },
+    "selectPaidTo": "결제처 선택",
+    "directInput": "직접 입력",
+    "enterNewPaidTo": "새 결제처명을 입력하세요",
+    "selectPaidFor": "결제내용 선택",
+    "enterNewPaidFor": "새 결제내용을 입력하세요",
+    "selectReservation": "예약 선택",
+    "enterEventId": "이벤트 ID를 입력하세요",
+    "viewReceipt": "영수증 보기",
+    "removeImage": "이미지 제거",
+    "selectFile": "파일 선택",
+    "processing": "처리중..."
+  },
+  "paymentMethod": {
+    "title": "결제 방법 관리",
+    "addMethod": "결제 방법 추가",
+    "methodList": "결제 방법 목록",
+    "noMethods": "등록된 결제 방법이 없습니다.",
+    "form": {
+      "id": "ID",
+      "method": "방법명",
+      "methodType": "유형",
+      "userEmail": "사용자",
+      "limitAmount": "한도 금액",
+      "status": "상태",
+      "cardNumberLast4": "카드 번호 마지막 4자리",
+      "cardType": "카드 타입",
+      "cardHolderName": "카드 소유자명",
+      "expiryDate": "만료일",
+      "monthlyLimit": "월 한도",
+      "dailyLimit": "일 한도",
+      "notes": "메모"
+    },
+    "methodTypes": {
+      "card": "카드",
+      "cash": "현금",
+      "transfer": "계좌이체",
+      "mobile": "모바일",
+      "other": "기타"
+    },
+    "cardTypes": {
+      "visa": "Visa",
+      "mastercard": "Mastercard",
+      "amex": "American Express",
+      "discover": "Discover",
+      "jcb": "JCB",
+      "other": "기타"
+    },
+    "status": {
+      "active": "활성",
+      "inactive": "비활성",
+      "suspended": "정지",
+      "expired": "만료"
+    },
+    "buttons": {
+      "register": "등록",
+      "cancel": "취소",
+      "edit": "수정",
+      "delete": "삭제",
+      "save": "저장",
+      "resetFilters": "필터 초기화"
+    },
+    "messages": {
+      "methodAdded": "결제 방법이 등록되었습니다.",
+      "methodUpdated": "결제 방법이 수정되었습니다.",
+      "methodDeleted": "결제 방법이 삭제되었습니다.",
+      "confirmDelete": "정말로 이 결제 방법을 삭제하시겠습니까?"
+    },
+    "usage": {
+      "monthlyUsage": "월 사용량",
+      "dailyUsage": "일 사용량",
+      "lastUsed": "마지막 사용",
+      "noLimit": "제한없음"
+    },
+    "filters": {
+      "status": "상태",
+      "methodType": "유형",
+      "search": "검색",
+      "all": "전체",
+      "searchPlaceholder": "방법명, ID, 사용자명 검색"
+    }
+  },
+  "companyExpense": {
+    "title": "회사 지출 관리",
+    "addExpense": "지출 추가",
+    "expenseList": "지출 목록",
+    "noExpenses": "등록된 지출이 없습니다.",
+    "form": {
+      "id": "ID",
+      "submitOn": "제출일시",
+      "paidTo": "결제처",
+      "paidFor": "결제내용",
+      "description": "상세 설명",
+      "amount": "금액",
+      "paymentMethod": "결제 방법",
+      "submitBy": "제출자",
+      "photoUrl": "사진",
+      "category": "카테고리",
+      "subcategory": "하위 카테고리",
+      "status": "상태",
+      "approvedBy": "승인자",
+      "approvedOn": "승인일시",
+      "paidBy": "지급자",
+      "paidOn": "지급일시",
+      "accountingPeriod": "회계 기간",
+      "expenseType": "지출 유형",
+      "taxDeductible": "세금 공제 가능",
+      "vehicleId": "차량",
+      "maintenanceType": "정비 유형",
+      "notes": "메모",
+      "attachments": "첨부파일"
+    },
+    "categories": {
+      "office": "사무용품",
+      "marketing": "마케팅",
+      "utilities": "공과금",
+      "vehicle": "차량",
+      "travel": "여행",
+      "meals": "식비",
+      "equipment": "장비",
+      "maintenance": "정비",
+      "other": "기타"
+    },
+    "expenseTypes": {
+      "operating": "운영비",
+      "capital": "자본비",
+      "marketing": "마케팅비",
+      "travel": "여행비",
+      "maintenance": "정비비",
+      "other": "기타"
+    },
+    "status": {
+      "pending": "대기",
+      "approved": "승인",
+      "rejected": "거부",
+      "paid": "지급완료"
+    },
+    "buttons": {
+      "register": "등록",
+      "cancel": "취소",
+      "edit": "수정",
+      "delete": "삭제",
+      "save": "저장",
+      "approve": "승인",
+      "reject": "거부",
+      "pay": "지급",
+      "resetFilters": "필터 초기화"
+    },
+    "messages": {
+      "expenseAdded": "지출이 등록되었습니다.",
+      "expenseUpdated": "지출이 수정되었습니다.",
+      "expenseDeleted": "지출이 삭제되었습니다.",
+      "expenseApproved": "지출이 승인되었습니다.",
+      "expenseRejected": "지출이 거부되었습니다.",
+      "expensePaid": "지출이 지급되었습니다.",
+      "confirmDelete": "정말로 이 지출을 삭제하시겠습니까?"
+    },
+    "filters": {
+      "category": "카테고리",
+      "status": "상태",
+      "vehicle": "차량",
+      "accountingPeriod": "회계 기간",
+      "search": "검색",
+      "all": "전체",
+      "searchPlaceholder": "결제처, 결제내용, 설명 검색"
+    },
+    "statistics": {
+      "totalAmount": "총 금액",
+      "averageAmount": "평균 금액",
+      "expenseCount": "지출 건수",
+      "byCategory": "카테고리별",
+      "byStatus": "상태별",
+      "byMonth": "월별",
+      "vehicleExpenses": "차량 지출"
+    }
+  },
+  "vehicleMaintenance": {
+    "title": "차량 정비 관리",
+    "addMaintenance": "정비 추가",
+    "maintenanceList": "정비 목록",
+    "noMaintenance": "등록된 정비 기록이 없습니다.",
+    "form": {
+      "id": "ID",
+      "vehicleId": "차량",
+      "maintenanceDate": "정비 날짜",
+      "mileage": "마일리지",
+      "maintenanceType": "정비 유형",
+      "category": "카테고리",
+      "subcategory": "하위 카테고리",
+      "description": "정비 내용",
+      "totalCost": "총 비용",
+      "laborCost": "인건비",
+      "partsCost": "부품비",
+      "otherCost": "기타 비용",
+      "serviceProvider": "정비소명",
+      "serviceProviderContact": "정비소 연락처",
+      "serviceProviderAddress": "정비소 주소",
+      "warrantyPeriod": "워런티 기간 (일)",
+      "warrantyExpires": "워런티 만료일",
+      "warrantyNotes": "워런티 메모",
+      "isScheduledMaintenance": "정기 정비",
+      "nextMaintenanceDate": "다음 정비일",
+      "nextMaintenanceMileage": "다음 정비 마일리지",
+      "maintenanceInterval": "정비 주기 (일)",
+      "mileageInterval": "마일리지 주기",
+      "partsReplaced": "교체 부품",
+      "partsCostBreakdown": "부품별 비용",
+      "qualityRating": "품질 평가",
+      "satisfactionRating": "만족도 평가",
+      "issuesFound": "발견된 문제",
+      "recommendations": "권장사항",
+      "photos": "정비 사진",
+      "receipts": "영수증",
+      "documents": "관련 문서",
+      "notes": "메모",
+      "technicianNotes": "정비사 메모",
+      "status": "상태"
+    },
+    "maintenanceTypes": {
+      "maintenance": "정기 정비",
+      "repair": "수리",
+      "service": "서비스",
+      "inspection": "점검",
+      "emergency": "긴급 수리"
+    },
+    "categories": {
+      "engine": "엔진",
+      "transmission": "변속기",
+      "brakes": "브레이크",
+      "tires": "타이어",
+      "electrical": "전기",
+      "air_conditioning": "에어컨",
+      "body": "차체",
+      "interior": "내부",
+      "exterior": "외부",
+      "other": "기타"
+    },
+    "subcategories": {
+      "oil_change": "오일 교체",
+      "tire_rotation": "타이어 로테이션",
+      "brake_pad": "브레이크 패드",
+      "battery": "배터리",
+      "filter": "필터",
+      "belt": "벨트",
+      "spark_plug": "스파크 플러그",
+      "alignment": "정렬",
+      "car_wash": "세차",
+      "windshield_wiper": "와이퍼",
+      "other": "기타"
+    },
+    "status": {
+      "scheduled": "예정",
+      "in_progress": "진행중",
+      "completed": "완료",
+      "cancelled": "취소"
+    },
+    "buttons": {
+      "register": "등록",
+      "cancel": "취소",
+      "edit": "수정",
+      "delete": "삭제",
+      "save": "저장",
+      "resetFilters": "필터 초기화"
+    },
+    "messages": {
+      "maintenanceAdded": "정비 기록이 등록되었습니다.",
+      "maintenanceUpdated": "정비 기록이 수정되었습니다.",
+      "maintenanceDeleted": "정비 기록이 삭제되었습니다.",
+      "confirmDelete": "정말로 이 정비 기록을 삭제하시겠습니까?"
+    },
+    "filters": {
+      "vehicle": "차량",
+      "maintenanceType": "정비 유형",
+      "category": "카테고리",
+      "status": "상태",
+      "dateRange": "날짜 범위",
+      "search": "검색",
+      "all": "전체",
+      "searchPlaceholder": "정비소명, 설명 검색"
+    },
+    "statistics": {
+      "totalCost": "총 비용",
+      "averageCost": "평균 비용",
+      "maintenanceCount": "정비 건수",
+      "byVehicle": "차량별",
+      "byCategory": "카테고리별",
+      "byMonth": "월별",
+      "upcomingMaintenance": "예정된 정비",
+      "warrantyExpiring": "워런티 만료 예정"
+    },
+    "warranty": {
+      "active": "활성",
+      "expired": "만료",
+      "expiringSoon": "곧 만료",
+      "noWarranty": "워런티 없음"
+    }
+  },
   "tourReportForm": {
     "title": "투어 리포트 작성",
     "reportSubmitted": "투어 리포트가 성공적으로 제출되었습니다.",

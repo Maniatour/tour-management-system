@@ -20,7 +20,8 @@ export async function POST(request: NextRequest) {
       nationality = '',
       selected_options = {},
       payment_method = 'pending',
-      status = 'confirmed'
+      status = 'confirmed',
+      uploaded_file_urls = []
     } = body
 
     // 필수 필드 검증
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
       selected_options,
       payment_method,
       status,
+      uploaded_file_urls,
       created_by: user.email,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()

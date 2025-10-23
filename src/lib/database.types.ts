@@ -898,6 +898,362 @@ export interface Database {
         updated_at?: string
       }
     }
+    company_expenses: {
+      Row: {
+        id: string
+        submit_on: string
+        paid_to: string
+        paid_for: string
+        description: string | null
+        amount: number
+        payment_method: string | null
+        submit_by: string
+        photo_url: string | null
+        category: string | null
+        subcategory: string | null
+        status: string
+        approved_by: string | null
+        approved_on: string | null
+        paid_by: string | null
+        paid_on: string | null
+        accounting_period: string | null
+        expense_type: string | null
+        tax_deductible: boolean
+        vehicle_id: string | null
+        maintenance_type: string | null
+        notes: string | null
+        attachments: string[] | null
+        created_by: string | null
+        updated_by: string | null
+        created_at: string
+        updated_at: string
+      }
+      Insert: {
+        id: string
+        submit_on?: string
+        paid_to: string
+        paid_for: string
+        description?: string | null
+        amount: number
+        payment_method?: string | null
+        submit_by: string
+        photo_url?: string | null
+        category?: string | null
+        subcategory?: string | null
+        status?: string
+        approved_by?: string | null
+        approved_on?: string | null
+        paid_by?: string | null
+        paid_on?: string | null
+        accounting_period?: string | null
+        expense_type?: string | null
+        tax_deductible?: boolean
+        vehicle_id?: string | null
+        maintenance_type?: string | null
+        notes?: string | null
+        attachments?: string[] | null
+        created_by?: string | null
+        updated_by?: string | null
+        created_at?: string
+        updated_at?: string
+      }
+      Update: {
+        id?: string
+        submit_on?: string
+        paid_to?: string
+        paid_for?: string
+        description?: string | null
+        amount?: number
+        payment_method?: string | null
+        submit_by?: string
+        photo_url?: string | null
+        category?: string | null
+        subcategory?: string | null
+        status?: string
+        approved_by?: string | null
+        approved_on?: string | null
+        paid_by?: string | null
+        paid_on?: string | null
+        accounting_period?: string | null
+        expense_type?: string | null
+        tax_deductible?: boolean
+        vehicle_id?: string | null
+        maintenance_type?: string | null
+        notes?: string | null
+        attachments?: string[] | null
+        created_by?: string | null
+        updated_by?: string | null
+        created_at?: string
+        updated_at?: string
+      }
+    }
+    vehicle_maintenance: {
+      Row: {
+        id: string
+        vehicle_id: string
+        maintenance_date: string
+        mileage: number | null
+        maintenance_type: string
+        category: string
+        subcategory: string | null
+        description: string
+        total_cost: number
+        labor_cost: number | null
+        parts_cost: number | null
+        other_cost: number | null
+        service_provider: string | null
+        service_provider_contact: string | null
+        service_provider_address: string | null
+        warranty_period: number | null
+        warranty_expires: string | null
+        warranty_notes: string | null
+        is_scheduled_maintenance: boolean
+        next_maintenance_date: string | null
+        next_maintenance_mileage: number | null
+        maintenance_interval: number | null
+        mileage_interval: number | null
+        parts_replaced: string[] | null
+        parts_cost_breakdown: any | null
+        quality_rating: number | null
+        satisfaction_rating: number | null
+        issues_found: string[] | null
+        recommendations: string[] | null
+        photos: string[] | null
+        receipts: string[] | null
+        documents: string[] | null
+        notes: string | null
+        technician_notes: string | null
+        status: string
+        approved_by: string | null
+        approved_on: string | null
+        company_expense_id: string | null
+        created_by: string | null
+        updated_by: string | null
+        created_at: string
+        updated_at: string
+      }
+      Insert: {
+        id: string
+        vehicle_id: string
+        maintenance_date: string
+        mileage?: number | null
+        maintenance_type: string
+        category: string
+        subcategory?: string | null
+        description: string
+        total_cost: number
+        labor_cost?: number | null
+        parts_cost?: number | null
+        other_cost?: number | null
+        service_provider?: string | null
+        service_provider_contact?: string | null
+        service_provider_address?: string | null
+        warranty_period?: number | null
+        warranty_expires?: string | null
+        warranty_notes?: string | null
+        is_scheduled_maintenance?: boolean
+        next_maintenance_date?: string | null
+        next_maintenance_mileage?: number | null
+        maintenance_interval?: number | null
+        mileage_interval?: number | null
+        parts_replaced?: string[] | null
+        parts_cost_breakdown?: any | null
+        quality_rating?: number | null
+        satisfaction_rating?: number | null
+        issues_found?: string[] | null
+        recommendations?: string[] | null
+        photos?: string[] | null
+        receipts?: string[] | null
+        documents?: string[] | null
+        notes?: string | null
+        technician_notes?: string | null
+        status?: string
+        approved_by?: string | null
+        approved_on?: string | null
+        company_expense_id?: string | null
+        created_by?: string | null
+        updated_by?: string | null
+        created_at?: string
+        updated_at?: string
+      }
+      Update: {
+        id?: string
+        vehicle_id?: string
+        maintenance_date?: string
+        mileage?: number | null
+        maintenance_type?: string
+        category?: string
+        subcategory?: string | null
+        description?: string
+        total_cost?: number
+        labor_cost?: number | null
+        parts_cost?: number | null
+        other_cost?: number | null
+        service_provider?: string | null
+        service_provider_contact?: string | null
+        service_provider_address?: string | null
+        warranty_period?: number | null
+        warranty_expires?: string | null
+        warranty_notes?: string | null
+        is_scheduled_maintenance?: boolean
+        next_maintenance_date?: string | null
+        next_maintenance_mileage?: number | null
+        maintenance_interval?: number | null
+        mileage_interval?: number | null
+        parts_replaced?: string[] | null
+        parts_cost_breakdown?: any | null
+        quality_rating?: number | null
+        satisfaction_rating?: number | null
+        issues_found?: string[] | null
+        recommendations?: string[] | null
+        photos?: string[] | null
+        receipts?: string[] | null
+        documents?: string[] | null
+        notes?: string | null
+        technician_notes?: string | null
+        status?: string
+        approved_by?: string | null
+        approved_on?: string | null
+        company_expense_id?: string | null
+        created_by?: string | null
+        updated_by?: string | null
+        created_at?: string
+        updated_at?: string
+      }
+    }
+    payment_methods: {
+      Row: {
+        id: string
+        method: string
+        method_type: string
+        user_email: string
+        limit_amount: number | null
+        status: string
+        card_number_last4: string | null
+        card_type: string | null
+        card_holder_name: string | null
+        expiry_date: string | null
+        monthly_limit: number | null
+        daily_limit: number | null
+        current_month_usage: number
+        current_day_usage: number
+        assigned_date: string
+        last_used_date: string | null
+        notes: string | null
+        created_by: string | null
+        updated_by: string | null
+        created_at: string
+        updated_at: string
+      }
+      Insert: {
+        id: string
+        method: string
+        method_type?: string
+        user_email: string
+        limit_amount?: number | null
+        status?: string
+        card_number_last4?: string | null
+        card_type?: string | null
+        card_holder_name?: string | null
+        expiry_date?: string | null
+        monthly_limit?: number | null
+        daily_limit?: number | null
+        current_month_usage?: number
+        current_day_usage?: number
+        assigned_date?: string
+        last_used_date?: string | null
+        notes?: string | null
+        created_by?: string | null
+        updated_by?: string | null
+        created_at?: string
+        updated_at?: string
+      }
+      Update: {
+        id?: string
+        method?: string
+        method_type?: string
+        user_email?: string
+        limit_amount?: number | null
+        status?: string
+        card_number_last4?: string | null
+        card_type?: string | null
+        card_holder_name?: string | null
+        expiry_date?: string | null
+        monthly_limit?: number | null
+        daily_limit?: number | null
+        current_month_usage?: number
+        current_day_usage?: number
+        assigned_date?: string
+        last_used_date?: string | null
+        notes?: string | null
+        created_by?: string | null
+        updated_by?: string | null
+        created_at?: string
+        updated_at?: string
+      }
+    }
+    reservation_expenses: {
+      Row: {
+        id: string
+        submit_on: string
+        submitted_by: string
+        paid_to: string
+        paid_for: string
+        amount: number
+        payment_method: string | null
+        note: string | null
+        image_url: string | null
+        file_path: string | null
+        status: 'pending' | 'approved' | 'rejected'
+        reservation_id: string | null
+        event_id: string | null
+        audited_by: string | null
+        checked_by: string | null
+        checked_on: string | null
+        created_at: string
+        updated_at: string
+      }
+      Insert: {
+        id: string
+        submit_on?: string
+        submitted_by: string
+        paid_to: string
+        paid_for: string
+        amount: number
+        payment_method?: string | null
+        note?: string | null
+        image_url?: string | null
+        file_path?: string | null
+        status?: 'pending' | 'approved' | 'rejected'
+        reservation_id?: string | null
+        event_id?: string | null
+        audited_by?: string | null
+        checked_by?: string | null
+        checked_on?: string | null
+        created_at?: string
+        updated_at?: string
+      }
+      Update: {
+        id?: string
+        submit_on?: string
+        submitted_by?: string
+        paid_to?: string
+        paid_for?: string
+        amount?: number
+        payment_method?: string | null
+        note?: string | null
+        image_url?: string | null
+        file_path?: string | null
+        status?: 'pending' | 'approved' | 'rejected'
+        reservation_id?: string | null
+        event_id?: string | null
+        audited_by?: string | null
+        checked_by?: string | null
+        checked_on?: string | null
+        created_at?: string
+        updated_at?: string
+      }
+    }
     expense_categories: {
       Row: {
         id: string

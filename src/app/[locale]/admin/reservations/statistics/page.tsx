@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle } from 'lucide-react'
+import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { 
@@ -10,6 +10,7 @@ import {
   getStatusLabel 
 } from '@/utils/reservationUtils'
 import TourStatisticsTab from '@/components/statistics/TourStatisticsTab'
+import ReservationSettlementTab from '@/components/statistics/ReservationSettlementTab'
 
 interface AdminReservationStatisticsProps {
   params: Promise<{ locale: string }>
@@ -17,7 +18,7 @@ interface AdminReservationStatisticsProps {
 
 type TimeRange = 'daily' | 'monthly' | 'yearly'
 type ChartType = 'channel' | 'product' | 'trend'
-type TabType = 'reservations' | 'tours'
+type TabType = 'reservations' | 'tours' | 'settlement'
 
 interface StatisticsData {
   totalReservations: number
@@ -287,7 +288,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           <nav className="-mb-px flex space-x-8 px-6">
             {[
               { key: 'reservations', label: '예약 통계', icon: BarChart3 },
-              { key: 'tours', label: '투어 통계', icon: TrendingUp }
+              { key: 'tours', label: '투어 통계', icon: TrendingUp },
+              { key: 'settlement', label: '예약 정산', icon: Receipt }
             ].map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -529,6 +531,11 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       {/* 투어 통계 탭 */}
       {activeTab === 'tours' && (
         <TourStatisticsTab dateRange={dateRange} />
+      )}
+
+      {/* 예약 정산 탭 */}
+      {activeTab === 'settlement' && (
+        <ReservationSettlementTab dateRange={dateRange} />
       )}
     </div>
   )

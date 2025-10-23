@@ -221,77 +221,95 @@ export class OptimizedSyncService {
     
     const results = { inserted: 0, updated: 0, errors: 0 }
     
-    // 1. 데이터 검증 (병렬 처리)
-    const validationRules = this.getValidationRules(targetTable)
-    const { valid, invalid } = await databaseOptimizer.validateBulkData(targetTable, data, validationRules)
-    
-    if (invalid.length > 0) {
-      console.warn(`⚠️ ${invalid.length}개 행이 검증 실패로 제외됨`)
-    }
-    
-    if (valid.length === 0) {
-      console.log('❌ 유효한 데이터가 없습니다.')
+    try {
+      // 1. 데이터 검증 (병렬 처리)
+      console.log(`🔍 데이터 검증 시작`)
+      const validationRules = this.getValidationRules(targetTable)
+      console.log(`🔍 검증 규칙:`, validationRules)
+      
+      const { valid, invalid } = await databaseOptimizer.validateBulkData(targetTable, data, validationRules)
+      console.log(`✅ 데이터 검증 완료: 유효한 행 ${valid.length}개, 무효한 행 ${invalid.length}개`)
+      
+      if (invalid.length > 0) {
+        console.warn(`⚠️ ${invalid.length}개 행이 검증 실패로 제외됨`)
+        // 처음 5개 검증 실패 사유 출력
+        invalid.slice(0, 5).forEach((item, index) => {
+          console.warn(`검증 실패 ${index + 1}:`, item.errors)
+        })
+      }
+      
+      if (valid.length === 0) {
+        console.log('❌ 유효한 데이터가 없습니다.')
+        return results
+      }
+      
+      // 2. 테이블 컬럼 정보 캐시에서 가져오기
+      console.log(`🔍 테이블 컬럼 정보 조회: ${targetTable}`)
+      const tableColumns = await databaseOptimizer.getTableColumns(targetTable)
+      console.log(`✅ 테이블 컬럼 정보 조회 완료:`, Array.from(tableColumns))
+      
+      // 3. 배치 처리
+      const batches = this.chunkArray(valid, batchSize)
+      console.log(`📊 배치 분할 완료: ${batches.length}개 배치`)
+      
+      // 병렬 배치 처리
+      await this.processBatchesInParallel(
+        batches,
+        async (batch) => {
+          try {
+            console.log(`🔄 배치 처리 시작: ${batch.length}개 행`)
+            const nowIso = new Date().toISOString()
+            
+            // ID가 없는 행들에 대해 UUID 생성
+            const preparedBatch = batch.map(row => {
+              const prepared = { ...row }
+              if (!prepared.id && targetTable !== 'team') {
+                prepared.id = this.generateUUID()
+              }
+              
+              // 테이블에 updated_at 컬럼이 있는 경우에만 추가
+              if (tableColumns.has('updated_at')) {
+                prepared.updated_at = nowIso
+              }
+              
+              return prepared
+            })
+            
+            console.log(`💾 RLS 우회 upsert 실행: ${targetTable} 테이블에 ${preparedBatch.length}개 행`)
+            
+            // RLS 정책 우회를 위한 직접 SQL 실행
+            const { error } = await this.executeDirectUpsert(targetTable, preparedBatch, tableColumns)
+            
+            if (error) {
+              console.error('❌ 배치 upsert 오류:', error)
+              results.errors += batch.length
+            } else {
+              console.log(`✅ 배치 upsert 성공: ${batch.length}개 행`)
+              results.updated += batch.length
+            }
+          } catch (error) {
+            console.error('❌ 배치 upsert 예외:', error)
+            results.errors += batch.length
+          }
+        },
+        3 // 최대 3개 배치 동시 처리
+      )
+      
+      console.log(`✅ 벌크 upsert 완료: ${results.updated}개 업데이트, ${results.errors}개 오류`)
+      return results
+    } catch (error) {
+      console.error('❌ 벌크 upsert 전체 실패:', error)
+      results.errors = data.length
       return results
     }
-    
-    // 2. 테이블 컬럼 정보 캐시에서 가져오기
-    const tableColumns = await databaseOptimizer.getTableColumns(targetTable)
-    
-    // 3. 배치 처리
-    const batches = this.chunkArray(valid, batchSize)
-    
-    // 병렬 배치 처리
-    await this.processBatchesInParallel(
-      batches,
-      async (batch) => {
-        try {
-          const nowIso = new Date().toISOString()
-          
-          // ID가 없는 행들에 대해 UUID 생성
-          const preparedBatch = batch.map(row => {
-            const prepared = { ...row }
-            if (!prepared.id && targetTable !== 'team') {
-              prepared.id = this.generateUUID()
-            }
-            
-            // 테이블에 updated_at 컬럼이 있는 경우에만 추가
-            if (tableColumns.has('updated_at')) {
-              prepared.updated_at = nowIso
-            }
-            
-            return prepared
-          })
-          
-          // RLS 정책 우회를 위한 직접 SQL 실행
-          const { error } = await this.executeDirectUpsert(targetTable, preparedBatch, tableColumns)
-          
-          if (error) {
-            console.error('Batch upsert error:', error)
-            results.errors += batch.length
-          } else {
-            results.updated += batch.length
-          }
-        } catch (error) {
-          console.error('Batch upsert exception:', error)
-          results.errors += batch.length
-        }
-      },
-      3 // 최대 3개 배치 동시 처리
-    )
-    
-    console.log(`✅ 벌크 upsert 완료: ${results.updated}개 업데이트, ${results.errors}개 오류`)
-    return results
   }
 
   // 테이블별 검증 규칙 정의
   private getValidationRules(tableName: string) {
     const rules: { [key: string]: any } = {
       reservations: {
-        requiredFields: ['id', 'customer_email'],
-        foreignKeys: [
-          { field: 'product_id', table: 'products' },
-          { field: 'tour_id', table: 'tours' }
-        ]
+        requiredFields: [], // 필수 필드 없음 (모든 필드 선택적)
+        foreignKeys: [] // 외래 키 검증 비활성화 (선택적)
       },
       tour_expenses: {
         requiredFields: ['id'],
@@ -302,10 +320,19 @@ export class OptimizedSyncService {
       },
       team: {
         requiredFields: ['email']
+      },
+      reservation_pricing: {
+        requiredFields: ['id', 'reservation_id']
+      },
+      reservation_expenses: {
+        requiredFields: ['id']
+      },
+      company_expenses: {
+        requiredFields: ['id']
       }
     }
     
-    return rules[tableName] || { requiredFields: ['id'] }
+    return rules[tableName] || { requiredFields: [] }
   }
 
   // UUID 생성
@@ -334,13 +361,18 @@ export class OptimizedSyncService {
   ) {
     try {
       console.log(`🚀 최적화된 동기화 시작: ${spreadsheetId}/${sheetName} → ${targetTable}`)
+      console.log(`📋 컬럼 매핑:`, columnMapping)
       onProgress?.({ type: 'info', message: `최적화된 동기화 시작 - ${sheetName} → ${targetTable}` })
       
       // 1. 구글 시트에서 데이터 읽기
+      console.log(`📊 구글 시트에서 데이터 읽기 시작: ${sheetName}`)
       onProgress?.({ type: 'info', message: '구글 시트에서 데이터 읽는 중...' })
+      
       const sheetData = await readSheetDataDynamic(spreadsheetId, sheetName)
+      console.log(`📊 구글 시트 데이터 읽기 완료: ${sheetData.length}개 행`)
       
       if (sheetData.length === 0) {
+        console.log(`⚠️ 동기화할 데이터가 없습니다.`)
         onProgress?.({ type: 'warn', message: '동기화할 데이터가 없습니다.' })
         return { success: true, message: 'No data to sync', count: 0 }
       }
@@ -348,18 +380,23 @@ export class OptimizedSyncService {
       onProgress?.({ type: 'info', message: `구글 시트에서 ${sheetData.length}개 행을 읽었습니다.` })
       
       // 2. 최적화된 데이터 변환
+      console.log(`🔄 데이터 변환 시작`)
       onProgress?.({ type: 'info', message: '데이터 변환 중...' })
       const transformedData = this.optimizeDataTransformation(sheetData, columnMapping, targetTable)
+      console.log(`✅ 데이터 변환 완료: ${transformedData.length}개 행`)
       
       // 3. 최적화된 배치 크기 계산
       const optimalBatchSize = this.calculateOptimalBatchSize(transformedData.length)
+      console.log(`📊 최적 배치 크기: ${optimalBatchSize}`)
       onProgress?.({ type: 'info', message: `최적 배치 크기: ${optimalBatchSize}` })
       
       // 4. 최적화된 벌크 upsert
+      console.log(`💾 데이터베이스 동기화 시작`)
       onProgress?.({ type: 'info', message: '데이터베이스에 동기화 시작...' })
       onProgress?.({ type: 'start', total: transformedData.length })
       
       const results = await this.optimizedBulkUpsert(targetTable, transformedData, optimalBatchSize)
+      console.log(`✅ 데이터베이스 동기화 완료:`, results)
       
       // 5. 결과 반환
       const summary = {
@@ -375,7 +412,8 @@ export class OptimizedSyncService {
       return summary
       
     } catch (error) {
-      console.error('최적화된 동기화 오류:', error)
+      console.error('❌ 최적화된 동기화 오류:', error)
+      console.error('❌ 오류 스택:', error instanceof Error ? error.stack : 'No stack trace')
       onProgress?.({ type: 'error', message: `동기화 실패: ${error}` })
       return {
         success: false,

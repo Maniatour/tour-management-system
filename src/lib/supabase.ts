@@ -18,8 +18,14 @@ if (process.env.NODE_ENV === 'development') {
   })
 }
 
-// 기본 Supabase 클라이언트 생성
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)
+// 전역 싱글톤 인스턴스 생성 (auth 설정 포함)
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+})
 
 // Supabase 연결 상태 확인 함수
 export const checkSupabaseConnection = async (): Promise<boolean> => {

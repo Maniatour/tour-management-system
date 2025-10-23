@@ -146,14 +146,24 @@ export class DatabaseOptimizer {
     }
 
     try {
-      const { data: sampleData } = await supabase
+      console.log(`🔍 테이블 컬럼 조회 시작: ${tableName}`)
+      
+      const { data: sampleData, error } = await supabase
         .from(tableName)
         .select('*')
         .limit(1)
 
+      if (error) {
+        console.error(`테이블 컬럼 조회 오류 (${tableName}):`, error)
+        // 폴백: 스키마 API에서 컬럼 정보 가져오기
+        return await this.getFallbackColumns(tableName)
+      }
+
       const columns = sampleData && sampleData.length > 0 
         ? new Set(Object.keys(sampleData[0] as Record<string, unknown>))
-        : new Set()
+        : await this.getFallbackColumns(tableName)
+
+      console.log(`✅ 테이블 컬럼 조회 완료 (${tableName}):`, Array.from(columns))
 
       this.queryCache.set(cacheKey, {
         data: columns,
@@ -163,7 +173,33 @@ export class DatabaseOptimizer {
       return columns
     } catch (error) {
       console.error(`테이블 컬럼 조회 실패 (${tableName}):`, error)
-      return new Set()
+      // 폴백: 스키마 API에서 컬럼 정보 가져오기
+      return await this.getFallbackColumns(tableName)
+    }
+  }
+
+  // 폴백 컬럼 정보 가져오기
+  private async getFallbackColumns(tableName: string): Promise<Set<string>> {
+    try {
+      console.log(`🔄 폴백 컬럼 정보 조회: ${tableName}`)
+      
+      const response = await fetch(`/api/sync/schema?table=${tableName}`)
+      if (!response.ok) {
+        throw new Error(`Schema API failed: ${response.status}`)
+      }
+      
+      const result = await response.json()
+      if (result.success && result.columns) {
+        const columns = new Set(result.columns.map((col: any) => col.name))
+        console.log(`✅ 폴백 컬럼 정보 조회 완료 (${tableName}):`, Array.from(columns))
+        return columns
+      }
+      
+      throw new Error('Schema API returned invalid data')
+    } catch (error) {
+      console.error(`폴백 컬럼 정보 조회 실패 (${tableName}):`, error)
+      // 최종 폴백: 기본 컬럼들
+      return new Set(['id', 'created_at', 'updated_at'])
     }
   }
 
@@ -179,22 +215,38 @@ export class DatabaseOptimizer {
     const valid: Record<string, unknown>[] = []
     const invalid: Record<string, unknown>[] = []
 
-    // 필수 필드 검증
+    console.log(`🔍 데이터 검증 시작: ${data.length}개 행, 테이블: ${tableName}`)
+    console.log(`🔍 검증 규칙:`, validationRules)
+
+    // 필수 필드 검증 (id가 없으면 자동 생성되므로 제외)
     if (validationRules?.requiredFields) {
-      data.forEach(row => {
-        const hasAllRequired = validationRules.requiredFields!.every(field => 
-          row[field] !== undefined && row[field] !== null && row[field] !== ''
-        )
+      data.forEach((row, index) => {
+        const errors: string[] = []
         
-        if (hasAllRequired) {
+        // id 필드를 제외한 필수 필드만 검증
+        const requiredFieldsWithoutId = validationRules.requiredFields!.filter(field => field !== 'id')
+        
+        requiredFieldsWithoutId.forEach(field => {
+          if (row[field] === undefined || row[field] === null || row[field] === '') {
+            errors.push(`${field} 필드가 비어있습니다`)
+          }
+        })
+        
+        if (errors.length === 0) {
           valid.push(row)
         } else {
-          invalid.push(row)
+          // 에러 정보를 포함한 객체로 저장
+          invalid.push({ ...row, errors })
+          if (index < 5) { // 처음 5개만 로그 출력
+            console.warn(`검증 실패 행 ${index + 1}:`, errors)
+          }
         }
       })
     } else {
       valid.push(...data)
     }
+
+    console.log(`✅ 검증 완료: 유효한 행 ${valid.length}개, 무효한 행 ${invalid.length}개`)
 
     // 외래 키 검증 (병렬 처리)
     if (validationRules?.foreignKeys && valid.length > 0) {

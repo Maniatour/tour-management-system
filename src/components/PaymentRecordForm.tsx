@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { Upload, X, Check, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Upload, X, Check, AlertCircle, CreditCard, DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
 
 interface PaymentRecordFormProps {
   reservationId: string
@@ -30,7 +31,8 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
   const [formData, setFormData] = useState({
     payment_status: 'pending' as 'pending' | 'confirmed' | 'rejected',
     amount: '',
-    payment_method: 'bank_transfer',
+    payment_method: '',
+    payment_method_id: '', // 새로운 결제 방법 ID
     note: '',
     amount_krw: ''
   })
@@ -38,14 +40,52 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
   const [saving, setSaving] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [paymentMethodOptions, setPaymentMethodOptions] = useState<Array<{id: string, method: string, method_type: string}>>([])
+  const [loadingOptions, setLoadingOptions] = useState(true)
+  const [validationError, setValidationError] = useState('')
 
-  const paymentMethods = [
-    { value: 'bank_transfer', label: '은행 이체' },
-    { value: 'cash', label: '현금' },
-    { value: 'card', label: '카드' },
-    { value: 'paypal', label: 'PayPal' },
-    { value: 'other', label: '기타' }
-  ]
+  // 결제 방법 옵션 로드
+  useEffect(() => {
+    const loadPaymentMethodOptions = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const userEmail = session?.user?.email
+        
+        const options = await paymentMethodIntegration.getPaymentMethodOptions(userEmail || undefined)
+        setPaymentMethodOptions(options)
+      } catch (error) {
+        console.error('결제 방법 옵션 로드 오류:', error)
+      } finally {
+        setLoadingOptions(false)
+      }
+    }
+
+    loadPaymentMethodOptions()
+  }, [])
+
+  // 결제 방법 변경 시 검증
+  useEffect(() => {
+    if (formData.payment_method_id && formData.amount) {
+      validatePaymentMethod()
+    }
+  }, [formData.payment_method_id, formData.amount])
+
+  const validatePaymentMethod = async () => {
+    try {
+      const amount = parseFloat(formData.amount)
+      if (isNaN(amount) || amount <= 0) return
+
+      const validation = await paymentMethodIntegration.validatePaymentMethod(formData.payment_method_id, amount)
+      
+      if (!validation.isValid) {
+        setValidationError(validation.reason || '결제 방법 검증에 실패했습니다.')
+      } else {
+        setValidationError('')
+      }
+    } catch (error) {
+      console.error('결제 방법 검증 오류:', error)
+    }
+  }
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -124,6 +164,16 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
         throw new Error(errorData.error || '입금 내역 저장 중 오류가 발생했습니다.')
       }
 
+      // 결제 방법 사용량 업데이트 (확인된 결제만)
+      if (formData.payment_status === 'confirmed' && formData.payment_method_id) {
+        try {
+          await paymentMethodIntegration.updatePaymentUsage(formData.payment_method_id, parseFloat(formData.amount))
+        } catch (usageError) {
+          console.error('결제 방법 사용량 업데이트 오류:', usageError)
+          // 사용량 업데이트 실패는 전체 프로세스를 중단시키지 않음
+        }
+      }
+
       onSuccess()
     } catch (error) {
       console.error('입금 내역 저장 오류:', error)
@@ -188,17 +238,35 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   결제 방법 *
                 </label>
-                <select
-                  value={formData.payment_method}
-                  onChange={(e) => handleInputChange('payment_method', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {paymentMethods.map(method => (
-                    <option key={method.value} value={method.value}>
-                      {method.label}
-                    </option>
-                  ))}
-                </select>
+                {loadingOptions ? (
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                    <span className="text-sm text-gray-500">결제 방법을 불러오는 중...</span>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.payment_method_id}
+                    onChange={(e) => {
+                      const selectedOption = paymentMethodOptions.find(option => option.id === e.target.value)
+                      handleInputChange('payment_method_id', e.target.value)
+                      handleInputChange('payment_method', selectedOption?.method || '')
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="">결제 방법을 선택하세요</option>
+                    {paymentMethodOptions.map(option => (
+                      <option key={option.id} value={option.id}>
+                        {option.method} ({option.method_type})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {validationError && (
+                  <div className="mt-1 flex items-center text-sm text-red-600">
+                    <AlertCircle size={14} className="mr-1" />
+                    {validationError}
+                  </div>
+                )}
               </div>
             </div>
 

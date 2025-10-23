@@ -359,9 +359,31 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
       // 투어 수수료 조회 (가이드/어시스턴트 이름 포함)
       const { data: tour, error: tourError } = await supabase
         .from('tours')
-        .select('guide_fee, assistant_fee, guide_name, assistant_name')
+        .select('guide_fee, assistant_fee, tour_guide_id, assistant_id')
         .eq('id', tourId)
         .maybeSingle()
+
+      // 가이드와 어시스턴트 이름 별도 조회 (team 테이블 사용)
+      let guideName = ''
+      let assistantName = ''
+      
+      if (tour?.tour_guide_id) {
+        const { data: guideData } = await supabase
+          .from('team')
+          .select('name_ko')
+          .eq('email', tour.tour_guide_id)
+          .maybeSingle()
+        guideName = guideData?.name_ko || ''
+      }
+      
+      if (tour?.assistant_id) {
+        const { data: assistantData } = await supabase
+          .from('team')
+          .select('name_ko')
+          .eq('email', tour.assistant_id)
+          .maybeSingle()
+        assistantName = assistantData?.name_ko || ''
+      }
 
       // 입금 내역 조회 (예약별 입금 정보) - 날짜 필터링 적용
       let reservationsQuery = supabase
@@ -424,7 +446,12 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         expenses: expenses || [],
         ticketBookings: ticketBookings || [],
         hotelBookings: hotelBookings || [],
-        tourFees: tour || { guide_fee: 0, assistant_fee: 0, guide_name: '', assistant_name: '' },
+        tourFees: { 
+          guide_fee: tour?.guide_fee || 0, 
+          assistant_fee: tour?.assistant_fee || 0, 
+          guide_name: guideName, 
+          assistant_name: assistantName
+        },
         reservations: reservations || [],
         customers: customers || [],
         reservationPricing: reservationPricing || []
@@ -435,7 +462,14 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         expenses: [],
         ticketBookings: [],
         hotelBookings: [],
-        tourFees: { guide_fee: 0, assistant_fee: 0, guide_name: '', assistant_name: '' },
+        tourFees: { 
+          guide_fee: 0, 
+          assistant_fee: 0, 
+          guide_name: '', 
+          assistant_name: '',
+          tour_guide: null,
+          assistant: null
+        },
         reservations: [],
         customers: [],
         reservationPricing: []
@@ -977,6 +1011,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">1인당 수익</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">1인당 지출</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">1인당 순수익</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상세</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -1006,14 +1041,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                       ${tour.revenue.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
-                      <button
-                        onClick={() => toggleExpenseDetails(tour.tourId, tour.tourDate)}
-                        className="flex items-center space-x-1 hover:text-red-700 transition-colors font-medium"
-                      >
-                        <span>${tour.expenses.toLocaleString()}</span>
-                        <Eye size={14} />
-                        {expandedExpenses[tour.tourId] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </button>
+                      ${tour.expenses.toLocaleString()}
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${
                       tour.netProfit >= 0 ? 'text-green-600' : 'text-red-600'
@@ -1034,12 +1062,22 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                     }`}>
                       ${tour.totalPeople > 0 ? (tour.netProfit / tour.totalPeople).toFixed(2) : 0}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                      <button
+                        onClick={() => toggleExpenseDetails(tour.tourId, tour.tourDate)}
+                        className="flex items-center justify-center space-x-1 hover:text-blue-700 transition-colors text-blue-600"
+                        title="상세 내역 보기"
+                      >
+                        <Eye size={16} />
+                        {expandedExpenses[tour.tourId] ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      </button>
+                    </td>
                   </tr>
                   
                   {/* 지출 상세 내역 */}
                   {expandedExpenses[tour.tourId] && (
                     <tr>
-                      <td colSpan={10} className="px-6 py-4 bg-gray-50">
+                      <td colSpan={11} className="px-6 py-4 bg-gray-50">
                         <div className="space-y-4">
                           <h4 className="font-semibold text-gray-900">상세 내역</h4>
                           

@@ -16,6 +16,7 @@ import ProductSelectionSection from '@/components/reservation/ProductSelectionSe
 import ChannelSection from '@/components/reservation/ChannelSection'
 import TourConnectionSection from '@/components/reservation/TourConnectionSection'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
+import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import QuantityBasedAccommodationSelector from '@/components/reservation/QuantityBasedAccommodationSelector'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
@@ -100,6 +101,7 @@ export default function ReservationForm({
   const [channelAccordionExpanded, setChannelAccordionExpanded] = useState(layout === 'modal')
   const [productAccordionExpanded, setProductAccordionExpanded] = useState(layout === 'modal')
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
+  const [expenseUpdateTrigger, setExpenseUpdateTrigger] = useState(0)
   
   const [formData, setFormData] = useState<{
     customerId: string
@@ -161,6 +163,7 @@ export default function ReservationForm({
       total_price: number
     }>
     choicesTotal: number
+    choiceTotal: number
     // 가격 정보
     adultProductPrice: number
     childProductPrice: number
@@ -244,6 +247,7 @@ export default function ReservationForm({
     productChoices: [],
     selectedChoices: [],
     choicesTotal: 0,
+    choiceTotal: 0,
     // 가격 정보 초기값 (loadPricingInfo 함수에서 동적으로 로드)
     adultProductPrice: 0,
     childProductPrice: 0,
@@ -2010,26 +2014,43 @@ export default function ReservationForm({
                  autoSelectCoupon={autoSelectCoupon}
                  reservationOptionsTotalPrice={reservationOptionsTotalPrice}
                  isExistingPricingLoaded={isExistingPricingLoaded}
+                 reservationId={reservation?.id}
+                 expenseUpdateTrigger={expenseUpdateTrigger}
                />
 
-              {/* 입금 내역과 예약 옵션을 2열 그리드로 배치 - 예약이 있을 때만 표시 */}
+              {/* 입금 내역, 지출 내역과 예약 옵션을 3열 그리드로 배치 - 예약이 있을 때만 표시 */}
               {reservation && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* 왼쪽: 예약 옵션 */}
-                  <div className="order-2 lg:order-1">
+                <div className="space-y-4">
+                  {/* 상단: 예약 옵션 */}
+                  <div>
                     <ReservationOptionsSection 
                       reservationId={reservation.id} 
                       onTotalPriceChange={setReservationOptionsTotalPrice}
                     />
                   </div>
                   
-                  {/* 오른쪽: 입금 내역 */}
-                  <div className="order-1 lg:order-2">
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                      <PaymentRecordsList
-                        reservationId={reservation.id}
-                        customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
-                      />
+                  {/* 하단: 입금 내역과 지출 내역을 2열 그리드로 배치 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* 왼쪽: 입금 내역 */}
+                    <div>
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                        <PaymentRecordsList
+                          reservationId={reservation.id}
+                          customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* 오른쪽: 지출 내역 */}
+                    <div>
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                        <ReservationExpenseManager
+                          reservationId={reservation.id}
+                          submittedBy={reservation.addedBy}
+                          userRole="admin"
+                          onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

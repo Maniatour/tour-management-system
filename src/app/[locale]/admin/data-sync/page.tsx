@@ -132,6 +132,8 @@ export default function DataSyncPage() {
     return {}
   }
 
+
+
   // 자동 완성 함수 (데이터베이스 컬럼명과 구글 시트 컬럼명 매칭)
   const getAutoCompleteSuggestions = (dbColumn: string, sheetColumns: string[]): string[] => {
     const suggestions: string[] = []
@@ -720,7 +722,7 @@ export default function DataSyncPage() {
   }
 
   // 구글 시트 정보 가져오기 (단순화된 버전)
-  const getSheetInfo = async () => {
+  const getSheetInfo = async (onComplete?: (sheets: SheetInfo[]) => void) => {
     if (!spreadsheetId.trim()) {
       alert('스프레드시트 ID를 입력해주세요.')
       return
@@ -729,6 +731,8 @@ export default function DataSyncPage() {
     console.log('🚀 Loading sheet information...')
     setLoading(true)
     setSheetInfo([])
+    
+    let result: { success: boolean; data?: { sheets: SheetInfo[] }; message?: string } | null = null
     
     try {
       // 이전 요청이 있다면 취소
@@ -767,20 +771,24 @@ export default function DataSyncPage() {
         throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`)
       }
 
-      const result = await response.json()
+      result = await response.json()
       console.log('API Response:', result)
+      console.log('API Response data:', result?.data)
+      console.log('API Response sheets:', result?.data?.sheets)
       
-      if (result.success) {
-        setSheetInfo(result.data.sheets)
+      if (result && result.success) {
+        const sheets = result.data?.sheets || []
+        console.log('Setting sheet info:', sheets)
+        setSheetInfo(sheets)
         
-        // 첫 번째 시트를 기본 선택
-        if (result.data.sheets.length > 0) {
-          setSelectedSheet(result.data.sheets[0].name)
-        } else {
+        // 시트 정보만 로드하고 자동 선택하지 않음
+        if (sheets.length === 0) {
           alert('시트를 찾을 수 없습니다. 스프레드시트에 "S"로 시작하는 시트가 있는지 확인해주세요.')
+        } else {
+          console.log(`✅ 성공적으로 ${sheets.length}개의 시트를 가져왔습니다:`, sheets.map(s => s.name))
         }
       } else {
-        alert(`시트 정보를 가져오는데 실패했습니다: ${result.message}`)
+        alert(`시트 정보를 가져오는데 실패했습니다: ${result?.message || '알 수 없는 오류'}`)
       }
     } catch (error) {
       // AbortError 처리 개선
@@ -812,32 +820,16 @@ export default function DataSyncPage() {
       setSheetInfo([])
     } finally {
       setLoading(false)
+      // 완료 콜백 호출 (성공한 경우에만)
+      if (onComplete && result?.success && result.data?.sheets) {
+        setTimeout(() => onComplete(result!.data!.sheets), 100) // 상태 업데이트 후 콜백 실행
+      }
     }
   }
 
-  // 컬럼 매핑 제안 가져오기
-  const getMappingSuggestions = async (sheetColumns: string[], tableName: string) => {
-    try {
-      const response = await fetch(`/api/sync/tables?sheetColumns=${JSON.stringify(sheetColumns)}&tableName=${tableName}`)
-      const result = await response.json()
-      
-      if (result.success) {
-        // setMappingSuggestions(result.data.suggestions)
-        console.log('Mapping suggestions:', result.data.suggestions)
-      }
-    } catch (error) {
-      // AbortError는 정상적인 취소이므로 무시
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.log('매핑 제안 요청이 취소되었습니다.')
-        return
-      }
-      
-      console.error('Error getting mapping suggestions:', error)
-    }
-  }
 
   // 시트 컬럼 정보 로드
-  const loadSheetColumns = async (sheetName: string) => {
+  const loadSheetColumns = useCallback(async (sheetName: string) => {
     try {
       console.log(`📊 Loading columns for ${sheetName}...`)
       
@@ -877,7 +869,7 @@ export default function DataSyncPage() {
     } catch (error) {
       console.error(`❌ Error loading columns for ${sheetName}:`, error)
     }
-  }
+  }, [spreadsheetId])
 
   // 시트 선택 (개선된 버전)
   const handleSheetSelect = async (sheetName: string) => {
@@ -917,8 +909,9 @@ export default function DataSyncPage() {
     }
   }
 
+
   // 테이블 선택 시 기본 매핑 설정
-  const handleTableSelect = (tableName: string) => {
+  const handleTableSelect = async (tableName: string) => {
     console.log('Table selected:', tableName)
     setSelectedTable(tableName)
     setTableColumns([]) // 이전 컬럼 정보 초기화
@@ -938,18 +931,8 @@ export default function DataSyncPage() {
         console.log('Loaded saved column mapping:', savedMapping)
         setColumnMapping(savedMapping)
       } else {
-        // 저장된 매핑이 없으면 자동 매핑 시도
-        const sheet = sheetInfo.find(s => s.name === selectedSheet)
-        if (sheet && sheet.columns.length > 0) {
-          console.log('No saved mapping found, will try auto-mapping when schema loads')
-        }
-      }
-      
-      // 선택된 시트가 있으면 매핑 제안 가져오기
-      const sheet = sheetInfo.find(s => s.name === selectedSheet)
-      if (sheet && sheet.columns.length > 0) {
-        console.log('Getting mapping suggestions for table:', tableName, 'and sheet:', selectedSheet)
-        getMappingSuggestions(sheet.columns, tableName)
+        // 저장된 매핑이 없으면 자동 매핑은 useEffect에서 처리
+        console.log('No saved mapping found, auto-mapping will be handled by useEffect')
       }
     }
   }
@@ -1040,11 +1023,23 @@ export default function DataSyncPage() {
       }
     } catch (error) {
       console.error('최적화된 동기화 오류:', error)
+      
+      let errorMessage = '최적화된 동기화 중 오류가 발생했습니다.'
+      if (error instanceof Error) {
+        if (error.message.includes('Google Sheets API 설정 오류')) {
+          errorMessage = 'Google Sheets API 설정이 필요합니다. 환경 변수를 확인해주세요.'
+        } else if (error.message.includes('HTTP error! status: 500')) {
+          errorMessage = '서버 오류가 발생했습니다. Google Sheets API 설정을 확인해주세요.'
+        } else {
+          errorMessage = `오류: ${error.message}`
+        }
+      }
+      
       setSyncResult({
         success: false,
-        message: '최적화된 동기화 중 오류가 발생했습니다.'
+        message: errorMessage
       })
-      setSyncLogs(prev => [...prev, `❌ 오류: ${error}`])
+      setSyncLogs(prev => [...prev, `❌ 오류: ${errorMessage}`])
     } finally {
       setProgress(100)
       setEtaMs(0)
@@ -1231,6 +1226,7 @@ export default function DataSyncPage() {
   useEffect(() => {
     getAvailableTables()
   }, [getAvailableTables])
+
 
   // 컴포넌트 언마운트 시 진행 중인 요청 취소
   useEffect(() => {
@@ -1438,6 +1434,50 @@ export default function DataSyncPage() {
           <FileSpreadsheet className="h-5 w-5 mr-2" />
           구글 시트 설정
         </h2>
+        
+        {/* 환경 변수 설정 안내 */}
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <h3 className="text-sm font-medium text-yellow-800 mb-2">⚠️ Google Sheets API 설정 필요</h3>
+          <p className="text-sm text-yellow-700 mb-2">
+            최적화된 동기화를 사용하려면 다음 환경 변수들이 설정되어야 합니다:
+          </p>
+          <ul className="text-xs text-yellow-600 space-y-1 ml-4">
+            <li>• <code>GOOGLE_PROJECT_ID</code> - Google Cloud 프로젝트 ID</li>
+            <li>• <code>GOOGLE_PRIVATE_KEY_ID</code> - 서비스 계정 개인 키 ID</li>
+            <li>• <code>GOOGLE_PRIVATE_KEY</code> - 서비스 계정 개인 키</li>
+            <li>• <code>GOOGLE_CLIENT_EMAIL</code> - 서비스 계정 이메일</li>
+            <li>• <code>GOOGLE_CLIENT_ID</code> - 서비스 계정 클라이언트 ID</li>
+          </ul>
+          <p className="text-xs text-yellow-600 mt-2">
+            이 변수들을 <code>.env.local</code> 파일에 설정하고 서버를 재시작하세요.
+          </p>
+          <div className="mt-3">
+            <button
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/debug/env-check')
+                  const result = await response.json()
+                  if (result.success) {
+                    if (result.data.allConfigured) {
+                      alert('✅ 모든 Google Sheets API 환경 변수가 올바르게 설정되어 있습니다!')
+                    } else {
+                      const missing = result.data.missingVars.join(', ')
+                      alert(`❌ 다음 환경 변수가 누락되었습니다: ${missing}\n\n.env.local 파일에 설정하고 서버를 재시작해주세요.`)
+                    }
+                  } else {
+                    alert(`❌ 환경 변수 확인 실패: ${result.message}`)
+                  }
+                } catch (error) {
+                  alert(`❌ 환경 변수 확인 중 오류: ${error}`)
+                }
+              }}
+              className="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+            >
+              환경 변수 상태 확인
+            </button>
+          </div>
+        </div>
+        
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-800">
             <strong>📋 필터링:</strong> 첫 글자가 &apos;S&apos;로 시작하는 시트만 표시됩니다.
@@ -1449,6 +1489,17 @@ export default function DataSyncPage() {
             <p className="text-sm text-yellow-800">
               <strong>💡 안내:</strong> 시트 정보를 가져오려면 아래 버튼을 클릭하세요.
             </p>
+          </div>
+        )}
+        
+        {sheetInfo.length > 0 && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-sm text-green-800">
+              <strong>✅ 성공:</strong> {sheetInfo.length}개의 시트를 발견했습니다.
+            </p>
+            <div className="mt-2 text-xs text-green-700">
+              시트 목록: {sheetInfo.map(s => s.name).join(', ')}
+            </div>
           </div>
         )}
         
@@ -1474,7 +1525,7 @@ export default function DataSyncPage() {
 
         <div className="flex space-x-3">
           <button
-            onClick={getSheetInfo}
+            onClick={() => getSheetInfo()}
             disabled={loading}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-lg font-medium"
           >
@@ -1501,7 +1552,7 @@ export default function DataSyncPage() {
       </div>
 
       {/* 테이블 선택 및 컬럼 매핑 */}
-      {selectedSheet && (
+      {sheetInfo.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
             <Settings className="h-5 w-5 mr-2" />
@@ -1564,7 +1615,7 @@ export default function DataSyncPage() {
             {/* 시트 선택 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                시트 선택
+                시트 선택 ({sheetInfo.length}개 시트 발견)
               </label>
               <select
                 value={selectedSheet}
@@ -1587,6 +1638,11 @@ export default function DataSyncPage() {
                   </option>
                 ))}
               </select>
+              {sheetInfo.length === 0 && (
+                <p className="text-sm text-gray-500 mt-1">
+                  시트 정보를 가져오려면 &quot;시트 정보 가져오기&quot; 버튼을 클릭하세요.
+                </p>
+              )}
             </div>
 
             {/* 컬럼 매핑 버튼 */}
@@ -1607,6 +1663,7 @@ export default function DataSyncPage() {
             </div>
           </div>
 
+
           {/* 현재 매핑 상태 표시 */}
           {Object.keys(columnMapping).length > 0 && (
             <div className="mt-4 p-3 bg-gray-50 rounded-lg">
@@ -1626,7 +1683,7 @@ export default function DataSyncPage() {
       )}
 
       {/* 동기화 실행 */}
-      {selectedSheet && selectedTable && Object.keys(columnMapping).length > 0 && (
+      {selectedSheet && selectedTable && (
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">동기화 실행</h3>
           
@@ -1658,7 +1715,7 @@ export default function DataSyncPage() {
           <div className="flex space-x-3 mb-4">
             <button
               onClick={handleFlexibleSync}
-              disabled={loading}
+              disabled={loading || Object.keys(columnMapping).length === 0}
               className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               <Upload className="h-4 w-4 mr-2" />
@@ -1667,13 +1724,21 @@ export default function DataSyncPage() {
             
             <button
               onClick={handleOptimizedSync}
-              disabled={loading}
+              disabled={loading || Object.keys(columnMapping).length === 0}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               <Zap className="h-4 w-4 mr-2" />
               🚀 최적화된 동기화 실행
             </button>
           </div>
+          
+          {Object.keys(columnMapping).length === 0 && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                <strong>⚠️ 주의:</strong> 컬럼 매핑을 설정해야 동기화를 실행할 수 있습니다.
+              </p>
+            </div>
+          )}
 
           {lastSyncTime && (
             <div className="flex items-center text-sm text-gray-600">

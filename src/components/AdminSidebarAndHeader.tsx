@@ -30,7 +30,9 @@ import {
   Camera,
   Calculator,
   UserCheck,
-  HelpCircle
+  HelpCircle,
+  CreditCard,
+  Wrench
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -278,6 +280,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('documents'), href: `/${locale}/admin/documents`, icon: FileText },
     { name: t('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
+    { name: '예약 지출 관리', href: `/${locale}/admin/reservation-expenses`, icon: DollarSign },
+    { name: '회사 지출 관리', href: `/${locale}/admin/company-expenses`, icon: DollarSign },
+    { name: '차량 정비 관리', href: `/${locale}/admin/vehicle-maintenance`, icon: Wrench },
+    { name: '결제 방법 관리', href: `/${locale}/admin/payment-methods`, icon: CreditCard },
     { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: BookOpen },
     { name: t('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
     { name: t('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },

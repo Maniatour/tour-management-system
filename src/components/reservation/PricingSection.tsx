@@ -1,6 +1,8 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
+import { Calculator, DollarSign, TrendingUp, TrendingDown, AlertCircle, RefreshCw } from 'lucide-react'
 
 interface ProductOption {
   id: string
@@ -62,6 +64,7 @@ interface PricingSectionProps {
     prepaymentCost: number
     prepaymentTip: number
     selectedOptionalOptions: Record<string, { choiceId: string; quantity: number; price: number }>
+    optionTotal: number
     selectedOptions: { [optionId: string]: string[] }
     totalPrice: number
     depositAmount: number
@@ -71,6 +74,8 @@ interface PricingSectionProps {
     onlinePaymentAmount?: number
     onSiteBalanceAmount?: number
   }
+  reservationId?: string
+  expenseUpdateTrigger?: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
   savePricingInfo: (reservationId: string) => Promise<void>
@@ -103,9 +108,85 @@ export default function PricingSection({
   coupons,
   autoSelectCoupon,
   reservationOptionsTotalPrice = 0,
-  isExistingPricingLoaded
+  isExistingPricingLoaded,
+  reservationId,
+  expenseUpdateTrigger
 }: PricingSectionProps) {
   const [showHelp, setShowHelp] = useState(false)
+  const [reservationExpensesTotal, setReservationExpensesTotal] = useState(0)
+  const [loadingExpenses, setLoadingExpenses] = useState(false)
+
+  // 예약 지출 총합 조회 함수
+  const fetchReservationExpenses = useCallback(async () => {
+    if (!reservationId) {
+      console.log('PricingSection: reservationId가 없어서 지출 조회를 건너뜁니다.')
+      setReservationExpensesTotal(0)
+      return
+    }
+
+    console.log('PricingSection: 예약 지출 조회 시작, reservationId:', reservationId)
+    setLoadingExpenses(true)
+    try {
+      const { data, error } = await supabase
+        .from('reservation_expenses')
+        .select('amount, status, id, paid_for')
+        .eq('reservation_id', reservationId)
+        // 모든 상태의 지출을 포함 (rejected 제외)
+        .not('status', 'eq', 'rejected')
+
+      console.log('PricingSection: 예약 지출 조회 결과:', { data, error })
+
+      if (error) {
+        console.error('예약 지출 조회 오류:', error)
+        setReservationExpensesTotal(0)
+        return
+      }
+
+      const total = data?.reduce((sum: number, expense: { amount?: number }) => sum + (expense.amount || 0), 0) || 0
+      console.log('PricingSection: 계산된 지출 총합:', total, '개별 지출:', data?.map((e: { id: string; amount: number; paid_for: string; status: string }) => ({ id: e.id, amount: e.amount, paid_for: e.paid_for, status: e.status })))
+      setReservationExpensesTotal(total)
+    } catch (error) {
+      console.error('예약 지출 조회 중 오류:', error)
+      setReservationExpensesTotal(0)
+    } finally {
+      setLoadingExpenses(false)
+    }
+  }, [reservationId])
+
+  // 예약 지출 총합 조회
+  useEffect(() => {
+    fetchReservationExpenses()
+  }, [reservationId, fetchReservationExpenses])
+
+  // 예약 지출 업데이트 감지
+  useEffect(() => {
+    if (expenseUpdateTrigger && expenseUpdateTrigger > 0) {
+      // 약간의 지연을 두고 지출 정보를 다시 조회
+      const timer = setTimeout(() => {
+        fetchReservationExpenses()
+      }, 1000)
+      
+      return () => clearTimeout(timer)
+    }
+    return undefined
+  }, [expenseUpdateTrigger, fetchReservationExpenses])
+
+  // Net 가격 계산
+  const calculateNetPrice = () => {
+    const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal + reservationOptionsTotalPrice
+    if (formData.commission_amount > 0) {
+      return totalPrice - formData.commission_amount
+    } else {
+      return totalPrice * (1 - formData.commission_percent / 100)
+    }
+  }
+
+  // 수익 계산 (Net 가격 - 예약 지출 총합)
+  const calculateProfit = () => {
+    const netPrice = calculateNetPrice()
+    return netPrice - reservationExpensesTotal
+  }
+
   return (
     <div>
       {/* 구분선 */}
@@ -716,6 +797,115 @@ export default function PricingSection({
           </div>
         </div>
       </div>
+
+      {/* 정산 섹션 - 예약이 있을 때만 표시 */}
+      {reservationId && (
+        <div className="mt-6">
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-2">
+                <Calculator className="h-5 w-5 text-blue-600" />
+                <h4 className="text-base font-semibold text-blue-900">정산 정보</h4>
+              </div>
+              <div className="flex items-center space-x-2">
+                {loadingExpenses && (
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    <span className="text-xs text-blue-600">지출 조회 중...</span>
+                  </div>
+                )}
+                <button
+                  onClick={fetchReservationExpenses}
+                  disabled={loadingExpenses}
+                  className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                  title="지출 정보 새로고침"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loadingExpenses ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Net 가격 */}
+              <div className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex items-center space-x-2 mb-2">
+                  <DollarSign className="h-4 w-4 text-blue-500" />
+                  <div className="text-sm font-medium text-gray-700">Net 가격</div>
+                </div>
+                <div className="text-xl font-bold text-blue-600 mb-1">
+                  ${calculateNetPrice().toFixed(2)}
+                </div>
+                <div className="text-xs text-gray-500">
+                  커미션 차감 후 수령액
+                </div>
+              </div>
+
+              {/* 예약 지출 총합 */}
+              <div className="bg-white p-4 rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex items-center space-x-2 mb-2">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <div className="text-sm font-medium text-gray-700">예약 지출 총합</div>
+                </div>
+                <div className="text-xl font-bold text-red-600 mb-1">
+                  ${reservationExpensesTotal.toFixed(2)}
+                </div>
+                <div className="text-xs text-gray-500">
+                  승인/대기/기타 지출 (거부 제외)
+                </div>
+              </div>
+
+              {/* 수익 */}
+              <div className="bg-white p-4 rounded-lg border border-green-200 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex items-center space-x-2 mb-2">
+                  {calculateProfit() >= 0 ? (
+                    <TrendingUp className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4 text-red-500" />
+                  )}
+                  <div className="text-sm font-medium text-gray-700">수익</div>
+                </div>
+                <div className={`text-xl font-bold mb-1 ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  ${calculateProfit().toFixed(2)}
+                </div>
+                <div className="text-xs text-gray-500">
+                  Net 가격 - 지출 총합
+                </div>
+              </div>
+            </div>
+
+            {/* 수익률 표시 */}
+            <div className="mt-4 pt-4 border-t border-blue-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-medium text-gray-700">수익률</span>
+                  {calculateProfit() >= 0 ? (
+                    <TrendingUp className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4 text-red-500" />
+                  )}
+                </div>
+                <span className={`text-lg font-bold ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {calculateNetPrice() > 0 ? ((calculateProfit() / calculateNetPrice()) * 100).toFixed(1) : '0.0'}%
+                </span>
+              </div>
+              
+              {/* 수익 상태 표시 */}
+              <div className="mt-2">
+                {calculateProfit() >= 0 ? (
+                  <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    수익 발생
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                    손실 발생
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showHelp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black bg-opacity-50" onClick={() => setShowHelp(false)}></div>

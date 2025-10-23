@@ -381,7 +381,7 @@ export default function BasicInfoTab({
         console.error('폴백 카테고리 데이터 가져오기 오류:', fallbackError)
       }
     }
-  }, [formData.category, formData.subCategory])
+  }, [formData, setFormData])
 
   // 카테고리와 서브카테고리 데이터 가져오기
   useEffect(() => {

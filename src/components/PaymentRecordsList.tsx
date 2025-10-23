@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign } from 'lucide-react'
+import { Plus, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, CreditCard, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import PaymentRecordForm from './PaymentRecordForm'
+import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
 
 interface PaymentRecord {
   id: string

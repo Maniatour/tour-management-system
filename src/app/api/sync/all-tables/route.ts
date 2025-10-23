@@ -52,7 +52,11 @@ function getHardcodedTables() {
     'tour_hotel_bookings',
     'tour_expenses',
     'off_schedules',
-    'payment_records'
+    'payment_records',
+    'reservation_expenses',
+    'company_expenses',
+    'payment_methods',
+    'vehicle_maintenance'
   ]
 
   // 테이블 목록을 표시명과 함께 반환
@@ -98,7 +102,11 @@ function getTableDisplayName(tableName: string): string {
     tour_hotel_bookings: '투어 호텔 예약',
     tour_expenses: '투어 지출',
     off_schedules: '휴가 일정',
-    payment_records: '결제 기록'
+    payment_records: '결제 기록',
+    reservation_expenses: '예약 지출',
+    company_expenses: '회사 지출',
+    payment_methods: '결제 수단',
+    vehicle_maintenance: '차량 정비'
   }
   return displayNames[tableName] || tableName
 }

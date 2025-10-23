@@ -4,6 +4,65 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Save, Copy, Download, Upload, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+// 임시 타입 정의 (데이터베이스 타입이 없을 때 사용)
+interface DatabaseOptions {
+  id: string
+  name: string
+  name_ko?: string
+  adult_price?: number
+  child_price?: number
+  infant_price?: number
+  status?: string
+  sort_order?: number
+  image_url?: string
+  image_alt?: string
+  thumbnail_url?: string
+  template_group?: string
+  template_group_ko?: string
+  choice_type?: string
+  is_required?: boolean
+  min_selections?: number
+  max_selections?: number
+  is_choice_template?: boolean
+}
+
+interface ProductChoiceData {
+  id: string
+  choice_group: string
+  choice_group_ko: string
+  choice_type: 'single' | 'multiple' | 'quantity'
+  is_required: boolean
+  min_selections: number
+  max_selections: number
+  sort_order: number
+  options?: ChoiceOptionData[]
+}
+
+interface ChoiceOptionData {
+  id: string
+  option_key: string
+  option_name: string
+  option_name_ko: string
+  adult_price: number
+  child_price: number
+  infant_price: number
+  capacity: number
+  is_default: boolean
+  is_active: boolean
+  sort_order: number
+  image_url?: string | undefined
+  image_alt?: string | undefined
+  thumbnail_url?: string | undefined
+}
+
+interface SupabaseError {
+  message: string
+  details?: string
+  hint?: string
+  code?: string
+}
+
+
 // 새로운 간결한 초이스 시스템 타입 정의
 interface ChoiceOption {
   id: string
@@ -17,9 +76,9 @@ interface ChoiceOption {
   is_default: boolean
   is_active: boolean
   sort_order: number
-  image_url?: string
-  image_alt?: string
-  thumbnail_url?: string
+  image_url?: string | undefined
+  image_alt?: string | undefined
+  thumbnail_url?: string | undefined
 }
 
 interface ProductChoice {
@@ -45,12 +104,10 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
   const [showCopyModal, setShowCopyModal] = useState(false)
-  const [showCopyToModal, setShowCopyToModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [products, setProducts] = useState<Array<{id: string, name: string, name_ko?: string}>>([])
   const [selectedProductId, setSelectedProductId] = useState('')
-  const [selectedTargetProductId, setSelectedTargetProductId] = useState('')
   const [importData, setImportData] = useState('')
 
   // 템플릿에서 초이스 불러오기
@@ -61,7 +118,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         .select('*')
         .eq('is_choice_template', true)
         .eq('template_group', templateGroup)
-        .order('sort_order', { ascending: true })
+        .order('sort_order', { ascending: true }) as { data: DatabaseOptions[] | null, error: SupabaseError | null }
 
       if (error) {
         console.error('Error loading template:', error)
@@ -69,12 +126,13 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       }
 
       if (data && data.length > 0) {
+        const firstItem = data[0] as DatabaseOptions
         // 템플릿을 초이스 그룹으로 변환
-        const templateGroupName = data[0].template_group_ko || data[0].template_group || '템플릿'
-        const choiceType = data[0].choice_type || 'single'
-        const isRequired = data[0].is_required || false
-        const minSelections = data[0].min_selections || 1
-        const maxSelections = data[0].max_selections || 1
+        const templateGroupName = firstItem.template_group_ko || firstItem.template_group || '템플릿'
+        const choiceType = firstItem.choice_type || 'single'
+        const isRequired = firstItem.is_required || false
+        const minSelections = firstItem.min_selections || 1
+        const maxSelections = firstItem.max_selections || 1
 
         const newChoice: ProductChoice = {
           id: crypto.randomUUID(),
@@ -85,7 +143,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           min_selections: minSelections,
           max_selections: maxSelections,
           sort_order: productChoices.length,
-          options: data.map(option => ({
+          options: data.map((option: DatabaseOptions) => ({
             id: crypto.randomUUID(),
             option_key: option.id,
             option_name: option.name,
@@ -94,7 +152,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             child_price: option.child_price || 0,
             infant_price: option.infant_price || 0,
             capacity: 1,
-            is_default: option.id === data[0].id, // 첫 번째 옵션을 기본값으로
+            is_default: option.id === firstItem.id, // 첫 번째 옵션을 기본값으로
             is_active: option.status === 'active',
             sort_order: option.sort_order || 0,
             image_url: option.image_url,
@@ -156,12 +214,22 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           )
         `)
         .eq('product_id', productId)
-        .order('sort_order')
+        .order('sort_order') as { data: ProductChoiceData[] | null, error: SupabaseError | null }
 
       if (error) throw error
 
       console.log('ChoicesTab에서 로드된 product choices:', data)
-      setProductChoices(data || [])
+      const convertedChoices: ProductChoice[] = (data || []).map(choice => ({
+        ...choice,
+        choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
+        options: (choice.options || []).map(option => ({
+          ...option,
+          image_url: option.image_url || undefined,
+          image_alt: option.image_alt || undefined,
+          thumbnail_url: option.thumbnail_url || undefined
+        }))
+      }))
+      setProductChoices(convertedChoices)
     } catch (error) {
       console.error('Choices 로드 오류:', error)
       setSaveMessage('Choices 로드 중 오류가 발생했습니다.')
@@ -191,7 +259,13 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       // 새로운 choices 저장
       for (const choice of productChoices) {
-        const { data: choiceData, error: choiceError } = await supabase
+        const { data: choiceData, error: choiceError } = await (supabase as unknown as {
+          from: (table: string) => {
+            insert: (data: Record<string, unknown>) => {
+              select: () => { single: () => Promise<{ data: ProductChoiceData, error: SupabaseError | null }> }
+            }
+          }
+        })
           .from('product_choices')
           .insert({
             product_id: productId,
@@ -204,7 +278,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             sort_order: choice.sort_order
           })
           .select()
-          .single()
+          .single() as { data: ProductChoiceData, error: SupabaseError | null }
 
         if (choiceError) throw choiceError
 
@@ -224,7 +298,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             sort_order: option.sort_order
           }))
 
-          const { error: optionsError } = await supabase
+          const { error: optionsError } = await (supabase as unknown as {
+            from: (table: string) => {
+              insert: (data: Record<string, unknown>[]) => Promise<{ error: SupabaseError | null }>
+            }
+          })
             .from('choice_options')
             .insert(optionsToInsert)
 
@@ -264,7 +342,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   }, [])
 
   // 초이스 그룹 업데이트
-  const updateChoiceGroup = useCallback((index: number, field: keyof ProductChoice, value: any) => {
+  const updateChoiceGroup = useCallback((index: number, field: keyof ProductChoice, value: string | number | boolean) => {
     setProductChoices(prev => prev.map((group, i) => 
       i === index ? { ...group, [field]: value } : group
     ))
@@ -305,7 +383,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   }, [])
 
   // 초이스 옵션 업데이트
-  const updateChoiceOption = useCallback((groupIndex: number, optionIndex: number, field: keyof ChoiceOption, value: any) => {
+  const updateChoiceOption = useCallback((groupIndex: number, optionIndex: number, field: keyof ChoiceOption, value: string | number | boolean) => {
     setProductChoices(prev => prev.map((group, i) => 
       i === groupIndex 
         ? { 
@@ -347,20 +425,20 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           )
         `)
         .eq('product_id', selectedProductId)
-        .order('sort_order')
+        .order('sort_order') as { data: ProductChoiceData[] | null, error: SupabaseError | null }
 
       if (error) throw error
 
-      const copiedChoices: ProductChoice[] = (data || []).map(choice => ({
-        id: `temp_${Date.now()}_${Math.random()}`,
-        choice_group: choice.choice_group,
-        choice_group_ko: choice.choice_group_ko,
-        choice_type: choice.choice_type,
-        is_required: choice.is_required,
-        min_selections: choice.min_selections,
-        max_selections: choice.max_selections,
-        sort_order: choice.sort_order,
-        options: (choice.options || []).map(option => ({
+        const copiedChoices: ProductChoice[] = (data || []).map((choice: ProductChoiceData) => ({
+          id: `temp_${Date.now()}_${Math.random()}`,
+          choice_group: choice.choice_group,
+          choice_group_ko: choice.choice_group_ko,
+          choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
+          is_required: choice.is_required,
+          min_selections: choice.min_selections,
+          max_selections: choice.max_selections,
+          sort_order: choice.sort_order,
+          options: (choice.options || []).map((option: ChoiceOptionData) => ({
           id: `temp_option_${Date.now()}_${Math.random()}`,
           option_key: option.option_key,
           option_name: option.option_name,
@@ -427,16 +505,16 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     try {
       const data = JSON.parse(importData)
       if (data.choices && Array.isArray(data.choices)) {
-        const importedChoices: ProductChoice[] = data.choices.map((choice: any, index: number) => ({
+        const importedChoices: ProductChoice[] = data.choices.map((choice: ProductChoiceData, index: number) => ({
           id: `temp_${Date.now()}_${index}`,
           choice_group: choice.choice_group || '',
           choice_group_ko: choice.choice_group_ko || '',
-          choice_type: choice.choice_type || 'single',
+          choice_type: (choice.choice_type || 'single') as 'single' | 'multiple' | 'quantity',
           is_required: choice.is_required !== false,
           min_selections: choice.min_selections || 1,
           max_selections: choice.max_selections || 1,
           sort_order: choice.sort_order || index,
-          options: (choice.options || []).map((option: any, optionIndex: number) => ({
+          options: (choice.options || []).map((option: ChoiceOptionData, optionIndex: number) => ({
             id: `temp_option_${Date.now()}_${index}_${optionIndex}`,
             option_key: option.option_key || '',
             option_name: option.option_name || '',
@@ -711,7 +789,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           {productChoices.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               <p>아직 초이스 그룹이 없습니다.</p>
-              <p className="text-sm">"초이스 그룹 추가" 버튼을 클릭하여 첫 번째 초이스를 만들어보세요.</p>
+              <p className="text-sm">&quot;초이스 그룹 추가&quot; 버튼을 클릭하여 첫 번째 초이스를 만들어보세요.</p>
             </div>
           )}
         </div>
@@ -788,7 +866,7 @@ function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
         .from('options')
         .select('template_group, template_group_ko')
         .eq('is_choice_template', true)
-        .not('template_group', 'is', null)
+        .not('template_group', 'is', null) as { data: DatabaseOptions[] | null, error: SupabaseError | null }
 
       if (error) {
         console.error('Error loading template groups:', error)
@@ -796,8 +874,9 @@ function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
       }
 
       // 그룹별로 카운트
-      const groupCounts = data?.reduce((acc, item) => {
+      const groupCounts = data?.reduce((acc, item: DatabaseOptions) => {
         const group = item.template_group
+        if (!group) return acc
         if (!acc[group]) {
           acc[group] = {
             template_group: group,
@@ -873,38 +952,6 @@ function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
   )
 }
 
-// 복사 모달 컴포넌트
-interface CopyModalProps {
-  onCopy: () => void
-  onClose: () => void
-}
-
-function CopyModal({ onCopy, onClose }: CopyModalProps) {
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-96">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 복사</h3>
-        <p className="text-sm text-gray-600 mb-6">
-          현재 상품의 초이스를 다른 상품으로 복사하시겠습니까?
-        </p>
-        <div className="flex justify-end space-x-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
-          >
-            취소
-          </button>
-          <button
-            onClick={onCopy}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
-          >
-            복사
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // 가져오기 모달 컴포넌트
 interface ImportModalProps {

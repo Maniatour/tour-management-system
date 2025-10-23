@@ -77,6 +77,8 @@ interface BookingData {
     tourLanguages: string[]
     specialRequests: string
   }
+  uploaded_files: File[]
+  uploaded_file_urls?: string[] // 업로드된 파일 URL들
 }
 
 interface BookingFlowProps {
@@ -146,6 +148,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   
   // 마감된 날짜들 상태
   const [closedDates, setClosedDates] = useState<Set<string>>(new Set())
+  
+  // 파일 업로드 관련 상태
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
 
   const [bookingData, setBookingData] = useState<BookingData>({
     productId: product.id,
@@ -165,7 +171,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       country: '',
       tourLanguages: [],
       specialRequests: ''
-    }
+    },
+    uploaded_files: []
   })
 
   // 투어 스케줄 로드 (매일 출발 가능, 고객은 모든 날짜 선택 가능)
@@ -602,18 +609,130 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }
   }
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     // 전화번호를 국제 형식으로 변환하여 저장
     const fullPhoneNumber = getFullPhoneNumber()
+    
+    // 파일 업로드 처리
+    let uploadedFileUrls: string[] = []
+    if (bookingData.uploaded_files.length > 0) {
+      setIsUploading(true)
+      try {
+        const uploadFormData = new FormData()
+        uploadFormData.append('bucketType', 'ticket_bookings') // 기본적으로 입장권 부킹으로 설정
+        bookingData.uploaded_files.forEach(file => {
+          uploadFormData.append('files', file)
+        })
+        
+        const uploadResponse = await fetch('/api/upload', {
+          method: 'POST',
+          body: uploadFormData
+        })
+        
+        if (uploadResponse.ok) {
+          const uploadResult = await uploadResponse.json()
+          uploadedFileUrls = uploadResult.urls
+        } else {
+          console.error('파일 업로드 실패')
+        }
+      } finally {
+        setIsUploading(false)
+      }
+    }
+    
     const finalBookingData = {
       ...bookingData,
       totalPrice: calculateTotalPrice(),
       customerInfo: {
         ...bookingData.customerInfo,
         phone: fullPhoneNumber
-      }
+      },
+      uploaded_file_urls: uploadedFileUrls // 업로드된 파일 URL들
     }
     onComplete(finalBookingData)
+  }
+
+  // 파일 업로드 핸들러
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    setBookingData(prev => ({
+      ...prev,
+      uploaded_files: [...prev.uploaded_files, ...files]
+    }))
+  }
+
+  // 파일 제거 핸들러
+  const removeFile = (index: number) => {
+    setBookingData(prev => ({
+      ...prev,
+      uploaded_files: prev.uploaded_files.filter((_, i) => i !== index)
+    }))
+  }
+
+  // 드래그 앤 드롭 핸들러
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+    
+    const files = Array.from(e.dataTransfer.files)
+    const validFiles = files.filter(file => {
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+      return allowedTypes.includes(file.type) && file.size <= 10 * 1024 * 1024
+    })
+    
+    if (validFiles.length !== files.length) {
+      alert('일부 파일이 지원되지 않는 형식이거나 크기가 너무 큽니다.')
+    }
+    
+    if (validFiles.length > 0) {
+      setBookingData(prev => ({
+        ...prev,
+        uploaded_files: [...prev.uploaded_files, ...validFiles]
+      }))
+    }
+  }
+
+  // 클립보드 붙여넣기 핸들러
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items)
+    const files: File[] = []
+    
+    items.forEach(item => {
+      if (item.kind === 'file') {
+        const file = item.getAsFile()
+        if (file) {
+          const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf']
+          if (allowedTypes.includes(file.type) && file.size <= 10 * 1024 * 1024) {
+            files.push(file)
+          }
+        }
+      }
+    })
+    
+    if (files.length > 0) {
+      setBookingData(prev => ({
+        ...prev,
+        uploaded_files: [...prev.uploaded_files, ...files]
+      }))
+    }
   }
 
   // 캘린더 관련 함수들
@@ -1370,6 +1489,122 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="특별 요청사항이 있다면 입력하세요"
                   />
+                </div>
+              </div>
+              
+              {/* 파일 업로드 섹션 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  관련 문서 첨부 (선택사항)
+                </label>
+                <div 
+                  className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
+                    isUploading 
+                      ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50' 
+                      : isDragOver 
+                        ? 'border-blue-500 bg-blue-100 scale-105 cursor-pointer' 
+                        : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
+                  }`}
+                  onDragOver={!isUploading ? handleDragOver : undefined}
+                  onDragEnter={!isUploading ? handleDragEnter : undefined}
+                  onDragLeave={!isUploading ? handleDragLeave : undefined}
+                  onDrop={!isUploading ? handleDrop : undefined}
+                  onPaste={!isUploading ? handlePaste : undefined}
+                  tabIndex={!isUploading ? 0 : -1}
+                  onClick={!isUploading ? () => document.getElementById('booking_file_upload')?.click() : undefined}
+                >
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
+                      isUploading 
+                        ? 'bg-blue-100' 
+                        : isDragOver 
+                          ? 'bg-blue-200' 
+                          : 'bg-gray-100'
+                    }`}>
+                      {isUploading ? (
+                        <div className="animate-spin">
+                          <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </div>
+                      ) : isDragOver ? (
+                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                      ) : (
+                        <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                      )}
+                    </div>
+                    <div>
+                      <p className={`text-sm font-medium transition-colors ${
+                        isDragOver ? 'text-blue-900' : 'text-gray-900'
+                      }`}>
+                        {isUploading 
+                          ? '파일 업로드 중...' 
+                          : isDragOver 
+                            ? '파일을 여기에 놓으세요' 
+                            : '파일을 드래그하여 놓거나 클릭하여 선택하세요'
+                        }
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        또는 클립보드에서 붙여넣기 (Ctrl+V)
+                      </p>
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      지원 형식: JPG, PNG, GIF, PDF, DOC, DOCX (최대 10MB)
+                    </div>
+                  </div>
+                  
+                  <input
+                    id="booking_file_upload"
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  
+                  {/* 업로드된 파일 목록 */}
+                  {bookingData.uploaded_files.length > 0 && (
+                    <div className="mt-6 pt-4 border-t border-gray-200">
+                      <h4 className="text-sm font-medium mb-3 text-gray-900">업로드된 파일 ({bookingData.uploaded_files.length}개)</h4>
+                      <div className="space-y-2">
+                        {bookingData.uploaded_files.map((file, index) => (
+                          <div key={index} className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
+                                {file.type.startsWith('image/') ? (
+                                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                                <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                removeFile(index)
+                              }}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1 rounded"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
