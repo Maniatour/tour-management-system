@@ -1164,53 +1164,13 @@ export default function CustomerReservations() {
                         : (reservation.products?.customer_name_en || reservation.products?.name || t('noProductName'))
                       }
                     </h3>
-                    
-                    {/* Channel 정보 표시 */}
-                    {reservation.channel_id && (
-                      <div className="flex items-center text-sm text-gray-600 mb-2">
-                        {(() => {
-                          const channel = channels.find(c => c.id === reservation.channel_id)
-                          return channel ? (
-                            <>
-                              {channel.favicon_url ? (
-                                <Image 
-                                  src={channel.favicon_url} 
-                                  alt={`${channel.name} favicon`} 
-                                  width={16}
-                                  height={16}
-                                  className="rounded mr-2 flex-shrink-0"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement
-                                    target.style.display = 'none'
-                                    const parent = target.parentElement
-                                    if (parent) {
-                                      const fallback = document.createElement('div')
-                                      fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0 mr-2'
-                                      fallback.innerHTML = '🌐'
-                                      parent.appendChild(fallback)
-                                    }
-                                  }}
-                                />
-                              ) : (
-                                <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0 mr-2">
-                                  🌐
-                                </div>
-                              )}
-                              <span className="text-sm text-gray-600">{channel.name}</span>
-                            </>
-                          ) : (
-                            <span className="text-sm text-gray-500">채널 정보 없음</span>
-                          )
-                        })()}
-                      </div>
-                    )}
                   </div>
                   <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(reservation.status)}`}>
                     {getStatusText(reservation.status)}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                   {/* 투어 날짜 */}
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2" />
@@ -1232,6 +1192,46 @@ export default function CustomerReservations() {
                     <div className="flex items-center text-gray-600">
                       <Clock className="w-4 h-4 mr-2" />
                       <span className="text-sm">{reservation.products.duration}{t('hours')}</span>
+                    </div>
+                  )}
+
+                  {/* 채널 정보 */}
+                  {reservation.channel_id && (
+                    <div className="flex items-center text-gray-600">
+                      {(() => {
+                        const channel = channels.find(c => c.id === reservation.channel_id)
+                        return channel ? (
+                          <>
+                            {channel.favicon_url ? (
+                              <Image 
+                                src={channel.favicon_url} 
+                                alt={`${channel.name} favicon`} 
+                                width={16}
+                                height={16}
+                                className="rounded mr-2 flex-shrink-0"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement
+                                  target.style.display = 'none'
+                                  const parent = target.parentElement
+                                  if (parent) {
+                                    const fallback = document.createElement('div')
+                                    fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0 mr-2'
+                                    fallback.innerHTML = '🌐'
+                                    parent.appendChild(fallback)
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0 mr-2">
+                                🌐
+                              </div>
+                            )}
+                            <span className="text-sm">{channel.name}</span>
+                          </>
+                        ) : (
+                          <span className="text-sm text-gray-500">채널 정보 없음</span>
+                        )
+                      })()}
                     </div>
                   )}
 
