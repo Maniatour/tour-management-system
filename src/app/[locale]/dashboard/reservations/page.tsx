@@ -1569,7 +1569,7 @@ export default function CustomerReservations() {
                                 <div className="flex justify-between items-center">
                                   <span className="text-gray-600">성인 {reservation.adults}명</span>
                                   <span className="font-semibold text-gray-900">
-                                    ${(reservation.pricing.adult_product_price * reservation.adults).toFixed(2)}
+                                    ${((reservation.pricing.adult_product_price || 0) * reservation.adults).toFixed(2)}
                                   </span>
                                 </div>
                               )}
@@ -1577,7 +1577,7 @@ export default function CustomerReservations() {
                                 <div className="flex justify-between items-center">
                                   <span className="text-gray-600">어린이 {reservation.child}명</span>
                                   <span className="font-semibold text-gray-900">
-                                    ${(reservation.pricing.child_product_price * reservation.child).toFixed(2)}
+                                    ${((reservation.pricing.child_product_price || 0) * reservation.child).toFixed(2)}
                                   </span>
                                 </div>
                               )}
@@ -1585,13 +1585,13 @@ export default function CustomerReservations() {
                                 <div className="flex justify-between items-center">
                                   <span className="text-gray-600">유아 {reservation.infant}명</span>
                                   <span className="font-semibold text-gray-900">
-                                    ${(reservation.pricing.infant_product_price * reservation.infant).toFixed(2)}
+                                    ${((reservation.pricing.infant_product_price || 0) * reservation.infant).toFixed(2)}
                                   </span>
                                 </div>
                               )}
                               <div className="flex justify-between items-center bg-white rounded px-2 py-1 col-span-2">
                                 <span className="font-semibold text-gray-900">상품 합계</span>
-                                <span className="font-bold">${reservation.pricing.product_price_total.toFixed(2)}</span>
+                                <span className="font-bold">${(reservation.pricing.product_price_total || 0).toFixed(2)}</span>
                               </div>
                             </>
                           ) : (
@@ -1626,7 +1626,7 @@ export default function CustomerReservations() {
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-600">필수 옵션</span>
                                 <span className="font-semibold text-gray-900">
-                                  ${reservation.pricing.required_option_total.toFixed(2)}
+                                  ${(reservation.pricing.required_option_total || 0).toFixed(2)}
                                 </span>
                               </div>
                             )}
@@ -1634,14 +1634,14 @@ export default function CustomerReservations() {
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-600">선택 옵션</span>
                                 <span className="font-semibold text-gray-900">
-                                  ${reservation.pricing.option_total.toFixed(2)}
+                                  ${(reservation.pricing.option_total || 0).toFixed(2)}
                                 </span>
                               </div>
                             )}
                             <div className="flex justify-between items-center bg-white rounded px-2 py-1 col-span-2">
                               <span className="font-semibold text-gray-900">옵션 합계</span>
                               <span className="font-bold">
-                                ${(reservation.pricing.required_option_total + reservation.pricing.option_total).toFixed(2)}
+                                ${((reservation.pricing.required_option_total || 0) + (reservation.pricing.option_total || 0)).toFixed(2)}
                               </span>
                             </div>
                           </div>
@@ -1654,7 +1654,7 @@ export default function CustomerReservations() {
                           <h5 className="text-sm font-semibold text-gray-900 mb-3">소계</h5>
                           <div className="flex justify-between items-center text-sm">
                             <span className="text-gray-700">상품 가격 + 옵션 가격</span>
-                            <span className="font-bold text-blue-600">${reservation.pricing.subtotal.toFixed(2)}</span>
+                            <span className="font-bold text-blue-600">${(reservation.pricing.subtotal || 0).toFixed(2)}</span>
                           </div>
                         </div>
                       )}
@@ -1667,7 +1667,7 @@ export default function CustomerReservations() {
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                           <h5 className="text-sm font-semibold text-gray-900 mb-3">할인 및 추가 비용</h5>
                           <div className="grid grid-cols-2 gap-2 text-sm">
-                            {reservation.pricing.coupon_discount !== 0 && (
+                            {reservation.pricing.coupon_discount !== 0 && reservation.pricing.coupon_discount !== null && (
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-600">쿠폰 할인</span>
                                 <span className="font-semibold text-green-600">
@@ -1677,7 +1677,7 @@ export default function CustomerReservations() {
                                 </span>
                               </div>
                             )}
-                            {reservation.pricing.additional_discount !== 0 && (
+                            {reservation.pricing.additional_discount !== 0 && reservation.pricing.additional_discount !== null && (
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-600">추가 할인</span>
                                 <span className="font-semibold text-green-600">
@@ -1685,7 +1685,7 @@ export default function CustomerReservations() {
                                 </span>
                               </div>
                             )}
-                            {reservation.pricing.additional_cost !== 0 && (
+                            {reservation.pricing.additional_cost !== 0 && reservation.pricing.additional_cost !== null && (
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-600">추가 비용</span>
                                 <span className="font-semibold text-gray-900">
@@ -1693,7 +1693,7 @@ export default function CustomerReservations() {
                                 </span>
                               </div>
                             )}
-                            {reservation.pricing.card_fee !== 0 && (
+                            {reservation.pricing.card_fee !== 0 && reservation.pricing.card_fee !== null && (
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-600">카드 수수료</span>
                                 <span className="font-semibold text-gray-900">
@@ -1701,7 +1701,7 @@ export default function CustomerReservations() {
                                 </span>
                               </div>
                             )}
-                            {reservation.pricing.tax !== 0 && (
+                            {reservation.pricing.tax !== 0 && reservation.pricing.tax !== null && (
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-600">세금</span>
                                 <span className="font-semibold text-gray-900">
@@ -1709,7 +1709,7 @@ export default function CustomerReservations() {
                                 </span>
                               </div>
                             )}
-                            {reservation.pricing.prepayment_cost !== 0 && (
+                            {reservation.pricing.prepayment_cost !== 0 && reservation.pricing.prepayment_cost !== null && (
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-600">선불 비용</span>
                                 <span className="font-semibold text-gray-900">
@@ -1717,7 +1717,7 @@ export default function CustomerReservations() {
                                 </span>
                               </div>
                             )}
-                            {reservation.pricing.prepayment_tip !== 0 && (
+                            {reservation.pricing.prepayment_tip !== 0 && reservation.pricing.prepayment_tip !== null && (
                               <div className="flex justify-between items-center">
                                 <span className="text-gray-600">선불 팁</span>
                                 <span className="font-semibold text-gray-900">
@@ -1730,7 +1730,7 @@ export default function CustomerReservations() {
                       )}
 
                       {/* 프라이빗 투어 */}
-                      {reservation.pricing && reservation.pricing.private_tour_additional_cost > 0 && (
+                      {reservation.pricing && reservation.pricing.private_tour_additional_cost > 0 && reservation.pricing.private_tour_additional_cost !== null && (
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                           <h5 className="text-sm font-semibold text-gray-900 mb-3">프라이빗 투어</h5>
                           <div className="flex justify-between items-center text-sm">
@@ -1749,19 +1749,19 @@ export default function CustomerReservations() {
                           <div className="space-y-2 text-sm">
                             <div className="flex justify-between items-center py-2 border-t border-gray-300">
                               <span className="text-lg font-bold text-gray-900">총 가격</span>
-                              <span className="text-xl font-bold text-blue-600">${reservation.pricing.total_price.toFixed(2)}</span>
+                              <span className="text-xl font-bold text-blue-600">${reservation.pricing.total_price?.toFixed(2) || '0.00'}</span>
                             </div>
                             <div className="grid grid-cols-2 gap-3 mt-3">
                               <div className="text-center">
                                 <div className="text-xs text-gray-600">예약금</div>
                                 <div className="text-sm font-semibold text-blue-600">
-                                  ${reservation.pricing.deposit_amount.toFixed(2)}
+                                  ${reservation.pricing.deposit_amount?.toFixed(2) || '0.00'}
                                 </div>
                               </div>
                               <div className="text-center">
                                 <div className="text-xs text-gray-600">잔금</div>
                                 <div className="text-sm font-semibold text-green-600">
-                                  ${reservation.pricing.balance_amount.toFixed(2)}
+                                  ${reservation.pricing.balance_amount?.toFixed(2) || '0.00'}
                                 </div>
                               </div>
                             </div>
@@ -1788,7 +1788,7 @@ export default function CustomerReservations() {
                                   </span>
                                 </div>
                                 <div className="text-right">
-                                  <div className="font-semibold text-gray-900">${payment.amount.toFixed(2)}</div>
+                                  <div className="font-semibold text-gray-900">${(payment.amount || 0).toFixed(2)}</div>
                                   <div className="text-xs text-gray-500">
                                     {new Date(payment.submit_on).toLocaleDateString()}
                                   </div>
