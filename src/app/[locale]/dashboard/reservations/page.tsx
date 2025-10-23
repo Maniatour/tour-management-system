@@ -1632,23 +1632,21 @@ export default function CustomerReservations() {
 
                            {/* 결제 정보 */}
                            <div className="p-4 bg-gray-50">
-                             <div className="flex justify-end">
-                               <div className="text-right text-sm">
-                                 <div className="space-y-1">
-                                   <div className="flex items-center justify-end space-x-2">
-                                     <span className="text-gray-600">결제금</span>
-                                     <span className="font-bold text-indigo-600">${(reservation.pricing.deposit_amount || 0).toFixed(2)}</span>
-                                     {reservation.payments && reservation.payments.length > 0 && (
-                                       <span className="text-xs text-gray-500">
-                                         ({new Date(reservation.payments[0].submit_on).toLocaleDateString()})
-                                       </span>
-                                     )}
-                                   </div>
-                                   <div className="flex items-center justify-end space-x-2">
-                                     <span className="text-gray-600">잔액</span>
-                                     <span className="font-bold text-purple-600">${(reservation.pricing.balance_amount || 0).toFixed(2)}</span>
-                                   </div>
+                             <div className="space-y-1 text-sm">
+                               <div className="flex justify-between items-center">
+                                 <div className="flex items-center space-x-2">
+                                   {reservation.payments && reservation.payments.length > 0 && (
+                                     <span className="text-xs text-gray-500">
+                                       {new Date(reservation.payments[0].submit_on).toLocaleDateString()}
+                                     </span>
+                                   )}
+                                   <span className="text-gray-600">결제금</span>
                                  </div>
+                                 <span className="font-bold text-indigo-600">${(reservation.pricing.deposit_amount || 0).toFixed(2)}</span>
+                               </div>
+                               <div className="flex justify-between items-center">
+                                 <span className="text-gray-600">잔액</span>
+                                 <span className="font-bold text-purple-600">${(reservation.pricing.balance_amount || 0).toFixed(2)}</span>
                                </div>
                              </div>
                            </div>
