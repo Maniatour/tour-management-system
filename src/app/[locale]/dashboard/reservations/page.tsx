@@ -1630,6 +1630,29 @@ export default function CustomerReservations() {
                              </div>
                            </div>
 
+                           {/* 결제 정보 */}
+                           <div className="p-4 bg-gray-50">
+                             <div className="flex justify-end">
+                               <div className="text-right text-sm">
+                                 <div className="space-y-1">
+                                   <div className="flex items-center justify-end space-x-2">
+                                     <span className="text-gray-600">결제금</span>
+                                     <span className="font-bold text-indigo-600">${(reservation.pricing.deposit_amount || 0).toFixed(2)}</span>
+                                   </div>
+                                   {reservation.payments && reservation.payments.length > 0 && (
+                                     <div className="text-xs text-gray-500">
+                                       ({new Date(reservation.payments[0].submit_on).toLocaleDateString()})
+                                     </div>
+                                   )}
+                                   <div className="flex items-center justify-end space-x-2">
+                                     <span className="text-gray-600">잔액</span>
+                                     <span className="font-bold text-purple-600">${(reservation.pricing.balance_amount || 0).toFixed(2)}</span>
+                                   </div>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+
                            {/* 할인 및 추가 비용 */}
                            {(reservation.pricing.coupon_discount !== 0 || reservation.pricing.additional_discount !== 0 || 
                              reservation.pricing.additional_cost !== 0 || reservation.pricing.card_fee !== 0 || 
@@ -1706,20 +1729,6 @@ export default function CustomerReservations() {
                                </div>
                              </div>
                            )}
-
-                           {/* 결제 정보 */}
-                           <div className="p-4 bg-gray-50">
-                             <div className="grid grid-cols-2 gap-4 text-sm">
-                               <div className="text-center">
-                                 <div className="text-xs text-gray-500 mb-1">예약금</div>
-                                 <div className="font-bold text-indigo-600">${(reservation.pricing.deposit_amount || 0).toFixed(2)}</div>
-                               </div>
-                               <div className="text-center">
-                                 <div className="text-xs text-gray-500 mb-1">잔금</div>
-                                 <div className="font-bold text-purple-600">${(reservation.pricing.balance_amount || 0).toFixed(2)}</div>
-                               </div>
-                             </div>
-                           </div>
 
                            {/* 결제 내역 */}
                            {reservation.payments && reservation.payments.length > 0 && (
