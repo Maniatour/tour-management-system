@@ -1638,12 +1638,12 @@ export default function CustomerReservations() {
                                    <div className="flex items-center justify-end space-x-2">
                                      <span className="text-gray-600">결제금</span>
                                      <span className="font-bold text-indigo-600">${(reservation.pricing.deposit_amount || 0).toFixed(2)}</span>
+                                     {reservation.payments && reservation.payments.length > 0 && (
+                                       <span className="text-xs text-gray-500">
+                                         ({new Date(reservation.payments[0].submit_on).toLocaleDateString()})
+                                       </span>
+                                     )}
                                    </div>
-                                   {reservation.payments && reservation.payments.length > 0 && (
-                                     <div className="text-xs text-gray-500">
-                                       ({new Date(reservation.payments[0].submit_on).toLocaleDateString()})
-                                     </div>
-                                   )}
                                    <div className="flex items-center justify-end space-x-2">
                                      <span className="text-gray-600">잔액</span>
                                      <span className="font-bold text-purple-600">${(reservation.pricing.balance_amount || 0).toFixed(2)}</span>
