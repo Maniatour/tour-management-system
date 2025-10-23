@@ -18,8 +18,8 @@ interface SubCategoryItem {
   label: string
   count: number
   id?: string
-  categoryId?: string
-  categoryName?: string
+  categoryId?: string | undefined
+  categoryName?: string | undefined
 }
 
   interface BasicInfoTabProps {
@@ -30,6 +30,8 @@ interface SubCategoryItem {
       category: string
       subCategory: string
       description: string
+      summaryKo?: string
+      summaryEn?: string
       duration: number
       maxParticipants: number
       departureCity: string
@@ -174,6 +176,8 @@ export default function BasicInfoTab({
             category: formData.category,
             sub_category: formData.subCategory.trim(),
             description: formData.description.trim(),
+            summary_ko: formData.summaryKo?.trim() || null,
+            summary_en: formData.summaryEn?.trim() || null,
             duration: formData.duration.toString(),
             base_price: 0, // 기본값
             max_participants: formData.maxParticipants,
@@ -218,6 +222,8 @@ export default function BasicInfoTab({
             category: formData.category,
             sub_category: formData.subCategory.trim(),
             description: formData.description.trim(),
+            summary_ko: formData.summaryKo?.trim() || null,
+            summary_en: formData.summaryEn?.trim() || null,
             duration: formData.duration.toString(),
             base_price: 0, // 기본 가격은 동적 가격에서 설정
             max_participants: formData.maxParticipants,
@@ -317,15 +323,26 @@ export default function BasicInfoTab({
         
         setSubCategories(filteredSubCategories)
         
-        // 현재 선택된 서브카테고리가 필터링된 목록에 없으면 초기화
+        // 현재 선택된 서브카테고리가 필터링된 목록에 없으면 초기화하지 않고 유지
+        // 대신 서브카테고리 목록에 현재 선택된 서브카테고리를 추가
         if (formData.subCategory && !filteredSubCategories.some(sub => sub.value === formData.subCategory)) {
-          console.log('Current subcategory not found in filtered list, resetting...')
-          setFormData({ ...formData, subCategory: '' })
+          console.log('Current subcategory not found in filtered list, but keeping it:', formData.subCategory)
+          // 현재 선택된 서브카테고리를 목록에 추가 (사용자가 수동으로 입력한 경우 대비)
+          const currentSubCategory = {
+            value: formData.subCategory,
+            label: formData.subCategory,
+            count: 0,
+            categoryId: selectedCategory?.id,
+            categoryName: selectedCategory?.label
+          }
+          setSubCategories([currentSubCategory, ...filteredSubCategories])
         }
       } else {
         setSubCategories([])
-        // 카테고리가 선택되지 않았으면 서브카테고리도 초기화
-        if (formData.subCategory) {
+        // 카테고리가 선택되지 않았으면 서브카테고리도 초기화하지 않음 (편집 중일 때)
+        if (formData.subCategory && !isNewProduct) {
+          console.log('No category selected but keeping subcategory for editing:', formData.subCategory)
+        } else if (formData.subCategory && isNewProduct) {
           setFormData({ ...formData, subCategory: '' })
         }
       }
@@ -381,7 +398,7 @@ export default function BasicInfoTab({
         console.error('폴백 카테고리 데이터 가져오기 오류:', fallbackError)
       }
     }
-  }, [formData, setFormData])
+  }, [formData, setFormData, isNewProduct])
 
   // 카테고리와 서브카테고리 데이터 가져오기
   useEffect(() => {
@@ -396,18 +413,29 @@ export default function BasicInfoTab({
       const filteredSubCategories = allSubCategories.filter(sub => sub.categoryId === selectedCategory?.id)
       setSubCategories(filteredSubCategories)
       
-      // 현재 선택된 서브카테고리가 필터링된 목록에 없으면 초기화
+      // 현재 선택된 서브카테고리가 필터링된 목록에 없으면 유지하고 목록에 추가
       if (formData.subCategory && !filteredSubCategories.some(sub => sub.value === formData.subCategory)) {
-        setFormData((prev: typeof formData) => ({ ...prev, subCategory: '' }))
+        console.log('Current subcategory not found in filtered list, but keeping it:', formData.subCategory)
+        // 현재 선택된 서브카테고리를 목록에 추가
+        const currentSubCategory = {
+          value: formData.subCategory,
+          label: formData.subCategory,
+          count: 0,
+          categoryId: selectedCategory?.id,
+          categoryName: selectedCategory?.label
+        }
+        setSubCategories([currentSubCategory, ...filteredSubCategories])
       }
     } else {
       setSubCategories([])
-      // 카테고리가 선택되지 않았으면 서브카테고리도 초기화
-      if (formData.subCategory) {
+      // 카테고리가 선택되지 않았으면 서브카테고리도 초기화하지 않음 (편집 중일 때)
+      if (formData.subCategory && !isNewProduct) {
+        console.log('No category selected but keeping subcategory for editing:', formData.subCategory)
+      } else if (formData.subCategory && isNewProduct) {
         setFormData((prev: typeof formData) => ({ ...prev, subCategory: '' }))
       }
     }
-  }, [formData.category, formData.subCategory, allSubCategories, categories, setFormData])
+  }, [formData.category, formData.subCategory, allSubCategories, categories, setFormData, isNewProduct])
 
   useEffect(() => {
     filterSubCategories()
@@ -534,6 +562,12 @@ export default function BasicInfoTab({
                 required
               >
                 <option value="">서브카테고리 선택</option>
+                {/* 현재 선택된 서브카테고리가 목록에 없으면 먼저 표시 */}
+                {formData.subCategory && !subCategories.some(sub => sub.value === formData.subCategory) && (
+                  <option value={formData.subCategory} style={{ backgroundColor: '#fef3c7' }}>
+                    {formData.subCategory} (현재 선택됨)
+                  </option>
+                )}
                 {subCategories.length === 0 ? (
                   <option value="" disabled>
                     {formData.category ? '해당 카테고리의 서브카테고리가 없습니다' : '카테고리를 먼저 선택하세요'}
@@ -568,6 +602,32 @@ export default function BasicInfoTab({
             placeholder="상품에 대한 간단한 설명을 입력하세요"
             rows={3}
           />
+        </div>
+
+        {/* 상품 요약 */}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('productSummaryKo')}</label>
+              <textarea
+                value={formData.summaryKo || ''}
+                onChange={(e) => setFormData({ ...formData, summaryKo: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder={t('productSummaryPlaceholderKo')}
+                rows={3}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('productSummaryEn')}</label>
+              <textarea
+                value={formData.summaryEn || ''}
+                onChange={(e) => setFormData({ ...formData, summaryEn: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder={t('productSummaryPlaceholderEn')}
+                rows={3}
+              />
+            </div>
+          </div>
         </div>
 
         {/* 상품 태그 */}

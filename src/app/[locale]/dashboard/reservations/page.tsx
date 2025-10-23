@@ -703,56 +703,55 @@ export default function CustomerReservations() {
                      console.log('예약 선택 옵션 로드됨:', choicesData)
                    }
                    
-                   // choice와 option 정보를 products.choices에서 가져와서 매핑
-                   // @ts-expect-error productData.choices는 동적으로 추가된 필드
-                   if (reservationChoicesInfo && reservationChoicesInfo.length > 0 && productData && productData.choices) {
-                     // @ts-expect-error productData.choices는 동적으로 추가된 필드
-                     const productChoices = productData.choices
-                     
-                     reservationChoicesInfo = reservationChoicesInfo.map((choice: {
-                       id: string
-                       choice_id: string
-                       option_id: string
-                       quantity: number
-                       total_price: number
-                     }) => {
-                       let choiceInfo = null
-                       let optionInfo = null
+                   // 새로운 테이블에서 choice와 option 정보 가져와서 매핑
+                   if (reservationChoicesInfo && reservationChoicesInfo.length > 0) {
+                     try {
+                       // reservation_choices에서 choice_id와 option_id를 가져와서 새로운 테이블에서 정보 조회
+                       const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string }) => c.choice_id))]
+                       const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string }) => c.option_id))]
                        
-                       // products.choices에서 choice 정보 찾기
-                       if (productChoices?.required) {
-                         for (const requiredChoice of productChoices.required) {
-                           if (requiredChoice.id === choice.choice_id) {
-                             choiceInfo = {
-                               id: requiredChoice.id,
-                               name_ko: requiredChoice.name_ko,
-                               name_en: requiredChoice.name
-                             }
-                             
-                             // 해당 choice의 option 정보 찾기
-                             if (requiredChoice.options) {
-                               for (const option of requiredChoice.options) {
-                                 if (option.id === choice.option_id) {
-                                   optionInfo = {
-                                     id: option.id,
-                                     name_ko: option.name_ko,
-                                     name_en: option.name
-                                   }
-                                   break
-                                 }
-                               }
-                             }
-                             break
+                       // product_choices 테이블에서 choice 정보 조회
+                       const { data: choicesData, error: choicesError } = await supabase
+                         .from('product_choices')
+                         .select('id, choice_group, choice_group_ko')
+                         .in('id', choiceIds)
+                       
+                       // choice_options 테이블에서 option 정보 조회
+                       const { data: optionsData, error: optionsError } = await supabase
+                         .from('choice_options')
+                         .select('id, option_key, option_name, option_name_ko')
+                         .in('id', optionIds)
+                       
+                       if (!choicesError && !optionsError && choicesData && optionsData) {
+                         // choice와 option 정보를 매핑
+                         reservationChoicesInfo = reservationChoicesInfo.map((choice: {
+                           id: string
+                           choice_id: string
+                           option_id: string
+                           quantity: number
+                           total_price: number
+                         }) => {
+                           const choiceInfo = choicesData.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === choice.choice_id) as { id: string; choice_group: string; choice_group_ko: string } | undefined
+                           const optionInfo = optionsData.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === choice.option_id) as { id: string; option_name: string; option_name_ko: string } | undefined
+                           
+                           return {
+                             ...choice,
+                             choice: choiceInfo ? {
+                               id: (choiceInfo as any).id,
+                               name_ko: (choiceInfo as any).choice_group_ko,
+                               name_en: (choiceInfo as any).choice_group
+                             } : null,
+                             option: optionInfo ? {
+                               id: (optionInfo as any).id,
+                               name_ko: (optionInfo as any).option_name_ko,
+                               name_en: (optionInfo as any).option_name
+                             } : null
                            }
-                         }
+                         })
                        }
-                       
-                       return {
-                         ...choice,
-                         choice: choiceInfo,
-                         option: optionInfo
-                       }
-                     })
+                     } catch (error) {
+                       console.warn('새로운 테이블에서 초이스 정보 조회 실패:', error)
+                     }
                    }
                  } catch (error) {
                    console.warn('예약 선택 옵션 조회 실패:', error)
@@ -991,56 +990,55 @@ export default function CustomerReservations() {
                   reservationChoicesInfo = choicesData
                   console.log('시뮬레이션 모드: 예약 선택 옵션 로드됨:', choicesData)
                   
-                  // choice와 option 정보를 products.choices에서 가져와서 매핑
-                  // @ts-expect-error productData.choices는 동적으로 추가된 필드
-                  if (reservationChoicesInfo && reservationChoicesInfo.length > 0 && productData && productData.choices) {
-                    // @ts-expect-error productData.choices는 동적으로 추가된 필드
-                    const productChoices = productData.choices
-                    
-                    reservationChoicesInfo = reservationChoicesInfo.map((choice: {
-                      id: string
-                      choice_id: string
-                      option_id: string
-                      quantity: number
-                      total_price: number
-                    }) => {
-                      let choiceInfo = null
-                      let optionInfo = null
+                  // 새로운 테이블에서 choice와 option 정보 가져와서 매핑
+                  if (reservationChoicesInfo && reservationChoicesInfo.length > 0) {
+                    try {
+                      // reservation_choices에서 choice_id와 option_id를 가져와서 새로운 테이블에서 정보 조회
+                      const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string }) => c.choice_id))]
+                      const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string }) => c.option_id))]
                       
-                      // products.choices에서 choice 정보 찾기
-                      if (productChoices?.required) {
-                        for (const requiredChoice of productChoices.required) {
-                          if (requiredChoice.id === choice.choice_id) {
-                            choiceInfo = {
-                              id: requiredChoice.id,
-                              name_ko: requiredChoice.name_ko,
-                              name_en: requiredChoice.name
-                            }
-                            
-                            // 해당 choice의 option 정보 찾기
-                            if (requiredChoice.options) {
-                              for (const option of requiredChoice.options) {
-                                if (option.id === choice.option_id) {
-                                  optionInfo = {
-                                    id: option.id,
-                                    name_ko: option.name_ko,
-                                    name_en: option.name
-                                  }
-                                  break
-                                }
-                              }
-                            }
-                            break
+                      // product_choices 테이블에서 choice 정보 조회
+                      const { data: choicesData, error: choicesError } = await supabase
+                        .from('product_choices')
+                        .select('id, choice_group, choice_group_ko')
+                        .in('id', choiceIds)
+                      
+                      // choice_options 테이블에서 option 정보 조회
+                      const { data: optionsData, error: optionsError } = await supabase
+                        .from('choice_options')
+                        .select('id, option_key, option_name, option_name_ko')
+                        .in('id', optionIds)
+                      
+                      if (!choicesError && !optionsError && choicesData && optionsData) {
+                        // choice와 option 정보를 매핑
+                        reservationChoicesInfo = reservationChoicesInfo.map((choice: {
+                          id: string
+                          choice_id: string
+                          option_id: string
+                          quantity: number
+                          total_price: number
+                        }) => {
+                          const choiceInfo = choicesData.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === choice.choice_id) as { id: string; choice_group: string; choice_group_ko: string } | undefined
+                          const optionInfo = optionsData.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === choice.option_id) as { id: string; option_name: string; option_name_ko: string } | undefined
+                          
+                          return {
+                            ...choice,
+                            choice: choiceInfo ? {
+                              id: (choiceInfo as any).id,
+                              name_ko: (choiceInfo as any).choice_group_ko,
+                              name_en: (choiceInfo as any).choice_group
+                            } : null,
+                            option: optionInfo ? {
+                              id: (optionInfo as any).id,
+                              name_ko: (optionInfo as any).option_name_ko,
+                              name_en: (optionInfo as any).option_name
+                            } : null
                           }
-                        }
+                        })
                       }
-                      
-                      return {
-                        ...choice,
-                        choice: choiceInfo,
-                        option: optionInfo
-                      }
-                    })
+                    } catch (error) {
+                      console.warn('시뮬레이션 모드: 새로운 테이블에서 초이스 정보 조회 실패:', error)
+                    }
                   }
                 }
               } catch (error) {
@@ -1535,41 +1533,41 @@ export default function CustomerReservations() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto px-0 sm:px-4 py-0 sm:py-6">
         {/* 헤더 */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white shadow-sm p-3 sm:p-6 mb-1 sm:mb-6 rounded-none sm:rounded-lg">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-4 space-y-2 sm:space-y-0">
             <div className="flex items-center">
               <button
                 onClick={() => router.back()}
-                className="flex items-center text-gray-600 hover:text-gray-900 mr-4"
+                className="flex items-center text-gray-600 hover:text-gray-900 mr-3 sm:mr-4"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
-                {t('back')}
+                <span className="text-sm sm:text-base">{t('back')}</span>
               </button>
-              <h1 className="text-2xl font-bold text-gray-900">{t('myReservations')}</h1>
+              <h1 className="text-lg sm:text-2xl font-bold text-gray-900">{t('myReservations')}</h1>
             </div>
             {isSimulating && simulatedUser && (
-              <div className="flex items-center space-x-2">
-                <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+              <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+                <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs sm:text-sm font-medium text-center">
                   {t('simulating')}: {simulatedUser.name_ko}
                 </div>
-                <div className="flex space-x-1">
+                <div className="flex flex-wrap gap-1 sm:gap-1">
                   <button
                     onClick={() => router.push(`/${locale}/dashboard`)}
-                    className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700"
+                    className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700 flex-1 sm:flex-none"
                   >
                     {t('dashboard')}
                   </button>
                   <button
                     onClick={() => router.push(`/${locale}/dashboard/profile`)}
-                    className="bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700"
+                    className="bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700 flex-1 sm:flex-none"
                   >
                     {t('myInfo')}
                   </button>
                   <button
                     onClick={handleStopSimulation}
-                    className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 flex items-center"
+                    className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700 flex items-center justify-center flex-1 sm:flex-none"
                   >
                     <ArrowLeft className="w-3 h-3 mr-1" />
                     {t('backToAdmin')}
@@ -1578,15 +1576,17 @@ export default function CustomerReservations() {
               </div>
             )}
           </div>
-          <p className="text-gray-600">{t('checkReservationHistory')}</p>
+          <p className="text-sm sm:text-base text-gray-600">{t('checkReservationHistory')}</p>
         </div>
 
         {/* 필터 */}
-        <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-          <div className="flex items-center space-x-4">
-            <Filter className="w-4 h-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">{t('filterByStatus')}</span>
-            <div className="flex space-x-2">
+        <div className="bg-white shadow-sm p-3 sm:p-4 mb-1 sm:mb-6 rounded-none sm:rounded-lg">
+          <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+            <div className="flex items-center space-x-2">
+              <Filter className="w-4 h-4 text-gray-500" />
+              <span className="text-sm font-medium text-gray-700">{t('filterByStatus')}</span>
+            </div>
+            <div className="flex space-x-2 overflow-x-auto pb-2 sm:pb-0">
               {[
                 { value: 'all', label: t('all') },
                 { value: 'pending', label: t('pending') },
@@ -1597,7 +1597,7 @@ export default function CustomerReservations() {
                 <button
                   key={option.value}
                   onClick={() => setFilter(option.value)}
-                  className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                  className={`px-3 py-1 text-sm rounded-full transition-colors whitespace-nowrap flex-shrink-0 ${
                     filter === option.value
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -1611,11 +1611,11 @@ export default function CustomerReservations() {
         </div>
 
         {/* 예약 목록 */}
-        <div className="space-y-6">
+        <div className="space-y-1 sm:space-y-6">
           {filteredReservations.length > 0 ? (
             filteredReservations.map((reservation) => (
-              <div key={reservation.id} className="bg-white rounded-lg shadow-sm p-6">
-                <div className="flex items-start justify-between mb-4">
+              <div key={reservation.id} className="bg-white shadow-sm p-4 sm:p-6 rounded-none sm:rounded-lg">
+                <div className="flex items-start justify-between mb-2 sm:mb-4">
                   <div className="flex-1">
                      <div className="flex items-center flex-wrap gap-2 mb-2">
                        <h3 className="text-xl font-semibold text-gray-900">
@@ -1627,21 +1627,47 @@ export default function CustomerReservations() {
                        {/* Choice 옵션 뱃지 */}
                        {reservation.reservationChoices && reservation.reservationChoices.length > 0 && (
                          <div className="flex flex-wrap gap-1">
-                           {reservation.reservationChoices.map((choice) => (
-                             <span
-                               key={choice.id}
-                               className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                             >
-                               {locale === 'ko' 
-                                 ? (choice.choice?.name_ko || choice.choice?.name_en || 'Unknown Choice')
-                                 : (choice.choice?.name_en || choice.choice?.name_ko || 'Unknown Choice')
-                               }: {locale === 'ko' 
+                           {(() => {
+                             // 중복 제거: 같은 option_name을 가진 것들을 합침
+                             const uniqueChoices = reservation.reservationChoices.reduce((acc: any[], choice: any) => {
+                               const optionName = locale === 'ko' 
                                  ? (choice.option?.name_ko || choice.option?.name_en || 'Unknown Option')
-                                 : (choice.option?.name_en || choice.option?.name_ko || 'Unknown Option')
+                                 : (choice.option?.name_en || choice.option?.name_ko || 'Unknown Option');
+                               
+                               const existing = acc.find(item => {
+                                 const itemOptionName = locale === 'ko' 
+                                   ? (item.option?.name_ko || item.option?.name_en || 'Unknown Option')
+                                   : (item.option?.name_en || item.option?.name_ko || 'Unknown Option');
+                                 return itemOptionName === optionName;
+                               });
+                               
+                               if (existing) {
+                                 // 기존 항목이 있으면 수량과 가격을 합침
+                                 existing.quantity += choice.quantity || 1;
+                                 existing.total_price += choice.total_price || 0;
+                               } else {
+                                 // 새로운 항목 추가
+                                 acc.push({ ...choice });
                                }
-                               {choice.quantity > 1 && ` (${choice.quantity})`}
-                             </span>
-                           ))}
+                               
+                               return acc;
+                             }, []);
+                             
+                             return uniqueChoices.map((choice, index) => {
+                               const optionName = locale === 'ko' 
+                                 ? (choice.option?.name_ko || choice.option?.name_en || 'Unknown Option')
+                                 : (choice.option?.name_en || choice.option?.name_ko || 'Unknown Option');
+                               
+                               return (
+                                 <span
+                                   key={`${choice.choice_id}-${choice.option_id}-${index}`}
+                                   className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                 >
+                                   {optionName}
+                                 </span>
+                               );
+                             });
+                           })()}
                          </div>
                        )}
                      </div>
@@ -1773,7 +1799,7 @@ export default function CustomerReservations() {
                              <div className="space-y-2 text-sm">
                                {reservation.adults > 0 && (
                                  <div className="flex justify-between items-center">
-                                   <span className="text-gray-600">성인 {reservation.adults}명</span>
+                                   <span className="text-gray-600">{t('adults')} {reservation.adults}{t('people')}</span>
                                    <span className="font-medium text-gray-900">
                                      ${((reservation.pricing.adult_product_price || 0) * reservation.adults).toFixed(2)}
                                    </span>
@@ -1781,7 +1807,7 @@ export default function CustomerReservations() {
                                )}
                                {reservation.child > 0 && (
                                  <div className="flex justify-between items-center">
-                                   <span className="text-gray-600">어린이 {reservation.child}명</span>
+                                   <span className="text-gray-600">{t('children')} {reservation.child}{t('people')}</span>
                                    <span className="font-medium text-gray-900">
                                      ${((reservation.pricing.child_product_price || 0) * reservation.child).toFixed(2)}
                                    </span>
@@ -1789,14 +1815,14 @@ export default function CustomerReservations() {
                                )}
                                {reservation.infant > 0 && (
                                  <div className="flex justify-between items-center">
-                                   <span className="text-gray-600">유아 {reservation.infant}명</span>
+                                   <span className="text-gray-600">{t('infants')} {reservation.infant}{t('people')}</span>
                                    <span className="font-medium text-gray-900">
                                      ${((reservation.pricing.infant_product_price || 0) * reservation.infant).toFixed(2)}
                                    </span>
                                  </div>
                                )}
                                <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-semibold">
-                                 <span className="text-gray-800">상품 합계</span>
+                                 <span className="text-gray-800">{t('productTotal')}</span>
                                  <span className="text-gray-900">${(reservation.pricing.product_price_total || 0).toFixed(2)}</span>
                                </div>
                              </div>
@@ -1808,7 +1834,7 @@ export default function CustomerReservations() {
                                <div className="space-y-2 text-sm">
                                  {reservation.pricing.required_option_total > 0 && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">필수 옵션</span>
+                                     <span className="text-gray-600">{t('requiredOptions')}</span>
                                      <span className="font-medium text-gray-900">
                                        ${(reservation.pricing.required_option_total || 0).toFixed(2)}
                                      </span>
@@ -1816,14 +1842,14 @@ export default function CustomerReservations() {
                                  )}
                                  {reservation.pricing.option_total > 0 && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">선택 옵션</span>
+                                     <span className="text-gray-600">{t('optionalOptions')}</span>
                                      <span className="font-medium text-gray-900">
                                        ${(reservation.pricing.option_total || 0).toFixed(2)}
                                      </span>
                                    </div>
                                  )}
                                  <div className="flex justify-between items-center pt-2 border-t border-gray-200 font-semibold">
-                                   <span className="text-gray-800">옵션 합계</span>
+                                   <span className="text-gray-800">{t('optionTotal')}</span>
                                    <span className="text-gray-900">
                                      ${((reservation.pricing.required_option_total || 0) + (reservation.pricing.option_total || 0)).toFixed(2)}
                                    </span>
@@ -1835,7 +1861,7 @@ export default function CustomerReservations() {
                            {/* 소계 */}
                            <div className="p-4 bg-blue-50">
                              <div className="flex justify-between items-center">
-                               <span className="text-sm font-semibold text-blue-800">소계 (상품 + 옵션)</span>
+                               <span className="text-sm font-semibold text-blue-800">{t('subtotal')}</span>
                                <span className="text-lg font-bold text-blue-900">${(reservation.pricing.subtotal || 0).toFixed(2)}</span>
                              </div>
                            </div>
@@ -1845,7 +1871,7 @@ export default function CustomerReservations() {
                              <div className="space-y-1 text-sm">
                                <div className="flex justify-between items-center">
                                  <div className="flex items-center space-x-1">
-                                   <span className="text-gray-600">결제금</span>
+                                   <span className="text-gray-600">{t('deposit')}</span>
                                    {reservation.payments && reservation.payments.length > 0 && (
                                      <span className="text-xs text-gray-500">
                                        ({new Date(reservation.payments[0].submit_on).toLocaleDateString()})
@@ -1855,7 +1881,7 @@ export default function CustomerReservations() {
                                  <span className="font-bold text-indigo-600">${(reservation.pricing.deposit_amount || 0).toFixed(2)}</span>
                                </div>
                                <div className="flex justify-between items-center">
-                                 <span className="text-gray-600">잔액</span>
+                                 <span className="text-gray-600">{t('balance')}</span>
                                  <span className="font-bold text-purple-600">${(reservation.pricing.balance_amount || 0).toFixed(2)}</span>
                                </div>
                              </div>
@@ -1870,7 +1896,7 @@ export default function CustomerReservations() {
                                <div className="space-y-2 text-sm">
                                  {reservation.pricing.coupon_discount !== 0 && reservation.pricing.coupon_discount !== null && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">쿠폰 할인</span>
+                                     <span className="text-gray-600">{t('couponDiscount')}</span>
                                      <span className="font-medium text-green-600">
                                        {reservation.pricing.coupon_discount < 0 
                                          ? `-$${Math.abs(reservation.pricing.coupon_discount).toFixed(2)}` 
@@ -1880,7 +1906,7 @@ export default function CustomerReservations() {
                                  )}
                                  {reservation.pricing.additional_discount !== 0 && reservation.pricing.additional_discount !== null && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">추가 할인</span>
+                                     <span className="text-gray-600">{t('additionalDiscount')}</span>
                                      <span className="font-medium text-green-600">
                                        ${reservation.pricing.additional_discount.toFixed(2)}
                                      </span>
@@ -1888,7 +1914,7 @@ export default function CustomerReservations() {
                                  )}
                                  {reservation.pricing.additional_cost !== 0 && reservation.pricing.additional_cost !== null && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">추가 비용</span>
+                                     <span className="text-gray-600">{t('additionalCost')}</span>
                                      <span className="font-medium text-gray-900">
                                        ${reservation.pricing.additional_cost.toFixed(2)}
                                      </span>
@@ -1896,7 +1922,7 @@ export default function CustomerReservations() {
                                  )}
                                  {reservation.pricing.card_fee !== 0 && reservation.pricing.card_fee !== null && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">카드 수수료</span>
+                                     <span className="text-gray-600">{t('cardFee')}</span>
                                      <span className="font-medium text-gray-900">
                                        ${reservation.pricing.card_fee.toFixed(2)}
                                      </span>
@@ -1904,7 +1930,7 @@ export default function CustomerReservations() {
                                  )}
                                  {reservation.pricing.tax !== 0 && reservation.pricing.tax !== null && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">세금</span>
+                                     <span className="text-gray-600">{t('tax')}</span>
                                      <span className="font-medium text-gray-900">
                                        ${reservation.pricing.tax.toFixed(2)}
                                      </span>
@@ -1912,7 +1938,7 @@ export default function CustomerReservations() {
                                  )}
                                  {reservation.pricing.prepayment_cost !== 0 && reservation.pricing.prepayment_cost !== null && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">선불 비용</span>
+                                     <span className="text-gray-600">{t('prepaymentCost')}</span>
                                      <span className="font-medium text-gray-900">
                                        ${reservation.pricing.prepayment_cost.toFixed(2)}
                                      </span>
@@ -1920,7 +1946,7 @@ export default function CustomerReservations() {
                                  )}
                                  {reservation.pricing.prepayment_tip !== 0 && reservation.pricing.prepayment_tip !== null && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">선불 팁</span>
+                                     <span className="text-gray-600">{t('prepaymentTip')}</span>
                                      <span className="font-medium text-gray-900">
                                        ${reservation.pricing.prepayment_tip.toFixed(2)}
                                      </span>
@@ -1928,7 +1954,7 @@ export default function CustomerReservations() {
                                  )}
                                  {reservation.pricing.private_tour_additional_cost > 0 && reservation.pricing.private_tour_additional_cost !== null && (
                                    <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">프라이빗 투어 추가 비용</span>
+                                     <span className="text-gray-600">{t('privateTourAdditionalCost')}</span>
                                      <span className="font-medium text-gray-900">
                                        ${reservation.pricing.private_tour_additional_cost.toFixed(2)}
                                      </span>
@@ -1943,17 +1969,17 @@ export default function CustomerReservations() {
                          <div className="p-4">
                            <div className="space-y-2 text-sm">
                              <div className="flex justify-between items-center">
-                               <span className="text-gray-600">기본 가격</span>
+                               <span className="text-gray-600">{t('basePrice')}</span>
                                <span className="font-medium text-gray-900">
-                                 ${(reservation.products?.base_price || 0).toFixed(2)} / 인
+                                 ${(reservation.products?.base_price || 0).toFixed(2)} / {t('perPerson')}
                                </span>
                              </div>
                              <div className="flex justify-between items-center">
-                               <span className="text-gray-600">총 인원</span>
-                               <span className="font-medium text-gray-900">{reservation.total_people}명</span>
+                               <span className="text-gray-600">{t('totalPeople')}</span>
+                               <span className="font-medium text-gray-900">{reservation.total_people}{t('people')}</span>
                              </div>
                              <div className="flex justify-between items-center pt-2 border-t border-gray-200 font-semibold">
-                               <span className="text-gray-800">예상 총액</span>
+                               <span className="text-gray-800">{t('estimatedTotal')}</span>
                                <span className="text-gray-900">
                                  ${((reservation.products?.base_price || 0) * reservation.total_people).toFixed(2)}
                                </span>
@@ -2075,29 +2101,35 @@ export default function CustomerReservations() {
                           <Calendar className="w-5 h-5 mr-2" />
                           {t('tourSchedule')}
                         </h4>
-                        <div className="bg-green-50 p-4 rounded-lg space-y-3">
+                        <div className="space-y-3">
                           {reservationDetails[reservation.id]?.productSchedules!.map((schedule) => (
-                            <div key={schedule.id} className="bg-white p-3 rounded-md border-l-4 border-green-500">
+                            <div key={schedule.id} className="bg-gray-50 p-3 rounded-md border-l-4 border-green-500">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
-                                  <div className="flex items-center mb-1">
-                                    {schedule.start_time && (
-                                      <span className="text-sm font-medium text-green-700 mr-2">
-                                        {formatTimeToAMPM(schedule.start_time)}
-                                        {schedule.end_time && ` - ${formatTimeToAMPM(schedule.end_time)}`}
+                                  <div className="space-y-2">
+                                    {/* 시간 정보와 소요시간 - 같은 줄에 배치 */}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {schedule.start_time && (
+                                        <span className="text-sm font-medium text-green-700">
+                                          {formatTimeToAMPM(schedule.start_time)}
+                                          {schedule.end_time && ` - ${formatTimeToAMPM(schedule.end_time)}`}
+                                        </span>
+                                      )}
+                                      {schedule.start_time && schedule.end_time && calculateDuration(schedule.start_time, schedule.end_time) && (
+                                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                          {calculateDuration(schedule.start_time, schedule.end_time)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {/* 스케줄 제목 - 별도 줄에 표시 */}
+                                    <div>
+                                      <span className="text-sm font-semibold text-gray-900">
+                                        {locale === 'ko' 
+                                          ? (schedule.title_ko || schedule.title_en)
+                                          : (schedule.title_en || schedule.title_ko)
+                                        }
                                       </span>
-                                    )}
-                                    {schedule.start_time && schedule.end_time && calculateDuration(schedule.start_time, schedule.end_time) && (
-                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 mr-2">
-                                        {calculateDuration(schedule.start_time, schedule.end_time)}
-                                      </span>
-                                    )}
-                                    <span className="text-sm font-semibold text-gray-900">
-                                      {locale === 'ko' 
-                                        ? (schedule.title_ko || schedule.title_en)
-                                        : (schedule.title_en || schedule.title_ko)
-                                      }
-                                    </span>
+                                    </div>
                                   </div>
                                   {(locale === 'ko' ? schedule.description_ko : schedule.description_en) && (
                                     <p className="text-xs text-gray-600 whitespace-pre-wrap">
@@ -2226,49 +2258,64 @@ export default function CustomerReservations() {
 
                         {/* 모든 픽업 정보 */}
                         {reservationDetails[reservation.id]?.pickupSchedule?.allPickups && (reservationDetails[reservation.id]?.pickupSchedule?.allPickups?.length || 0) > 0 && (
-                          <div className="bg-gray-50 p-4 rounded-lg">
+                          <div>
                             <h5 className="font-semibold text-gray-800 mb-3 flex items-center">
                               <Users className="w-4 h-4 mr-1" />
                               {t('allPickups')}
                             </h5>
                             <div className="space-y-3">
                               {reservationDetails[reservation.id]?.pickupSchedule?.allPickups!.map((pickup) => (
-                                <div key={pickup.reservation_id} className={`bg-white p-3 rounded-md border-l-4 ${
-                                  pickup.reservation_id === reservation.id ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+                                <div key={pickup.reservation_id} className={`p-3 rounded-md border-l-4 ${
+                                  pickup.reservation_id === reservation.id ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50'
                                 }`}>
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <div className="flex items-center mb-1">
-                                        <span className="text-sm font-semibold text-blue-600 mr-3">
-                                          {formatTimeToAMPM(pickup.pickup_time)}
-                                        </span>
-                                        <span className="text-sm font-semibold text-blue-600 mr-3">
-                                          {pickup.tour_date && calculatePickupDate(pickup.pickup_time, pickup.tour_date)}
-                                        </span>
-                                        <span className="text-sm font-semibold text-gray-900">
-                                          {pickup.hotel_name}
-                                        </span>
-                                        {pickup.reservation_id === reservation.id && (
-                                          <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                                            {t('myReservation')}
-                                          </span>
-                                        )}
+                                  <div className="space-y-2">
+                                    {/* 첫 번째 줄: 픽업 시간과 날짜 */}
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-semibold text-blue-600">
+                                        {formatTimeToAMPM(pickup.pickup_time)}
+                                      </span>
+                                      <span className="text-sm font-semibold text-blue-600">
+                                        {pickup.tour_date && calculatePickupDate(pickup.pickup_time, pickup.tour_date)}
+                                      </span>
+                                    </div>
+                                    
+                                    {/* 두 번째 줄: 호텔 이름 */}
+                                    <div>
+                                      <span className="text-sm font-semibold text-gray-900">
+                                        {pickup.hotel_name}
+                                      </span>
+                                    </div>
+                                    
+                                    {/* 세 번째 줄: 픽업 장소 (크기 키우고 다른 색깔) */}
+                                    <div className="text-sm text-orange-600 font-medium">
+                                      <p>{pickup.pick_up_location}</p>
+                                    </div>
+                                    
+                                    {/* 네 번째 줄: 주소 (회색) */}
+                                    {pickup.address && (
+                                      <div className="text-sm text-gray-600">
+                                        <p>{pickup.address}</p>
                                       </div>
-                                      <div className="text-xs text-gray-600">
-                                        <p>{pickup.pick_up_location}</p>
-                                        {pickup.address && <p>{pickup.address}</p>}
-                                        <a 
-                                          href={pickup.link || `https://maps.google.com/maps?q=${encodeURIComponent(pickup.hotel_name + (pickup.address ? ', ' + pickup.address : ''))}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="inline-flex items-center mt-2 text-blue-600 hover:text-blue-800 text-xs"
-                                        >
-                                          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                                          </svg>
-                                          {t('viewOnMap')}
-                                        </a>
-                                      </div>
+                                    )}
+                                    
+                                    {/* 다섯 번째 줄: MY RESERVATION과 VIEW ON MAP */}
+                                    <div className="flex items-center justify-between">
+                                      {pickup.reservation_id === reservation.id && (
+                                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                          {t('myReservation')}
+                                        </span>
+                                      )}
+                                      <a 
+                                        href={pickup.link || `https://maps.google.com/maps?q=${encodeURIComponent(pickup.hotel_name + (pickup.address ? ', ' + pickup.address : ''))}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center text-blue-600 hover:text-blue-800 text-xs"
+                                      >
+                                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                                        </svg>
+                                        {t('viewOnMap')}
+                                      </a>
                                     </div>
                                   </div>
                                 </div>

@@ -118,7 +118,7 @@ interface AdminProductEditProps {
   params: Promise<{ locale: string; id: string }>
 }
 
-export default function AdminProductEdit({ params }: AdminProductEditProps) {
+export default function AdminProductEdit({ }: AdminProductEditProps) {
   console.log('AdminProductEdit: Component initializing...')
   
   // 안전한 JSON 파싱 유틸리티 함수
@@ -164,6 +164,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
     category: string
     subCategory: string
     description: string
+    summaryKo?: string
+    summaryEn?: string
     duration: number
     basePrice: { adult: number; child: number; infant: number }
     channelPricing: ChannelPricing[]
@@ -562,11 +564,13 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           setFormData((prevData) => ({
             ...prevData,
             name: productData.name || '',
-            nameEn: productData.name_en || '',
+            nameEn: productData.name_en || undefined,
             productCode: productData.product_code || '',
             category: productData.category || 'nature',
             subCategory: productData.sub_category || '',
             description: productData.description || '',
+            summaryKo: productData.summary_ko || undefined,
+            summaryEn: productData.summary_en || undefined,
             duration: typeof productData.duration === 'string' ? parseInt(productData.duration) || 1 : productData.duration || 1,
             basePrice: {
               adult: productData.base_price || 0,
@@ -1361,6 +1365,8 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
         productData={{
           name: formData.name,
           nameEn: formData.nameEn || undefined,
+          summaryKo: formData.summaryKo || undefined,
+          summaryEn: formData.summaryEn || undefined,
           customerNameKo: formData.customerNameKo || undefined,
           customerNameEn: formData.customerNameEn || undefined,
           description: formData.description,
@@ -1379,7 +1385,7 @@ export default function AdminProductEdit({ params }: AdminProductEditProps) {
           status: formData.status,
           tourDepartureTimes: formData.tourDepartureTimes || undefined,
           tags: formData.tags || undefined
-        }}
+        } as any}
         productDetails={formData.productDetails}
         currentLanguage={formData.currentLanguage}
       />

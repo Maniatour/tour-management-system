@@ -42,9 +42,11 @@ interface ProductPreviewSidebarProps {
   onClose: () => void
   productData: {
     name: string
-    nameEn?: string
-    customerNameKo?: string
-    customerNameEn?: string
+    nameEn?: string | undefined
+    summaryKo?: string | undefined
+    summaryEn?: string | undefined
+    customerNameKo?: string | undefined
+    customerNameEn?: string | undefined
     description: string
     duration: number
     maxParticipants: number
@@ -59,8 +61,8 @@ interface ProductPreviewSidebarProps {
     childAgeMax: number
     infantAge: number
     status: 'active' | 'inactive' | 'draft'
-    tourDepartureTimes?: string[]
-    tags?: string[]
+    tourDepartureTimes?: string[] | undefined
+    tags?: string[] | undefined
   }
   productDetails: {
     [languageCode: string]: {
