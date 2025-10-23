@@ -1429,12 +1429,41 @@ export default function CustomerReservations() {
               <div key={reservation.id} className="bg-white rounded-lg shadow-sm p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                      {locale === 'ko' 
-                        ? (reservation.products?.customer_name_ko || reservation.products?.name || t('noProductName'))
-                        : (reservation.products?.customer_name_en || reservation.products?.name || t('noProductName'))
-                      }
-                    </h3>
+                    <div className="flex items-center flex-wrap gap-2 mb-2">
+                      <h3 className="text-xl font-semibold text-gray-900">
+                        {locale === 'ko' 
+                          ? (reservation.products?.customer_name_ko || reservation.products?.name || t('noProductName'))
+                          : (reservation.products?.customer_name_en || reservation.products?.name || t('noProductName'))
+                        }
+                      </h3>
+                      {/* Choice 옵션 뱃지 */}
+                      {reservation.pricing?.choices && typeof reservation.pricing.choices === 'object' && Object.keys(reservation.pricing.choices).length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {Object.entries(reservation.pricing.choices).map(([key, value]) => {
+                            if (value && typeof value === 'object' && 'name_ko' in value) {
+                              return (
+                                <span
+                                  key={key}
+                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                >
+                                  {locale === 'ko' ? (value as any).name_ko : (value as any).name_en || (value as any).name_ko}
+                                </span>
+                              )
+                            } else if (typeof value === 'string' && value.trim()) {
+                              return (
+                                <span
+                                  key={key}
+                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                >
+                                  {value}
+                                </span>
+                              )
+                            }
+                            return null
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(reservation.status)}`}>
                     {getStatusText(reservation.status)}
