@@ -257,7 +257,7 @@ export default function TourCoursesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">로딩 중...</div>
+        <div className="text-gray-500">{t('loading')}</div>
       </div>
     )
   }

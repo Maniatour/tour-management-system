@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Home, Calendar, MessageCircle, AlertCircle, Bell, X } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { useTranslations } from 'next-intl'
 
 interface UserFooterProps {
   locale: string
@@ -14,6 +15,7 @@ interface UserFooterProps {
 export default function UserFooter({ locale }: UserFooterProps) {
   const pathname = usePathname()
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
+  const t = useTranslations('common')
   const [showAnnouncements, setShowAnnouncements] = useState(false)
   const [showTeamChats, setShowTeamChats] = useState(false)
   const [announcements, setAnnouncements] = useState<any[]>([])
@@ -168,26 +170,26 @@ export default function UserFooter({ locale }: UserFooterProps) {
 
   const footerItems = [
     {
-      name: '홈',
+      name: t('home'),
       href: `/${locale}`,
       icon: Home,
       showForAll: true
     },
     {
-      name: '상품',
+      name: t('products'),
       href: `/${locale}/products`,
       icon: Calendar,
       showForAll: true
     },
     {
-      name: '내 예약',
+      name: t('myReservations'),
       href: `/${locale}/dashboard/reservations`,
       icon: Calendar,
       showForAll: false,
       showForCustomer: true
     },
     {
-      name: '전달사항',
+      name: t('announcements'),
       href: '#',
       icon: AlertCircle,
       showForAll: false,
@@ -195,7 +197,7 @@ export default function UserFooter({ locale }: UserFooterProps) {
       badge: announcements.length > 0 ? announcements.length : null
     },
     {
-      name: '팀채팅',
+      name: t('teamChat'),
       href: '#',
       icon: MessageCircle,
       showForAll: false,

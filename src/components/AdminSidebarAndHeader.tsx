@@ -487,7 +487,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     </div>
                     <div className="text-xs text-gray-500">
                       {isSimulating ? (
-                        <span className="text-orange-600 font-medium">시뮬레이션 중</span>
+                        <span className="text-orange-600 font-medium">{t('simulating')}</span>
                       ) : (
                         userRole === 'admin' ? t('admin') : 
                         userRole === 'manager' ? t('manager') : 
@@ -518,7 +518,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                           {userRole && (
                             <p className="text-xs text-blue-600 font-medium mt-1">
                               {isSimulating ? (
-                                <span className="text-orange-600">시뮬레이션 중 ({userRole === 'admin' ? t('admin') : 
+                                <span className="text-orange-600">{t('simulating')} ({userRole === 'admin' ? t('admin') : 
                                  userRole === 'manager' ? t('manager') : 
                                  userRole === 'team_member' ? t('teamMember') : t('customer')})</span>
                               ) : (
@@ -655,7 +655,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                               className="w-full px-4 py-2 text-left text-sm text-orange-600 hover:bg-orange-50 flex items-center"
                             >
                               <XCircle className="w-4 h-4 mr-2" />
-                              시뮬레이션 중지
+                              {t('stopSimulation')}
                             </button>
                           </div>
                         )}

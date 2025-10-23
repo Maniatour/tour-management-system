@@ -1530,7 +1530,7 @@ export default function DataSyncPage() {
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-lg font-medium"
           >
             <FileSpreadsheet className="h-5 w-5 mr-2" />
-            {loading ? '로딩 중...' : '시트 정보 가져오기'}
+            {loading ? t('loading') : '시트 정보 가져오기'}
           </button>
           {loading && (
             <button
@@ -1754,13 +1754,13 @@ export default function DataSyncPage() {
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
             <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
-            동기화 진행 중
+            {t('syncingInProgress')}
           </h3>
           
           {/* 진행률 바 */}
           <div className="mb-4">
             <div className="flex justify-between text-sm text-gray-600 mb-2">
-              <span>진행률</span>
+              <span>{t('progress')}</span>
               <span>{progress}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
@@ -1771,7 +1771,7 @@ export default function DataSyncPage() {
             </div>
             {etaMs && etaMs > 0 && (
               <div className="text-xs text-gray-500 mt-1">
-                예상 완료 시간: {Math.ceil(etaMs / 1000)}초 후
+                {t('estimatedCompletion')}: {Math.ceil(etaMs / 1000)}{t('secondsLater')}
               </div>
             )}
           </div>

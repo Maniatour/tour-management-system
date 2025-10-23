@@ -37,7 +37,7 @@ const Navigation = () => {
       await signOut()
       router.push(`/${locale}/auth`)
     } catch (error) {
-      console.error('로그아웃 중 오류가 발생했습니다:', error)
+      console.error(t('logoutError'), error)
     }
   }
 
@@ -54,7 +54,7 @@ const Navigation = () => {
         router.push(`/${locale}/admin`)
       }, 100)
     } catch (error) {
-      console.error('시뮬레이션 중지 중 오류:', error)
+      console.error(t('simulationStopError'), error)
       // 오류가 발생해도 관리자 페이지로 이동
       router.push(`/${locale}/admin`)
     }
@@ -232,7 +232,7 @@ const Navigation = () => {
                             <>
                               <div className="px-4 py-2 border-t border-gray-100">
                                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                                  내 정보
+                                  {t('myInfo')}
                                 </p>
                                 <Link
                                   href={`/${locale}/dashboard/profile`}
@@ -240,7 +240,7 @@ const Navigation = () => {
                                   className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                                 >
                                   <User className="w-4 h-4 mr-2" />
-                                  내 정보
+                                  {t('myInfo')}
                                 </Link>
                                 <Link
                                   href={`/${locale}/dashboard/reservations`}
@@ -248,7 +248,7 @@ const Navigation = () => {
                                   className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                                 >
                                   <Calendar className="w-4 h-4 mr-2" />
-                                  내 예약
+                                  {t('myReservations')}
                                 </Link>
                               </div>
                             </>
@@ -295,7 +295,7 @@ const Navigation = () => {
                                 className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center"
                               >
                                 <ArrowLeft className="w-4 h-4 mr-2" />
-                                관리자로 돌아가기
+                                {t('backToAdmin')}
                               </button>
                             </div>
                           )}
@@ -521,7 +521,7 @@ const Navigation = () => {
                       className="flex items-center w-full text-red-600 hover:text-red-700 transition-colors px-2 py-2"
                     >
                       <ArrowLeft className="w-4 h-4 mr-3" />
-                      관리자로 돌아가기
+                      {t('backToAdmin')}
                     </button>
                   )}
                   

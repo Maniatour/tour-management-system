@@ -780,7 +780,7 @@ export default function CompanyExpenseManager() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-8">로딩 중...</div>
+            <div className="text-center py-8">{t('loading')}</div>
           ) : expenses.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               {t('noExpenses')}

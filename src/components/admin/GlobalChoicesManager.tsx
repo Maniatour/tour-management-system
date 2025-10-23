@@ -362,7 +362,7 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">로딩 중...</div>
+        <div className="text-gray-500">{t('loading')}</div>
       </div>
     )
   }
@@ -933,7 +933,7 @@ function ImportChoicesModal({ onImport, onClose }: ImportChoicesModalProps) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-6 w-96">
-          <div className="text-center">로딩 중...</div>
+          <div className="text-center">{t('loading')}</div>
         </div>
       </div>
     )

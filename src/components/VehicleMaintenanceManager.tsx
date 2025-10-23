@@ -1030,7 +1030,7 @@ export default function VehicleMaintenanceManager() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-8">로딩 중...</div>
+            <div className="text-center py-8">{t('loading')}</div>
           ) : maintenances.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               {t('noMaintenance')}

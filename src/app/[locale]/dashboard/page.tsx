@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { Calendar, User, Phone, Mail, Search, MapPin, Clock, Users, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -41,6 +42,7 @@ export default function CustomerDashboard() {
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
+  const t = useTranslations('common')
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loading, setLoading] = useState(true)
@@ -413,7 +415,7 @@ export default function CustomerDashboard() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">로딩 중...</p>
+          <p className="text-gray-600">{t('loading')}</p>
             </div>
           </div>
         )
@@ -576,39 +578,39 @@ export default function CustomerDashboard() {
             <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
                 <User className="w-5 h-5 mr-2" />
-                내 정보
+                {t('myInfo')}
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex items-center">
                   <User className="w-4 h-4 mr-2 text-gray-500" />
-                  <span className="text-gray-600">이름:</span>
+                  <span className="text-gray-600">{t('name')}:</span>
                   <span className="ml-2 font-medium">{customer.name}</span>
                 </div>
                 <div className="flex items-center">
                   <Mail className="w-4 h-4 mr-2 text-gray-500" />
-                  <span className="text-gray-600">이메일:</span>
+                  <span className="text-gray-600">{t('email')}:</span>
                   <span className="ml-2 font-medium">{customer.email}</span>
                 </div>
                 {customer.phone && (
                   <div className="flex items-center">
                     <Phone className="w-4 h-4 mr-2 text-gray-500" />
-                    <span className="text-gray-600">전화번호:</span>
+                    <span className="text-gray-600">{t('phone')}:</span>
                     <span className="ml-2 font-medium">{customer.phone}</span>
                   </div>
                 )}
                 {customer.language && (
                   <div className="flex items-center">
-                    <span className="text-gray-600">언어:</span>
+                    <span className="text-gray-600">{t('language')}:</span>
                     <span className="ml-2 font-medium">{customer.language}</span>
                   </div>
                 )}
               </div>
               <div className="mt-4">
                 <Link
-                  href="/dashboard/profile"
+                  href={`/${locale}/dashboard/profile`}
                   className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                 >
-                  정보 수정하기 →
+                  {t('editInfo')} →
                 </Link>
               </div>
             </div>

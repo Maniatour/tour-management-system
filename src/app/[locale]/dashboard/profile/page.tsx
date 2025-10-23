@@ -120,7 +120,7 @@ export default function CustomerProfile() {
         .single()
 
       if (error) {
-        console.error('고객 정보 조회 오류:', {
+        console.error(t('customerInfoError'), {
           error: error,
           message: error?.message || 'Unknown error',
           code: error?.code || 'No code',
@@ -161,7 +161,7 @@ export default function CustomerProfile() {
         })
       }
     } catch (error) {
-      console.error('데이터 로드 오류:', error)
+      console.error(t('dataLoadError'), error)
       setCustomer(null)
       setFormData({
         name: authUser.name || authUser.email?.split('@')[0] || '',
@@ -208,7 +208,7 @@ export default function CustomerProfile() {
 
         if (error) {
           console.error('고객 정보 업데이트 오류:', error)
-          alert('정보 저장 중 오류가 발생했습니다.')
+          alert(t('saveError'))
           return
         }
       } else {
@@ -224,16 +224,16 @@ export default function CustomerProfile() {
 
         if (error) {
           console.error('고객 정보 생성 오류:', error)
-          alert('정보 저장 중 오류가 발생했습니다.')
+          alert(t('saveError'))
           return
         }
       }
 
-      alert('정보가 성공적으로 저장되었습니다.')
+      alert(t('saveSuccess'))
       loadCustomerData()
     } catch (error) {
-      console.error('저장 오류:', error)
-      alert('정보 저장 중 오류가 발생했습니다.')
+      console.error(t('saveErrorLog'), error)
+      alert(t('saveError'))
     } finally {
       setSaving(false)
     }
@@ -244,7 +244,7 @@ export default function CustomerProfile() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">로딩 중...</p>
+          <p className="text-gray-600">{t('loading')}</p>
         </div>
       </div>
     )
@@ -295,21 +295,21 @@ export default function CustomerProfile() {
               </div>
             )}
           </div>
-          <p className="text-gray-600">개인 정보를 확인하고 수정하세요.</p>
+          <p className="text-gray-600">{t('profileDescription')}</p>
         </div>
 
         {/* 프로필 폼 */}
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
             <User className="w-5 h-5 mr-2" />
-            개인 정보
+            {t('personalInfo')}
           </h2>
 
           <div className="space-y-6">
             {/* 이름 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                이름 *
+                {t('name')} *
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -318,7 +318,7 @@ export default function CustomerProfile() {
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="이름을 입력하세요"
+                  placeholder={t('enterName')}
                   required
                 />
               </div>
@@ -327,7 +327,7 @@ export default function CustomerProfile() {
             {/* 이메일 (읽기 전용) */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                이메일
+                {t('email')}
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -338,13 +338,13 @@ export default function CustomerProfile() {
                   disabled
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">이메일은 변경할 수 없습니다.</p>
+              <p className="text-xs text-gray-500 mt-1">{t('emailCannotChange')}</p>
             </div>
 
             {/* 전화번호 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                전화번호
+                {t('phone')}
               </label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -353,7 +353,7 @@ export default function CustomerProfile() {
                   value={formData.phone}
                   onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="010-1234-5678"
+                  placeholder={t('enterPhone')}
                 />
               </div>
             </div>
@@ -361,7 +361,7 @@ export default function CustomerProfile() {
             {/* 언어 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                선호 언어
+                {t('language')}
               </label>
               <div className="relative">
                 <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -389,12 +389,12 @@ export default function CustomerProfile() {
               {saving ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                  저장 중...
+                  {t('saving')}
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />
-                  저장
+                  {t('save')}
                 </>
               )}
             </button>

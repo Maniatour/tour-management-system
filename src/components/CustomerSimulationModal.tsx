@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { X, User, Search } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { useTranslations } from 'next-intl'
 
 interface Customer {
   id: string
@@ -21,6 +22,7 @@ interface CustomerSimulationModalProps {
 
 export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSimulationModalProps) {
   const { startSimulation } = useAuth()
+  const t = useTranslations('common')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -153,14 +155,14 @@ export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSim
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-2 text-gray-600">고객 목록을 불러오는 중...</span>
+              <span className="ml-2 text-gray-600">{t('loadingCustomerList')}</span>
             </div>
           ) : filteredCustomers.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
                 <User className="w-12 h-12 text-gray-400 mx-auto mb-2" />
                 <p className="text-gray-500">
-                  {searchTerm ? '검색 결과가 없습니다.' : '고객이 없습니다.'}
+                  {searchTerm ? t('noSearchResults') : t('noCustomers')}
                 </p>
               </div>
             </div>

@@ -7,6 +7,7 @@ import { getRoleDisplayName } from '@/lib/roles'
 import { User, LogOut, Settings, ChevronDown, Shield, Home, UserCheck } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
 interface UserProfileProps {
   className?: string
@@ -17,6 +18,7 @@ export default function UserProfile({ className = '' }: UserProfileProps) {
   const [isOpen, setIsOpen] = useState(false)
   const params = useParams()
   const locale = params.locale as string
+  const t = useTranslations('common')
 
   const handleSignOut = async () => {
     await signOut()
@@ -94,7 +96,7 @@ export default function UserProfile({ className = '' }: UserProfileProps) {
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                   >
                     <Shield className="w-4 h-4 mr-2" />
-                    관리자 페이지
+                    {t('adminPage')}
                   </Link>
                   
                   <Link
@@ -103,7 +105,7 @@ export default function UserProfile({ className = '' }: UserProfileProps) {
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                   >
                     <Home className="w-4 h-4 mr-2" />
-                    고객 페이지
+                    {t('customerPage')}
                   </Link>
                   
                   <div className="border-t border-gray-100 my-1"></div>

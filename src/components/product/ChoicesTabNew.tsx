@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Save, Copy, Download, Upload, FileText } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 
 // 임시 타입 정의 (데이터베이스 타입이 없을 때 사용)
@@ -852,6 +853,7 @@ interface TemplateModalProps {
 }
 
 function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
+  const t = useTranslations('common')
   const [templates, setTemplates] = useState<Array<{template_group: string, template_group_ko: string, count: number}>>([])
   const [loading, setLoading] = useState(true)
 
@@ -900,7 +902,7 @@ function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-6 w-96">
-          <div className="text-center">로딩 중...</div>
+          <div className="text-center">{t('loading')}</div>
         </div>
       </div>
     )

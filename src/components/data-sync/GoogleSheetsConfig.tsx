@@ -1,6 +1,7 @@
 'use client'
 
 import { FileSpreadsheet, ExternalLink, X } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 
 interface GoogleSheetsConfigProps {
   spreadsheetId: string
@@ -25,6 +26,8 @@ export default function GoogleSheetsConfig({
   onCancelRequest,
   onOpenGoogleSheets
 }: GoogleSheetsConfigProps) {
+  const t = useTranslations('common')
+  
   return (
     <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
       <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
@@ -72,7 +75,7 @@ export default function GoogleSheetsConfig({
           className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-lg font-medium"
         >
           <FileSpreadsheet className="h-5 w-5 mr-2" />
-          {loading ? '로딩 중...' : '시트 정보 가져오기'}
+          {loading ? t('loading') : '시트 정보 가져오기'}
         </button>
         {loading && (
           <button

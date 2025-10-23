@@ -373,7 +373,7 @@ export default function ProductSelector({
       {/* 상품 목록 - 탭 형식 */}
       <div className="border border-gray-200 rounded-lg h-[500px] flex flex-col">
         {loading ? (
-          <div className="p-4 text-center text-gray-500">상품 로딩 중...</div>
+          <div className="p-4 text-center text-gray-500">{t('loading')}</div>
         ) : filteredProducts.length === 0 ? (
           <div className="p-4 text-center text-gray-500">
             {searchTerm || selectedCategory || selectedSubCategory 
@@ -541,7 +541,7 @@ export default function ProductSelector({
         <div className="space-y-3">
           <h4 className="font-medium text-gray-900">선택 옵션</h4>
           {loadingChoices ? (
-            <div className="p-4 text-center text-gray-500">선택 옵션 로딩 중...</div>
+            <div className="p-4 text-center text-gray-500">{t('loading')}</div>
           ) : productChoices.length === 0 ? (
             <div className="p-4 text-center text-gray-500">선택 옵션이 없습니다.</div>
           ) : (

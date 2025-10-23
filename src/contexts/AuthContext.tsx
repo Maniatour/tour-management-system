@@ -27,6 +27,7 @@ interface SimulatedUser {
   id: string
   email: string
   name_ko: string
+  name_en?: string
   phone: string | null
   language: string | null
   created_at: string
