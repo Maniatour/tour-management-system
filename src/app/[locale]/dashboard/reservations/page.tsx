@@ -1555,248 +1555,96 @@ export default function CustomerReservations() {
                 {(reservation.pricing || reservation.products?.base_price) && (
                   <div className="border-t border-gray-200 pt-4">
                     <h4 className="text-sm font-medium text-gray-900 mb-3">{t('priceInfo')}</h4>
-                    <div className="space-y-4">
-                      {/* 상품 가격 */}
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <h5 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                          <CreditCard className="w-4 h-4 mr-1 text-blue-600" />
-                          상품 가격
-                        </h5>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          {reservation.pricing ? (
-                            <>
-                              {reservation.adults > 0 && (
-                                <div className="flex justify-between items-center">
-                                  <span className="text-gray-600">성인 {reservation.adults}명</span>
-                                  <span className="font-semibold text-gray-900">
-                                    ${((reservation.pricing.adult_product_price || 0) * reservation.adults).toFixed(2)}
-                                  </span>
-                                </div>
-                              )}
-                              {reservation.child > 0 && (
-                                <div className="flex justify-between items-center">
-                                  <span className="text-gray-600">어린이 {reservation.child}명</span>
-                                  <span className="font-semibold text-gray-900">
-                                    ${((reservation.pricing.child_product_price || 0) * reservation.child).toFixed(2)}
-                                  </span>
-                                </div>
-                              )}
-                              {reservation.infant > 0 && (
-                                <div className="flex justify-between items-center">
-                                  <span className="text-gray-600">유아 {reservation.infant}명</span>
-                                  <span className="font-semibold text-gray-900">
-                                    ${((reservation.pricing.infant_product_price || 0) * reservation.infant).toFixed(2)}
-                                  </span>
-                                </div>
-                              )}
-                              <div className="flex justify-between items-center bg-white rounded px-2 py-1 col-span-2">
-                                <span className="font-semibold text-gray-900">상품 합계</span>
-                                <span className="font-bold">${(reservation.pricing.product_price_total || 0).toFixed(2)}</span>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">기본 가격</span>
-                                <span className="font-semibold text-gray-900">
-                                  ${(reservation.products?.base_price || 0).toFixed(2)} / 인
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center bg-white rounded px-2 py-1 col-span-2">
-                                <span className="font-semibold text-gray-900">총 인원</span>
-                                <span className="font-bold">{reservation.total_people}명</span>
-                              </div>
-                              <div className="flex justify-between items-center bg-white rounded px-2 py-1 col-span-2">
-                                <span className="font-semibold text-gray-900">예상 총액</span>
-                                <span className="font-bold">
-                                  ${((reservation.products?.base_price || 0) * reservation.total_people).toFixed(2)}
-                                </span>
-                              </div>
-                            </>
+                    <div className="text-sm text-gray-700 space-y-1">
+                      {reservation.pricing ? (
+                        <>
+                          {/* 상품 가격 */}
+                          {reservation.adults > 0 && (
+                            <div>• 성인 {reservation.adults}명: ${((reservation.pricing.adult_product_price || 0) * reservation.adults).toFixed(2)}</div>
                           )}
-                        </div>
-                      </div>
+                          {reservation.child > 0 && (
+                            <div>• 어린이 {reservation.child}명: ${((reservation.pricing.child_product_price || 0) * reservation.child).toFixed(2)}</div>
+                          )}
+                          {reservation.infant > 0 && (
+                            <div>• 유아 {reservation.infant}명: ${((reservation.pricing.infant_product_price || 0) * reservation.infant).toFixed(2)}</div>
+                          )}
+                          <div className="font-semibold">• 상품 합계: ${(reservation.pricing.product_price_total || 0).toFixed(2)}</div>
 
-                      {/* 옵션 가격 */}
-                      {reservation.pricing && (reservation.pricing.required_option_total > 0 || reservation.pricing.option_total > 0) && (
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                          <h5 className="text-sm font-semibold text-gray-900 mb-3">옵션 가격</h5>
-                          <div className="grid grid-cols-2 gap-3 text-sm">
-                            {reservation.pricing.required_option_total > 0 && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">필수 옵션</span>
-                                <span className="font-semibold text-gray-900">
-                                  ${(reservation.pricing.required_option_total || 0).toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            {reservation.pricing.option_total > 0 && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">선택 옵션</span>
-                                <span className="font-semibold text-gray-900">
-                                  ${(reservation.pricing.option_total || 0).toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex justify-between items-center bg-white rounded px-2 py-1 col-span-2">
-                              <span className="font-semibold text-gray-900">옵션 합계</span>
-                              <span className="font-bold">
-                                ${((reservation.pricing.required_option_total || 0) + (reservation.pricing.option_total || 0)).toFixed(2)}
-                              </span>
+                          {/* 옵션 가격 */}
+                          {reservation.pricing.required_option_total > 0 && (
+                            <div>• 필수 옵션: ${(reservation.pricing.required_option_total || 0).toFixed(2)}</div>
+                          )}
+                          {reservation.pricing.option_total > 0 && (
+                            <div>• 선택 옵션: ${(reservation.pricing.option_total || 0).toFixed(2)}</div>
+                          )}
+                          {(reservation.pricing.required_option_total > 0 || reservation.pricing.option_total > 0) && (
+                            <div className="font-semibold">• 옵션 합계: ${((reservation.pricing.required_option_total || 0) + (reservation.pricing.option_total || 0)).toFixed(2)}</div>
+                          )}
+
+                          {/* 소계 */}
+                          <div className="font-semibold text-blue-600">• 소계: ${(reservation.pricing.subtotal || 0).toFixed(2)}</div>
+
+                          {/* 할인 및 추가 비용 */}
+                          {reservation.pricing.coupon_discount !== 0 && reservation.pricing.coupon_discount !== null && (
+                            <div className="text-green-600">
+                              • 쿠폰 할인: {reservation.pricing.coupon_discount < 0 
+                                ? `-$${Math.abs(reservation.pricing.coupon_discount).toFixed(2)}` 
+                                : `$${reservation.pricing.coupon_discount.toFixed(2)}`}
                             </div>
-                          </div>
-                        </div>
-                      )}
+                          )}
+                          {reservation.pricing.additional_discount !== 0 && reservation.pricing.additional_discount !== null && (
+                            <div className="text-green-600">• 추가 할인: ${reservation.pricing.additional_discount.toFixed(2)}</div>
+                          )}
+                          {reservation.pricing.additional_cost !== 0 && reservation.pricing.additional_cost !== null && (
+                            <div>• 추가 비용: ${reservation.pricing.additional_cost.toFixed(2)}</div>
+                          )}
+                          {reservation.pricing.card_fee !== 0 && reservation.pricing.card_fee !== null && (
+                            <div>• 카드 수수료: ${reservation.pricing.card_fee.toFixed(2)}</div>
+                          )}
+                          {reservation.pricing.tax !== 0 && reservation.pricing.tax !== null && (
+                            <div>• 세금: ${reservation.pricing.tax.toFixed(2)}</div>
+                          )}
+                          {reservation.pricing.prepayment_cost !== 0 && reservation.pricing.prepayment_cost !== null && (
+                            <div>• 선불 비용: ${reservation.pricing.prepayment_cost.toFixed(2)}</div>
+                          )}
+                          {reservation.pricing.prepayment_tip !== 0 && reservation.pricing.prepayment_tip !== null && (
+                            <div>• 선불 팁: ${reservation.pricing.prepayment_tip.toFixed(2)}</div>
+                          )}
 
-                      {/* 소계 */}
-                      {reservation.pricing && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <h5 className="text-sm font-semibold text-gray-900 mb-3">소계</h5>
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-700">상품 가격 + 옵션 가격</span>
-                            <span className="font-bold text-blue-600">${(reservation.pricing.subtotal || 0).toFixed(2)}</span>
-                          </div>
-                        </div>
-                      )}
+                          {/* 프라이빗 투어 */}
+                          {reservation.pricing.private_tour_additional_cost > 0 && reservation.pricing.private_tour_additional_cost !== null && (
+                            <div>• 프라이빗 투어 추가 비용: ${reservation.pricing.private_tour_additional_cost.toFixed(2)}</div>
+                          )}
 
-                      {/* 할인 및 추가 비용 */}
-                      {reservation.pricing && (reservation.pricing.coupon_discount !== 0 || reservation.pricing.additional_discount !== 0 || 
-                        reservation.pricing.additional_cost !== 0 || reservation.pricing.card_fee !== 0 || 
-                        reservation.pricing.tax !== 0 || reservation.pricing.prepayment_cost !== 0 || 
-                        reservation.pricing.prepayment_tip !== 0) && (
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                          <h5 className="text-sm font-semibold text-gray-900 mb-3">할인 및 추가 비용</h5>
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            {reservation.pricing.coupon_discount !== 0 && reservation.pricing.coupon_discount !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">쿠폰 할인</span>
-                                <span className="font-semibold text-green-600">
-                                  {reservation.pricing.coupon_discount < 0 
-                                    ? `-$${Math.abs(reservation.pricing.coupon_discount).toFixed(2)}` 
-                                    : `$${reservation.pricing.coupon_discount.toFixed(2)}`}
-                                </span>
-                              </div>
-                            )}
-                            {reservation.pricing.additional_discount !== 0 && reservation.pricing.additional_discount !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">추가 할인</span>
-                                <span className="font-semibold text-green-600">
-                                  ${reservation.pricing.additional_discount.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            {reservation.pricing.additional_cost !== 0 && reservation.pricing.additional_cost !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">추가 비용</span>
-                                <span className="font-semibold text-gray-900">
-                                  ${reservation.pricing.additional_cost.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            {reservation.pricing.card_fee !== 0 && reservation.pricing.card_fee !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">카드 수수료</span>
-                                <span className="font-semibold text-gray-900">
-                                  ${reservation.pricing.card_fee.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            {reservation.pricing.tax !== 0 && reservation.pricing.tax !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">세금</span>
-                                <span className="font-semibold text-gray-900">
-                                  ${reservation.pricing.tax.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            {reservation.pricing.prepayment_cost !== 0 && reservation.pricing.prepayment_cost !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">선불 비용</span>
-                                <span className="font-semibold text-gray-900">
-                                  ${reservation.pricing.prepayment_cost.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            {reservation.pricing.prepayment_tip !== 0 && reservation.pricing.prepayment_tip !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-gray-600">선불 팁</span>
-                                <span className="font-semibold text-gray-900">
-                                  ${reservation.pricing.prepayment_tip.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
+                          {/* 최종 가격 */}
+                          <div className="font-bold text-lg text-blue-600 border-t pt-2 mt-2">
+                            총 가격: ${(reservation.pricing.total_price || 0).toFixed(2)}
                           </div>
-                        </div>
-                      )}
-
-                      {/* 프라이빗 투어 */}
-                      {reservation.pricing && reservation.pricing.private_tour_additional_cost > 0 && reservation.pricing.private_tour_additional_cost !== null && (
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                          <h5 className="text-sm font-semibold text-gray-900 mb-3">프라이빗 투어</h5>
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-600">추가 비용</span>
-                            <span className="font-semibold text-gray-900">
-                              ${reservation.pricing.private_tour_additional_cost.toFixed(2)}
-                            </span>
+                          <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
+                            <div>예약금: ${(reservation.pricing.deposit_amount || 0).toFixed(2)}</div>
+                            <div>잔금: ${(reservation.pricing.balance_amount || 0).toFixed(2)}</div>
                           </div>
-                        </div>
-                      )}
 
-                      {/* 최종 가격 */}
-                      {reservation.pricing && (
-                        <div className="bg-gradient-to-r from-blue-50 to-green-50 border-2 border-blue-200 rounded-lg p-4">
-                          <h5 className="text-lg font-bold text-gray-900 mb-3 text-center">최종 가격 정보</h5>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between items-center py-2 border-t border-gray-300">
-                              <span className="text-lg font-bold text-gray-900">총 가격</span>
-                              <span className="text-xl font-bold text-blue-600">${reservation.pricing.total_price?.toFixed(2) || '0.00'}</span>
+                          {/* 결제 내역 */}
+                          {reservation.payments && reservation.payments.length > 0 && (
+                            <div className="mt-3">
+                              <div className="font-semibold text-gray-900">결제 내역:</div>
+                              {reservation.payments.map((payment) => (
+                                <div key={payment.id} className="text-xs text-gray-600 ml-2">
+                                  • {payment.payment_status === 'confirmed' ? '확인됨' :
+                                     payment.payment_status === 'pending' ? '대기중' : '거부됨'} - 
+                                  ${(payment.amount || 0).toFixed(2)} ({new Date(payment.submit_on).toLocaleDateString()})
+                                </div>
+                              ))}
                             </div>
-                            <div className="grid grid-cols-2 gap-3 mt-3">
-                              <div className="text-center">
-                                <div className="text-xs text-gray-600">예약금</div>
-                                <div className="text-sm font-semibold text-blue-600">
-                                  ${reservation.pricing.deposit_amount?.toFixed(2) || '0.00'}
-                                </div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-xs text-gray-600">잔금</div>
-                                <div className="text-sm font-semibold text-green-600">
-                                  ${reservation.pricing.balance_amount?.toFixed(2) || '0.00'}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 결제 내역 */}
-                      {reservation.payments && reservation.payments.length > 0 && (
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                          <h5 className="text-sm font-semibold text-gray-900 mb-3">결제 내역</h5>
-                          <div className="space-y-2">
-                            {reservation.payments.map((payment) => (
-                              <div key={payment.id} className="flex justify-between items-center text-sm bg-white rounded px-3 py-2">
-                                <div className="flex items-center space-x-2">
-                                  <span className="text-gray-600">{payment.payment_method}</span>
-                                  <span className={`px-2 py-1 rounded text-xs ${
-                                    payment.payment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                                    payment.payment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                    'bg-red-100 text-red-800'
-                                  }`}>
-                                    {payment.payment_status === 'confirmed' ? '확인됨' :
-                                     payment.payment_status === 'pending' ? '대기중' : '거부됨'}
-                                  </span>
-                                </div>
-                                <div className="text-right">
-                                  <div className="font-semibold text-gray-900">${(payment.amount || 0).toFixed(2)}</div>
-                                  <div className="text-xs text-gray-500">
-                                    {new Date(payment.submit_on).toLocaleDateString()}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div>• 기본 가격: ${(reservation.products?.base_price || 0).toFixed(2)} / 인</div>
+                          <div>• 총 인원: {reservation.total_people}명</div>
+                          <div className="font-semibold">• 예상 총액: ${((reservation.products?.base_price || 0) * reservation.total_people).toFixed(2)}</div>
+                        </>
                       )}
                     </div>
                   </div>
