@@ -23,6 +23,7 @@ interface Reservation {
   status: string
   event_note: string | null
   channel_id: string | null
+  partner_rn: string | null
   created_at: string
   products?: {
     name: string
@@ -1232,6 +1233,16 @@ export default function CustomerReservations() {
                           <span className="text-sm text-gray-500">채널 정보 없음</span>
                         )
                       })()}
+                    </div>
+                  )}
+
+                  {/* 파트너 RN */}
+                  {reservation.partner_rn && (
+                    <div className="flex items-center text-gray-600">
+                      <User className="w-4 h-4 mr-2" />
+                      <span className="text-sm">
+                        RN: <span className="font-semibold text-blue-600">{reservation.partner_rn}</span>
+                      </span>
                     </div>
                   )}
 
