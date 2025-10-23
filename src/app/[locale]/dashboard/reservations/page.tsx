@@ -513,6 +513,7 @@ export default function CustomerReservations() {
                   console.log('가격 정보 조회 시작:', { reservationId: reservation.id, reservationIdType: typeof reservation.id })
                   
                   // 디버깅: reservation_pricing 테이블에 어떤 데이터가 있는지 확인
+                  console.log('reservation_pricing 테이블 조회 시도 중...')
                   const { data: allPricingData, error: allPricingError } = await supabase
                     .from('reservation_pricing')
                     .select('reservation_id, total_price')
@@ -520,8 +521,28 @@ export default function CustomerReservations() {
                   
                   if (allPricingError) {
                     console.warn('reservation_pricing 테이블 전체 조회 오류:', allPricingError)
+                    console.warn('오류 상세:', {
+                      code: allPricingError.code,
+                      message: allPricingError.message,
+                      details: allPricingError.details,
+                      hint: allPricingError.hint
+                    })
                   } else {
                     console.log('reservation_pricing 테이블 샘플 데이터:', allPricingData)
+                    console.log('reservation_pricing 테이블 데이터 개수:', allPricingData?.length || 0)
+                  }
+                  
+                  // 특정 reservation_id로 검색해보기
+                  console.log('특정 reservation_id 검색 시도:', reservation.id.toString())
+                  const { data: specificPricingData, error: specificPricingError } = await supabase
+                    .from('reservation_pricing')
+                    .select('*')
+                    .eq('reservation_id', reservation.id.toString())
+                  
+                  if (specificPricingError) {
+                    console.warn('특정 reservation_id 검색 오류:', specificPricingError)
+                  } else {
+                    console.log('특정 reservation_id 검색 결과:', specificPricingData)
                   }
                   
                   const { data: pricingData, error: pricingError } = await supabase
