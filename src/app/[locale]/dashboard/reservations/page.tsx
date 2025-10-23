@@ -1728,34 +1728,6 @@ export default function CustomerReservations() {
                              </div>
                            )}
 
-                           {/* 결제 내역 */}
-                           {reservation.payments && reservation.payments.length > 0 && (
-                             <div className="p-4">
-                               <div className="space-y-2 text-sm">
-                                 <div className="text-xs text-gray-500 mb-2">결제 내역</div>
-                                 {reservation.payments.map((payment) => (
-                                   <div key={payment.id} className="flex justify-between items-center">
-                                     <div className="flex items-center space-x-2">
-                                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                         payment.payment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                                         payment.payment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 
-                                         'bg-red-100 text-red-800'
-                                       }`}>
-                                         {payment.payment_status === 'confirmed' ? '확인됨' :
-                                          payment.payment_status === 'pending' ? '대기중' : '거부됨'}
-                                       </span>
-                                       <span className="text-gray-500 text-xs">
-                                         {new Date(payment.submit_on).toLocaleDateString()}
-                                       </span>
-                                     </div>
-                                     <div className="font-semibold text-gray-900">
-                                       ${(payment.amount || 0).toFixed(2)}
-                                     </div>
-                                   </div>
-                                 ))}
-                               </div>
-                             </div>
-                           )}
                          </div>
                        ) : (
                          <div className="p-4">
