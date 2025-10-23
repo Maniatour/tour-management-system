@@ -512,6 +512,18 @@ export default function CustomerReservations() {
                 try {
                   console.log('가격 정보 조회 시작:', { reservationId: reservation.id, reservationIdType: typeof reservation.id })
                   
+                  // 디버깅: reservation_pricing 테이블에 어떤 데이터가 있는지 확인
+                  const { data: allPricingData, error: allPricingError } = await supabase
+                    .from('reservation_pricing')
+                    .select('reservation_id, total_price')
+                    .limit(10)
+                  
+                  if (allPricingError) {
+                    console.warn('reservation_pricing 테이블 전체 조회 오류:', allPricingError)
+                  } else {
+                    console.log('reservation_pricing 테이블 샘플 데이터:', allPricingData)
+                  }
+                  
                   const { data: pricingData, error: pricingError } = await supabase
                     .from('reservation_pricing')
                     .select('adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, is_private_tour, private_tour_additional_cost, total_price, deposit_amount, balance_amount')
@@ -713,9 +725,13 @@ export default function CustomerReservations() {
       }
 
       if (reservationsData && reservationsData.length > 0) {
+        console.log('시뮬레이션 모드: 예약 데이터 발견:', reservationsData.length, '개')
+        console.log('시뮬레이션 모드: 예약 ID들:', reservationsData.map(r => r.id))
+        
         // 각 예약에 대해 상품 정보를 별도로 조회
         const reservationsWithProducts = await Promise.all(
           reservationsData.map(async (reservation: SupabaseReservation) => {
+            console.log('시뮬레이션 모드: 예약 처리 중:', reservation.id)
             try {
               const { data: productData, error: productError } = await supabase
                 .from('products')
