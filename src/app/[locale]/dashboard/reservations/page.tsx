@@ -1617,9 +1617,6 @@ export default function CustomerReservations() {
                           )}
 
                           {/* 최종 가격 */}
-                          <div className="font-bold text-lg text-blue-600 border-t pt-2 mt-2">
-                            총 가격: ${(reservation.pricing.total_price || 0).toFixed(2)}
-                          </div>
                           <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
                             <div>예약금: ${(reservation.pricing.deposit_amount || 0).toFixed(2)}</div>
                             <div>잔금: ${(reservation.pricing.balance_amount || 0).toFixed(2)}</div>
