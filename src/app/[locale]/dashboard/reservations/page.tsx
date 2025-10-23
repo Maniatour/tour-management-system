@@ -374,21 +374,18 @@ export default function CustomerReservations() {
     }
   }
 
-  // 픽업 스케줄 정보 가져오기
+  // 픽업 스케줄 정보 가져오기 (reservations 테이블에서 직접 조회)
   const getPickupSchedule = async (reservationId: string) => {
     try {
-      const { data: pickupSchedule, error } = await supabase
-        .from('pickup_schedules')
+      const { data: reservation, error } = await supabase
+        .from('reservations')
         .select(`
-          *,
-          pickup_hotels (
-            hotel_name,
-            pick_up_location,
-            address,
-            description_ko
-          )
+          pickup_hotel,
+          pickup_time,
+          tour_date,
+          tour_time
         `)
-        .eq('reservation_id', reservationId)
+        .eq('id', reservationId)
         .single()
 
       if (error) {
@@ -396,7 +393,26 @@ export default function CustomerReservations() {
         return null
       }
 
-      return pickupSchedule
+      // 픽업 호텔 정보가 있으면 추가 조회
+      if (reservation?.pickup_hotel) {
+        const { data: hotelInfo } = await supabase
+          .from('pickup_hotels')
+          .select(`
+            hotel_name,
+            pick_up_location,
+            address,
+            description_ko
+          `)
+          .eq('hotel_name', reservation.pickup_hotel)
+          .single()
+
+        return {
+          ...reservation,
+          pickup_hotels: hotelInfo
+        }
+      }
+
+      return reservation
     } catch (error) {
       console.error('픽업 스케줄 조회 중 예외:', error)
       return null
@@ -406,15 +422,15 @@ export default function CustomerReservations() {
   // 투어 상세 정보 가져오기
   const getTourDetails = async (reservationId: string) => {
     try {
-      // reservation_ids에서 tour_id 찾기
-      const { data: reservationIds, error: reservationIdsError } = await supabase
-        .from('reservation_ids')
+      // reservations 테이블에서 직접 tour_id 찾기
+      const { data: reservation, error: reservationError } = await supabase
+        .from('reservations')
         .select('tour_id')
-        .eq('reservation_id', reservationId)
+        .eq('id', reservationId)
         .single()
 
-      if (reservationIdsError || !reservationIds) {
-        console.warn('예약 ID 조회 오류:', reservationIdsError)
+      if (reservationError || !reservation?.tour_id) {
+        console.warn('예약 ID 조회 오류:', reservationError)
         return null
       }
 
@@ -442,7 +458,7 @@ export default function CustomerReservations() {
             driver_phone
           )
         `)
-        .eq('id', reservationIds.tour_id)
+        .eq('id', reservation.tour_id)
         .single()
 
       if (tourError) {
