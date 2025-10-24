@@ -309,7 +309,42 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         </button>
       </div>
       
-      {isExpanded && !formData.productId && (
+      {/* 선택된 상품 정보 표시 (어코디언이 접혀있을 때도 표시) */}
+      {formData.productId && !isExpanded && (
+        <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-blue-600 font-medium">선택된 상품:</span>
+              <span className="text-sm text-blue-900 font-medium">
+                {products.find(p => p.id === formData.productId)?.name_ko || '알 수 없는 상품'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(prev => ({
+                  ...prev,
+                  productId: '',
+                  selectedProductCategory: '',
+                  selectedProductSubCategory: '',
+                  productSearch: '',
+                  selectedOptions: {},
+                  requiredOptions: {},
+                  selectedOptionPrices: {},
+                  productChoices: [],
+                  selectedChoices: [],
+                  choicesTotal: 0
+                }));
+              }}
+              className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 hover:bg-blue-100 rounded"
+            >
+              해제
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {isExpanded && (
         <div className="mb-4">
           {/* 새로운 ProductSelector 사용 */}
           <ProductSelector
@@ -336,7 +371,6 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
                 adults={0}
                 children={0}
                 infants={0}
-                totalPeople={0}
                 onSelectionChange={handleSelectionChange}
                 initialSelections={formData.selectedChoices}
               />

@@ -828,304 +828,321 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                 {/* 2열 그리드 레이아웃 */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                  {choice.options.map((option, optionIndex) => (
-                   <div key={option.id} className="border border-gray-200 rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+                   <div key={option.id} className="bg-white rounded-2xl border border-gray-100 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group">
                      {/* 옵션 헤더 */}
-                     <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 rounded-t-lg">
+                     <div className="bg-gradient-to-r from-slate-50 to-gray-50 px-4 py-3 border-b border-gray-100">
                        <div className="flex items-center justify-between">
-                         <div className="flex items-center space-x-2">
-                           <div className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                         <div className="flex items-center space-x-3">
+                           <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl flex items-center justify-center text-sm font-bold shadow-md">
                              {optionIndex + 1}
                            </div>
-                           <h4 className="text-xs font-semibold text-gray-900">
+                           <h4 className="text-sm font-semibold text-gray-800">
                              옵션 {optionIndex + 1}
                            </h4>
                          </div>
-                         <div className="flex items-center space-x-2">
-                           <label className="flex items-center text-xs text-gray-600">
+                         <div className="flex items-center space-x-3">
+                           <label className="flex items-center text-sm text-gray-600 bg-white px-3 py-1.5 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer">
                              <input
                                type="checkbox"
                                checked={option.is_default}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'is_default', e.target.checked)}
-                               className="mr-1"
+                               className="mr-2 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                              />
-                             기본
+                             기본값
                            </label>
                            <button
                              onClick={() => removeChoiceOption(groupIndex, optionIndex)}
-                             className="p-1 text-red-600 hover:bg-red-100 rounded transition-colors duration-200"
+                             className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all duration-200 group-hover:scale-105"
                              title="옵션 삭제"
                            >
-                             <Trash2 className="w-3 h-3" />
+                             <Trash2 className="w-4 h-4" />
                            </button>
                          </div>
                        </div>
                      </div>
 
                      {/* 옵션 내용 */}
-                     <div className="p-3 space-y-4">
+                     <div className="p-6 space-y-6">
                        {/* 옵션명 섹션 */}
-                       <div className="space-y-2">
-                         <h5 className="text-xs font-medium text-gray-700 uppercase tracking-wide">옵션명</h5>
-                         <div className="grid grid-cols-1 gap-2">
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">한국어</label>
+                       <div className="space-y-3">
+                         <h5 className="text-sm font-semibold text-gray-700 flex items-center">
+                           <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                           옵션명
+                         </h5>
+                         <div className="grid grid-cols-2 gap-4">
+                           <div className="space-y-2">
+                             <label className="block text-sm font-medium text-gray-600">한국어</label>
                              <input
                                type="text"
                                value={option.option_name_ko}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name_ko', e.target.value)}
                                placeholder="옵션명 (한국어)"
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                               className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">영어</label>
+                           <div className="space-y-2">
+                             <label className="block text-sm font-medium text-gray-600">영어</label>
                              <input
                                type="text"
                                value={option.option_name}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name', e.target.value)}
                                placeholder="옵션명 (영어)"
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                               className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
                          </div>
                        </div>
 
                        {/* 설명 섹션 */}
-                       <div className="space-y-2">
-                         <h5 className="text-xs font-medium text-gray-700 uppercase tracking-wide">설명</h5>
-                         <div className="grid grid-cols-1 gap-2">
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">한국어</label>
+                       <div className="space-y-3">
+                         <h5 className="text-sm font-semibold text-gray-700 flex items-center">
+                           <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                           설명
+                         </h5>
+                         <div className="grid grid-cols-2 gap-4">
+                           <div className="space-y-2">
+                             <label className="block text-sm font-medium text-gray-600">한국어</label>
                              <textarea
                                value={option.description_ko || ''}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'description_ko', e.target.value)}
                                placeholder="설명 (한국어)"
-                               rows={2}
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent resize-none"
+                               rows={3}
+                               className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">영어</label>
+                           <div className="space-y-2">
+                             <label className="block text-sm font-medium text-gray-600">영어</label>
                              <textarea
                                value={option.description || ''}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'description', e.target.value)}
                                placeholder="Description (English)"
-                               rows={2}
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent resize-none"
+                               rows={3}
+                               className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
                          </div>
                        </div>
 
                        {/* 가격 및 기타 정보 섹션 */}
-                       <div className="space-y-2">
-                         <h5 className="text-xs font-medium text-gray-700 uppercase tracking-wide">가격 및 설정</h5>
-                         <div className="grid grid-cols-2 gap-2">
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">성인</label>
+                       <div className="space-y-3">
+                         <h5 className="text-sm font-semibold text-gray-700 flex items-center">
+                           <div className="w-2 h-2 bg-purple-500 rounded-full mr-2"></div>
+                           가격 및 설정
+                         </h5>
+                         <div className="grid grid-cols-4 gap-4">
+                           <div className="space-y-2">
+                             <label className="block text-sm font-medium text-gray-600">성인</label>
                              <input
                                type="number"
                                value={option.adult_price}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'adult_price', parseInt(e.target.value) || 0)}
                                placeholder="0"
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                               className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">아동</label>
+                           <div className="space-y-2">
+                             <label className="block text-sm font-medium text-gray-600">아동</label>
                              <input
                                type="number"
                                value={option.child_price}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'child_price', parseInt(e.target.value) || 0)}
                                placeholder="0"
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                               className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">유아</label>
+                           <div className="space-y-2">
+                             <label className="block text-sm font-medium text-gray-600">유아</label>
                              <input
                                type="number"
                                value={option.infant_price}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'infant_price', parseInt(e.target.value) || 0)}
                                placeholder="0"
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                               className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">수용</label>
+                           <div className="space-y-2">
+                             <label className="block text-sm font-medium text-gray-600">수용</label>
                              <input
                                type="number"
                                value={option.capacity}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'capacity', parseInt(e.target.value) || 1)}
                                placeholder="1"
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                               className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
                          </div>
-                         <div className="flex items-center justify-between">
-                           <label className="flex items-center text-xs text-gray-600">
+                         <div className="flex items-center justify-between pt-2">
+                           <label className="flex items-center text-sm text-gray-600 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer">
                              <input
                                type="checkbox"
                                checked={option.is_active}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'is_active', e.target.checked)}
-                               className="mr-1"
+                               className="mr-2 w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                              />
-                             활성
+                             활성 상태
                            </label>
                          </div>
                        </div>
 
                        {/* 이미지 업로드 섹션 */}
-                       <div className="space-y-2">
-                         <h5 className="text-xs font-medium text-gray-700 uppercase tracking-wide">이미지</h5>
+                       <div className="space-y-3">
+                         <h5 className="text-sm font-semibold text-gray-700 flex items-center">
+                           <div className="w-2 h-2 bg-orange-500 rounded-full mr-2"></div>
+                           이미지
+                         </h5>
                          
-                         {/* 현재 이미지 미리보기 */}
-                         {option.image_url ? (
-                           <div className="flex items-center space-x-2">
-                             <Image
-                               src={option.image_url}
-                               alt={option.image_alt || option.option_name_ko}
-                               width={40}
-                               height={40}
-                               className="w-10 h-10 object-cover rounded border flex-shrink-0"
-                             />
-                             <div className="flex-1 min-w-0">
-                               <p className="text-xs text-gray-600 truncate">{option.image_url}</p>
-                               <div className="flex space-x-1 mt-1">
-                                 <button
-                                   onClick={() => {
-                                     updateChoiceOption(groupIndex, optionIndex, 'image_url', '')
-                                     updateChoiceOption(groupIndex, optionIndex, 'image_alt', '')
-                                   }}
-                                   className="px-1 py-0.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded"
-                                 >
-                                   삭제
-                                 </button>
-                                 <button
-                                   onClick={() => {
-                                     const url = prompt('새 이미지 URL:', option.image_url || '')
-                                     if (url !== null) {
-                                       updateChoiceOption(groupIndex, optionIndex, 'image_url', url)
+                         <div className="space-y-4">
+                           {/* 이미지 미리보기와 업로드 영역 */}
+                           <div className="grid grid-cols-2 gap-4">
+                             {/* 왼쪽: 이미지 미리보기 */}
+                             <div className="flex flex-col justify-center h-full">
+                               {/* 현재 이미지 미리보기 */}
+                               {option.image_url ? (
+                                 <div className="space-y-3 text-center">
+                                   <div className="relative inline-block">
+                                     <Image
+                                       src={option.image_url}
+                                       alt={option.image_alt || option.option_name_ko}
+                                       width={80}
+                                       height={80}
+                                       className="w-20 h-20 object-cover rounded-2xl border-2 border-gray-200 shadow-md"
+                                     />
+                                   </div>
+                                   <div className="flex space-x-2 justify-center">
+                                     <button
+                                       onClick={() => {
+                                         updateChoiceOption(groupIndex, optionIndex, 'image_url', '')
+                                         updateChoiceOption(groupIndex, optionIndex, 'image_alt', '')
+                                       }}
+                                       className="px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors font-medium"
+                                     >
+                                       삭제
+                                     </button>
+                                     <button
+                                       onClick={() => {
+                                         const url = prompt('새 이미지 URL:', option.image_url || '')
+                                         if (url !== null) {
+                                           updateChoiceOption(groupIndex, optionIndex, 'image_url', url)
+                                         }
+                                       }}
+                                       className="px-3 py-1.5 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors font-medium"
+                                     >
+                                       변경
+                                     </button>
+                                   </div>
+                                 </div>
+                               ) : (
+                                 <div className="text-sm text-gray-500 py-8 text-center border-2 border-dashed border-gray-200 rounded-2xl h-full flex items-center justify-center bg-gray-50">
+                                   이미지 없음
+                                 </div>
+                               )}
+                             </div>
+
+                             {/* 오른쪽: 드래그앤드롭 업로드 영역 */}
+                             <div className="relative h-full">
+                               <input
+                                 type="file"
+                                 accept="image/*"
+                                 disabled={uploadingImages[`${groupIndex}-${optionIndex}`]}
+                                 onChange={async (e) => {
+                                   const file = e.target.files?.[0]
+                                   if (file) {
+                                     await handleImageUpload(file, groupIndex, optionIndex)
+                                     e.target.value = ''
+                                   }
+                                 }}
+                                 className="hidden"
+                                 id={`file-upload-${groupIndex}-${optionIndex}`}
+                               />
+                               
+                               <div
+                                 className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all duration-300 h-full ${
+                                   dragOverStates[`${groupIndex}-${optionIndex}`]
+                                     ? 'border-blue-400 bg-blue-50 scale-105'
+                                     : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                 } ${uploadingImages[`${groupIndex}-${optionIndex}`] ? 'pointer-events-none opacity-50' : ''}`}
+                                 onDragOver={(e) => {
+                                   e.preventDefault()
+                                   e.stopPropagation()
+                                   setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: true }))
+                                 }}
+                                 onDragLeave={(e) => {
+                                   e.preventDefault()
+                                   e.stopPropagation()
+                                   setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                                 }}
+                                 onDrop={async (e) => {
+                                   e.preventDefault()
+                                   e.stopPropagation()
+                                   setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                                   
+                                   const files = Array.from(e.dataTransfer.files)
+                                   const imageFiles = files.filter(file => file.type.startsWith('image/'))
+                                   
+                                   if (imageFiles.length > 0) {
+                                     await handleImageUpload(imageFiles[0], groupIndex, optionIndex)
+                                   }
+                                 }}
+                                 onClick={() => {
+                                   if (!uploadingImages[`${groupIndex}-${optionIndex}`]) {
+                                     document.getElementById(`file-upload-${groupIndex}-${optionIndex}`)?.click()
+                                   }
+                                 }}
+                                 onPaste={async (e) => {
+                                   const items = e.clipboardData?.items
+                                   if (!items) return
+
+                                   for (let i = 0; i < items.length; i++) {
+                                     const item = items[i]
+                                     if (item.type.startsWith('image/')) {
+                                       e.preventDefault()
+                                       const file = item.getAsFile()
+                                       if (file) {
+                                         await handleImageUpload(file, groupIndex, optionIndex)
+                                       }
+                                       break
                                      }
-                                   }}
-                                   className="px-1 py-0.5 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded"
-                                 >
-                                   변경
-                                 </button>
+                                   }
+                                 }}
+                                 tabIndex={0}
+                               >
+                                 {uploadingImages[`${groupIndex}-${optionIndex}`] ? (
+                                   <div className="flex flex-col items-center justify-center h-full">
+                                     <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+                                     <p className="text-sm text-blue-600 font-medium">업로드 중...</p>
+                                   </div>
+                                 ) : (
+                                   <div className="flex flex-col items-center justify-center h-full">
+                                     <Upload className="w-8 h-8 text-gray-400 mb-3" />
+                                     <p className="text-sm text-gray-600 mb-1 font-medium">드래그하거나 클릭</p>
+                                     <p className="text-xs text-gray-500">Ctrl+V 붙여넣기</p>
+                                   </div>
+                                 )}
                                </div>
                              </div>
                            </div>
-                         ) : (
-                           <div className="text-xs text-gray-500 py-2 text-center border border-dashed border-gray-300 rounded">
-                             이미지 없음
-                           </div>
-                         )}
 
-                         {/* 이미지 URL 입력 */}
-                         <div className="space-y-1">
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">URL</label>
-                             <input
-                               type="url"
-                               value={option.image_url || ''}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'image_url', e.target.value)}
-                               placeholder="https://example.com/image.jpg"
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                             />
-                           </div>
-                           <div>
-                             <label className="block text-xs font-medium text-gray-700 mb-1">Alt</label>
-                             <input
-                               type="text"
-                               value={option.image_alt || ''}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'image_alt', e.target.value)}
-                               placeholder="이미지 설명"
-                               className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                             />
-                           </div>
-                         </div>
-
-                         {/* 드래그앤드롭 업로드 영역 */}
-                         <div className="border-t pt-2">
-                           <div className="relative">
-                             <input
-                               type="file"
-                               accept="image/*"
-                               disabled={uploadingImages[`${groupIndex}-${optionIndex}`]}
-                               onChange={async (e) => {
-                                 const file = e.target.files?.[0]
-                                 if (file) {
-                                   await handleImageUpload(file, groupIndex, optionIndex)
-                                   e.target.value = ''
-                                 }
-                               }}
-                               className="hidden"
-                               id={`file-upload-${groupIndex}-${optionIndex}`}
-                             />
-                             
-                             <div
-                               className={`border border-dashed rounded p-2 text-center transition-colors ${
-                                 dragOverStates[`${groupIndex}-${optionIndex}`]
-                                   ? 'border-blue-400 bg-blue-50'
-                                   : 'border-gray-300 hover:border-gray-400'
-                               } ${uploadingImages[`${groupIndex}-${optionIndex}`] ? 'pointer-events-none opacity-50' : ''}`}
-                               onDragOver={(e) => {
-                                 e.preventDefault()
-                                 e.stopPropagation()
-                                 setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: true }))
-                               }}
-                               onDragLeave={(e) => {
-                                 e.preventDefault()
-                                 e.stopPropagation()
-                                 setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
-                               }}
-                               onDrop={async (e) => {
-                                 e.preventDefault()
-                                 e.stopPropagation()
-                                 setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
-                                 
-                                 const files = Array.from(e.dataTransfer.files)
-                                 const imageFiles = files.filter(file => file.type.startsWith('image/'))
-                                 
-                                 if (imageFiles.length > 0) {
-                                   await handleImageUpload(imageFiles[0], groupIndex, optionIndex)
-                                 }
-                               }}
-                               onClick={() => {
-                                 if (!uploadingImages[`${groupIndex}-${optionIndex}`]) {
-                                   document.getElementById(`file-upload-${groupIndex}-${optionIndex}`)?.click()
-                                 }
-                               }}
-                               onPaste={async (e) => {
-                                 const items = e.clipboardData?.items
-                                 if (!items) return
-
-                                 for (let i = 0; i < items.length; i++) {
-                                   const item = items[i]
-                                   if (item.type.startsWith('image/')) {
-                                     e.preventDefault()
-                                     const file = item.getAsFile()
-                                     if (file) {
-                                       await handleImageUpload(file, groupIndex, optionIndex)
-                                     }
-                                     break
-                                   }
-                                 }
-                               }}
-                               tabIndex={0}
-                             >
-                               {uploadingImages[`${groupIndex}-${optionIndex}`] ? (
-                                 <div className="flex flex-col items-center">
-                                   <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-1"></div>
-                                   <p className="text-xs text-blue-600">업로드 중...</p>
-                                 </div>
-                               ) : (
-                                 <div className="flex flex-col items-center">
-                                   <Upload className="w-4 h-4 text-gray-400 mb-1" />
-                                   <p className="text-xs text-gray-600">드래그/클릭</p>
-                                   <p className="text-xs text-gray-500">Ctrl+V</p>
-                                 </div>
-                               )}
+                           {/* URL과 Alt 입력 필드 */}
+                           <div className="grid grid-cols-2 gap-4">
+                             <div className="space-y-2">
+                               <label className="block text-sm font-medium text-gray-600">URL</label>
+                               <input
+                                 type="url"
+                                 value={option.image_url || ''}
+                                 onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'image_url', e.target.value)}
+                                 placeholder="https://example.com/image.jpg"
+                                 className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                               />
+                             </div>
+                             <div className="space-y-2">
+                               <label className="block text-sm font-medium text-gray-600">Alt</label>
+                               <input
+                                 type="text"
+                                 value={option.image_alt || ''}
+                                 onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'image_alt', e.target.value)}
+                                 placeholder="이미지 설명"
+                                 className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                               />
                              </div>
                            </div>
                          </div>

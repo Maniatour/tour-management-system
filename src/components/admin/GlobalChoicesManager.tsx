@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, Edit, Trash2, Settings, Copy, Upload } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ImageUpload from '@/components/common/ImageUpload'
 
@@ -37,6 +38,7 @@ interface GlobalChoicesManagerProps {
 }
 
 export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoicesManagerProps) {
+  const t = useTranslations('common')
   const [templates, setTemplates] = useState<ChoiceTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -894,6 +896,7 @@ interface ImportChoicesModalProps {
 }
 
 function ImportChoicesModal({ onImport, onClose }: ImportChoicesModalProps) {
+  const t = useTranslations('common')
   const [products, setProducts] = useState<Array<{id: string, name: string, name_ko?: string}>>([])
   const [selectedProductId, setSelectedProductId] = useState('')
   const [loading, setLoading] = useState(true)

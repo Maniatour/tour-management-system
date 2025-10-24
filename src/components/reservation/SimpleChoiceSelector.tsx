@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Copy, Trash2, X } from 'lucide-react';
 
 // 새로운 간결한 타입 정의
 interface ChoiceOption {
@@ -58,8 +57,6 @@ export default function SimpleChoiceSelector({
 }: SimpleChoiceSelectorProps) {
   const [selections, setSelections] = useState<SelectedChoice[]>(initialSelections);
   const [errors, setErrors] = useState<string[]>([]);
-  const [selectedOption, setSelectedOption] = useState<{ choice: ProductChoice; option: ChoiceOption } | null>(null);
-  const [showModal, setShowModal] = useState(false);
 
   // 선택사항 변경 핸들러
   const handleSelectionChange = useCallback((
@@ -191,9 +188,50 @@ export default function SimpleChoiceSelector({
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                     onClick={() => {
-                      // 모달 열기
-                      setSelectedOption({ choice, option });
-                      setShowModal(true);
+                      // 카드 클릭 시 선택/해제 토글
+                      const currentSelection = selections.find(s => 
+                        s.choice_id === choice.id && s.option_id === option.id
+                      );
+                      const currentQuantity = currentSelection?.quantity || 0;
+                      
+                      if (choice.choice_type === 'single') {
+                        // single 타입: 다른 옵션들 해제하고 현재 옵션 선택
+                        const newSelections = selections.filter(s => s.choice_id !== choice.id);
+                        if (currentQuantity === 0) {
+                          newSelections.push({
+                            choice_id: choice.id,
+                            option_id: option.id,
+                            option_key: option.option_key,
+                            option_name_ko: option.option_name_ko,
+                            quantity: 1,
+                            total_price: calculatePrice(option, 1, adults, children, infants)
+                          });
+                        }
+                        setSelections(newSelections);
+                      } else {
+                        // multiple/quantity 타입: 현재 옵션 토글
+                        if (currentQuantity > 0) {
+                          // 선택 해제
+                          handleSelectionChange(
+                            choice.id,
+                            option.id,
+                            option.option_key,
+                            option.option_name_ko,
+                            0,
+                            0
+                          );
+                        } else {
+                          // 선택
+                          handleSelectionChange(
+                            choice.id,
+                            option.id,
+                            option.option_key,
+                            option.option_name_ko,
+                            1,
+                            calculatePrice(option, 1, adults, children, infants)
+                          );
+                        }
+                      }
                     }}
                   >
                     <div className="flex flex-col h-full">
@@ -334,62 +372,6 @@ export default function SimpleChoiceSelector({
                     <li key={index}>{error}</li>
                   ))}
                 </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* 옵션 수정 모달 */}
-      {showModal && selectedOption && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {selectedOption.option.option_name_ko}
-              </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="text-sm text-gray-600">
-                <p><strong>카테고리:</strong> {selectedOption.choice.choice_group_ko}</p>
-                <p><strong>성인 가격:</strong> ${selectedOption.option.adult_price.toLocaleString()}</p>
-                <p><strong>아동 가격:</strong> ${selectedOption.option.child_price.toLocaleString()}</p>
-                <p><strong>유아 가격:</strong> ${selectedOption.option.infant_price.toLocaleString()}</p>
-              </div>
-              
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => {
-                    // 복사 기능 (현재는 알림만 표시)
-                    alert('복사 기능이 구현되었습니다.');
-                    setShowModal(false);
-                  }}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                >
-                  <Copy className="w-4 h-4" />
-                  <span>복사</span>
-                </button>
-                
-                <button
-                  onClick={() => {
-                    if (confirm('이 옵션을 삭제하시겠습니까?')) {
-                      // 삭제 기능 (현재는 알림만 표시)
-                      alert('삭제 기능이 구현되었습니다.');
-                      setShowModal(false);
-                    }
-                  }}
-                  className="flex items-center space-x-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>삭제</span>
-                </button>
               </div>
             </div>
           </div>
