@@ -354,7 +354,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const interval = setInterval(() => {
       const savedSimulation = localStorage.getItem('positionSimulation')
       if (!savedSimulation) {
-        console.warn('AuthContext: Simulation data lost from localStorage, restoring...')
+        // 시뮬레이션 데이터가 사라진 경우 조용히 복원 (로그 레벨을 낮춤)
+        console.debug('AuthContext: Simulation data lost from localStorage, restoring...')
         // 시뮬레이션 데이터가 사라진 경우 다시 저장
         localStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
         sessionStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
@@ -365,7 +366,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const parsedSaved = JSON.parse(savedSimulation)
           if (parsedSaved.email !== simulatedUser.email) {
-            console.warn('AuthContext: Simulation data mismatch, updating...')
+            // 시뮬레이션 데이터 불일치 시 조용히 업데이트 (로그 레벨을 낮춤)
+            console.debug('AuthContext: Simulation data mismatch, updating...')
             localStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
             sessionStorage.setItem('positionSimulation', JSON.stringify(simulatedUser))
             document.cookie = `simulation_user=${encodeURIComponent(JSON.stringify(simulatedUser))}; path=/; max-age=3600; SameSite=Lax`
