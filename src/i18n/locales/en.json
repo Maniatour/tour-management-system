@@ -12,10 +12,10 @@
     "viewVideo": "View Video",
     "media": "Media",
     "vehicle": "Vehicle",
-    "customers": "Customer Management",
-    "reservations": "Reservation Management",
+    "customers": "Customers",
+    "reservations": "Reservations",
     "reservation": "Reservation",
-    "tours": "Tour Management",
+    "tours": "Tours",
     "channels": "Channel Management",
     "products": "Product Management",
     "options": "Option Management",
@@ -65,8 +65,8 @@
     "dataSync": "Data Sync",
     "dataReview": "Data Review",
     "auditLogs": "Audit Logs",
-    "booking": "Booking Management",
-    "chatManagement": "Chat Management",
+    "booking": "Bookings",
+    "chatManagement": "Chats",
     "basicInfo": "Basic Info",
     "dynamicPricing": "Dynamic Pricing",
     "optionsManagement": "Options Management",
@@ -249,7 +249,7 @@
       "checkSchedule": "Check Guide Schedule",
       "newReservation": "New Reservation",
       "customerInfo": "Customer Information",
-      "tourManagement": "Tour Management"
+      "tourManagement": "Tours"
     },
     "recentActivity": {
       "title": "Recent Activity",
@@ -276,7 +276,7 @@
     }
   },
   "customers": {
-    "title": "Customer Management",
+    "title": "Customers",
     "addCustomer": "Add New Customer",
     "searchPlaceholder": "Search by name, email, or phone...",
     "columns": {
@@ -331,7 +331,7 @@
     }
   },
   "reservations": {
-    "title": "Reservation Management",
+    "title": "Reservations",
     "addReservation": "Add New Reservation",
     "searchPlaceholder": "Search by customer name, product name, date, or channel RN#...",
     "deleteConfirm": "Are you sure you want to delete this reservation?",
@@ -414,7 +414,7 @@
     }
   },
   "tours": {
-    "title": "Tour Management",
+    "title": "Tours",
     "addTour": "Add New Tour",
     "searchPlaceholder": "Search by tour ID, product ID, or tour guide...",
     "deleteConfirm": "Are you sure you want to delete this tour?",
@@ -517,8 +517,8 @@
     "guideTours": {
       "loading": "Loading tour data...",
       "backToDashboard": "Back to Guide Dashboard",
-      "adminMode": "Tour Management (Admin Mode)",
-      "myTours": "My Tour Management",
+      "adminMode": "Tours (Admin Mode)",
+      "myTours": "My Tours",
       "calendarView": "Calendar View",
       "scheduleView": "Schedule View",
       "searchPlaceholder": "Search by tour ID, product ID...",
@@ -545,7 +545,44 @@
       "status": "Status",
       "actions": "Actions"
     },
+    "reservationDetails": "Reservation Details",
+    "reservationNotFound": "Reservation not found",
+    "backToReservations": "Back to Reservations",
     "viewDetails": "View Details",
+    "customerReservations": "Customer Reservations",
+    "customerNotFound": "Customer not found",
+    "customerInfo": "Customer Information",
+    "productInfo": "Product Information",
+    "productName": "Product Name",
+    "duration": "Duration",
+    "maxParticipants": "Max Participants",
+    "minParticipants": "Min Participants",
+    "description": "Description",
+    "selectedOptions": "Selected Options",
+    "guide": "Guide",
+    "name": "Name",
+    "phone": "Phone",
+    "email": "Email",
+    "languages": "Languages",
+    "capacity": "Capacity",
+    "licensePlate": "License Plate",
+    "specialRequests": "Special Requests",
+    "paymentInfo": "Payment Information",
+    "createdAt": "Created At",
+    "viewingAs": "Viewing as",
+    "total": "Total",
+    "pricingInformation": "Pricing Information",
+    "subtotalProductOptions": "Subtotal (Product Options)",
+    "paymentAmount": "Payment Amount",
+    "pickupSchedule": "Pickup Schedule",
+    "tourSchedule": "Tour Schedule",
+    "tourInfo": "Tour Information",
+    "guide": "Guide",
+    "assistant": "Assistant",
+    "capacity": "Capacity",
+    "licensePlate": "License Plate",
+    "totalPrice": "Total Price",
+    "pickupDropInfo": "Pickup/Drop Information",
     "status": {
       "scheduled": "Scheduled",
       "inProgress": "In Progress",
@@ -665,17 +702,34 @@
     "options": "Option Management",
     "tours": "Tour Management",
     "channels": "Channel Management",
+    "guideFeeManagement": "Guide Fee Management",
+    "reservationExpenseManagement": "Reservation Expense Management",
+    "companyExpenseManagement": "Company Expense Management",
+    "vehicleMaintenanceManagement": "Vehicle Maintenance Management",
+    "paymentMethodManagement": "Payment Method Management",
+    "developerTools": "Developer Tools",
+    "logout": "Logout",
     "stats": {
       "totalProducts": "Total Products",
       "totalCustomers": "Total Customers",
-      "monthlyReservations": "Monthly Reservations",
-      "monthlyRevenue": "Monthly Revenue"
+      "monthlyReservations": "This Month's Reservations",
+      "monthlyRevenue": "This Month's Sales"
     },
     "quickActions": {
       "addProduct": "Add New Product",
       "checkReservations": "Check Reservations",
       "manageCustomers": "Manage Customers",
       "manageOptions": "Manage Options"
+    },
+    "consoleMessages": {
+      "adminAuthGuardCounterpart": "AdminAuthGuard counterpart",
+      "employeeInfoLookupResult": "Employee Information Lookup Result",
+      "attendanceRecordLookupStart": "Attendance Record Lookup Start",
+      "todayDateUTC": "Today's Date (UTC)",
+      "lasVegasTodayDate": "Las Vegas Today's Date",
+      "attendanceRecordActionResult": "Attendance Record Action Result",
+      "queryRange": "Query Range",
+      "noCheckoutRecordsLast7Days": "No check-out records for the last 7 days"
     }
   },
   "products": {
@@ -1004,10 +1058,10 @@
     "records": "records"
   },
   "booking": {
-    "title": "Booking Management",
+    "title": "Bookings",
     "subtitle": "Manage ticket and hotel bookings for tours and track change history",
     "tickets": {
-      "title": "Ticket Booking Management",
+      "title": "Ticket Bookings",
       "addBooking": "Add New Booking",
       "editBooking": "Edit Booking",
       "searchPlaceholder": "Search by category, company, submitter, RN#...",
@@ -1049,7 +1103,7 @@
       }
     },
     "hotels": {
-      "title": "Tour Hotel Booking Management",
+      "title": "Hotel Bookings",
       "addBooking": "Add New Booking",
       "editBooking": "Edit Booking",
       "searchPlaceholder": "Search by hotel, city, reservation name, RN#...",
@@ -1109,7 +1163,7 @@
       "new": "New"
     },
     "guidance": {
-      "title": "Booking Management Guidance",
+      "title": "Booking Guidance",
       "items": [
         "Payment to suppliers and actual booking must be completed 2 days before the tour.",
         "Tour participants may change, so always check and update booking records.",
@@ -1153,7 +1207,7 @@
       "past": "Past Tours",
       "noUpcoming": "No upcoming tours.",
       "noPast": "No past tours.",
-      "management": "Tour Management",
+      "management": "Tours",
       "managementDesc": "View my tour list",
       "calendar": "Calendar View",
       "calendarDesc": "Tour schedule calendar"
@@ -1378,7 +1432,7 @@
     "reservationInfo": "Reservation Info",
     "pickupSchedule": "Pickup Schedule",
     "tourMemo": "Tour Memo",
-    "bookingManagement": "Booking Management",
+    "bookingManagement": "Bookings",
     "tourPhotos": "Tour Photos",
     "expenseManagement": "Expense Management",
     "tourReport": "Tour Report",
