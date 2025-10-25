@@ -627,7 +627,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             hint: error.hint,
             code: error.code
           })
-          alert('예약 수정 중 오류가 발생했습니다: ' + error.message)
+          alert(t('messages.reservationUpdateError') + error.message)
           return
         }
 
@@ -703,14 +703,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         // 성공 시 예약 목록 새로고침
         await refreshReservations()
         setEditingReservation(null)
-        alert('예약이 성공적으로 수정되었습니다!')
+        alert(t('messages.reservationUpdated'))
       } catch (error) {
         console.error('Error updating reservation:', {
           message: error instanceof Error ? error.message : 'Unknown error',
           stack: error instanceof Error ? error.stack : undefined,
           error: error
         })
-        alert('예약 수정 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'))
+        alert(t('messages.reservationUpdateError') + (error instanceof Error ? error.message : 'Unknown error'))
       }
     }
   }, [editingReservation, refreshReservations])
@@ -750,7 +750,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       const tourExists = await checkTourExists(reservation.productId, reservation.tourDate)
       
       if (tourExists) {
-        alert('해당 날짜에 이미 투어가 존재합니다.')
+        alert(t('messages.tourExists'))
         // 예약 목록 새로고침하여 최신 상태 반영
         await refreshReservations()
         return
@@ -770,15 +770,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           console.warn('Failed to create tour-photos bucket, but tour creation succeeded')
         }
         
-        alert('투어가 성공적으로 생성되었습니다!')
+        alert(t('messages.tourCreated'))
         // 예약 목록 새로고침
         await refreshReservations()
       } else {
-        alert('투어 생성 중 오류가 발생했습니다: ' + result.message)
+        alert(t('messages.tourCreationError') + result.message)
       }
     } catch (error) {
       console.error('Error creating tour:', error)
-      alert('투어 생성 중 오류가 발생했습니다.')
+      alert(t('messages.tourCreationError'))
     }
   }
 
@@ -838,24 +838,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       if (error) {
         console.error('Error adding customer:', error)
-        alert('고객 추가 중 오류가 발생했습니다: ' + error.message)
+        alert(t('messages.customerAddError') + error.message)
         return
       }
 
       // 성공 시 고객 목록 새로고침
       await refreshCustomers()
       setShowCustomerForm(false)
-      alert('고객이 성공적으로 추가되었습니다!')
+      alert(t('messages.customerAdded'))
       
       // 새로 추가된 고객을 자동으로 선택 (예약 폼이 열려있는 경우)
       if (showAddForm && data && data[0]) {
         const newCustomer = data[0]
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        alert(`새 고객 "${(newCustomer as any).name}"이 추가되었습니다. 고객을 선택해주세요.`)
+        alert(t('messages.newCustomerAdded').replace('{name}', (newCustomer as any).name))
       }
     } catch (error) {
       console.error('Error adding customer:', error)
-      alert('고객 추가 중 오류가 발생했습니다.')
+      alert(t('messages.customerAddErrorGeneric'))
     }
   }, [showAddForm, refreshCustomers])
 
@@ -950,7 +950,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
               <input
                 type="text"
-                placeholder="예약번호, 고객명, 다른 이름(영문명 등), 특별요청, 상품명으로 검색..."
+                placeholder={t('searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value)
@@ -986,12 +986,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               }}
               className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
             >
-              <option value="all">모든 상태</option>
-              <option value="pending">대기중</option>
-              <option value="confirmed">확정</option>
-              <option value="completed">완료</option>
-              <option value="cancelled">취소</option>
-              <option value="recruiting">모집중</option>
+              <option value="all">{t('filters.allStatus')}</option>
+              <option value="pending">{t('filters.pending')}</option>
+              <option value="confirmed">{t('filters.confirmed')}</option>
+              <option value="completed">{t('filters.completed')}</option>
+              <option value="cancelled">{t('filters.cancelled')}</option>
+              <option value="recruiting">{t('filters.recruiting')}</option>
             </select>
             
             <select
@@ -1002,7 +1002,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               }}
               className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
             >
-              <option value="all">모든 채널</option>
+              <option value="all">{t('filters.allChannel')}</option>
               {channels?.map((channel: { id: string; name: string }) => (
                 <option key={channel.id} value={channel.id}>{channel.name}</option>
               ))}
@@ -1034,16 +1034,16 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           {/* 두 번째 줄: 정렬, 그룹화, 페이지당, 초기화 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
             <div className="flex items-center space-x-1">
-              <label className="text-xs font-medium text-gray-700 whitespace-nowrap">정렬:</label>
+              <label className="text-xs font-medium text-gray-700 whitespace-nowrap">{t('sorting.label')}</label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'created_at' | 'tour_date' | 'customer_name' | 'product_name')}
                 className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs flex-1"
               >
-                <option value="created_at">등록일</option>
-                <option value="tour_date">투어 날짜</option>
-                <option value="customer_name">고객명</option>
-                <option value="product_name">상품명</option>
+                <option value="created_at">{t('sorting.registrationDate')}</option>
+                <option value="tour_date">{t('sorting.tourDate')}</option>
+                <option value="customer_name">{t('sorting.customerName')}</option>
+                <option value="product_name">{t('sorting.productName')}</option>
               </select>
               <button
                 onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
@@ -1061,7 +1061,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              {groupByDate ? '그룹화 ON' : '그룹화 OFF'}
+              {groupByDate ? t('grouping.on') : t('grouping.off')}
             </button>
             
             <select
@@ -1072,10 +1072,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               }}
               className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs"
             >
-              <option value={10}>10개</option>
-              <option value={20}>20개</option>
-              <option value={50}>50개</option>
-              <option value={100}>100개</option>
+              <option value={10}>10{t('pagination.itemsPerPage')}</option>
+              <option value={20}>20{t('pagination.itemsPerPage')}</option>
+              <option value={50}>50{t('pagination.itemsPerPage')}</option>
+              <option value={100}>100{t('pagination.itemsPerPage')}</option>
             </select>
             
             <button
@@ -1092,7 +1092,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               }}
               className="px-2 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:border-transparent"
             >
-              초기화
+              {t('pagination.reset')}
             </button>
           </div>
         </div>
@@ -1125,7 +1125,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       <span className="font-semibold">{Object.values(groupedReservations).flat().length}예약</span>
                     </span>
                     <span className="text-green-600">
-                      <span className="font-semibold">{weeklyStats.totalPeople}명</span>
+                      <span className="font-semibold">{weeklyStats.totalPeople}{t('stats.people')}</span>
                     </span>
                     <span className="text-green-600">
                       <span className="font-semibold">{Math.round(weeklyStats.totalPeople / Math.max(Object.keys(groupedReservations).length, 1))}/일</span>
@@ -1150,7 +1150,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         : 'text-blue-700 bg-white border border-blue-300 hover:bg-blue-50'
                     }`}
                   >
-                    이번주
+                    {t('pagination.thisWeek')}
                   </button>
                   
                   <button
@@ -1190,14 +1190,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       <svg className="w-3 h-3 mr-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                       </svg>
-                      상품별
+                      {t('stats.byProduct')}
                     </h5>
                     <div className="space-y-0.5">
                       {weeklyStats.productStats.slice(0, 3).map(([productName, count]) => (
                         <div key={productName} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
                           <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{productName}</span>
                           <span className="font-semibold bg-blue-100 text-blue-800 px-1 py-0.5 rounded text-xs">
-                            {count}명
+                            {count}{t('stats.people')}
                           </span>
                         </div>
                       ))}
@@ -1215,7 +1215,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       <svg className="w-3 h-3 mr-1 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                       </svg>
-                      채널별
+                      {t('stats.byChannel')}
                     </h5>
                     <div className="space-y-0.5">
                       {weeklyStats.channelStats.slice(0, 3).map((channelInfo) => (
@@ -1249,7 +1249,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                             <span className="text-gray-700 truncate text-xs">{channelInfo.name}</span>
                           </div>
                           <span className="font-semibold bg-green-100 text-green-800 px-1 py-0.5 rounded text-xs">
-                            {channelInfo.count}명
+                            {channelInfo.count}{t('stats.people')}
                           </span>
                         </div>
                       ))}
@@ -1267,14 +1267,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       <svg className="w-3 h-3 mr-1 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      상태별
+                      {t('stats.byStatus')}
                     </h5>
                     <div className="space-y-0.5">
                       {weeklyStats.statusStats.map(([status, count]) => (
                         <div key={status} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
                           <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{getStatusLabel(status, t)}</span>
                           <span className="font-semibold bg-purple-100 text-purple-800 px-1 py-0.5 rounded text-xs">
-                            {count}명
+                            {count}{t('stats.people')}
                           </span>
                         </div>
                       ))}
@@ -1290,19 +1290,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         <div className="text-sm text-gray-600">
           {groupByDate ? (
             <>
-              {Object.values(groupedReservations).flat().length}개 예약이 {Object.keys(groupedReservations).length}개 등록일로 그룹화됨
+              {Object.values(groupedReservations).flat().length}{t('groupingLabels.reservationsGroupedBy')} {Object.keys(groupedReservations).length}{t('groupingLabels.registrationDates')}
               {Object.values(groupedReservations).flat().length !== reservations.length && (
                 <span className="ml-2 text-blue-600">
-                  (전체 {reservations.length}개 중 필터링됨)
+                  ({t('groupingLabels.filteredFromTotal')} {reservations.length}{t('stats.more')})
                 </span>
               )}
             </>
           ) : (
             <>
-              총 {filteredReservations.length}개 예약 중 {startIndex + 1}-{Math.min(endIndex, filteredReservations.length)}개 표시
+              Total {filteredReservations.length} {t('stats.reservations')} {startIndex + 1}-{Math.min(endIndex, filteredReservations.length)} {t('stats.more')} displayed
               {filteredReservations.length !== reservations.length && (
                 <span className="ml-2 text-blue-600">
-                  (전체 {reservations.length}개 중 필터링됨)
+                  ({t('groupingLabels.filteredFromTotal')} {reservations.length} {t('stats.more')})
                 </span>
               )}
             </>
@@ -1374,14 +1374,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           day: 'numeric',
                           weekday: 'long',
                           timeZone: 'America/Los_Angeles'
-                        })} 등록 (라스베가스 시간)
+                        })} {t('groupingLabels.registeredOn')} {t('groupingLabels.lasVegasTime')}
                       </h3>
                       <div className="flex items-center space-x-2">
                         <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
-                          {reservations.length}개 예약
+                          {reservations.length}{t('stats.reservations')}
                         </span>
                         <span className="px-2 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
-                          총 {reservations.reduce((total, reservation) => total + reservation.totalPeople, 0)}명
+                          Total {reservations.reduce((total, reservation) => total + reservation.totalPeople, 0)} {t('stats.people')}
                         </span>
                       </div>
                     </div>
@@ -1406,7 +1406,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                           </svg>
-                          상품별 인원
+                          {t('stats.byProduct')} 인원
                         </h4>
                         <div className="space-y-2">
                           {(() => {
@@ -1425,7 +1425,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                 <div key={productName} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
                                   <span className="text-gray-700 text-sm truncate flex-1 mr-2">{productName}</span>
                                   <span className="font-semibold text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-full min-w-0">
-                                    {count}명
+                                    {count}{t('stats.people')}
                                   </span>
                                 </div>
                               ))
@@ -1439,7 +1439,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           <svg className="w-4 h-4 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                           </svg>
-                          채널별 인원
+                          {t('stats.byChannel')} 인원
                         </h4>
                         <div className="space-y-2">
                           {(() => {
@@ -1489,7 +1489,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                       <span className="text-gray-700 text-sm truncate">{channelName}</span>
                                     </div>
                                     <span className="font-semibold text-sm bg-green-100 text-green-800 px-2 py-1 rounded-full min-w-0">
-                                      {count}명
+                                      {count}{t('stats.people')}
                                     </span>
                                   </div>
                                 )
@@ -1504,7 +1504,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           <svg className="w-4 h-4 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          상태별 인원
+                          {t('stats.byStatus')} 인원
                         </h4>
                         <div className="space-y-2">
                           {(() => {
@@ -1523,7 +1523,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                                 <div key={status} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
                                   <span className="text-gray-700 text-sm truncate flex-1 mr-2">{getStatusLabel(status, t)}</span>
                                   <span className="font-semibold text-sm bg-purple-100 text-purple-800 px-2 py-1 rounded-full min-w-0">
-                                    {count}명
+                                    {count}{t('stats.people')}
                                   </span>
                                 </div>
                               ))
@@ -1631,7 +1631,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 <div className="flex items-center space-x-2">
                   <Users className="h-4 w-4 text-gray-400" />
                   <div className="text-sm text-gray-900">
-                    성인 {reservation.adults}명, 아동 {reservation.child}명, 유아 {reservation.infant}명
+                    {t('participants.adults')} {reservation.adults}{t('participants.people')}, {t('participants.children')} {reservation.child}{t('participants.people')}, {t('participants.infants')} {reservation.infant}{t('participants.people')}
                   </div>
                 </div>
 
@@ -1696,7 +1696,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                         </svg>
-                        <span>가격</span>
+                        <span>{t('actions.price')}</span>
                       </button>
                       <button
                         onClick={(e) => {
@@ -1706,7 +1706,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors border border-blue-200"
                         title="빠른 수정"
                       >
-                        수정
+                        {t('actions.edit')}
                       </button>
                       <button
                         onClick={(e) => {
@@ -1716,7 +1716,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         className="px-2 py-1 text-xs bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors border border-gray-200"
                         title="상세 보기"
                       >
-                        상세
+                        {t('actions.details')}
                       </button>
                       
                       {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
@@ -1736,7 +1736,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                               title="투어 생성"
                             >
                               <Play className="w-3 h-3" />
-                              <span>투어</span>
+                              <span>{t('actions.tour')}</span>
                             </button>
                           );
                         }
@@ -1754,7 +1754,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         title="입금 내역 관리"
                       >
                         <DollarSign className="w-3 h-3" />
-                        <span>입금</span>
+                        <span>{t('actions.deposit')}</span>
                       </button>
                     </div>
                   </div>
@@ -1888,7 +1888,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   <div className="flex items-center space-x-2">
                     <Users className="h-4 w-4 text-gray-400" />
                     <div className="text-sm text-gray-900">
-                      성인 {reservation.adults}명, 아동 {reservation.child}명, 유아 {reservation.infant}명
+                      {t('participants.adults')} {reservation.adults}{t('participants.people')}, {t('participants.children')} {reservation.child}{t('participants.people')}, {t('participants.infants')} {reservation.infant}{t('participants.people')}
                     </div>
                   </div>
 
@@ -1958,7 +1958,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                         </svg>
-                        <span>가격</span>
+                        <span>{t('actions.price')}</span>
                       </button>
                       <button
                         onClick={(e) => {
@@ -1968,7 +1968,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors border border-blue-200"
                         title="빠른 수정"
                       >
-                        수정
+                        {t('actions.edit')}
                       </button>
                       <button
                         onClick={(e) => {
@@ -1978,7 +1978,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         className="px-2 py-1 text-xs bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors border border-gray-200"
                         title="상세 보기"
                       >
-                        상세
+                        {t('actions.details')}
                       </button>
 
                       {/* 입금 내역 버튼 */}
@@ -1992,7 +1992,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         title="입금 내역 관리"
                       >
                         <DollarSign className="w-3 h-3" />
-                        <span>입금</span>
+                        <span>{t('actions.deposit')}</span>
                       </button>
                     </div>
                   </div>
@@ -2111,22 +2111,22 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
               if (error) {
                 console.error('Error updating customer:', error)
-                alert('고객 정보 수정 중 오류가 발생했습니다: ' + error.message)
+                alert(t('messages.customerUpdateError') + error.message)
                 return
               }
 
               // 성공 시 고객 목록 새로고침
               await refreshCustomers()
               setEditingCustomer(null)
-              alert('고객 정보가 성공적으로 수정되었습니다!')
+              alert(t('messages.customerUpdated'))
             } catch (error) {
               console.error('Error updating customer:', error)
-              alert('고객 정보 수정 중 오류가 발생했습니다.')
+              alert(t('messages.customerUpdateErrorGeneric'))
             }
           }}
           onCancel={() => setEditingCustomer(null)}
           onDelete={async () => {
-            if (confirm('정말로 이 고객을 삭제하시겠습니까?')) {
+            if (confirm(t('messages.confirmDeleteCustomer'))) {
               try {
                 const { error } = await supabase
                   .from('customers')

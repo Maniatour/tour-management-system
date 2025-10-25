@@ -579,14 +579,82 @@
   "reservations": {
     "title": "예약 관리",
     "addReservation": "새 예약 추가",
-    "searchPlaceholder": "고객명, 상품명, 날짜, 채널 RN#으로 검색...",
+    "searchPlaceholder": "예약번호, 고객명, 다른 이름(영문명 등), 특별요청, 상품명으로 검색...",
     "loadingReservationData": "예약 데이터를 불러오는 중...",
     "reservationsLoading": "예약 로딩 중",
     "completed": "완료됨",
     "deleteConfirm": "정말로 이 예약을 삭제하시겠습니까?",
-    "filter": {
-      "allStatus": "모든 상태"
+    "cardDeluxe": "카드 딜럭",
+    "filters": {
+      "allStatus": "모든 상태",
+      "allChannel": "모든 채널",
+      "pending": "대기중",
+      "confirmed": "확정",
+      "completed": "완료",
+      "cancelled": "취소",
+      "recruiting": "모집중",
+      "paymentRequested": "입금요청"
     },
+    "sorting": {
+      "label": "정렬:",
+      "registrationDate": "등록일",
+      "tourDate": "투어 날짜",
+      "customerName": "고객명",
+      "productName": "상품명"
+    },
+    "grouping": {
+      "on": "그룹화 ON",
+      "off": "그룹화 OFF"
+    },
+    "pagination": {
+      "itemsPerPage": "개",
+      "reset": "초기화",
+      "thisWeek": "이번주"
+    },
+    "stats": {
+      "days": "일",
+      "reservations": "예약",
+      "people": "명",
+      "perDay": "/일",
+      "byProduct": "상품별",
+      "byChannel": "채널별",
+      "byStatus": "상태별",
+      "more": "개"
+    },
+    "participants": {
+      "adults": "성인",
+      "children": "아동",
+      "infants": "유아",
+      "people": "명"
+    },
+    "actions": {
+      "price": "가격",
+      "edit": "수정",
+      "details": "상세",
+      "tour": "투어",
+      "deposit": "입금"
+    },
+    "groupingLabels": {
+      "reservationsGroupedBy": "개 예약이",
+      "registrationDates": "개 등록일로 그룹화됨",
+      "filteredFromTotal": "개 중 필터링됨",
+      "registeredOn": "등록",
+      "lasVegasTime": "(라스베가스 시간)",
+      "reservationsTotal": "개 예약 총",
+      "people": "명"
+    },
+    "messages": {
+      "reservationUpdated": "예약이 성공적으로 수정되었습니다!",
+      "reservationUpdateError": "예약 수정 중 오류가 발생했습니다:",
+      "tourExists": "해당 날짜에 이미 투어가 존재합니다.",
+      "tourCreated": "투어가 성공적으로 생성되었습니다!",
+      "tourCreationError": "투어 생성 중 오류가 발생했습니다:",
+      "customerAdded": "고객이 성공적으로 추가되었습니다!",
+      "customerAddError": "고객 추가 중 오류가 발생했습니다:",
+      "newCustomerAdded": "새 고객 \"{name}\"이 추가되었습니다. 고객을 선택해주세요.",
+      "customerUpdateError": "고객 정보 수정 중 오류가 발생했습니다:",
+      "customerUpdated": "고객 정보가 성공적으로 수정되었습니다!",
+      "confirmDeleteCustomer": "정말로 이 고객을 삭제하시겠습니까?"
     "columns": {
       "id": "ID",
       "customer": "고객",
