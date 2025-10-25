@@ -509,6 +509,9 @@
     "title": "Reservations",
     "addReservation": "Add New Reservation",
     "searchPlaceholder": "Search by customer name, product name, date, or channel RN#...",
+    "loadingReservationData": "Loading reservation data...",
+    "reservationsLoading": "reservations loading",
+    "completed": "completed",
     "deleteConfirm": "Are you sure you want to delete this reservation?",
     "filter": {
       "allStatus": "All Status"

@@ -580,6 +580,9 @@
     "title": "예약 관리",
     "addReservation": "새 예약 추가",
     "searchPlaceholder": "고객명, 상품명, 날짜, 채널 RN#으로 검색...",
+    "loadingReservationData": "예약 데이터를 불러오는 중...",
+    "reservationsLoading": "예약 로딩 중",
+    "completed": "완료됨",
     "deleteConfirm": "정말로 이 예약을 삭제하시겠습니까?",
     "filter": {
       "allStatus": "모든 상태"
