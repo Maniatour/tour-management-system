@@ -1,6 +1,17 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
+interface ChoicePricing {
+  combinations: Record<string, {
+    combination_key: string;
+    combination_name: string;
+    combination_name_ko: string;
+    adult_price: number;
+    child_price: number;
+    infant_price: number;
+  }>;
+}
+
 interface PriceHistory {
   byChannel: Record<string, {
     channelId: string;
@@ -14,16 +25,8 @@ interface PriceHistory {
       markup_amount: number;
       coupon_percent: number;
       is_sale_available: boolean;
+      choices_pricing?: ChoicePricing;
       options_pricing?: Record<string, { adult: number; child: number; infant: number }>;
-      choices_pricing?: Record<string, {
-        name: string;
-        options: Record<string, {
-          name: string;
-          adult_price: number;
-          child_price: number;
-          infant_price: number;
-        }>;
-      }>;
     };
     priceHistory: Array<{
       date: string;
@@ -48,7 +51,8 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
     commission_percent: 0,
     markup_amount: 0,
     coupon_percent: 0,
-    is_sale_available: true
+    is_sale_available: true,
+    choices_pricing: {} as ChoicePricing
   });
 
   const loadPriceHistory = useCallback(async (channelId?: string) => {
@@ -90,21 +94,35 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
       const groupedData = data.reduce((acc, item) => {
         const channelId = item.channel_id;
         if (!acc[channelId]) {
-          acc[channelId] = {
-            channelId,
-            channelName: `채널 ${channelId}`, // 채널 이름은 별도로 조회 필요
-            channelType: 'Unknown',
-            latestPricing: {
-              adult_price: item.adult_price,
-              child_price: item.child_price,
-              infant_price: item.infant_price,
-              commission_percent: item.commission_percent,
-              markup_amount: item.markup_amount,
-              coupon_percent: item.coupon_percent,
-              is_sale_available: item.is_sale_available
-            },
-            priceHistory: []
-          };
+        // choices_pricing 파싱
+        let choicesPricing: ChoicePricing = { combinations: {} };
+        if (item.choices_pricing) {
+          try {
+            choicesPricing = typeof item.choices_pricing === 'string' 
+              ? JSON.parse(item.choices_pricing) 
+              : item.choices_pricing;
+          } catch (error) {
+            console.warn('choices_pricing 파싱 오류:', error);
+            choicesPricing = { combinations: {} };
+          }
+        }
+
+        acc[channelId] = {
+          channelId,
+          channelName: `채널 ${channelId}`, // 채널 이름은 별도로 조회 필요
+          channelType: 'Unknown',
+          latestPricing: {
+            adult_price: item.adult_price,
+            child_price: item.child_price,
+            infant_price: item.infant_price,
+            commission_percent: item.commission_percent,
+            markup_amount: item.markup_amount,
+            coupon_percent: item.coupon_percent,
+            is_sale_available: item.is_sale_available,
+            choices_pricing: choicesPricing
+          },
+          priceHistory: []
+        };
         }
         
         acc[channelId].priceHistory.push({
@@ -126,6 +144,41 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
       // 최신 가격 데이터를 pricingConfig에 설정
       if (data.length > 0) {
         const latestData = data[0]; // updated_at으로 정렬했으므로 첫 번째가 최신
+        
+        // choices_pricing 파싱
+        let choicesPricing: ChoicePricing = { combinations: {} };
+        if (latestData.choices_pricing) {
+          try {
+            const rawChoicesPricing = typeof latestData.choices_pricing === 'string' 
+              ? JSON.parse(latestData.choices_pricing) 
+              : latestData.choices_pricing;
+            
+            // 새로운 구조인지 확인: { choiceId: { adult: 50, child: 30, infant: 20 } }
+            if (rawChoicesPricing && typeof rawChoicesPricing === 'object' && !rawChoicesPricing.combinations) {
+              // 새로운 구조를 기존 구조로 변환
+              choicesPricing = { combinations: {} };
+              Object.entries(rawChoicesPricing).forEach(([choiceId, choiceData]: [string, any]) => {
+                if (choiceData && typeof choiceData === 'object') {
+                  choicesPricing.combinations[choiceId] = {
+                    combination_key: choiceId,
+                    combination_name: choiceId.replace(/_/g, ' '),
+                    combination_name_ko: choiceId.replace(/_/g, ' '),
+                    adult_price: choiceData.adult || choiceData.adult_price || 0,
+                    child_price: choiceData.child || choiceData.child_price || 0,
+                    infant_price: choiceData.infant || choiceData.infant_price || 0
+                  };
+                }
+              });
+            } else {
+              // 기존 구조 그대로 사용
+              choicesPricing = rawChoicesPricing;
+            }
+          } catch (error) {
+            console.warn('최신 choices_pricing 파싱 오류:', error);
+            choicesPricing = { combinations: {} };
+          }
+        }
+        
         setPricingConfig({
           adult_price: latestData.adult_price,
           child_price: latestData.child_price,
@@ -133,13 +186,16 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
           commission_percent: latestData.commission_percent,
           markup_amount: latestData.markup_amount,
           coupon_percent: latestData.coupon_percent,
-          is_sale_available: latestData.is_sale_available
+          is_sale_available: latestData.is_sale_available,
+          choices_pricing: choicesPricing
         });
         
         console.log('최신 가격 데이터 로드됨:', {
           selectedChannelId,
           selectedChannelType,
-          latestData: latestData
+          latestData: latestData,
+          choicesPricing: choicesPricing,
+          combinationsCount: Object.keys(choicesPricing.combinations || {}).length
         });
       }
     } catch (error) {

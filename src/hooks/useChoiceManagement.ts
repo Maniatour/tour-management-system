@@ -71,6 +71,197 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
 
       console.log('상품에서 로드된 choices 데이터:', productData?.choices);
 
+      // product_choices와 choice_options 테이블에서 실제 초이스 데이터 가져오기
+      const { data: choicesData, error: choicesError } = await supabase
+        .from('product_choices')
+        .select(`
+          id,
+          choice_group,
+          choice_group_ko,
+          choice_type,
+          is_required,
+          choice_options (
+            id,
+            option_key,
+            option_name,
+            option_name_ko,
+            adult_price,
+            child_price,
+            infant_price,
+            capacity,
+            is_default,
+            is_active,
+            sort_order
+          )
+        `)
+        .eq('product_id', productId)
+        .order('sort_order');
+
+      if (choicesError) {
+        console.error('초이스 옵션 데이터 로드 실패:', choicesError);
+      } else {
+        console.log('choice_options에서 로드된 데이터:', choicesData);
+      }
+
+      // 먼저 dynamic_pricing 테이블에서 choices_pricing 데이터 확인
+      // dynamic_pricing 테이블에서 choices_pricing 데이터 가져오기
+      let query = supabase
+        .from('dynamic_pricing')
+        .select('choices_pricing, channel_id, updated_at')
+        .eq('product_id', productId)
+        .not('choices_pricing', 'is', null);
+
+      // 채널 필터링
+      if (selectedChannelId) {
+        query = query.eq('channel_id', selectedChannelId);
+      } else if (selectedChannelType === 'SELF') {
+        query = query.like('channel_id', 'B%');
+      }
+
+      const { data: pricingData, error: pricingError } = await query
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (pricingError) {
+        console.error('초이스 가격 데이터 로드 실패:', pricingError);
+      }
+
+      console.log('동적 가격에서 초이스 조합 로드 쿼리 결과:', {
+        productId,
+        selectedChannelId,
+        selectedChannelType,
+        dataCount: pricingData?.length || 0,
+        note: 'dynamic_pricing 테이블에서 로드'
+      });
+
+      // choice_options 테이블에서 데이터가 있으면 우선 사용
+      if (choicesData && choicesData.length > 0) {
+        console.log('choice_options에서 로드된 데이터로 조합 생성');
+        
+        const combinations: ChoiceCombination[] = [];
+        
+        // 각 choice_group의 모든 옵션 조합 생성
+        const generateCombinations = (groups: any[], currentCombination: any[] = [], groupIndex: number = 0) => {
+          if (groupIndex >= groups.length) {
+            // 조합 완성
+            if (currentCombination.length > 0) {
+              const combinationKey = currentCombination.map(item => item.option_key).join('+');
+              const combinationName = currentCombination.map(item => item.option_name).join(' + ');
+              const combinationNameKo = currentCombination.map(item => item.option_name_ko).join(' + ');
+              
+              // 조합의 총 가격 계산
+              const totalAdultPrice = currentCombination.reduce((sum, item) => sum + (item.adult_price || 0), 0);
+              const totalChildPrice = currentCombination.reduce((sum, item) => sum + (item.child_price || 0), 0);
+              const totalInfantPrice = currentCombination.reduce((sum, item) => sum + (item.infant_price || 0), 0);
+              
+              combinations.push({
+                id: combinationKey,
+                combination_key: combinationKey,
+                combination_name: combinationName,
+                combination_name_ko: combinationNameKo,
+                adult_price: totalAdultPrice,
+                child_price: totalChildPrice,
+                infant_price: totalInfantPrice,
+                is_active: true,
+                combination_details: currentCombination
+              });
+            }
+            return;
+          }
+          
+          const currentGroup = groups[groupIndex];
+          if (currentGroup.choice_options && currentGroup.choice_options.length > 0) {
+            // 현재 그룹의 각 옵션에 대해 재귀 호출
+            currentGroup.choice_options.forEach((option: any) => {
+              generateCombinations(groups, [...currentCombination, option], groupIndex + 1);
+            });
+          } else {
+            // 옵션이 없는 그룹은 건너뛰기
+            generateCombinations(groups, currentCombination, groupIndex + 1);
+          }
+        };
+        
+        generateCombinations(choicesData);
+        
+        console.log('choice_options에서 생성된 조합들:', combinations);
+        setChoiceCombinations(combinations);
+        return;
+      }
+
+      // dynamic_pricing에서 choices_pricing 데이터가 있으면 사용
+      if (pricingData && pricingData.length > 0) {
+        const choicesPricing = pricingData[0].choices_pricing;
+        const choicesData = typeof choicesPricing === 'string' 
+          ? JSON.parse(choicesPricing) 
+          : choicesPricing;
+
+        console.log('동적 가격에서 로드된 choices_pricing:', choicesData);
+        console.log('choices_pricing 타입:', typeof choicesData);
+        console.log('choices_pricing 키들:', Object.keys(choicesData || {}));
+
+        const combinations: ChoiceCombination[] = [];
+
+        // 새로운 조합 구조 처리 (choices_pricing이 직접 조합 데이터인 경우)
+        if (choicesData.combinations) {
+          Object.entries(choicesData.combinations).forEach(([combinationId, combinationData]: [string, any]) => {
+            console.log(`조합 처리: ${combinationId} ->`, combinationData);
+            combinations.push({
+              id: combinationId,
+              combination_key: combinationData.combination_key,
+              combination_name: combinationData.combination_name,
+              combination_name_ko: combinationData.combination_name_ko,
+              adult_price: combinationData.adult_price,
+              child_price: combinationData.child_price,
+              infant_price: combinationData.infant_price,
+              is_active: true
+            });
+          });
+        } else if (typeof choicesData === 'object' && choicesData !== null) {
+          // 새로운 구조: { choiceId: { adult: 50, child: 30, infant: 20 } }
+          Object.entries(choicesData).forEach(([choiceId, choiceData]: [string, any]) => {
+            if (choiceData && typeof choiceData === 'object') {
+              console.log(`새로운 구조 조합 처리: ${choiceId} ->`, choiceData);
+              combinations.push({
+                id: choiceId,
+                combination_key: choiceId,
+                combination_name: choiceId.replace(/_/g, ' '),
+                combination_name_ko: choiceId.replace(/_/g, ' '),
+                adult_price: choiceData.adult || choiceData.adult_price || 0,
+                child_price: choiceData.child || choiceData.child_price || 0,
+                infant_price: choiceData.infant || choiceData.infant_price || 0,
+                is_active: true
+              });
+            }
+          });
+        } else {
+          // 기존 그룹별 구조 처리 (하위 호환성)
+          Object.entries(choicesData).forEach(([groupKey, groupData]: [string, any]) => {
+            console.log(`초이스 그룹 처리: ${groupKey} ->`, groupData);
+            
+            if (groupData?.options) {
+              Object.entries(groupData.options).forEach(([optionKey, option]: [string, any]) => {
+                console.log(`초이스 조합 생성: ${groupKey}_${optionKey} ->`, option);
+                combinations.push({
+                  id: `${groupKey}_${optionKey}`,
+                  combination_key: `${groupKey}_${optionKey}`,
+                  combination_name: option.name,
+                  combination_name_ko: option.name_ko,
+                  adult_price: option.adult_price,
+                  child_price: option.child_price,
+                  infant_price: option.infant_price,
+                  is_active: true
+                });
+              });
+            }
+          });
+        }
+
+        console.log('동적 가격에서 생성된 초이스 조합:', combinations);
+        setChoiceCombinations(combinations);
+        return;
+      }
+
+      // dynamic_pricing에 데이터가 없으면 products 테이블의 choices 데이터 사용
       if (productData?.choices?.required) {
         const combinations: ChoiceCombination[] = [];
 
@@ -145,83 +336,13 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
         return;
       }
 
-      // products 테이블에 choices가 없으면 dynamic_pricing 테이블에서 확인
-      const { data, error } = await supabase
-        .from('dynamic_pricing')
-        .select('choices_pricing')
-        .eq('product_id', productId)
-        .not('choices_pricing', 'is', null)
-        .limit(1);
-
-      if (error) {
-        console.error('초이스 가격 데이터 로드 실패:', error);
-        return;
-      }
-
-      console.log('동적 가격에서 초이스 조합 로드 쿼리 결과:', {
-        productId,
-        dataCount: data?.length || 0,
-        note: 'dynamic_pricing 테이블에서 로드'
-      });
-
-      if (data && data.length > 0) {
-        const choicesPricing = data[0].choices_pricing;
-        const choicesData = typeof choicesPricing === 'string' 
-          ? JSON.parse(choicesPricing) 
-          : choicesPricing;
-
-        console.log('동적 가격에서 로드된 choices_pricing:', choicesData);
-
-        const combinations: ChoiceCombination[] = [];
-
-        // 새로운 조합 구조 처리
-        if (choicesData.combinations) {
-          Object.entries(choicesData.combinations).forEach(([combinationId, combinationData]: [string, any]) => {
-            console.log(`조합 처리: ${combinationId} ->`, combinationData);
-            combinations.push({
-              id: combinationId,
-              combination_key: combinationData.combination_key,
-              combination_name: combinationData.combination_name,
-              combination_name_ko: combinationData.combination_name_ko,
-              adult_price: combinationData.adult_price,
-              child_price: combinationData.child_price,
-              infant_price: combinationData.infant_price,
-              is_active: true
-            });
-          });
-        } else {
-          // 기존 그룹별 구조 처리 (하위 호환성)
-          Object.entries(choicesData).forEach(([groupKey, groupData]: [string, any]) => {
-            console.log(`초이스 그룹 처리: ${groupKey} ->`, groupData);
-            
-            if (groupData?.options) {
-              Object.entries(groupData.options).forEach(([optionKey, option]: [string, any]) => {
-                console.log(`초이스 조합 생성: ${groupKey}_${optionKey} ->`, option);
-                combinations.push({
-                  id: `${groupKey}_${optionKey}`,
-                  combination_key: `${groupKey}_${optionKey}`,
-                  combination_name: option.name,
-                  combination_name_ko: option.name_ko,
-                  adult_price: option.adult_price,
-                  child_price: option.child_price,
-                  infant_price: option.infant_price,
-                  is_active: true
-                });
-              });
-            }
-          });
-        }
-
-        console.log('동적 가격에서 생성된 초이스 조합:', combinations);
-        setChoiceCombinations(combinations);
-      } else {
-        console.log('초이스 데이터가 없습니다.');
-        setChoiceCombinations([]);
-      }
+      // 두 곳 모두에서 데이터가 없으면 빈 배열 설정
+      console.log('초이스 데이터가 없습니다.');
+      setChoiceCombinations([]);
     } catch (error) {
       console.error('초이스 조합 로드 실패:', error);
     }
-  }, [productId]);
+  }, [productId, selectedChannelId, selectedChannelType]);
 
   const loadChoiceGroups = useCallback(async () => {
     try {

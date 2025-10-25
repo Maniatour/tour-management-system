@@ -156,10 +156,10 @@ export const PriceCalculator = memo(function PriceCalculator({
            </h4>
            
            <div className="space-y-6">
-             {/* 최대 판매가 (초이스 가격 + 업차지) */}
+             {/* 최대 판매가 (기본가격 + 초이스 가격 + 업차지) */}
              <div>
                <h5 className="text-sm font-semibold text-green-600 mb-3">
-                 최대 판매가 (초이스 가격 + 업차지)
+                 최대 판매가 (기본가격 + 초이스 가격 + 업차지)
                </h5>
                <div className="overflow-x-auto">
                  <table className="w-full text-sm bg-green-50">
@@ -174,19 +174,30 @@ export const PriceCalculator = memo(function PriceCalculator({
                    <tbody>
                      {Object.entries(choiceCalculations).map(([choiceId, choiceCalc]) => {
                        const combination = choiceCombinations.find(c => c.id === choiceId);
+                       // 기본가격 + 초이스가격 계산
+                       const totalAdultPrice = (calculation?.basePrice?.adult || 0) + (choiceCalc.markupPrice.adult || 0);
+                       const totalChildPrice = (calculation?.basePrice?.child || 0) + (choiceCalc.markupPrice.child || 0);
+                       const totalInfantPrice = (calculation?.basePrice?.infant || 0) + (choiceCalc.markupPrice.infant || 0);
+                       
+                       // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
+                       const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
+                       const isLowerAntelope = combinationName.includes('로어') || combinationName.includes('Lower');
+                       const rowClass = isLowerAntelope ? 'bg-blue-50' : 'bg-green-50';
+                       const textClass = isLowerAntelope ? 'text-blue-700' : 'text-green-700';
+                       
                        return (
-                         <tr key={choiceId} className="border-b border-gray-100">
-                           <td className="py-2 text-gray-700">
-                             {combination?.combination_name_ko || combination?.combination_name || choiceId}
+                         <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
+                           <td className={`py-2 font-medium ${textClass}`}>
+                             {combinationName}
                            </td>
                            <td className="py-2 text-right font-medium text-blue-600">
-                             {formatPrice(choiceCalc.markupPrice.adult)}
+                             {formatPrice(totalAdultPrice)}
                            </td>
                            <td className="py-2 text-right font-medium text-blue-600">
-                             {formatPrice(choiceCalc.markupPrice.child)}
+                             {formatPrice(totalChildPrice)}
                            </td>
                            <td className="py-2 text-right font-medium text-blue-600">
-                             {formatPrice(choiceCalc.markupPrice.infant)}
+                             {formatPrice(totalInfantPrice)}
                            </td>
                          </tr>
                        );
@@ -214,19 +225,35 @@ export const PriceCalculator = memo(function PriceCalculator({
                    <tbody>
                      {Object.entries(choiceCalculations).map(([choiceId, choiceCalc]) => {
                        const combination = choiceCombinations.find(c => c.id === choiceId);
+                       // 기본가격 + 초이스가격에 할인 적용
+                       const totalAdultPrice = (calculation?.basePrice?.adult || 0) + (choiceCalc.markupPrice.adult || 0);
+                       const totalChildPrice = (calculation?.basePrice?.child || 0) + (choiceCalc.markupPrice.child || 0);
+                       const totalInfantPrice = (calculation?.basePrice?.infant || 0) + (choiceCalc.markupPrice.infant || 0);
+                       
+                       const discountRate = (pricingConfig?.coupon_percent || 0) / 100;
+                       const discountedAdultPrice = totalAdultPrice * (1 - discountRate);
+                       const discountedChildPrice = totalChildPrice * (1 - discountRate);
+                       const discountedInfantPrice = totalInfantPrice * (1 - discountRate);
+                       
+                       // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
+                       const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
+                       const isLowerAntelope = combinationName.includes('로어') || combinationName.includes('Lower');
+                       const rowClass = isLowerAntelope ? 'bg-blue-50' : 'bg-green-50';
+                       const textClass = isLowerAntelope ? 'text-blue-700' : 'text-green-700';
+                       
                        return (
-                         <tr key={choiceId} className="border-b border-gray-100">
-                           <td className="py-2 text-gray-700">
-                             {combination?.combination_name_ko || combination?.combination_name || choiceId}
+                         <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
+                           <td className={`py-2 font-medium ${textClass}`}>
+                             {combinationName}
                            </td>
                            <td className="py-2 text-right font-medium text-orange-600">
-                             {formatPrice(choiceCalc.discountPrice.adult)}
+                             {formatPrice(discountedAdultPrice)}
                            </td>
                            <td className="py-2 text-right font-medium text-orange-600">
-                             {formatPrice(choiceCalc.discountPrice.child)}
+                             {formatPrice(discountedChildPrice)}
                            </td>
                            <td className="py-2 text-right font-medium text-orange-600">
-                             {formatPrice(choiceCalc.discountPrice.infant)}
+                             {formatPrice(discountedInfantPrice)}
                            </td>
                          </tr>
                        );
@@ -254,19 +281,41 @@ export const PriceCalculator = memo(function PriceCalculator({
                    <tbody>
                      {Object.entries(choiceCalculations).map(([choiceId, choiceCalc]) => {
                        const combination = choiceCombinations.find(c => c.id === choiceId);
+                       // 기본가격 + 초이스가격에 할인 적용 후 커미션 차감
+                       const totalAdultPrice = (calculation?.basePrice?.adult || 0) + (choiceCalc.markupPrice.adult || 0);
+                       const totalChildPrice = (calculation?.basePrice?.child || 0) + (choiceCalc.markupPrice.child || 0);
+                       const totalInfantPrice = (calculation?.basePrice?.infant || 0) + (choiceCalc.markupPrice.infant || 0);
+                       
+                       const discountRate = (pricingConfig?.coupon_percent || 0) / 100;
+                       const commissionRate = (pricingConfig?.commission_percent || 0) / 100;
+                       
+                       const discountedAdultPrice = totalAdultPrice * (1 - discountRate);
+                       const discountedChildPrice = totalChildPrice * (1 - discountRate);
+                       const discountedInfantPrice = totalInfantPrice * (1 - discountRate);
+                       
+                       const netAdultPrice = discountedAdultPrice * (1 - commissionRate);
+                       const netChildPrice = discountedChildPrice * (1 - commissionRate);
+                       const netInfantPrice = discountedInfantPrice * (1 - commissionRate);
+                       
+                       // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
+                       const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
+                       const isLowerAntelope = combinationName.includes('로어') || combinationName.includes('Lower');
+                       const rowClass = isLowerAntelope ? 'bg-blue-50' : 'bg-green-50';
+                       const textClass = isLowerAntelope ? 'text-blue-700' : 'text-green-700';
+                       
                        return (
-                         <tr key={choiceId} className="border-b border-gray-100">
-                           <td className="py-2 text-gray-700">
-                             {combination?.combination_name_ko || combination?.combination_name || choiceId}
+                         <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
+                           <td className={`py-2 font-medium ${textClass}`}>
+                             {combinationName}
                            </td>
                            <td className="py-2 text-right font-bold text-green-600">
-                             {formatPrice(choiceCalc.netPrice.adult)}
+                             {formatPrice(netAdultPrice)}
                            </td>
                            <td className="py-2 text-right font-bold text-green-600">
-                             {formatPrice(choiceCalc.netPrice.child)}
+                             {formatPrice(netChildPrice)}
                            </td>
                            <td className="py-2 text-right font-bold text-green-600">
-                             {formatPrice(choiceCalc.netPrice.infant)}
+                             {formatPrice(netInfantPrice)}
                            </td>
                          </tr>
                        );

@@ -6,6 +6,7 @@ import {
   List
 } from 'lucide-react';
 import { SimplePricingRuleDto, SimplePricingRule, DateRangeSelection } from '@/lib/types/dynamic-pricing';
+import { NewDynamicPricingService } from '@/lib/newDynamicPricingService';
 
 // 커스텀 훅들
 import { useDynamicPricing } from '@/hooks/useDynamicPricing';
@@ -104,6 +105,38 @@ export default function DynamicPricingManager({
     choiceCalculations
   } = usePriceCalculation();
 
+  // 새로운 가격 계산 함수 사용
+  const calculatePriceWithNewSystem = useCallback(async (
+    adults: number = 1,
+    children: number = 0,
+    infants: number = 0,
+    selectedChoices: string[] = [],
+    selectedAdditionalOptions: string[] = []
+  ) => {
+    if (!selectedChannel || !selectedDates.length) {
+      return null;
+    }
+
+    try {
+      const result = await NewDynamicPricingService.calculateDynamicPrice(
+        productId,
+        selectedChannel,
+        selectedDates[0], // 첫 번째 선택된 날짜 사용
+        adults,
+        children,
+        infants,
+        selectedChoices,
+        selectedAdditionalOptions
+      );
+
+      console.log('새로운 가격 계산 결과:', result);
+      return result;
+    } catch (error) {
+      console.error('새로운 가격 계산 실패:', error);
+      return null;
+    }
+  }, [productId, selectedChannel, selectedDates]);
+
   // 날짜 범위 선택 핸들러
   const handleDateRangeSelection = useCallback((selection: DateRangeSelection) => {
     setDateRangeSelection(selection);
@@ -161,32 +194,53 @@ export default function DynamicPricingManager({
     });
   }, [pricingConfig, updatePricingConfig, updateCalculationConfig]);
 
-  // 초이스별 가격 업데이트 핸들러
-  const handleChoicePriceUpdate = useCallback((
+  // 초이스별 가격 업데이트 핸들러 (새로운 시스템)
+  const handleChoicePriceUpdate = useCallback(async (
     combinationId: string, 
-    priceType: 'adult_price' | 'child_price' | 'infant_price', 
+    priceType: 'adult' | 'child' | 'infant', 
     value: number
   ) => {
-    // 기존 초이스 조합 업데이트
-    updateChoiceCombinationPrice(combinationId, priceType, value);
-    
-    // 실시간 계산을 위한 가격 설정 업데이트
-    const combination = choiceCombinations.find(c => c.id === combinationId);
-    if (combination) {
-      const updatedPricing = {
-        ...combination,
-        [priceType]: value
+    try {
+      // 새로운 가격 구조에 맞게 choices_pricing 업데이트
+      const currentPricing = pricingConfig.choices_pricing || {};
+      const updatedChoicesPricing = {
+        ...currentPricing,
+        [combinationId]: {
+          ...currentPricing[combinationId],
+          [priceType]: value
+        }
       };
+
+      // pricingConfig 업데이트
+      updatePricingConfig({
+        ...pricingConfig,
+        choices_pricing: updatedChoicesPricing
+      });
+
+      // 기존 초이스 조합도 업데이트 (호환성 유지)
+      updateChoiceCombinationPrice(combinationId, `${priceType}_price`, value);
       
-      updateChoicePricing(combinationId, {
-        choiceId: combinationId,
-        choiceName: combination.combination_name,
-        adult_price: updatedPricing.adult_price || 0,
-        child_price: updatedPricing.child_price || 0,
-        infant_price: updatedPricing.infant_price || 0
+      console.log(`초이스 가격 업데이트: ${combinationId} - ${priceType}: ${value}`);
+    } catch (error) {
+      console.error('초이스 가격 업데이트 실패:', error);
+    }
+  }, [pricingConfig, updatePricingConfig, updateChoiceCombinationPrice]);
+
+  // 새로운 가격 구조에 맞게 초이스 가격 데이터 동기화
+  useEffect(() => {
+    if (pricingConfig.choices_pricing && Object.keys(pricingConfig.choices_pricing).length > 0) {
+      console.log('새로운 choices_pricing 데이터 감지됨:', pricingConfig.choices_pricing);
+      
+      // 새로운 구조: { choiceId: { adult: 50, child: 30, infant: 20 } }
+      Object.entries(pricingConfig.choices_pricing).forEach(([choiceId, choiceData]: [string, any]) => {
+        if (choiceData && typeof choiceData === 'object') {
+          updateChoiceCombinationPrice(choiceId, 'adult_price', choiceData.adult || 0);
+          updateChoiceCombinationPrice(choiceId, 'child_price', choiceData.child || 0);
+          updateChoiceCombinationPrice(choiceId, 'infant_price', choiceData.infant || 0);
+        }
       });
     }
-  }, [choiceCombinations, updateChoiceCombinationPrice, updateChoicePricing]);
+  }, [pricingConfig.choices_pricing, updateChoiceCombinationPrice]);
 
   // 초이스 조합이 로드되면 초기 가격 설정
   useEffect(() => {
@@ -564,52 +618,50 @@ export default function DynamicPricingManager({
             />
              </div>
 
-          {/* 기본 가격 설정 - 컴팩트 레이아웃 */}
+          {/* 기본 가격 설정 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <h4 className="text-md font-semibold text-gray-900 mb-4">기본 가격</h4>
             
-             <div className="space-y-4">
-              {/* 기본 가격 - 초이스가 없을 때만 표시 */}
-              {choiceCombinations.length === 0 && (
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      성인 가격
-                    </label>
-                    <input
-                      type="number"
-                      value={pricingConfig.adult_price}
-                      onChange={(e) => handlePricingConfigUpdate({ adult_price: Number(e.target.value) })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      아동 가격
-                    </label>
-                    <input
-                      type="number"
-                      value={pricingConfig.child_price}
-                      onChange={(e) => handlePricingConfigUpdate({ child_price: Number(e.target.value) })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      유아 가격
-                    </label>
-                    <input
-                      type="number"
-                      value={pricingConfig.infant_price}
-                      onChange={(e) => handlePricingConfigUpdate({ infant_price: Number(e.target.value) })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="0"
-                    />
-                  </div>
+            <div className="space-y-4">
+              {/* 기본 가격 - 항상 표시 */}
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    성인 가격 ($)
+                  </label>
+                  <input
+                    type="number"
+                    value={pricingConfig.adult_price || 0}
+                    onChange={(e) => handlePricingConfigUpdate({ adult_price: Number(e.target.value) })}
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="0"
+                  />
                 </div>
-              )}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    아동 가격 ($)
+                  </label>
+                  <input
+                    type="number"
+                    value={pricingConfig.child_price || 0}
+                    onChange={(e) => handlePricingConfigUpdate({ child_price: Number(e.target.value) })}
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    유아 가격 ($)
+                  </label>
+                  <input
+                    type="number"
+                    value={pricingConfig.infant_price || 0}
+                    onChange={(e) => handlePricingConfigUpdate({ infant_price: Number(e.target.value) })}
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
 
               {/* 수수료 및 마크업 - 한 줄에 3개 */}
               <div className="grid grid-cols-3 gap-3">
@@ -692,12 +744,13 @@ export default function DynamicPricingManager({
                               </div>
                             </div>
 
-          {/* 초이스 가격 패널 - 항상 표시 */}
-                            {choiceCombinations.length > 0 && (
+          {/* 초이스별 가격 설정 */}
+          {choiceCombinations.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <h4 className="text-md font-semibold text-gray-900 mb-4">초이스별 가격 설정</h4>
+              <h4 className="text-md font-semibold text-gray-900 mb-2">초이스별 가격 설정</h4>
+              <p className="text-xs text-gray-600 mb-4">※ 각 초이스 조합의 가격은 포함된 옵션들의 가격 합산입니다</p>
               
-                              <div className="space-y-3">
+              <div className="space-y-3">
                 {choiceCombinations.map((combination) => (
                   <div
                     key={combination.id}
@@ -710,85 +763,91 @@ export default function DynamicPricingManager({
                       <p className="text-xs text-gray-600">
                         {combination.combination_name}
                       </p>
+                      
                       {/* 조합 구성 요소 표시 */}
-                      {combination.combination_details && combination.combination_details.length > 1 && (
+                      {combination.combination_details && combination.combination_details.length > 0 && (
                         <div className="mt-2">
                           <p className="text-xs text-gray-500 mb-1">구성 요소:</p>
                           <div className="flex flex-wrap gap-1">
-                            {combination.combination_details.map((detail, index) => (
-                              <span
-                                key={index}
-                                className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded"
-                              >
-                                {detail.groupNameKo || detail.groupName}: {detail.optionNameKo || detail.optionName}
-                              </span>
-                            ))}
+                            {combination.combination_details.map((detail, index) => {
+                              console.log(`조합 ${combination.id}의 detail ${index}:`, detail);
+                              return (
+                                <span
+                                  key={index}
+                                  className={`inline-block px-2 py-1 text-xs rounded ${
+                                    index % 4 === 0 ? 'bg-blue-100 text-blue-800' :
+                                    index % 4 === 1 ? 'bg-green-100 text-green-800' :
+                                    index % 4 === 2 ? 'bg-purple-100 text-purple-800' :
+                                    'bg-orange-100 text-orange-800'
+                                  }`}
+                                >
+                                  {detail.optionNameKo || detail.optionName || detail.option_name_ko || detail.option_name || '옵션'}: ${detail.adult_price || 0}
+                                </span>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
                     </div>
-                                    
+                    
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">
-                          성인 가격
+                          성인 가격 ($)
                         </label>
-                                          <input
-                                            type="number"
-                                            value={combination.adult_price}
-                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'adult_price', Number(e.target.value))}
+                        <input
+                          type="number"
+                          value={combination.adult_price || 0}
+                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'adult', Number(e.target.value))}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="0"
-                                          />
-                        {/* 실시간 계산 결과 표시 */}
-                        {choiceCalculations[combination.id] && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            최종: ${choiceCalculations[combination.id].finalPrice.adult}
-                                        </div>
-                        )}
-                                      </div>
+                          placeholder="0"
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          원래 합산: ${combination.combination_details ? 
+                            combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
+                            combination.adult_price || 0}
+                        </div>
+                      </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">
-                          아동 가격
+                          아동 가격 ($)
                         </label>
-                                          <input
-                                            type="number"
-                                            value={combination.child_price}
-                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'child_price', Number(e.target.value))}
+                        <input
+                          type="number"
+                          value={combination.child_price || 0}
+                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'child', Number(e.target.value))}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="0"
-                                          />
-                        {/* 실시간 계산 결과 표시 */}
-                        {choiceCalculations[combination.id] && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            최종: ${choiceCalculations[combination.id].finalPrice.child}
-                                        </div>
-                        )}
-                                      </div>
+                          placeholder="0"
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          원래 합산: ${combination.combination_details ? 
+                            combination.combination_details.reduce((sum, detail) => sum + (detail.child_price || 0), 0) : 
+                            combination.child_price || 0}
+                        </div>
+                      </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">
-                          유아 가격
+                          유아 가격 ($)
                         </label>
-                                          <input
-                                            type="number"
-                                            value={combination.infant_price}
-                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'infant_price', Number(e.target.value))}
+                        <input
+                          type="number"
+                          value={combination.infant_price || 0}
+                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'infant', Number(e.target.value))}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                            placeholder="0"
-                                          />
-                        {/* 실시간 계산 결과 표시 */}
-                        {choiceCalculations[combination.id] && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            최종: ${choiceCalculations[combination.id].finalPrice.infant}
-                                        </div>
-                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
+                          placeholder="0"
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          원래 합산: ${combination.combination_details ? 
+                            combination.combination_details.reduce((sum, detail) => sum + (detail.infant_price || 0), 0) : 
+                            combination.infant_price || 0}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 저장 컨트롤 */}
           <PricingControls
