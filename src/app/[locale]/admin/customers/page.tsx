@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import ReactCountryFlag from 'react-country-flag'
 import { 
   Plus, 
@@ -102,6 +103,7 @@ export default function AdminCustomers() {
   const params = useParams() as { locale?: string }
   const router = useRouter()
   const locale = params?.locale || 'ko'
+  const t = useTranslations('customers')
   
   // 최적화된 고객 데이터 로딩
   const { data: customers = [], loading: customersLoading, refetch: refetchCustomers } = useOptimizedData({
@@ -379,7 +381,7 @@ export default function AdminCustomers() {
 
       if (error) {
         console.error('Error saving reservation:', error)
-        alert('예약 저장 중 오류가 발생했습니다: ' + (error as Error).message)
+        alert(t('messages.errorSavingReservation') + ' ' + (error as Error).message)
         return
       }
 
@@ -387,10 +389,10 @@ export default function AdminCustomers() {
       await fetchReservationInfo()
       setShowReservationForm(false)
       setSelectedCustomerForReservation(null)
-      alert('예약이 성공적으로 추가되었습니다!')
+      alert(t('messages.reservationAdded'))
     } catch (error) {
       console.error('Error saving reservation:', error)
-      alert('예약 저장 중 오류가 발생했습니다.')
+      alert(t('messages.errorSavingReservation'))
     }
   }, [fetchReservationInfo])
 
@@ -404,16 +406,16 @@ export default function AdminCustomers() {
 
       if (error) {
         console.error('Error deleting reservation:', error)
-        alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
+        alert(t('messages.errorDeletingReservation') + ' ' + error.message)
         return
       }
 
       // 성공 시 예약 정보 새로고침
       await fetchReservationInfo()
-      alert('예약이 성공적으로 삭제되었습니다!')
+      alert(t('messages.reservationDeleted'))
     } catch (error) {
       console.error('Error deleting reservation:', error)
-      alert('예약 삭제 중 오류가 발생했습니다.')
+      alert(t('messages.errorDeletingReservation'))
     }
   }, [fetchReservationInfo])
 
@@ -427,16 +429,16 @@ export default function AdminCustomers() {
 
       if (error) {
         console.error('Error adding customer:', error)
-        alert('고객 추가 중 오류가 발생했습니다.')
+        alert(t('messages.errorAddingCustomer'))
         return
       }
 
-      alert('고객이 성공적으로 추가되었습니다!')
+      alert(t('messages.customerAdded'))
       closeForm()
       refetchCustomers()
     } catch (error) {
       console.error('Error adding customer:', error)
-      alert('고객 추가 중 오류가 발생했습니다.')
+      alert(t('messages.errorAddingCustomer'))
     }
   }
 
@@ -451,16 +453,16 @@ export default function AdminCustomers() {
 
         if (error) {
           console.error('Error updating customer:', error)
-        alert('고객 정보 수정 중 오류가 발생했습니다.')
+        alert(t('messages.errorUpdatingCustomer'))
           return
         }
 
-            alert('고객 정보가 성공적으로 수정되었습니다!')
+            alert(t('messages.customerUpdated'))
       closeForm()
       refetchCustomers()
       } catch (error) {
         console.error('Error updating customer:', error)
-      alert('고객 정보 수정 중 오류가 발생했습니다.')
+      alert(t('messages.errorUpdatingCustomer'))
     }
   }
 
@@ -474,11 +476,11 @@ export default function AdminCustomers() {
 
         if (error) {
           console.error('Error deleting customer:', error)
-        alert('고객 삭제 중 오류가 발생했습니다.')
+        alert(t('messages.errorDeletingCustomer'))
           return
         }
 
-      alert('고객이 성공적으로 삭제되었습니다!')
+      alert(t('messages.customerDeleted'))
       refetchCustomers()
       
       // 모달 닫기
@@ -486,7 +488,7 @@ export default function AdminCustomers() {
       setEditingCustomer(null)
       } catch (error) {
         console.error('Error deleting customer:', error)
-      alert('고객 삭제 중 오류가 발생했습니다.')
+      alert(t('messages.errorDeletingCustomer'))
     }
   }
 
@@ -646,15 +648,15 @@ export default function AdminCustomers() {
       {/* 페이지 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">고객 관리</h1>
-          <p className="mt-2 text-gray-600">고객 정보를 관리하고 모니터링합니다.</p>
+          <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="mt-2 text-gray-600">{t('subtitle')}</p>
         </div>
         <button
                           onClick={openForm}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
         >
           <Plus size={20} />
-          <span>새 고객 추가</span>
+          <span>{t('addCustomer')}</span>
         </button>
       </div>
 
@@ -664,7 +666,7 @@ export default function AdminCustomers() {
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
         <input
           type="text"
-            placeholder="ID, 이름, 이메일, 전화번호, 다른 이름(영문명 등), 특별요청으로 검색..."
+            placeholder={t('searchPlaceholder')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -681,7 +683,7 @@ export default function AdminCustomers() {
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            전체
+            {t('filters.all')}
           </button>
           <button
             onClick={() => setStatusFilter('active')}
@@ -691,7 +693,7 @@ export default function AdminCustomers() {
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            활성
+            {t('filters.active')}
           </button>
           <button
             onClick={() => setStatusFilter('inactive')}
@@ -701,7 +703,7 @@ export default function AdminCustomers() {
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            비활성
+            {t('filters.inactive')}
           </button>
         </div>
         
@@ -717,12 +719,12 @@ export default function AdminCustomers() {
             }}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <option value="created_at-desc">최신순</option>
-            <option value="created_at-asc">오래된순</option>
-            <option value="name-asc">이름 ↑</option>
-            <option value="name-desc">이름 ↓</option>
-            <option value="language-asc">언어 ↑</option>
-            <option value="language-desc">언어 ↓</option>
+            <option value="created_at-desc">{t('sortOptions.newest')}</option>
+            <option value="created_at-asc">{t('sortOptions.oldest')}</option>
+            <option value="name-asc">{t('sortOptions.nameAsc')}</option>
+            <option value="name-desc">{t('sortOptions.nameDesc')}</option>
+            <option value="language-asc">{t('sortOptions.languageAsc')}</option>
+            <option value="language-desc">{t('sortOptions.languageDesc')}</option>
           </select>
         </div>
       </div>
@@ -731,20 +733,20 @@ export default function AdminCustomers() {
       {loading ? (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">고객 목록을 불러오는 중...</p>
+          <p className="mt-4 text-gray-600">{t('loading')}</p>
         </div>
       ) : (
         <>
           {/* 필터 정보 표시 */}
           <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
             <div>
-              {statusFilter === 'active' && '활성 고객'}
-              {statusFilter === 'inactive' && '비활성 고객'}
-              {statusFilter === 'all' && '전체 고객'}
-              : {filteredCustomers.length}명 (날짜 {currentPage}/{totalPages})
+              {statusFilter === 'active' && t('stats.activeCustomers')}
+              {statusFilter === 'inactive' && t('stats.inactiveCustomers')}
+              {statusFilter === 'all' && t('stats.allCustomers')}
+              : {filteredCustomers.length}{t('stats.customers')} (날짜 {currentPage}/{totalPages})
             </div>
             <div>
-              전체: {customers?.length || 0}명
+              {t('stats.total')}: {customers?.length || 0}{t('stats.customers')}
             </div>
           </div>
           
@@ -752,8 +754,8 @@ export default function AdminCustomers() {
           {Object.keys(groupedCustomers).length === 0 ? (
             <div className="text-center py-12">
               <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">고객이 없습니다</h3>
-              <p className="text-gray-500">새 고객을 추가해보세요.</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">{t('noCustomers')}</h3>
+              <p className="text-gray-500">{t('noCustomersDescription')}</p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -1073,7 +1075,7 @@ export default function AdminCustomers() {
                             if (!info || (info.bookingCount === 0 && info.totalParticipants === 0)) {
                               return (
                                 <div className="text-center py-2">
-                                  <span className="text-gray-400 text-xs">예약 없음</span>
+                                  <span className="text-gray-400 text-xs">{t('customerCard.noReservations')}</span>
                                 </div>
                               )
                             }
@@ -1086,14 +1088,14 @@ export default function AdminCustomers() {
                                   router.push(`/${locale}/admin/reservations?customer=${customer.id}`)
                                 }}
                                 className="w-full hover:bg-blue-50 p-2 rounded-lg transition-colors group border border-blue-200 bg-blue-50/30"
-                                title="예약 내역 보기"
+                                title={t('customerCard.viewReservations')}
                               >
                                 <div className="flex items-center justify-between mb-1">
                                   <div className="flex items-center space-x-2 text-xs text-blue-700">
                                     <Calendar className="h-3 w-3 group-hover:text-blue-800" />
-                                    <span className="group-hover:text-blue-800 font-semibold">{info.bookingCount}건</span>
+                                    <span className="group-hover:text-blue-800 font-semibold">{info.bookingCount}{t('stats.bookings')}</span>
                                     <User className="h-3 w-3 group-hover:text-blue-800" />
-                                    <span className="group-hover:text-blue-800 font-semibold">{info.totalParticipants}명</span>
+                                    <span className="group-hover:text-blue-800 font-semibold">{info.totalParticipants}{t('stats.participants')}</span>
                                   </div>
                                   <span className="text-blue-600 text-xs group-hover:text-blue-800 font-semibold">→</span>
                                 </div>
@@ -1116,7 +1118,7 @@ export default function AdminCustomers() {
                                           // 개별 예약 상세 페이지로 이동
                                           router.push(`/${locale}/admin/reservations/${reservation.id}`)
                                         }}
-                                        title="예약 상세 보기"
+                                        title={t('customerCard.viewDetails')}
                                       >
                                         <div className="flex items-center space-x-2 flex-1 min-w-0">
                                           <span className="text-green-600 font-mono font-semibold">
@@ -1129,11 +1131,11 @@ export default function AdminCustomers() {
                                           <span className="truncate font-semibold text-green-800">{productName}</span>
                                         </div>
                                         <div className="flex items-center space-x-2 flex-shrink-0">
-                                          <span className="text-green-600 font-medium">{reservation.total_people}명</span>
+                                          <span className="text-green-600 font-medium">{reservation.total_people}{t('stats.participants')}</span>
                                           <span className={`font-semibold ${statusColor}`}>
-                                            {reservation.status === 'confirmed' ? '확정' :
-                                             reservation.status === 'pending' ? '대기' :
-                                             reservation.status === 'cancelled' ? '취소' : reservation.status}
+                                            {reservation.status === 'confirmed' ? t('reservationStatus.confirmed') :
+                                             reservation.status === 'pending' ? t('reservationStatus.pending') :
+                                             reservation.status === 'cancelled' ? t('reservationStatus.cancelled') : reservation.status}
                                           </span>
                                           <span className="text-green-600 text-xs font-semibold">→</span>
                                         </div>
@@ -1148,9 +1150,9 @@ export default function AdminCustomers() {
                                         // 예약 목록 페이지로 이동 (고객 ID로 필터링)
                                         router.push(`/${locale}/admin/reservations?customer=${customer.id}`)
                                       }}
-                                      title="모든 예약 보기"
+                                      title={t('customerCard.viewReservations')}
                                     >
-                                      +{info.reservations.length - 2}건 더 보기
+                                      +{info.reservations.length - 2}{t('customerCard.moreReservations')}
                                     </div>
                                   )}
                                 </div>
@@ -1165,7 +1167,7 @@ export default function AdminCustomers() {
                             <div className="flex items-start space-x-2">
                               <FileText className="h-3 w-3 text-yellow-600 mt-0.5 flex-shrink-0" />
                               <div className="text-xs text-yellow-800">
-                                <div className="font-medium mb-1">특별요청:</div>
+                                <div className="font-medium mb-1">{t('customerCard.specialRequests')}</div>
                                 <div className="whitespace-pre-wrap break-words">
                                   {customer.special_requests.length > 100 
                                     ? `${customer.special_requests.substring(0, 100)}...` 
@@ -1185,10 +1187,10 @@ export default function AdminCustomers() {
                               handleAddReservation(customer)
                             }}
                             className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors duration-200"
-                            title="새 예약 추가"
+                            title={t('customerCard.addReservation')}
                           >
                             <BookOpen className="h-3 w-3" />
-                            <span>예약 추가</span>
+                            <span>{t('customerCard.addReservation')}</span>
                           </button>
                         </div>
 
@@ -1208,14 +1210,14 @@ export default function AdminCustomers() {
                 disabled={currentPage === 1}
                 className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
               >
-                처음
+                {t('pagination.first')}
               </button>
               <button
                 onClick={() => setCurrentPage(currentPage - 1)}
                 disabled={currentPage === 1}
                 className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
               >
-                이전
+                {t('pagination.previous')}
               </button>
               
               {/* 페이지 번호들 */}
@@ -1251,14 +1253,14 @@ export default function AdminCustomers() {
                 disabled={currentPage === totalPages}
                 className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                       >
-                다음
+                {t('pagination.next')}
                       </button>
                       <button
                 onClick={() => setCurrentPage(totalPages)}
                 disabled={currentPage === totalPages}
                 className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                       >
-                마지막
+                {t('pagination.last')}
                       </button>
                     </div>
           )}
@@ -1538,7 +1540,7 @@ function CustomerForm({
     
     // 필수 필드 검증
     if (!formData.name) {
-      alert('이름은 필수 입력 항목입니다.')
+      alert(t('form.validation.nameRequired'))
       return
     }
 
@@ -1546,7 +1548,7 @@ function CustomerForm({
     if (formData.email) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(formData.email)) {
-        alert('올바른 이메일 형식을 입력해주세요.')
+        alert(t('form.validation.invalidEmail'))
         return
       }
     }
@@ -1560,11 +1562,11 @@ function CustomerForm({
       )
       
       if (duplicateCustomer) {
-        const confirmMessage = `이미 등록된 고객과 유사한 정보가 있습니다.\n\n` +
+        const confirmMessage = `${t('form.validation.duplicateCustomer')}\n\n` +
           `기존 고객: ${duplicateCustomer.name}` +
           (duplicateCustomer.email ? ` (${duplicateCustomer.email})` : '') +
           (duplicateCustomer.phone ? ` (${duplicateCustomer.phone})` : '') +
-          `\n\n기존 고객을 선택하시겠습니까?`
+          `\n\n${t('form.validation.selectExistingCustomer')}`
         
         if (confirm(confirmMessage)) {
           handleCustomerSelect(duplicateCustomer)
@@ -1584,7 +1586,7 @@ function CustomerForm({
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center space-x-3">
             <h2 className="text-xl font-bold">
-              {customer ? '고객 정보 수정' : '새 고객 추가'}
+              {customer ? t('form.title.edit') : t('form.title.add')}
         </h2>
             <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
               ID: {formData.id}
@@ -1593,7 +1595,7 @@ function CustomerForm({
           
           {/* 상태 온오프 스위치 */}
           <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium text-gray-700">상태</span>
+            <span className="text-sm font-medium text-gray-700">{t('form.fields.status')}</span>
             <button
               type="button"
               onClick={() => setFormData({
@@ -1613,7 +1615,7 @@ function CustomerForm({
             <span className={`text-sm font-medium ${
               formData.status === 'active' ? 'text-blue-600' : 'text-gray-500'
             }`}>
-              {formData.status === 'active' ? '활성' : '비활성'}
+              {formData.status === 'active' ? t('form.fields.active') : t('form.fields.inactive')}
             </span>
           </div>
         </div>
@@ -1625,7 +1627,7 @@ function CustomerForm({
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  이름 *
+                  {t('form.fields.name')} *
                 </label>
                 <div className="relative" ref={customerSearchRef}>
                   <input
@@ -1634,7 +1636,7 @@ function CustomerForm({
                     onChange={(e) => handleCustomerSearchChange(e.target.value)}
                     onFocus={() => setShowCustomerDropdown(customerSearch.length > 0)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="고객 ID, 이름, 이메일, 전화번호로 검색..."
+                    placeholder={t('form.search.placeholder')}
                     required
                   />
                   
@@ -1661,7 +1663,7 @@ function CustomerForm({
                       ))}
                       {filteredCustomers.length === 0 && (
                         <div className="px-3 py-2 text-gray-500 text-center">
-                          검색 결과가 없습니다
+                          {t('form.search.noResults')}
                         </div>
                       )}
                     </div>
@@ -1671,7 +1673,7 @@ function CustomerForm({
                   {isExistingCustomer && (
                     <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
                       <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
-                        기존 고객
+                        {t('form.validation.existingCustomer')}
                       </span>
                     </div>
                   )}
@@ -1680,14 +1682,14 @@ function CustomerForm({
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  전화번호
+                  {t('form.fields.phone')}
                 </label>
                 <input
                   type="tel"
                   value={formData.phone || ''}
                   onChange={(e) => setFormData({...formData, phone: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="전화번호 (선택사항)"
+                  placeholder={t('form.fields.phonePlaceholder')}
                 />
               </div>
             </div>
@@ -1696,7 +1698,7 @@ function CustomerForm({
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  언어
+                  {t('form.fields.language')}
                 </label>
                 <select
                   value={(() => {
@@ -1730,68 +1732,68 @@ function CustomerForm({
                   onChange={(e) => setFormData({...formData, language: e.target.value})}
                   className="w-full h-10 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="">🌐 언어 선택</option>
-                  <option value="KR">🇰🇷 한국어</option>
-                  <option value="EN">🇺🇸 English</option>
-                  <option value="JA">🇯🇵 日本語</option>
-                  <option value="ZH">🇨🇳 中文</option>
-                  <option value="ES">🇪🇸 Español</option>
-                  <option value="FR">🇫🇷 Français</option>
-                  <option value="DE">🇩🇪 Deutsch</option>
-                  <option value="IT">🇮🇹 Italiano</option>
-                  <option value="PT">🇵🇹 Português</option>
-                  <option value="RU">🇷🇺 Русский</option>
-                  <option value="AR">🇸🇦 العربية</option>
-                  <option value="TH">🇹🇭 ไทย</option>
-                  <option value="VI">🇻🇳 Tiếng Việt</option>
-                  <option value="ID">🇮🇩 Bahasa Indonesia</option>
-                  <option value="MS">🇲🇾 Bahasa Melayu</option>
-                  <option value="TL">🇵🇭 Filipino</option>
-                  <option value="HI">🇮🇳 हिन्दी</option>
-                  <option value="BN">🇧🇩 বাংলা</option>
-                  <option value="UR">🇵🇰 اردو</option>
-                  <option value="FA">🇮🇷 فارسی</option>
-                  <option value="TR">🇹🇷 Türkçe</option>
-                  <option value="PL">🇵🇱 Polski</option>
-                  <option value="NL">🇳🇱 Nederlands</option>
-                  <option value="SV">🇸🇪 Svenska</option>
-                  <option value="NO">🇳🇴 Norsk</option>
-                  <option value="DA">🇩🇰 Dansk</option>
-                  <option value="FI">🇫🇮 Suomi</option>
-                  <option value="CS">🇨🇿 Čeština</option>
-                  <option value="HU">🇭🇺 Magyar</option>
-                  <option value="RO">🇷🇴 Română</option>
-                  <option value="BG">🇧🇬 Български</option>
-                  <option value="HR">🇭🇷 Hrvatski</option>
-                  <option value="SK">🇸🇰 Slovenčina</option>
-                  <option value="SL">🇸🇮 Slovenščina</option>
-                  <option value="ET">🇪🇪 Eesti</option>
-                  <option value="LV">🇱🇻 Latviešu</option>
-                  <option value="LT">🇱🇹 Lietuvių</option>
-                  <option value="EL">🇬🇷 Ελληνικά</option>
-                  <option value="HE">🇮🇱 עברית</option>
-                  <option value="KO">🇰🇵 조선어</option>
-                  <option value="MN">🇲🇳 Монгол</option>
-                  <option value="KA">🇬🇪 ქართული</option>
-                  <option value="AM">🇪🇹 አማርኛ</option>
-                  <option value="SW">🇰🇪 Kiswahili</option>
-                  <option value="ZU">🇿🇦 IsiZulu</option>
-                  <option value="AF">🇿🇦 Afrikaans</option>
-                  <option value="XH">🇿🇦 IsiXhosa</option>
-                  <option value="OTHER">🌍 기타</option>
+                  <option value="">{t('form.languages.select')}</option>
+                  <option value="KR">{t('form.languages.korean')}</option>
+                  <option value="EN">{t('form.languages.english')}</option>
+                  <option value="JA">{t('form.languages.japanese')}</option>
+                  <option value="ZH">{t('form.languages.chinese')}</option>
+                  <option value="ES">{t('form.languages.spanish')}</option>
+                  <option value="FR">{t('form.languages.french')}</option>
+                  <option value="DE">{t('form.languages.german')}</option>
+                  <option value="IT">{t('form.languages.italian')}</option>
+                  <option value="PT">{t('form.languages.portuguese')}</option>
+                  <option value="RU">{t('form.languages.russian')}</option>
+                  <option value="AR">{t('form.languages.arabic')}</option>
+                  <option value="TH">{t('form.languages.thai')}</option>
+                  <option value="VI">{t('form.languages.vietnamese')}</option>
+                  <option value="ID">{t('form.languages.indonesian')}</option>
+                  <option value="MS">{t('form.languages.malay')}</option>
+                  <option value="TL">{t('form.languages.filipino')}</option>
+                  <option value="HI">{t('form.languages.hindi')}</option>
+                  <option value="BN">{t('form.languages.bengali')}</option>
+                  <option value="UR">{t('form.languages.urdu')}</option>
+                  <option value="FA">{t('form.languages.persian')}</option>
+                  <option value="TR">{t('form.languages.turkish')}</option>
+                  <option value="PL">{t('form.languages.polish')}</option>
+                  <option value="NL">{t('form.languages.dutch')}</option>
+                  <option value="SV">{t('form.languages.swedish')}</option>
+                  <option value="NO">{t('form.languages.norwegian')}</option>
+                  <option value="DA">{t('form.languages.danish')}</option>
+                  <option value="FI">{t('form.languages.finnish')}</option>
+                  <option value="CS">{t('form.languages.czech')}</option>
+                  <option value="HU">{t('form.languages.hungarian')}</option>
+                  <option value="RO">{t('form.languages.romanian')}</option>
+                  <option value="BG">{t('form.languages.bulgarian')}</option>
+                  <option value="HR">{t('form.languages.croatian')}</option>
+                  <option value="SK">{t('form.languages.slovak')}</option>
+                  <option value="SL">{t('form.languages.slovenian')}</option>
+                  <option value="ET">{t('form.languages.estonian')}</option>
+                  <option value="LV">{t('form.languages.latvian')}</option>
+                  <option value="LT">{t('form.languages.lithuanian')}</option>
+                  <option value="EL">{t('form.languages.greek')}</option>
+                  <option value="HE">{t('form.languages.hebrew')}</option>
+                  <option value="KO">{t('form.languages.koreanNorth')}</option>
+                  <option value="MN">{t('form.languages.mongolian')}</option>
+                  <option value="KA">{t('form.languages.georgian')}</option>
+                  <option value="AM">{t('form.languages.amharic')}</option>
+                  <option value="SW">{t('form.languages.swahili')}</option>
+                  <option value="ZU">{t('form.languages.zulu')}</option>
+                  <option value="AF">{t('form.languages.afrikaans')}</option>
+                  <option value="XH">{t('form.languages.xhosa')}</option>
+                  <option value="OTHER">{t('form.languages.other')}</option>
                 </select>
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  비상연락처
+                  {t('form.fields.emergencyContact')}
                 </label>
                 <input
                   type="tel"
                   value={formData.emergency_contact || ''}
                   onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="비상연락처 (선택사항)"
+                  placeholder={t('form.fields.emergencyContactPlaceholder')}
                 />
               </div>
             </div>
@@ -1799,7 +1801,7 @@ function CustomerForm({
             {/* 오른쪽 열: 채널 (2줄 차지) */}
             <div className="row-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                채널
+                {t('form.fields.channel')}
               </label>
               {/* 채널 타입별 탭과 선택 드롭다운을 하나의 박스로 통합 */}
               <div className="border border-gray-300 rounded-lg overflow-hidden">
@@ -1816,7 +1818,7 @@ function CustomerForm({
                           : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                       }`}
                     >
-                      {type === 'ota' ? 'OTA' : type === 'self' ? '직접' : '파트너'}
+                      {type === 'ota' ? t('form.channelTypes.ota') : type === 'self' ? t('form.channelTypes.self') : t('form.channelTypes.partner')}
                     </button>
                   ))}
                 </div>
@@ -1828,7 +1830,7 @@ function CustomerForm({
                     onChange={(e) => setFormData({...formData, channel_id: e.target.value})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    <option value="">채널 선택</option>
+                    <option value="">{t('form.fields.channelSelect')}</option>
                     {channels
                       .filter(channel => channel.type === selectedChannelType)
                       .map((channel) => (
@@ -1846,27 +1848,27 @@ function CustomerForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                이메일
+                {t('form.fields.email')}
               </label>
               <input
                 type="email"
                 value={formData.email || ''}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="이메일 (선택사항)"
+                placeholder={t('form.fields.emailPlaceholder')}
               />
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                주소
+                {t('form.fields.address')}
               </label>
               <input
                 type="text"
                 value={formData.address || ''}
                 onChange={(e) => setFormData({...formData, address: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="주소 (선택사항)"
+                placeholder={t('form.fields.addressPlaceholder')}
               />
             </div>
           </div>
@@ -1874,14 +1876,14 @@ function CustomerForm({
           {/* 특별요청 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              특별요청
+              {t('form.fields.specialRequests')}
             </label>
             <textarea
               value={formData.special_requests || ''}
               onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="특별한 요청사항, 다른 이름(영문명, 다국어명 등), 알레르기 정보 등을 입력해주세요"
+              placeholder={t('form.fields.specialRequestsPlaceholder')}
             />
           </div>
 
@@ -1894,14 +1896,14 @@ function CustomerForm({
             <button
                 type="button"
                 onClick={() => {
-                  if (confirm('정말로 이 고객을 삭제하시겠습니까?')) {
+                  if (confirm(t('messages.confirmDelete'))) {
                     onDelete()
                   }
                 }}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2"
               >
                 <Trash2 className="h-4 w-4" />
-                <span>삭제</span>
+                <span>{t('form.buttons.delete')}</span>
             </button>
             )}
             
@@ -1912,13 +1914,13 @@ function CustomerForm({
               onClick={onCancel}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
               >
-                취소
+                {t('form.buttons.cancel')}
               </button>
               <button
                 type="submit"
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                {customer ? '수정' : '추가'}
+                {customer ? t('form.buttons.edit') : t('form.buttons.add')}
             </button>
             </div>
           </div>
@@ -1940,7 +1942,7 @@ function CustomerDetailModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">고객 상세 정보</h2>
+          <h2 className="text-2xl font-bold">{t('detailModal.title')}</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
@@ -1957,28 +1959,28 @@ function CustomerDetailModal({
           <div>
             <h3 className="text-lg font-medium mb-4 flex items-center">
               <User className="h-5 w-5 mr-2" />
-              기본 정보
+              {t('detailModal.basicInfo')}
             </h3>
             <div className="space-y-3">
               <div>
-                <span className="text-sm font-medium text-gray-500">ID</span>
+                <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.id')}</span>
                 <p className="text-gray-900">{customer.id}</p>
               </div>
                              <div>
-                 <span className="text-sm font-medium text-gray-500">이름</span>
+                 <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.name')}</span>
                  <p className="text-gray-900">{customer.name}</p>
                </div>
               <div>
-                <span className="text-sm font-medium text-gray-500">이메일</span>
+                <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.email')}</span>
                 <p className="text-gray-900">{customer.email}</p>
               </div>
               <div>
-                <span className="text-sm font-medium text-gray-500">전화번호</span>
+                <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.phone')}</span>
                 <p className="text-gray-900">{customer.phone}</p>
               </div>
               {customer.emergency_contact && (
                 <div>
-                  <span className="text-sm font-medium text-gray-500">비상연락처</span>
+                  <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.emergencyContact')}</span>
                   <p className="text-gray-900">{customer.emergency_contact}</p>
                 </div>
               )}
@@ -1989,46 +1991,46 @@ function CustomerDetailModal({
           <div>
             <h3 className="text-lg font-medium mb-4 flex items-center">
               <FileText className="h-5 w-5 mr-2" />
-              추가 정보
+              {t('detailModal.additionalInfo')}
             </h3>
             <div className="space-y-3">
               {customer.address && (
                 <div>
-                  <span className="text-sm font-medium text-gray-500">주소</span>
+                  <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.address')}</span>
                   <p className="text-gray-900">{customer.address}</p>
                 </div>
               )}
               <div>
-                <span className="text-sm font-medium text-gray-500">언어</span>
+                <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.language')}</span>
                 <p className="text-gray-900 flex items-center">
                   {(() => {
-                    if (!customer.language) return '언어 없음'
+                    if (!customer.language) return t('detailModal.language.none')
                     if (Array.isArray(customer.language)) {
                       const firstLang = customer.language[0]
                       if (firstLang === 'KR' || firstLang === 'ko') return (
                         <>
                           <ReactCountryFlag countryCode="KR" svg style={{ width: '16px', height: '12px', marginRight: '8px' }} />
-                          한국어
+                          {t('detailModal.language.korean')}
                         </>
                       )
                       if (firstLang === 'EN' || firstLang === 'en') return (
                         <>
                           <ReactCountryFlag countryCode="US" svg style={{ width: '16px', height: '12px', marginRight: '8px' }} />
-                          English
+                          {t('detailModal.language.english')}
                         </>
                       )
-                      return firstLang || '언어 없음'
+                      return firstLang || t('detailModal.language.none')
                     }
                     if (customer.language === 'KR' || customer.language === 'ko') return (
                       <>
                         <ReactCountryFlag countryCode="KR" svg style={{ width: '16px', height: '12px', marginRight: '8px' }} />
-                        한국어
+                        {t('detailModal.language.korean')}
                       </>
                     )
                     if (customer.language === 'EN' || customer.language === 'en') return (
                       <>
                         <ReactCountryFlag countryCode="US" svg style={{ width: '16px', height: '12px', marginRight: '8px' }} />
-                        English
+                        {t('detailModal.language.english')}
                       </>
                     )
                     return customer.language
@@ -2036,16 +2038,16 @@ function CustomerDetailModal({
                 </p>
               </div>
               <div>
-                <span className="text-sm font-medium text-gray-500">예약수</span>
+                <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.bookingCount')}</span>
                 <p className="text-gray-900">{customer.booking_count || 0}</p>
               </div>
               <div>
-                <span className="text-sm font-medium text-gray-500">상태</span>
-                <p className="text-gray-900">{customer.status === 'active' ? '활성' : '비활성'}</p>
+                <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.status')}</span>
+                <p className="text-gray-900">{customer.status === 'active' ? t('detailModal.status.active') : t('detailModal.status.inactive')}</p>
               </div>
               {customer.created_at && (
                 <div>
-                  <span className="text-sm font-medium text-gray-500">등록일</span>
+                  <span className="text-sm font-medium text-gray-500">{t('detailModal.fields.createdAt')}</span>
                   <p className="text-gray-900">{new Date(customer.created_at).toLocaleDateString('ko-KR')}</p>
                 </div>
               )}
@@ -2057,7 +2059,7 @@ function CustomerDetailModal({
             <div className="md:col-span-2">
               <h3 className="text-lg font-medium mb-4 flex items-center">
                 <FileText className="h-5 w-5 mr-2" />
-                특별요청
+                {t('detailModal.specialRequests')}
               </h3>
               <div className="bg-gray-50 p-4 rounded-lg">
                 <p className="text-gray-900">{customer.special_requests}</p>
@@ -2071,7 +2073,7 @@ function CustomerDetailModal({
             onClick={onClose}
             className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
           >
-            닫기
+            {t('detailModal.buttons.close')}
           </button>
         </div>
       </div>

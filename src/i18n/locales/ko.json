@@ -298,29 +298,204 @@
   },
   "customers": {
     "title": "고객 관리",
+    "subtitle": "고객 정보를 관리하고 모니터링합니다.",
     "addCustomer": "새 고객 추가",
-    "searchPlaceholder": "고객명, 이메일, 전화번호로 검색...",
-    "columns": {
-      "name": "고객명",
-      "email": "이메일",
-      "phone": "전화번호",
-      "channel": "유입 채널",
-      "language": "언어",
-      "createdAt": "등록일",
-      "actions": "작업"
+    "searchPlaceholder": "ID, 이름, 이메일, 전화번호, 다른 이름(영문명 등), 특별요청으로 검색...",
+    "loading": "고객 목록을 불러오는 중...",
+    "noCustomers": "고객이 없습니다",
+    "noCustomersDescription": "새 고객을 추가해보세요.",
+    "filters": {
+      "all": "전체",
+      "active": "활성",
+      "inactive": "비활성"
+    },
+    "sortOptions": {
+      "newest": "최신순",
+      "oldest": "오래된순",
+      "nameAsc": "이름 ↑",
+      "nameDesc": "이름 ↓",
+      "languageAsc": "언어 ↑",
+      "languageDesc": "언어 ↓"
+    },
+    "stats": {
+      "activeCustomers": "활성 고객",
+      "inactiveCustomers": "비활성 고객",
+      "allCustomers": "전체 고객",
+      "total": "전체",
+      "customers": "명",
+      "bookings": "건",
+      "participants": "명"
+    },
+    "customerCard": {
+      "noReservations": "예약 없음",
+      "viewReservations": "예약 내역 보기",
+      "addReservation": "예약 추가",
+      "viewDetails": "예약 상세 보기",
+      "moreReservations": "건 더 보기",
+      "specialRequests": "특별요청:",
+      "channelNotFound": "채널 없음",
+      "languageNotSelected": "언어가 선택되지 않음",
+      "invalidLanguage": "유효하지 않은 언어 설정",
+      "languageError": "언어 설정 오류"
+    },
+    "pagination": {
+      "first": "처음",
+      "previous": "이전",
+      "next": "다음",
+      "last": "마지막"
     },
     "form": {
-      "title": "새 고객 추가",
-      "editTitle": "고객 정보 편집",
-      "name": "고객명",
-      "email": "이메일",
-      "phone": "전화번호",
-      "channel": "유입 채널",
-      "language": "언어"
+      "title": {
+        "add": "새 고객 추가",
+        "edit": "고객 정보 수정"
+      },
+      "fields": {
+        "name": "이름",
+        "nameRequired": "이름은 필수 입력 항목입니다.",
+        "phone": "전화번호",
+        "phonePlaceholder": "전화번호 (선택사항)",
+        "email": "이메일",
+        "emailPlaceholder": "이메일 (선택사항)",
+        "emergencyContact": "비상연락처",
+        "emergencyContactPlaceholder": "비상연락처 (선택사항)",
+        "address": "주소",
+        "addressPlaceholder": "주소 (선택사항)",
+        "language": "언어",
+        "languageSelect": "언어 선택",
+        "channel": "채널",
+        "channelSelect": "채널 선택",
+        "specialRequests": "특별요청",
+        "specialRequestsPlaceholder": "특별한 요청사항, 다른 이름(영문명, 다국어명 등), 알레르기 정보 등을 입력해주세요",
+        "status": "상태",
+        "active": "활성",
+        "inactive": "비활성"
+      },
+      "channelTypes": {
+        "ota": "OTA",
+        "self": "직접",
+        "partner": "파트너"
+      },
+      "languages": {
+        "select": "🌐 언어 선택",
+        "korean": "🇰🇷 한국어",
+        "english": "🇺🇸 English",
+        "japanese": "🇯🇵 日本語",
+        "chinese": "🇨🇳 中文",
+        "spanish": "🇪🇸 Español",
+        "french": "🇫🇷 Français",
+        "german": "🇩🇪 Deutsch",
+        "italian": "🇮🇹 Italiano",
+        "portuguese": "🇵🇹 Português",
+        "russian": "🇷🇺 Русский",
+        "arabic": "🇸🇦 العربية",
+        "thai": "🇹🇭 ไทย",
+        "vietnamese": "🇻🇳 Tiếng Việt",
+        "indonesian": "🇮🇩 Bahasa Indonesia",
+        "malay": "🇲🇾 Bahasa Melayu",
+        "filipino": "🇵🇭 Filipino",
+        "hindi": "🇮🇳 हिन्दी",
+        "bengali": "🇧🇩 বাংলা",
+        "urdu": "🇵🇰 اردو",
+        "persian": "🇮🇷 فارسی",
+        "turkish": "🇹🇷 Türkçe",
+        "polish": "🇵🇱 Polski",
+        "dutch": "🇳🇱 Nederlands",
+        "swedish": "🇸🇪 Svenska",
+        "norwegian": "🇳🇴 Norsk",
+        "danish": "🇩🇰 Dansk",
+        "finnish": "🇫🇮 Suomi",
+        "czech": "🇨🇿 Čeština",
+        "hungarian": "🇭🇺 Magyar",
+        "romanian": "🇷🇴 Română",
+        "bulgarian": "🇧🇬 Български",
+        "croatian": "🇭🇷 Hrvatski",
+        "slovak": "🇸🇰 Slovenčina",
+        "slovenian": "🇸🇮 Slovenščina",
+        "estonian": "🇪🇪 Eesti",
+        "latvian": "🇱🇻 Latviešu",
+        "lithuanian": "🇱🇹 Lietuvių",
+        "greek": "🇬🇷 Ελληνικά",
+        "hebrew": "🇮🇱 עברית",
+        "koreanNorth": "🇰🇵 조선어",
+        "mongolian": "🇲🇳 Монгол",
+        "georgian": "🇬🇪 ქართული",
+        "amharic": "🇪🇹 አማርኛ",
+        "swahili": "🇰🇪 Kiswahili",
+        "zulu": "🇿🇦 IsiZulu",
+        "afrikaans": "🇿🇦 Afrikaans",
+        "xhosa": "🇿🇦 IsiXhosa",
+        "other": "🌍 기타"
+      },
+      "buttons": {
+        "cancel": "취소",
+        "save": "저장",
+        "add": "추가",
+        "edit": "수정",
+        "delete": "삭제"
+      },
+      "validation": {
+        "nameRequired": "이름은 필수 입력 항목입니다.",
+        "invalidEmail": "올바른 이메일 형식을 입력해주세요.",
+        "duplicateCustomer": "이미 등록된 고객과 유사한 정보가 있습니다.",
+        "existingCustomer": "기존 고객",
+        "selectExistingCustomer": "기존 고객을 선택하시겠습니까?"
+      },
+      "search": {
+        "placeholder": "고객 ID, 이름, 이메일, 전화번호로 검색...",
+        "noResults": "검색 결과가 없습니다"
+      }
     },
-    "languages": {
-      "ko": "한국어",
-      "en": "영어"
+    "detailModal": {
+      "title": "고객 상세 정보",
+      "basicInfo": "기본 정보",
+      "additionalInfo": "추가 정보",
+      "specialRequests": "특별요청",
+      "fields": {
+        "id": "ID",
+        "name": "이름",
+        "email": "이메일",
+        "phone": "전화번호",
+        "emergencyContact": "비상연락처",
+        "address": "주소",
+        "language": "언어",
+        "bookingCount": "예약수",
+        "status": "상태",
+        "createdAt": "등록일"
+      },
+      "status": {
+        "active": "활성",
+        "inactive": "비활성"
+      },
+      "language": {
+        "none": "언어 없음",
+        "korean": "한국어",
+        "english": "English"
+      },
+      "buttons": {
+        "close": "닫기"
+      }
+    },
+    "reservationModal": {
+      "title": "예약 추가",
+      "prefilledMessage": "고객 정보가 미리 채워졌습니다. 상품을 선택하면 가격 정보가 로드됩니다."
+    },
+    "messages": {
+      "customerAdded": "고객이 성공적으로 추가되었습니다!",
+      "customerUpdated": "고객 정보가 성공적으로 수정되었습니다!",
+      "customerDeleted": "고객이 성공적으로 삭제되었습니다!",
+      "reservationAdded": "예약이 성공적으로 추가되었습니다!",
+      "reservationDeleted": "예약이 성공적으로 삭제되었습니다!",
+      "errorAddingCustomer": "고객 추가 중 오류가 발생했습니다.",
+      "errorUpdatingCustomer": "고객 정보 수정 중 오류가 발생했습니다.",
+      "errorDeletingCustomer": "고객 삭제 중 오류가 발생했습니다.",
+      "errorSavingReservation": "예약 저장 중 오류가 발생했습니다:",
+      "errorDeletingReservation": "예약 삭제 중 오류가 발생했습니다:",
+      "confirmDelete": "정말로 이 고객을 삭제하시겠습니까?"
+    },
+    "reservationStatus": {
+      "confirmed": "확정",
+      "pending": "대기",
+      "cancelled": "취소"
     }
   },
   "pickupHotels": {

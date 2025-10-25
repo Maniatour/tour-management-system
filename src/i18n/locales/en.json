@@ -276,30 +276,205 @@
     }
   },
   "customers": {
-    "title": "Customers",
+    "title": "Customer Management",
+    "subtitle": "Manage and monitor customer information.",
     "addCustomer": "Add New Customer",
-    "searchPlaceholder": "Search by name, email, or phone...",
-    "columns": {
-      "name": "Customer Name",
-      "email": "Email",
-      "phone": "Phone",
-      "channel": "Source Channel",
-      "language": "Language",
-      "createdAt": "Created At",
-      "actions": "Actions"
+    "searchPlaceholder": "Search by ID, name, email, phone, other names (English names, etc.), special requests...",
+    "loading": "Loading customer list...",
+    "noCustomers": "No customers",
+    "noCustomersDescription": "Add a new customer to get started.",
+    "filters": {
+      "all": "All",
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "sortOptions": {
+      "newest": "Newest",
+      "oldest": "Oldest",
+      "nameAsc": "Name ↑",
+      "nameDesc": "Name ↓",
+      "languageAsc": "Language ↑",
+      "languageDesc": "Language ↓"
+    },
+    "stats": {
+      "activeCustomers": "Active customers",
+      "inactiveCustomers": "Inactive customers",
+      "allCustomers": "All customers",
+      "total": "Total",
+      "customers": "customers",
+      "bookings": "bookings",
+      "participants": "participants"
+    },
+    "customerCard": {
+      "noReservations": "No reservations",
+      "viewReservations": "View reservations",
+      "addReservation": "Add reservation",
+      "viewDetails": "View details",
+      "moreReservations": "more reservations",
+      "specialRequests": "Special requests:",
+      "channelNotFound": "No channel",
+      "languageNotSelected": "Language not selected",
+      "invalidLanguage": "Invalid language setting",
+      "languageError": "Language setting error"
+    },
+    "pagination": {
+      "first": "First",
+      "previous": "Previous",
+      "next": "Next",
+      "last": "Last"
     },
     "form": {
-      "title": "Add New Customer",
-      "editTitle": "Edit Customer Information",
-      "name": "Customer Name",
-      "email": "Email",
-      "phone": "Phone Number",
-      "channel": "Source Channel",
-      "language": "Language"
+      "title": {
+        "add": "Add New Customer",
+        "edit": "Edit Customer Information"
+      },
+      "fields": {
+        "name": "Name",
+        "nameRequired": "Name is required",
+        "phone": "Phone Number",
+        "phonePlaceholder": "Phone number (optional)",
+        "email": "Email",
+        "emailPlaceholder": "Email (optional)",
+        "emergencyContact": "Emergency Contact",
+        "emergencyContactPlaceholder": "Emergency contact (optional)",
+        "address": "Address",
+        "addressPlaceholder": "Address (optional)",
+        "language": "Language",
+        "languageSelect": "Select language",
+        "channel": "Channel",
+        "channelSelect": "Select channel",
+        "specialRequests": "Special Requests",
+        "specialRequestsPlaceholder": "Enter special requests, other names (English names, multilingual names, etc.), allergy information, etc.",
+        "status": "Status",
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "channelTypes": {
+        "ota": "OTA",
+        "self": "Direct",
+        "partner": "Partner"
+      },
+      "languages": {
+        "select": "🌐 Select language",
+        "korean": "🇰🇷 Korean",
+        "english": "🇺🇸 English",
+        "japanese": "🇯🇵 Japanese",
+        "chinese": "🇨🇳 Chinese",
+        "spanish": "🇪🇸 Spanish",
+        "french": "🇫🇷 French",
+        "german": "🇩🇪 German",
+        "italian": "🇮🇹 Italian",
+        "portuguese": "🇵🇹 Portuguese",
+        "russian": "🇷🇺 Russian",
+        "arabic": "🇸🇦 Arabic",
+        "thai": "🇹🇭 Thai",
+        "vietnamese": "🇻🇳 Vietnamese",
+        "indonesian": "🇮🇩 Indonesian",
+        "malay": "🇲🇾 Malay",
+        "filipino": "🇵🇭 Filipino",
+        "hindi": "🇮🇳 Hindi",
+        "bengali": "🇧🇩 Bengali",
+        "urdu": "🇵🇰 Urdu",
+        "persian": "🇮🇷 Persian",
+        "turkish": "🇹🇷 Turkish",
+        "polish": "🇵🇱 Polish",
+        "dutch": "🇳🇱 Dutch",
+        "swedish": "🇸🇪 Swedish",
+        "norwegian": "🇳🇴 Norwegian",
+        "danish": "🇩🇰 Danish",
+        "finnish": "🇫🇮 Finnish",
+        "czech": "🇨🇿 Czech",
+        "hungarian": "🇭🇺 Hungarian",
+        "romanian": "🇷🇴 Romanian",
+        "bulgarian": "🇧🇬 Bulgarian",
+        "croatian": "🇭🇷 Croatian",
+        "slovak": "🇸🇰 Slovak",
+        "slovenian": "🇸🇮 Slovenian",
+        "estonian": "🇪🇪 Estonian",
+        "latvian": "🇱🇻 Latvian",
+        "lithuanian": "🇱🇹 Lithuanian",
+        "greek": "🇬🇷 Greek",
+        "hebrew": "🇮🇱 Hebrew",
+        "koreanNorth": "🇰🇵 Korean (North)",
+        "mongolian": "🇲🇳 Mongolian",
+        "georgian": "🇬🇪 Georgian",
+        "amharic": "🇪🇹 Amharic",
+        "swahili": "🇰🇪 Swahili",
+        "zulu": "🇿🇦 Zulu",
+        "afrikaans": "🇿🇦 Afrikaans",
+        "xhosa": "🇿🇦 Xhosa",
+        "other": "🌍 Other"
+      },
+      "buttons": {
+        "cancel": "Cancel",
+        "save": "Save",
+        "add": "Add",
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "validation": {
+        "nameRequired": "Name is required",
+        "invalidEmail": "Please enter a valid email format",
+        "duplicateCustomer": "Customer information similar to an already registered customer exists.",
+        "existingCustomer": "Existing customer",
+        "selectExistingCustomer": "Would you like to select the existing customer?"
+      },
+      "search": {
+        "placeholder": "Search by customer ID, name, email, phone...",
+        "noResults": "No search results"
+      }
     },
-    "languages": {
-      "ko": "Korean",
-      "en": "English"
+    "detailModal": {
+      "title": "Customer Details",
+      "basicInfo": "Basic Information",
+      "additionalInfo": "Additional Information",
+      "specialRequests": "Special Requests",
+      "fields": {
+        "id": "ID",
+        "name": "Name",
+        "email": "Email",
+        "phone": "Phone Number",
+        "emergencyContact": "Emergency Contact",
+        "address": "Address",
+        "language": "Language",
+        "bookingCount": "Booking Count",
+        "status": "Status",
+        "createdAt": "Created Date"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "language": {
+        "none": "No language",
+        "korean": "Korean",
+        "english": "English"
+      },
+      "buttons": {
+        "close": "Close"
+      }
+    },
+    "reservationModal": {
+      "title": "Add Reservation",
+      "prefilledMessage": "Customer information has been pre-filled. Please select a product to load pricing information."
+    },
+    "messages": {
+      "customerAdded": "Customer has been successfully added!",
+      "customerUpdated": "Customer information has been successfully updated!",
+      "customerDeleted": "Customer has been successfully deleted!",
+      "reservationAdded": "Reservation has been successfully added!",
+      "reservationDeleted": "Reservation has been successfully deleted!",
+      "errorAddingCustomer": "Error occurred while adding customer.",
+      "errorUpdatingCustomer": "Error occurred while updating customer information.",
+      "errorDeletingCustomer": "Error occurred while deleting customer.",
+      "errorSavingReservation": "Error occurred while saving reservation:",
+      "errorDeletingReservation": "Error occurred while deleting reservation:",
+      "confirmDelete": "Are you sure you want to delete this customer?"
+    },
+    "reservationStatus": {
+      "confirmed": "Confirmed",
+      "pending": "Pending",
+      "cancelled": "Cancelled"
     }
   },
   "pickupHotels": {
