@@ -31,10 +31,11 @@ interface AdminDashboardProps {
 export default function AdminDashboard({ params }: AdminDashboardProps) {
   const paramsObj = useParams()
   const locale = paramsObj.locale as string
+  const t = useTranslations('admin')
 
   const stats = [
     {
-      name: '총 상품 수',
+      name: t('stats.totalProducts'),
       value: '24',
       change: '+12%',
       changeType: 'increase',
@@ -42,7 +43,7 @@ export default function AdminDashboard({ params }: AdminDashboardProps) {
       href: `/${locale}/admin/products`
     },
     {
-      name: '총 고객 수',
+      name: t('stats.totalCustomers'),
       value: '1,234',
       change: '+8%',
       changeType: 'increase',
@@ -50,7 +51,7 @@ export default function AdminDashboard({ params }: AdminDashboardProps) {
       href: `/${locale}/admin/customers`
     },
     {
-      name: '이번 달 예약',
+      name: t('stats.monthlyReservations'),
       value: '89',
       change: '+23%',
       changeType: 'increase',
@@ -58,7 +59,7 @@ export default function AdminDashboard({ params }: AdminDashboardProps) {
       href: `/${locale}/admin/reservations`
     },
     {
-      name: '이번 달 매출',
+      name: t('stats.monthlyRevenue'),
       value: '$12,345',
       change: '+15%',
       changeType: 'increase',
@@ -69,97 +70,97 @@ export default function AdminDashboard({ params }: AdminDashboardProps) {
 
   const mobileMenuItems = [
     {
-      name: '상품 관리',
+      name: t('products'),
       href: `/${locale}/admin/products`,
       icon: Package,
       color: 'bg-blue-500'
     },
     {
-      name: '고객 관리',
+      name: t('customers'),
       href: `/${locale}/admin/customers`,
       icon: Users,
       color: 'bg-green-500'
     },
     {
-      name: '예약 관리',
+      name: t('reservations'),
       href: `/${locale}/admin/reservations`,
       icon: Calendar,
       color: 'bg-purple-500'
     },
     {
-      name: '부킹 관리',
+      name: t('booking'),
       href: `/${locale}/admin/booking`,
       icon: BookOpen,
       color: 'bg-orange-500'
     },
     {
-      name: '투어 관리',
+      name: t('tours'),
       href: `/${locale}/admin/tours`,
       icon: Map,
       color: 'bg-red-500'
     },
     {
-      name: '팀 관리',
+      name: t('team'),
       href: `/${locale}/admin/team`,
       icon: UserCheck,
       color: 'bg-indigo-500'
     },
     {
-      name: '옵션 관리',
+      name: t('options'),
       href: `/${locale}/admin/options`,
       icon: Settings,
       color: 'bg-gray-500'
     },
     {
-      name: '채널 관리',
+      name: t('channels'),
       href: `/${locale}/admin/channels`,
       icon: Globe,
       color: 'bg-cyan-500'
     },
     {
-      name: '차량 관리',
+      name: t('vehicles'),
       href: `/${locale}/admin/vehicles`,
       icon: Car,
       color: 'bg-yellow-500'
     },
     {
-      name: '쿠폰 관리',
+      name: t('coupons'),
       href: `/${locale}/admin/coupons`,
       icon: Gift,
       color: 'bg-pink-500'
     },
     {
-      name: '데이터 검토',
+      name: t('dataReview'),
       href: `/${locale}/admin/data-review`,
       icon: BarChart3,
       color: 'bg-teal-500'
     },
     {
-      name: '감사 로그',
+      name: t('auditLogs'),
       href: `/${locale}/admin/audit-logs`,
       icon: Shield,
       color: 'bg-slate-500'
     },
     {
-      name: '출석 관리',
+      name: t('attendance'),
       href: `/${locale}/admin/attendance`,
       icon: Clock,
       color: 'bg-emerald-500'
     },
     {
-      name: 'Off 스케줄',
+      name: t('offSchedule'),
       href: `/${locale}/admin/off-schedule`,
       icon: FileText,
       color: 'bg-violet-500'
     },
     {
-      name: '픽업 호텔',
+      name: t('pickupHotels'),
       href: `/${locale}/admin/pickup-hotels`,
       icon: Map,
       color: 'bg-amber-500'
     },
     {
-      name: '투어 리포트',
+      name: t('tourReports'),
       href: `/${locale}/admin/tour-reports`,
       icon: FileText,
       color: 'bg-rose-500'

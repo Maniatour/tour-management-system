@@ -57,6 +57,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const { signOut, authUser, userRole, isSimulating, stopSimulation } = useAuth()
   const currentLocale = locale
   const t = useTranslations('common')
+  const tAdmin = useTranslations('admin')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
@@ -264,14 +265,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const navigation = [
     // removed from sidebar: 대시보드, 고객 관리, 예약 관리, 부킹 관리, 투어 관리, 채팅 관리
     { name: t('products'), href: `/${locale}/admin/products`, icon: BookOpen },
-    { name: '가이드비 관리', href: `/${locale}/admin/guide-costs`, icon: Calculator },
+    { name: tAdmin('guideFeeManagement'), href: `/${locale}/admin/guide-costs`, icon: Calculator },
     { name: t('options'), href: `/${locale}/admin/options`, icon: Settings },
     { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },
     { name: t('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
     { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
     { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
-    { name: '상담 관리', href: `/${locale}/admin/consultation`, icon: HelpCircle },
+    { name: 'Consultation', href: `/${locale}/admin/consultation`, icon: HelpCircle },
     { name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
     { name: t('documentTemplates'), href: `/${locale}/admin/reservations/templates`, icon: FileText },
     { name: t('team'), href: `/${locale}/admin/team`, icon: Users },
@@ -280,10 +281,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('documents'), href: `/${locale}/admin/documents`, icon: FileText },
     { name: t('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
-    { name: '예약 지출 관리', href: `/${locale}/admin/reservation-expenses`, icon: DollarSign },
-    { name: '회사 지출 관리', href: `/${locale}/admin/company-expenses`, icon: DollarSign },
-    { name: '차량 정비 관리', href: `/${locale}/admin/vehicle-maintenance`, icon: Wrench },
-    { name: '결제 방법 관리', href: `/${locale}/admin/payment-methods`, icon: CreditCard },
+    { name: tAdmin('reservationExpenseManagement'), href: `/${locale}/admin/reservation-expenses`, icon: DollarSign },
+    { name: tAdmin('companyExpenseManagement'), href: `/${locale}/admin/company-expenses`, icon: DollarSign },
+    { name: tAdmin('vehicleMaintenanceManagement'), href: `/${locale}/admin/vehicle-maintenance`, icon: Wrench },
+    { name: tAdmin('paymentMethodManagement'), href: `/${locale}/admin/payment-methods`, icon: CreditCard },
     { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: BookOpen },
     { name: t('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
     { name: t('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
@@ -291,7 +292,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
     { name: t('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
     // 개발자 도구 (관리자만 보이도록, 시뮬레이션 중일 때도 표시)
-    ...((userRole === 'admin' || (userRole === 'team_member' && isSimulating)) ? [{ name: '개발자 도구', href: `/${locale}/admin/dev-tools`, icon: Settings }] : []),
+    ...((userRole === 'admin' || (userRole === 'team_member' && isSimulating)) ? [{ name: tAdmin('developerTools'), href: `/${locale}/admin/dev-tools`, icon: Settings }] : []),
   ]
 
   return (
@@ -327,7 +328,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     router.push(`/${locale}/admin/consultation`)
                   }}
                 >
-                  상담 관리
+                  Consultation
                 </Link>
                 <Link
                   href={`/${locale}/admin/customers`}
@@ -389,7 +390,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       router.push(`/${locale}/admin/dev-tools`)
                     }}
                   >
-                    개발자 도구
+                    {tAdmin('developerTools')}
                   </Link>
                 )}
               </div>
@@ -581,7 +582,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                             >
                               <Settings className="w-4 h-4 mr-2" />
-                              개발자 도구
+                              {tAdmin('developerTools')}
                             </Link>
                           </div>
                         )}
@@ -667,7 +668,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                           className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                         >
                           <LogOut className="w-4 h-4 mr-2" />
-                          로그아웃
+                          {tAdmin('logout')}
                         </button>
                       </div>
                     </div>
@@ -774,7 +775,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             className="flex items-center w-full px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
           >
             <LogOut size={16} className="mr-3" />
-            로그아웃
+            {tAdmin('logout')}
           </button>
         </nav>
       </div>
@@ -822,7 +823,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
             >
               <LogOut size={20} className="mr-3" />
-              로그아웃
+              {tAdmin('logout')}
             </button>
           </div>
         </div>
