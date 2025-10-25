@@ -162,13 +162,13 @@ export const PriceCalculator = memo(function PriceCalculator({
                  최대 판매가 (기본가격 + 초이스 가격 + 업차지)
                </h5>
                <div className="overflow-x-auto">
-                 <table className="w-full text-sm bg-green-50">
+                 <table className="w-full text-xs bg-green-50">
                    <thead>
                      <tr className="border-b border-gray-200">
-                       <th className="text-left py-2 font-medium text-gray-700">초이스</th>
-                       <th className="text-right py-2 font-medium text-gray-700">성인</th>
-                       <th className="text-right py-2 font-medium text-gray-700">아동</th>
-                       <th className="text-right py-2 font-medium text-gray-700">유아</th>
+                       <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
+                       <th className="text-right py-1 px-2 font-medium text-gray-700">성인</th>
+                       <th className="text-right py-1 px-2 font-medium text-gray-700">아동</th>
+                       <th className="text-right py-1 px-2 font-medium text-gray-700">유아</th>
                      </tr>
                    </thead>
                    <tbody>
@@ -187,16 +187,16 @@ export const PriceCalculator = memo(function PriceCalculator({
                        
                        return (
                          <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
-                           <td className={`py-2 font-medium ${textClass}`}>
+                           <td className={`py-1 px-2 font-medium ${textClass}`}>
                              {combinationName}
                            </td>
-                           <td className="py-2 text-right font-medium text-blue-600">
+                           <td className="py-1 px-2 text-right font-medium text-blue-600">
                              {formatPrice(totalAdultPrice)}
                            </td>
-                           <td className="py-2 text-right font-medium text-blue-600">
+                           <td className="py-1 px-2 text-right font-medium text-blue-600">
                              {formatPrice(totalChildPrice)}
                            </td>
-                           <td className="py-2 text-right font-medium text-blue-600">
+                           <td className="py-1 px-2 text-right font-medium text-blue-600">
                              {formatPrice(totalInfantPrice)}
                            </td>
                          </tr>
@@ -213,13 +213,13 @@ export const PriceCalculator = memo(function PriceCalculator({
                  할인 가격 (최대 판매가 × 쿠폰%)
                </h5>
                <div className="overflow-x-auto">
-                 <table className="w-full text-sm bg-orange-50">
+                 <table className="w-full text-xs bg-orange-50">
                    <thead>
                      <tr className="border-b border-gray-200">
-                       <th className="text-left py-2 font-medium text-gray-700">초이스</th>
-                       <th className="text-right py-2 font-medium text-gray-700">성인</th>
-                       <th className="text-right py-2 font-medium text-gray-700">아동</th>
-                       <th className="text-right py-2 font-medium text-gray-700">유아</th>
+                       <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
+                       <th className="text-right py-1 px-2 font-medium text-gray-700">성인</th>
+                       <th className="text-right py-1 px-2 font-medium text-gray-700">아동</th>
+                       <th className="text-right py-1 px-2 font-medium text-gray-700">유아</th>
                      </tr>
                    </thead>
                    <tbody>
@@ -243,16 +243,16 @@ export const PriceCalculator = memo(function PriceCalculator({
                        
                        return (
                          <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
-                           <td className={`py-2 font-medium ${textClass}`}>
+                           <td className={`py-1 px-2 font-medium ${textClass}`}>
                              {combinationName}
                            </td>
-                           <td className="py-2 text-right font-medium text-orange-600">
+                           <td className="py-1 px-2 text-right font-medium text-orange-600">
                              {formatPrice(discountedAdultPrice)}
                            </td>
-                           <td className="py-2 text-right font-medium text-orange-600">
+                           <td className="py-1 px-2 text-right font-medium text-orange-600">
                              {formatPrice(discountedChildPrice)}
                            </td>
-                           <td className="py-2 text-right font-medium text-orange-600">
+                           <td className="py-1 px-2 text-right font-medium text-orange-600">
                              {formatPrice(discountedInfantPrice)}
                            </td>
                          </tr>
@@ -269,13 +269,13 @@ export const PriceCalculator = memo(function PriceCalculator({
                  Net Price (할인가격 - 커미션)
                </h5>
                <div className="overflow-x-auto">
-                 <table className="w-full text-sm bg-blue-50">
+                 <table className="w-full text-xs bg-blue-50">
                    <thead>
                      <tr className="border-b border-gray-200">
-                       <th className="text-left py-2 font-medium text-gray-700">초이스</th>
-                       <th className="text-right py-2 font-medium text-gray-700">성인</th>
-                       <th className="text-right py-2 font-medium text-gray-700">아동</th>
-                       <th className="text-right py-2 font-medium text-gray-700">유아</th>
+                       <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
+                       <th className="text-right py-1 px-2 font-medium text-gray-700">성인</th>
+                       <th className="text-right py-1 px-2 font-medium text-gray-700">아동</th>
+                       <th className="text-right py-1 px-2 font-medium text-gray-700">유아</th>
                      </tr>
                    </thead>
                    <tbody>
@@ -305,16 +305,16 @@ export const PriceCalculator = memo(function PriceCalculator({
                        
                        return (
                          <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
-                           <td className={`py-2 font-medium ${textClass}`}>
+                           <td className={`py-1 px-2 font-medium ${textClass}`}>
                              {combinationName}
                            </td>
-                           <td className="py-2 text-right font-bold text-green-600">
+                           <td className="py-1 px-2 text-right font-bold text-green-600">
                              {formatPrice(netAdultPrice)}
                            </td>
-                           <td className="py-2 text-right font-bold text-green-600">
+                           <td className="py-1 px-2 text-right font-bold text-green-600">
                              {formatPrice(netChildPrice)}
                            </td>
-                           <td className="py-2 text-right font-bold text-green-600">
+                           <td className="py-1 px-2 text-right font-bold text-green-600">
                              {formatPrice(netInfantPrice)}
                            </td>
                          </tr>

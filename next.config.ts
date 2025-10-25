@@ -30,6 +30,8 @@ const nextConfig = {
 	env: {
 		NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
 		NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
+		// CSS preload 최적화
+		NEXT_DISABLE_CSS_PRELOAD: 'true',
 	},
 	
 	// 압축 최적화
@@ -40,10 +42,25 @@ const nextConfig = {
 		optimizeCss: true,
 		scrollRestoration: true,
 		esmExternals: true,
+		// CSS preload 최적화
+		optimizePackageImports: ['@supabase/supabase-js'],
+		// CSS preload 경고 해결
+		disableOptimizedLoading: false,
 	},
 	
 	// 웹팩 최적화
 	webpack: (config: any, { isServer, dev }: { isServer: boolean; dev: boolean }) => {
+		// CSS preload 최적화
+		if (!isServer) {
+			// CSS 파일의 불필요한 preload 방지
+			config.plugins = config.plugins || [];
+			config.plugins.push(
+				new (require('webpack')).DefinePlugin({
+					'process.env.NEXT_DISABLE_CSS_PRELOAD': JSON.stringify('true'),
+				})
+			);
+		}
+		
 		// 프로덕션 빌드 최적화
 		if (!dev) {
 			// 청크 분할 최적화

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { supabase, updateSupabaseToken } from '@/lib/supabase'
 import { AuthUser } from '@/lib/auth'
 import { UserRole, getUserRole, UserPermissions, hasPermission } from '@/lib/roles'
+import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 
 interface AuthContextType {
   user: AuthUser | null
@@ -253,6 +254,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // localStorage에서 시뮬레이션 정보 확인
     let simulationData = null
     const savedSimulation = localStorage.getItem('positionSimulation')
+    const simulationEndTime = localStorage.getItem('simulationEndTime')
+    
+    // 시뮬레이션 종료 시점이 있으면 복원하지 않음
+    if (simulationEndTime) {
+      console.log('AuthContext: Simulation was ended, not restoring:', simulationEndTime)
+      // 종료 시점 기록도 정리
+      localStorage.removeItem('simulationEndTime')
+      return
+    }
     
     if (savedSimulation) {
       try {
@@ -267,6 +277,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // localStorage에 없으면 sessionStorage에서 확인
     if (!simulationData) {
       const sessionSimulation = sessionStorage.getItem('positionSimulation')
+      const sessionEndTime = sessionStorage.getItem('simulationEndTime')
+      
+      // sessionStorage에서도 종료 시점이 있으면 복원하지 않음
+      if (sessionEndTime) {
+        console.log('AuthContext: Simulation was ended in session, not restoring:', sessionEndTime)
+        sessionStorage.removeItem('simulationEndTime')
+        return
+      }
+      
       if (sessionSimulation) {
         try {
           simulationData = JSON.parse(sessionSimulation)
@@ -286,6 +305,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const cookies = document.cookie.split(';')
       const simulationActiveCookie = cookies.find(cookie => cookie.trim().startsWith('simulation_active='))
       const simulationUserCookie = cookies.find(cookie => cookie.trim().startsWith('simulation_user='))
+      const simulationEndCookie = cookies.find(cookie => cookie.trim().startsWith('simulation_end_time='))
+      
+      // 쿠키에서도 종료 시점이 있으면 복원하지 않음
+      if (simulationEndCookie) {
+        console.log('AuthContext: Simulation was ended in cookies, not restoring')
+        document.cookie = 'simulation_end_time=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+        return
+      }
       
       if (simulationActiveCookie && simulationUserCookie) {
         try {
@@ -408,6 +435,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const accessToken = localStorage.getItem('sb-access-token')
         const expiresAt = localStorage.getItem('sb-expires-at')
         
+        console.log('AuthContext: Checking stored tokens:', {
+          hasAccessToken: !!accessToken,
+          hasExpiresAt: !!expiresAt,
+          expiresAt: expiresAt ? new Date(parseInt(expiresAt) * 1000).toISOString() : 'N/A'
+        })
+        
         if (accessToken && expiresAt) {
           const now = Math.floor(Date.now() / 1000)
           const tokenExpiry = parseInt(expiresAt)
@@ -435,7 +468,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } as User
                 
                 console.log('AuthContext: Mock user created:', mockUser.email)
-                setUser(mockUser)
                 
                 const authUserData: AuthUser = {
                   id: mockUser.id,
@@ -445,7 +477,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         mockUser.email?.split('@')[0] || 'User',
                   avatar_url: mockUser.user_metadata?.avatar_url,
                   created_at: mockUser.created_at,
+                  user_metadata: mockUser.user_metadata
                 }
+                
+                setUser(authUserData)
                 setAuthUser(authUserData)
                 
                 console.log('AuthContext: Mock session created, updating Supabase token')
@@ -503,11 +538,123 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('AuthContext: Error checking stored tokens:', error)
       }
       
-      // 토큰이 없거나 만료된 경우
-      setUserRole('customer')
-      setPermissions(null)
-      setLoading(false)
-      setIsInitialized(true)
+      // 토큰이 없거나 만료된 경우 - Supabase 세션 확인
+      console.log('AuthContext: No valid token found, checking Supabase session...')
+      
+      // Supabase에서 현재 세션 확인
+      if (supabase) {
+        try {
+          const { data: { session }, error } = await supabase.auth.getSession()
+          
+          if (session && !error) {
+            console.log('AuthContext: Found Supabase session:', session.user.email)
+            
+            // 세션에서 사용자 정보 설정
+            const authUserData: AuthUser = {
+              id: session.user.id,
+              email: session.user.email || '',
+              name: session.user.user_metadata?.name || 
+                    session.user.user_metadata?.full_name || 
+                    (session.user.email ? session.user.email.split('@')[0] : 'User'),
+              avatar_url: session.user.user_metadata?.avatar_url,
+              created_at: session.user.created_at,
+              user_metadata: session.user.user_metadata
+            }
+            
+            setUser(authUserData)
+            setAuthUser(authUserData)
+            
+            // 토큰을 localStorage에 저장
+            localStorage.setItem('sb-access-token', session.access_token)
+            localStorage.setItem('sb-refresh-token', session.refresh_token)
+            const tokenExpiry = session.expires_at || Math.floor(Date.now() / 1000) + (7 * 24 * 3600)
+            localStorage.setItem('sb-expires-at', tokenExpiry.toString())
+            
+            // Supabase 클라이언트에 토큰 설정
+            updateSupabaseToken(session.access_token)
+            
+            // 사용자 역할 확인
+            if (session.user.email) {
+              checkUserRole(session.user.email).catch(error => {
+                console.error('AuthContext: Team membership check failed:', error)
+                setUserRole('customer')
+                setPermissions(null)
+              })
+            } else {
+              console.error('AuthContext: No email in session user')
+              setUserRole('customer')
+              setPermissions(null)
+            }
+            return
+          } else {
+            console.log('AuthContext: No Supabase session found:', error?.message)
+          }
+        } catch (sessionError) {
+          console.error('AuthContext: Error getting Supabase session:', sessionError)
+        }
+      }
+      
+      // 짧은 지연 후 다시 한 번 확인 (토큰 복원 시간 제공)
+      setTimeout(() => {
+        const accessToken = localStorage.getItem('sb-access-token')
+        const expiresAt = localStorage.getItem('sb-expires-at')
+        
+        if (accessToken && expiresAt) {
+          const now = Math.floor(Date.now() / 1000)
+          const tokenExpiry = parseInt(expiresAt)
+          
+          if (tokenExpiry > now) {
+            console.log('AuthContext: Token found after delay, creating mock session...')
+            try {
+              const tokenPayload = JSON.parse(atob(accessToken.split('.')[1]))
+              
+              if (tokenPayload.email) {
+                const mockUser = {
+                  id: tokenPayload.sub,
+                  email: tokenPayload.email,
+                  user_metadata: {
+                    name: tokenPayload.user_metadata?.name || tokenPayload.user_metadata?.full_name || 'User',
+                    avatar_url: tokenPayload.user_metadata?.avatar_url,
+                    ...tokenPayload.user_metadata
+                  },
+                  created_at: tokenPayload.iat ? new Date(tokenPayload.iat * 1000).toISOString() : new Date().toISOString()
+                } as User
+                
+                const authUserData: AuthUser = {
+                  id: mockUser.id,
+                  email: mockUser.email || '',
+                  name: mockUser.user_metadata?.name || 
+                        mockUser.user_metadata?.full_name || 
+                        mockUser.email?.split('@')[0] || 'User',
+                  avatar_url: mockUser.user_metadata?.avatar_url,
+                  created_at: mockUser.created_at,
+                  user_metadata: mockUser.user_metadata
+                }
+                
+                setUser(authUserData)
+                setAuthUser(authUserData)
+                updateSupabaseToken(accessToken)
+                
+                checkUserRole(mockUser.email || '').catch(error => {
+                  console.error('AuthContext: Team membership check failed:', error)
+                  setUserRole('customer')
+                  setPermissions(null)
+                })
+                return
+              }
+            } catch (tokenError) {
+              console.error('AuthContext: Error parsing delayed token:', tokenError)
+            }
+          }
+        }
+        
+        // 여전히 토큰이 없으면 customer로 설정
+        console.log('AuthContext: No token found after delay, setting customer role')
+        setUserRole('customer')
+        setPermissions(null)
+        setLoading(false)
+        setIsInitialized(true)
+      }, 200) // 200ms 지연으로 증가
     }
     
     checkStoredTokens().catch(error => {
@@ -523,7 +670,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event: string, session: { user: AuthUser; access_token: string; refresh_token: string } | null) => {
+      async (event: AuthChangeEvent, session: Session | null) => {
         console.log('AuthContext: Auth state change:', { 
           event, 
           session: !!session, 
@@ -544,8 +691,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_IN' && session?.user?.email) {
           console.log('AuthContext: User signed in, setting user data')
           
-          setUser(session.user)
-          
+          // Supabase User를 AuthUser로 변환
           const authUserData: AuthUser = {
             id: session.user.id,
             email: session.user.email,
@@ -554,7 +700,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   session.user.email.split('@')[0],
             avatar_url: session.user.user_metadata?.avatar_url,
             created_at: session.user.created_at,
+            user_metadata: session.user.user_metadata
           }
+          
+          setUser(authUserData)
           setAuthUser(authUserData)
           
           // team 확인 (비동기로 처리하여 로딩을 차단하지 않음)
@@ -565,8 +714,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           })
         } else if (event === 'TOKEN_REFRESHED' && session?.user?.email) {
           console.log('AuthContext: Token refreshed')
-          setUser(session.user)
           
+          // Supabase User를 AuthUser로 변환
           const authUserData: AuthUser = {
             id: session.user.id,
             email: session.user.email,
@@ -575,15 +724,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   session.user.email.split('@')[0],
             avatar_url: session.user.user_metadata?.avatar_url,
             created_at: session.user.created_at,
+            user_metadata: session.user.user_metadata
           }
+          
+          setUser(authUserData)
           setAuthUser(authUserData)
         } else if (event === 'INITIAL_SESSION') {
           // 초기 세션 처리
           console.log('AuthContext: INITIAL_SESSION event received')
           if (session?.user?.email) {
             console.log('AuthContext: Initial session found for:', session.user.email)
-            setUser(session.user)
             
+            // Supabase User를 AuthUser로 변환
             const authUserData: AuthUser = {
               id: session.user.id,
               email: session.user.email,
@@ -592,7 +744,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     session.user.email.split('@')[0],
               avatar_url: session.user.user_metadata?.avatar_url,
               created_at: session.user.created_at,
+              user_metadata: session.user.user_metadata
             }
+            
+            setUser(authUserData)
             setAuthUser(authUserData)
             
             checkUserRole(session.user.email).catch(error => {
@@ -668,19 +823,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const stopSimulation = () => {
     try {
+      console.log('시뮬레이션 중지 시작')
+      
+      // 상태 초기화
       setSimulatedUser(null)
       setIsSimulating(false)
+      
+      // 시뮬레이션 종료 시점 기록
+      const endTime = Date.now()
+      localStorage.setItem('simulationEndTime', endTime.toString())
+      sessionStorage.setItem('simulationEndTime', endTime.toString())
+      document.cookie = `simulation_end_time=${endTime}; path=/; max-age=3600; SameSite=Lax`
+      
+      // 로컬 스토리지 정리
       localStorage.removeItem('positionSimulation')
       sessionStorage.removeItem('positionSimulation')
       
       // 쿠키도 정리
       document.cookie = 'simulation_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
       document.cookie = 'simulation_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+      document.cookie = 'simulation_end_time=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
       
-      console.log('Simulation stopped')
+      // 추가적인 정리 작업
+      localStorage.removeItem('simulation_active')
+      sessionStorage.removeItem('simulation_active')
+      
+      console.log('시뮬레이션 중지 완료')
       setLoading(false)
     } catch (error) {
       console.error('시뮬레이션 중지 중 오류:', error)
+      // 오류가 발생해도 강제로 상태 초기화
+      setSimulatedUser(null)
+      setIsSimulating(false)
+      setLoading(false)
     }
   }
 
@@ -768,6 +943,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       setTeamChatUnreadCount(0)
     }
+    
+    // 모든 경우에 cleanup 함수 반환 (빈 함수라도)
+    return () => {}
   }, [user?.email, userRole, refreshTeamChatUnreadCount])
 
   // 토큰 자동 갱신 (30분마다 체크)
@@ -782,6 +960,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       return () => clearInterval(interval)
     }
+    
+    // 모든 경우에 cleanup 함수 반환 (빈 함수라도)
+    return () => {}
   }, [user, isSimulating, refreshTokenIfNeeded])
 
   const value: AuthContextType = {

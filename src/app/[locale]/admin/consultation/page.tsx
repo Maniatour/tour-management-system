@@ -96,7 +96,7 @@ export default function ConsultationManagementPage() {
   }}>({})
 
   // 데이터 로딩
-  const { data: categories, loading: categoriesLoading, refetch: refetchCategories } = useOptimizedData<ConsultationCategory>({
+  const { data: categories, loading: categoriesLoading, refetch: refetchCategories, invalidateCache: invalidateCategoriesCache } = useOptimizedData<ConsultationCategory>({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('consultation_categories')
@@ -111,7 +111,7 @@ export default function ConsultationManagementPage() {
     dependencies: []
   })
 
-  const { data: templates, loading: templatesLoading, refetch: refetchTemplates } = useOptimizedData<ConsultationTemplateWithRelations>({
+  const { data: templates, loading: templatesLoading, refetch: refetchTemplates, invalidateCache: invalidateTemplatesCache } = useOptimizedData<ConsultationTemplateWithRelations>({
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('consultation_templates')
@@ -166,7 +166,7 @@ export default function ConsultationManagementPage() {
   })
 
   // Workflow data loading (temporarily disabled)
-  const { data: workflows, loading: workflowsLoading, refetch: refetchWorkflows } = useOptimizedData({
+  const { data: workflows, loading: workflowsLoading, refetch: refetchWorkflows, invalidateCache: invalidateWorkflowsCache } = useOptimizedData({
     fetchFn: async () => {
       // Return empty array if table doesn't exist
       try {
@@ -198,7 +198,7 @@ export default function ConsultationManagementPage() {
   })
 
   // Workflow step data loading (temporarily disabled)
-  const { data: workflowSteps, loading: workflowStepsLoading, refetch: refetchWorkflowSteps } = useOptimizedData({
+  const { data: workflowSteps, loading: workflowStepsLoading, refetch: refetchWorkflowSteps, invalidateCache: invalidateWorkflowStepsCache } = useOptimizedData({
     fetchFn: async () => {
       // Return empty array if table doesn't exist
       try {
@@ -295,6 +295,7 @@ export default function ConsultationManagementPage() {
       await supabase.rpc('increment_template_usage', { template_id: template.id })
       
       // Refresh template list
+      invalidateTemplatesCache()
       refetchTemplates()
       
       // Success notification
@@ -306,7 +307,7 @@ export default function ConsultationManagementPage() {
     } catch (error) {
       console.error('Copy failed:', error)
     }
-  }, [refetchTemplates])
+  }, [refetchTemplates, invalidateTemplatesCache])
 
   // Template copy function (English version)
   const copyTemplateEn = useCallback(async (template: ConsultationTemplateWithRelations) => {
@@ -317,6 +318,7 @@ export default function ConsultationManagementPage() {
       await supabase.rpc('increment_template_usage', { template_id: template.id })
       
       // Refresh template list
+      invalidateTemplatesCache()
       refetchTemplates()
       
       // Success notification
@@ -328,7 +330,7 @@ export default function ConsultationManagementPage() {
     } catch (error) {
       console.error('Copy failed:', error)
     }
-  }, [refetchTemplates])
+  }, [refetchTemplates, invalidateTemplatesCache])
 
   // Template favorite toggle
   const toggleFavorite = useCallback(async (template: ConsultationTemplateWithRelations) => {
@@ -340,11 +342,12 @@ export default function ConsultationManagementPage() {
       
       if (error) throw error
       
+      invalidateTemplatesCache()
       refetchTemplates()
     } catch (error) {
       console.error('Favorite update failed:', error)
     }
-  }, [refetchTemplates])
+  }, [refetchTemplates, invalidateTemplatesCache])
 
   // Template activation/deactivation toggle
   const toggleActive = useCallback(async (template: ConsultationTemplateWithRelations) => {
@@ -356,11 +359,12 @@ export default function ConsultationManagementPage() {
       
       if (error) throw error
       
+      invalidateTemplatesCache()
       refetchTemplates()
     } catch (error) {
       console.error('Activation status update failed:', error)
     }
-  }, [refetchTemplates])
+  }, [refetchTemplates, invalidateTemplatesCache])
 
   // Template deletion
   const deleteTemplate = useCallback(async () => {
@@ -376,6 +380,7 @@ export default function ConsultationManagementPage() {
       
       setShowDeleteModal(false)
       setTemplateToDelete(null)
+      invalidateTemplatesCache()
       refetchTemplates()
     } catch (error) {
       console.error('Template deletion failed:', error)
@@ -392,11 +397,12 @@ export default function ConsultationManagementPage() {
       
       if (error) throw error
       
+      invalidateWorkflowsCache()
       refetchWorkflows()
     } catch (error) {
       console.error('Workflow activation status update failed:', error)
     }
-  }, [refetchWorkflows])
+  }, [refetchWorkflows, invalidateWorkflowsCache])
 
   // Workflow diagram view
   const showWorkflowDiagramModal = (workflow: any, mode: 'diagram' | 'manual' | 'edit' = 'manual') => {
@@ -483,7 +489,10 @@ export default function ConsultationManagementPage() {
         }))
       }
 
+      invalidateWorkflowsCache()
+      invalidateWorkflowStepsCache()
       await refetchWorkflows()
+      await refetchWorkflowSteps()
     } catch (error) {
       console.error('Workflow save failed:', error)
       alert('Failed to save workflow.')
@@ -554,6 +563,8 @@ export default function ConsultationManagementPage() {
       if (stepsError) throw stepsError
 
       // Refresh data
+      invalidateWorkflowsCache()
+      invalidateWorkflowStepsCache()
       await refetchWorkflows()
       await refetchWorkflowSteps()
       
@@ -579,6 +590,7 @@ export default function ConsultationManagementPage() {
       
       setShowWorkflowDeleteModal(false)
       setWorkflowToDelete(null)
+      invalidateWorkflowsCache()
       refetchWorkflows()
     } catch (error) {
       console.error('Workflow deletion failed:', error)
@@ -1424,12 +1436,14 @@ export default function ConsultationManagementPage() {
           categories={categories || []}
           products={products || []}
           channels={channels || []}
+          locale={locale as string}
           onClose={() => {
             setShowTemplateModal(false)
             setEditingTemplate(null)
           }}
-          onSave={() => {
-            refetchTemplates()
+          onSave={async () => {
+            invalidateTemplatesCache()
+            await refetchTemplates()
             setShowTemplateModal(false)
             setEditingTemplate(null)
           }}
@@ -1440,6 +1454,7 @@ export default function ConsultationManagementPage() {
       {showDeleteModal && templateToDelete && (
         <DeleteModal
           template={templateToDelete}
+          locale={locale as string}
           onClose={() => {
             setShowDeleteModal(false)
             setTemplateToDelete(null)
@@ -1463,9 +1478,11 @@ export default function ConsultationManagementPage() {
             setEditingWorkflow(null)
             setIsWorkflowModalFullscreen(false)
           }}
-          onSave={() => {
-            refetchWorkflows()
-            refetchWorkflowSteps()
+          onSave={async () => {
+            invalidateWorkflowsCache()
+            invalidateWorkflowStepsCache()
+            await refetchWorkflows()
+            await refetchWorkflowSteps()
             setShowWorkflowModal(false)
             setEditingWorkflow(null)
             setIsWorkflowModalFullscreen(false)
@@ -1519,6 +1536,7 @@ function TemplateModal({
   categories, 
   products, 
   channels, 
+  locale,
   onClose, 
   onSave 
 }: {
@@ -1526,8 +1544,9 @@ function TemplateModal({
   categories: ConsultationCategory[]
   products: any[]
   channels: any[]
+  locale: string
   onClose: () => void
-  onSave: () => void
+  onSave: () => Promise<void>
 }) {
   const [formData, setFormData] = useState({
     category_id: template?.category_id || '',
@@ -1609,7 +1628,7 @@ function TemplateModal({
         }
       }
 
-      onSave()
+      await onSave()
     } catch (error) {
       console.error('Template save failed:', error)
     } finally {
@@ -2028,10 +2047,12 @@ function TemplateModal({
 // Delete Confirmation Modal Component
 function DeleteModal({ 
   template, 
+  locale,
   onClose, 
   onConfirm 
 }: {
   template: ConsultationTemplateWithRelations
+  locale: string
   onClose: () => void
   onConfirm: () => void
 }) {
@@ -2091,7 +2112,7 @@ function WorkflowModal({
   isFullscreen: boolean
   onToggleFullscreen: () => void
   onClose: () => void
-  onSave: (data: any) => void
+  onSave: (data: any) => Promise<void>
   locale: string
 }) {
   const [formData, setFormData] = useState({
@@ -2272,7 +2293,7 @@ function WorkflowModal({
         }
       }
 
-      onSave()
+      await onSave()
     } catch (error) {
       console.error('워크플로우 저장 실패:', error)
     } finally {

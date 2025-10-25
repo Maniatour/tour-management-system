@@ -8,6 +8,12 @@ export interface AuthUser {
   avatar_url?: string
   created_at: string
   permissions?: string[]
+  user_metadata?: {
+    name?: string
+    full_name?: string
+    avatar_url?: string
+    [key: string]: any
+  }
 }
 
 export interface SignUpData {
