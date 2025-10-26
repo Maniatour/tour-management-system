@@ -29,7 +29,7 @@ export default function TourReportSection({
   canDeleteReport = true,
   showHeader = true
 }: TourReportSectionProps) {
-  const t = useTranslations('tourReport')
+  const t = useTranslations('tours.tourReport')
   const locale = useLocale()
   const [showForm, setShowForm] = useState(false)
   const [showList, setShowList] = useState(false)

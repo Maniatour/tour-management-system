@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
 
@@ -79,6 +80,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   safeJsonParse,
   pickupHotels = []
 }) => {
+  const t = useTranslations('tours.assignmentManagement')
   const isExpanded = expandedSections.has('assignment-management')
   const [tourInfos, setTourInfos] = useState<Record<string, TourInfo>>({})
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -148,7 +150,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
 
   // 팀 멤버 이름 가져오기 함수
   const getTeamMemberName = (email: string | null) => {
-    if (!email) return '미배정'
+    if (!email) return t('unassigned')
     
     const member = teamMembers.find(m => m.email === email)
     if (!member) return email
@@ -203,7 +205,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
           className="flex items-center justify-between cursor-pointer"
           onClick={() => onToggleSection('assignment-management')}
         >
-          <h2 className="text-lg font-semibold text-gray-900">배정 관리</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{t('title')}</h2>
           <div className="flex items-center space-x-2">
             {loadingStates.reservations && (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
@@ -223,25 +225,25 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                   onClick={onAssignAllReservations}
                   className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
                 >
-                  모든 대기 예약 배정
+                  {t('assignAllPending')}
                 </button>
                 <button
                   onClick={onUnassignAllReservations}
                   className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
                 >
-                  모든 배정 해제
+                  {t('unassignAll')}
                 </button>
               </div>
             )}
 
             {/* 1. 이 투어에 배정된 예약 */}
             <ReservationSection
-              title="1. 이 투어에 배정된 예약"
+              title={t('assignedToTour')}
               reservations={sortedAssignedReservations}
               isStaff={isStaff}
               showActions={true}
               showStatus={true}
-              emptyMessage="이 투어에 배정된 예약이 없습니다."
+              emptyMessage={t('noAssignedReservations')}
               onEditReservation={onEditReservationClick}
               onUnassignReservation={onUnassignReservation}
               {...(onEditPickupTime && { onEditPickupTime })}
@@ -255,12 +257,12 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
 
             {/* 2. 배정 대기 중인 예약 */}
             <ReservationSection
-              title="2. 배정 대기 중인 예약"
+              title={t('pendingAssignments')}
               reservations={pendingReservations}
               isStaff={isStaff}
               showActions={false}
               showStatus={true}
-              emptyMessage="배정 대기 중인 예약이 없습니다."
+              emptyMessage={t('noPendingReservations')}
               onEditReservation={onEditReservationClick}
               {...(onEditPickupTime && { onEditPickupTime })}
               {...(onEditPickupHotel && { onEditPickupHotel })}
@@ -273,17 +275,17 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
 
             {/* 3. 다른 투어에 배정된 예약 - 투어 ID별 그룹화 */}
             <div className="mb-6">
-              <h3 className="text-md font-semibold text-gray-900 mb-3">3. 다른 투어에 배정된 예약</h3>
+              <h3 className="text-md font-semibold text-gray-900 mb-3">{t('otherToursAssigned')}</h3>
               {Object.keys(groupedOtherToursReservations).length === 0 ? (
                 <div className="text-center py-4 text-gray-500">
-                  <p className="text-sm">다른 투어에 배정된 예약이 없습니다.</p>
+                  <p className="text-sm">{t('noOtherToursReservations')}</p>
                 </div>
               ) : (
                  <div className="space-y-4">
                    {Object.entries(groupedOtherToursReservations).map(([tourId, reservations]) => {
                      const tourInfo = tourInfos[tourId]
-                     const guideName = tourInfo ? getTeamMemberName(tourInfo.tour_guide_id) : '알 수 없음'
-                     const assistantName = tourInfo ? getTeamMemberName(tourInfo.assistant_id) : '미배정'
+                     const guideName = tourInfo ? getTeamMemberName(tourInfo.tour_guide_id) : t('unknown')
+                     const assistantName = tourInfo ? getTeamMemberName(tourInfo.assistant_id) : t('unassigned')
                      
                      // 예약들의 상태 뱃지들
                      const statusCounts = reservations.reduce((acc, reservation) => {
@@ -302,10 +304,10 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                              <div className="flex items-center space-x-4 mb-2">
                                <div>
                                  <h4 className="text-sm font-medium text-gray-900">
-                                   가이드: {guideName}
+                                   {t('guide')}: {guideName}
                                  </h4>
                                  <p className="text-xs text-gray-600">
-                                   어시스턴트: {assistantName}
+                                   {t('assistant')}: {assistantName}
                                  </p>
                                </div>
                                <div className="flex flex-wrap gap-1">
@@ -330,15 +332,15 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                            </div>
                            <div className="flex items-center space-x-2">
                              <span className="text-xs text-gray-500">
-                               {reservations.length}개 예약
+                               {reservations.length} {t('reservations')}
                              </span>
                              {onNavigateToTour && tourId !== 'unknown' && (
                                <button
                                  onClick={() => onNavigateToTour(tourId)}
                                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                                 title="해당 투어로 이동"
+                                 title={t('tourNavigate')}
                                >
-                                 투어 이동
+                                 {t('tourNavigate')}
                                </button>
                              )}
                            </div>
@@ -370,12 +372,12 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
 
             {/* 4. 다른 상태의 예약 */}
             <ReservationSection
-              title="4. 다른 상태의 예약"
+              title={t('otherStatus')}
               reservations={otherStatusReservations}
               isStaff={isStaff}
               showActions={false}
               showStatus={true}
-              emptyMessage="다른 상태의 예약이 없습니다."
+              emptyMessage={t('noOtherStatusReservations')}
               onEditReservation={onEditReservationClick}
               {...(onEditPickupTime && { onEditPickupTime })}
               {...(onEditPickupHotel && { onEditPickupHotel })}

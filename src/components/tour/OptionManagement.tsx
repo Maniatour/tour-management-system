@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Settings, Package, DollarSign, Users } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 
 interface ReservationOption {
@@ -29,6 +30,7 @@ interface OptionManagementProps {
 }
 
 export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationIds }) => {
+  const t = useTranslations('tours.optionManagement')
   const [reservationOptions, setReservationOptions] = useState<ReservationOption[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -250,7 +252,7 @@ export const OptionManagement: React.FC<OptionManagementProps> = ({ reservationI
       <div className="p-4">
         <h2 className="text-md font-semibold text-gray-900 mb-3 flex items-center">
           <Settings className="h-5 w-5 mr-2" />
-          옵션 관리
+          {t('title')}
           {reservationOptions.length > 0 && (
             <span className="ml-2 text-sm text-gray-500">
               ({reservationOptions.length}개 옵션)

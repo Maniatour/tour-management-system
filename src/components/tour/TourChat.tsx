@@ -1,6 +1,7 @@
 import React from 'react'
 import { Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useTranslations } from 'next-intl'
 
 interface TourChatProps {
   tour: any
@@ -13,6 +14,8 @@ export const TourChat: React.FC<TourChatProps> = ({
   user,
   openChat
 }) => {
+  const t = useTranslations('tours.tourChat')
+  
   const handleOpenChat = () => {
     if (tour) {
       openChat({
@@ -29,19 +32,19 @@ export const TourChat: React.FC<TourChatProps> = ({
     <div className="bg-white rounded-lg shadow-sm border">
       <div className="p-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">채팅</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
           <Button 
             onClick={handleOpenChat}
             className="flex items-center gap-2"
           >
             <Users className="h-4 w-4" />
-            채팅방 플로팅
+            {t('floatingChat')}
           </Button>
         </div>
         <div className="text-center py-8 text-gray-500">
           <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-          <p className="text-sm mb-2">투어 채팅방</p>
-          <p className="text-xs">위 버튼을 클릭하여 채팅방을 열어보세요.</p>
+          <p className="text-sm mb-2">{t('tourChatRoom')}</p>
+          <p className="text-xs">{t('openChatMessage')}</p>
         </div>
       </div>
     </div>

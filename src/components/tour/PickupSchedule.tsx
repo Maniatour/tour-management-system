@@ -1,5 +1,6 @@
 import React from 'react'
-import { ChevronDown, ChevronUp, MapPin, Map } from 'lucide-react'
+import { ChevronDown, ChevronUp, MapPin, Map, Users } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
 interface PickupScheduleProps {
@@ -38,6 +39,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   getCustomerName,
   openGoogleMaps
 }) => {
+  const t = useTranslations('tours.pickupSchedule')
   const renderPickupSchedule = () => {
     if (assignedReservations.length === 0) {
       return (
@@ -74,7 +76,11 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
             <div className="flex items-center space-x-2">
               <span className="text-sm font-medium text-blue-600">{earliestTime}</span>
               <span className="text-gray-300">|</span>
-              <span className="font-medium text-sm">{hotelName} ({totalPeople}명)</span>
+              <span className="font-medium text-sm">{hotelName}</span>
+              <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                <Users size={14} />
+                <span>{totalPeople}</span>
+              </span>
             </div>
             {hotelInfo?.link && (
               <button
@@ -116,7 +122,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
           onClick={() => onToggleSection('pickup-schedule')}
         >
           <h2 className="text-md font-semibold text-gray-900 flex items-center">
-            픽업 스케줄
+            {t('title')}
             <ConnectionStatusLabel status={connectionStatus.reservations} section="예약" />
           </h2>
           <div className="flex items-center space-x-2">

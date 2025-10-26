@@ -1,5 +1,6 @@
 import React from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 
 interface TourScheduleProps {
@@ -15,6 +16,8 @@ export const TourSchedule: React.FC<TourScheduleProps> = ({
   onToggleSection,
   locale
 }) => {
+  const t = useTranslations('tours.tourSchedule')
+  
   if (!tour.product_id) {
     return null
   }
@@ -27,7 +30,7 @@ export const TourSchedule: React.FC<TourScheduleProps> = ({
           onClick={() => onToggleSection('tour-schedule')}
         >
           <h2 className="text-md font-semibold text-gray-900 flex items-center">
-            투어 스케줄
+            {t('title')}
           </h2>
           <div className="flex items-center space-x-2">
             {expandedSections.has('tour-schedule') ? (

@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TourHotelBookingForm from './TourHotelBookingForm';
 import BookingHistory from './BookingHistory';
-import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar, Filter } from 'lucide-react';
+import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar } from 'lucide-react';
 
 interface TourHotelBooking {
   id: string;
@@ -31,11 +32,14 @@ interface TourHotelBooking {
     tour_date: string;
     products?: {
       name: string;
+      name_en?: string;
     };
-  };
+  } | undefined;
 }
 
 export default function TourHotelBookingList() {
+  const locale = useLocale();
+  const t = useTranslations('booking.calendar');
   const [bookings, setBookings] = useState<TourHotelBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -46,6 +50,54 @@ export default function TourHotelBookingList() {
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
   const [viewMode, setViewMode] = useState<'card' | 'calendar'>('calendar');
+
+  // 상품 이름을 로케일에 따라 반환하는 함수
+  const getProductName = (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => {
+    if (!product) return t('tour');
+    
+    if (locale === 'en') {
+      // 영어 로케일인 경우
+      if (product.name_en && product.name_en !== product.name) {
+        return product.name_en;
+      }
+      
+      // name_en이 없거나 한국어와 동일한 경우, 한국어 이름을 영어로 변환
+      const koreanToEnglish: { [key: string]: string } = {
+        '야경투어': 'Night Tour',
+        '그랜드서클': 'Grand Circle',
+        '도깨비 그랜드캐년 일출 투어': 'Goblin Grand Canyon Sunrise Tour',
+        '웨스트림': 'West Rim',
+        '공항 픽업 서비스': 'Airport Pickup Service',
+        '불의 계곡': 'Valley of Fire',
+        '그랜드캐년': 'Grand Canyon',
+        '자이언 캐니언': 'Zion Canyon',
+        '브라이스 캐니언': 'Bryce Canyon',
+        '라스베가스': 'Las Vegas',
+        '앤텔롭 캐니언': 'Antelope Canyon',
+        '후버댐': 'Hoover Dam',
+        '데쓰밸리': 'Death Valley',
+        '모뉴먼트 밸리': 'Monument Valley',
+        '그랜드서클 1박 2일 투어': 'Grand Circle 1 Night 2 Days Tour',
+        '그랜드서클 당일 투어': 'Grand Circle Day Tour',
+        '도깨비 그랜드캐년 일출 투어 + 엔텔롭캐년': 'Goblin Grand Canyon Sunrise Tour + Antelope Canyon',
+        '도깨비 그랜드캐년 일출 투어 + 앤틸롭캐년': 'Goblin Grand Canyon Sunrise Tour + Antelope Canyon',
+        '도깨비 그랜드캐년 일출 투어 엔텔롭캐년': 'Goblin Grand Canyon Sunrise Tour Antelope Canyon',
+        '도깨비 그랜드캐년 일출 투어 + 앤텔롭캐년 + 홀슈밴드': 'Goblin Grand Canyon Sunrise Tour + Antelope Canyon + Horseshoe Bend',
+        '도깨비 그랜드캐년 일출 투어 + 엔텔롭캐년 + 홀슈밴드': 'Goblin Grand Canyon Sunrise Tour + Antelope Canyon + Horseshoe Bend',
+        '도깨비 X': 'Goblin Grand Canyon Sunrise Tour + Antelope X Canyon',
+        '도깨비 프라이빗': 'Goblin Private Tour',
+        '2박3일': '2 Nights 3 Days',
+        '엔텔롭캐년': 'Antelope Canyon',
+        '앤텔롭캐년': 'Antelope Canyon',
+        '앤틸롭캐년': 'Antelope Canyon'
+      };
+      
+      return koreanToEnglish[product.name || ''] || product.name || t('tour');
+    } else {
+      // 한국어 로케일인 경우
+      return product.name_ko || product.name || t('tour');
+    }
+  };
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TourHotelBooking[]>([]);
@@ -62,7 +114,7 @@ export default function TourHotelBookingList() {
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('tour_hotel_bookings')
         .select('*')
-        .order('check_in_date', { ascending: false });
+        .order('check_in_date', { ascending: false }) as { data: TourHotelBooking[] | null; error: Error | null };
 
       if (bookingsError) throw bookingsError;
 
@@ -94,10 +146,11 @@ export default function TourHotelBookingList() {
           id,
           tour_date,
           products (
-            name
+            name,
+            name_en
           )
         `)
-        .in('id', tourIds);
+        .in('id', tourIds) as { data: Array<{ id: string; tour_date: string; products: { name: string; name_en?: string } | null }> | null; error: Error | null };
 
       console.log('투어 데이터:', toursData);
       console.log('투어 조회 오류:', toursError);
@@ -173,7 +226,7 @@ export default function TourHotelBookingList() {
   const handleSave = (booking: TourHotelBooking) => {
     if (editingBooking) {
       setBookings(prev => 
-        prev.map(b => b.id === booking.id ? { ...booking, tours: b.tours } : b)
+        prev.map(b => b.id === booking.id ? { ...booking, tours: b.tours } as TourHotelBooking : b)
       );
     } else {
       setBookings(prev => [booking, ...prev]);
@@ -208,10 +261,10 @@ export default function TourHotelBookingList() {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'pending': return '대기중';
-      case 'confirmed': return '확정';
-      case 'cancelled': return '취소';
-      case 'completed': return '완료';
+      case 'pending': return t('pending');
+      case 'confirmed': return t('confirmed');
+      case 'cancelled': return t('cancelled');
+      case 'completed': return t('completed');
       default: return status;
     }
   };
@@ -273,7 +326,7 @@ export default function TourHotelBookingList() {
     <div className="space-y-6">
       {/* 헤더 - 모바일 최적화 */}
       <div className="flex items-center justify-between px-1 sm:px-6 py-4">
-        <h2 className="text-lg sm:text-2xl font-bold">투어 호텔 부킹 관리</h2>
+        <h2 className="text-lg sm:text-2xl font-bold">{t('tourHotelBookingManagement')}</h2>
         <div className="flex items-center space-x-2">
           {/* 뷰 전환 버튼 */}
           <div className="flex bg-gray-100 rounded-lg p-1">
@@ -303,8 +356,8 @@ export default function TourHotelBookingList() {
             className="px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs sm:text-base flex items-center space-x-1"
           >
             <Plus size={14} />
-            <span className="hidden sm:inline">새 부킹 추가</span>
-            <span className="sm:hidden">추가</span>
+            <span className="hidden sm:inline">{t('addNewBooking')}</span>
+            <span className="sm:hidden">{t('add')}</span>
           </button>
         </div>
       </div>
@@ -314,7 +367,7 @@ export default function TourHotelBookingList() {
         <div className="flex flex-row sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              검색
+              {t('search')}
             </label>
             <div className="relative">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
@@ -322,7 +375,7 @@ export default function TourHotelBookingList() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="검색..."
+                placeholder={`${t('search')}...`}
                 className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
               />
             </div>
@@ -330,24 +383,24 @@ export default function TourHotelBookingList() {
 
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              상태
+              {t('status')}
             </label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
             >
-              <option value="all">모든 상태</option>
-              <option value="pending">대기중</option>
-              <option value="confirmed">확정</option>
-              <option value="cancelled">취소</option>
-              <option value="completed">완료</option>
+              <option value="all">{t('allStatus')}</option>
+              <option value="pending">{t('pending')}</option>
+              <option value="confirmed">{t('confirmed')}</option>
+              <option value="cancelled">{t('cancelled')}</option>
+              <option value="completed">{t('completed')}</option>
             </select>
           </div>
 
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              체크인 날짜
+              {t('checkInDate')}
             </label>
             <div className="relative">
               <Calendar className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
@@ -412,12 +465,8 @@ export default function TourHotelBookingList() {
                   calendarDays.push(date);
                 }
 
-                const monthNames = [
-                  '1월', '2월', '3월', '4월', '5월', '6월',
-                  '7월', '8월', '9월', '10월', '11월', '12월'
-                ];
-
-                const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+                const monthNames = t.raw('monthNames');
+                const dayNames = t.raw('dayNames');
 
                 return (
                   <div className="space-y-4">
@@ -435,13 +484,13 @@ export default function TourHotelBookingList() {
                       
                       <div className="text-center">
                         <h4 className="text-xl font-semibold text-gray-900">
-                          {currentYear}년 {monthNames[currentMonth]}
+                          {currentYear} {monthNames[currentMonth]}
                         </h4>
                         <button
                           onClick={goToToday}
                           className="text-sm text-blue-600 hover:text-blue-800 mt-1"
                         >
-                          오늘로 이동
+                          {t('goToToday')}
                         </button>
                       </div>
                       
@@ -458,7 +507,7 @@ export default function TourHotelBookingList() {
 
                     {/* 요일 헤더 */}
                     <div className="grid grid-cols-7 gap-1">
-                      {dayNames.map((day) => (
+                      {dayNames.map((day: string) => (
                         <div key={day} className="p-2 text-center text-sm font-medium text-gray-500 bg-gray-50">
                           {day}
                         </div>
@@ -478,7 +527,6 @@ export default function TourHotelBookingList() {
                         if (dayBookings.length > 0) {
                           console.log(`${dateString}에 호텔 부킹 ${dayBookings.length}개:`, dayBookings);
                         }
-                        const hotels = [...new Set(dayBookings.map(b => b.hotel))];
 
                         return (
                           <div
@@ -497,7 +545,7 @@ export default function TourHotelBookingList() {
                              {dayBookings.length > 0 && (
                                <div className="space-y-0.5">
                                  <div className="text-xs text-blue-600 font-semibold">
-                                   총 {totalRooms}개 객실
+                                   {t('totalRooms')} {totalRooms}
                                  </div>
                                 {(() => {
                                   // 호텔별로 그룹화하고 체크인 시간순으로 정렬
@@ -524,7 +572,6 @@ export default function TourHotelBookingList() {
 
                                   return sortedHotels.map((hotel) => {
                                     const hotelBookings = hotelGroups[hotel];
-                                    const hotelTotal = hotelBookings.reduce((sum, booking) => sum + booking.rooms, 0);
                                     const firstBooking = hotelBookings[0];
                                     
                                      // 호텔명 단축 및 색상 구분
@@ -554,7 +601,7 @@ export default function TourHotelBookingList() {
                                        .join(', ');
 
                                      // 투어 상품 이름 가져오기
-                                     const tourProductName = firstBooking.tours?.products?.name || '';
+                                     const tourProductName = getProductName(firstBooking.tours?.products);
                                      const tourInfo = tourProductName ? ` [${tourProductName}]` : '';
 
                                      return (
@@ -578,48 +625,44 @@ export default function TourHotelBookingList() {
 
                      {/* 범례 */}
                      <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                       <div className="text-sm font-medium text-gray-700 mb-2">상태 범례</div>
+                       <div className="text-sm font-medium text-gray-700 mb-2">{t('statusLegend')}</div>
                        <div className="flex flex-wrap gap-2">
                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                           대기중
+                           {t('pending')}
                          </span>
                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                           확정
+                           {t('confirmed')}
                          </span>
                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                           취소
+                           {t('cancelled')}
                          </span>
                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                           완료
+                           {t('completed')}
                          </span>
                        </div>
                        <div className="mt-3">
-                         <div className="text-sm font-medium text-gray-700 mb-2">호텔 구분 (자동 색상 할당)</div>
+                         <div className="text-sm font-medium text-gray-700 mb-2">{t('hotelCategory')}</div>
                          <div className="flex flex-wrap gap-2">
                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-200 text-purple-800">
-                             호텔 A
+                             {t('hotelA')}
                            </span>
                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-orange-200 text-orange-800">
-                             호텔 B
+                             {t('hotelB')}
                            </span>
                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-pink-200 text-pink-800">
-                             호텔 C
+                             {t('hotelC')}
                            </span>
                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-indigo-200 text-indigo-800">
-                             호텔 D
+                             {t('hotelD')}
                            </span>
                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-200 text-green-800">
-                             호텔 E
+                             {t('hotelE')}
                            </span>
                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-200 text-red-800">
-                             호텔 F
+                             {t('hotelF')}
                            </span>
                           </div>
-                          <div className="mt-2 text-xs text-gray-600">
-                            • 라벨에 호텔명, 룸타입(갯수), 투어상품명 표시<br/>
-                            • 2박 이상 예약은 체크인부터 체크아웃 전날까지 모든 날짜에 표시<br/>
-                            • 마우스 오버 시 상세 정보(날짜 포함) 확인 가능
-                          </div>
+                          <div className="mt-2 text-xs text-gray-600" dangerouslySetInnerHTML={{ __html: t('hotelLegendDescription') }} />
                         </div>
                      </div>
                         </div>
@@ -650,39 +693,39 @@ export default function TourHotelBookingList() {
                   {/* 카드 내용 */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">체크인</span>
+                      <span className="text-gray-500">{t('checkInDate')}</span>
                       <span className="font-medium">{booking.check_in_date}</span>
                     </div>
                     
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">체크아웃</span>
+                      <span className="text-gray-500">{t('checkOutDate')}</span>
                       <span className="font-medium">{booking.check_out_date}</span>
                     </div>
                     
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">객실 수</span>
+                      <span className="text-gray-500">{t('rooms')}</span>
                       <span className="font-medium">{booking.rooms}개</span>
                     </div>
                     
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">객실 타입</span>
+                      <span className="text-gray-500">{t('roomType')}</span>
                       <span className="font-medium truncate ml-2">{booking.room_type || '타입 미지정'}</span>
                     </div>
                     
                     <div className="border-t pt-3">
                       <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="text-gray-500">단가</span>
+                        <span className="text-gray-500">{t('unitPrice')}</span>
                         <span className="font-medium">${booking.unit_price}</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">총액</span>
+                        <span className="text-gray-500">{t('totalPrice')}</span>
                         <span className="font-medium text-blue-600">${booking.total_price}</span>
                       </div>
                     </div>
 
                     <div className="border-t pt-3">
                       <div className="text-sm">
-                        <span className="text-gray-500">결제 방법</span>
+                        <span className="text-gray-500">{t('paymentMethod')}</span>
                         <div className="mt-1 font-medium">{getPaymentMethodText(booking.payment_method) || '-'}</div>
                       </div>
                       <div className="mt-2">
@@ -699,7 +742,7 @@ export default function TourHotelBookingList() {
                           <div className="mt-1">
                             <div className="font-medium">{booking.tours.tour_date}</div>
                             <div className="text-xs text-gray-500">
-                              {booking.tours.products?.name || '상품명 없음'}
+                              {getProductName(booking.tours?.products)}
                             </div>
                           </div>
                         </div>
@@ -714,19 +757,19 @@ export default function TourHotelBookingList() {
                         onClick={() => handleEdit(booking)}
                         className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
                       >
-                        편집
+                        {t('edit')}
                       </button>
                       <button
                         onClick={() => handleViewHistory(booking.id)}
                         className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
                       >
-                        히스토리
+                        {t('history')}
                       </button>
                       <button
                         onClick={() => handleDelete(booking.id)}
                         className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
                       >
-                        삭제
+                        {t('delete')}
                       </button>
                     </div>
                   </div>
@@ -752,10 +795,10 @@ export default function TourHotelBookingList() {
       </div>
 
       {/* 폼 모달 */}
-      {showForm && (
+      {showForm && editingBooking && (
         <TourHotelBookingForm
-          booking={editingBooking || undefined}
-          onSave={handleSave}
+          booking={editingBooking}
+          onSave={(booking: unknown) => handleSave(booking as TourHotelBooking)}
           onCancel={() => {
             setShowForm(false);
             setEditingBooking(null);
@@ -810,39 +853,39 @@ export default function TourHotelBookingList() {
 
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">체크인</span>
+                        <span className="text-gray-500">{t('checkInDate')}</span>
                         <span className="font-medium">{booking.check_in_date}</span>
                       </div>
                       
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">체크아웃</span>
+                        <span className="text-gray-500">{t('checkOutDate')}</span>
                         <span className="font-medium">{booking.check_out_date}</span>
                       </div>
                       
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">객실 수</span>
+                        <span className="text-gray-500">{t('rooms')}</span>
                         <span className="font-medium">{booking.rooms}개</span>
                       </div>
                       
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">객실 타입</span>
+                        <span className="text-gray-500">{t('roomType')}</span>
                         <span className="font-medium truncate ml-2">{booking.room_type || '타입 미지정'}</span>
                       </div>
                       
                       <div className="border-t pt-2">
                         <div className="flex items-center justify-between text-sm mb-1">
-                          <span className="text-gray-500">단가</span>
+                          <span className="text-gray-500">{t('unitPrice')}</span>
                           <span className="font-medium">${booking.unit_price}</span>
                         </div>
                         <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-500">총액</span>
+                          <span className="text-gray-500">{t('totalPrice')}</span>
                           <span className="font-medium text-blue-600">${booking.total_price}</span>
                         </div>
                       </div>
 
                       <div className="border-t pt-2">
                         <div className="text-sm">
-                          <span className="text-gray-500">결제 방법</span>
+                          <span className="text-gray-500">{t('paymentMethod')}</span>
                           <div className="mt-1 font-medium">{getPaymentMethodText(booking.payment_method) || '-'}</div>
                         </div>
                         <div className="mt-2">
@@ -859,7 +902,7 @@ export default function TourHotelBookingList() {
                             <div className="mt-1">
                               <div className="font-medium">{booking.tours.tour_date}</div>
                               <div className="text-xs text-gray-500">
-                                {booking.tours.products?.name || '상품명 없음'}
+                                {getProductName(booking.tours?.products)}
                               </div>
                             </div>
                           </div>
@@ -877,7 +920,7 @@ export default function TourHotelBookingList() {
                           }}
                           className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
                         >
-                          편집
+                          {t('edit')}
                         </button>
                         <button
                           onClick={() => {
@@ -887,7 +930,7 @@ export default function TourHotelBookingList() {
                           }}
                           className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
                         >
-                          히스토리
+                          {t('history')}
                         </button>
                         <button
                           onClick={() => {
@@ -896,7 +939,7 @@ export default function TourHotelBookingList() {
                           }}
                           className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
                         >
-                          삭제
+                          {t('delete')}
                         </button>
                       </div>
                     </div>

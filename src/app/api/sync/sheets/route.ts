@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSheetNames } from '@/lib/googleSheets'
 
+// Next.js API route 타임아웃 설정 (최대 120초)
+export const maxDuration = 120
+
 export async function POST(request: NextRequest) {
   try {
     console.log('=== Google Sheets API Route Started ===')
@@ -35,9 +38,9 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // 타임아웃 설정 (60초로 단축)
+    // 타임아웃 설정 (120초로 증가)
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout after 60 seconds')), 60000)
+      setTimeout(() => reject(new Error('Request timeout after 120 seconds')), 120000)
     })
 
     const fetchPromise = async () => {
@@ -88,7 +91,7 @@ export async function POST(request: NextRequest) {
     let errorMessage = 'Failed to get sheet information'
     if (error instanceof Error) {
       if (error.message.includes('timeout')) {
-        errorMessage = '요청 시간 초과 (60초) - 구글 시트가 너무 크거나 네트워크가 느립니다. 시트 크기를 줄이거나 잠시 후 다시 시도해주세요.'
+        errorMessage = '요청 시간 초과 (120초) - 구글 시트가 너무 크거나 네트워크가 느립니다. 시트 크기를 줄이거나 잠시 후 다시 시도해주세요.'
       } else if (error.message.includes('aborted') || error.message.includes('abort')) {
         errorMessage = '요청이 중단되었습니다. 네트워크 연결을 확인하고 잠시 후 다시 시도해주세요.'
       } else if (error.message.includes('403')) {

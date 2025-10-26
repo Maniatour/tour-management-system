@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback, memo, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Filter } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import type { Database } from '@/lib/supabase'
 
 type Reservation = Database['public']['Tables']['reservations']['Row']
@@ -11,8 +11,14 @@ interface ReservationCalendarProps {
   reservations: (Reservation & { 
     customer_name?: string; 
     product_name?: string; 
+    product_name_en?: string;
     total_people?: number; 
     channel_name?: string;
+    products?: {
+      name: string;
+      name_en?: string;
+      name_ko?: string;
+    };
   })[]
   onReservationClick: (reservation: Reservation) => void
   onLoadComplete?: () => void
@@ -24,6 +30,7 @@ const ReservationCalendar = memo(function ReservationCalendar({
   onLoadComplete
 }: ReservationCalendarProps) {
   const t = useTranslations('reservations')
+  const locale = useLocale()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [dateFilter, setDateFilter] = useState<'created_at' | 'tour_date'>('created_at')
 
@@ -206,7 +213,9 @@ const ReservationCalendar = memo(function ReservationCalendar({
           {dayReservations.map((reservation, reservationIndex) => {
             // 예약 데이터에서 정보 추출
             const customerName = reservation.customer_name || '고객명 없음'
-            const productName = reservation.product_name || reservation.product_id || '상품명 없음'
+            const productName = locale === 'en' 
+              ? (reservation.products?.name_en || reservation.product_name_en || reservation.product_name || reservation.product_id || '상품명 없음')
+              : (reservation.products?.name_ko || reservation.product_name || reservation.products?.name_en || reservation.product_id || '상품명 없음')
             const totalPeople = reservation.total_people || 0
             const status = reservation.status || '상태 없음'
             

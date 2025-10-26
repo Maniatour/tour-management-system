@@ -74,7 +74,7 @@ export default function TourExpenseManager({
   userRole = 'team_member',
   onExpenseUpdated 
 }: TourExpenseManagerProps) {
-  const t = useTranslations('tourExpense')
+  const t = useTranslations('tours.tourExpense')
   const [expenses, setExpenses] = useState<TourExpense[]>([])
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
   const [vendors, setVendors] = useState<ExpenseVendor[]>([])
@@ -890,7 +890,7 @@ export default function TourExpenseManager({
 
       {/* 정산 통계 섹션 */}
       <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-        <h4 className="text-lg font-semibold text-gray-900">정산 통계</h4>
+        <h4 className="text-lg font-semibold text-gray-900">{t('settlementStats')}</h4>
         
         {/* 입금액 총합 - 어드민만 표시 */}
         {userRole === 'admin' && (
@@ -901,7 +901,7 @@ export default function TourExpenseManager({
           >
             <div className="flex items-center space-x-3">
               <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-              <span className="font-medium text-gray-900">입금액 총합</span>
+              <span className="font-medium text-gray-900">{t('totalDeposits')}</span>
               <span className="text-lg font-bold text-green-600">
                 {formatCurrency(financialStats.totalPayments)}
               </span>
@@ -950,7 +950,7 @@ export default function TourExpenseManager({
           >
             <div className="flex items-center space-x-3">
               <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-              <span className="font-medium text-gray-900">지출 총합</span>
+              <span className="font-medium text-gray-900">{t('totalExpenses')}</span>
               <span className="text-lg font-bold text-red-600">
                 {formatCurrency(financialStats.totalExpensesWithFeesAndBookings)}
               </span>
@@ -1046,7 +1046,7 @@ export default function TourExpenseManager({
           >
             <div className="flex items-center space-x-3">
               <div className={`w-3 h-3 rounded-full ${financialStats.profit >= 0 ? 'bg-blue-500' : 'bg-orange-500'}`}></div>
-              <span className="font-medium text-gray-900">수익</span>
+              <span className="font-medium text-gray-900">{t('profit')}</span>
               <span className={`text-lg font-bold ${financialStats.profit >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
                 {formatCurrency(financialStats.profit)}
               </span>
@@ -1058,16 +1058,16 @@ export default function TourExpenseManager({
             <div className="border-t p-4 bg-gray-50">
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span>총 입금액</span>
+                  <span>{t('totalDeposits')}</span>
                   <span className="text-green-600 font-medium">{formatCurrency(financialStats.totalPayments)}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>총 지출 (수수료 + 부킹 포함)</span>
+                  <span>{t('totalExpensesWithFeesAndBookings')}</span>
                   <span className="text-red-600">{formatCurrency(financialStats.totalExpensesWithFeesAndBookings)}</span>
                 </div>
                 <hr className="my-2" />
                 <div className="flex items-center justify-between font-bold">
-                  <span>수익</span>
+                  <span>{t('profit')}</span>
                   <span className={financialStats.profit >= 0 ? 'text-blue-600' : 'text-orange-600'}>
                     {formatCurrency(financialStats.profit)}
                   </span>

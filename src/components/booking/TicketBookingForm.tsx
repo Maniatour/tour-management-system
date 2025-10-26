@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useTranslations } from 'next-intl';
 
 interface TicketBooking {
   id?: string;
@@ -58,6 +59,7 @@ export default function TicketBookingForm({
   onCancel, 
   tourId 
 }: TicketBookingFormProps) {
+  const t = useTranslations('booking.ticketBooking');
   const [formData, setFormData] = useState<TicketBooking>(() => {
     console.log('편집 모드 - 전달받은 booking 데이터:', booking);
     
@@ -662,13 +664,8 @@ export default function TicketBookingForm({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-[95vw] sm:max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg sm:text-xl font-bold mb-4">
-          {booking ? '입장권 부킹 수정' : '새 입장권 부킹'}
-        </h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+    <div className="space-y-3 sm:space-y-4">
+        <form onSubmit={handleSubmit}>
           {/* 공급업체 티켓 사용 여부 선택 - 모바일 최적화 */}
           <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
             <div className="flex items-center mb-2 sm:mb-3">
@@ -685,11 +682,11 @@ export default function TicketBookingForm({
                 className="mr-2"
               />
               <label htmlFor="useSupplierTicket" className="text-sm font-medium text-blue-800">
-                공급업체 티켓 사용
+                {t('useSupplierTicket')}
               </label>
             </div>
             <p className="text-xs text-blue-600">
-              체크하면 등록된 공급업체의 티켓을 선택할 수 있습니다. 가격과 입장시간이 자동으로 설정됩니다.
+              {t('useSupplierTicketDesc')}
             </p>
           </div>
 
@@ -755,7 +752,7 @@ export default function TicketBookingForm({
 
             <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                카테고리 *
+                {t('category')} *
               </label>
               <input
                 type="text"
@@ -774,7 +771,7 @@ export default function TicketBookingForm({
                 }}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="카테고리를 입력하세요 (예: 앤텔로프 캐니언)"
+                placeholder={t('categoryPlaceholder')}
                 autoComplete="off"
                 disabled={useSupplierTicket}
               />
@@ -796,7 +793,7 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                제출자 이메일 *
+                {t('submitterEmail')} *
               </label>
               <input
                 type="email"
@@ -805,13 +802,13 @@ export default function TicketBookingForm({
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="제출자 이메일을 입력하세요"
+                placeholder={t('submitterEmailPlaceholder')}
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                체크인 날짜 *
+                {t('checkInDate')} *
               </label>
               <div className="relative">
                 <input
@@ -849,16 +846,16 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                시간 *
+                {t('time')} *
               </label>
               <select
                 name="time"
                 value={formData.time || ''}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">시간을 선택하세요</option>
+                <option value="">{t('selectTime')}</option>
                 {Array.from({ length: 13 * 12 }, (_, i) => {
                   const hour = Math.floor(i / 12) + 6; // 6시부터 시작
                   const minute = (i % 12) * 5;
@@ -944,7 +941,7 @@ export default function TicketBookingForm({
 
             <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                공급업체 *
+                {t('supplier')} *
               </label>
               <input
                 type="text"
@@ -963,7 +960,7 @@ export default function TicketBookingForm({
                 }}
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="공급업체를 입력하세요"
+                placeholder={t('supplierPlaceholder')}
                 autoComplete="off"
                 disabled={useSupplierTicket}
               />
@@ -984,7 +981,7 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                수량 *
+                {t('quantity')} *
               </label>
               <input
                 type="number"
@@ -999,7 +996,7 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                비용 (USD)
+                {t('costUsd')}
               </label>
               <input
                 type="number"
@@ -1014,7 +1011,7 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                수입 (USD)
+                {t('revenueUsd')}
               </label>
               <input
                 type="number"
@@ -1029,7 +1026,7 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                결제 방법
+                {t('paymentMethod')}
               </label>
               <select
                 name="payment_method"
@@ -1037,11 +1034,11 @@ export default function TicketBookingForm({
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">선택하세요</option>
-                <option value="credit_card">신용카드</option>
-                <option value="bank_transfer">계좌이체</option>
-                <option value="cash">현금</option>
-                <option value="other">기타</option>
+                <option value="">{t('select')}</option>
+                <option value="credit_card">{t('paymentCreditCard')}</option>
+                <option value="bank_transfer">{t('paymentBankTransfer')}</option>
+                <option value="cash">{t('paymentCash')}</option>
+                <option value="other">{t('paymentOther')}</option>
               </select>
             </div>
 
@@ -1060,7 +1057,7 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                투어 선택 (선택사항)
+                {t('selectTourOptional')}
               </label>
               <select
                 name="tour_id"
@@ -1068,7 +1065,7 @@ export default function TicketBookingForm({
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">투어를 선택하세요 (선택사항)</option>
+                <option value="">{t('selectTourPlaceholder')}</option>
                 {tours.length > 0 ? (
                   tours.map(tour => (
                     <option key={tour.id} value={tour.id}>
@@ -1082,13 +1079,13 @@ export default function TicketBookingForm({
                 )}
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                투어가 아직 생성되지 않은 경우 비워두고 저장할 수 있습니다.
+                {t('selectTourHelpText')}
               </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                예약 선택 (선택사항)
+                {t('selectReservationOptional')}
               </label>
               <select
                 name="reservation_id"
@@ -1096,7 +1093,7 @@ export default function TicketBookingForm({
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">예약을 선택하세요 (선택사항)</option>
+                <option value="">{t('selectReservationPlaceholder')}</option>
                 {reservations.length > 0 ? (
                     reservations.map(reservation => (
                       <option key={reservation.id} value={reservation.id}>
@@ -1110,13 +1107,13 @@ export default function TicketBookingForm({
                 )}
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                예약이 아직 생성되지 않은 경우 비워두고 저장할 수 있습니다.
+                {t('selectReservationHelpText')}
               </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                상태
+                {t('status')}
               </label>
               <select
                 name="status"
@@ -1124,16 +1121,16 @@ export default function TicketBookingForm({
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="tentative">가예약</option>
-                <option value="confirmed">확정</option>
-                <option value="paid">결제완료</option>
-                <option value="cancelled">취소</option>
+                <option value="tentative">{t('statusTentative')}</option>
+                <option value="confirmed">{t('statusConfirmed')}</option>
+                <option value="paid">{t('statusPaid')}</option>
+                <option value="cancelled">{t('statusCancelled')}</option>
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                시즌
+                {t('season')}
               </label>
               <select
                 name="season"
@@ -1141,15 +1138,15 @@ export default function TicketBookingForm({
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="no">시즌 아님</option>
-                <option value="yes">시즌</option>
+                <option value="no">{t('seasonNo')}</option>
+                <option value="yes">{t('seasonYes')}</option>
               </select>
             </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              메모
+              {t('memo')}
             </label>
             <textarea
               name="note"
@@ -1157,14 +1154,14 @@ export default function TicketBookingForm({
               onChange={handleChange}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="특별 사항이나 메모를 입력하세요"
+              placeholder={t('memoPlaceholder')}
             />
           </div>
 
           {/* 파일 업로드 섹션 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              관련 문서 첨부 (선택사항)
+              {t('attachDocuments')}
             </label>
             <div 
               className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
@@ -1211,18 +1208,18 @@ export default function TicketBookingForm({
                     isDragOver ? 'text-blue-900' : 'text-gray-900'
                   }`}>
                     {isUploading 
-                      ? '파일 업로드 중...' 
+                      ? t('uploading') 
                       : isDragOver 
-                        ? '파일을 여기에 놓으세요' 
-                        : '파일을 드래그하여 놓거나 클릭하여 선택하세요'
+                        ? t('dropFilesHere') 
+                        : t('dragOrClickFiles')
                     }
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    또는 클립보드에서 붙여넣기 (Ctrl+V)
+                    {t('orPasteClipboard')}
                   </p>
                 </div>
                 <div className="text-xs text-gray-400">
-                  지원 형식: JPG, PNG, GIF, PDF, DOC, DOCX (최대 10MB)
+                  {t('supportedFormats')}
                 </div>
               </div>
               
@@ -1238,7 +1235,7 @@ export default function TicketBookingForm({
               {/* 업로드된 파일 목록 */}
               {formData.uploaded_files && formData.uploaded_files.length > 0 && (
                 <div className="mt-6 pt-4 border-t border-gray-200">
-                  <h4 className="text-sm font-medium mb-3 text-gray-900">업로드된 파일 ({formData.uploaded_files.length}개)</h4>
+                  <h4 className="text-sm font-medium mb-3 text-gray-900">{t('uploadedFiles')} ({formData.uploaded_files.length})</h4>
                   <div className="space-y-2">
                     {formData.uploaded_files.map((file, index) => (
                       <div key={index} className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50">
@@ -1285,18 +1282,17 @@ export default function TicketBookingForm({
               onClick={onCancel}
               className="px-4 py-2 text-gray-600 bg-gray-200 rounded-md hover:bg-gray-300"
             >
-              취소
+              {t('cancel')}
             </button>
             <button
               type="submit"
               disabled={loading}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
-              {loading ? '저장 중...' : '저장'}
+              {loading ? t('saving') : t('save')}
             </button>
           </div>
         </form>
-      </div>
     </div>
   );
 }

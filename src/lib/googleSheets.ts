@@ -407,13 +407,13 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
     const sheets = google.sheets({ 
       version: 'v4', 
       auth,
-      timeout: 60000 // 60초로 증가 (안정성 향상)
+      timeout: 120000 // 120초로 증가 (안정성 향상)
     })
     console.log('Google Sheets client created')
 
-    // 타임아웃 설정 (60초로 증가)
+    // 타임아웃 설정 (120초로 증가)
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Google Sheets API timeout after 60 seconds')), 60000)
+      setTimeout(() => reject(new Error('Google Sheets API timeout after 120 seconds')), 120000)
     })
 
     console.log('Making API request to Google Sheets...')
@@ -465,7 +465,7 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
     // 구체적인 에러 메시지 제공
     if (error instanceof Error) {
       if (error.message.includes('timeout')) {
-        throw new Error('구글 시트 API 응답 시간 초과 (60초). 네트워크 연결을 확인하고 다시 시도해주세요.')
+        throw new Error('구글 시트 API 응답 시간 초과 (120초). 네트워크 연결을 확인하고 다시 시도해주세요.')
       } else if (error.message.includes('403')) {
         throw new Error('구글 시트 접근 권한이 없습니다. 시트 공유 설정을 확인해주세요')
       } else if (error.message.includes('404')) {

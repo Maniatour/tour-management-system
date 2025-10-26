@@ -1,17 +1,19 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import TicketBookingList from '@/components/booking/TicketBookingList';
 import TourHotelBookingList from '@/components/booking/TourHotelBookingList';
 
 type TabType = 'tickets' | 'hotels';
 
 export default function BookingManagementPage() {
+  const t = useTranslations('booking');
   const [activeTab, setActiveTab] = useState<TabType>('tickets');
 
   const tabs = [
-    { id: 'tickets' as TabType, name: '입장권 부킹', component: TicketBookingList },
-    { id: 'hotels' as TabType, name: '투어 호텔 부킹', component: TourHotelBookingList },
+    { id: 'tickets' as TabType, name: t('tabs.tickets'), component: TicketBookingList },
+    { id: 'hotels' as TabType, name: t('tabs.hotels'), component: TourHotelBookingList },
   ];
 
   const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component;
@@ -21,9 +23,9 @@ export default function BookingManagementPage() {
       <div className="py-4 sm:py-6 lg:py-8">
         {/* 헤더 - 모바일 최적화 */}
         <div className="mb-6 sm:mb-8 px-1 sm:px-6 lg:px-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">부킹 관리</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
           <p className="mt-2 text-sm sm:text-base text-gray-600">
-            투어를 위한 입장권과 호텔 부킹을 관리하고 변경 이력을 추적할 수 있습니다.
+            {t('subtitle')}
           </p>
         </div>
 
@@ -61,14 +63,13 @@ export default function BookingManagementPage() {
             </div>
             <div className="ml-3">
               <h3 className="text-sm font-medium text-blue-800">
-                부킹 관리 안내
+                {t('info.title')}
               </h3>
               <div className="mt-2 text-sm text-blue-700">
                 <ul className="list-disc pl-5 space-y-1">
-                  <li>투어 2일 전까지 공급업체에 비용을 지불하고 실예약을 완료해야 합니다.</li>
-                  <li>투어 인원이 변경될 수 있으므로 상시로 부킹 내역을 확인하고 업데이트하세요.</li>
-                  <li>모든 변경사항은 자동으로 히스토리에 기록되며, 언제든지 확인할 수 있습니다.</li>
-                  <li>가예약 상태에서 실예약으로 변경 시 상태를 업데이트해주세요.</li>
+                  {t.raw('info.items').map((item: string, index: number) => (
+                    <li key={index}>{item}</li>
+                  ))}
                 </ul>
               </div>
             </div>

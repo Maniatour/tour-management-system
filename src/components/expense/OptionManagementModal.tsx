@@ -35,7 +35,7 @@ const OptionManagementModal: React.FC<OptionManagementModalProps> = ({
   onClose,
   onOptionsUpdated
 }) => {
-  const t = useTranslations('tourExpense')
+  const t = useTranslations('tours.tourExpense')
   const [activeTab, setActiveTab] = useState<'paid_to' | 'paid_for' | 'payment_method'>('paid_to')
   const [options, setOptions] = useState<OptionItem[]>([])
   const [loading, setLoading] = useState(false)

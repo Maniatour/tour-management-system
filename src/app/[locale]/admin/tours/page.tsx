@@ -490,7 +490,7 @@ export default function AdminTours() {
               }`}
             >
               <Grid className="w-4 h-4" />
-              <span className="hidden sm:inline">리스트 뷰</span>
+              <span className="hidden sm:inline">{t('calendar.listView')}</span>
             </button>
             <button
               onClick={() => setViewMode('calendar')}
@@ -501,7 +501,7 @@ export default function AdminTours() {
               }`}
             >
               <Calendar className="w-4 h-4" />
-              <span className="hidden sm:inline">달력 보기</span>
+              <span className="hidden sm:inline">{t('calendar.calendarView')}</span>
             </button>
             <button
               onClick={() => setViewMode('schedule')}
@@ -512,7 +512,7 @@ export default function AdminTours() {
               }`}
             >
               <CalendarDays className="w-4 h-4" />
-              <span className="hidden sm:inline">스케줄 뷰</span>
+              <span className="hidden sm:inline">{t('calendar.scheduleView')}</span>
             </button>
             <button
               onClick={() => router.push('/ko/admin/tours/new')}
@@ -530,7 +530,7 @@ export default function AdminTours() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
-              placeholder="Q 투어 ID, 상품 ID, 투어 가이드로 검색..."
+              placeholder={t('calendar.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
@@ -542,7 +542,7 @@ export default function AdminTours() {
             onChange={(e) => setSelectedStatus(e.target.value)}
             className="w-full sm:w-auto col-span-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
           >
-            <option value="all">모든 상태</option>
+            <option value="all">{t('calendar.allStatus')}</option>
             {statusOptions.sort().map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
@@ -555,7 +555,7 @@ export default function AdminTours() {
               onChange={(e) => setAsGuideEmail(e.target.value)}
               className="w-full sm:w-56 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
             >
-              <option value="">모든 가이드</option>
+              <option value="">{t('calendar.allGuides')}</option>
               {guideOptions.map((m) => (
                 <option key={m.email} value={m.email}>
                   {(m.name_ko || m.name_en || m.email) as string}
@@ -568,7 +568,7 @@ export default function AdminTours() {
                 onClick={() => setAsGuideEmail('')}
                 className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded"
               >
-                지우기
+{t('calendar.clear')}
               </button>
             )}
           </div>
@@ -580,7 +580,7 @@ export default function AdminTours() {
               onClick={() => { setSearchTerm(''); setSelectedStatus('all'); setAsGuideEmail('') }}
               className="w-full sm:w-auto px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded"
             >
-              필터 초기화
+{t('calendar.resetFilter')}
             </button>
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
 import BookingHistory from './BookingHistory';
@@ -31,6 +32,7 @@ interface TicketBooking {
     tour_date: string;
     products?: {
       name: string;
+      name_en?: string;
     } | undefined;
   } | undefined;
 }
@@ -46,11 +48,14 @@ interface TourEvent {
   infant: number;
   products?: {
     name: string;
+    name_en?: string;
   };
 }
 
 export default function TicketBookingList() {
   const router = useRouter();
+  const locale = useLocale();
+  const t = useTranslations('booking.calendar');
   const [bookings, setBookings] = useState<TicketBooking[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -62,6 +67,54 @@ export default function TicketBookingList() {
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
   const [viewMode, setViewMode] = useState<'card' | 'calendar'>('calendar');
+
+  // 상품 이름을 로케일에 따라 반환하는 함수
+  const getProductName = (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => {
+    if (!product) return t('tour');
+    
+    if (locale === 'en') {
+      // 영어 로케일인 경우
+      if (product.name_en && product.name_en !== product.name) {
+        return product.name_en;
+      }
+      
+      // name_en이 없거나 한국어와 동일한 경우, 한국어 이름을 영어로 변환
+      const koreanToEnglish: { [key: string]: string } = {
+        '야경투어': 'Night Tour',
+        '그랜드서클': 'Grand Circle',
+        '도깨비 그랜드캐년 일출 투어': 'Goblin Grand Canyon Sunrise Tour',
+        '웨스트림': 'West Rim',
+        '공항 픽업 서비스': 'Airport Pickup Service',
+        '불의 계곡': 'Valley of Fire',
+        '그랜드캐년': 'Grand Canyon',
+        '자이언 캐니언': 'Zion Canyon',
+        '브라이스 캐니언': 'Bryce Canyon',
+        '라스베가스': 'Las Vegas',
+        '앤텔롭 캐니언': 'Antelope Canyon',
+        '후버댐': 'Hoover Dam',
+        '데쓰밸리': 'Death Valley',
+        '모뉴먼트 밸리': 'Monument Valley',
+        '그랜드서클 1박 2일 투어': 'Grand Circle 1 Night 2 Days Tour',
+        '그랜드서클 당일 투어': 'Grand Circle Day Tour',
+        '도깨비 그랜드캐년 일출 투어 + 엔텔롭캐년': 'Goblin Grand Canyon Sunrise Tour + Antelope Canyon',
+        '도깨비 그랜드캐년 일출 투어 + 앤틸롭캐년': 'Goblin Grand Canyon Sunrise Tour + Antelope Canyon',
+        '도깨비 그랜드캐년 일출 투어 엔텔롭캐년': 'Goblin Grand Canyon Sunrise Tour Antelope Canyon',
+        '도깨비 그랜드캐년 일출 투어 + 앤텔롭캐년 + 홀슈밴드': 'Goblin Grand Canyon Sunrise Tour + Antelope Canyon + Horseshoe Bend',
+        '도깨비 그랜드캐년 일출 투어 + 엔텔롭캐년 + 홀슈밴드': 'Goblin Grand Canyon Sunrise Tour + Antelope Canyon + Horseshoe Bend',
+        '도깨비 X': 'Goblin Grand Canyon Sunrise Tour + Antelope X Canyon',
+        '도깨비 프라이빗': 'Goblin Private Tour',
+        '2박3일': '2 Nights 3 Days',
+        '엔텔롭캐년': 'Antelope Canyon',
+        '앤텔롭캐년': 'Antelope Canyon',
+        '앤틸롭캐년': 'Antelope Canyon'
+      };
+      
+      return koreanToEnglish[product.name || ''] || product.name || t('tour');
+    } else {
+      // 한국어 로케일인 경우
+      return product.name_ko || product.name || t('tour');
+    }
+  };
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
@@ -107,7 +160,8 @@ export default function TicketBookingList() {
           id,
           tour_date,
           products (
-            name
+            name,
+            name_en
           )
         `)
         .in('id', tourIds as string[]);
@@ -411,10 +465,10 @@ export default function TicketBookingList() {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'pending': return '대기중';
-      case 'confirmed': return '확정';
-      case 'cancelled': return '취소';
-      case 'completed': return '완료';
+      case 'pending': return t('pending');
+      case 'confirmed': return t('confirmed');
+      case 'cancelled': return t('cancelled');
+      case 'completed': return t('completed');
       default: return status;
     }
   };
@@ -480,7 +534,7 @@ export default function TicketBookingList() {
     <div className="space-y-6">
       {/* 헤더 - 모바일 최적화 */}
       <div className="flex items-center justify-between px-1 sm:px-6 py-4">
-        <h2 className="text-lg sm:text-2xl font-bold">입장권 부킹 관리</h2>
+        <h2 className="text-lg sm:text-2xl font-bold">{t('ticketBookingManagement')}</h2>
         <div className="flex items-center space-x-2">
           {/* 뷰 전환 버튼 */}
           <div className="flex bg-gray-100 rounded-lg p-1">
@@ -510,8 +564,8 @@ export default function TicketBookingList() {
             className="px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs sm:text-base flex items-center space-x-1"
           >
             <Plus size={14} />
-            <span className="hidden sm:inline">새 부킹 추가</span>
-            <span className="sm:hidden">추가</span>
+            <span className="hidden sm:inline">{t('addNewBooking')}</span>
+            <span className="sm:hidden">{t('add')}</span>
           </button>
         </div>
       </div>
@@ -521,7 +575,7 @@ export default function TicketBookingList() {
         <div className="flex flex-row sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              검색
+              {t('search')}
             </label>
             <div className="relative">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
@@ -529,7 +583,7 @@ export default function TicketBookingList() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="검색..."
+                placeholder={`${t('search')}...`}
                 className="w-full pl-6 pr-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
               />
             </div>
@@ -537,39 +591,39 @@ export default function TicketBookingList() {
 
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              상태
+              {t('status')}
             </label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
             >
-              <option value="all">모든 상태</option>
-              <option value="pending">대기중</option>
-              <option value="confirmed">확정</option>
-              <option value="cancelled">취소</option>
-              <option value="completed">완료</option>
+              <option value="all">{t('allStatus')}</option>
+              <option value="pending">{t('pending')}</option>
+              <option value="confirmed">{t('confirmed')}</option>
+              <option value="cancelled">{t('cancelled')}</option>
+              <option value="completed">{t('completed')}</option>
             </select>
           </div>
 
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              투어 연결
+              {t('tourConnection')}
             </label>
             <select
               value={tourFilter}
               onChange={(e) => setTourFilter(e.target.value)}
               className="w-full px-1 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"
             >
-              <option value="all">모든 부킹</option>
-              <option value="connected">투어 연결됨</option>
-              <option value="unconnected">투어 미연결</option>
+              <option value="all">{t('allBookings')}</option>
+              <option value="connected">{t('tourConnected')}</option>
+              <option value="unconnected">{t('tourNotConnected')}</option>
             </select>
           </div>
 
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-              제출일
+              {t('submissionDate')}
             </label>
             <div className="relative">
               <Calendar className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={12} />
@@ -627,12 +681,8 @@ export default function TicketBookingList() {
                   calendarDays.push(date);
                 }
 
-                const monthNames = [
-                  '1월', '2월', '3월', '4월', '5월', '6월',
-                  '7월', '8월', '9월', '10월', '11월', '12월'
-                ];
-
-                const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+                const monthNames = t.raw('monthNames');
+                const dayNames = t.raw('dayNames');
 
                 return (
                   <div className="space-y-4">
@@ -641,7 +691,7 @@ export default function TicketBookingList() {
                           <button
                         onClick={goToPreviousMonth}
                         className="p-2 hover:bg-gray-100 rounded-md transition-colors"
-                        title="이전 달"
+                        title={t('previousMonth')}
                           >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -650,20 +700,20 @@ export default function TicketBookingList() {
                       
                       <div className="text-center">
                         <h4 className="text-xl font-semibold text-gray-900">
-                          {currentYear}년 {monthNames[currentMonth]}
+                          {currentYear} {monthNames[currentMonth]}
                         </h4>
                           <button
                           onClick={goToToday}
                           className="text-sm text-blue-600 hover:text-blue-800 mt-1"
                           >
-                          오늘로 이동
+                          {t('goToToday')}
                           </button>
                       </div>
                       
                           <button
                         onClick={goToNextMonth}
                         className="p-2 hover:bg-gray-100 rounded-md transition-colors"
-                        title="다음 달"
+                        title={t('nextMonth')}
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -673,7 +723,7 @@ export default function TicketBookingList() {
 
                     {/* 요일 헤더 */}
                     <div className="grid grid-cols-7 gap-1">
-                      {dayNames.map((day) => (
+                      {dayNames.map((day: string) => (
                         <div key={day} className="p-2 text-center text-sm font-medium text-gray-500 bg-gray-50">
                           {day}
                         </div>
@@ -722,25 +772,25 @@ export default function TicketBookingList() {
                   <div
                     key={tourIndex}
                     className="px-1 py-0.5 bg-purple-100 text-purple-800 rounded text-[8px] sm:text-[10px] font-medium cursor-pointer hover:bg-purple-200 transition-colors"
-                    title={`${tour.products?.name || '투어'} - 성인:${tour.adults}명, 아동:${tour.child}명, 유아:${tour.infant}명 (총 ${tour.total_people}명) (클릭하여 상세보기)`}
+                    title={`${getProductName(tour.products)} - ${t('adults')}:${tour.adults}${t('people')}, ${t('children')}:${tour.child}${t('people')}, ${t('infants')}:${tour.infant}${t('people')} (${t('total')} ${tour.total_people}${t('people')}) (Click for details)`}
                     onClick={() => handleTourClick(tour.id)}
                   >
                     <div className="truncate">
                       {(() => {
-                        const tourName = tour.products?.name || '투어';
+                        const tourName = getProductName(tour.products);
                         const totalPeople = tour.total_people;
                         const child = tour.child || 0;
                         const infant = tour.infant || 0;
                         
                         // 아동이나 유아가 있을 때만 괄호 안에 표시
                         if (child > 0 || infant > 0) {
-                          const childText = child > 0 ? `아동${child}` : '';
-                          const infantText = infant > 0 ? `유아${infant}` : '';
+                          const childText = child > 0 ? `${t('children')}${child}` : '';
+                          const infantText = infant > 0 ? `${t('infants')}${infant}` : '';
                           const additionalText = [childText, infantText].filter(Boolean).join(' ');
-                          return `${tourName} ${totalPeople}명 (${additionalText})`;
+                          return `${tourName} ${totalPeople}${t('people')} (${additionalText})`;
                         } else {
                           // 성인만 있을 경우
-                          return `${tourName} ${totalPeople}명`;
+                          return `${tourName} ${totalPeople}${t('people')}`;
                         }
                       })()}
                     </div>
@@ -753,7 +803,7 @@ export default function TicketBookingList() {
                             {dayBookings.length > 0 && (
                               <div className="space-y-0.5">
                                 <div className="text-xs text-blue-600 font-semibold">
-                                  총 {totalQuantity}개
+                                  {t('total')} {totalQuantity}{t('items')}
                                 </div>
                                 {(() => {
                                   // 공급업체별로 그룹화하고 시간순으로 정렬
@@ -799,15 +849,15 @@ export default function TicketBookingList() {
                                       <div
                                         key={company}
                                         className={`px-0.5 py-0 rounded truncate ${companyBgColor} text-[8px] sm:text-[12px] cursor-pointer hover:opacity-80`}
-                                        title={`${company} - ${companyBookings.map(b => `${b.category} (${b.ea}개)`).join(', ')}`}
+                                        title={`${company} - ${companyBookings.map(b => `${b.category} (${b.ea}${t('items')})`).join(', ')}`}
                                         onClick={() => handleBookingClick(companyBookings)}
                                       >
                                         <div className="block sm:hidden">
                                           <div className="font-bold">{firstBooking.time.replace(/:\d{2}$/, '')}</div>
-                                          <div>{companyTotal}개 ({companyBookings.length})</div>
+                                          <div>{companyTotal}{t('items')} ({companyBookings.length})</div>
                                         </div>
                                         <div className="hidden sm:block">
-                                          <span className="font-bold">{firstBooking.time.replace(/:\d{2}$/, '')}</span> <span>{companyTotal}개</span> <span>({companyBookings.length})</span>
+                                          <span className="font-bold">{firstBooking.time.replace(/:\d{2}$/, '')}</span> <span>{companyTotal}{t('items')}</span> <span>({companyBookings.length})</span>
                                         </div>
                                       </div>
                                     );
@@ -822,43 +872,46 @@ export default function TicketBookingList() {
 
                     {/* 범례 */}
                     <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                      <div className="text-sm font-medium text-gray-700 mb-2">상태 범례</div>
+                      <div className="text-sm font-medium text-gray-700 mb-2">{t('statusLegend')}</div>
                       <div className="flex flex-wrap gap-2">
                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                          대기중
+                          {t('pending')}
                         </span>
                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                          확정
+                          {t('confirmed')}
                         </span>
                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                          취소
+                          {t('cancelled')}
                         </span>
                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                          완료
+                          {t('completed')}
                         </span>
                       </div>
                       <div className="mt-3">
-                        <div className="text-sm font-medium text-gray-700 mb-2">투어 이벤트</div>
+                        <div className="text-sm font-medium text-gray-700 mb-2">{t('tourEvents')}</div>
                         <div className="flex flex-wrap gap-2">
                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                            투어명 인원수
+                            {t('tourNameAndPeople')}
+                          </span>
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                            {t('supplierCategory')}
                           </span>
                         </div>
                       </div>
                       <div className="mt-3">
-                        <div className="text-sm font-medium text-gray-700 mb-2">공급업체 구분</div>
+                        <div className="text-sm font-medium text-gray-700 mb-2">{t('supplierCategory')}</div>
                         <div className="flex flex-wrap gap-2">
                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-200 text-blue-800">
-                            L (SEE CANYON) - 투어 연결됨
+                            {t('seeCanyonConnected')}
                           </span>
                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-600">
-                            L (SEE CANYON) - 투어 미연결
+                            {t('seeCanyonNotConnected')}
                           </span>
                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-200 text-green-800">
-                            X (Antelope X) - 투어 연결됨
+                            {t('antelopeXConnected')}
                           </span>
                           <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-600">
-                            X (Antelope X) - 투어 미연결
+                            {t('antelopeXNotConnected')}
                           </span>
                         </div>
                       </div>
@@ -936,7 +989,7 @@ export default function TicketBookingList() {
                             <div>
                               <div className="font-medium">{booking.tours.tour_date}</div>
                               <div className="text-xs text-gray-500">
-                                {booking.tours.products?.name || '상품명 없음'}
+                                {getProductName(booking.tours.products)}
                               </div>
                               <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 mt-1">
                                 연결됨
@@ -1110,7 +1163,7 @@ export default function TicketBookingList() {
                               <div>
                                 <div className="text-xs text-green-600 font-medium">투어 연결</div>
                                 <div className="text-xs text-gray-500 truncate">
-                                  {booking.tours.products?.name || '상품명 없음'}
+                                  {getProductName(booking.tours.products)}
                                 </div>
                               </div>
                             ) : (

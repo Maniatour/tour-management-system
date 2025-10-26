@@ -2,6 +2,7 @@ import { ArrowLeft, Edit, Trash2, Copy } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import TourSunriseTime from '@/components/TourSunriseTime'
 import { StatusManagement } from '@/components/tour/StatusManagement'
+import { useTranslations } from 'next-intl'
 
 interface TourHeaderProps {
   tour: any
@@ -19,7 +20,7 @@ interface TourHeaderProps {
   onUpdateTourStatus: (status: string) => void
   onUpdateAssignmentStatus: (status: string) => void
   getStatusColor: (status: string | null) => string
-  getStatusText: (status: string | null) => string
+  getStatusText: (status: string | null, locale: string) => string
   getAssignmentStatusColor: () => string
   getAssignmentStatusText: () => string
 }
@@ -45,6 +46,9 @@ export default function TourHeader({
   getAssignmentStatusText
 }: TourHeaderProps) {
   const router = useRouter()
+  const t = useTranslations('tours.tourHeader')
+  const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
+  const dateLocale = params.locale === 'ko' ? 'ko-KR' : 'en-US'
 
   return (
     <div className="bg-white shadow-sm border-b">
@@ -60,15 +64,15 @@ export default function TourHeader({
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">
-                  {product?.name_ko || '투어 상세'}
+                  {productName || 'Tour Detail'}
                 </h1>
                 {/* 일출 시간 표시 (투어 날짜 기반) */}
                 <TourSunriseTime tourDate={tour.tour_date} />
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600 mt-1">
-                <span>투어 ID: {tour.id}</span>
+                <span>{params.locale === 'ko' ? '투어 ID' : 'Tour ID'}: {tour.id}</span>
                 <span className="hidden sm:inline">|</span>
-                <span>날짜: {tour.tour_date ? new Date(tour.tour_date + 'T00:00:00').toLocaleDateString('ko-KR', {timeZone: 'America/Los_Angeles'}) : ''}</span>
+                <span>{params.locale === 'ko' ? '날짜' : 'Date'}: {tour.tour_date ? new Date(tour.tour_date + 'T00:00:00').toLocaleDateString(dateLocale, {timeZone: 'America/Los_Angeles'}) : ''}</span>
                 <span className="hidden sm:inline">|</span>
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
                   {getStatusText(tour.tour_status)}
@@ -107,7 +111,7 @@ export default function TourHeader({
                   onClick={onToggleTourStatusDropdown}
                   className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center min-w-[120px] ${getStatusColor(tour.tour_status)} hover:opacity-80 transition-opacity`}
                 >
-                  투어: {getStatusText(tour.tour_status)}
+                  {t('tour')}: {getStatusText(tour.tour_status, params.locale)}
                   <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
@@ -138,7 +142,7 @@ export default function TourHeader({
                   onClick={onToggleAssignmentStatusDropdown}
                   className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center min-w-[120px] ${getAssignmentStatusColor()} hover:opacity-80 transition-opacity`}
                 >
-                  배정: {getAssignmentStatusText()}
+                  {t('assignment')}: {getAssignmentStatusText()}
                   <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
@@ -171,26 +175,26 @@ export default function TourHeader({
             
             {/* 총 배정 인원 표시 */}
             <div className="text-center bg-blue-50 rounded-lg px-4 py-3 border border-blue-200">
-              <div className="text-xl font-bold text-blue-600">
-                {getTotalAssignedPeople}명 / {getTotalPeopleFiltered}명 ({Math.max(getTotalPeopleAll - getTotalPeopleFiltered, 0)}명)
+              <div className="text-xl font-bold text-blue-600 flex items-center justify-center gap-2">
+                {getTotalAssignedPeople} <span className={params.locale === 'ko' ? '' : 'hidden'}>명</span> / {getTotalPeopleFiltered} <span className={params.locale === 'ko' ? '' : 'hidden'}>명</span> ({Math.max(getTotalPeopleAll - getTotalPeopleFiltered, 0)} <span className={params.locale === 'ko' ? '' : 'hidden'}>명</span>)
               </div>
               <div className="text-xs text-blue-600 mt-1">
-                배정 / 전체 / 취소및 대기
+                {t('assignedFull')} / {t('total')} / {t('cancelledPending')}
               </div>
             </div>
             
             <div className="flex space-x-2">
               <button className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center space-x-2">
                 <Copy size={16} />
-                <span>복사</span>
+                <span>{t('copy')}</span>
               </button>
               <button className="px-4 py-2 text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center space-x-2">
                 <Trash2 size={16} />
-                <span>삭제</span>
+                <span>{t('delete')}</span>
               </button>
               <button className="px-4 py-2 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 flex items-center space-x-2">
                 <Edit size={16} />
-                <span>편집</span>
+                <span>{t('edit')}</span>
               </button>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslations } from 'next-intl'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
 
 interface TourPhotosProps {
@@ -10,11 +11,13 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
   tour,
   onPhotosUpdated
 }) => {
+  const t = useTranslations('tours.tourPhoto')
+  
   return (
     <div className="bg-white rounded-lg shadow-sm border">
       <div className="p-4" id="tour-photos">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">투어 사진</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         </div>
         <TourPhotoUpload
           tourId={tour.id}

@@ -68,7 +68,10 @@ export async function getCachedSunriseSunsetData(locationName: string, date: str
       .limit(1)
     
     if (error || !data || data.length === 0) {
-      console.warn(`No cached sunrise/sunset data for ${locationName} on ${date}:`, error?.message)
+      // Only log if there's an actual error, not just missing cache
+      if (error) {
+        console.warn(`Error fetching cached sunrise/sunset data for ${locationName} on ${date}:`, error.message)
+      }
       return null
     }
     
@@ -107,7 +110,10 @@ async function getCachedWeatherData(locationName: string, date: string) {
       .limit(1)
     
     if (error || !data || data.length === 0) {
-      console.warn(`No cached weather data for ${locationName} on ${date}:`, error?.message)
+      // Only log if there's an actual error, not just missing cache
+      if (error) {
+        console.warn(`Error fetching cached weather data for ${locationName} on ${date}:`, error.message)
+      }
       return null
     }
     

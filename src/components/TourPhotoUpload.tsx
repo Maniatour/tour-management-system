@@ -36,7 +36,7 @@ export default function TourPhotoUpload({
   onPhotosUpdated 
 }: TourPhotoUploadProps) {
   const { user } = useAuth()
-  const t = useTranslations('tourPhoto')
+  const t = useTranslations('tours.tourPhoto')
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)

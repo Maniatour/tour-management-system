@@ -72,8 +72,8 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
           {title} ({reservations.length})
         </h3>
         {totalPeople > 0 && (
-          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-            👥 {totalPeople}명
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            👥 <span>{totalPeople}</span>
           </span>
         )}
       </div>

@@ -54,6 +54,8 @@ interface ColumnMapping {
 }
 
 export default function DataSyncPage() {
+  // 번역 훅 사용 (사용하지 않는 번역은 하드코딩으로 대체)
+  
   const [spreadsheetId] = useState('15pu3wMPDwOHlVM0LhRsOYW5WZDZ3SUPVU4h0G4hyLc0')
   const [selectedSheet, setSelectedSheet] = useState('')
   const [selectedTable, setSelectedTable] = useState('')
@@ -744,11 +746,11 @@ export default function DataSyncPage() {
       const controller = new AbortController()
       abortControllerRef.current = controller
 
-      // 타임아웃 설정 (60초로 단축)
+      // 타임아웃 설정 (120초로 증가)
       const timeoutId = setTimeout(() => {
         console.log('Request timeout - aborting fetch')
         controller.abort()
-      }, 60000)
+      }, 120000)
 
       console.log('Sending request to /api/sync/sheets')
       const response = await fetch('/api/sync/sheets', {
@@ -795,7 +797,7 @@ export default function DataSyncPage() {
       if (error instanceof Error && error.name === 'AbortError') {
         console.log('요청이 취소되었습니다 (타임아웃 또는 사용자 취소)')
         // 사용자에게 더 명확한 메시지 제공
-        alert('요청 시간이 초과되었습니다 (60초). 네트워크 연결을 확인하고 다시 시도해주세요. 구글 시트가 너무 크거나 복잡할 수 있습니다.')
+        alert('요청 시간이 초과되었습니다 (120초). 네트워크 연결을 확인하고 다시 시도해주세요. 구글 시트가 너무 크거나 복잡할 수 있습니다.')
         return
       }
       
@@ -1530,7 +1532,7 @@ export default function DataSyncPage() {
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-lg font-medium"
           >
             <FileSpreadsheet className="h-5 w-5 mr-2" />
-            {loading ? t('loading') : '시트 정보 가져오기'}
+            {loading ? '로딩 중...' : '시트 정보 가져오기'}
           </button>
           {loading && (
             <button
@@ -1754,13 +1756,13 @@ export default function DataSyncPage() {
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
             <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
-            {t('syncingInProgress')}
+            동기화 진행 중...
           </h3>
           
           {/* 진행률 바 */}
           <div className="mb-4">
             <div className="flex justify-between text-sm text-gray-600 mb-2">
-              <span>{t('progress')}</span>
+              <span>진행률</span>
               <span>{progress}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
@@ -1771,7 +1773,7 @@ export default function DataSyncPage() {
             </div>
             {etaMs && etaMs > 0 && (
               <div className="text-xs text-gray-500 mt-1">
-                {t('estimatedCompletion')}: {Math.ceil(etaMs / 1000)}{t('secondsLater')}
+                예상 완료 시간: 약 {Math.ceil(etaMs / 1000)}초 후
               </div>
             )}
           </div>

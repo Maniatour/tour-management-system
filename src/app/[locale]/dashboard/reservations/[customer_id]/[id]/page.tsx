@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
-import { Calendar, Clock, MapPin, Users, CreditCard, ArrowLeft, Filter, User, Phone, Mail, ExternalLink, X, Car, Printer } from 'lucide-react'
+import { Calendar, Clock, MapPin, Users, ArrowLeft, Filter, User, Phone, Mail, ExternalLink, X, Car, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface Reservation {
@@ -255,6 +255,7 @@ interface SupabaseReservation {
   created_at: string
   tour_id?: string
   channel_id?: string
+  channel_rn?: string
 }
 
 interface SupabaseCustomer {
@@ -673,7 +674,7 @@ export default function CustomerReservations() {
                   })
                   
                   // 먼저 채널별 정보를 찾아보기 (채널 ID가 있는 경우에만)
-                  let detailsData: any = null
+                  let detailsData: Record<string, unknown> | null = null
                   if (reservation.channel_id) {
                     console.log('채널별 정보 조회 시도:', reservation.channel_id)
                     const result = await supabase
@@ -920,19 +921,19 @@ export default function CustomerReservations() {
                            const choiceInfo = choicesData.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === choice.choice_id) as { id: string; choice_group: string; choice_group_ko: string } | undefined
                            const optionInfo = optionsData.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === choice.option_id) as { id: string; option_name: string; option_name_ko: string } | undefined
                            
-                           return {
-                             ...choice,
-                             choice: choiceInfo ? {
-                               id: (choiceInfo as any).id,
-                               name_ko: (choiceInfo as any).choice_group_ko,
-                               name_en: (choiceInfo as any).choice_group
-                             } : null,
-                             option: optionInfo ? {
-                               id: (optionInfo as any).id,
-                               name_ko: (optionInfo as any).option_name_ko,
-                               name_en: (optionInfo as any).option_name
-                             } : null
-                           }
+                          return {
+                            ...choice,
+                            choice: choiceInfo ? {
+                              id: choiceInfo.id,
+                              name_ko: choiceInfo.choice_group_ko,
+                              name_en: choiceInfo.choice_group
+                            } : null,
+                            option: optionInfo ? {
+                              id: optionInfo.id,
+                              name_ko: optionInfo.option_name_ko,
+                              name_en: optionInfo.option_name
+                            } : null
+                          }
                          })
                        }
                      } catch (error) {
@@ -1051,9 +1052,9 @@ export default function CustomerReservations() {
         console.log('시뮬레이션 모드: 예약 데이터 발견:', reservationsData.length, '개')
         console.log('시뮬레이션 모드: 예약 ID들:', reservationsData.map((r: SupabaseReservation) => r.id))
         console.log('시뮬레이션 모드: 첫 번째 예약의 채널 정보:', {
-          id: reservationsData[0].id,
-          channel_id: reservationsData[0].channel_id,
-          channel_rn: reservationsData[0].channel_rn,
+          id: (reservationsData[0] as SupabaseReservation).id,
+          channel_id: (reservationsData[0] as SupabaseReservation).channel_id,
+          channel_rn: (reservationsData[0] as SupabaseReservation).channel_rn,
           전체데이터: reservationsData[0]
         })
         
@@ -1091,7 +1092,7 @@ export default function CustomerReservations() {
                 })
                 
                 // 먼저 채널별 정보를 찾아보기 (채널 ID가 있는 경우에만)
-                let detailsData: any = null
+                let detailsData: Record<string, unknown> | null = null
                 if (reservation.channel_id) {
                   console.log('시뮬레이션 모드: 채널별 정보 조회 시도:', reservation.channel_id)
                   const result = await supabase
@@ -1262,14 +1263,14 @@ export default function CustomerReservations() {
                           return {
                             ...choice,
                             choice: choiceInfo ? {
-                              id: (choiceInfo as any).id,
-                              name_ko: (choiceInfo as any).choice_group_ko,
-                              name_en: (choiceInfo as any).choice_group
+                              id: choiceInfo.id,
+                              name_ko: choiceInfo.choice_group_ko,
+                              name_en: choiceInfo.choice_group
                             } : null,
                             option: optionInfo ? {
-                              id: (optionInfo as any).id,
-                              name_ko: (optionInfo as any).option_name_ko,
-                              name_en: (optionInfo as any).option_name
+                              id: optionInfo.id,
+                              name_ko: optionInfo.option_name_ko,
+                              name_en: optionInfo.option_name
                             } : null
                           }
                         })
@@ -1330,7 +1331,7 @@ export default function CustomerReservations() {
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }, [t, locale])
 
   // 데이터 로딩 (시뮬레이션 상태와 분리)
   useEffect(() => {
@@ -1882,8 +1883,22 @@ export default function CustomerReservations() {
                        {reservation.reservationChoices && reservation.reservationChoices.length > 0 && (
                          <div className="flex flex-wrap gap-1">
                            {(() => {
-                             // 중복 제거: 같은 option_name을 가진 것들을 합침
-                             const uniqueChoices = reservation.reservationChoices.reduce((acc: any[], choice: any) => {
+                            // 중복 제거: 같은 option_name을 가진 것들을 합침
+                            const uniqueChoices = reservation.reservationChoices.reduce((acc: Array<{
+                              choice_id: string;
+                              option_id: string;
+                              quantity: number;
+                              total_price: number;
+                              choice?: { id: string; name_ko: string; name_en: string } | null;
+                              option?: { id: string; name_ko: string; name_en: string } | null;
+                            }>, choice: {
+                              choice_id: string;
+                              option_id: string;
+                              quantity: number;
+                              total_price: number;
+                              choice?: { id: string; name_ko: string; name_en: string } | null;
+                              option?: { id: string; name_ko: string; name_en: string } | null;
+                            }) => {
                                const optionName = locale === 'ko' 
                                  ? (choice.option?.name_ko || choice.option?.name_en || 'Unknown Option')
                                  : (choice.option?.name_en || choice.option?.name_ko || 'Unknown Option');
@@ -2780,25 +2795,24 @@ export default function CustomerReservations() {
                             </div>
                           )}
 
-                          {/* 차량 정보는 현재 스키마에서 직접 연결되지 않으므로 제거 */}
-                              </div>
-                            </div>
-                          )}
                         </div>
+                      </div>
+                    )}
 
-                {/* 예약 일시 */}
-                <div className="border-t border-gray-200 pt-4 mt-4">
-                  <p className="text-xs text-gray-500">
-                    {t('reservationDate')}: {new Date(reservation.created_at).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US')}
-                  </p>
-                </div>
+                    {/* 예약 일시 */}
+                      <div className="border-t border-gray-200 pt-4 mt-4">
+                        <p className="text-xs text-gray-500">
+                          {t('reservationDate')}: {new Date(reservation.created_at).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US')}
+                        </p>
+                      </div>
 
-                {/* 프린트용 푸터 */}
-                <div className="hidden print:block text-center mt-8 print:mt-6 text-xs text-gray-500">
-                  <p>{locale === 'ko' ? 'MANIA TOUR - 예약 관리 시스템' : 'MANIA TOUR - Reservation Management System'}</p>
-                </div>
-              </div>
-            ))
+                      {/* 프린트용 푸터 */}
+                      <div className="hidden print:block text-center mt-8 print:mt-6 text-xs text-gray-500">
+                        <p>{locale === 'ko' ? 'MANIA TOUR - 예약 관리 시스템' : 'MANIA TOUR - Reservation Management System'}</p>
+                      </div>
+                    </div>
+                  </div>
+              ))
           ) : (
             <div className="bg-white rounded-lg shadow-sm p-12 text-center">
               <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
@@ -2831,7 +2845,7 @@ export default function CustomerReservations() {
               <X className="w-6 h-6" />
             </button>
             <Image
-              src={selectedMedia}
+              src={selectedMedia || ''}
               alt="Enlarged Media"
               width={800}
               height={600}

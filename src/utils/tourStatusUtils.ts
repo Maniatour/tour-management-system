@@ -16,19 +16,44 @@ export const getStatusColor = (status: string | null) => {
   }
 }
 
-export const getStatusText = (status: string | null) => {
-  if (!status) return '미정'
+export const getStatusText = (status: string | null, locale: string = 'ko') => {
+  const translations = {
+    ko: {
+      undefined: '미정',
+      recruiting: '모집중',
+      confirm: '확정',
+      confirmed: '확정',
+      cancel: '취소',
+      cancelled: '취소',
+      complete: '완료',
+      completed: '완료'
+    },
+    en: {
+      undefined: 'Undefined',
+      recruiting: 'Recruiting',
+      confirm: 'Confirmed',
+      confirmed: 'Confirmed',
+      cancel: 'Cancelled',
+      cancelled: 'Cancelled',
+      complete: 'Completed',
+      completed: 'Completed'
+    }
+  }
+  
+  if (!status) return translations[locale as keyof typeof translations].undefined
   
   const normalizedStatus = status.toLowerCase()
+  const lang = translations[locale as keyof typeof translations] || translations.ko
+  
   switch (normalizedStatus) {
-    case 'recruiting': return '모집중'
+    case 'recruiting': return lang.recruiting
     case 'confirm':
-    case 'confirmed': return '확정'
+    case 'confirmed': return lang.confirmed
     case 'cancel':
-    case 'cancelled': return '취소'
+    case 'cancelled': return lang.cancelled
     case 'complete':
-    case 'completed': return '완료'
-    default: return '미정'
+    case 'completed': return lang.completed
+    default: return lang.undefined
   }
 }
 
@@ -49,20 +74,37 @@ export const getAssignmentStatusColor = (tour: any) => {
   }
 }
 
-export const getAssignmentStatusText = (tour: any) => {
+export const getAssignmentStatusText = (tour: any, locale: string = 'ko') => {
+  const translations = {
+    ko: {
+      undefined: '미정',
+      confirm: '확정',
+      confirmed: '확정',
+      pending: '대기'
+    },
+    en: {
+      undefined: 'Undefined',
+      confirm: 'Confirmed',
+      confirmed: 'Confirmed',
+      pending: 'Pending'
+    }
+  }
+  
   if (!tour?.assignment_status) {
-    return '미정'
+    return translations[locale as keyof typeof translations].undefined
   }
   
   const normalizedStatus = tour.assignment_status.toLowerCase()
+  const lang = translations[locale as keyof typeof translations] || translations.ko
+  
   switch (normalizedStatus) {
     case 'confirm':
     case 'confirmed': 
-      return '확정'
+      return lang.confirmed
     case 'pending': 
-      return '대기'
+      return lang.pending
     default: 
-      return '미정'
+      return lang.undefined
   }
 }
 

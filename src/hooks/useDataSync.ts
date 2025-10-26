@@ -151,7 +151,7 @@ export function useDataSync() {
       const timeoutId = setTimeout(() => {
         console.log('Request timeout - aborting fetch')
         controller.abort()
-      }, 60000)
+      }, 120000)
 
       console.log('Sending request to /api/sync/sheets')
       const response = await fetch('/api/sync/sheets', {
@@ -191,7 +191,7 @@ export function useDataSync() {
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         console.log('요청이 취소되었습니다 (타임아웃 또는 사용자 취소)')
-        alert('요청 시간이 초과되었습니다 (60초). 네트워크 연결을 확인하고 다시 시도해주세요. 구글 시트가 너무 크거나 복잡할 수 있습니다.')
+        alert('요청 시간이 초과되었습니다 (120초). 네트워크 연결을 확인하고 다시 시도해주세요. 구글 시트가 너무 크거나 복잡할 수 있습니다.')
         return
       }
       

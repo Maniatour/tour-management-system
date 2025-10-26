@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useTranslations } from 'next-intl';
 
 interface TourHotelBooking {
   id?: string;
@@ -38,6 +39,7 @@ export default function TourHotelBookingForm({
   onCancel, 
   tourId 
 }: TourHotelBookingFormProps) {
+  const t = useTranslations('booking.tourHotelBooking');
   const [formData, setFormData] = useState<TourHotelBooking>(() => {
     console.log('편집 모드 - 전달받은 booking 데이터:', booking);
     
@@ -511,13 +513,8 @@ export default function TourHotelBookingForm({
   }, [formData.rooms, formData.unit_price]);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-[95vw] sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg sm:text-xl font-bold mb-4">
-          {booking ? '투어 호텔 부킹 수정' : '새 투어 호텔 부킹'}
-        </h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+    <div className="space-y-3 sm:space-y-4">
+        <form onSubmit={handleSubmit}>
           {/* 첫 번째 줄: 투어 선택, RN# - 모바일 최적화 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
@@ -1033,18 +1030,17 @@ export default function TourHotelBookingForm({
               onClick={onCancel}
               className="px-4 py-2 text-gray-600 bg-gray-200 rounded-md hover:bg-gray-300"
             >
-              취소
+              {t('cancel')}
             </button>
             <button
               type="submit"
               disabled={loading}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
-              {loading ? '저장 중...' : '저장'}
+              {loading ? t('saving') : t('save')}
             </button>
           </div>
         </form>
-      </div>
     </div>
   );
 }

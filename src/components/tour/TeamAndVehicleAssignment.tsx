@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { User, Users, Car, Save } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
 interface TeamMember {
@@ -88,6 +89,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   getTeamMemberName,
   getVehicleName
 }) => {
+  const t = useTranslations('tours.teamAndVehicle')
   const [isSaving, setIsSaving] = useState(false)
 
   const getFilteredTeamMembers = (excludeEmail?: string) => {
@@ -153,9 +155,9 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
           onClick={() => onToggleSection('team-vehicle-assignment')}
         >
           <h2 className="text-md font-semibold text-gray-900 flex items-center">
-            팀 구성 & 차량 배정
-            <ConnectionStatusLabel status={connectionStatus.team} section="팀" />
-            <ConnectionStatusLabel status={connectionStatus.vehicles} section="차량" />
+            {t('title')}
+            <ConnectionStatusLabel status={connectionStatus.team} section={t('sectionTeam')} />
+            <ConnectionStatusLabel status={connectionStatus.vehicles} section={t('sectionVehicle')} />
             {teamMembers.length === 0 && (
               <button
                 onClick={(e) => {
@@ -182,7 +184,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
               }`}
             >
               <Save size={16} />
-              <span>{isSaving ? '저장 중...' : '저장'}</span>
+              <span>{isSaving ? t('saving') : t('save')}</span>
             </button>
             <svg 
               className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${
@@ -210,7 +212,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 }`}
               >
                 <User size={16} />
-                <span>1가이드</span>
+                <span>{t('oneGuide')}</span>
               </button>
               
               <button 
@@ -222,7 +224,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 }`}
               >
                 <Users size={16} />
-                <span>2가이드</span>
+                <span>{t('twoGuide')}</span>
               </button>
               
               <button 
@@ -234,20 +236,20 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 }`}
               >
                 <Car size={16} />
-                <span>가이드+드라이버</span>
+                <span>{t('guideDriver')}</span>
               </button>
             </div>
 
             <div className="space-y-4">
               {/* 가이드 선택 */}
               <div className="flex items-center space-x-4">
-                <label className="w-20 text-sm font-medium text-gray-700">가이드</label>
+                <label className="w-20 text-sm font-medium text-gray-700">{t('guide')}</label>
                 <select
                   value={selectedGuide || ''}
                   onChange={(e) => onGuideSelect(e.target.value)}
                   className="flex-1 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="">가이드 선택</option>
+                  <option value="">{t('selectGuide')}</option>
                   {getFilteredTeamMembers().map((member) => (
                     <option key={member.email} value={member.email}>
                       {getDisplayName(member)}
@@ -287,14 +289,14 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
               {(teamType === '2guide' || teamType === 'guide+driver') && (
                 <div className="flex items-center space-x-4">
                   <label className="w-20 text-sm font-medium text-gray-700">
-                    {teamType === '2guide' ? '2차 가이드' : '드라이버'}
+                    {teamType === '2guide' ? t('secondGuide') : t('driver')}
                   </label>
                   <select
                     value={selectedAssistant || ''}
                     onChange={(e) => onAssistantSelect(e.target.value)}
                     className="flex-1 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="">선택</option>
+                    <option value="">{t('selectGuide')}</option>
                     {getFilteredTeamMembers(selectedGuide).map((member) => (
                       <option key={member.email} value={member.email}>
                         {getDisplayName(member)}
@@ -333,14 +335,14 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
 
               {/* 차량 선택 */}
               <div className="flex items-center space-x-4">
-                <label className="w-20 text-sm font-medium text-gray-700">차량</label>
+                <label className="w-20 text-sm font-medium text-gray-700">{t('vehicle')}</label>
                 <select
                   value={selectedVehicleId || ''}
                   onChange={(e) => onVehicleSelect(e.target.value)}
                   className="flex-1 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   disabled={vehiclesLoading}
                 >
-                  <option value="">차량 선택</option>
+                  <option value="">{t('selectVehicle')}</option>
                   {vehicles.map((vehicle) => (
                     <option key={vehicle.id} value={vehicle.id}>
                       {vehicle.vehicle_number || '번호 없음'} - {vehicle.vehicle_type || '타입 없음'}
@@ -355,7 +357,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
               {/* 마일리지 입력 */}
               {selectedVehicleId && (
                 <div className="flex items-center space-x-4">
-                  <label className="w-20 text-sm font-medium text-gray-700">시작</label>
+                  <label className="w-20 text-sm font-medium text-gray-700">{t('start')}</label>
                   <div className="flex items-center space-x-2">
                     <input
                       type="number"
@@ -372,7 +374,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                     )}
                   </div>
                   
-                  <label className="w-20 text-sm font-medium text-gray-700">종료</label>
+                  <label className="w-20 text-sm font-medium text-gray-700">{t('end')}</label>
                   <div className="flex items-center space-x-2">
                     <input
                       type="number"
@@ -392,12 +394,12 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
             {(selectedGuide || selectedAssistant || selectedVehicleId) && (
               <div className="p-3 bg-gray-50 rounded-lg">
                 <div className="font-medium text-gray-700 mb-2">
-                  현재 배정된 팀원 & 차량 ({teamType === '1guide' ? '1가이드' : teamType === '2guide' ? '2가이드' : '가이드+드라이버'}):
+                  {t('currentlyAssigned')} ({teamType === '1guide' ? t('oneGuide') : teamType === '2guide' ? t('twoGuide') : t('guideDriver')}):
                 </div>
                 <div className="space-y-1 text-sm">
                   {selectedGuide && (
                     <div className="text-gray-600 flex justify-between">
-                      <span>가이드: {getTeamMemberName(selectedGuide)}</span>
+                      <span>{t('guide')}: {getTeamMemberName(selectedGuide)}</span>
                       {guideFee > 0 && (
                         <span className={`flex items-center space-x-1 ${
                           isGuideFeeFromTour ? 'text-green-600' : 
@@ -414,7 +416,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   {selectedAssistant && (
                     <div className="text-gray-600 flex justify-between">
                       <span>
-                        {teamType === '2guide' ? '2차 가이드' : '드라이버'}: {getTeamMemberName(selectedAssistant)}
+                        {teamType === '2guide' ? t('secondGuide') : t('driver')}: {getTeamMemberName(selectedAssistant)}
                       </span>
                       {assistantFee > 0 && (
                         <span className={`flex items-center space-x-1 ${
@@ -431,7 +433,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   )}
                   {selectedVehicleId && (
                     <div className="text-gray-600 flex justify-between">
-                      <span>차량: {getVehicleName(selectedVehicleId)}</span>
+                      <span>{t('vehicle')}: {getVehicleName(selectedVehicleId)}</span>
                       {(startMileage > 0 || endMileage > 0) && (
                         <span className="text-gray-600">
                           {startMileage > 0 && `${startMileage}miles`}

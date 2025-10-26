@@ -6,7 +6,6 @@ import {
   List
 } from 'lucide-react';
 import { SimplePricingRuleDto, SimplePricingRule, DateRangeSelection } from '@/lib/types/dynamic-pricing';
-import { NewDynamicPricingService } from '@/lib/newDynamicPricingService';
 
 // 커스텀 훅들
 import { useDynamicPricing } from '@/hooks/useDynamicPricing';
@@ -100,42 +99,10 @@ export default function DynamicPricingManager({
     pricingConfig: calculationConfig,
     updatePricingConfig: updateCalculationConfig,
     updateChoicePricing,
-    calculateChoicePrice,
     currentCalculation,
     choiceCalculations
   } = usePriceCalculation();
 
-  // 새로운 가격 계산 함수 사용
-  const calculatePriceWithNewSystem = useCallback(async (
-    adults: number = 1,
-    children: number = 0,
-    infants: number = 0,
-    selectedChoices: string[] = [],
-    selectedAdditionalOptions: string[] = []
-  ) => {
-    if (!selectedChannel || !selectedDates.length) {
-      return null;
-    }
-
-    try {
-      const result = await NewDynamicPricingService.calculateDynamicPrice(
-        productId,
-        selectedChannel,
-        selectedDates[0], // 첫 번째 선택된 날짜 사용
-        adults,
-        children,
-        infants,
-        selectedChoices,
-        selectedAdditionalOptions
-      );
-
-      console.log('새로운 가격 계산 결과:', result);
-      return result;
-    } catch (error) {
-      console.error('새로운 가격 계산 실패:', error);
-      return null;
-    }
-  }, [productId, selectedChannel, selectedDates]);
 
   // 날짜 범위 선택 핸들러
   const handleDateRangeSelection = useCallback((selection: DateRangeSelection) => {
@@ -176,28 +143,28 @@ export default function DynamicPricingManager({
 
 
   // 기본 가격 설정 업데이트 핸들러
-  const handlePricingConfigUpdate = useCallback((updates: any) => {
+  const handlePricingConfigUpdate = useCallback((updates: Record<string, unknown>) => {
     // 기존 가격 설정 업데이트
     updatePricingConfig(updates);
     
     // 실시간 계산을 위한 가격 설정 업데이트
     updateCalculationConfig({
-      adult_price: updates.adult_price ?? pricingConfig.adult_price,
-      child_price: updates.child_price ?? pricingConfig.child_price,
-      infant_price: updates.infant_price ?? pricingConfig.infant_price,
-      commission_percent: updates.commission_percent ?? pricingConfig.commission_percent,
-      markup_amount: updates.markup_amount ?? pricingConfig.markup_amount,
-      markup_percent: updates.markup_percent ?? (pricingConfig as any).markup_percent,
-      coupon_percent: updates.coupon_percent ?? pricingConfig.coupon_percent,
-      is_sale_available: updates.is_sale_available ?? pricingConfig.is_sale_available,
-      not_included_price: updates.not_included_price ?? (pricingConfig as any).not_included_price
+      adult_price: (updates.adult_price as number) ?? pricingConfig.adult_price ?? 0,
+      child_price: (updates.child_price as number) ?? pricingConfig.child_price ?? 0,
+      infant_price: (updates.infant_price as number) ?? pricingConfig.infant_price ?? 0,
+      commission_percent: (updates.commission_percent as number) ?? pricingConfig.commission_percent ?? 0,
+      markup_amount: (updates.markup_amount as number) ?? pricingConfig.markup_amount ?? 0,
+      markup_percent: (updates.markup_percent as number) ?? ((pricingConfig as Record<string, unknown>).markup_percent as number) ?? 0,
+      coupon_percent: (updates.coupon_percent as number) ?? pricingConfig.coupon_percent ?? 0,
+      is_sale_available: (updates.is_sale_available as boolean) ?? pricingConfig.is_sale_available ?? false,
+      not_included_price: (updates.not_included_price as number) ?? ((pricingConfig as Record<string, unknown>).not_included_price as number) ?? 0
     });
   }, [pricingConfig, updatePricingConfig, updateCalculationConfig]);
 
   // 초이스별 가격 업데이트 핸들러 (새로운 시스템)
   const handleChoicePriceUpdate = useCallback(async (
     combinationId: string, 
-    priceType: 'adult' | 'child' | 'infant', 
+    priceType: 'adult_price' | 'child_price' | 'infant_price', 
     value: number
   ) => {
     try {
@@ -206,7 +173,7 @@ export default function DynamicPricingManager({
       const updatedChoicesPricing = {
         ...currentPricing,
         [combinationId]: {
-          ...currentPricing[combinationId],
+          ...(currentPricing as unknown as Record<string, Record<string, unknown>>)[combinationId],
           [priceType]: value
         }
       };
@@ -218,7 +185,7 @@ export default function DynamicPricingManager({
       });
 
       // 기존 초이스 조합도 업데이트 (호환성 유지)
-      updateChoiceCombinationPrice(combinationId, `${priceType}_price`, value);
+      updateChoiceCombinationPrice(combinationId, priceType, value);
       
       console.log(`초이스 가격 업데이트: ${combinationId} - ${priceType}: ${value}`);
     } catch (error) {
@@ -232,11 +199,11 @@ export default function DynamicPricingManager({
       console.log('새로운 choices_pricing 데이터 감지됨:', pricingConfig.choices_pricing);
       
       // 새로운 구조: { choiceId: { adult: 50, child: 30, infant: 20 } }
-      Object.entries(pricingConfig.choices_pricing).forEach(([choiceId, choiceData]: [string, any]) => {
+      Object.entries(pricingConfig.choices_pricing).forEach(([choiceId, choiceData]: [string, Record<string, unknown>]) => {
         if (choiceData && typeof choiceData === 'object') {
-          updateChoiceCombinationPrice(choiceId, 'adult_price', choiceData.adult || 0);
-          updateChoiceCombinationPrice(choiceId, 'child_price', choiceData.child || 0);
-          updateChoiceCombinationPrice(choiceId, 'infant_price', choiceData.infant || 0);
+          updateChoiceCombinationPrice(choiceId, 'adult_price', (choiceData as Record<string, unknown>).adult as number || 0);
+          updateChoiceCombinationPrice(choiceId, 'child_price', (choiceData as Record<string, unknown>).child as number || 0);
+          updateChoiceCombinationPrice(choiceId, 'infant_price', (choiceData as Record<string, unknown>).infant as number || 0);
         }
       });
     }
@@ -260,15 +227,15 @@ export default function DynamicPricingManager({
   // 기본 가격 설정이 변경되면 calculationConfig도 업데이트
   useEffect(() => {
     updateCalculationConfig({
-      adult_price: pricingConfig.adult_price,
-      child_price: pricingConfig.child_price,
-      infant_price: pricingConfig.infant_price,
-      commission_percent: pricingConfig.commission_percent,
-      markup_amount: pricingConfig.markup_amount,
-      markup_percent: (pricingConfig as any).markup_percent || 0,
-      coupon_percent: pricingConfig.coupon_percent,
-      is_sale_available: pricingConfig.is_sale_available,
-      not_included_price: (pricingConfig as any).not_included_price || 0
+      adult_price: pricingConfig.adult_price ?? 0,
+      child_price: pricingConfig.child_price ?? 0,
+      infant_price: pricingConfig.infant_price ?? 0,
+      commission_percent: pricingConfig.commission_percent ?? 0,
+      markup_amount: pricingConfig.markup_amount ?? 0,
+      markup_percent: ((pricingConfig as Record<string, unknown>).markup_percent as number) ?? 0,
+      coupon_percent: pricingConfig.coupon_percent ?? 0,
+      is_sale_available: pricingConfig.is_sale_available ?? false,
+      not_included_price: ((pricingConfig as Record<string, unknown>).not_included_price as number) ?? 0
     });
   }, [pricingConfig, updateCalculationConfig]);
 
@@ -389,21 +356,16 @@ export default function DynamicPricingManager({
           markup_amount: pricingConfig.markup_amount,
           coupon_percent: pricingConfig.coupon_percent,
           is_sale_available: pricingConfig.is_sale_available,
-          not_included_price: (pricingConfig as any).not_included_price || 0,
-          markup_percent: (pricingConfig as any).markup_percent || 0,
+          not_included_price: ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0,
+          markup_percent: ((pricingConfig as Record<string, unknown>).markup_percent as number) || 0,
           choices_pricing: Object.keys(calculationConfig.choicePricing).length > 0 
             ? (() => {
                 // 조합별 가격 저장 구조
-                const choicesPricing: any = {
-                  combinations: {}
-                };
+                const choicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; }> = {};
                 
                 Object.entries(calculationConfig.choicePricing).forEach(([choiceId, choice]) => {
                   // choiceId는 조합 ID (예: "combination_0", "combination_1")
-                  choicesPricing.combinations[choiceId] = {
-                    combination_key: choiceId,
-                    combination_name: choice.choiceName,
-                    combination_name_ko: choice.choiceName,
+                  choicesPricing[choiceId] = {
                     adult_price: choice.adult_price,
                     child_price: choice.child_price,
                     infant_price: choice.infant_price
@@ -695,7 +657,7 @@ export default function DynamicPricingManager({
                         </label>
                           <input
                             type="number"
-                    value={(pricingConfig as any).markup_percent || 0}
+                    value={((pricingConfig as Record<string, unknown>).markup_percent as number) || 0}
                     onChange={(e) => handlePricingConfigUpdate({ markup_percent: Number(e.target.value) })}
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="0"
@@ -723,7 +685,7 @@ export default function DynamicPricingManager({
                   </label>
                        <input
                          type="number"
-                    value={(pricingConfig as any).not_included_price || 0}
+                    value={((pricingConfig as Record<string, unknown>).not_included_price as number) || 0}
                     onChange={(e) => handlePricingConfigUpdate({ not_included_price: Number(e.target.value) })}
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                          placeholder="0"
@@ -781,7 +743,7 @@ export default function DynamicPricingManager({
                                     'bg-orange-100 text-orange-800'
                                   }`}
                                 >
-                                  {detail.optionNameKo || detail.optionName || detail.option_name_ko || detail.option_name || '옵션'}: ${detail.adult_price || 0}
+                                  {detail.optionNameKo || detail.optionName || '옵션'}: ${detail.adult_price || 0}
                                 </span>
                               );
                             })}
@@ -798,7 +760,7 @@ export default function DynamicPricingManager({
                         <input
                           type="number"
                           value={combination.adult_price || 0}
-                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'adult', Number(e.target.value))}
+                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'adult_price', Number(e.target.value))}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="0"
                         />
@@ -815,7 +777,7 @@ export default function DynamicPricingManager({
                         <input
                           type="number"
                           value={combination.child_price || 0}
-                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'child', Number(e.target.value))}
+                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'child_price', Number(e.target.value))}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="0"
                         />
@@ -832,7 +794,7 @@ export default function DynamicPricingManager({
                         <input
                           type="number"
                           value={combination.infant_price || 0}
-                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'infant', Number(e.target.value))}
+                          onChange={(e) => handleChoicePriceUpdate(combination.id, 'infant_price', Number(e.target.value))}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="0"
                         />

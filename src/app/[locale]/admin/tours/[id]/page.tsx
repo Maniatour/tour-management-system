@@ -3,7 +3,8 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
@@ -75,6 +76,9 @@ const TourHotelBookingFormAny = TourHotelBookingForm as any
 export default function TourDetailPage() {
   console.log('TourDetailPage 렌더링 시작')
   const router = useRouter()
+  const params = useParams()
+  const locale = params.locale as string
+  const t = useTranslations('tours')
   
   const { hasPermission, loading } = useAuth()
   const { openChat } = useFloatingChat()
@@ -427,7 +431,7 @@ export default function TourDetailPage() {
 
       if (error) {
         console.error('팀 구성 및 차량 배정 저장 오류:', error)
-        alert('저장 중 오류가 발생했습니다.')
+        alert(t('detail.saveError'))
         return
       }
 
@@ -441,10 +445,10 @@ export default function TourDetailPage() {
       tourData.setTour(prev => prev ? { ...prev, ...updateData } : null)
 
       console.log('팀 구성 및 차량 배정 저장 완료:', updateData)
-      alert('저장되었습니다.')
+      alert(t('detail.saveSuccess'))
     } catch (error) {
       console.error('팀 구성 및 차량 배정 저장 오류:', error)
-      alert('저장 중 오류가 발생했습니다.')
+      alert(t('detail.saveError'))
     }
   }
 
@@ -453,14 +457,14 @@ export default function TourDetailPage() {
 
   // 차량 이름 가져오기 함수
   const getVehicleName = (vehicleId: string) => {
-    if (!vehicleId) return '차량 미선택'
+    if (!vehicleId) return t('detail.vehicleNotSelected')
     
     const vehicle = tourData.vehicles.find((v) => v.id === vehicleId)
     if (!vehicle) {
       return vehicleId
     }
     
-    return `${vehicle.vehicle_number || '번호 없음'} - ${vehicle.vehicle_type || '타입 없음'}`
+    return `${vehicle.vehicle_number || t('detail.noNumber')} - ${vehicle.vehicle_type || t('detail.noType')}`
   }
 
   // 채널 정보 가져오기 함수
@@ -863,7 +867,7 @@ export default function TourDetailPage() {
   if (!tourData.tour) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">투어를 찾을 수 없습니다.</div>
+        <div className="text-gray-500">{t('detail.tourNotFound')}</div>
       </div>
     )
   }
@@ -874,7 +878,7 @@ export default function TourDetailPage() {
       <TourHeader
         tour={tourData.tour}
         product={tourData.product}
-        params={{ locale: 'ko' }}
+        params={{ locale }}
         showTourStatusDropdown={tourData.showTourStatusDropdown}
         showAssignmentStatusDropdown={tourData.showAssignmentStatusDropdown}
               tourStatusOptions={tourStatusOptions}
@@ -887,9 +891,9 @@ export default function TourDetailPage() {
         onUpdateTourStatus={handleTourStatusUpdate}
         onUpdateAssignmentStatus={handleAssignmentStatusUpdate}
               getStatusColor={getStatusColor}
-              getStatusText={getStatusText}
+              getStatusText={(status) => getStatusText(status, locale)}
         getAssignmentStatusColor={() => getAssignmentStatusColor(tourData.tour)}
-        getAssignmentStatusText={() => getAssignmentStatusText(tourData.tour)}
+        getAssignmentStatusText={() => getAssignmentStatusText(tourData.tour, locale)}
       />
 
       <div className="px-0 py-6">
@@ -904,6 +908,7 @@ export default function TourDetailPage() {
               tourNote={tourData.tourNote}
               isPrivateTour={tourData.isPrivateTour}
               connectionStatus={{ tours: tourData.connectionStatus.tours }}
+              params={{ locale }}
               onTourNoteChange={handleTourNoteChange}
               onPrivateTourToggle={handlePrivateTourToggle}
               getStatusColor={getStatusColor}
@@ -1076,6 +1081,7 @@ export default function TourDetailPage() {
                 connectionStatus={{ bookings: tourData.connectionStatus.bookings }}
                 isStaff={tourData.isStaff}
                 userRole="admin"
+                params={{ locale }}
             />
           </div>
         )}
@@ -1159,7 +1165,7 @@ export default function TourDetailPage() {
       {/* 입장권 부킹 폼 모달 */}
       <BookingModal
         isOpen={showTicketBookingForm}
-        title={editingTicketBooking ? '입장권 부킹 수정' : '입장권 부킹 추가'}
+        title={editingTicketBooking ? (locale === 'ko' ? '입장권 부킹 수정' : 'Edit Ticket Booking') : (locale === 'ko' ? '새 입장권 부킹' : 'New Ticket Booking')}
         onClose={handleCloseTicketBookingForm}
       >
         {showTicketBookingForm && tourData.tour && (
@@ -1175,7 +1181,7 @@ export default function TourDetailPage() {
       {/* 투어 호텔 부킹 폼 모달 */}
       <BookingModal
         isOpen={showTourHotelBookingForm}
-        title={editingTourHotelBooking ? '투어 호텔 부킹 수정' : '투어 호텔 부킹 추가'}
+        title={editingTourHotelBooking ? (locale === 'ko' ? '투어 호텔 부킹 수정' : 'Edit Tour Hotel Booking') : (locale === 'ko' ? '새 투어 호텔 부킹' : 'New Tour Hotel Booking')}
         onClose={handleCloseTourHotelBookingForm}
       >
         {showTourHotelBookingForm && tourData.tour && (
