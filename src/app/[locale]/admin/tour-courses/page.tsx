@@ -13,6 +13,7 @@ import {
   BookOpen,
   Plus
 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import CategoryManagementModal from '@/components/CategoryManagementModal'
@@ -106,6 +107,7 @@ interface TourCourseCategory {
 }
 
 export default function TourCoursesPage() {
+  const t = useTranslations()
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [difficultyFilter, setDifficultyFilter] = useState('all')

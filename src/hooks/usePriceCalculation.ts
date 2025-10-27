@@ -10,7 +10,7 @@ export function usePriceCalculation() {
     markup_amount: 0,
     markup_percent: 0,
     coupon_percent: 0,
-    is_sale_available: false,
+    is_sale_available: true,
     not_included_price: 0,
     choicePricing: {}
   });

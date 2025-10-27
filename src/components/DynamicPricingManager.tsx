@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
@@ -156,8 +156,12 @@ export default function DynamicPricingManager({
       markup_amount: (updates.markup_amount as number) ?? pricingConfig.markup_amount ?? 0,
       markup_percent: (updates.markup_percent as number) ?? ((pricingConfig as Record<string, unknown>).markup_percent as number) ?? 0,
       coupon_percent: (updates.coupon_percent as number) ?? pricingConfig.coupon_percent ?? 0,
-      is_sale_available: (updates.is_sale_available as boolean) ?? pricingConfig.is_sale_available ?? false,
-      not_included_price: (updates.not_included_price as number) ?? ((pricingConfig as Record<string, unknown>).not_included_price as number) ?? 0
+      is_sale_available: (updates.is_sale_available as boolean) ?? pricingConfig.is_sale_available ?? true,
+      not_included_price: (updates.not_included_price as number) ?? ((pricingConfig as Record<string, unknown>).not_included_price as number) ?? 0,
+      inclusions_ko: (updates.inclusions_ko as string) ?? ((pricingConfig as Record<string, unknown>).inclusions_ko as string) ?? '',
+      exclusions_ko: (updates.exclusions_ko as string) ?? ((pricingConfig as Record<string, unknown>).exclusions_ko as string) ?? '',
+      inclusions_en: (updates.inclusions_en as string) ?? ((pricingConfig as Record<string, unknown>).inclusions_en as string) ?? '',
+      exclusions_en: (updates.exclusions_en as string) ?? ((pricingConfig as Record<string, unknown>).exclusions_en as string) ?? ''
     });
   }, [pricingConfig, updatePricingConfig, updateCalculationConfig]);
 
@@ -234,7 +238,7 @@ export default function DynamicPricingManager({
       markup_amount: pricingConfig.markup_amount ?? 0,
       markup_percent: ((pricingConfig as Record<string, unknown>).markup_percent as number) ?? 0,
       coupon_percent: pricingConfig.coupon_percent ?? 0,
-      is_sale_available: pricingConfig.is_sale_available ?? false,
+      is_sale_available: pricingConfig.is_sale_available ?? true,
       not_included_price: ((pricingConfig as Record<string, unknown>).not_included_price as number) ?? 0
     });
   }, [pricingConfig, updateCalculationConfig]);
@@ -358,6 +362,10 @@ export default function DynamicPricingManager({
           is_sale_available: pricingConfig.is_sale_available,
           not_included_price: ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0,
           markup_percent: ((pricingConfig as Record<string, unknown>).markup_percent as number) || 0,
+          inclusions_ko: ((pricingConfig as Record<string, unknown>).inclusions_ko as string) || null,
+          exclusions_ko: ((pricingConfig as Record<string, unknown>).exclusions_ko as string) || null,
+          inclusions_en: ((pricingConfig as Record<string, unknown>).inclusions_en as string) || null,
+          exclusions_en: ((pricingConfig as Record<string, unknown>).exclusions_en as string) || null,
           choices_pricing: Object.keys(calculationConfig.choicePricing).length > 0 
             ? (() => {
                 // 조합별 가격 저장 구조
@@ -565,6 +573,67 @@ export default function DynamicPricingManager({
               onDeleteRule={handleDeleteRule}
             />
                )}
+
+          {/* 포함/불포함 내역 */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <h4 className="text-md font-semibold text-gray-900 mb-4">포함/불포함 내역</h4>
+            
+            <div className="space-y-4">
+                {/* 포함 내역 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    포함 내역 (한국어)
+                  </label>
+                  <textarea
+                    value={(pricingConfig as Record<string, unknown>).inclusions_ko as string || ''}
+                    onChange={(e) => handlePricingConfigUpdate({ inclusions_ko: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                    placeholder="포함된 내용을 입력하세요"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    포함 내역 (영어)
+                  </label>
+                  <textarea
+                    value={(pricingConfig as Record<string, unknown>).inclusions_en as string || ''}
+                    onChange={(e) => handlePricingConfigUpdate({ inclusions_en: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                    placeholder="Enter included items"
+                  />
+                </div>
+
+                {/* 불포함 내역 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    불포함 내역 (한국어)
+                  </label>
+                  <textarea
+                    value={((pricingConfig as Record<string, unknown>).exclusions_ko as string) || ''}
+                    onChange={(e) => handlePricingConfigUpdate({ exclusions_ko: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                    placeholder="불포함된 내용을 입력하세요"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    불포함 내역 (영어)
+                  </label>
+                  <textarea
+                    value={(pricingConfig as Record<string, unknown>).exclusions_en as string || ''}
+                    onChange={(e) => handlePricingConfigUpdate({ exclusions_en: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                    placeholder="Enter excluded items"
+                  />
+                </div>
+              </div>
+          </div>
              </div>
 
         {/* 3열: 가격 설정 (3/12) */}
@@ -573,7 +642,6 @@ export default function DynamicPricingManager({
           
           {/* 날짜 및 요일 선택기 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <h4 className="text-md font-semibold text-gray-900 mb-4">날짜 및 요일 선택</h4>
             <DateRangeSelector
               onDateRangeSelect={handleDateRangeSelection}
               initialSelection={dateRangeSelection || { startDate: '', endDate: '', selectedDays: [0, 1, 2, 3, 4, 5, 6] }}
@@ -582,7 +650,19 @@ export default function DynamicPricingManager({
 
           {/* 기본 가격 설정 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <h4 className="text-md font-semibold text-gray-900 mb-4">기본 가격</h4>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-md font-semibold text-gray-900">기본 가격</h4>
+              <button
+                onClick={() => handlePricingConfigUpdate({ is_sale_available: !pricingConfig.is_sale_available })}
+                className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  pricingConfig.is_sale_available
+                    ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-200'
+                    : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                <span>{pricingConfig.is_sale_available ? '✓ 판매중' : '판매중지'}</span>
+              </button>
+            </div>
             
             <div className="space-y-4">
               {/* 기본 가격 - 항상 표시 */}
@@ -692,17 +772,6 @@ export default function DynamicPricingManager({
                        />
                      </div>
                    </div>
-
-              {/* 판매중 체크박스 */}
-              <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                <label className="text-sm font-medium text-gray-700">판매중</label>
-                                  <input
-                  type="checkbox"
-                  checked={pricingConfig.is_sale_available}
-                  onChange={(e) => handlePricingConfigUpdate({ is_sale_available: Boolean(e.target.checked) })}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                                </div>
                               </div>
                             </div>
 

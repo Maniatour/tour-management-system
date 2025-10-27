@@ -172,35 +172,35 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
   
 
-  // 번역 문자열 정의
+  // Translation strings
 
   const translations = {
 
-    title: '새 호텔 추가',
+    title: 'Add New Hotel',
 
-    editTitle: '호텔 수정',
+    editTitle: 'Edit Hotel',
 
-    hotel: '호텔명',
+    hotel: 'Hotel Name',
 
-    pickUpLocation: '픽업 위치',
+    pickUpLocation: 'Pickup Location',
 
-    descriptionKo: '한국어 설명',
+    descriptionKo: 'Description (Korean)',
 
-    descriptionEn: '영어 설명',
+    descriptionEn: 'Description (English)',
 
-    address: '주소',
+    address: 'Address',
 
-    pin: '좌표 (위도,경도)',
+    pin: 'Coordinates (Latitude, Longitude)',
 
-    link: '구글 맵 링크',
+    link: 'Google Map Link',
 
-    media: '미디어 파일 (사진, 동영상)',
+    media: 'Media Files (Photos, Videos)',
 
-    cancel: '취소',
+    cancel: 'Cancel',
 
-    add: '추가',
+    add: 'Add',
 
-    edit: '수정'
+    edit: 'Edit'
 
   }
 
@@ -468,13 +468,23 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
   const groupedHotels = groupHotelsByGroupNumber(filteredHotels)
 
+  // Convert group keys to English if locale is 'en'
+  const getGroupLabel = (key: string) => {
+    if (locale === 'en') {
+      if (key === '그룹 미설정') return 'No Group'
+      return key.replace('그룹 ', 'Group ')
+    }
+    return key
+  }
+
   const sortedGroupKeys = Object.keys(groupedHotels).sort((a, b) => {
 
-    // 그룹 번호 순으로 정렬 (그룹 미설정은 마지막)
+    // Sort by group number (ungrouped items last)
 
-    if (a === '그룹 미설정') return 1
+    const ungrouped = locale === 'en' ? 'No Group' : '그룹 미설정'
+    if (a === ungrouped || a === '그룹 미설정') return 1
 
-    if (b === '그룹 미설정') return -1
+    if (b === ungrouped || b === '그룹 미설정') return -1
 
     
 
@@ -642,7 +652,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
     if (!testRequest.trim()) {
 
-      alert('테스트할 호텔명을 입력해주세요.')
+        alert('Please enter a hotel name to test.')
 
       return
 
@@ -718,7 +728,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
         console.error('Error updating hotel:', error)
 
-        alert('호텔 수정 중 오류가 발생했습니다: ' + error.message)
+        alert('Error updating hotel: ' + error.message)
 
         return
 
@@ -732,13 +742,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       setEditFormData({})
 
-      alert('호텔이 성공적으로 수정되었습니다!')
+      alert('Hotel updated successfully!')
 
     } catch (error) {
 
       console.error('Error updating hotel:', error)
 
-      alert('호텔 수정 중 오류가 발생했습니다.')
+      alert('Error updating hotel.')
 
     }
 
@@ -756,7 +766,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       if (error) {
         console.error('Error updating hotel group number:', error)
-        alert('그룹 번호 수정 중 오류가 발생했습니다: ' + error.message)
+        alert('Error updating group number: ' + error.message)
         return
       }
 
@@ -767,10 +777,10 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       // 선택된 호텔 정보 업데이트
       setSelectedHotelInfo(prev => prev ? { ...prev, group: quickEditGroupNumber } : null)
       
-      alert('그룹 번호가 성공적으로 수정되었습니다!')
+      alert('Group number updated successfully!')
     } catch (error) {
       console.error('Error updating hotel group number:', error)
-      alert('그룹 번호 수정 중 오류가 발생했습니다.')
+      alert('Error updating group number.')
     }
   }
 
@@ -1120,9 +1130,9 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       if (error) {
 
-        console.error('Error adding hotel:', error)
+          console.error('Error adding hotel:', error)
 
-        alert('호텔 추가 중 오류가 발생했습니다: ' + error.message)
+        alert('Error adding hotel: ' + error.message)
 
         return
 
@@ -1134,13 +1144,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       setShowAddForm(false)
 
-      alert('호텔이 성공적으로 추가되었습니다!')
+      alert('Hotel added successfully!')
 
     } catch (error) {
 
       console.error('Error adding hotel:', error)
 
-      alert('호텔 추가 중 오류가 발생했습니다.')
+      alert('Error adding hotel.')
 
     }
 
@@ -1168,7 +1178,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
           console.error('Error updating hotel:', error)
 
-          alert('호텔 수정 중 오류가 발생했습니다: ' + error.message)
+          alert(locale === 'en' ? 'Error updating hotel: ' + error.message : '호텔 수정 중 오류가 발생했습니다: ' + error.message)
 
           return
 
@@ -1184,7 +1194,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
         console.error('Error updating hotel:', error)
 
-        alert('호텔 수정 중 오류가 발생했습니다.')
+        alert(locale === 'en' ? 'Error updating hotel.' : '호텔 수정 중 오류가 발생했습니다.')
 
       }
 
@@ -1212,7 +1222,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
         console.error('Error deleting hotel:', error)
 
-        alert('호텔 삭제 중 오류가 발생했습니다: ' + error.message)
+        alert(locale === 'en' ? 'Error deleting hotel: ' + error.message : '호텔 삭제 중 오류가 발생했습니다: ' + error.message)
 
         return
 
@@ -1224,13 +1234,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       setDeleteConfirm({ isOpen: false, hotel: null })
 
-      alert('호텔이 성공적으로 삭제되었습니다!')
+      alert(locale === 'en' ? 'Hotel deleted successfully!' : '호텔이 성공적으로 삭제되었습니다!')
 
     } catch (error) {
 
       console.error('Error deleting hotel:', error)
 
-      alert('호텔 삭제 중 오류가 발생했습니다.')
+      alert(locale === 'en' ? 'Error deleting hotel.' : '호텔 삭제 중 오류가 발생했습니다.')
 
     }
 
@@ -1258,7 +1268,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
         console.error('Error toggling hotel status:', error)
 
-        alert('호텔 상태 변경 중 오류가 발생했습니다: ' + error.message)
+        alert(locale === 'en' ? 'Error changing hotel status: ' + error.message : '호텔 상태 변경 중 오류가 발생했습니다: ' + error.message)
 
         return
 
@@ -1268,13 +1278,14 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       await fetchHotels()
 
-      alert(`호텔이 ${newStatus ? '활성화' : '비활성화'}되었습니다!`)
+      alert(locale === 'en' ? `Hotel has been ${newStatus ? 'activated' : 'deactivated'}!` : `호텔이 ${newStatus ? '활성화' : '비활성화'}되었습니다!`)
 
     } catch (error) {
 
+
       console.error('Error toggling hotel status:', error)
 
-      alert('호텔 상태 변경 중 오류가 발생했습니다.')
+      alert(locale === 'en' ? 'Error changing hotel status.' : '호텔 상태 변경 중 오류가 발생했습니다.')
 
     }
 
@@ -1290,7 +1301,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       const newHotel = {
 
-        hotel: `${hotel.hotel} (복사본)`,
+            hotel: `${hotel.hotel} ${locale === 'en' ? '(Copy)' : '(복사본)'}`,
 
         pick_up_location: hotel.pick_up_location,
 
@@ -1324,7 +1335,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
         console.error('Error copying hotel:', error)
 
-        alert('호텔 복사 중 오류가 발생했습니다: ' + error.message)
+        alert(locale === 'en' ? 'Error copying hotel: ' + error.message : '호텔 복사 중 오류가 발생했습니다: ' + error.message)
 
         return
 
@@ -1334,13 +1345,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       await fetchHotels()
 
-      alert('호텔이 복사되었습니다!')
+      alert(locale === 'en' ? 'Hotel copied successfully!' : '호텔이 복사되었습니다!')
 
     } catch (error) {
 
       console.error('Error copying hotel:', error)
 
-      alert('호텔 복사 중 오류가 발생했습니다.')
+      alert(locale === 'en' ? 'Error copying hotel.' : '호텔 복사 중 오류가 발생했습니다.')
 
     }
 
@@ -1444,7 +1455,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       <div className="flex justify-between items-center">
 
-        <h1 className="text-3xl font-bold text-gray-900">픽업 호텔 관리</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Pickup Hotel Management</h1>
 
         <div className="flex items-center space-x-3">
 
@@ -1470,7 +1481,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <Grid3X3 size={16} />
 
-              <span>그리드</span>
+              <span>Grid</span>
 
             </button>
 
@@ -1492,7 +1503,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <Table size={16} />
 
-              <span>테이블</span>
+              <span>Table</span>
 
             </button>
 
@@ -1500,7 +1511,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               onClick={() => setViewMode('map')}
 
-              className={`px-3 py-2 rounded-md flex items-center space-x-2 transition-colors ${
+              className={`px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
 
                 viewMode === 'map' 
 
@@ -1514,7 +1525,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <Map size={16} />
 
-              <span>지도</span>
+              <span>Map</span>
 
             </button>
 
@@ -1538,7 +1549,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                   <ChevronUp size={20} />
 
-                  <span>모두 접기</span>
+                  <span>Collapse All</span>
 
                 </>
 
@@ -1548,7 +1559,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                   <ChevronDown size={20} />
 
-                  <span>모두 펼치기</span>
+                  <span>Expand All</span>
 
                 </>
 
@@ -1568,7 +1579,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
             <Plus size={20} />
 
-            <span>호텔 추가</span>
+            <span>Add Hotel</span>
 
           </button>
 
@@ -1589,7 +1600,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
           type="text"
 
-          placeholder="호텔명, 위치, 주소로 검색..."
+          placeholder="Search by hotel name, location, address..."
 
           value={searchTerm}
 
@@ -1603,9 +1614,9 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
         
         {/* 필터 버튼들 */}
         <div className="flex items-center space-x-2">
-          {/* 그룹 필터 */}
+          {/* Group filter */}
           <div className="flex items-center space-x-1">
-            <span className="text-sm text-gray-600 font-medium">그룹:</span>
+            <span className="text-sm text-gray-600 font-medium">Group:</span>
             <button
               onClick={() => setGroupFilter('integer')}
               className={`px-3 py-1 text-sm rounded-md transition-colors ${
@@ -1614,7 +1625,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              정수만
+              Integers Only
             </button>
             <button
               onClick={() => setGroupFilter('all')}
@@ -1624,13 +1635,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              모두
+              All
             </button>
           </div>
           
-          {/* 상태 필터 */}
+          {/* Status filter */}
           <div className="flex items-center space-x-1">
-            <span className="text-sm text-gray-600 font-medium">상태:</span>
+            <span className="text-sm text-gray-600 font-medium">Status:</span>
             <button
               onClick={() => setStatusFilter('all')}
               className={`px-3 py-1 text-sm rounded-md transition-colors ${
@@ -1639,7 +1650,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              전체
+              All
             </button>
             <button
               onClick={() => setStatusFilter('active')}
@@ -1649,7 +1660,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              활성
+              Active
             </button>
             <button
               onClick={() => setStatusFilter('inactive')}
@@ -1659,7 +1670,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              비활성
+              Inactive
             </button>
           </div>
         </div>
@@ -1667,7 +1678,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
 
 
-      {/* 픽업 요청 테스트 */}
+      {/* Pickup Request Test */}
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
 
@@ -1675,13 +1686,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
           <Info size={20} className="text-blue-600" />
 
-          <h3 className="text-lg font-semibold text-blue-900">픽업 요청 테스트</h3>
+          <h3 className="text-lg font-semibold text-blue-900">Pickup Request Test</h3>
 
         </div>
 
         <p className="text-sm text-blue-700 mb-4">
 
-          호텔명을 입력하면 그룹 번호에 따라 반올림된 호텔로 안내되는지 테스트할 수 있습니다.
+          Enter a hotel name to test if it correctly guides to the rounded hotel based on the group number.
 
         </p>
 
@@ -1693,7 +1704,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
             type="text"
 
-            placeholder="예: 플래닛 헐리우드"
+            placeholder="e.g., Planet Hollywood"
 
             value={testRequest}
 
@@ -1721,7 +1732,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
           >
 
-            테스트
+            Test
 
           </button>
 
@@ -1729,7 +1740,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
 
 
-        {/* 테스트 결과 */}
+        {/* Test Result */}
 
         {testResult && (
 
@@ -1757,11 +1768,11 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <div className="mt-2 text-xs text-gray-600">
 
-                <div><strong>요청 호텔:</strong> {testResult.requestedHotel?.hotel} (그룹 {testResult.requestedHotel?.group_number})</div>
+                <div><strong>Requested Hotel:</strong> {testResult.requestedHotel?.hotel} (Group {testResult.requestedHotel?.group_number})</div>
 
-                <div><strong>안내 호텔:</strong> {testResult.targetHotel.hotel} (그룹 {testResult.targetHotel.group_number})</div>
+                <div><strong>Target Hotel:</strong> {testResult.targetHotel.hotel} (Group {testResult.targetHotel.group_number})</div>
 
-                <div><strong>픽업 위치:</strong> {testResult.targetHotel.pick_up_location}</div>
+                <div><strong>Pickup Location:</strong> {testResult.targetHotel.pick_up_location}</div>
 
               </div>
 
@@ -1803,11 +1814,11 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                   <div className="flex items-center space-x-3">
 
-                    <h2 className="text-lg font-semibold text-gray-900">{groupKey}</h2>
+                     <h2 className="text-lg font-semibold text-gray-900">{getGroupLabel(groupKey)}</h2>
 
                     <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
 
-                      {groupedHotels[groupKey].length}개 호텔
+                      {groupedHotels[groupKey].length} hotels
 
                     </span>
 
@@ -1865,7 +1876,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                     <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
 
-                      그룹 {hotel.group_number}
+                      Group {hotel.group_number}
 
                     </span>
 
@@ -1911,7 +1922,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                       onClick={(e) => e.stopPropagation()}
 
-                      title="YouTube 영상 보기"
+                      title="View YouTube Video"
 
                     >
 
@@ -1933,7 +1944,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                     className="text-blue-600 hover:text-blue-800 transition-colors"
 
-                    title="호텔 복사"
+                    title="Copy Hotel"
 
                   >
 
@@ -1953,7 +1964,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                     className="text-red-600 hover:text-red-800 transition-colors"
 
-                    title="호텔 삭제"
+                    title="Delete Hotel"
 
                   >
 
@@ -1977,7 +1988,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                     }`}
 
-                    title={hotel.is_active ? '비활성화' : '활성화'}
+                    title={hotel.is_active ? 'Deactivate' : 'Activate'}
 
                   >
 
@@ -2023,7 +2034,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                   <div className="text-sm text-gray-900 mb-1">
 
-                    <span className="font-medium">한국어 설명:</span> {hotel.description_ko}
+                    <span className="font-medium">Description (KO):</span> {hotel.description_ko}
 
                   </div>
 
@@ -2033,7 +2044,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                   <div className="text-sm text-gray-600">
 
-                    <span className="font-medium">영어 설명:</span> {hotel.description_en}
+                    <span className="font-medium">Description (EN):</span> {hotel.description_en}
 
                   </div>
 
@@ -2049,7 +2060,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
             <div className="text-sm text-gray-700 mb-3">
 
-              <span className="font-medium">주소:</span> {hotel.address}
+              <span className="font-medium">Address:</span> {hotel.address}
 
             </div>
 
@@ -2061,7 +2072,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <div className="text-sm text-gray-600 mb-3">
 
-                <span className="font-medium">좌표:</span> {hotel.pin}
+                <span className="font-medium">Coordinates:</span> {hotel.pin}
 
               </div>
 
@@ -2077,7 +2088,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                 <div className="flex items-center">
 
-                  <span className="font-medium mr-2">구글맵:</span>
+                  <span className="font-medium mr-2">Google Map:</span>
 
                   <a
 
@@ -2115,7 +2126,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                     className="ml-2 p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
 
-                    title="링크 복사"
+                    title="Copy Link"
 
                   >
 
@@ -2179,7 +2190,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                     className="ml-2 p-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
 
-                    title="YouTube 링크 복사"
+                    title="Copy YouTube Link"
 
                   >
 
@@ -2205,7 +2216,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <div className="mb-4">
 
-                <div className="text-sm font-medium text-gray-700 mb-2">미디어:</div>
+                 <div className="text-sm font-medium text-gray-700 mb-2">{locale === 'en' ? 'Media:' : '미디어:'}</div>
 
                 <div className="grid grid-cols-4 gap-2">
 
@@ -2321,7 +2332,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                     >
 
-                      +{hotel.media.length - 4}개 더
+                      +{hotel.media.length - 4}{locale === 'en' ? ' more' : '개 더'}
 
                     </div>
 
@@ -2369,7 +2380,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                 <div className="flex items-center justify-between">
 
-                  <h3 className="text-lg font-semibold text-gray-900">픽업 호텔 목록</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">{locale === 'en' ? 'Pickup Hotel List' : '픽업 호텔 목록'}</h3>
 
                   <div className="flex items-center space-x-3">
 
@@ -2389,7 +2400,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                           if (updatedHotels.length === 0) {
 
-                            alert('변경된 내용이 없습니다.')
+                            alert(locale === 'en' ? 'No changes made.' : '변경된 내용이 없습니다.')
 
                             setBulkEditMode(false)
 
@@ -2401,7 +2412,9 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                           
 
-                          const confirmMessage = `${updatedHotels.length}개 호텔의 변경사항을 저장하시겠습니까?`
+                           const confirmMessage = locale === 'en' 
+                             ? `Do you want to save changes for ${updatedHotels.length} hotels?`
+                             : `${updatedHotels.length}개 호텔의 변경사항을 저장하시겠습니까?`
 
                           if (!confirm(confirmMessage)) return
 
@@ -2459,11 +2472,15 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                             if (errorCount === 0) {
 
-                              alert(`${successCount}개 호텔이 성공적으로 저장되었습니다!`)
+                              alert(locale === 'en' 
+                                ? `${successCount} hotel(s) saved successfully!`
+                                : `${successCount}개 호텔이 성공적으로 저장되었습니다!`)
 
                             } else {
 
-                              alert(`${successCount}개 호텔 저장 완료, ${errorCount}개 호텔 저장 실패`)
+                              alert(locale === 'en' 
+                                ? `${successCount} hotel(s) saved, ${errorCount} failed`
+                                : `${successCount}개 호텔 저장 완료, ${errorCount}개 호텔 저장 실패`)
 
                             }
 
@@ -2471,7 +2488,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                             console.error('Error bulk saving hotels:', error)
 
-                            alert('호텔 일괄 저장 중 오류가 발생했습니다.')
+                            alert(locale === 'en' ? 'Error bulk saving hotels.' : '호텔 일괄 저장 중 오류가 발생했습니다.')
 
                           }
 
@@ -2499,7 +2516,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                       <Edit2 size={16} />
 
-                      <span>{bulkEditMode ? '전체 수정 완료' : '전체 수정'}</span>
+                          <span>{bulkEditMode ? (locale === 'en' ? 'Finish Bulk Edit' : '전체 수정 완료') : (locale === 'en' ? 'Bulk Edit' : '전체 수정')}</span>
 
                     </button>
 
@@ -2521,7 +2538,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                         <XCircle size={16} />
 
-                        <span>취소</span>
+                        <span>{locale === 'en' ? 'Cancel' : '취소'}</span>
 
                       </button>
 
@@ -2553,7 +2570,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                         <div className="flex items-center space-x-1">
 
-                          <span>그룹 번호</span>
+                           <span>{locale === 'en' ? 'Group Number' : '그룹 번호'}</span>
 
                           {getSortIcon('group_number')}
 
@@ -2571,7 +2588,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                         <div className="flex items-center space-x-1">
 
-                          <span>호텔명</span>
+                          <span>{locale === 'en' ? 'Hotel Name' : '호텔명'}</span>
 
                           {getSortIcon('hotel')}
 
@@ -2589,7 +2606,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                         <div className="flex items-center space-x-1">
 
-                          <span>픽업 위치</span>
+                          <span>{locale === 'en' ? 'Pickup Location' : '픽업 위치'}</span>
 
                           {getSortIcon('pick_up_location')}
 
@@ -2607,7 +2624,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                         <div className="flex items-center space-x-1">
 
-                          <span>주소</span>
+                          <span>{locale === 'en' ? 'Address' : '주소'}</span>
 
                           {getSortIcon('address')}
 
@@ -2625,7 +2642,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                         <div className="flex items-center space-x-1">
 
-                          <span>상태</span>
+                          <span>{locale === 'en' ? 'Status' : '상태'}</span>
 
                           {getSortIcon('is_active')}
 
@@ -2633,9 +2650,9 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                       </th>
 
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">미디어</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{locale === 'en' ? 'Media' : '미디어'}</th>
 
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{locale === 'en' ? 'Actions' : '작업'}</th>
 
                     </tr>
 
@@ -2705,7 +2722,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                             <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
 
-                              {hotel.group_number || '미설정'}
+                               {hotel.group_number || (locale === 'en' ? 'Not Set' : '미설정')}
 
                             </span>
 
@@ -2925,7 +2942,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                             }`}>
 
-                              {hotel.is_active ? '활성' : '비활성'}
+                              {hotel.is_active ? (locale === 'en' ? 'Active' : '활성') : (locale === 'en' ? 'Inactive' : '비활성')}
 
                             </span>
 
@@ -2939,7 +2956,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                             <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
 
-                              {hotel.media.length}개
+                              {hotel.media.length}{locale === 'en' ? '' : '개'}
 
                             </span>
 
@@ -3025,7 +3042,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                                 className="text-red-600 hover:text-red-900"
 
-                                title="취소"
+                                title={locale === 'en' ? 'Cancel' : '취소'}
 
                               >
 
@@ -3045,7 +3062,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                                 className="text-blue-600 hover:text-blue-900"
 
-                                title="인라인 편집"
+                                title={locale === 'en' ? 'Inline Edit' : '인라인 편집'}
 
                               >
 
@@ -3125,7 +3142,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                       <span className="text-sm text-gray-700">
 
-                        전체 편집 모드 - 모든 호텔을 동시에 편집할 수 있습니다
+                        {locale === 'en' ? 'Bulk Edit Mode - You can edit all hotels simultaneously' : '전체 편집 모드 - 모든 호텔을 동시에 편집할 수 있습니다'}
 
                       </span>
 
@@ -3137,7 +3154,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                       <span className="text-sm text-gray-500">
 
-                        상단의 &quot;전체 수정 완료&quot; 버튼을 눌러 저장하세요
+                        {locale === 'en' ? 'Click the "Finish Bulk Edit" button above to save' : '상단의 "전체 수정 완료" 버튼을 눌러 저장하세요'}
                       </span>
 
                     </div>
@@ -3162,10 +3179,10 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <div className="p-4 border-b border-gray-200">
 
-                <h3 className="text-lg font-semibold text-gray-900">호텔 위치 지도</h3>
+                 <h3 className="text-lg font-semibold text-gray-900">{locale === 'en' ? 'Hotel Location Map' : '호텔 위치 지도'}</h3>
 
                 <p className="text-sm text-gray-600">
-                  마커를 클릭하면 호텔 정보를 확인할 수 있습니다. 마커 라벨은 그룹 번호를 표시합니다. 정수 그룹 번호를 가진 호텔 주변에는 1000m 반투명 원이 표시되며, 각 그룹마다 다른 색상으로 구분됩니다. 호텔 정보 창에서 편집 버튼을 클릭하여 호텔 정보를 수정할 수 있습니다.
+                  {locale === 'en' ? 'Click on a marker to view hotel information. Marker labels show group numbers. A transparent circle of 1000m is displayed around hotels with integer group numbers, with different colors for each group. Click the edit button in the hotel information window to modify hotel information.' : '마커를 클릭하면 호텔 정보를 확인할 수 있습니다. 마커 라벨은 그룹 번호를 표시합니다. 정수 그룹 번호를 가진 호텔 주변에는 1000m 반투명 원이 표시되며, 각 그룹마다 다른 색상으로 구분됩니다. 호텔 정보 창에서 편집 버튼을 클릭하여 호텔 정보를 수정할 수 있습니다.'}
 
                 </p>
 
@@ -3186,7 +3203,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                             className="w-3 h-3 rounded-full border border-gray-300"
                             style={{ backgroundColor: color }}
                           />
-                          <span className="text-gray-600">그룹 {groupNum}</span>
+                          <span className="text-gray-600">{locale === 'en' ? `Group ${groupNum}` : `그룹 ${groupNum}`}</span>
                         </div>
                       )
                     })}
@@ -3219,14 +3236,14 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                         <div className="mt-2">
                           {quickEditMode ? (
                             <div className="flex items-center space-x-2">
-                              <span className="text-xs text-gray-600">그룹:</span>
+                              <span className="text-xs text-gray-600">{locale === 'en' ? 'Group:' : '그룹:'}</span>
                               <input
                                 type="number"
                                 step="0.1"
                                 value={quickEditGroupNumber || ''}
                                 onChange={(e) => setQuickEditGroupNumber(e.target.value ? parseFloat(e.target.value) : null)}
                                 className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                placeholder="그룹 번호"
+                                placeholder={locale === 'en' ? 'Group Number' : '그룹 번호'}
                                 autoFocus
                               />
                               <button
@@ -3242,14 +3259,14 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                                   setQuickEditGroupNumber(null)
                                 }}
                                 className="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600"
-                                title="취소"
+                                title={locale === 'en' ? 'Cancel' : '취소'}
                               >
-                                취소
+                                {locale === 'en' ? 'Cancel' : '취소'}
                               </button>
                             </div>
                           ) : (
                             selectedHotelInfo.group != null && (
-                              <div className="text-xs text-blue-700">그룹: {selectedHotelInfo.group}</div>
+                              <div className="text-xs text-blue-700">{locale === 'en' ? `Group: ${selectedHotelInfo.group}` : `그룹: ${selectedHotelInfo.group}`}</div>
                             )
                           )}
                         </div>
@@ -3269,7 +3286,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                               title="호텔 편집"
                             >
                               <Edit2 size={12} />
-                              <span>편집</span>
+                              <span>{locale === 'en' ? 'Edit' : '편집'}</span>
                             </button>
                             
                             <button
@@ -3281,7 +3298,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
                               title="빠른 편집"
                             >
                               <Save size={12} />
-                              <span>빠른 편집</span>
+                              <span>{locale === 'en' ? 'Quick Edit' : '빠른 편집'}</span>
                             </button>
                           </div>
                         )}
@@ -3310,7 +3327,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
 
-                      <p className="text-gray-600">지도를 로딩 중...</p>
+                      <p className="text-gray-600">{locale === 'en' ? 'Loading map...' : '지도를 로딩 중...'}</p>
 
                     </div>
 
@@ -3326,12 +3343,14 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                   <div className="text-sm text-gray-600">
 
-                    총 {filteredHotels.length}개 호텔 중 {filteredHotels.filter(h => h.pin).length}개 위치 표시
+                    {locale === 'en' 
+                      ? `Total ${filteredHotels.length} hotels, showing ${filteredHotels.filter(h => h.pin).length} locations`
+                      : `총 ${filteredHotels.length}개 호텔 중 ${filteredHotels.filter(h => h.pin).length}개 위치 표시`}
 
-                    {groupFilter === 'integer' && ' (정수 그룹만)'}
-                    {statusFilter !== 'all' && ` (${statusFilter === 'active' ? '활성' : '비활성'}만)`}
-                    {mapMarkers.length > 0 && ` • ${mapMarkers.length}개 마커 활성`}
-                    {mapCircles.length > 0 && ` • ${mapCircles.length}개 원 표시`}
+                    {groupFilter === 'integer' && (locale === 'en' ? ' (integer groups only)' : ' (정수 그룹만)')}
+                    {statusFilter !== 'all' && (locale === 'en' ? ` (${statusFilter === 'active' ? 'active' : 'inactive'} only)` : ` (${statusFilter === 'active' ? '활성' : '비활성'}만)`)}
+                    {mapMarkers.length > 0 && (locale === 'en' ? ` • ${mapMarkers.length} active markers` : ` • ${mapMarkers.length}개 마커 활성`)}
+                    {mapCircles.length > 0 && (locale === 'en' ? ` • ${mapCircles.length} circles` : ` • ${mapCircles.length}개 원 표시`)}
                   </div>
 
                   <div className="flex space-x-2">
@@ -3361,7 +3380,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                     >
 
-                      모든 호텔 보기
+                      {locale === 'en' ? 'View All Hotels' : '모든 호텔 보기'}
 
                     </button>
 
@@ -3383,7 +3402,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                     >
 
-                      라스베가스 중심
+                      {locale === 'en' ? 'Las Vegas Center' : '라스베가스 중심'}
 
                     </button>
 
@@ -3405,13 +3424,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
           <div className="text-gray-500 text-lg">
 
-            {searchTerm ? '검색 결과가 없습니다.' : '등록된 호텔이 없습니다.'}
+            {searchTerm ? (locale === 'en' ? 'No search results.' : '검색 결과가 없습니다.') : (locale === 'en' ? 'No registered hotels.' : '등록된 호텔이 없습니다.')}
 
           </div>
 
           <div className="text-gray-400 text-sm mt-2">
 
-            {searchTerm ? '다른 검색어를 시도해보세요.' : '새 호텔을 추가해보세요.'}
+            {searchTerm ? (locale === 'en' ? 'Try a different search term.' : '다른 검색어를 시도해보세요.') : (locale === 'en' ? 'Add a new hotel.' : '새 호텔을 추가해보세요.')}
 
           </div>
 
@@ -3664,7 +3683,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <AlertTriangle className="h-6 w-6 text-red-600 mr-3" />
 
-              <h3 className="text-lg font-semibold text-gray-900">호텔 삭제 확인</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{locale === 'en' ? 'Confirm Hotel Deletion' : '호텔 삭제 확인'}</h3>
 
             </div>
 
@@ -3674,7 +3693,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <p className="text-gray-700 mb-2">
 
-                다음 호텔을 삭제하시겠습니까?
+                {locale === 'en' ? 'Are you sure you want to delete the following hotel?' : '다음 호텔을 삭제하시겠습니까?'}
 
               </p>
 
@@ -3688,7 +3707,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               <p className="text-sm text-red-600 mt-2">
 
-                ⚠️ 이 작업은 되돌릴 수 없습니다.
+                ⚠️ {locale === 'en' ? 'This action cannot be undone.' : '이 작업은 되돌릴 수 없습니다.'}
 
               </p>
 
@@ -3706,7 +3725,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               >
 
-                취소
+                {locale === 'en' ? 'Cancel' : '취소'}
 
               </button>
 
@@ -3718,7 +3737,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               >
 
-                삭제
+                {locale === 'en' ? 'Delete' : '삭제'}
 
               </button>
 

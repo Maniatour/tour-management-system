@@ -229,7 +229,70 @@
     "pickupHotels": "픽업 호텔",
     "vehicles": "차량",
     "coupons": "쿠폰",
-    "reservationStats": "예약 통계"
+    "reservationStats": "예약 통계",
+    "switchToEnglish": "영어로 전환",
+    "basicInfo": "기본 정보",
+    "dynamicPricing": "동적 가격",
+    "optionsManagement": "옵션 관리",
+    "schedule": "스케줄",
+    "faq": "FAQ",
+    "media": "미디어",
+    "changeHistory": "변경 이력",
+    "productSummaryKo": "상품 요약 (한국어)",
+    "productSummaryPlaceholderKo": "한국어로 상품 요약을 입력하세요",
+    "productSummaryEn": "상품 요약 (영어)",
+    "productSummaryPlaceholderEn": "Enter product summary in English",
+    "tourDepartureTimes": "투어 출발 시간",
+    "addDepartureTime": "출발 시간 추가",
+    "removeDepartureTime": "출발 시간 삭제",
+    "all": "전체"
+  },
+  "products": {
+    "title": "상품 관리",
+    "addProduct": "새 상품 추가",
+    "searchPlaceholder": "상품명, 카테고리, 설명, 태그로 검색...",
+    "deleteConfirm": "정말로 이 상품을 삭제하시겠습니까?",
+    "columns": {
+      "name": "상품명",
+      "category": "카테고리",
+      "pricing": "가격",
+      "participants": "참가자",
+      "difficulty": "난이도",
+      "options": "옵션",
+      "status": "상태"
+    },
+    "categories": {
+      "city": "도시",
+      "nature": "자연",
+      "culture": "문화",
+      "adventure": "모험",
+      "food": "음식"
+    },
+    "difficulty": {
+      "easy": "쉬움",
+      "medium": "보통",
+      "hard": "어려움"
+    },
+    "status": {
+      "active": "활성",
+      "inactive": "비활성",
+      "draft": "초안"
+    },
+    "form": {
+      "title": "새 상품 추가",
+      "editTitle": "상품 정보 편집",
+      "name": "상품명",
+      "category": "카테고리",
+      "description": "설명",
+      "duration": "소요 시간",
+      "basePrice": "기본 가격",
+      "maxParticipants": "최대 참가자",
+      "status": "상태",
+      "tags": "태그",
+      "tagPlaceholder": "태그 입력",
+      "addTag": "태그 추가",
+      "availableOptions": "사용 가능한 옵션"
+    }
   },
   "admin": {
     "dashboard": "대시보드",
@@ -243,6 +306,12 @@
     "channels": "채널 관리",
     "booking": "부킹 관리",
     "team": "팀 관리",
+    "vehicles": "차량 관리",
+    "coupons": "쿠폰 관리",
+    "dataReview": "데이터 검토",
+    "auditLogs": "감사 로그",
+    "attendance": "출석 관리",
+    "offSchedule": "스케줄 외 관리",
     "tourReports": "투어 리포트",
     "guideFeeManagement": "가이드비 관리",
     "reservationExpenseManagement": "예약 지출 관리",
@@ -1066,5 +1135,113 @@
         "5": "금",
         "6": "토"
       }
+  },
+  "reservationExpense": {
+    "title": "예약 지출 관리",
+    "subtitle": "투어 이외의 예약에 대한 지출을 입력하고 관리할 수 있습니다.",
+    "addExpense": "지출 추가",
+    "expenseList": "지출 목록",
+    "totalAmount": "총 금액",
+    "noExpenses": "등록된 예약 지출이 없습니다.",
+    "stats": {
+      "total": "전체",
+      "pending": "대기중",
+      "approved": "승인됨",
+      "rejected": "거부됨"
+    },
+    "sync": {
+      "title": "구글 시트 동기화",
+      "showSettings": "동기화 설정",
+      "hide": "숨기기",
+      "spreadsheetId": "스프레드시트 ID",
+      "spreadsheetIdPlaceholder": "구글 스프레드시트 ID를 입력하세요",
+      "sheetName": "시트 이름",
+      "sheetNamePlaceholder": "시트 이름을 입력하세요",
+      "columnInfo": "구글 시트 컬럼: ID, Submit on, Submitted by, Paid to, Paid for, Amount, Payment Method, Note, Image, File, Status, Reservation ID, Event ID",
+      "syncButton": "동기화 시작",
+      "syncing": "동기화 중...",
+      "startSyncMessage": "동기화를 시작합니다...",
+      "successMessage": "동기화 완료: {message}",
+      "errorMessage": "동기화 실패: {message}",
+      "error": "동기화 오류: {message}",
+      "requiredFields": "스프레드시트 ID와 시트 이름을 입력해주세요."
+    },
+    "form": {
+      "paidTo": "결제처",
+      "paidFor": "결제내용",
+      "amount": "금액",
+      "paymentMethod": "결제 방법",
+      "note": "메모",
+      "image": "영수증 이미지",
+      "reservationId": "예약 ID",
+      "eventId": "이벤트 ID"
+    },
+    "paidTo": "결제처",
+    "paidFor": "결제내용",
+    "amount": "금액",
+    "memo": "메모",
+    "memoPlaceholder": "메모를 입력하세요",
+    "receiptPhoto": "영수증 사진",
+    "enterDirectly": "직접 입력",
+    "dragOrClickReceipt": "영수증을 드래그하거나 클릭하여 업로드하세요",
+    "mobileCameraInfo": "모바일에서는 카메라로 촬영할 수 있습니다",
+    "cameraOrFile": "카메라 또는 파일",
+    "cancel": "취소",
+    "selectOptions": {
+      "pleaseSelect": "선택해주세요"
+    },
+    "paymentMethods": {
+      "cash": "현금",
+      "creditCard": "신용카드",
+      "debitCard": "체크카드",
+      "mobilePayment": "모바일 결제",
+      "other": "기타"
+    },
+    "buttons": {
+      "register": "등록",
+      "cancel": "취소",
+      "edit": "수정",
+      "delete": "삭제",
+      "save": "저장"
+    },
+    "messages": {
+      "expenseAdded": "예약 지출이 등록되었습니다.",
+      "expenseUpdated": "예약 지출이 수정되었습니다.",
+      "expenseDeleted": "예약 지출이 삭제되었습니다.",
+      "confirmDelete": "정말로 이 예약 지출을 삭제하시겠습니까?"
+    },
+    "status": {
+      "pending": "대기중",
+      "approved": "승인됨",
+      "rejected": "거부됨"
+    },
+    "selectPaidTo": "결제처 선택",
+    "directInput": "직접 입력",
+    "enterNewPaidTo": "새 결제처명을 입력하세요",
+    "selectPaidFor": "결제내용 선택",
+    "enterNewPaidFor": "새 결제내용을 입력하세요",
+    "selectReservation": "예약 선택",
+    "enterEventId": "이벤트 ID를 입력하세요",
+    "viewReceipt": "영수증 보기",
+    "removeImage": "이미지 제거",
+    "selectFile": "파일 선택",
+    "processing": "처리중...",
+    "expenseManagement": "예약 지출 관리",
+    "totalAmountLabel": "총 금액",
+    "editExpense": "지출 수정",
+    "newPaidToPlaceholder": "새 결제처명을 입력하세요",
+    "newPaidForPlaceholder": "새 결제내용을 입력하세요",
+    "backToList": "선택 목록으로 돌아가기",
+    "uploadingFiles": "파일 업로드 중...",
+    "dropFilesHere": "파일을 여기에 놓으세요",
+    "dragOrClickFiles": "파일을 드래그하여 놓거나 클릭하여 선택하세요",
+    "pasteFromClipboard": "또는 클립보드에서 붙여넣기 (Ctrl+V)",
+    "supportedFormats": "지원 형식: JPG, PNG, GIF, PDF, DOC, DOCX (최대 10MB)",
+    "uploadedFiles": "업로드된 파일",
+    "files": "개",
+    "loading": "로딩중...",
+    "delete": "삭제",
+    "noExpensesMessage": "등록된 예약 지출이 없습니다.",
+    "reservation": "예약"
   }
 }

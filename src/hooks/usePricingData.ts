@@ -186,7 +186,7 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
           commission_percent: latestData.commission_percent,
           markup_amount: latestData.markup_amount,
           coupon_percent: latestData.coupon_percent,
-          is_sale_available: latestData.is_sale_available,
+          is_sale_available: latestData.is_sale_available ?? true,
           choices_pricing: choicesPricing
         });
         

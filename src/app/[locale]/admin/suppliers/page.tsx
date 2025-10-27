@@ -709,6 +709,18 @@ function ProductFormModal({
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedChoiceOption, setSelectedChoiceOption] = useState<ChoiceOption | null>(null);
   const [supplyType, setSupplyType] = useState<'product' | 'choice' | ''>('');
+  const [productHasChoices, setProductHasChoices] = useState(false);
+  const [allChoiceOptions, setAllChoiceOptions] = useState<ChoiceOption[]>([]);
+  const [choicePricesTable, setChoicePricesTable] = useState<Record<string, {
+    adult: number;
+    child: number;
+    infant: number;
+    season_adult: number;
+    season_child: number;
+    season_infant: number;
+    markup_percent: number;
+    markup_amount: number;
+  }>>({});
   const [formData, setFormData] = useState({
     ticket_name: product?.ticket_name || '',
     adult_supplier_price: product?.adult_supplier_price || 0,
@@ -717,8 +729,8 @@ function ProductFormModal({
     adult_season_price: product?.adult_season_price || 0,
     child_season_price: product?.child_season_price || 0,
     infant_season_price: product?.infant_season_price || 0,
-    entry_times: product?.entry_times || [],
-    season_dates: product?.season_dates || [],
+    entry_times: product?.entry_times || [] as string[],
+    season_dates: product?.season_dates || [] as SeasonDate[],
     markup_percent: product?.markup_percent || 0,
     markup_amount: product?.markup_amount || 0,
     is_active: product?.is_active ?? true
@@ -726,23 +738,65 @@ function ProductFormModal({
 
   // 기존 상품이 있다면 해당 상품 정보 로드
   useEffect(() => {
-    if (product?.product_id) {
-      setSupplyType('product');
-    } else if (product?.choice_id) {
-      setSupplyType('choice');
-    }
-  }, [product?.product_id, product?.choice_id]);
+    const loadProductInfo = async () => {
+      if (product?.product_id) {
+        // 상품 정보 로드
+        const { data: prodData } = await supabase
+          .from('products')
+          .select('*')
+          .eq('id', product.product_id)
+          .single();
+        
+        if (prodData) {
+          const productData = prodData as Product;
+          setSelectedProduct(productData);
+          const requiredChoices = productData.choices?.required;
+          const hasChoices = requiredChoices && Array.isArray(requiredChoices) && requiredChoices.length > 0;
+          setProductHasChoices(!!hasChoices);
+        }
+        
+        if (product.choice_id || product.choice_option_id) {
+          setSupplyType('choice');
+          
+          // choice_option 정보 로드
+          if (product.choice_option_id) {
+            const { data: optionData } = await supabase
+              .from('choice_options')
+              .select('*')
+              .eq('id', product.choice_option_id)
+              .single();
+            
+            if (optionData) {
+              setSelectedChoiceOption(optionData as ChoiceOption);
+            }
+          }
+        } else {
+          setSupplyType('product');
+        }
+      }
+    };
+    
+    loadProductInfo();
+  }, [product?.product_id, product?.choice_id, product?.choice_option_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!selectedProduct) {
+      alert('상품을 선택해주세요.');
+      return;
+    }
+    
     try {
+      // supplyType이 없으면 기본적으로 'product'로 설정
+      const finalSupplyType = supplyType || 'product';
+      
       const productData = {
         ...formData,
         supplier_id: supplier.id,
-        product_id: supplyType === 'product' ? selectedProduct?.id || null : null,
-        choice_id: supplyType === 'choice' ? selectedChoiceOption?.id || null : null,
-        choice_option_id: supplyType === 'choice' ? selectedChoiceOption?.id || null : null,
+        product_id: finalSupplyType === 'product' ? selectedProduct.id : null,
+        choice_id: finalSupplyType === 'choice' ? selectedChoiceOption?.id || null : null,
+        choice_option_id: finalSupplyType === 'choice' ? selectedChoiceOption?.id || null : null,
         // 기존 필드들은 호환성을 위해 유지
         regular_price: formData.adult_supplier_price || 0,
         supplier_price: formData.adult_supplier_price || 0,
@@ -751,15 +805,73 @@ function ProductFormModal({
         entry_times: formData.entry_times.length > 0 ? formData.entry_times : null
       };
 
-      if (product) {
-        await supabase
+      // 테이블에 입력된 choice_option별로 저장
+      if (allChoiceOptions.length > 0) {
+        const productsToInsert = allChoiceOptions.map(opt => {
+          const prices = choicePricesTable[opt.id] || {};
+          return {
+            supplier_id: supplier.id,
+            product_id: selectedProduct.id,
+            choice_id: null,
+            choice_option_id: opt.id,
+            ticket_name: `${selectedProduct.name_ko || selectedProduct.name} - ${opt.name_ko || opt.name}`,
+            regular_price: prices.adult || 0,
+            supplier_price: prices.adult || 0,
+            season_price: prices.season_adult || null,
+            season_dates: formData.season_dates.length > 0 ? formData.season_dates : null,
+            entry_times: formData.entry_times.length > 0 ? formData.entry_times : null,
+            markup_percent: prices.markup_percent || 0,
+            markup_amount: prices.markup_amount || 0,
+            adult_supplier_price: prices.adult || 0,
+            child_supplier_price: prices.child || 0,
+            infant_supplier_price: prices.infant || 0,
+            adult_season_price: prices.season_adult || null,
+            child_season_price: prices.season_child || null,
+            infant_season_price: prices.season_infant || null,
+            is_active: formData.is_active
+          };
+        });
+
+        if (product) {
+          // 수정 시 기존 레코드 삭제 후 새로 추가
+          if (product.product_id) {
+            await supabase
+              .from('supplier_products')
+              .delete()
+              .eq('product_id', product.product_id)
+              .eq('supplier_id', supplier.id);
+          }
+        }
+
+        const { data: insertedData, error: insertError } = await supabase
           .from('supplier_products')
-          .update(productData as never)
-          .eq('id', product.id);
+          .insert(productsToInsert as any)
+          .select();
+
+        if (insertError) {
+          console.error('초이스별 가격 저장 오류:', insertError);
+          alert(`저장 오류가 발생했습니다: ${insertError.message}`);
+          return;
+        }
+
+        console.log(`${insertedData?.length || 0}개의 초이스별 가격이 저장되었습니다:`, insertedData);
+        
+        // 저장된 데이터 확인 메시지
+        if (insertedData && insertedData.length > 0) {
+          alert(`${insertedData.length}개의 초이스별 가격이 성공적으로 저장되었습니다.`);
+        }
       } else {
-        await supabase
-          .from('supplier_products')
-          .insert([productData] as any);
+        // choice가 없는 경우 기존 방식으로 저장
+        if (product) {
+          await supabase
+            .from('supplier_products')
+            .update(productData as never)
+            .eq('id', product.id);
+        } else {
+          await supabase
+            .from('supplier_products')
+            .insert([productData] as any);
+        }
       }
 
       // 공급 업체 상품이 실제 상품과 연결된 경우 동적 가격 업데이트
@@ -807,66 +919,115 @@ function ProductFormModal({
             {/* 왼쪽: 상품 선택기만 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                상품 선택 {supplyType ? '*' : ''}
+                상품 선택 *
               </label>
               <ProductSelector
                 selectedProductId={selectedProduct?.id || ''}
-                selectedChoiceId={supplyType === 'choice' ? selectedChoiceOption?.id || '' : ''}
-                onProductSelect={(product) => {
+                selectedChoiceId={selectedChoiceOption?.id || ''}
+                onProductSelect={async (product) => {
                   setSelectedProduct(product as Product);
                   if (product) {
-                    setFormData(prev => ({
-                      ...prev,
-                      ticket_name: product.name_ko || product.name
-                    }));
+                    // 선택된 상품에 choices가 있는지 확인
+                    const requiredChoices = product.choices?.required;
+                    const hasChoices = requiredChoices && Array.isArray(requiredChoices) && requiredChoices.length > 0;
+                    setProductHasChoices(!!hasChoices);
+                    
+                    if (hasChoices) {
+                      // products 테이블의 choices JSON에서 직접 로드
+                      try {
+                        const choicesData = product.choices?.required;
+                        
+                        if (choicesData && Array.isArray(choicesData)) {
+                          const options: ChoiceOption[] = [];
+                          
+                          // 모든 choice group의 options를 수집
+                          choicesData.forEach((choiceGroup: any) => {
+                            if (choiceGroup.options && Array.isArray(choiceGroup.options)) {
+                              choiceGroup.options.forEach((option: any) => {
+                                options.push({
+                                  id: option.id,
+                                  name: option.name || option.option_name,
+                                  name_ko: option.name_ko || option.option_name_ko,
+                                  price: option.adult_price || option.price || 0,
+                                  is_default: option.is_default || false
+                                });
+                              });
+                            }
+                          });
+                          
+                          if (options.length > 0) {
+                            setAllChoiceOptions(options);
+                            
+                            // 초기 가격 설정
+                            const initialPrices: Record<string, any> = {};
+                            options.forEach(opt => {
+                              initialPrices[opt.id] = {
+                                adult: 0,
+                                child: 0,
+                                infant: 0,
+                                season_adult: 0,
+                                season_child: 0,
+                                season_infant: 0,
+                                markup_percent: 0,
+                                markup_amount: 0
+                              };
+                            });
+                            setChoicePricesTable(initialPrices);
+                          } else {
+                            setAllChoiceOptions([]);
+                            setChoicePricesTable({});
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Choice options 로드 오류:', error);
+                        setAllChoiceOptions([]);
+                        setChoicePricesTable({});
+                      }
+                    } else {
+                      // choices가 없으면 기본적으로 'product' 타입으로 설정
+                      setSupplyType('product');
+                      setSelectedChoiceOption(null);
+                      setAllChoiceOptions([]);
+                      setChoicePricesTable({});
+                    }
                   }
                 }}
                 onChoiceSelect={(choice) => {
                   if (choice) {
                     setSelectedChoiceOption(choice as unknown as ChoiceOption);
+                    setSupplyType('choice');
                     setFormData(prev => ({
                       ...prev,
                       ticket_name: `${selectedProduct?.name_ko || selectedProduct?.name} - ${choice.name_ko || choice.name}`
                     }));
                   }
                 }}
-                showChoices={supplyType === 'choice'}
-                disabled={!supplyType}
+                showChoices={productHasChoices}
               />
             </div>
 
             {/* 오른쪽: 모든 필드들 */}
             <div className="space-y-4">
-              {/* 공급 타입 선택 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  공급 타입 *
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="supplyType"
-                      value="product"
-                      checked={supplyType === 'product'}
-                      onChange={(e) => setSupplyType(e.target.value as 'product')}
-                      className="mr-2"
-                    />
-                    상품 전체 공급
+              {/* 공급 타입 표시 (선택된 상품에 따라 자동 결정) */}
+              {selectedProduct && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    공급 타입
                   </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="supplyType"
-                      value="choice"
-                      checked={supplyType === 'choice'}
-                      onChange={(e) => setSupplyType(e.target.value as 'choice')}
-                      className="mr-2"
-                    />
-                    입장권(선택 옵션) 공급
-                  </label>
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="text-sm text-gray-700">
+                      {supplyType === 'choice' ? (
+                        <span className="font-medium text-blue-700">입장권(선택 옵션) 공급 - {selectedChoiceOption?.name_ko || selectedChoiceOption?.name || '옵션 미선택'}</span>
+                      ) : (
+                        <span className="font-medium text-blue-700">상품 전체 공급</span>
+                      )}
+                      {productHasChoices && supplyType === 'product' && (
+                        <div className="text-xs text-gray-600 mt-1">아래 옵션에서 특정 입장권을 선택할 수 있습니다.</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 티켓명 */}
               <div>
@@ -1121,6 +1282,162 @@ function ProductFormModal({
               </div>
             </div>
           </div>
+
+          {/* 초이스별 가격 테이블 (선택된 상품에 초이스가 있는 경우) */}
+          {allChoiceOptions.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-lg font-semibold text-gray-800">
+                  초이스별 가격 설정
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newPrices: Record<string, any> = {};
+                    allChoiceOptions.forEach(opt => {
+                      newPrices[opt.id] = {
+                        adult: formData.adult_supplier_price,
+                        child: formData.child_supplier_price,
+                        infant: formData.infant_supplier_price,
+                        season_adult: formData.adult_season_price,
+                        season_child: formData.child_season_price,
+                        season_infant: formData.infant_season_price,
+                        markup_percent: formData.markup_percent,
+                        markup_amount: formData.markup_amount
+                      };
+                    });
+                    setChoicePricesTable(newPrices);
+                  }}
+                  className="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600"
+                >
+                  위 가격으로 일괄 적용
+                </button>
+              </div>
+              
+              <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">옵션명</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">성인</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">아동</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">유아</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">시즌 성인</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">시즌 아동</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">시즌 유아</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">마크업 %</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">마크업 금액</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {allChoiceOptions.map((option) => (
+                      <tr key={option.id}>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {option.name_ko || option.name}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={choicePricesTable[option.id]?.adult || 0}
+                            onChange={(e) => setChoicePricesTable(prev => ({
+                              ...prev,
+                              [option.id]: { ...prev[option.id], adult: parseFloat(e.target.value) || 0 }
+                            }))}
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={choicePricesTable[option.id]?.child || 0}
+                            onChange={(e) => setChoicePricesTable(prev => ({
+                              ...prev,
+                              [option.id]: { ...prev[option.id], child: parseFloat(e.target.value) || 0 }
+                            }))}
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={choicePricesTable[option.id]?.infant || 0}
+                            onChange={(e) => setChoicePricesTable(prev => ({
+                              ...prev,
+                              [option.id]: { ...prev[option.id], infant: parseFloat(e.target.value) || 0 }
+                            }))}
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={choicePricesTable[option.id]?.season_adult || 0}
+                            onChange={(e) => setChoicePricesTable(prev => ({
+                              ...prev,
+                              [option.id]: { ...prev[option.id], season_adult: parseFloat(e.target.value) || 0 }
+                            }))}
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={choicePricesTable[option.id]?.season_child || 0}
+                            onChange={(e) => setChoicePricesTable(prev => ({
+                              ...prev,
+                              [option.id]: { ...prev[option.id], season_child: parseFloat(e.target.value) || 0 }
+                            }))}
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={choicePricesTable[option.id]?.season_infant || 0}
+                            onChange={(e) => setChoicePricesTable(prev => ({
+                              ...prev,
+                              [option.id]: { ...prev[option.id], season_infant: parseFloat(e.target.value) || 0 }
+                            }))}
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={choicePricesTable[option.id]?.markup_percent || 0}
+                            onChange={(e) => setChoicePricesTable(prev => ({
+                              ...prev,
+                              [option.id]: { ...prev[option.id], markup_percent: parseFloat(e.target.value) || 0 }
+                            }))}
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={choicePricesTable[option.id]?.markup_amount || 0}
+                            onChange={(e) => setChoicePricesTable(prev => ({
+                              ...prev,
+                              [option.id]: { ...prev[option.id], markup_amount: parseFloat(e.target.value) || 0 }
+                            }))}
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
         </form>
       </div>

@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Calendar, User, CreditCard } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Calendar, User, CreditCard } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 
@@ -62,19 +62,16 @@ interface ReservationExpenseManagerProps {
 export default function ReservationExpenseManager({ 
   reservationId, 
   submittedBy, 
-  userRole = 'team_member',
   onExpenseUpdated 
 }: ReservationExpenseManagerProps) {
   
   const t = useTranslations('reservationExpense')
   const [expenses, setExpenses] = useState<ReservationExpense[]>([])
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
-  const [vendors, setVendors] = useState<ExpenseVendor[]>([])
   const [paidToOptions, setPaidToOptions] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
   const [reservations, setReservations] = useState<Reservation[]>([])
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingExpense, setEditingExpense] = useState<ReservationExpense | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -150,8 +147,7 @@ export default function ReservationExpenseManager({
         .order('name')
 
       if (error) throw error
-      setVendors(data || [])
-      setPaidToOptions(data?.map(v => v.name) || [])
+      setPaidToOptions(data?.map((v: ExpenseVendor) => v.name) || [])
     } catch (error) {
       console.error('Error loading vendors:', error)
     }
@@ -166,7 +162,7 @@ export default function ReservationExpenseManager({
       if (error) throw error
       
       const membersMap: Record<string, string> = {}
-      data?.forEach(member => {
+      data?.forEach((member: { email: string; name_ko: string }) => {
         membersMap[member.email] = member.name_ko
       })
       setTeamMembers(membersMap)
@@ -192,7 +188,7 @@ export default function ReservationExpenseManager({
       }
 
       // 고객 ID 목록 추출
-      const customerIds = [...new Set(reservationsData.map(r => r.customer_id).filter(Boolean))]
+      const customerIds = [...new Set(reservationsData.map((r: any) => r.customer_id).filter(Boolean))]
       
       // 고객 정보 가져오기
       const { data: customersData, error: customersError } = await supabase
@@ -203,10 +199,10 @@ export default function ReservationExpenseManager({
       if (customersError) throw customersError
 
       // 고객 정보를 Map으로 변환
-      const customerMap = new Map((customersData || []).map(c => [c.id, c]))
+      const customerMap = new Map((customersData || []).map((c: any) => [c.id, c]))
 
       // 예약과 고객 정보 결합
-      const reservationsWithCustomers = reservationsData.map(reservation => ({
+      const reservationsWithCustomers = reservationsData.map((reservation: any) => ({
         id: reservation.id,
         customer_id: reservation.customer_id,
         product_id: reservation.product_id,
@@ -269,13 +265,12 @@ export default function ReservationExpenseManager({
         try {
           const { data: newVendor } = await supabase
             .from('expense_vendors')
-            .insert({ name: formData.custom_paid_to })
+            .insert({ name: formData.custom_paid_to } as any)
             .select()
             .single()
           
           if (newVendor) {
-            setVendors(prev => [...prev, newVendor])
-            setPaidToOptions(prev => [...prev, newVendor.name])
+            setPaidToOptions(prev => [...prev, (newVendor as ExpenseVendor).name])
           }
         } catch (error) {
           console.error('Error adding new vendor:', error)
@@ -297,7 +292,7 @@ export default function ReservationExpenseManager({
           reservation_id: formData.reservation_id || null,
           event_id: formData.event_id || null,
           status: 'pending'
-        })
+        } as any)
         .select()
         .single()
 
@@ -437,26 +432,6 @@ export default function ReservationExpenseManager({
     setShowAddForm(true)
   }
 
-  // 영수증 이미지 업로드 처리
-  const handleFileUpload = async (files: FileList) => {
-    if (!files.length) return
-
-    try {
-      setUploading(true)
-      const file = files[0] // 첫 번째 파일만 사용
-      const { filePath, imageUrl } = await handleImageUpload(file)
-      
-      setFormData(prev => ({
-        ...prev,
-        file_path: filePath,
-        image_url: imageUrl
-      }))
-    } catch (error) {
-      alert(`이미지 업로드에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
-    } finally {
-      setUploading(false)
-    }
-  }
 
   // 드래그 앤 드롭 핸들러
   const handleDragOver = (e: React.DragEvent) => {
@@ -536,9 +511,9 @@ export default function ReservationExpenseManager({
   // 상태별 텍스트
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'approved': return '승인됨'
-      case 'rejected': return '거부됨'
-      case 'pending': return '대기중'
+      case 'approved': return t('status.approved')
+      case 'rejected': return t('status.rejected')
+      case 'pending': return t('status.pending')
       default: return status
     }
   }
@@ -560,11 +535,11 @@ export default function ReservationExpenseManager({
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <DollarSign className="h-6 w-6 text-blue-600" />
-          <h3 className="text-lg font-semibold text-gray-900">예약 지출 관리</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t('expenseManagement')}</h3>
         </div>
         <div className="flex items-center space-x-4">
           <div className="text-sm text-gray-600">
-            총 금액: <span className="font-semibold text-green-600">{formatCurrency(totalAmount)}</span>
+            {t('totalAmountLabel')}: <span className="font-semibold text-green-600">{formatCurrency(totalAmount)}</span>
           </div>
           <button
             onClick={() => {
@@ -588,7 +563,7 @@ export default function ReservationExpenseManager({
             className="flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Plus size={16} />
-            <span>지출 추가</span>
+            <span>{t('addExpense')}</span>
           </button>
         </div>
       </div>
@@ -598,7 +573,7 @@ export default function ReservationExpenseManager({
         <div className="bg-white border rounded-lg p-4 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h4 className="text-lg font-medium text-gray-900">
-              {editingExpense ? '지출 수정' : '지출 추가'}
+              {editingExpense ? t('editExpense') : t('addExpense')}
             </h4>
             <button
               onClick={() => {
@@ -630,7 +605,7 @@ export default function ReservationExpenseManager({
               {/* 결제처 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  결제처 <span className="text-red-500">*</span>
+                  {t('paidTo')} <span className="text-red-500">*</span>
                 </label>
                 {!showCustomPaidTo ? (
                   <div className="space-y-2">
@@ -640,7 +615,7 @@ export default function ReservationExpenseManager({
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
                     >
-                      <option value="">선택해주세요</option>
+                      <option value="">{t('selectOptions.pleaseSelect')}</option>
                       {paidToOptions.map(option => (
                         <option key={option} value={option}>{option}</option>
                       ))}
@@ -650,7 +625,7 @@ export default function ReservationExpenseManager({
                       onClick={() => setShowCustomPaidTo(true)}
                       className="text-sm text-blue-600 hover:text-blue-800"
                     >
-                      직접 입력
+                      {t('directInput')}
                     </button>
                   </div>
                 ) : (
@@ -659,7 +634,7 @@ export default function ReservationExpenseManager({
                       type="text"
                       value={formData.custom_paid_to}
                       onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_to: e.target.value }))}
-                      placeholder="새 결제처명을 입력하세요"
+                      placeholder={t('newPaidToPlaceholder')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
                     />
@@ -671,7 +646,7 @@ export default function ReservationExpenseManager({
                       }}
                       className="text-sm text-gray-600 hover:text-gray-800"
                     >
-                      선택 목록으로 돌아가기
+                      {t('backToList')}
                     </button>
                   </div>
                 )}
@@ -680,7 +655,7 @@ export default function ReservationExpenseManager({
               {/* 결제내용 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  결제내용 <span className="text-red-500">*</span>
+                  {t('paidFor')} <span className="text-red-500">*</span>
                 </label>
                 {!showCustomPaidFor ? (
                   <div className="space-y-2">
@@ -690,7 +665,7 @@ export default function ReservationExpenseManager({
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
                     >
-                      <option value="">선택해주세요</option>
+                      <option value="">{t('selectOptions.pleaseSelect')}</option>
                       {categories.map(category => (
                         <option key={category.id} value={category.name}>{category.name}</option>
                       ))}
@@ -700,7 +675,7 @@ export default function ReservationExpenseManager({
                       onClick={() => setShowCustomPaidFor(true)}
                       className="text-sm text-blue-600 hover:text-blue-800"
                     >
-                      직접 입력
+                      {t('directInput')}
                     </button>
                   </div>
                 ) : (
@@ -709,7 +684,7 @@ export default function ReservationExpenseManager({
                       type="text"
                       value={formData.custom_paid_for}
                       onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_for: e.target.value }))}
-                      placeholder="새 결제내용을 입력하세요"
+                      placeholder={t('newPaidForPlaceholder')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
                     />
@@ -721,7 +696,7 @@ export default function ReservationExpenseManager({
                       }}
                       className="text-sm text-gray-600 hover:text-gray-800"
                     >
-                      선택 목록으로 돌아가기
+                      {t('backToList')}
                     </button>
                   </div>
                 )}
@@ -730,7 +705,7 @@ export default function ReservationExpenseManager({
               {/* 금액 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  금액 <span className="text-red-500">*</span>
+                  {t('amount')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -747,34 +722,34 @@ export default function ReservationExpenseManager({
               {/* 결제방법 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  결제방법
+                  {t('form.paymentMethod')}
                 </label>
-                <select
-                  value={formData.payment_method}
-                  onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">선택해주세요</option>
-                  <option value="cash">현금</option>
-                  <option value="creditCard">신용카드</option>
-                  <option value="debitCard">체크카드</option>
-                  <option value="mobilePayment">모바일 결제</option>
-                  <option value="other">기타</option>
-                </select>
+                  <select
+                    value={formData.payment_method}
+                    onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">{t('selectOptions.pleaseSelect')}</option>
+                    <option value="cash">{t('paymentMethods.cash')}</option>
+                    <option value="creditCard">{t('paymentMethods.creditCard')}</option>
+                    <option value="debitCard">{t('paymentMethods.debitCard')}</option>
+                    <option value="mobilePayment">{t('paymentMethods.mobilePayment')}</option>
+                    <option value="other">{t('paymentMethods.other')}</option>
+                  </select>
               </div>
 
               {/* 예약 ID */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  예약 ID
+                  {t('form.reservationId')}
                 </label>
                 <select
                   value={formData.reservation_id}
                   onChange={(e) => setFormData(prev => ({ ...prev, reservation_id: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="">선택해주세요</option>
-                  {reservations.map(reservation => (
+                  <option value="">{t('selectOptions.pleaseSelect')}</option>
+                  {reservations.map((reservation: Reservation) => (
                     <option key={reservation.id} value={reservation.id}>
                       {reservation.customers.name} ({reservation.product_id})
                     </option>
@@ -785,13 +760,13 @@ export default function ReservationExpenseManager({
               {/* 이벤트 ID */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  이벤트 ID
+                  {t('form.eventId')}
                 </label>
                 <input
                   type="text"
                   value={formData.event_id}
                   onChange={(e) => setFormData(prev => ({ ...prev, event_id: e.target.value }))}
-                  placeholder="이벤트 ID를 입력하세요"
+                  placeholder={t('enterEventId')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -800,12 +775,12 @@ export default function ReservationExpenseManager({
             {/* 메모 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                메모
+                {t('memo')}
               </label>
               <textarea
                 value={formData.note}
                 onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
-                placeholder="메모를 입력하세요"
+                placeholder={t('memoPlaceholder')}
                 rows={3}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
@@ -814,7 +789,7 @@ export default function ReservationExpenseManager({
             {/* 영수증 이미지 업로드 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                영수증 이미지
+                {t('form.image')}
               </label>
               <div
                 className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
@@ -871,25 +846,25 @@ export default function ReservationExpenseManager({
                       dragOver ? 'text-blue-900' : 'text-gray-900'
                     }`}>
                       {uploading 
-                        ? '파일 업로드 중...' 
+                        ? t('uploadingFiles')
                         : dragOver 
-                          ? '파일을 여기에 놓으세요' 
-                          : '파일을 드래그하여 놓거나 클릭하여 선택하세요'
+                          ? t('dropFilesHere')
+                          : t('dragOrClickFiles')
                       }
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      또는 클립보드에서 붙여넣기 (Ctrl+V)
+                      {t('pasteFromClipboard')}
                     </p>
                   </div>
                   <div className="text-xs text-gray-400">
-                    지원 형식: JPG, PNG, GIF, PDF, DOC, DOCX (최대 10MB)
+                    {t('supportedFormats')}
                   </div>
                 </div>
                 
                 {/* 업로드된 파일 목록 */}
                 {formData.uploaded_files && formData.uploaded_files.length > 0 && (
                   <div className="mt-6 pt-4 border-t border-gray-200">
-                    <h4 className="text-sm font-medium mb-3 text-gray-900">업로드된 파일 ({formData.uploaded_files?.length || 0}개)</h4>
+                    <h4 className="text-sm font-medium mb-3 text-gray-900">{t('uploadedFiles')} ({formData.uploaded_files?.length || 0}{t('files')})</h4>
                     <div className="space-y-2">
                       {formData.uploaded_files.map((file, index) => (
                         <div key={index} className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50">
@@ -952,7 +927,7 @@ export default function ReservationExpenseManager({
                 }}
                 className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
-                취소
+                {t('buttons.cancel')}
               </button>
               <button
                 type="button"
@@ -960,7 +935,7 @@ export default function ReservationExpenseManager({
                 disabled={uploading}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
-                {uploading ? '처리중...' : (editingExpense ? '수정' : '등록')}
+                {uploading ? t('processing') : (editingExpense ? t('buttons.edit') : t('buttons.register'))}
               </button>
             </div>
           </div>
@@ -971,7 +946,7 @@ export default function ReservationExpenseManager({
       {loading ? (
         <div className="text-center py-4">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-500 mt-2">로딩중...</p>
+          <p className="text-gray-500 mt-2">{t('loading')}</p>
         </div>
       ) : expenses.length > 0 ? (
         <div className="space-y-2">
@@ -993,7 +968,7 @@ export default function ReservationExpenseManager({
                   <button
                     onClick={() => handleEditExpense(expense)}
                     className="p-1 text-gray-600 hover:text-blue-600"
-                    title="수정"
+                    title={t('buttons.edit')}
                   >
                     <Edit size={14} />
                   </button>
@@ -1002,7 +977,7 @@ export default function ReservationExpenseManager({
                   <button
                     onClick={() => handleDeleteExpense(expense.id)}
                     className="p-1 text-gray-600 hover:text-red-600"
-                    title="삭제"
+                    title={t('buttons.delete')}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -1036,7 +1011,7 @@ export default function ReservationExpenseManager({
                     className="flex items-center space-x-1 text-blue-600 hover:text-blue-800"
                   >
                     <Eye size={12} />
-                    <span>영수증 보기</span>
+                    <span>{t('viewReceipt')}</span>
                   </button>
                 )}
               </div>
@@ -1044,7 +1019,7 @@ export default function ReservationExpenseManager({
               {/* 예약 정보 */}
               {expense.reservations && (
                 <div className="mt-2 text-xs text-gray-500">
-                  예약: {expense.reservations.customers.name} ({expense.reservations.product_id})
+                  {t('reservation')}: {expense.reservations.customer_name} ({expense.reservations.product_id})
                 </div>
               )}
 
@@ -1060,7 +1035,7 @@ export default function ReservationExpenseManager({
       ) : (
         <div className="text-center py-8 text-gray-500">
           <DollarSign className="h-12 w-12 text-gray-300 mx-auto mb-2" />
-          <p>등록된 예약 지출이 없습니다.</p>
+          <p>{t('noExpensesMessage')}</p>
         </div>
       )}
     </div>

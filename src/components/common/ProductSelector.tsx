@@ -107,39 +107,85 @@ export default function ProductSelector({
   const loadProductChoices = async (productId: string) => {
     try {
       setLoadingChoices(true);
-      const { data, error } = await supabase
+      
+      // 먼저 products 테이블의 choices 컬럼에서 읽기 시도
+      const { data: productData, error: productError } = await supabase
         .from('products')
         .select('choices')
         .eq('id', productId)
         .single();
 
-      if (error) throw error;
-      
-      if (data && typeof data === 'object' && 'choices' in data) {
-        const choicesData = (data as { choices: unknown }).choices as Record<string, unknown>;
+      if (!productError && productData && typeof productData === 'object' && 'choices' in productData) {
+        const choicesData = (productData as { choices: unknown }).choices as Record<string, unknown>;
         if (choicesData && typeof choicesData === 'object' && 'required' in choicesData) {
           const choices: Choice[] = [];
           const requiredChoices = (choicesData.required as Record<string, unknown>[]);
           requiredChoices.forEach((choiceGroup: Record<string, unknown>) => {
-          if (choiceGroup.options && Array.isArray(choiceGroup.options)) {
-            (choiceGroup.options as Record<string, unknown>[]).forEach((option: Record<string, unknown>) => {
+            if (choiceGroup.options && Array.isArray(choiceGroup.options)) {
+              (choiceGroup.options as Record<string, unknown>[]).forEach((option: Record<string, unknown>) => {
+                choices.push({
+                  id: option.id as string,
+                  name: option.name as string,
+                  name_ko: option.name_ko as string,
+                  description: option.description as string,
+                  adult_price: (option.price as number) || 0,
+                  child_price: (option.child_price as number) || (option.price as number) || 0,
+                  infant_price: (option.infant_price as number) || 0,
+                  is_default: (option.is_default as boolean) || false
+                });
+              });
+            }
+          });
+          setProductChoices(choices);
+          return;
+        }
+      }
+
+      // products.choices에서 찾지 못했으면 별도 테이블(product_choices, choice_options)에서 가져오기
+      const { data: choicesData, error: choicesError } = await supabase
+        .from('product_choices')
+        .select(`
+          id,
+          choice_name,
+          choice_name_ko,
+          choice_options (
+            id,
+            option_key,
+            option_name,
+            option_name_ko,
+            adult_price,
+            child_price,
+            infant_price,
+            is_default
+          )
+        `)
+        .eq('product_id', productId);
+
+      if (choicesError) {
+        console.error('product_choices 로드 오류:', choicesError);
+        setProductChoices([]);
+        return;
+      }
+
+      if (choicesData && Array.isArray(choicesData)) {
+        const choices: Choice[] = [];
+        choicesData.forEach((choice: any) => {
+          if (choice.choice_options && Array.isArray(choice.choice_options)) {
+            choice.choice_options.forEach((option: any) => {
               choices.push({
-                id: option.id as string,
-                name: option.name as string,
-                name_ko: option.name_ko as string,
-                description: option.description as string,
-                adult_price: (option.price as number) || 0,
-                child_price: (option.child_price as number) || (option.price as number) || 0,
-                infant_price: (option.infant_price as number) || 0,
-                is_default: (option.is_default as boolean) || false
+                id: option.id,
+                name: option.option_name,
+                name_ko: option.option_name_ko,
+                description: option.option_name_ko || option.option_name,
+                adult_price: option.adult_price || 0,
+                child_price: option.child_price || 0,
+                infant_price: option.infant_price || 0,
+                is_default: option.is_default || false
               });
             });
           }
-          });
-          setProductChoices(choices);
-        } else {
-          setProductChoices([]);
-        }
+        });
+        setProductChoices(choices);
       } else {
         setProductChoices([]);
       }
@@ -373,7 +419,7 @@ export default function ProductSelector({
       {/* 상품 목록 - 탭 형식 */}
       <div className="border border-gray-200 rounded-lg h-[500px] flex flex-col">
         {loading ? (
-          <div className="p-4 text-center text-gray-500">{t('loading')}</div>
+          <div className="p-4 text-center text-gray-500">로딩 중...</div>
         ) : filteredProducts.length === 0 ? (
           <div className="p-4 text-center text-gray-500">
             {searchTerm || selectedCategory || selectedSubCategory 
@@ -541,7 +587,7 @@ export default function ProductSelector({
         <div className="space-y-3">
           <h4 className="font-medium text-gray-900">선택 옵션</h4>
           {loadingChoices ? (
-            <div className="p-4 text-center text-gray-500">{t('loading')}</div>
+            <div className="p-4 text-center text-gray-500">로딩 중...</div>
           ) : productChoices.length === 0 ? (
             <div className="p-4 text-center text-gray-500">선택 옵션이 없습니다.</div>
           ) : (

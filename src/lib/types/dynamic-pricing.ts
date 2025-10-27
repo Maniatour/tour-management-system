@@ -128,6 +128,10 @@ export interface SimplePricingRuleDto {
   is_sale_available: boolean;
   not_included_price?: number;
   markup_percent?: number;
+  inclusions_ko?: string | null;
+  exclusions_ko?: string | null;
+  inclusions_en?: string | null;
+  exclusions_en?: string | null;
   choices_pricing?: Record<string, {
     adult_price: number;
     child_price: number;
@@ -340,5 +344,9 @@ export interface PricingConfig {
   coupon_percent: number;
   is_sale_available: boolean;
   not_included_price: number;
+  inclusions_ko?: string | null;
+  exclusions_ko?: string | null;
+  inclusions_en?: string | null;
+  exclusions_en?: string | null;
   choicePricing: Record<string, ChoicePricing>;
 }
