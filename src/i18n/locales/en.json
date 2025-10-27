@@ -1207,5 +1207,71 @@
     "delete": "Delete",
     "noExpensesMessage": "No reservation expenses registered.",
     "reservation": "Reservation"
+  },
+  "companyExpense": {
+    "title": "Company Expense Management",
+    "expenseList": "Expense List",
+    "addExpense": "Add Expense",
+    "loading": "Loading...",
+    "noExpenses": "No company expenses registered.",
+    "categories": {
+      "office": "Office",
+      "marketing": "Marketing",
+      "utilities": "Utilities",
+      "vehicle": "Vehicle",
+      "travel": "Travel",
+      "meals": "Meals",
+      "equipment": "Equipment",
+      "maintenance": "Maintenance",
+      "other": "Other"
+    },
+    "expenseTypes": {
+      "operating": "Operating",
+      "capital": "Capital",
+      "marketing": "Marketing",
+      "travel": "Travel",
+      "maintenance": "Maintenance",
+      "other": "Other"
+    },
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "paid": "Paid"
+    },
+    "form": {
+      "id": "ID",
+      "amount": "Amount",
+      "paidTo": "Paid To",
+      "paidFor": "Paid For",
+      "description": "Description",
+      "category": "Category",
+      "expenseType": "Expense Type",
+      "vehicleId": "Vehicle",
+      "paymentMethod": "Payment Method",
+      "notes": "Notes",
+      "taxDeductible": "Tax Deductible"
+    },
+    "filters": {
+      "search": "Search",
+      "searchPlaceholder": "Search expenses...",
+      "category": "Category",
+      "status": "Status",
+      "vehicle": "Vehicle",
+      "all": "All"
+    },
+    "buttons": {
+      "edit": "Edit",
+      "cancel": "Cancel",
+      "save": "Save",
+      "delete": "Delete",
+      "resetFilters": "Reset Filters"
+    },
+    "messages": {
+      "expenseAdded": "Company expense has been registered.",
+      "expenseUpdated": "Company expense has been updated.",
+      "expenseDeleted": "Company expense has been deleted.",
+      "confirmDelete": "Are you sure you want to delete this company expense?"
+    }
   }
 }

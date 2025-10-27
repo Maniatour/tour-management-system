@@ -1243,5 +1243,71 @@
     "delete": "삭제",
     "noExpensesMessage": "등록된 예약 지출이 없습니다.",
     "reservation": "예약"
+  },
+  "companyExpense": {
+    "title": "회사 지출 관리",
+    "expenseList": "지출 목록",
+    "addExpense": "지출 추가",
+    "loading": "로딩 중...",
+    "noExpenses": "등록된 회사 지출이 없습니다.",
+    "categories": {
+      "office": "사무실",
+      "marketing": "마케팅",
+      "utilities": "공과금",
+      "vehicle": "차량",
+      "travel": "여행",
+      "meals": "식사",
+      "equipment": "장비",
+      "maintenance": "정비",
+      "other": "기타"
+    },
+    "expenseTypes": {
+      "operating": "운영비",
+      "capital": "자본비",
+      "marketing": "마케팅",
+      "travel": "여행",
+      "maintenance": "정비",
+      "other": "기타"
+    },
+    "status": {
+      "pending": "대기중",
+      "approved": "승인됨",
+      "rejected": "거부됨",
+      "paid": "지급됨"
+    },
+    "form": {
+      "id": "ID",
+      "amount": "금액",
+      "paidTo": "결제처",
+      "paidFor": "결제내용",
+      "description": "설명",
+      "category": "카테고리",
+      "expenseType": "지출 유형",
+      "vehicleId": "차량",
+      "paymentMethod": "결제 방법",
+      "notes": "메모",
+      "taxDeductible": "세금 공제"
+    },
+    "filters": {
+      "search": "검색",
+      "searchPlaceholder": "지출 검색...",
+      "category": "카테고리",
+      "status": "상태",
+      "vehicle": "차량",
+      "all": "전체"
+    },
+    "buttons": {
+      "edit": "수정",
+      "cancel": "취소",
+      "save": "저장",
+      "delete": "삭제",
+      "resetFilters": "필터 초기화"
+    },
+    "messages": {
+      "expenseAdded": "회사 지출이 등록되었습니다.",
+      "expenseUpdated": "회사 지출이 수정되었습니다.",
+      "expenseDeleted": "회사 지출이 삭제되었습니다.",
+      "confirmDelete": "정말로 이 회사 지출을 삭제하시겠습니까?"
+    }
   }
 }
