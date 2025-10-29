@@ -5,6 +5,7 @@ import { Plus, Edit2, Trash2, Save, X, Globe } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import TranslationManager from './TranslationManager'
+import JsonSyncManager from './JsonSyncManager'
 
 interface Tag {
   id: string
@@ -27,7 +28,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
   const t = useTranslations('tagTranslations')
   const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'tags' | 'translations'>('tags')
+  const [activeTab, setActiveTab] = useState<'tags' | 'translations' | 'json'>('tags')
   const [editingTag, setEditingTag] = useState<string | null>(null)
   const [editingLocale, setEditingLocale] = useState<string | null>(null)
   const [editingValues, setEditingValues] = useState<{ label: string; pronunciation?: string; notes?: string }>({
@@ -306,6 +307,16 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
             >
               번역 관리
             </button>
+            <button
+              onClick={() => setActiveTab('json')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'json'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              JSON 동기화
+            </button>
           </nav>
         </div>
       </div>
@@ -543,6 +554,11 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
       {/* 번역 관리 탭 */}
       {activeTab === 'translations' && (
         <TranslationManager locale={locale} />
+      )}
+
+      {/* JSON 동기화 탭 */}
+      {activeTab === 'json' && (
+        <JsonSyncManager locale={locale} />
       )}
     </div>
   )
