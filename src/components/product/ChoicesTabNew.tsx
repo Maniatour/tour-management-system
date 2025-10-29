@@ -230,9 +230,13 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           )
         `)
         .eq('product_id', productId)
-        .order('sort_order') as { data: ProductChoiceData[] | null, error: SupabaseError | null }
+        .order('sort_order', { ascending: true }) as { data: ProductChoiceData[] | null, error: SupabaseError | null }
 
-      if (error) throw error
+      if (error) {
+        console.error('Choices 로드 오류:', error)
+        setSaveMessage('Choices 로드 중 오류가 발생했습니다.')
+        return
+      }
 
       console.log('ChoicesTab에서 로드된 product choices:', data)
       const convertedChoices: ProductChoice[] = (data || []).map(choice => ({

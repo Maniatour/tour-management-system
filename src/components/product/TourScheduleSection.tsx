@@ -410,7 +410,7 @@ export default function TourScheduleSection({
                         {/* 설명 영역 (아코디언) */}
                         {hasDescription && isExpanded && (
                           <div className="mt-2 pt-2 border-t border-gray-200">
-                            <p className="text-sm text-gray-600 leading-relaxed">
+                            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
                               {getLocalizedText(schedule.description_ko, schedule.description_en, '')}
                             </p>
                           </div>

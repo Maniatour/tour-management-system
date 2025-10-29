@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useRef, useState, useCallback } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
 // 마크다운을 HTML로 변환하는 함수
 const markdownToHtml = (markdown: string): string => {
@@ -106,6 +107,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   // 드롭다운 상태 관리
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showFontSizePicker, setShowFontSizePicker] = useState(false)
+  const [showBackgroundColorPicker, setShowBackgroundColorPicker] = useState(false)
   
   // 사이즈 조정 상태 관리
   const [currentHeight, setCurrentHeight] = useState(height)
@@ -159,11 +161,12 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   // 드롭다운 외부 클릭 시 닫기
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showColorPicker || showFontSizePicker) {
+      if (showColorPicker || showFontSizePicker || showBackgroundColorPicker) {
         const target = event.target as HTMLElement
         if (!target.closest('.relative')) {
           setShowColorPicker(false)
           setShowFontSizePicker(false)
+          setShowBackgroundColorPicker(false)
         }
       }
     }
@@ -172,7 +175,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showColorPicker, showFontSizePicker])
+  }, [showColorPicker, showFontSizePicker, showBackgroundColorPicker])
 
   // 사이즈 조정 이벤트 핸들러 (단순화)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -251,6 +254,13 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     document.execCommand('foreColor', false, color)
     setTimeout(updateEditorContent, 0)
     setShowColorPicker(false)
+  }
+
+  // 배경색 적용
+  const applyBackgroundColor = (color: string) => {
+    document.execCommand('backColor', false, color)
+    setTimeout(updateEditorContent, 0)
+    setShowBackgroundColorPicker(false)
   }
 
   // 글자 크기 적용
@@ -351,7 +361,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             <div className="w-px bg-gray-300 mx-1"></div>
           )}
           
-          {/* 색상 선택기 */}
+          {/* 글자색 선택기 */}
           {enableColorPicker && (
             <div className="relative">
               <button
@@ -361,7 +371,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                 title="글자색"
               >
                 <span style={{ color: '#000000' }}>A</span>
-                <span className="text-xs">▼</span>
+                <ChevronDown className="w-3 h-3" />
               </button>
               {showColorPicker && (
                 <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg p-2 z-10">
@@ -371,6 +381,40 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                         key={color}
                         type="button"
                         onClick={() => applyColor(color)}
+                        className="w-6 h-6 border border-gray-300 rounded hover:scale-110 transition-transform"
+                        style={{ backgroundColor: color }}
+                        title={color}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 배경색 선택기 */}
+          {enableColorPicker && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowBackgroundColorPicker(!showBackgroundColorPicker)}
+                className="px-3 py-1 text-sm bg-white border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1"
+                title="글자 배경색"
+              >
+                <span className="relative">
+                  <span style={{ color: '#000000' }}>A</span>
+                  <span className="absolute top-0 left-0 w-full h-1/2 bg-yellow-300 opacity-50"></span>
+                </span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showBackgroundColorPicker && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg p-2 z-10">
+                  <div className="grid grid-cols-6 gap-1 w-48">
+                    {colorPalette.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => applyBackgroundColor(color)}
                         className="w-6 h-6 border border-gray-300 rounded hover:scale-110 transition-transform"
                         style={{ backgroundColor: color }}
                         title={color}
@@ -392,7 +436,7 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
                 title="글자 크기"
               >
                 <span>12px</span>
-                <span className="text-xs">▼</span>
+                <ChevronDown className="w-3 h-3" />
               </button>
               {showFontSizePicker && (
                 <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-10">

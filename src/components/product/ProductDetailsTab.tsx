@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import CommonDetailsModal from './CommonDetailsModal'
 import { translateProductDetailsFields, type ProductDetailsTranslationFields } from '@/lib/translationService'
 import { suggestTourDescription } from '@/lib/chatgptService'
+import LightRichEditor from '@/components/LightRichEditor'
 
 interface ProductDetailsFields {
   slogan1: string
@@ -152,7 +153,7 @@ export default function ProductDetailsTab({
 
       if (error) throw error
       
-      const channelsData = data || []
+      const channelsData = (data || []) as Channel[]
       setChannels(channelsData)
       
       // 채널을 타입별로 그룹화
@@ -172,10 +173,10 @@ export default function ProductDetailsTab({
       
       setChannelGroups(groups)
       
-      // 모든 그룹을 기본적으로 확장
+      // 모든 그룹을 기본적으로 접힘
       const expanded: Record<string, boolean> = {}
       groups.forEach(group => {
-        expanded[group.type] = true
+        expanded[group.type] = false
       })
       setExpandedGroups(expanded)
       
@@ -255,7 +256,25 @@ export default function ProductDetailsTab({
 
       if (sourceData && sourceData.length > 0) {
         const copyPromises = toChannelIds.map(async (toChannelId) => {
-          for (const sourceItem of sourceData) {
+          for (const sourceItem of sourceData as Array<{
+            language_code: string
+            slogan1: string | null
+            slogan2: string | null
+            slogan3: string | null
+            description: string | null
+            included: string | null
+            not_included: string | null
+            pickup_drop_info: string | null
+            luggage_info: string | null
+            tour_operation_info: string | null
+            preparation_info: string | null
+            small_group_info: string | null
+            notice_info: string | null
+            private_tour_info: string | null
+            cancellation_policy: string | null
+            chat_announcement: string | null
+            tags: string[] | null
+          }>) {
             const copyData = {
               product_id: productId,
               channel_id: toChannelId,
@@ -280,6 +299,7 @@ export default function ProductDetailsTab({
 
             const { error: insertError } = await supabase
               .from('product_details_multilingual')
+              // @ts-expect-error - Supabase 타입 추론 문제
               .upsert([copyData])
 
             if (insertError) {
@@ -374,6 +394,7 @@ export default function ProductDetailsTab({
           // 업데이트
           const { error: updateError } = await supabase
             .from('product_details_multilingual')
+            // @ts-expect-error - Supabase 타입 추론 문제
             .update({
               ...detailsData,
               updated_at: new Date().toISOString()
@@ -390,6 +411,7 @@ export default function ProductDetailsTab({
           // 새로 생성
           const { error: insertError } = await supabase
             .from('product_details_multilingual')
+            // @ts-expect-error - Supabase 타입 추론 문제
             .insert([detailsData])
           
           if (insertError) {
@@ -441,14 +463,32 @@ export default function ProductDetailsTab({
         .from('products')
         .select('use_common_details, sub_category')
         .eq('id', productId)
-        .single()
+        .single() as { data: { use_common_details: boolean | null; sub_category: string | null } | null, error: unknown }
 
       if (productError) throw productError
 
-      let detailsData: unknown = null
+      let detailsData: Array<{
+        language_code: string | null
+        slogan1: string | null
+        slogan2: string | null
+        slogan3: string | null
+        description: string | null
+        included: string | null
+        not_included: string | null
+        pickup_drop_info: string | null
+        luggage_info: string | null
+        tour_operation_info: string | null
+        preparation_info: string | null
+        small_group_info: string | null
+        notice_info: string | null
+        private_tour_info: string | null
+        cancellation_policy: string | null
+        chat_announcement: string | null
+        tags: string[] | null
+      }> | { language_code: string | null; slogan1: string | null; slogan2: string | null; slogan3: string | null; description: string | null; included: string | null; not_included: string | null; pickup_drop_info: string | null; luggage_info: string | null; tour_operation_info: string | null; preparation_info: string | null; small_group_info: string | null; notice_info: string | null; private_tour_info: string | null; cancellation_policy: string | null; chat_announcement: string | null; tags: string[] | null } | null = null
       let detailsError: { code?: string } | null = null
 
-      if (productData?.use_common_details) {
+      if (productData?.use_common_details && productData.sub_category) {
         // 공통 세부정보 사용
         const { data: commonData, error: commonError } = await supabase
           .from('product_details_common_multilingual')
@@ -476,7 +516,7 @@ export default function ProductDetailsTab({
       
       if (Array.isArray(detailsData) && detailsData.length > 0) {
         // 여러 언어 데이터가 있는 경우
-        detailsData.forEach((item: any) => {
+        detailsData.forEach((item) => {
           multilingualDetails[item.language_code || 'ko'] = {
             slogan1: item.slogan1 || '',
             slogan2: item.slogan2 || '',
@@ -496,25 +536,44 @@ export default function ProductDetailsTab({
             tags: item.tags || []
           }
         })
-      } else if (detailsData) {
+      } else if (detailsData && !Array.isArray(detailsData)) {
         // 단일 언어 데이터가 있는 경우
-        multilingualDetails[(detailsData as any).language_code || 'ko'] = {
-          slogan1: (detailsData as any).slogan1 || '',
-          slogan2: (detailsData as any).slogan2 || '',
-          slogan3: (detailsData as any).slogan3 || '',
-          description: (detailsData as any).description || '',
-          included: (detailsData as any).included || '',
-          not_included: (detailsData as any).not_included || '',
-          pickup_drop_info: (detailsData as any).pickup_drop_info || '',
-          luggage_info: (detailsData as any).luggage_info || '',
-          tour_operation_info: (detailsData as any).tour_operation_info || '',
-          preparation_info: (detailsData as any).preparation_info || '',
-          small_group_info: (detailsData as any).small_group_info || '',
-          notice_info: (detailsData as any).notice_info || '',
-          private_tour_info: (detailsData as any).private_tour_info || '',
-          cancellation_policy: (detailsData as any).cancellation_policy || '',
-          chat_announcement: (detailsData as any).chat_announcement || '',
-          tags: (detailsData as any).tags || []
+        const item = detailsData as {
+          language_code: string | null
+          slogan1: string | null
+          slogan2: string | null
+          slogan3: string | null
+          description: string | null
+          included: string | null
+          not_included: string | null
+          pickup_drop_info: string | null
+          luggage_info: string | null
+          tour_operation_info: string | null
+          preparation_info: string | null
+          small_group_info: string | null
+          notice_info: string | null
+          private_tour_info: string | null
+          cancellation_policy: string | null
+          chat_announcement: string | null
+          tags: string[] | null
+        }
+        multilingualDetails[item.language_code || 'ko'] = {
+          slogan1: item.slogan1 || '',
+          slogan2: item.slogan2 || '',
+          slogan3: item.slogan3 || '',
+          description: item.description || '',
+          included: item.included || '',
+          not_included: item.not_included || '',
+          pickup_drop_info: item.pickup_drop_info || '',
+          luggage_info: item.luggage_info || '',
+          tour_operation_info: item.tour_operation_info || '',
+          preparation_info: item.preparation_info || '',
+          small_group_info: item.small_group_info || '',
+          notice_info: item.notice_info || '',
+          private_tour_info: item.private_tour_info || '',
+          cancellation_policy: item.cancellation_policy || '',
+          chat_announcement: item.chat_announcement || '',
+          tags: item.tags || []
         }
       }
 
@@ -559,6 +618,7 @@ export default function ProductDetailsTab({
     if (!isNewProduct) {
       loadProductDetails()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // 의존성 배열을 비워서 한 번만 실행
 
   // 채널 선택 변경 시 데이터 로드
@@ -726,47 +786,47 @@ export default function ProductDetailsTab({
     }))
   }
 
-  const handleUseCommonChange = (field: keyof ProductDetailsFields, useCommon: boolean) => {
-    const currentLang = formData.currentLanguage || 'ko'
-    setFormData((prev) => {
-      const currentUseCommonForField = prev.useCommonForField?.[currentLang] || {
-        slogan1: false,
-        slogan2: false,
-        slogan3: false,
-        description: false,
-        included: false,
-        not_included: false,
-        pickup_drop_info: false,
-        luggage_info: false,
-        tour_operation_info: false,
-        preparation_info: false,
-        small_group_info: false,
-        companion_info: false,
-        exclusive_booking_info: false,
-        cancellation_policy: false,
-        chat_announcement: false,
-        tags: false
-      }
+  // const handleUseCommonChange = (field: keyof ProductDetailsFields, useCommon: boolean) => {
+  //   const currentLang = formData.currentLanguage || 'ko'
+  //   setFormData((prev) => {
+  //     const currentUseCommonForField = prev.useCommonForField?.[currentLang] || {
+  //       slogan1: false,
+  //       slogan2: false,
+  //       slogan3: false,
+  //       description: false,
+  //       included: false,
+  //       not_included: false,
+  //       pickup_drop_info: false,
+  //       luggage_info: false,
+  //       tour_operation_info: false,
+  //       preparation_info: false,
+  //       small_group_info: false,
+  //       companion_info: false,
+  //       exclusive_booking_info: false,
+  //       cancellation_policy: false,
+  //       chat_announcement: false,
+  //       tags: false
+  //     }
       
-      const newUseCommonForField = {
-        ...currentUseCommonForField,
-        [field]: useCommon
-      }
+  //     const newUseCommonForField = {
+  //       ...currentUseCommonForField,
+  //       [field]: useCommon
+  //     }
       
-      // 모든 필드가 공통 사용인지 확인
-      const allFieldsUseCommon = Object.values(newUseCommonForField).every(value => value === true)
+  //     // 모든 필드가 공통 사용인지 확인
+  //     const allFieldsUseCommon = Object.values(newUseCommonForField).every(value => value === true)
       
-      return {
-        ...prev,
-        useCommonForField: {
-          ...prev.useCommonForField,
-          [currentLang]: newUseCommonForField
-        },
-        // 모든 필드가 공통 사용이면 전체 공통 사용으로 설정
-        useCommonDetails: allFieldsUseCommon
-      }
-    })
-  }
+  //     return {
+  //       ...prev,
+  //       useCommonForField: {
+  //         ...prev.useCommonForField,
+  //         [currentLang]: newUseCommonForField
+  //       },
+  //       // 모든 필드가 공통 사용이면 전체 공통 사용으로 설정
+  //       useCommonDetails: allFieldsUseCommon
+  //     }
+  //   })
+  // }
 
   // 태그 관련 핸들러 함수들
   const [newTag, setNewTag] = useState('')
@@ -870,16 +930,19 @@ export default function ProductDetailsTab({
         }
 
         // 번역된 내용을 영어 필드에 적용
-        setFormData(prev => ({
-          ...prev,
-          productDetails: {
-            ...prev.productDetails,
-            en: {
-              ...prev.productDetails.en,
-              ...result.translatedFields
+        setFormData(prev => {
+          if (!result.translatedFields) return prev
+          return {
+            ...prev,
+            productDetails: {
+              ...prev.productDetails,
+              en: {
+                ...prev.productDetails.en,
+                ...result.translatedFields
+              }
             }
           }
-        }))
+        })
 
         setSaveMessage('번역이 완료되었습니다! 영어 탭에서 확인하세요.')
         setTimeout(() => setSaveMessage(''), 3000)
@@ -1019,6 +1082,7 @@ export default function ProductDetailsTab({
         // 업데이트
         const { error: detailsError } = await supabase
           .from('product_details_multilingual')
+          // @ts-expect-error - Supabase 타입 추론 문제
           .update({
             ...detailsData,
             updated_at: new Date().toISOString()
@@ -1035,6 +1099,7 @@ export default function ProductDetailsTab({
         // 새로 생성
         const { error: detailsError } = await supabase
           .from('product_details_multilingual')
+          // @ts-expect-error - Supabase 타입 추론 문제
           .insert([detailsData])
 
         if (detailsError) {
@@ -1398,12 +1463,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       상세 설명
                     </label>
-                    <textarea
-                      value={getValue('description')}
-                      onChange={(e) => handleInputChange('description', e.target.value)}
-                      rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('description') as string}
+                      onChange={(value) => handleInputChange('description', value || '')}
+                      height={150}
                       placeholder="상품에 대한 자세한 설명을 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>
@@ -1416,24 +1481,24 @@ export default function ProductDetailsTab({
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         포함 사항
                       </label>
-                      <textarea
-                        value={getValue('included')}
-                        onChange={(e) => handleInputChange('included', e.target.value)}
-                        rows={4}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      <LightRichEditor
+                        value={getValue('included') as string}
+                        onChange={(value) => handleInputChange('included', value || '')}
+                        height={150}
                         placeholder="포함되는 사항들을 입력해주세요"
+                        enableResize={false}
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         불포함 사항
                       </label>
-                      <textarea
-                        value={getValue('not_included')}
-                        onChange={(e) => handleInputChange('not_included', e.target.value)}
-                        rows={4}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      <LightRichEditor
+                        value={getValue('not_included') as string}
+                        onChange={(value) => handleInputChange('not_included', value || '')}
+                        height={150}
                         placeholder="불포함되는 사항들을 입력해주세요"
+                        enableResize={false}
                       />
                     </div>
                   </div>
@@ -1446,12 +1511,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       픽업 및 드롭 정보
                     </label>
-                    <textarea
-                      value={getValue('pickup_drop_info')}
-                      onChange={(e) => handleInputChange('pickup_drop_info', e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('pickup_drop_info') as string}
+                      onChange={(value) => handleInputChange('pickup_drop_info', value || '')}
+                      height={120}
                       placeholder="픽업 및 드롭에 대한 정보를 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>
@@ -1463,12 +1528,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       수하물 관련 정보
                     </label>
-                    <textarea
-                      value={getValue('luggage_info')}
-                      onChange={(e) => handleInputChange('luggage_info', e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('luggage_info') as string}
+                      onChange={(value) => handleInputChange('luggage_info', value || '')}
+                      height={120}
                       placeholder="수하물에 대한 정보를 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>
@@ -1480,12 +1545,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       투어 운영 관련 정보
                     </label>
-                    <textarea
-                      value={getValue('tour_operation_info')}
-                      onChange={(e) => handleInputChange('tour_operation_info', e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('tour_operation_info') as string}
+                      onChange={(value) => handleInputChange('tour_operation_info', value || '')}
+                      height={120}
                       placeholder="투어 운영에 대한 정보를 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>
@@ -1497,12 +1562,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       준비해야 할 사항들
                     </label>
-                    <textarea
-                      value={getValue('preparation_info')}
-                      onChange={(e) => handleInputChange('preparation_info', e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('preparation_info') as string}
+                      onChange={(value) => handleInputChange('preparation_info', value || '')}
+                      height={120}
                       placeholder="준비해야 할 사항들을 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>
@@ -1514,12 +1579,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       소그룹 투어 관련 정보
                     </label>
-                    <textarea
-                      value={getValue('small_group_info')}
-                      onChange={(e) => handleInputChange('small_group_info', e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('small_group_info') as string}
+                      onChange={(value) => handleInputChange('small_group_info', value || '')}
+                      height={120}
                       placeholder="소그룹 투어에 대한 정보를 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>
@@ -1531,12 +1596,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       중요한 안내사항들
                     </label>
-                    <textarea
-                      value={getValue('notice_info')}
-                      onChange={(e) => handleInputChange('notice_info', e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('notice_info') as string}
+                      onChange={(value) => handleInputChange('notice_info', value || '')}
+                      height={120}
                       placeholder="중요한 안내사항들을 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>
@@ -1548,12 +1613,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       단독투어 관련 정보
                     </label>
-                    <textarea
-                      value={getValue('private_tour_info')}
-                      onChange={(e) => handleInputChange('private_tour_info', e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('private_tour_info') as string}
+                      onChange={(value) => handleInputChange('private_tour_info', value || '')}
+                      height={120}
                       placeholder="단독투어에 대한 정보를 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>
@@ -1565,12 +1630,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       취소 및 환불 정책
                     </label>
-                    <textarea
-                      value={getValue('cancellation_policy')}
-                      onChange={(e) => handleInputChange('cancellation_policy', e.target.value)}
-                      rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('cancellation_policy') as string}
+                      onChange={(value) => handleInputChange('cancellation_policy', value || '')}
+                      height={150}
                       placeholder="취소 및 환불 정책을 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>
@@ -1582,12 +1647,12 @@ export default function ProductDetailsTab({
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       채팅방 공지사항
                     </label>
-                    <textarea
-                      value={getValue('chat_announcement')}
-                      onChange={(e) => handleInputChange('chat_announcement', e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <LightRichEditor
+                      value={getValue('chat_announcement') as string}
+                      onChange={(value) => handleInputChange('chat_announcement', value || '')}
+                      height={120}
                       placeholder="채팅방에 표시될 공지사항을 입력해주세요"
+                      enableResize={false}
                     />
                   </div>
                 </div>

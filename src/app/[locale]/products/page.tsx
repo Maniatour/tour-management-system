@@ -77,7 +77,7 @@ export default function ProductsPage() {
         
         if (error) {
           console.error('Error fetching products:', error)
-          setError('제품을 불러오는 중 오류가 발생했습니다.')
+          setError(t('errorLoadingProducts'))
           return
         }
         
@@ -93,7 +93,7 @@ export default function ProductsPage() {
                 .eq('file_type', 'image')
                 .eq('is_active', true)
                 .eq('is_primary', true)
-                .single()
+                .maybeSingle()
               
               if (mediaData && 'file_url' in mediaData) {
                 return { ...product, primary_image: (mediaData as any).file_url }
@@ -130,7 +130,7 @@ export default function ProductsPage() {
                     .select('photo_url')
                     .in('course_id', courseIds)
                     .eq('is_primary', true)
-                    .single()
+                    .maybeSingle()
                   
                   if (photoData && 'photo_url' in photoData) {
                     return { 
@@ -168,7 +168,7 @@ export default function ProductsPage() {
         setProducts(productsWithImages)
       } catch (err) {
         console.error('Error fetching products:', err)
-        setError('제품을 불러오는 중 오류가 발생했습니다.')
+        setError(t('errorLoadingProducts'))
       } finally {
         setLoading(false)
       }
@@ -337,7 +337,7 @@ export default function ProductsPage() {
         {loading && (
           <div className="flex justify-center items-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-            <span className="ml-2 text-gray-600">제품을 불러오는 중...</span>
+            <span className="ml-2 text-gray-600">{t('loadingProducts')}</span>
           </div>
         )}
 
@@ -357,7 +357,7 @@ export default function ProductsPage() {
         {/* 상품 목록 */}
         {!loading && !error && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProducts.map((product) => (
+            {filteredProducts.map((product, index) => (
               <div key={product.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
                 {/* 상품 이미지 */}
                 <div className="relative h-48 bg-gray-200">
@@ -368,6 +368,7 @@ export default function ProductsPage() {
                       fill
                       sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       className="object-cover"
+                      priority={index === 0}
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
@@ -399,7 +400,7 @@ export default function ProductsPage() {
                 <div className="p-6">
                   {/* 상품명 */}
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    <Link href={`/ko/products/${product.id}`} className="hover:text-blue-600">
+                    <Link href={`/${locale}/products/${product.id}`} className="hover:text-blue-600">
                       {getCustomerDisplayName(product)}
                     </Link>
                   </h3>
@@ -453,7 +454,7 @@ export default function ProductsPage() {
                   {/* 상세보기 버튼 */}
                   <div className="mt-4">
                     <Link
-                      href={`/ko/products/${product.id}`}
+                      href={`/${locale}/products/${product.id}`}
                       className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-center block"
                     >
 {t('viewDetails')}

@@ -105,9 +105,12 @@ export async function getProductChoicesAndOptions(productId: string) {
         )
       `)
       .eq('product_id', productId)
-      .order('sort_order');
+      .order('sort_order', { ascending: true });
 
-    if (choicesError) throw choicesError;
+    if (choicesError) {
+      console.error('Choices 조회 오류:', choicesError);
+      throw choicesError;
+    }
 
     // Options 조회 (기존 product_options 테이블 사용)
     const { data: options, error: optionsError } = await supabase

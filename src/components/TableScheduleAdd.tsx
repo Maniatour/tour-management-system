@@ -9,6 +9,7 @@ import LocationPickerModal from './LocationPickerModal'
 import { uploadThumbnail, deleteThumbnail, isSupabaseStorageUrl } from '@/lib/productMediaUpload'
 import { supabase } from '@/lib/supabase'
 import { translateScheduleFields, type ScheduleTranslationFields } from '@/lib/translationService'
+import LightRichEditor from './LightRichEditor'
 
 // Google Maps 타타입 선언 완료
 
@@ -2556,7 +2557,7 @@ export default function TableScheduleAdd({
               }
             </h3>
             
-            <textarea
+            <LightRichEditor
               value={(() => {
                 if (textModalType === 'description') {
                   return showEnglishFields ? (schedules[textModalIndex].description_en || '') : (schedules[textModalIndex].description_ko || '')
@@ -2564,22 +2565,22 @@ export default function TableScheduleAdd({
                   return showEnglishFields ? (schedules[textModalIndex].guide_notes_en || '') : (schedules[textModalIndex].guide_notes_ko || '')
                 }
               })()}
-              onChange={(e) => {
+              onChange={(value) => {
                 if (textModalType === 'description') {
                   if (showEnglishFields) {
-                    updateSchedule(textModalIndex, 'description_en', e.target.value)
+                    updateSchedule(textModalIndex, 'description_en', value || '')
                   } else {
-                    updateSchedule(textModalIndex, 'description_ko', e.target.value)
+                    updateSchedule(textModalIndex, 'description_ko', value || '')
                   }
                 } else {
                   if (showEnglishFields) {
-                    updateSchedule(textModalIndex, 'guide_notes_en', e.target.value)
+                    updateSchedule(textModalIndex, 'guide_notes_en', value || '')
                   } else {
-                    updateSchedule(textModalIndex, 'guide_notes_ko', e.target.value)
+                    updateSchedule(textModalIndex, 'guide_notes_ko', value || '')
                   }
                 }
               }}
-              className="w-full h-64 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              height={400}
               placeholder={textModalType === 'description' 
                 ? (showEnglishFields ? 'Enter English description...' : '한국어 설명을 입력하세요...')
                 : (showEnglishFields ? 'Enter guide notes in English...' : '가이드 메모를 입력하세요...')

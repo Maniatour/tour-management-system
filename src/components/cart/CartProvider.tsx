@@ -1,13 +1,15 @@
 'use client'
 
 import React, { useState, useEffect, createContext, useContext } from 'react'
-import { ShoppingCart, Plus, Minus, Trash2, X, CreditCard, Calendar, Users } from 'lucide-react'
+import { ShoppingCart, Plus, Minus, Trash2, X, CreditCard, Calendar } from 'lucide-react'
+import { useLocale } from 'next-intl'
 
 interface CartItem {
   id: string
   productId: string
   productName: string
   productNameKo: string
+  productNameEn?: string | null
   tourDate: string
   departureTime: string
   participants: {
@@ -151,6 +153,9 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
   onCheckout
 }) => {
   const { items, removeItem, updateQuantity, getTotalPrice, clearCart } = useCart()
+  const locale = useLocale()
+  const isEnglish = locale === 'en'
+  const translate = (ko: string, en: string) => (isEnglish ? en : ko)
 
   const handleQuantityChange = (itemId: string, type: 'adults' | 'children' | 'infants', delta: number) => {
     const item = items.find(i => i.id === itemId)
@@ -169,7 +174,7 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
         <div className="flex flex-col h-full">
           {/* 헤더 */}
           <div className="flex items-center justify-between p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">장바구니</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{translate('장바구니', 'Cart')}</h2>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -183,7 +188,7 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
             {items.length === 0 ? (
               <div className="text-center py-8">
                 <ShoppingCart className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p className="text-gray-600">장바구니가 비어있습니다</p>
+                <p className="text-gray-600">{translate('장바구니가 비어있습니다', 'Your cart is empty')}</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -191,11 +196,11 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
                   <div key={item.id} className="border rounded-lg p-4">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
-                        <h3 className="font-medium text-gray-900">{item.productNameKo}</h3>
+                        <h3 className="font-medium text-gray-900">{isEnglish ? item.productNameEn || item.productName || item.productNameKo : item.productNameKo || item.productName}</h3>
                         <div className="text-sm text-gray-600 mt-1">
                           <div className="flex items-center">
                             <Calendar className="h-4 w-4 mr-1" />
-                            {new Date(item.tourDate).toLocaleDateString('ko-KR')}
+                            {new Date(item.tourDate).toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR')}
                           </div>
                           {item.departureTime && (
                             <div className="flex items-center mt-1">
@@ -216,7 +221,7 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
                     {/* 인원 수 조정 */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">성인</span>
+                        <span className="text-sm text-gray-600">{translate('성인', 'Adult')}</span>
                         <div className="flex items-center space-x-2">
                           <button
                             onClick={() => handleQuantityChange(item.id, 'adults', -1)}
@@ -236,7 +241,7 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
 
                       {item.participants.children > 0 && (
                         <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">아동</span>
+                          <span className="text-sm text-gray-600">{translate('아동', 'Child')}</span>
                           <div className="flex items-center space-x-2">
                             <button
                               onClick={() => handleQuantityChange(item.id, 'children', -1)}
@@ -257,7 +262,7 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
 
                       {item.participants.infants > 0 && (
                         <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">유아</span>
+                          <span className="text-sm text-gray-600">{translate('유아', 'Infant')}</span>
                           <div className="flex items-center space-x-2">
                             <button
                               onClick={() => handleQuantityChange(item.id, 'infants', -1)}
@@ -280,7 +285,7 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
                     {/* 가격 */}
                     <div className="mt-3 pt-3 border-t border-gray-200">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">총 가격</span>
+                        <span className="text-sm text-gray-600">{translate('총 가격', 'Total price')}</span>
                         <span className="font-semibold text-blue-600">${item.totalPrice}</span>
                       </div>
                     </div>
@@ -294,7 +299,7 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
           {items.length > 0 && (
             <div className="border-t border-gray-200 p-4">
               <div className="flex items-center justify-between mb-4">
-                <span className="text-lg font-semibold text-gray-900">총 가격</span>
+                <span className="text-lg font-semibold text-gray-900">{translate('총 가격', 'Total price')}</span>
                 <span className="text-xl font-bold text-blue-600">${getTotalPrice()}</span>
               </div>
               
@@ -304,13 +309,13 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
                   className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center"
                 >
                   <CreditCard className="h-5 w-5 mr-2" />
-                  결제하기
+                  {translate('결제하기', 'Proceed to payment')}
                 </button>
                 <button
                   onClick={clearCart}
                   className="w-full text-gray-600 py-2 px-4 rounded-lg hover:bg-gray-100 transition-colors text-sm"
                 >
-                  장바구니 비우기
+                  {translate('장바구니 비우기', 'Clear cart')}
                 </button>
               </div>
             </div>
@@ -326,6 +331,9 @@ export const CartMini: React.FC<{ onClick: () => void }> = ({ onClick }) => {
   const { getTotalItems, getTotalPrice } = useCart()
   const totalItems = getTotalItems()
   const totalPrice = getTotalPrice()
+  const locale = useLocale()
+  const isEnglish = locale === 'en'
+  const translate = (ko: string, en: string) => (isEnglish ? en : ko)
 
   return (
     <button
@@ -341,10 +349,10 @@ export const CartMini: React.FC<{ onClick: () => void }> = ({ onClick }) => {
         )}
       </div>
       <div className="text-left">
-        <div className="text-sm font-medium">장바구니</div>
+        <div className="text-sm font-medium">{translate('장바구니', 'Cart')}</div>
         {totalItems > 0 && (
           <div className="text-xs text-gray-500">
-            {totalItems}개 상품 • ${totalPrice}
+            {isEnglish ? `${totalItems} item${totalItems === 1 ? '' : 's'}` : `${totalItems}개 상품`} • ${totalPrice}
           </div>
         )}
       </div>

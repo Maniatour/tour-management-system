@@ -1,57 +1,146 @@
 'use client'
 
-import React from 'react'
-import { Star, MapPin, Users, Calendar, ArrowRight, Play, CheckCircle } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { ArrowRight, Play, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
+import { supabase } from '@/lib/supabase'
 
-interface FeaturedProduct {
+interface PopularProduct {
   id: string
   name: string
-  description: string
-  price: number
-  rating: number
-  reviewCount: number
-  image: string
-  category: string
+  name_en: string | null
+  description: string | null
+  category: string | null
+  base_price: number | null
+  primary_image: string | null
 }
 
-export default function HomePage({ params }: { params: Promise<{ locale: string }> }) {
+export default function HomePage() {
   const t = useTranslations('common')
   const locale = useLocale()
-  // 자동 리다이렉트 기능 제거 - 사용자가 직접 메뉴에서 선택하도록 함
-  const featuredProducts: FeaturedProduct[] = [
-    {
-      id: '1',
-      name: '그랜드서클 1박2일 투어',
-      description: '그랜드 캐년, 브라이스 캐년, 자이온 국립공원을 포함한 1박2일 투어',
-      price: 299,
-      rating: 4.8,
-      reviewCount: 127,
-      image: '/placeholder-tour.svg',
-      category: '자연'
-    },
-    {
-      id: '2',
-      name: '모뉴먼트 밸리 일일 투어',
-      description: '모뉴먼트 밸리와 앤텔롭 캐년을 방문하는 일일 투어',
-      price: 199,
-      rating: 4.6,
-      reviewCount: 89,
-      image: '/images/monument-valley-1.jpg',
-      category: '자연'
-    },
-    {
-      id: '3',
-      name: '라스베가스 시티 투어',
-      description: '라스베가스의 화려한 밤거리와 명소를 둘러보는 시티 투어',
-      price: 99,
-      rating: 4.4,
-      reviewCount: 156,
-      image: '/placeholder-tour.svg',
-      category: '도시'
+  const [popularTours, setPopularTours] = useState<PopularProduct[]>([])
+  const [popularLoading, setPopularLoading] = useState(true)
+  const [popularError, setPopularError] = useState<string | null>(null)
+
+  const getProductName = (product: PopularProduct) => {
+    if (locale === 'en') {
+      const englishName = product.name_en?.trim()
+      if (englishName && englishName.length > 0) {
+        return englishName
+      }
     }
-  ]
+
+    const baseName = product.name?.trim()
+    if (baseName && baseName.length > 0) {
+      return baseName
+    }
+
+    const fallbackName = locale === 'en' ? 'Untitled Tour' : '이름 없는 투어'
+    return fallbackName
+  }
+
+  const getProductDescription = (product: PopularProduct) => {
+    if (product.description && product.description.trim().length > 0) {
+      return product.description
+    }
+
+    return locale === 'en' ? 'Detailed information is being prepared.' : '상세 정보가 준비 중입니다.'
+  }
+
+  const getPriceLabel = (price: number | null) => {
+    if (price == null) {
+      return locale === 'en' ? 'Pricing to be announced' : '가격 정보 준비 중'
+    }
+
+    const formatted = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0
+    }).format(price)
+
+    return locale === 'en' ? `${t('startingFrom')} ${formatted}` : `${formatted}${t('startingFrom')}`
+  }
+
+  useEffect(() => {
+    const fetchPopularTours = async () => {
+      setPopularLoading(true)
+      setPopularError(null)
+
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('id, name, name_en, description, base_price, category')
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(3)
+
+        if (error) {
+          console.error('Failed to load popular tours:', error)
+          setPopularError(locale === 'en' ? 'Failed to load popular tours.' : '인기 투어를 불러오지 못했습니다.')
+          setPopularTours([])
+          return
+        }
+
+        const rows = (data ?? []).map((product) => ({
+          id: product.id,
+          name: product.name,
+          name_en: product.name_en,
+          description: product.description,
+          base_price: product.base_price,
+          category: product.category
+        }))
+
+        const productsWithImages = await Promise.all(
+          rows.map(async (product) => {
+            let primaryImage: string | null = null
+
+            const { data: primaryMedia, error: primaryError } = await supabase
+              .from('product_media')
+              .select('file_url')
+              .eq('product_id', product.id)
+              .eq('file_type', 'image')
+              .eq('is_active', true)
+              .eq('is_primary', true)
+              .single()
+
+            if (!primaryError && primaryMedia && 'file_url' in primaryMedia) {
+              primaryImage = (primaryMedia as { file_url: string }).file_url
+            } else {
+              const { data: firstMedia, error: firstError } = await supabase
+                .from('product_media')
+                .select('file_url')
+                .eq('product_id', product.id)
+                .eq('file_type', 'image')
+                .eq('is_active', true)
+                .order('order_index', { ascending: true })
+                .limit(1)
+                .single()
+
+              if (!firstError && firstMedia && 'file_url' in firstMedia) {
+                primaryImage = (firstMedia as { file_url: string }).file_url
+              }
+            }
+
+            return {
+              ...product,
+              primary_image: primaryImage
+            }
+          })
+        )
+
+        setPopularTours(productsWithImages)
+      } catch (error) {
+        console.error('Failed to load popular tours:', error)
+        setPopularError(locale === 'en' ? 'Failed to load popular tours.' : '인기 투어를 불러오지 못했습니다.')
+        setPopularTours([])
+      } finally {
+        setPopularLoading(false)
+      }
+    }
+
+    fetchPopularTours()
+  }, [locale])
 
   const stats = [
     { number: '10,000+', label: t('satisfiedCustomers') },
@@ -80,6 +169,93 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
       icon: CheckCircle,
       title: t('support24_7'),
       description: t('support24_7Desc')
+    }
+  ]
+
+  const categoryTags = [
+    {
+      labelKey: 'antelopeCanyon',
+      tagQuery: '앤텔롭',
+      emoji: '🏜️',
+      gradient: 'from-yellow-50 to-orange-50',
+      hoverGradient: 'hover:from-yellow-100 hover:to-orange-100'
+    },
+    {
+      labelKey: 'grandCanyon',
+      tagQuery: '그랜드캐년',
+      emoji: '🏔️',
+      gradient: 'from-orange-50 to-red-50',
+      hoverGradient: 'hover:from-orange-100 hover:to-red-100'
+    },
+    {
+      labelKey: 'suburbanTour',
+      tagQuery: '근교',
+      emoji: '🗺️',
+      gradient: 'from-green-50 to-emerald-50',
+      hoverGradient: 'hover:from-green-100 hover:to-emerald-100'
+    },
+    {
+      labelKey: 'dayTour',
+      tagQuery: '당일',
+      emoji: '🛣️',
+      gradient: 'from-blue-50 to-cyan-50',
+      hoverGradient: 'hover:from-blue-100 hover:to-cyan-100'
+    },
+    {
+      labelKey: 'accommodationTour',
+      tagQuery: '숙박',
+      emoji: '🏕️',
+      gradient: 'from-purple-50 to-pink-50',
+      hoverGradient: 'hover:from-purple-100 hover:to-pink-100'
+    },
+    {
+      labelKey: 'cityTour',
+      tagQuery: '시티',
+      emoji: '🏙️',
+      gradient: 'from-indigo-50 to-blue-50',
+      hoverGradient: 'hover:from-indigo-100 hover:to-blue-100'
+    },
+    {
+      labelKey: 'helicopterTour',
+      tagQuery: '헬기',
+      emoji: '🚁',
+      gradient: 'from-red-50 to-pink-50',
+      hoverGradient: 'hover:from-red-100 hover:to-pink-100'
+    },
+    {
+      labelKey: 'lightAircraftTour',
+      tagQuery: '경비행기',
+      emoji: '✈️',
+      gradient: 'from-sky-50 to-blue-50',
+      hoverGradient: 'hover:from-sky-100 hover:to-blue-100'
+    },
+    {
+      labelKey: 'busTour',
+      tagQuery: '버스',
+      emoji: '🚌',
+      gradient: 'from-yellow-50 to-orange-50',
+      hoverGradient: 'hover:from-yellow-100 hover:to-orange-100'
+    },
+    {
+      labelKey: 'premiumTour',
+      tagQuery: '프리미엄',
+      emoji: '⭐',
+      gradient: 'from-amber-50 to-yellow-50',
+      hoverGradient: 'hover:from-amber-100 hover:to-yellow-100'
+    },
+    {
+      labelKey: 'performanceTicket',
+      tagQuery: '공연',
+      emoji: '🎫',
+      gradient: 'from-orange-50 to-red-50',
+      hoverGradient: 'hover:from-orange-100 hover:to-red-100'
+    },
+    {
+      labelKey: 'attraction',
+      tagQuery: '어트랙션',
+      emoji: '🎪',
+      gradient: 'from-purple-50 to-pink-50',
+      hoverGradient: 'hover:from-purple-100 hover:to-pink-100'
     }
   ]
 
@@ -130,161 +306,20 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 sm:gap-6">
-            {/* 앤텔롭 캐년 */}
-            <Link
-              href="/ko/products?tag=앤텔롭"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl hover:from-yellow-100 hover:to-orange-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🏜️
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                앤텔롭 캐년
-              </h3>
-            </Link>
-
-            {/* 그랜드캐년 */}
-            <Link
-              href="/ko/products?tag=그랜드캐년"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-orange-50 to-red-50 rounded-xl hover:from-orange-100 hover:to-red-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🏔️
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                그랜드캐년
-              </h3>
-            </Link>
-
-            {/* 근교투어 */}
-            <Link
-              href="/ko/products?tag=근교"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl hover:from-green-100 hover:to-emerald-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🗺️
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                근교투어
-              </h3>
-            </Link>
-
-            {/* 당일투어 */}
-            <Link
-              href="/ko/products?tag=당일"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl hover:from-blue-100 hover:to-cyan-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🛣️
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                당일투어
-              </h3>
-            </Link>
-
-            {/* 숙박투어 */}
-            <Link
-              href="/ko/products?tag=숙박"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl hover:from-purple-100 hover:to-pink-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🏕️
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                숙박투어
-              </h3>
-            </Link>
-
-            {/* 시티투어 */}
-            <Link
-              href="/ko/products?tag=시티"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl hover:from-indigo-100 hover:to-blue-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🏙️
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                시티투어
-              </h3>
-            </Link>
-
-            {/* 헬기 투어 */}
-            <Link
-              href="/ko/products?tag=헬기"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-red-50 to-pink-50 rounded-xl hover:from-red-100 hover:to-pink-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🚁
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                헬기 투어
-              </h3>
-            </Link>
-
-            {/* 경비행기 투어 */}
-            <Link
-              href="/ko/products?tag=경비행기"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-sky-50 to-blue-50 rounded-xl hover:from-sky-100 hover:to-blue-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                ✈️
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                경비행기 투어
-              </h3>
-            </Link>
-
-            {/* 버스투어 */}
-            <Link
-              href="/ko/products?tag=버스"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl hover:from-yellow-100 hover:to-orange-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🚌
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                버스투어
-              </h3>
-            </Link>
-
-            {/* 프리미엄 투어 */}
-            <Link
-              href="/ko/products?tag=프리미엄"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl hover:from-amber-100 hover:to-yellow-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                ⭐
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                프리미엄 투어
-              </h3>
-            </Link>
-
-            {/* 공연티켓 */}
-            <Link
-              href="/ko/products?tag=공연"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-orange-50 to-red-50 rounded-xl hover:from-orange-100 hover:to-red-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🎫
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                공연티켓
-              </h3>
-            </Link>
-
-            {/* 어트랙션 */}
-            <Link
-              href="/ko/products?tag=어트랙션"
-              className="group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl hover:from-purple-100 hover:to-pink-100 transition-all duration-300 hover:scale-105 hover:shadow-lg"
-            >
-              <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
-                🎪
-              </div>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
-                어트랙션
-              </h3>
-            </Link>
+            {categoryTags.map((category) => (
+              <Link
+                key={category.labelKey}
+                href={`/${locale}/products?tag=${encodeURIComponent(category.tagQuery)}`}
+                className={`group flex flex-col items-center p-4 sm:p-6 bg-gradient-to-br ${category.gradient} rounded-xl transition-all duration-300 hover:scale-105 hover:shadow-lg ${category.hoverGradient}`}
+              >
+                <div className="text-3xl sm:text-4xl mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300">
+                  {category.emoji}
+                </div>
+                <h3 className="text-xs sm:text-sm font-semibold text-gray-800 text-center">
+                  {t(category.labelKey)}
+                </h3>
+              </Link>
+            ))}
           </div>
 
           {/* 더 많은 태그 보기 링크 */}
@@ -329,55 +364,69 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
-            {featuredProducts.map((product) => (
-              <div key={product.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
-                <div className="relative h-40 sm:h-48 bg-gray-200">
-                  <img
-                    src={product.image}
-                    alt={product.name}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute top-2 sm:top-3 left-2 sm:left-3">
-                    <span className="inline-flex items-center px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      {product.category}
-                    </span>
+            {popularLoading && (
+              <div className="col-span-full flex justify-center py-10 text-gray-500">
+                {t('loading')}
+              </div>
+            )}
+
+            {!popularLoading && popularError && (
+              <div className="col-span-full flex justify-center py-10 text-center text-gray-500">
+                {popularError}
+              </div>
+            )}
+
+            {!popularLoading && !popularError && popularTours.length === 0 && (
+              <div className="col-span-full flex justify-center py-10 text-center text-gray-500">
+                {locale === 'en' ? 'No popular tours are available yet.' : '등록된 인기 투어가 없습니다.'}
+              </div>
+            )}
+
+            {!popularLoading && !popularError &&
+              popularTours.map((product) => (
+                <div key={product.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
+                  <div className="relative h-40 sm:h-48 bg-gray-200">
+                    <img
+                      src={product.primary_image ?? '/placeholder-tour.svg'}
+                      alt={getProductName(product)}
+                      className="w-full h-full object-cover"
+                    />
+                    {product.category && (
+                      <div className="absolute top-2 sm:top-3 left-2 sm:left-3">
+                        <span className="inline-flex items-center px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {product.category}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                </div>
-                <div className="p-4 sm:p-6">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
-                    <Link href={`/ko/products/${product.id}`} className="hover:text-blue-600">
-                      {product.name}
-                    </Link>
-                  </h3>
-                  <p className="text-gray-600 text-sm mb-3 sm:mb-4 line-clamp-2">
-                    {product.description}
-                  </p>
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 sm:mb-4 space-y-2 sm:space-y-0">
-                    <div className="flex items-center">
-                      <Star className="h-4 w-4 text-yellow-400 mr-1" />
-                      <span className="font-medium text-sm sm:text-base">{product.rating}</span>
-                      <span className="text-gray-500 text-xs sm:text-sm ml-1">
-                        ({product.reviewCount})
+                  <div className="p-4 sm:p-6">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
+                      <Link href={`/${locale}/products/${product.id}`} className="hover:text-blue-600">
+                        {getProductName(product)}
+                      </Link>
+                    </h3>
+                    <p className="text-gray-600 text-sm mb-3 sm:mb-4 line-clamp-2">
+                      {getProductDescription(product)}
+                    </p>
+                    <div className="mb-3 sm:mb-4">
+                      <span className="text-base sm:text-lg font-bold text-blue-600">
+                        {getPriceLabel(product.base_price)}
                       </span>
                     </div>
-                    <div className="text-base sm:text-lg font-bold text-blue-600">
-                      ${product.price}부터
-                    </div>
+                    <Link
+                      href={`/${locale}/products/${product.id}`}
+                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-center block text-sm sm:text-base"
+                    >
+                      {t('viewDetails')}
+                    </Link>
                   </div>
-                  <Link
-                    href={`/${locale}/products/${product.id}`}
-                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-center block text-sm sm:text-base"
-                  >
-                    {t('viewDetails')}
-                  </Link>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
 
           <div className="text-center mt-12">
             <Link
-              href="/ko/products"
+              href={`/${locale}/products`}
               className="inline-flex items-center px-6 py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-colors font-medium"
             >
               {t('viewAllTours')}

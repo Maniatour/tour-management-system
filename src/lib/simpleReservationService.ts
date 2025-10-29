@@ -98,9 +98,12 @@ export class SimplePricingService {
           )
         `)
         .eq('product_id', productId)
-        .order('sort_order');
+        .order('sort_order', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Choices 로드 오류:', error);
+        throw error;
+      }
       return data || [];
     } catch (error) {
       console.error('상품 초이스 로드 오류:', error);

@@ -142,9 +142,12 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
           )
         `)
         .eq('product_id', productId)
-        .order('sort_order');
+        .order('sort_order', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('product_choices 로드 오류:', error)
+        throw error
+      }
 
       console.log('ProductSelectionSection에서 로드된 초이스:', data);
       

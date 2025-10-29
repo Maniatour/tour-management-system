@@ -121,6 +121,7 @@ export default function ProductDetailPage() {
   const params = useParams()
   const productId = params.id as string
   const locale = useLocale()
+  const isEnglish = locale === 'en'
   
   const [product, setProduct] = useState<Product | null>(null)
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
@@ -157,6 +158,7 @@ export default function ProductDetailPage() {
 
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({})
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   
   // 부킹 시스템 상태
   const [showBookingFlow, setShowBookingFlow] = useState(false)
@@ -182,22 +184,35 @@ export default function ProductDetailPage() {
         
         if (productError) {
           console.error('Error fetching product:', productError)
-          setError('상품을 찾을 수 없습니다.')
+          setError(isEnglish ? 'Product not found.' : '상품을 찾을 수 없습니다.')
           return
         }
         
         setProduct(productData)
         
         // 2. 다국어 상세 정보 가져오기
-        const { data: detailsData, error: detailsError } = await supabase
+        const { data: detailsData, error: detailsError, status: detailsStatus } = await supabase
           .from('product_details_multilingual')
           .select('*')
           .eq('product_id', productId)
           .eq('language_code', locale)
-          .single()
+          .maybeSingle()
         
         if (!detailsError && detailsData) {
           setProductDetails(detailsData)
+        } else if ((detailsStatus === 404 || detailsStatus === 406) && locale !== 'ko') {
+          const { data: fallbackDetails, error: fallbackError } = await supabase
+            .from('product_details_multilingual')
+            .select('*')
+            .eq('product_id', productId)
+            .eq('language_code', 'ko')
+            .maybeSingle()
+
+          if (!fallbackError && fallbackDetails) {
+            setProductDetails(fallbackDetails)
+          }
+        } else if (detailsError) {
+          throw detailsError
         }
         
         // 3. 투어 코스 정보 가져오기
@@ -213,14 +228,62 @@ export default function ProductDetailPage() {
           setTourCourses(tourCoursesData)
         }
         
-        // 4. 선택 옵션 정보 가져오기 (view 사용)
-        const { data: choicesData, error: choicesError } = await supabase
-          .from('product_choices_view')
-          .select('*')
-          .eq('product_id', productId)
-        
-        if (!choicesError && choicesData) {
-          setProductChoices(choicesData)
+        // 4. 선택 옵션 정보 가져오기
+        try {
+          const { data: fallbackChoices, error: fallbackError } = await supabase
+            .from('product_choices')
+            .select(`
+              id,
+              product_id,
+              choice_group,
+              choice_group_ko,
+              choice_type,
+              options:choice_options (
+                id,
+                option_name,
+                option_name_ko,
+                adult_price,
+                is_default
+              )
+            `)
+            .eq('product_id', productId)
+            .order('sort_order', { ascending: true })
+
+          if (fallbackError) {
+            console.error('product_choices 로드 오류:', fallbackError)
+            // 에러가 발생해도 빈 배열로 설정
+            setProductChoices([])
+          } else if (fallbackChoices) {
+            const flattenedChoices: ProductChoice[] = fallbackChoices.flatMap((choice: any) => {
+              const choiceName = choice.choice_group || ''
+              const choiceNameKo = choice.choice_group_ko || null
+              const choiceDescription = null
+              const choiceType = choice.choice_type || 'single'
+              const options = Array.isArray(choice.options) ? choice.options : []
+
+              return options.map((option: any) => ({
+                product_id: choice.product_id,
+                product_name: product?.name || product?.customer_name_ko || '',
+                choice_id: choice.id,
+                choice_name: choiceName,
+                choice_name_ko: choiceNameKo,
+                choice_type: choiceType,
+                choice_description: choiceDescription,
+                option_id: option.id,
+                option_name: option.option_name || option.option_key || '',
+                option_name_ko: option.option_name_ko || null,
+                option_price: option.adult_price ?? null,
+                is_default: option.is_default ?? null
+              }))
+            })
+
+            setProductChoices(flattenedChoices)
+          } else {
+            setProductChoices([])
+          }
+        } catch (error) {
+          console.error('선택 옵션 로드 중 예외 발생:', error)
+          setProductChoices([])
         }
         
         // 5. 상품 미디어 가져오기
@@ -254,7 +317,7 @@ export default function ProductDetailPage() {
         
       } catch (error) {
         console.error('상품 데이터 로드 오류:', error)
-        setError('상품 정보를 불러오는데 실패했습니다.')
+        setError(isEnglish ? 'Failed to load product information.' : '상품 정보를 불러오는데 실패했습니다.')
       } finally {
         setLoading(false)
       }
@@ -265,12 +328,23 @@ export default function ProductDetailPage() {
     }
   }, [productId, locale])
 
+  // 이미지 배열이 변경되면 선택된 이미지 인덱스를 리셋
+  useEffect(() => {
+    setSelectedImageIndex(0)
+  }, [productMedia, tourCoursePhotos])
+
   const getDifficultyLabel = (difficulty: string) => {
-    const difficultyLabels: { [key: string]: string } = {
-      easy: '쉬움',
-      medium: '보통',
-      hard: '어려움'
-    }
+    const difficultyLabels: { [key: string]: string } = isEnglish
+      ? {
+          easy: 'Easy',
+          medium: 'Moderate',
+          hard: 'Challenging'
+        }
+      : {
+          easy: '쉬움',
+          medium: '보통',
+          hard: '어려움'
+        }
     return difficultyLabels[difficulty] || difficulty
   }
 
@@ -284,16 +358,27 @@ export default function ProductDetailPage() {
   }
 
   const getCategoryLabel = (category: string) => {
-    const categoryLabels: { [key: string]: string } = {
-      city: '도시',
-      nature: '자연',
-      culture: '문화',
-      adventure: '모험',
-      food: '음식',
-      tour: '투어',
-      sightseeing: '관광',
-      outdoor: '야외활동'
-    }
+    const categoryLabels: { [key: string]: string } = isEnglish
+      ? {
+          city: 'City',
+          nature: 'Nature',
+          culture: 'Culture',
+          adventure: 'Adventure',
+          food: 'Food',
+          tour: 'Tour',
+          sightseeing: 'Sightseeing',
+          outdoor: 'Outdoor'
+        }
+      : {
+          city: '도시',
+          nature: '자연',
+          culture: '문화',
+          adventure: '모험',
+          food: '음식',
+          tour: '투어',
+          sightseeing: '관광',
+          outdoor: '야외활동'
+        }
     return categoryLabels[category] || category
   }
 
@@ -306,7 +391,7 @@ export default function ProductDetailPage() {
 
   // 시간 형식을 일수 형식으로 변환 (예: 36:00:00 → 1박 2일)
   const formatDuration = (duration: string | null) => {
-    if (!duration) return '미정'
+    if (!duration) return isEnglish ? 'Not specified' : '미정'
     
     // HH:MM:SS 형식인지 확인
     const timeMatch = duration.match(/^(\d+):(\d+):(\d+)$/)
@@ -324,28 +409,34 @@ export default function ProductDetailPage() {
       if (days === 1) {
         // 당일 투어는 시간으로 표시
         if (hours === 0 && minutes > 0) {
-          return `${minutes}분`
+          return isEnglish ? `${minutes} minute${minutes === 1 ? '' : 's'}` : `${minutes}분`
         } else if (hours > 0 && minutes === 0) {
-          return `${hours}시간`
+          return isEnglish ? `${hours} ${hours === 1 ? 'hour' : 'hours'}` : `${hours}시간`
         } else if (hours > 0 && minutes > 0) {
-          return `${hours}시간 ${minutes}분`
+          const hourLabel = isEnglish ? `${hours} ${hours === 1 ? 'hour' : 'hours'}` : `${hours}시간`
+          const minuteLabel = isEnglish ? `${minutes} minute${minutes === 1 ? '' : 's'}` : `${minutes}분`
+          return `${hourLabel} ${minuteLabel}`
         } else {
-          return `${Math.round(totalHours * 10) / 10}시간`
+          const formattedHours = Math.round(totalHours * 10) / 10
+          return isEnglish ? `${formattedHours} hours` : `${formattedHours}시간`
         }
       } else if (days === 2) {
-        return '1박 2일'
+        return isEnglish ? '1 night 2 days' : '1박 2일'
       } else if (days === 3) {
-        return '2박 3일'
+        return isEnglish ? '2 nights 3 days' : '2박 3일'
       } else if (days === 4) {
-        return '3박 4일'
+        return isEnglish ? '3 nights 4 days' : '3박 4일'
       } else if (days === 5) {
-        return '4박 5일'
+        return isEnglish ? '4 nights 5 days' : '4박 5일'
       } else if (days === 6) {
-        return '5박 6일'
+        return isEnglish ? '5 nights 6 days' : '5박 6일'
       } else if (days === 7) {
-        return '6박 7일'
+        return isEnglish ? '6 nights 7 days' : '6박 7일'
       } else {
-        return `${days - 1}박 ${days}일`
+        const nights = days - 1
+        return isEnglish
+          ? `${nights} night${nights === 1 ? '' : 's'} ${days} day${days === 1 ? '' : 's'}`
+          : `${nights}박 ${days}일`
       }
     }
     
@@ -438,6 +529,7 @@ export default function ProductDetailPage() {
       productId: product?.id,
       productName: product?.name,
       productNameKo: product?.customer_name_ko,
+      productNameEn: product?.customer_name_en || product?.name_en,
       tourDate: bookingData.tourDate,
       departureTime: bookingData.departureTime,
       participants: bookingData.participants,
@@ -474,28 +566,43 @@ export default function ProductDetailPage() {
     setShowPayment(false)
     setCartItems([])
     // 성공 메시지 표시 또는 리다이렉트
-    alert('예약이 성공적으로 완료되었습니다!')
+    alert(isEnglish ? 'Your reservation has been completed successfully!' : '예약이 성공적으로 완료되었습니다!')
   }
 
   const handlePaymentError = (error: string) => {
     console.error('결제 오류:', error)
-    alert(`결제 중 오류가 발생했습니다: ${error}`)
+    alert(isEnglish ? `An error occurred during payment: ${error}` : `결제 중 오류가 발생했습니다: ${error}`)
   }
 
-  const tabs = [
-    { id: 'overview', label: '개요' },
-    { id: 'itinerary', label: '투어 코스' },
-    { id: 'tour-schedule', label: '투어 스케줄' },
-    { id: 'details', label: '상세정보' },
-    { id: 'faq', label: 'FAQ' }
-  ]
+  const tabs = isEnglish
+    ? [
+        { id: 'overview', label: 'Overview' },
+        { id: 'itinerary', label: 'Tour Course' },
+        { id: 'tour-schedule', label: 'Tour Schedule' },
+        { id: 'details', label: 'Details' },
+        { id: 'faq', label: 'FAQ' }
+      ]
+    : [
+        { id: 'overview', label: '개요' },
+        { id: 'itinerary', label: '투어 코스' },
+        { id: 'tour-schedule', label: '투어 스케줄' },
+        { id: 'details', label: '상세정보' },
+        { id: 'faq', label: 'FAQ' }
+      ]
 
-  const detailTabs = [
-    { id: 'basic', label: '기본정보' },
-    { id: 'included', label: '포함/불포함' },
-    { id: 'logistics', label: '운영정보' },
-    { id: 'policy', label: '정책' }
-  ]
+  const detailTabs = isEnglish
+    ? [
+        { id: 'basic', label: 'Basic Info' },
+        { id: 'included', label: 'Included / Excluded' },
+        { id: 'logistics', label: 'Logistics' },
+        { id: 'policy', label: 'Policies' }
+      ]
+    : [
+        { id: 'basic', label: '기본정보' },
+        { id: 'included', label: '포함/불포함' },
+        { id: 'logistics', label: '운영정보' },
+        { id: 'policy', label: '정책' }
+      ]
 
   const [activeDetailTab, setActiveDetailTab] = useState('basic')
 
@@ -504,7 +611,7 @@ export default function ProductDetailPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">상품 정보를 불러오는 중...</p>
+          <p className="text-gray-600">{isEnglish ? 'Loading product information...' : '상품 정보를 불러오는 중...'}</p>
         </div>
       </div>
     )
@@ -519,14 +626,14 @@ export default function ProductDetailPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">오류가 발생했습니다</h2>
-          <p className="text-gray-600 mb-4">{error || '상품을 찾을 수 없습니다.'}</p>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">{isEnglish ? 'An error occurred' : '오류가 발생했습니다'}</h2>
+          <p className="text-gray-600 mb-4">{error || (isEnglish ? 'Product not found.' : '상품을 찾을 수 없습니다.')}</p>
           <Link 
-            href="/products" 
+            href={`/${locale}/products`} 
             className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            상품 목록으로 돌아가기
+            {isEnglish ? 'Back to product list' : '상품 목록으로 돌아가기'}
           </Link>
         </div>
       </div>
@@ -541,7 +648,7 @@ export default function ProductDetailPage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                <Link href="/ko/products" className="text-gray-500 hover:text-gray-700">
+                <Link href={`/${locale}/products`} className="text-gray-500 hover:text-gray-700">
                   <ArrowLeft size={24} />
                 </Link>
                 <div>
@@ -593,8 +700,8 @@ export default function ProductDetailPage() {
                   {/* 메인 이미지 */}
                   <div className="relative h-96 bg-gray-200">
                     <Image
-                      src={allImages[0].file_url}
-                      alt={allImages[0].alt_text || allImages[0].file_name}
+                      src={allImages[selectedImageIndex].file_url}
+                      alt={allImages[selectedImageIndex].alt_text || allImages[selectedImageIndex].file_name}
                       fill
                       sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                       priority
@@ -615,20 +722,14 @@ export default function ProductDetailPage() {
                   <div className="p-4">
                     <div className="flex space-x-2 overflow-x-auto">
                       {allImages.slice(0, 8).map((image, index) => (
-                        <div key={image.id} className="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-gray-200 relative">
+                        <div key={image.id} className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-gray-200 relative border-2 ${selectedImageIndex === index ? 'border-blue-500' : 'border-transparent'}`}>
                           <Image
                             src={image.file_url}
                             alt={image.alt_text || image.file_name}
                             fill
                             sizes="80px"
                             className="object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                            onClick={() => {
-                              // 메인 이미지와 썸네일 순서 바꾸기
-                              const newImages = [...allImages]
-                              const selectedImage = newImages.splice(index, 1)[0]
-                              newImages.unshift(selectedImage)
-                              // 상태 업데이트는 실제로는 필요하지 않지만, 구조를 유지하기 위해
-                            }}
+                            onClick={() => setSelectedImageIndex(index)}
                           />
                         </div>
                       ))}
@@ -646,7 +747,7 @@ export default function ProductDetailPage() {
                           {getCustomerDisplayName(product)}
                         </div>
                         <div className="text-sm text-gray-500 mt-2">
-                          이미지 준비 중
+                          {isEnglish ? 'Image coming soon' : '이미지 준비 중'}
                         </div>
                       </div>
                     </div>
@@ -663,7 +764,7 @@ export default function ProductDetailPage() {
                   <div className="p-4">
                     <div className="flex space-x-2 overflow-x-auto">
                       <div className="flex-shrink-0 w-20 h-20 rounded-lg bg-gray-200 flex items-center justify-center text-gray-500 text-xs">
-                        이미지 없음
+                        {isEnglish ? 'No image' : '이미지 없음'}
                       </div>
                     </div>
                   </div>
@@ -722,7 +823,7 @@ export default function ProductDetailPage() {
 
                     {/* 투어 소개 */}
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">투어 소개</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Tour Overview' : '투어 소개'}</h3>
                       <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
                         {productDetails?.description || product.description || getCustomerDisplayName(product)}
                       </p>
@@ -730,26 +831,29 @@ export default function ProductDetailPage() {
 
                     {/* 기본 정보 */}
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">기본 정보</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Key Information' : '기본 정보'}</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="flex items-center space-x-3">
                           <Calendar className="h-5 w-5 text-blue-500" />
                           <div>
-                            <span className="text-sm text-gray-600">기간</span>
+                            <span className="text-sm text-gray-600">{isEnglish ? 'Duration' : '기간'}</span>
                             <p className="font-medium">{formatDuration(product.duration)}</p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-3">
                           <Users className="h-5 w-5 text-green-500" />
                           <div>
-                            <span className="text-sm text-gray-600">최대 참가자</span>
-                            <p className="font-medium">{product.max_participants || 0}명</p>
+                            <span className="text-sm text-gray-600">{isEnglish ? 'Maximum Participants' : '최대 참가자'}</span>
+                            <p className="font-medium">
+                              {product.max_participants || 0}
+                              {isEnglish ? ' people' : '명'}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-3">
                           <MapPin className="h-5 w-5 text-red-500" />
                           <div>
-                            <span className="text-sm text-gray-600">카테고리</span>
+                            <span className="text-sm text-gray-600">{isEnglish ? 'Category' : '카테고리'}</span>
                             <p className="font-medium">{getCategoryLabel(product.category || '')}</p>
                           </div>
                         </div>
@@ -757,7 +861,7 @@ export default function ProductDetailPage() {
                           <div className="flex items-center space-x-3">
                             <Users className="h-5 w-5 text-purple-500" />
                             <div>
-                              <span className="text-sm text-gray-600">그룹 크기</span>
+                              <span className="text-sm text-gray-600">{isEnglish ? 'Group Size' : '그룹 크기'}</span>
                               <p className="font-medium">{product.group_size}</p>
                             </div>
                           </div>
@@ -770,7 +874,7 @@ export default function ProductDetailPage() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {productDetails.included && (
                           <div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-3">포함 사항</h3>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Included' : '포함 사항'}</h3>
                             <div className="text-gray-700 whitespace-pre-line">
                               {productDetails.included}
                             </div>
@@ -778,7 +882,7 @@ export default function ProductDetailPage() {
                         )}
                         {productDetails.not_included && (
                           <div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-3">불포함 사항</h3>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Excluded' : '불포함 사항'}</h3>
                             <div className="text-gray-700 whitespace-pre-line">
                               {productDetails.not_included}
                             </div>
@@ -790,7 +894,7 @@ export default function ProductDetailPage() {
                     {/* 태그 */}
                     {(product.tags && product.tags.length > 0) || (productDetails?.tags && productDetails.tags.length > 0) && (
                       <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3">태그</h3>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Tags' : '태그'}</h3>
                         <div className="flex flex-wrap gap-2">
                           {(productDetails?.tags || product.tags || []).map((tag, index) => (
                             <span
@@ -829,13 +933,13 @@ export default function ProductDetailPage() {
                             {tourCourse.duration && (
                               <div className="flex items-center mb-4">
                                 <Clock className="h-5 w-5 text-blue-500 mr-2" />
-                                <span className="text-gray-600">소요시간: {tourCourse.duration}</span>
+                                <span className="text-gray-600">{isEnglish ? 'Duration:' : '소요시간:'} {tourCourse.duration}</span>
                               </div>
                             )}
                             
                             {tourCourse.difficulty && (
                               <div className="flex items-center mb-4">
-                                <span className="text-gray-600 mr-2">난이도:</span>
+                                <span className="text-gray-600 mr-2">{isEnglish ? 'Difficulty:' : '난이도:'}</span>
                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(tourCourse.difficulty)}`}>
                                   {getDifficultyLabel(tourCourse.difficulty)}
                                 </span>
@@ -844,7 +948,7 @@ export default function ProductDetailPage() {
                             
                             {tourCourse.highlights && tourCourse.highlights.length > 0 && (
                               <div className="mb-4">
-                                <h4 className="font-medium text-gray-900 mb-2">하이라이트</h4>
+                                <h4 className="font-medium text-gray-900 mb-2">{isEnglish ? 'Highlights' : '하이라이트'}</h4>
                                 <ul className="space-y-1">
                                   {tourCourse.highlights.map((highlight, index) => (
                                     <li key={index} className="flex items-center text-sm text-gray-600">
@@ -858,7 +962,7 @@ export default function ProductDetailPage() {
                             
                             {tourCourse.itinerary && (
                               <div>
-                                <h4 className="font-medium text-gray-900 mb-2">상세 일정</h4>
+                                <h4 className="font-medium text-gray-900 mb-2">{isEnglish ? 'Detailed Itinerary' : '상세 일정'}</h4>
                                 <div className="text-sm text-gray-600 whitespace-pre-line">
                                   {JSON.stringify(tourCourse.itinerary, null, 2)}
                                 </div>
@@ -870,8 +974,8 @@ export default function ProductDetailPage() {
                     ) : (
                       <div className="text-center py-8">
                         <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                        <p className="text-lg font-medium text-gray-900">일정 정보가 없습니다</p>
-                        <p className="text-gray-600">투어 코스 정보를 추가해주세요</p>
+                        <p className="text-lg font-medium text-gray-900">{isEnglish ? 'Schedule information is not available yet' : '일정 정보가 없습니다'}</p>
+                        <p className="text-gray-600">{isEnglish ? 'Please add tour course details.' : '투어 코스 정보를 추가해주세요'}</p>
                       </div>
                     )}
                   </div>
@@ -889,7 +993,7 @@ export default function ProductDetailPage() {
                 {/* 상세정보 탭 */}
                 {activeTab === 'details' && (
                   <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-gray-900">투어 상세 정보</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Detailed Tour Information' : '투어 상세 정보'}</h3>
                     
                     {/* 상세정보 서브 탭 네비게이션 */}
                     <div className="border-b border-gray-200">
@@ -918,56 +1022,67 @@ export default function ProductDetailPage() {
                         {/* 기본 정보 */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">기본 정보</h4>
+                            <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Basic Information' : '기본 정보'}</h4>
                             <dl className="space-y-3 text-sm">
                               <div className="flex justify-between">
-                                <dt className="text-gray-600">카테고리</dt>
+                                <dt className="text-gray-600">{isEnglish ? 'Category' : '카테고리'}</dt>
                                 <dd className="text-gray-900">{getCategoryLabel(product.category || '')}</dd>
                               </div>
                               <div className="flex justify-between">
-                                <dt className="text-gray-600">서브 카테고리</dt>
-                                <dd className="text-gray-900">{product.sub_category || '미정'}</dd>
+                                <dt className="text-gray-600">{isEnglish ? 'Subcategory' : '서브 카테고리'}</dt>
+                                <dd className="text-gray-900">{product.sub_category || (isEnglish ? 'Not specified' : '미정')}</dd>
                               </div>
                               <div className="flex justify-between">
-                                <dt className="text-gray-600">기간</dt>
+                                <dt className="text-gray-600">{isEnglish ? 'Duration' : '기간'}</dt>
                                 <dd className="text-gray-900">{formatDuration(product.duration)}</dd>
                               </div>
                               <div className="flex justify-between">
-                                <dt className="text-gray-600">최대 참가자</dt>
-                                <dd className="text-gray-900">{product.max_participants || 0}명</dd>
+                                <dt className="text-gray-600">{isEnglish ? 'Maximum Participants' : '최대 참가자'}</dt>
+                                <dd className="text-gray-900">
+                                  {product.max_participants || 0}
+                                  {isEnglish ? ' people' : '명'}
+                                </dd>
                               </div>
                               <div className="flex justify-between">
-                                <dt className="text-gray-600">상태</dt>
-                                <dd className="text-gray-900">{product.status || '미정'}</dd>
+                                <dt className="text-gray-600">{isEnglish ? 'Status' : '상태'}</dt>
+                                <dd className="text-gray-900">{product.status || (isEnglish ? 'Not specified' : '미정')}</dd>
                               </div>
                               {product.group_size && (
                                 <div className="flex justify-between">
-                                  <dt className="text-gray-600">그룹 크기</dt>
+                                  <dt className="text-gray-600">{isEnglish ? 'Group Size' : '그룹 크기'}</dt>
                                   <dd className="text-gray-900">{product.group_size}</dd>
                                 </div>
                               )}
                             </dl>
                           </div>
-                          
+
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">연령 정보</h4>
+                            <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Age Guidelines' : '연령 정보'}</h4>
                             <dl className="space-y-3 text-sm">
                               {product.adult_age && (
                                 <div className="flex justify-between">
-                                  <dt className="text-gray-600">성인 연령</dt>
-                                  <dd className="text-gray-900">{product.adult_age}세 이상</dd>
+                                  <dt className="text-gray-600">{isEnglish ? 'Adult Age' : '성인 연령'}</dt>
+                                  <dd className="text-gray-900">
+                                    {isEnglish ? `${product.adult_age}+ years` : `${product.adult_age}세 이상`}
+                                  </dd>
                                 </div>
                               )}
                               {product.child_age_min && product.child_age_max && (
                                 <div className="flex justify-between">
-                                  <dt className="text-gray-600">아동 연령</dt>
-                                  <dd className="text-gray-900">{product.child_age_min}-{product.child_age_max}세</dd>
+                                  <dt className="text-gray-600">{isEnglish ? 'Child Age' : '아동 연령'}</dt>
+                                  <dd className="text-gray-900">
+                                    {isEnglish
+                                      ? `${product.child_age_min}-${product.child_age_max} years`
+                                      : `${product.child_age_min}-${product.child_age_max}세`}
+                                  </dd>
                                 </div>
                               )}
                               {product.infant_age && (
                                 <div className="flex justify-between">
-                                  <dt className="text-gray-600">유아 연령</dt>
-                                  <dd className="text-gray-900">{product.infant_age}세 미만</dd>
+                                  <dt className="text-gray-600">{isEnglish ? 'Infant Age' : '유아 연령'}</dt>
+                                  <dd className="text-gray-900">
+                                    {isEnglish ? `Under ${product.infant_age} years` : `${product.infant_age}세 미만`}
+                                  </dd>
                                 </div>
                               )}
                             </dl>
@@ -977,7 +1092,7 @@ export default function ProductDetailPage() {
                         {/* 언어 정보 */}
                         {product.languages && product.languages.length > 0 && (
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">지원 언어</h4>
+                            <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Supported Languages' : '지원 언어'}</h4>
                             <div className="flex flex-wrap gap-2">
                               {product.languages.map((language, index) => (
                                 <span
@@ -994,12 +1109,12 @@ export default function ProductDetailPage() {
                         {/* 출발/도착 정보 */}
                         {(product.departure_city || product.arrival_city) && (
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">출발/도착 정보</h4>
+                            <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Departure / Arrival Details' : '출발/도착 정보'}</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               {product.departure_city && (
                                 <div className="flex items-center space-x-2">
                                   <MapPin className="h-4 w-4 text-blue-500" />
-                                  <span className="text-sm text-gray-600">출발지:</span>
+                                  <span className="text-sm text-gray-600">{isEnglish ? 'Departure:' : '출발지:'}</span>
                                   <span className="text-sm font-medium">{product.departure_city}</span>
                                   {product.departure_country && (
                                     <span className="text-sm text-gray-500">({product.departure_country})</span>
@@ -1009,7 +1124,7 @@ export default function ProductDetailPage() {
                               {product.arrival_city && (
                                 <div className="flex items-center space-x-2">
                                   <MapPin className="h-4 w-4 text-green-500" />
-                                  <span className="text-sm text-gray-600">도착지:</span>
+                                  <span className="text-sm text-gray-600">{isEnglish ? 'Arrival:' : '도착지:'}</span>
                                   <span className="text-sm font-medium">{product.arrival_city}</span>
                                   {product.arrival_country && (
                                     <span className="text-sm text-gray-500">({product.arrival_country})</span>
@@ -1023,7 +1138,7 @@ export default function ProductDetailPage() {
                         {/* 태그 */}
                         {(product.tags && product.tags.length > 0) || (productDetails?.tags && productDetails.tags.length > 0) && (
                           <div>
-                            <h4 className="font-medium text-gray-900 mb-3">태그</h4>
+                            <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Tags' : '태그'}</h4>
                             <div className="flex flex-wrap gap-2">
                               {(productDetails?.tags || product.tags || []).map((tag, index) => (
                                 <span
@@ -1045,7 +1160,7 @@ export default function ProductDetailPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           {productDetails?.included && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">포함 사항</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Included' : '포함 사항'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-green-50 p-4 rounded-lg">
                                 {productDetails.included}
                               </div>
@@ -1053,7 +1168,7 @@ export default function ProductDetailPage() {
                           )}
                           {productDetails?.not_included && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">불포함 사항</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Excluded' : '불포함 사항'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-red-50 p-4 rounded-lg">
                                 {productDetails.not_included}
                               </div>
@@ -1064,7 +1179,7 @@ export default function ProductDetailPage() {
                         {!productDetails?.included && !productDetails?.not_included && (
                           <div className="text-center py-8">
                             <div className="text-gray-400 mb-2">📋</div>
-                            <p className="text-gray-600">포함/불포함 정보가 없습니다</p>
+                            <p className="text-gray-600">{isEnglish ? 'No inclusion or exclusion details available' : '포함/불포함 정보가 없습니다'}</p>
                           </div>
                         )}
                       </div>
@@ -1076,7 +1191,7 @@ export default function ProductDetailPage() {
                         <div className="space-y-6">
                           {productDetails?.pickup_drop_info && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">픽업/드롭 정보</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Pickup & Drop-off Information' : '픽업/드롭 정보'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-blue-50 p-4 rounded-lg">
                                 {productDetails.pickup_drop_info}
                               </div>
@@ -1085,7 +1200,7 @@ export default function ProductDetailPage() {
                           
                           {productDetails?.luggage_info && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">짐 정보</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Luggage Information' : '짐 정보'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-yellow-50 p-4 rounded-lg">
                                 {productDetails.luggage_info}
                               </div>
@@ -1094,7 +1209,7 @@ export default function ProductDetailPage() {
                           
                           {productDetails?.tour_operation_info && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">투어 운영 정보</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Tour Operations' : '투어 운영 정보'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-purple-50 p-4 rounded-lg">
                                 {productDetails.tour_operation_info}
                               </div>
@@ -1103,7 +1218,7 @@ export default function ProductDetailPage() {
                           
                           {productDetails?.preparation_info && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">준비사항</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Preparation Tips' : '준비사항'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-orange-50 p-4 rounded-lg">
                                 {productDetails.preparation_info}
                               </div>
@@ -1112,7 +1227,7 @@ export default function ProductDetailPage() {
                           
                           {productDetails?.small_group_info && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">소그룹 정보</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Small Group Details' : '소그룹 정보'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-indigo-50 p-4 rounded-lg">
                                 {productDetails.small_group_info}
                               </div>
@@ -1121,7 +1236,7 @@ export default function ProductDetailPage() {
                           
                           {productDetails?.notice_info && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">주의사항</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Important Notes' : '주의사항'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-red-50 p-4 rounded-lg">
                                 {productDetails.notice_info}
                               </div>
@@ -1134,7 +1249,7 @@ export default function ProductDetailPage() {
                          !productDetails?.small_group_info && !productDetails?.notice_info && (
                           <div className="text-center py-8">
                             <div className="text-gray-400 mb-2">🚌</div>
-                            <p className="text-gray-600">운영 정보가 없습니다</p>
+                            <p className="text-gray-600">{isEnglish ? 'No logistics information available' : '운영 정보가 없습니다'}</p>
                           </div>
                         )}
                       </div>
@@ -1146,7 +1261,7 @@ export default function ProductDetailPage() {
                         <div className="grid grid-cols-1 gap-6">
                           {productDetails?.private_tour_info && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">프라이빗 투어 정보</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Private Tour Information' : '프라이빗 투어 정보'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-purple-50 p-4 rounded-lg">
                                 {productDetails.private_tour_info}
                               </div>
@@ -1155,7 +1270,7 @@ export default function ProductDetailPage() {
                           
                           {productDetails?.cancellation_policy && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">취소 정책</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Cancellation Policy' : '취소 정책'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-red-50 p-4 rounded-lg">
                                 {productDetails.cancellation_policy}
                               </div>
@@ -1164,7 +1279,7 @@ export default function ProductDetailPage() {
                           
                           {productDetails?.chat_announcement && (
                             <div>
-                              <h4 className="font-medium text-gray-900 mb-3">공지사항</h4>
+                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Announcements' : '공지사항'}</h4>
                               <div className="text-sm text-gray-600 whitespace-pre-line bg-blue-50 p-4 rounded-lg">
                                 {productDetails.chat_announcement}
                               </div>
@@ -1176,7 +1291,7 @@ export default function ProductDetailPage() {
                          !productDetails?.chat_announcement && (
                           <div className="text-center py-8">
                             <div className="text-gray-400 mb-2">📋</div>
-                            <p className="text-gray-600">정책 정보가 없습니다</p>
+                            <p className="text-gray-600">{isEnglish ? 'No policy information available' : '정책 정보가 없습니다'}</p>
                           </div>
                         )}
                       </div>
@@ -1201,22 +1316,27 @@ export default function ProductDetailPage() {
                   ${getSelectedOptionPrice()}
                 </div>
                 <div className="text-sm text-gray-600">
-                  {Object.keys(groupedChoices).length > 0 ? '선택 옵션 포함' : '기본 가격'}
+                  {Object.keys(groupedChoices).length > 0
+                    ? (isEnglish ? 'Includes selected options' : '선택 옵션 포함')
+                    : (isEnglish ? 'Base price' : '기본 가격')}
                 </div>
               </div>
 
               <div className="space-y-4 mb-6">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">최대 참가자</span>
-                  <span className="font-medium">{product.max_participants || 0}명</span>
+                  <span className="text-gray-600">{isEnglish ? 'Maximum participants' : '최대 참가자'}</span>
+                  <span className="font-medium">
+                    {product.max_participants || 0}
+                    {isEnglish ? ' people' : '명'}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">기간</span>
+                  <span className="text-gray-600">{isEnglish ? 'Duration' : '기간'}</span>
                   <span className="font-medium">{formatDuration(product.duration)}</span>
                 </div>
                 {product.group_size && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">그룹 크기</span>
+                    <span className="text-gray-600">{isEnglish ? 'Group size' : '그룹 크기'}</span>
                     <span className="font-medium">{product.group_size}</span>
                   </div>
                 )}
@@ -1225,12 +1345,12 @@ export default function ProductDetailPage() {
               {/* 선택 옵션 */}
               {Object.keys(groupedChoices).length > 0 && (
                 <div className="mb-6">
-                  <h4 className="font-medium text-gray-900 mb-3">선택 옵션</h4>
+                  <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Optional add-ons' : '선택 옵션'}</h4>
                   <div className="space-y-4">
                     {Object.values(groupedChoices).map((group: ChoiceGroup) => (
                       <div key={group.choice_id}>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {locale === 'en' && group.choice_name_ko ? group.choice_name_ko : group.choice_name}
+                          {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
                         </label>
                         <select
                           value={selectedOptions[group.choice_id] || ''}
@@ -1239,9 +1359,9 @@ export default function ProductDetailPage() {
                         >
                           {group.options.map((option) => (
                             <option key={option.option_id} value={option.option_id}>
-                              {locale === 'en' && option.option_name_ko ? option.option_name_ko : option.option_name}
+                              {isEnglish ? option.option_name || option.option_name_ko : option.option_name_ko || option.option_name}
                               {option.option_price ? ` (+$${option.option_price})` : ''}
-                              {option.is_default ? ' (기본)' : ''}
+                              {option.is_default ? (isEnglish ? ' (default)' : ' (기본)') : ''}
                             </option>
                           ))}
                         </select>
@@ -1258,19 +1378,19 @@ export default function ProductDetailPage() {
                 onClick={() => setShowBookingFlow(true)}
                 className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
-                예약하기
+                {isEnglish ? 'Book Now' : '예약하기'}
               </button>
 
               <div className="mt-4 text-center">
                 <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
-                  문의하기
+                  {isEnglish ? 'Contact Us' : '문의하기'}
                 </button>
               </div>
             </div>
 
             {/* 연락처 정보 */}
             <div className="bg-white rounded-lg shadow-sm border p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">연락처</h3>
+              <h3 className="font-semibold text-gray-900 mb-4">{isEnglish ? 'Contact' : '연락처'}</h3>
               <div className="space-y-3">
                 <div className="flex items-center text-gray-700">
                   <Phone size={16} className="mr-3" />
@@ -1286,17 +1406,17 @@ export default function ProductDetailPage() {
             {/* 리뷰 요약 */}
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-900">리뷰</h3>
+                <h3 className="font-semibold text-gray-900">{isEnglish ? 'Reviews' : '리뷰'}</h3>
                 <div className="flex items-center">
                   <Star className="h-4 w-4 text-yellow-400 mr-1" />
                   <span className="font-medium">4.5</span>
                 </div>
               </div>
               <div className="text-sm text-gray-600">
-                12개의 리뷰
+                {isEnglish ? '12 reviews' : '12개의 리뷰'}
               </div>
               <button className="w-full mt-3 text-blue-600 hover:text-blue-700 text-sm font-medium">
-                모든 리뷰 보기
+                {isEnglish ? 'View all reviews' : '모든 리뷰 보기'}
               </button>
             </div>
           </div>
@@ -1327,7 +1447,7 @@ export default function ProductDetailPage() {
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="border-b border-gray-200 px-6 py-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">결제하기</h2>
+                <h2 className="text-xl font-semibold text-gray-900">{isEnglish ? 'Complete Payment' : '결제하기'}</h2>
                 <button
                   onClick={() => setShowPayment(false)}
                   className="text-gray-400 hover:text-gray-600 transition-colors"

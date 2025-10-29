@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { Calendar, Users, Clock, MapPin, CreditCard, ShoppingCart, ArrowLeft, ArrowRight, Check, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { Calendar, Users, Clock, CreditCard, ShoppingCart, ArrowLeft, ArrowRight, Check, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useLocale } from 'next-intl'
 
 interface Product {
   id: string
@@ -26,6 +27,51 @@ interface Product {
   infant_age: number | null
   choices: Record<string, unknown> | null
   tour_departure_times: Record<string, unknown> | null
+}
+
+interface Tour {
+  id: string
+  product_id: string
+  tour_date: string
+  tour_start_datetime: string | null
+  tour_status: string | null
+  team_type: string | null
+  tour_guide_id: string | null
+  tour_car_id: string | null
+  tour_note: string | null
+}
+
+interface ProductOption {
+  id: string
+  product_id: string
+  name: string
+  description: string | null
+  is_required: boolean
+  is_multiple: boolean
+  choice_name: string | null
+  choice_description: string | null
+  adult_price_adjustment: number | null
+  child_price_adjustment: number | null
+  infant_price_adjustment: number | null
+  is_default: boolean
+}
+
+interface ChoiceOption {
+  option_id: string
+  option_name: string
+  option_name_ko: string | null
+  option_price: number | null
+  is_default: boolean | null
+}
+
+interface ChoiceGroup {
+  choice_id: string
+  choice_name: string
+  choice_name_ko: string | null
+  choice_type: string
+  choice_description: string | null
+  is_required: boolean
+  options: ChoiceOption[]
 }
 
 interface ProductChoice {
@@ -88,59 +134,80 @@ interface BookingFlowProps {
   onComplete: (bookingData: BookingData) => void
 }
 
-const steps = [
-  { id: 'date', title: '날짜 선택', icon: Calendar },
-  { id: 'participants', title: '인원 선택', icon: Users },
-  { id: 'required', title: '필수 선택', icon: Check },
-  { id: 'optional', title: '추가 선택', icon: ShoppingCart },
-  { id: 'customer', title: '고객 정보', icon: Users },
-  { id: 'payment', title: '결제', icon: CreditCard }
-]
-
 // 국가 목록
 const countries = [
-  { code: 'KR', name: '대한민국', phoneCode: '+82' },
-  { code: 'US', name: '미국', phoneCode: '+1' },
-  { code: 'JP', name: '일본', phoneCode: '+81' },
-  { code: 'CN', name: '중국', phoneCode: '+86' },
-  { code: 'TH', name: '태국', phoneCode: '+66' },
-  { code: 'SG', name: '싱가포르', phoneCode: '+65' },
-  { code: 'MY', name: '말레이시아', phoneCode: '+60' },
-  { code: 'ID', name: '인도네시아', phoneCode: '+62' },
-  { code: 'PH', name: '필리핀', phoneCode: '+63' },
-  { code: 'VN', name: '베트남', phoneCode: '+84' },
-  { code: 'AU', name: '호주', phoneCode: '+61' },
-  { code: 'CA', name: '캐나다', phoneCode: '+1' },
-  { code: 'GB', name: '영국', phoneCode: '+44' },
-  { code: 'DE', name: '독일', phoneCode: '+49' },
-  { code: 'FR', name: '프랑스', phoneCode: '+33' },
-  { code: 'IT', name: '이탈리아', phoneCode: '+39' },
-  { code: 'ES', name: '스페인', phoneCode: '+34' },
-  { code: 'RU', name: '러시아', phoneCode: '+7' },
-  { code: 'BR', name: '브라질', phoneCode: '+55' },
-  { code: 'MX', name: '멕시코', phoneCode: '+52' },
-  { code: 'IN', name: '인도', phoneCode: '+91' },
-  { code: 'OTHER', name: '기타', phoneCode: '+' }
+  { code: 'KR', nameKo: '대한민국', nameEn: 'South Korea', phoneCode: '+82' },
+  { code: 'US', nameKo: '미국', nameEn: 'United States', phoneCode: '+1' },
+  { code: 'JP', nameKo: '일본', nameEn: 'Japan', phoneCode: '+81' },
+  { code: 'CN', nameKo: '중국', nameEn: 'China', phoneCode: '+86' },
+  { code: 'TH', nameKo: '태국', nameEn: 'Thailand', phoneCode: '+66' },
+  { code: 'SG', nameKo: '싱가포르', nameEn: 'Singapore', phoneCode: '+65' },
+  { code: 'MY', nameKo: '말레이시아', nameEn: 'Malaysia', phoneCode: '+60' },
+  { code: 'ID', nameKo: '인도네시아', nameEn: 'Indonesia', phoneCode: '+62' },
+  { code: 'PH', nameKo: '필리핀', nameEn: 'Philippines', phoneCode: '+63' },
+  { code: 'VN', nameKo: '베트남', nameEn: 'Vietnam', phoneCode: '+84' },
+  { code: 'AU', nameKo: '호주', nameEn: 'Australia', phoneCode: '+61' },
+  { code: 'CA', nameKo: '캐나다', nameEn: 'Canada', phoneCode: '+1' },
+  { code: 'GB', nameKo: '영국', nameEn: 'United Kingdom', phoneCode: '+44' },
+  { code: 'DE', nameKo: '독일', nameEn: 'Germany', phoneCode: '+49' },
+  { code: 'FR', nameKo: '프랑스', nameEn: 'France', phoneCode: '+33' },
+  { code: 'IT', nameKo: '이탈리아', nameEn: 'Italy', phoneCode: '+39' },
+  { code: 'ES', nameKo: '스페인', nameEn: 'Spain', phoneCode: '+34' },
+  { code: 'RU', nameKo: '러시아', nameEn: 'Russia', phoneCode: '+7' },
+  { code: 'BR', nameKo: '브라질', nameEn: 'Brazil', phoneCode: '+55' },
+  { code: 'MX', nameKo: '멕시코', nameEn: 'Mexico', phoneCode: '+52' },
+  { code: 'IN', nameKo: '인도', nameEn: 'India', phoneCode: '+91' },
+  { code: 'OTHER', nameKo: '기타', nameEn: 'Other', phoneCode: '+' }
 ]
 
 // 투어 언어 옵션
 const tourLanguages = [
-  { code: 'ko', name: '한국어' },
-  { code: 'en', name: '영어' }
+  { code: 'ko', nameKo: '한국어', nameEn: 'Korean' },
+  { code: 'en', nameKo: '영어', nameEn: 'English' }
 ]
 
 export default function BookingFlow({ product, productChoices, onClose, onComplete }: BookingFlowProps) {
+  const locale = useLocale()
+  const isEnglish = locale === 'en'
+  const translate = useCallback((ko: string, en: string) => (isEnglish ? en : ko), [isEnglish])
+  const localeTag = isEnglish ? 'en-US' : 'ko-KR'
+  const dayNames = isEnglish ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['일', '월', '화', '수', '목', '금', '토']
+  const statusLabelMap: Record<string, string> = {
+    available: translate('예약 가능', 'Available'),
+    recruiting: translate('동행 모집중', 'More guests needed'),
+    confirmed: translate('출발 확정', 'Confirmed departure'),
+    almost_full: translate('마감 임박', 'Almost full'),
+    closed: translate('마감', 'Closed'),
+    unknown: translate('알 수 없음', 'Unknown')
+  }
+  const steps = isEnglish
+    ? [
+        { id: 'date', title: 'Select Date', icon: Calendar },
+        { id: 'participants', title: 'Guests', icon: Users },
+        { id: 'required', title: 'Required Options', icon: Check },
+        { id: 'optional', title: 'Optional Add-ons', icon: ShoppingCart },
+        { id: 'customer', title: 'Guest Details', icon: Users },
+        { id: 'payment', title: 'Payment', icon: CreditCard }
+      ]
+    : [
+        { id: 'date', title: '날짜 선택', icon: Calendar },
+        { id: 'participants', title: '인원 선택', icon: Users },
+        { id: 'required', title: '필수 선택', icon: Check },
+        { id: 'optional', title: '추가 선택', icon: ShoppingCart },
+        { id: 'customer', title: '고객 정보', icon: Users },
+        { id: 'payment', title: '결제', icon: CreditCard }
+      ]
+
   const [currentStep, setCurrentStep] = useState(0)
   const [tourSchedules, setTourSchedules] = useState<TourSchedule[]>([])
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   
   // 캘린더 관련 상태
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   
   // 추가 선택 옵션 상태
-  const [productOptions, setProductOptions] = useState<any[]>([])
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([])
   const [loadingOptions, setLoadingOptions] = useState(false)
   
   // 예약 인원수 상태
@@ -175,6 +242,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     uploaded_files: []
   })
 
+  const productDisplayName = isEnglish
+    ? product.customer_name_en || product.name_en || product.customer_name_ko || product.name
+    : product.customer_name_ko || product.name
+
   // 투어 스케줄 로드 (매일 출발 가능, 고객은 모든 날짜 선택 가능)
   useEffect(() => {
     const loadTourSchedules = async () => {
@@ -187,7 +258,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           .select('date, is_sale_available')
           .eq('product_id', product.id)
           .gte('date', new Date().toISOString().split('T')[0])
-          .order('date', { ascending: true })
+          .order('date', { ascending: true }) as { data: Array<{ date: string; is_sale_available: boolean }> | null, error: Error | null }
 
         if (pricingError) {
           console.error('Dynamic pricing 조회 오류:', pricingError)
@@ -216,7 +287,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           .select('*')
           .eq('product_id', product.id)
           .gte('tour_date', new Date().toISOString().split('T')[0])
-          .order('tour_date', { ascending: true })
+          .order('tour_date', { ascending: true }) as { data: Tour[] | null, error: Error | null }
 
         if (toursError) {
           console.error('투어 정보 조회 오류:', toursError)
@@ -236,18 +307,17 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         }
 
         // 4. 스케줄 생성 로직
-        let finalSchedules: TourSchedule[] = []
+        const finalSchedules: TourSchedule[] = []
 
         if (pricingData && pricingData.length > 0) {
           // Dynamic pricing에 날짜가 있으면 해당 날짜들 우선 표시
           console.log('Dynamic pricing에서 가져온 날짜들:', pricingData.map(item => item.date))
           
-          const pricingDates = pricingData.map(item => item.date)
-          const existingTourDates = (existingTours || []).map(tour => tour.tour_date)
+          const pricingDates = pricingData.map((item: { date: string; is_sale_available: boolean }) => item.date)
           
           // Dynamic pricing 날짜들을 스케줄로 생성
           pricingDates.forEach(date => {
-            const existingTour = existingTours?.find(tour => tour.tour_date === date)
+            const existingTour = existingTours?.find((tour: Tour) => tour.tour_date === date)
             
             if (existingTour) {
               // 기존 투어가 있으면 그 정보 사용
@@ -280,7 +350,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                 guide_name: null,
                 vehicle_id: null,
                 vehicle_type: null,
-                notes: 'Dynamic pricing 기반 - 4인 이상 확정 시 출발'
+                notes: translate('Dynamic pricing 기반 - 4인 이상 확정 시 출발', 'Dynamic pricing availability - departs with 4 or more guests')
               })
             }
           })
@@ -288,7 +358,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           // Dynamic pricing에 없는 날짜들도 추가 (모든 날짜 선택 가능)
           const remainingDates = allDates.filter(date => !pricingDates.includes(date))
           remainingDates.forEach(date => {
-            const existingTour = existingTours?.find(tour => tour.tour_date === date)
+            const existingTour = existingTours?.find((tour: Tour) => tour.tour_date === date)
             
             if (existingTour) {
               finalSchedules.push({
@@ -319,7 +389,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                 guide_name: null,
                 vehicle_id: null,
                 vehicle_type: null,
-                notes: '매일 출발 가능 - 4인 이상 확정 시 출발'
+                notes: translate('매일 출발 가능 - 4인 이상 확정 시 출발', 'Daily departures available - confirmed with 4 or more guests')
               })
             }
           })
@@ -328,7 +398,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           console.log('Dynamic pricing에 날짜가 없어 모든 날짜를 선택 가능하게 표시합니다.')
           
           allDates.forEach(date => {
-            const existingTour = existingTours?.find(tour => tour.tour_date === date)
+            const existingTour = existingTours?.find((tour: Tour) => tour.tour_date === date)
             
             if (existingTour) {
               finalSchedules.push({
@@ -359,7 +429,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                 guide_name: null,
                 vehicle_id: null,
                 vehicle_type: null,
-                notes: '매일 출발 가능 - 4인 이상 확정 시 출발'
+                notes: translate('매일 출발 가능 - 4인 이상 확정 시 출발', 'Daily departures available - confirmed with 4 or more guests')
               })
             }
           })
@@ -378,7 +448,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }
 
     loadTourSchedules()
-  }, [product.id])
+  }, [product.id, product.max_participants, translate])
 
   // product_options 테이블에서 추가 선택 옵션 로드
   useEffect(() => {
@@ -529,10 +599,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     
     // 선택된 옵션 가격 추가 (필수 + 추가 선택)
     const allChoices = [...requiredChoices, ...optionalChoices]
-    allChoices.forEach((group) => {
+    allChoices.forEach((group: ChoiceGroup) => {
       const selectedOptionId = bookingData.selectedOptions[group.choice_id]
       if (selectedOptionId) {
-        const option = group.options.find((opt) => opt.option_id === selectedOptionId)
+        const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
         if (option && option.option_price) {
           totalPrice += option.option_price
         }
@@ -566,7 +636,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       is_default: choice.is_default
     })
     return groups
-  }, {} as Record<string, any>)
+  }, {} as Record<string, ChoiceGroup>)
 
   // 필수 선택: productChoices의 모든 내용
   const requiredChoices = Object.values(groupedChoices)
@@ -699,7 +769,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     })
     
     if (validFiles.length !== files.length) {
-      alert('일부 파일이 지원되지 않는 형식이거나 크기가 너무 큽니다.')
+      alert(translate('일부 파일이 지원되지 않는 형식이거나 크기가 너무 큽니다.', 'Some files are unsupported or exceed the size limit.'))
     }
     
     if (validFiles.length > 0) {
@@ -850,7 +920,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         return bookingData.participants.adults > 0
       case 2: // 필수 선택
         // 모든 필수 선택이 완료되었는지 확인
-        return requiredChoices.every((group: any) => {
+        return requiredChoices.every((group: ChoiceGroup) => {
           const selectedOption = bookingData.selectedOptions[group.choice_id]
           return selectedOption && selectedOption !== ''
         })
@@ -871,7 +941,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         return (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">투어 날짜 선택</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('투어 날짜 선택', 'Select Tour Date')}</h3>
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
                 <div className="flex items-start">
                   <div className="flex-shrink-0">
@@ -881,8 +951,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   </div>
                   <div className="ml-3">
                     <p className="text-sm text-blue-800">
-                      <strong>매일 출발 가능합니다!</strong> 원하시는 날짜를 선택하세요. 
-                      4인 이상 확정 시 해당 날짜로 투어가 진행됩니다.
+                      <strong>{translate('매일 출발 가능합니다!', 'Tours depart daily!')}</strong> {translate('원하시는 날짜를 선택하세요.', 'Pick the date that works best for you.')} 
+                      {translate('4인 이상 확정 시 해당 날짜로 투어가 진행됩니다.', 'Departures are confirmed once four or more guests book the date.')}
                     </p>
                   </div>
                 </div>
@@ -891,7 +961,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               {loading ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-gray-600">투어 스케줄을 불러오는 중...</p>
+                  <p className="text-gray-600">{translate('투어 스케줄을 불러오는 중...', 'Loading tour availability...')}</p>
                 </div>
               ) : (
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -904,7 +974,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       <ChevronLeft className="h-5 w-5 text-gray-600" />
                     </button>
                     <h4 className="text-lg font-semibold text-gray-900">
-                      {currentMonth.toLocaleDateString('ko-KR', { 
+                      {currentMonth.toLocaleDateString(localeTag, { 
                             year: 'numeric',
                         month: 'long' 
                       })}
@@ -919,7 +989,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
                   {/* 요일 헤더 */}
                   <div className="grid grid-cols-7 gap-1 mb-2">
-                    {['일', '월', '화', '수', '목', '금', '토'].map((day) => (
+                    {dayNames.map((day) => (
                       <div key={day} className="text-center text-sm font-medium text-gray-500 py-2">
                         {day}
                       </div>
@@ -929,7 +999,6 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   {/* 캘린더 그리드 */}
                   <div className="grid grid-cols-7 gap-1">
                     {getDaysInMonth(currentMonth).map((day, index) => {
-                      const schedule = getScheduleForDate(day.date)
                       const dateString = day.date.toISOString().split('T')[0]
                       const isSelected = selectedDate === dateString
                       const isToday = dateString === new Date().toISOString().split('T')[0]
@@ -975,23 +1044,23 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   <div className="mt-4 flex items-center justify-center space-x-3 text-xs text-gray-600">
                     <div className="flex items-center">
                       <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                      예약 가능
+                      {statusLabelMap.available}
                     </div>
                     <div className="flex items-center">
                       <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div>
-                      동행 모집중
+                      {statusLabelMap.recruiting}
                     </div>
                     <div className="flex items-center">
                       <div className="w-2 h-2 bg-blue-500 rounded-full mr-1"></div>
-                      출발 확정
+                      {statusLabelMap.confirmed}
                     </div>
                     <div className="flex items-center">
                       <div className="w-2 h-2 bg-yellow-500 rounded-full mr-1"></div>
-                      마감 임박
+                      {statusLabelMap.almost_full}
                     </div>
                     <div className="flex items-center">
                       <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
-                      마감
+                      {statusLabelMap.closed}
                     </div>
                   </div>
                   </div>
@@ -1000,10 +1069,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               {/* 선택된 날짜 정보 */}
               {selectedDate && (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-medium text-gray-900 mb-2">선택된 날짜</h4>
+                  <h4 className="font-medium text-gray-900 mb-2">{translate('선택된 날짜', 'Selected Date')}</h4>
                   <div className="text-sm text-gray-700">
                     <div className="font-medium">
-                      {new Date(selectedDate).toLocaleDateString('ko-KR', {
+                      {new Date(selectedDate).toLocaleDateString(localeTag, {
                         year: 'numeric',
                         month: 'long',
                         day: 'numeric',
@@ -1013,26 +1082,26 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     {bookingData.departureTime && (
                       <div className="mt-1 flex items-center text-gray-600">
                         <Clock className="h-4 w-4 mr-1" />
-                        출발 시간: {bookingData.departureTime}
+                        {translate('출발 시간', 'Departure time')}: {bookingData.departureTime}
                       </div>
                     )}
                     <div className="mt-1">
-                      <span className="font-medium">상태:</span>
+                      <span className="font-medium">{translate('상태', 'Status')}:</span>
                       {(() => {
                         const status = getDateStatus(new Date(selectedDate))
                         switch(status) {
                           case 'available':
-                            return <span className="text-green-600 ml-1">예약 가능</span>
+                            return <span className="text-green-600 ml-1">{statusLabelMap.available}</span>
                           case 'recruiting':
-                            return <span className="text-orange-600 ml-1">동행 모집중</span>
+                            return <span className="text-orange-600 ml-1">{statusLabelMap.recruiting}</span>
                           case 'confirmed':
-                            return <span className="text-blue-600 ml-1">출발 확정</span>
+                            return <span className="text-blue-600 ml-1">{statusLabelMap.confirmed}</span>
                           case 'almost_full':
-                            return <span className="text-yellow-600 ml-1">마감 임박</span>
+                            return <span className="text-yellow-600 ml-1">{statusLabelMap.almost_full}</span>
                           case 'closed':
-                            return <span className="text-red-600 ml-1">마감</span>
+                            return <span className="text-red-600 ml-1">{statusLabelMap.closed}</span>
                           default:
-                            return <span className="text-gray-600 ml-1">알 수 없음</span>
+                            return <span className="text-gray-600 ml-1">{statusLabelMap.unknown}</span>
                         }
                       })()}
                     </div>
@@ -1047,13 +1116,13 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         return (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">인원 선택</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">{translate('인원 선택', 'Select Participants')}</h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 border rounded-lg">
                   <div>
-                    <div className="font-medium text-gray-900">성인</div>
+                    <div className="font-medium text-gray-900">{translate('성인', 'Adult')}</div>
                     <div className="text-sm text-gray-600">
-                      {product.adult_age ? `${product.adult_age}세 이상` : '성인'}
+                      {product.adult_age ? translate(`${product.adult_age}세 이상`, `${product.adult_age}+ years`) : translate('성인', 'Adult')}
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -1097,9 +1166,9 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                 {product.child_age_min && product.child_age_max && (
                   <div className="flex items-center justify-between p-4 border rounded-lg">
                     <div>
-                      <div className="font-medium text-gray-900">아동</div>
+                      <div className="font-medium text-gray-900">{translate('아동', 'Child')}</div>
                       <div className="text-sm text-gray-600">
-                        {product.child_age_min}-{product.child_age_max}세
+                        {translate(`${product.child_age_min}-${product.child_age_max}세`, `${product.child_age_min}-${product.child_age_max} years`)}
                       </div>
                     </div>
                     <div className="flex items-center space-x-3">
@@ -1144,9 +1213,9 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                 {product.infant_age && (
                   <div className="flex items-center justify-between p-4 border rounded-lg">
                     <div>
-                      <div className="font-medium text-gray-900">유아</div>
+                      <div className="font-medium text-gray-900">{translate('유아', 'Infant')}</div>
                       <div className="text-sm text-gray-600">
-                        {product.infant_age}세 미만
+                        {translate(`${product.infant_age}세 미만`, `Under ${product.infant_age} years`)}
                       </div>
                     </div>
                     <div className="flex items-center space-x-3">
@@ -1196,7 +1265,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         return (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">필수 선택</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('필수 선택', 'Required Options')}</h3>
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
                 <div className="flex items-start">
                   <div className="flex-shrink-0">
@@ -1206,7 +1275,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   </div>
                   <div className="ml-3">
                     <p className="text-sm text-red-800">
-                      <strong>필수 선택사항입니다!</strong> 아래 옵션 중 하나를 반드시 선택해주세요.
+                      <strong>{translate('필수 선택사항입니다!', 'These options are required!')}</strong> {translate('아래 옵션 중 하나를 반드시 선택해주세요.', 'Please choose at least one option below.')}
                     </p>
                   </div>
                 </div>
@@ -1214,19 +1283,19 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               
               {requiredChoices.length > 0 ? (
                 <div className="space-y-4">
-                  {requiredChoices.map((group: any) => (
+                  {requiredChoices.map((group: ChoiceGroup) => (
                     <div key={group.choice_id} className="border border-red-200 rounded-lg p-4 bg-red-50">
                       <div className="mb-3">
                         <h4 className="font-medium text-gray-900 flex items-center">
                           <span className="text-red-600 mr-2">*</span>
-                          {group.choice_name_ko || group.choice_name}
+                          {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
                         </h4>
                         {group.choice_description && (
                           <p className="text-sm text-gray-600 mt-1">{group.choice_description}</p>
                         )}
                       </div>
                       <div className="space-y-2">
-                        {group.options.map((option: any) => (
+                        {group.options.map((option: ChoiceOption) => (
                           <label key={option.option_id} className="flex items-center space-x-3 cursor-pointer p-2 rounded hover:bg-white transition-colors">
                             <input
                               type="radio"
@@ -1246,14 +1315,14 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                               required
                             />
                             <div className="flex-1">
-                              <span className="text-gray-900 font-medium">{option.option_name_ko || option.option_name}</span>
+                              <span className="text-gray-900 font-medium">{isEnglish ? option.option_name || option.option_name_ko : option.option_name_ko || option.option_name}</span>
                               {option.option_price && (
                                 <span className="text-red-600 font-medium ml-2">
                                   +${option.option_price}
                                 </span>
                               )}
                               {option.is_default && (
-                                <span className="text-xs text-gray-500 ml-2 bg-gray-200 px-2 py-1 rounded">기본</span>
+                                <span className="text-xs text-gray-500 ml-2 bg-gray-200 px-2 py-1 rounded">{translate('기본', 'Default')}</span>
                               )}
                             </div>
                           </label>
@@ -1265,7 +1334,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               ) : (
                 <div className="text-center py-8">
                   <Check className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-gray-600">필수 선택사항이 없습니다</p>
+                  <p className="text-gray-600">{translate('필수 선택사항이 없습니다', 'There are no required options.')}</p>
                 </div>
               )}
             </div>
@@ -1276,7 +1345,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         return (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">추가 선택</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('추가 선택', 'Optional Add-ons')}</h3>
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
                 <div className="flex items-start">
                   <div className="flex-shrink-0">
@@ -1286,7 +1355,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   </div>
                   <div className="ml-3">
                     <p className="text-sm text-green-800">
-                      <strong>선택사항입니다!</strong> 원하시는 추가 옵션을 선택하세요. 선택하지 않아도 됩니다.
+                      <strong>{translate('선택사항입니다!', 'These are optional!')}</strong> {translate('원하시는 추가 옵션을 선택하세요. 선택하지 않아도 됩니다.', 'Choose any add-ons you’d like—this step is optional.')}
                     </p>
                   </div>
                 </div>
@@ -1295,20 +1364,20 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               {loadingOptions ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-4"></div>
-                  <p className="text-gray-600">추가 선택사항을 불러오는 중...</p>
+                  <p className="text-gray-600">{translate('추가 선택사항을 불러오는 중...', 'Loading optional add-ons...')}</p>
                 </div>
               ) : optionalChoices.length > 0 ? (
                 <div className="space-y-4">
-                  {optionalChoices.map((group: any) => (
+                  {optionalChoices.map((group: ChoiceGroup) => (
                     <div key={group.choice_id} className="border border-gray-200 rounded-lg p-4">
                       <div className="mb-3">
-                        <h4 className="font-medium text-gray-900">{group.choice_name_ko || group.choice_name}</h4>
+                        <h4 className="font-medium text-gray-900">{isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}</h4>
                         {group.choice_description && (
                           <p className="text-sm text-gray-600 mt-1">{group.choice_description}</p>
                         )}
                       </div>
                       <div className="space-y-2">
-                        {group.options.map((option: any) => (
+                        {group.options.map((option: ChoiceOption) => (
                           <label key={option.option_id} className="flex items-center space-x-3 cursor-pointer p-2 rounded hover:bg-gray-50 transition-colors">
                             <input
                               type="radio"
@@ -1327,14 +1396,14 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                               className="w-4 h-4 text-green-600"
                             />
                             <div className="flex-1">
-                              <span className="text-gray-900">{option.option_name_ko || option.option_name}</span>
+                              <span className="text-gray-900">{isEnglish ? option.option_name || option.option_name_ko : option.option_name_ko || option.option_name}</span>
                               {option.option_price && option.option_price > 0 && (
                                 <span className="text-green-600 font-medium ml-2">
                                   +${option.option_price}
                                 </span>
                               )}
                               {option.is_default && (
-                                <span className="text-xs text-gray-500 ml-2 bg-gray-200 px-2 py-1 rounded">기본</span>
+                                <span className="text-xs text-gray-500 ml-2 bg-gray-200 px-2 py-1 rounded">{translate('기본', 'Default')}</span>
                               )}
                             </div>
                           </label>
@@ -1346,7 +1415,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               ) : (
                 <div className="text-center py-8">
                   <ShoppingCart className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-gray-600">추가 선택사항이 없습니다</p>
+                  <p className="text-gray-600">{translate('추가 선택사항이 없습니다', 'There are no optional add-ons.')}</p>
                 </div>
               )}
             </div>
@@ -1357,10 +1426,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         return (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">고객 정보</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">{translate('고객 정보', 'Guest Information')}</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">이름 *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('이름 *', 'Name *')}</label>
                   <input
                     type="text"
                     value={bookingData.customerInfo.name}
@@ -1374,11 +1443,11 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       }))
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="이름을 입력하세요"
+                    placeholder={translate('이름을 입력하세요', 'Enter your name')}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">이메일 *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('이메일 *', 'Email *')}</label>
                   <input
                     type="email"
                     value={bookingData.customerInfo.email}
@@ -1392,11 +1461,11 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       }))
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="이메일을 입력하세요"
+                    placeholder={translate('이메일을 입력하세요', 'Enter your email')}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">전화번호 *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('전화번호 *', 'Phone Number *')}</label>
                   <div className="flex space-x-2">
                     <select
                       value={bookingData.customerInfo.country}
@@ -1411,10 +1480,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       }}
                       className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                      <option value="">국가</option>
+                      <option value="">{translate('국가', 'Country')}</option>
                       {countries.map(country => (
                         <option key={country.code} value={country.code}>
-                          {country.phoneCode} {country.name}
+                          {country.phoneCode} {translate(country.nameKo, country.nameEn)}
                         </option>
                       ))}
                     </select>
@@ -1433,19 +1502,19 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         }))
                       }}
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="전화번호를 입력하세요"
+                      placeholder={translate('전화번호를 입력하세요', 'Enter your phone number')}
                     />
                   </div>
                   {bookingData.customerInfo.country && bookingData.customerInfo.phone && (
                     <div className="mt-2 text-sm text-gray-600">
-                      <span className="font-medium">전체 번호:</span> 
+                      <span className="font-medium">{translate('전체 번호:', 'Full number:')}</span>{' '}
                       {countries.find(c => c.code === bookingData.customerInfo.country)?.phoneCode}
                       {bookingData.customerInfo.phone}
                     </div>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">투어 언어</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('투어 언어', 'Preferred Tour Language')}</label>
                   <div className="space-y-2">
                     {tourLanguages.map(language => (
                       <label key={language.code} className="flex items-center space-x-3 cursor-pointer">
@@ -1467,13 +1536,13 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           }}
                           className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                         />
-                        <span className="text-gray-900">{language.name}</span>
+                        <span className="text-gray-900">{translate(language.nameKo, language.nameEn)}</span>
                       </label>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">특별 요청사항</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('특별 요청사항', 'Special Requests')}</label>
                   <textarea
                     value={bookingData.customerInfo.specialRequests}
                     onChange={(e) => {
@@ -1487,7 +1556,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     }}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="특별 요청사항이 있다면 입력하세요"
+                    placeholder={translate('특별 요청사항이 있다면 입력하세요', 'Let us know if you have any special requests')}
                   />
                 </div>
               </div>
@@ -1495,7 +1564,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               {/* 파일 업로드 섹션 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  관련 문서 첨부 (선택사항)
+                  {translate('관련 문서 첨부 (선택사항)', 'Attach relevant documents (optional)')}
                 </label>
                 <div 
                   className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 ${
@@ -1541,19 +1610,19 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                       <p className={`text-sm font-medium transition-colors ${
                         isDragOver ? 'text-blue-900' : 'text-gray-900'
                       }`}>
-                        {isUploading 
-                          ? '파일 업로드 중...' 
-                          : isDragOver 
-                            ? '파일을 여기에 놓으세요' 
-                            : '파일을 드래그하여 놓거나 클릭하여 선택하세요'
-                        }
+                      {isUploading 
+                        ? translate('파일 업로드 중...', 'Uploading files...') 
+                        : isDragOver 
+                          ? translate('파일을 여기에 놓으세요', 'Drop files here') 
+                          : translate('파일을 드래그하여 놓거나 클릭하여 선택하세요', 'Drag & drop files or click to browse')
+                      }
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        또는 클립보드에서 붙여넣기 (Ctrl+V)
+                        {translate('또는 클립보드에서 붙여넣기 (Ctrl+V)', 'Or paste from clipboard (Ctrl+V)')}
                       </p>
                     </div>
                     <div className="text-xs text-gray-400">
-                      지원 형식: JPG, PNG, GIF, PDF, DOC, DOCX (최대 10MB)
+                      {translate('지원 형식: JPG, PNG, GIF, PDF, DOC, DOCX (최대 10MB)', 'Supported formats: JPG, PNG, GIF, PDF, DOC, DOCX (max 10MB)')}
                     </div>
                   </div>
                   
@@ -1569,7 +1638,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   {/* 업로드된 파일 목록 */}
                   {bookingData.uploaded_files.length > 0 && (
                     <div className="mt-6 pt-4 border-t border-gray-200">
-                      <h4 className="text-sm font-medium mb-3 text-gray-900">업로드된 파일 ({bookingData.uploaded_files.length}개)</h4>
+                      <h4 className="text-sm font-medium mb-3 text-gray-900">{translate(`업로드된 파일 (${bookingData.uploaded_files.length}개)`, `Uploaded files (${bookingData.uploaded_files.length})`)}</h4>
                       <div className="space-y-2">
                         {bookingData.uploaded_files.map((file, index) => (
                           <div key={index} className="flex items-center justify-between bg-white border border-gray-200 p-3 rounded-lg hover:bg-gray-50">
@@ -1615,43 +1684,43 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         return (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">결제 정보</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">{translate('결제 정보', 'Payment Details')}</h3>
               <div className="bg-gray-50 rounded-lg p-4 mb-6">
-                <h4 className="font-medium text-gray-900 mb-3">예약 요약</h4>
+                <h4 className="font-medium text-gray-900 mb-3">{translate('예약 요약', 'Reservation Summary')}</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">투어</span>
-                    <span className="font-medium">{product.customer_name_ko}</span>
+                    <span className="text-gray-600">{translate('투어', 'Tour')}</span>
+                    <span className="font-medium">{productDisplayName}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">날짜</span>
+                    <span className="text-gray-600">{translate('날짜', 'Date')}</span>
                     <span className="font-medium">
-                      {bookingData.tourDate && new Date(bookingData.tourDate).toLocaleDateString('ko-KR')}
+                      {bookingData.tourDate && new Date(bookingData.tourDate).toLocaleDateString(localeTag)}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">인원</span>
+                    <span className="text-gray-600">{translate('인원', 'Guests')}</span>
                     <span className="font-medium">
-                      성인 {bookingData.participants.adults}명
-                      {bookingData.participants.children > 0 && `, 아동 ${bookingData.participants.children}명`}
-                      {bookingData.participants.infants > 0 && `, 유아 ${bookingData.participants.infants}명`}
+                      {translate(`성인 ${bookingData.participants.adults}명`, `${bookingData.participants.adults} adult${bookingData.participants.adults === 1 ? '' : 's'}`)}
+                      {bookingData.participants.children > 0 && `, ${translate(`아동 ${bookingData.participants.children}명`, `${bookingData.participants.children} child${bookingData.participants.children === 1 ? '' : 'ren'}`)}`}
+                      {bookingData.participants.infants > 0 && `, ${translate(`유아 ${bookingData.participants.infants}명`, `${bookingData.participants.infants} infant${bookingData.participants.infants === 1 ? '' : 's'}`)}`}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">기본 가격</span>
+                    <span className="text-gray-600">{translate('기본 가격', 'Base price')}</span>
                     <span className="font-medium">${product.base_price}</span>
                   </div>
                   {(() => {
                     const allChoices = [...requiredChoices, ...optionalChoices]
-                    return allChoices.map((group: any) => {
+                    return allChoices.map((group: ChoiceGroup) => {
                     const selectedOptionId = bookingData.selectedOptions[group.choice_id]
                     if (selectedOptionId) {
-                      const option = group.options.find((opt: any) => opt.option_id === selectedOptionId)
+                      const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
                       if (option && option.option_price) {
                         return (
                           <div key={group.choice_id} className="flex justify-between">
                               <span className="text-gray-600">
-                                {group.choice_name_ko || group.choice_name}
+                                {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
                                 {group.is_required && <span className="text-red-500 ml-1">*</span>}
                               </span>
                             <span className="font-medium">+${option.option_price}</span>
@@ -1664,7 +1733,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   })()}
                   <div className="border-t pt-2 mt-2">
                     <div className="flex justify-between font-semibold text-lg">
-                      <span>총 가격</span>
+                      <span>{translate('총 가격', 'Total price')}</span>
                       <span className="text-blue-600">${calculateTotalPrice()}</span>
                     </div>
                   </div>
@@ -1673,10 +1742,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">결제 방법</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{translate('결제 방법', 'Payment method')}</label>
                   <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                    <option value="card">신용카드</option>
-                    <option value="bank_transfer">은행 이체</option>
+                    <option value="card">{translate('신용카드', 'Credit card')}</option>
+                    <option value="bank_transfer">{translate('은행 이체', 'Bank transfer')}</option>
                     <option value="paypal">PayPal</option>
                   </select>
                 </div>
@@ -1684,7 +1753,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   <div className="flex items-center">
                     <CreditCard className="h-5 w-5 text-blue-600 mr-2" />
                     <span className="text-sm text-blue-800">
-                      결제는 예약 확정 후 별도로 안내드립니다.
+                      {translate('결제는 예약 확정 후 별도로 안내드립니다.', 'We will send separate payment instructions once your reservation is confirmed.')}
                     </span>
                   </div>
                 </div>
@@ -1701,12 +1770,11 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-        {/* 헤더 */}
         <div className="border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">예약하기</h2>
-              <p className="text-sm text-gray-600">{product.customer_name_ko}</p>
+              <h2 className="text-xl font-semibold text-gray-900">{translate('예약하기', 'Book this tour')}</h2>
+              <p className="text-sm text-gray-600">{productDisplayName}</p>
             </div>
             <button
               onClick={onClose}
@@ -1774,11 +1842,11 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               }`}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
-              이전
+              {translate('이전', 'Back')}
             </button>
             
             <div className="text-right">
-              <div className="text-sm text-gray-600">총 가격</div>
+              <div className="text-sm text-gray-600">{translate('총 가격', 'Total price')}</div>
               <div className="text-xl font-bold text-blue-600">${calculateTotalPrice()}</div>
             </div>
 
@@ -1792,7 +1860,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
               >
-                예약 완료
+                {translate('예약 완료', 'Complete booking')}
               </button>
             ) : (
               <button
@@ -1804,7 +1872,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
               >
-                다음
+                {translate('다음', 'Next')}
                 <ArrowRight className="h-4 w-4 ml-2" />
               </button>
             )}
