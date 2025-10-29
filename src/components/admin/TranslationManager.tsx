@@ -78,6 +78,9 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
       }))
 
       setTranslations(translationsWithValues)
+      // 기본으로 모든 네임스페이스를 접힌 상태로 설정
+      const allNamespaces = [...new Set(translationsWithValues.map(t => t.namespace))]
+      setCollapsedNamespaces(new Set(allNamespaces))
     } catch (error) {
       console.error('Error fetching translations:', error)
     } finally {
@@ -110,6 +113,15 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
   }, {} as Record<string, Translation[]>)
 
   const namespaceGroups = Object.keys(groupedTranslations).sort()
+
+  // 번역 현황 계산
+  const getTranslationStats = (namespace: string) => {
+    const translations = groupedTranslations[namespace]
+    const total = translations.length
+    const koCount = translations.filter(t => t.values['ko']?.value).length
+    const enCount = translations.filter(t => t.values['en']?.value).length
+    return { total, koCount, enCount }
+  }
 
   const toggleNamespace = (namespace: string) => {
     setCollapsedNamespaces(prev => {
