@@ -31,6 +31,10 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
   const [editingTranslation, setEditingTranslation] = useState<string | null>(null)
   const [editingLocale, setEditingLocale] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [newNamespace, setNewNamespace] = useState('')
+  const [newKeyPath, setNewKeyPath] = useState('')
+  const [newTranslations, setNewTranslations] = useState<{ [locale: string]: string }>({})
 
   useEffect(() => {
     fetchTranslations()
@@ -127,13 +131,13 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
       }
 
       if (transValueData) {
-        const { error: updateError } = await supabase
+        const { error: updateError } = await (supabase as any)
           .from('translation_values')
           .update({
             value: editingValue,
             updated_at: new Date().toISOString()
           })
-          .eq('id', transValueData.id)
+          .eq('id', (transValueData as any).id)
 
         if (updateError) {
           console.error('Error updating translation:', updateError)
@@ -141,7 +145,7 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
           return
         }
       } else {
-        const { error: insertError } = await supabase
+        const { error: insertError } = await (supabase as any)
           .from('translation_values')
           .insert({
             id: crypto.randomUUID(),
@@ -189,6 +193,69 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
     }
   }
 
+  const handleAddTranslation = async () => {
+    if (!newNamespace.trim() || !newKeyPath.trim()) {
+      alert('네임스페이스와 키를 입력해주세요.')
+      return
+    }
+
+    try {
+      // 새 번역 키 추가
+      const { data: newTranslation, error: transError } = await (supabase as any)
+        .from('translations')
+        .insert({
+          id: crypto.randomUUID(),
+          namespace: newNamespace.trim(),
+          key_path: newKeyPath.trim(),
+          is_system: false
+        })
+        .select()
+        .single()
+
+      if (transError) {
+        if (transError.code === '23505') {
+          alert('이미 존재하는 번역 키입니다.')
+          return
+        }
+        console.error('Error adding translation:', transError)
+        alert('번역 키 추가 중 오류가 발생했습니다.')
+        return
+      }
+
+      // 번역 값들 추가
+      const translationsToInsert = Object.entries(newTranslations)
+        .filter(([_, value]) => value.trim())
+        .map(([locale, value]) => ({
+          id: crypto.randomUUID(),
+          translation_id: (newTranslation as any).id,
+          locale,
+          value: value.trim()
+        }))
+
+      if (translationsToInsert.length > 0) {
+        const { error: translationError } = await (supabase as any)
+          .from('translation_values')
+          .insert(translationsToInsert)
+
+        if (translationError) {
+          console.error('Error inserting translations:', translationError)
+          alert('번역 추가 중 오류가 발생했습니다.')
+          return
+        }
+      }
+
+      alert('번역 키가 추가되었습니다.')
+      setShowAddModal(false)
+      setNewNamespace('')
+      setNewKeyPath('')
+      setNewTranslations({})
+      await fetchTranslations()
+    } catch (error) {
+      console.error('Error adding translation:', error)
+      alert('번역 키 추가 중 오류가 발생했습니다.')
+    }
+  }
+
   if (loading) {
     return <div className="text-center py-8">{t('loading')}</div>
   }
@@ -197,6 +264,13 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h3 className="text-xl font-semibold">번역 관리</h3>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+        >
+          <Plus size={20} />
+          <span>새 번역 키 추가</span>
+        </button>
       </div>
 
       <div className="flex gap-4">
@@ -305,6 +379,79 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
           </table>
         </div>
       </div>
+
+      {/* 새 번역 키 추가 모달 */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold mb-4">새 번역 키 추가</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">네임스페이스</label>
+                <input
+                  type="text"
+                  value={newNamespace}
+                  onChange={(e) => setNewNamespace(e.target.value)}
+                  placeholder="예: common, options"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">키</label>
+                <input
+                  type="text"
+                  value={newKeyPath}
+                  onChange={(e) => setNewKeyPath(e.target.value)}
+                  placeholder="예: myNewKey, form.title"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium text-gray-700 mb-3">번역 추가</h4>
+                <div className="space-y-3">
+                  {locales.map(loc => (
+                    <div key={loc} className="flex items-center space-x-2">
+                      <div className="w-12 text-sm font-medium text-gray-700">{loc.toUpperCase()}:</div>
+                      <input
+                        type="text"
+                        value={newTranslations[loc] || ''}
+                        onChange={(e) => setNewTranslations(prev => ({
+                          ...prev,
+                          [loc]: e.target.value
+                        }))}
+                        placeholder={`${loc.toUpperCase()} 번역 입력`}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  번역 키를 먼저 추가한 후, 필요에 따라 각 언어별 번역을 추가할 수 있습니다.
+                </p>
+              </div>
+            </div>
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={handleAddTranslation}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
+              >
+                추가
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddModal(false)
+                  setNewNamespace('')
+                  setNewKeyPath('')
+                  setNewTranslations({})
+                }}
+                className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
