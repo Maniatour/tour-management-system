@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Save, X, Globe } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
+import TranslationManager from './TranslationManager'
 
 interface Tag {
   id: string
@@ -541,17 +542,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
       {/* 번역 관리 탭 */}
       {activeTab === 'translations' && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-center py-12">
-            <h3 className="text-xl font-semibold text-gray-700 mb-2">번역 관리</h3>
-            <p className="text-gray-500">
-              i18n 번역 관리 기능은 아직 구현되지 않았습니다.
-            </p>
-            <p className="text-sm text-gray-400 mt-4">
-              add_i18n_translations_table.sql 파일을 실행하고 번역 관리 기능을 추가하시겠습니까?
-            </p>
-          </div>
-        </div>
+        <TranslationManager locale={locale} />
       )}
     </div>
   )
