@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Save, X, Globe } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useTranslations } from 'next-intl'
 
 interface Tag {
   id: string
@@ -22,6 +23,7 @@ interface TagTranslationManagerProps {
 }
 
 export default function TagTranslationManager({ locale }: TagTranslationManagerProps) {
+  const t = useTranslations('tagTranslations')
   const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
   const [editingTag, setEditingTag] = useState<string | null>(null)
@@ -162,7 +164,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
   }
 
   const deleteTranslation = async (tagKey: string, locale: string) => {
-    if (!confirm('이 번역을 삭제하시겠습니까?')) return
+    if (!confirm(t('deleteConfirm'))) return
 
     try {
       const tag = tags.find(t => t.key === tagKey)
@@ -197,14 +199,14 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
   const handleAddTag = async () => {
     if (!newTagKey.trim()) {
-      alert('태그 키를 입력해주세요.')
+      alert(t('tagKeyRequired'))
       return
     }
 
     // 키 검증 (영어 소문자, 언더스코어만 허용)
     const keyPattern = /^[a-z][a-z0-9_]*$/
     if (!keyPattern.test(newTagKey.trim())) {
-      alert('태그 키는 영어 소문자로 시작하고, 숫자와 언더스코어(_)만 사용할 수 있습니다.\n예: my_new_tag, las_vegas')
+      alert(t('tagKeyInvalid'))
       return
     }
 
@@ -222,7 +224,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
       if (tagError) {
         if (tagError.code === '23505') { // unique violation
-          alert('이미 존재하는 태그 키입니다.')
+          alert(t('tagExists'))
           return
         }
         console.error('Error adding tag:', tagError)
@@ -248,13 +250,13 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
         if (translationError) {
           console.error('Error adding translations:', translationError)
-          alert('태그는 추가되었지만 번역 추가 중 오류가 발생했습니다.')
+          alert(t('noTranslationAdded'))
         }
       }
 
       alert(translationsToInsert.length > 0 
-        ? '태그와 번역이 성공적으로 추가되었습니다.' 
-        : '태그가 추가되었습니다. 번역을 추가할 수 있습니다.')
+        ? t('addSuccess')
+        : t('addTagSuccess'))
       
       setShowAddTagModal(false)
       setNewTagKey('')
@@ -263,12 +265,12 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
       await fetchTags()
     } catch (error) {
       console.error('Error adding tag:', error)
-      alert('태그 추가 중 오류가 발생했습니다.')
+      alert(t('addError'))
     }
   }
 
   if (loading) {
-    return <div className="text-center py-8">로딩 중...</div>
+    return <div className="text-center py-8">{t('loading')}</div>
   }
 
   const locales = ['ko', 'en', 'ja', 'zh', 'es'] // 지원 언어
@@ -276,21 +278,20 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">태그 번역 관리</h2>
+        <h2 className="text-2xl font-bold">{t('title')}</h2>
         <button
           onClick={() => setShowAddTagModal(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
         >
           <Plus size={20} />
-          <span>새 태그 추가</span>
+          <span>{t('addTag')}</span>
         </button>
       </div>
 
       {/* 안내 */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-800">
-          💡 <strong>발음(pronunciation)</strong> 필드에는 여러 발음을 세로바(|)로 구분하여 입력할 수 있습니다.<br />
-          예: "라스베가스|라스베이거스" 또는 "그랜드 캐니언|그랜드 캐니온"
+        <p className="text-sm text-blue-800 whitespace-pre-line">
+          {t('pronunciationTooltip')}
         </p>
       </div>
 
@@ -300,10 +301,10 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  태그 키
+                  {t('tagKey')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  시스템 태그
+                  {t('system')} Tag
                 </th>
                 {locales.map(loc => (
                   <th key={loc} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -333,14 +334,14 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                               type="text"
                               value={editingValues.label}
                               onChange={(e) => setEditingValues({ ...editingValues, label: e.target.value })}
-                              placeholder="번역 입력"
+                              placeholder="Translation"
                               className="w-full px-2 py-1 border border-gray-300 rounded"
                             />
                             <input
                               type="text"
                               value={editingValues.pronunciation || ''}
                               onChange={(e) => setEditingValues({ ...editingValues, pronunciation: e.target.value })}
-                              placeholder="발음 (선택) 예: 라스베가스|라스베이거스"
+                              placeholder={t('pronunciationPlaceholder')}
                               className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
                             />
                             <div className="flex space-x-1">
@@ -361,7 +362,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                         ) : (
                           <div className="space-y-1">
                             <div className="flex items-center space-x-2">
-                              <span>{translation?.label || '-'}</span>
+                              <span>{translation?.label || t('noTranslation')}</span>
                               <button
                                 onClick={() => startEdit(tag.key, loc)}
                                 className="text-blue-600 hover:text-blue-900"
@@ -379,12 +380,12 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                             </div>
                             {translation?.pronunciation && (
                               <div className="text-xs text-gray-400">
-                                발음: {translation.pronunciation}
+                                {t('pronunciation')}: {translation.pronunciation}
                               </div>
                             )}
                             {translation?.notes && (
                               <div className="text-xs text-gray-400">
-                                메모: {translation.notes}
+                                {t('notes')}: {translation.notes}
                               </div>
                             )}
                           </div>
@@ -403,22 +404,22 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
       {showAddTagModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">새 태그 추가</h3>
+            <h3 className="text-xl font-bold mb-4">{t('addTag')}</h3>
             
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  태그 키 (영어 소문자, 언더스코어 사용)
+                  {t('tagKey')} ({t('tagKeyDescription')})
                 </label>
                 <input
                   type="text"
                   value={newTagKey}
                   onChange={(e) => setNewTagKey(e.target.value)}
-                  placeholder="예: my_custom_tag"
+                  placeholder={t('tagKeyPlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  영문 소문자로 시작, 숫자와 언더스코어(_)만 사용 가능
+                  {t('tagKeyDescription')}
                 </p>
               </div>
 
@@ -432,11 +433,11 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mt-1"
                   />
                   <label htmlFor="isSystem" className="ml-2 block text-sm">
-                    <span className="font-medium text-gray-700">시스템 태그로 만들기</span>
+                    <span className="font-medium text-gray-700">{t('systemTag')}</span>
                     <p className="text-xs text-gray-600 mt-1">
-                      ✓ 시스템 태그: 자동 생성되는 기본 태그 (예: popular, new, recommended)<br />
-                      ✓ 사용자 태그: 사용자가 직접 만드는 커스텀 태그<br />
-                      ✓ 현재 기능상 차이는 없으며, 구분을 위한 마킹 목적입니다.
+                      {t('systemTagDescription1')}<br />
+                      {t('systemTagDescription2')}<br />
+                      {t('systemTagDescription3')}
                     </p>
                   </label>
                 </div>
@@ -444,7 +445,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
               {/* 언어별 번역 입력 */}
               <div className="border-t pt-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">번역 추가 (선택사항)</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-3">{t('translationAdd')}</h4>
                 <div className="space-y-3">
                   {locales.map(loc => (
                     <div key={loc} className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -456,7 +457,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                           type="text"
                           value={newTagTranslations[loc]?.label || ''}
                           onChange={(e) => updateNewTagTranslation(loc, 'label', e.target.value)}
-                          placeholder={`${loc.toUpperCase()} 번역`}
+                          placeholder={t('tagKey')}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                         />
                       </div>
@@ -465,7 +466,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                           type="text"
                           value={newTagTranslations[loc]?.pronunciation || ''}
                           onChange={(e) => updateNewTagTranslation(loc, 'pronunciation', e.target.value)}
-                          placeholder="발음 (예: 발음1|발음2)"
+                          placeholder={t('pronunciationPlaceholder')}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                         />
                       </div>
@@ -473,7 +474,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  💡 번역은 나중에 추가할 수도 있습니다. 꼭 입력하지 않아도 됩니다.
+                  {t('pronunciationInfo')}
                 </p>
               </div>
             </div>
@@ -483,7 +484,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                 onClick={handleAddTag}
                 className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
               >
-                추가
+                {t('add')}
               </button>
               <button
                 onClick={() => {
@@ -494,7 +495,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                 }}
                 className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
               >
-                취소
+                {t('cancel')}
               </button>
             </div>
           </div>
