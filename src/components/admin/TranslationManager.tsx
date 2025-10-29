@@ -120,7 +120,9 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
     const total = translations.length
     const koCount = translations.filter(t => t.values['ko']?.value).length
     const enCount = translations.filter(t => t.values['en']?.value).length
-    return { total, koCount, enCount }
+    const missingKo = total - koCount
+    const missingEn = total - enCount
+    return { total, koCount, enCount, missingKo, missingEn }
   }
 
   const toggleNamespace = (namespace: string) => {
@@ -352,9 +354,16 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
                     {(() => {
                       const stats = getTranslationStats(namespace)
                       return (
-                        <p className="text-sm text-gray-500">
-                          total {stats.total}개 키 한국어 {stats.koCount}, 영어 {stats.enCount}
-                        </p>
+                        <div className="space-y-1">
+                          <p className="text-sm text-gray-500">
+                            total {stats.total}개 키 한국어 {stats.koCount}, 영어 {stats.enCount}
+                          </p>
+                          {(stats.missingKo > 0 || stats.missingEn > 0) && (
+                            <p className="text-xs text-orange-600">
+                              ⚠️ 한국어 누락 {stats.missingKo}개, 영어 누락 {stats.missingEn}개
+                            </p>
+                          )}
+                        </div>
                       )
                     })()}
                   </div>
