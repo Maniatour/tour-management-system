@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react'
 import { Download, Upload, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import koData from '@/i18n/locales/ko.json'
+import enData from '@/i18n/locales/en.json'
 
 interface JsonTranslation {
   namespace: string
@@ -57,18 +59,7 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
     try {
       setLoading(true)
       
-      // JSON 파일들 로드
-      const [koResponse, enResponse] = await Promise.all([
-        fetch('/locales/ko.json'),
-        fetch('/locales/en.json')
-      ])
-
-      if (!koResponse.ok || !enResponse.ok) {
-        throw new Error('Failed to load JSON files')
-      }
-
-      const koData = await koResponse.json()
-      const enData = await enResponse.json()
+      // JSON 데이터는 이미 import됨
 
       // 모든 네임스페이스 수집
       const allNamespaces = new Set([...Object.keys(koData), ...Object.keys(enData)])
