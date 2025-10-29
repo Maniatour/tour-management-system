@@ -1347,7 +1347,7 @@
     }
   },
   "tagTranslations": {
-    "title": "태그 번역 관리",
+    "title": "태그 & 번역 관리",
     "addTag": "새 태그 추가",
     "tagKey": "태그 키",
     "tagKeyDescription": "영문 소문자로 시작, 숫자와 언더스코어(_)만 사용 가능",

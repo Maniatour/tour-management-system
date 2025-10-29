@@ -1244,8 +1244,8 @@
     "noExpensesMessage": "No reservation expenses registered.",
     "reservation": "Reservation"
   },
-  "tagTranslations": {
-    "title": "Tag Translation Management",
+ σύνορα  "tagTranslations": {
+    "title": "Tag & Translation Management",
     "addTag": "Add New Tag",
     "tagKey": "Tag Key",
     "tagKeyDescription": "Starts with lowercase English, only numbers and underscore(_) allowed",

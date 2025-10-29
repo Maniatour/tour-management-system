@@ -26,6 +26,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
   const t = useTranslations('tagTranslations')
   const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'tags' | 'translations'>('tags')
   const [editingTag, setEditingTag] = useState<string | null>(null)
   const [editingLocale, setEditingLocale] = useState<string | null>(null)
   const [editingValues, setEditingValues] = useState<{ label: string; pronunciation?: string; notes?: string }>({
@@ -277,23 +278,57 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">{t('title')}</h2>
-        <button
-          onClick={() => setShowAddTagModal(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-        >
-          <Plus size={20} />
-          <span>{t('addTag')}</span>
-        </button>
+      {/* 헤더 */}
+      <div>
+        <h2 className="text-2xl font-bold mb-4">태그 & 번역 관리</h2>
+        
+        {/* 탭 네비게이션 */}
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('tags')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'tags'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              태그 관리
+            </button>
+            <button
+              onClick={() => setActiveTab('translations')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'translations'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              번역 관리
+            </button>
+          </nav>
+        </div>
       </div>
 
-      {/* 안내 */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-800 whitespace-pre-line">
-          {t('pronunciationTooltip')}
-        </p>
-      </div>
+      {/* 태그 관리 탭 */}
+      {activeTab === 'tags' && (
+        <>
+          <div className="flex justify-between items-center">
+            <h3 className="text-xl font-semibold">{t('title')}</h3>
+            <button
+              onClick={() => setShowAddTagModal(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            >
+              <Plus size={20} />
+              <span>{t('addTag')}</span>
+            </button>
+          </div>
+
+          {/* 안내 */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800 whitespace-pre-line">
+              {t('pronunciationTooltip')}
+            </p>
+          </div>
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
@@ -498,6 +533,23 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                 {t('cancel')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+        </>
+      )}
+
+      {/* 번역 관리 탭 */}
+      {activeTab === 'translations' && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="text-center py-12">
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">번역 관리</h3>
+            <p className="text-gray-500">
+              i18n 번역 관리 기능은 아직 구현되지 않았습니다.
+            </p>
+            <p className="text-sm text-gray-400 mt-4">
+              add_i18n_translations_table.sql 파일을 실행하고 번역 관리 기능을 추가하시겠습니까?
+            </p>
           </div>
         </div>
       )}
