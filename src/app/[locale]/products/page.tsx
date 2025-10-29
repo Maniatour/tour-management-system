@@ -5,7 +5,7 @@ import { Search, Users, Calendar, Heart, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
 
 interface Product {
@@ -43,6 +43,7 @@ interface Product {
 export default function ProductsPage() {
   const locale = useLocale()
   const searchParams = useSearchParams()
+  const t = useTranslations('common')
   
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -202,14 +203,14 @@ export default function ProductsPage() {
 
   const getCategoryLabel = (category: string) => {
     const categoryLabels: { [key: string]: string } = {
-      city: '도시',
-      nature: '자연',
-      culture: '문화',
-      adventure: '모험',
-      food: '음식',
-      tour: '투어',
-      sightseeing: '관광',
-      outdoor: '야외활동'
+      city: t('city'),
+      nature: t('nature'),
+      culture: t('culture'),
+      adventure: t('adventure'),
+      food: t('food'),
+      tour: t('tour'),
+      sightseeing: t('sightseeing'),
+      outdoor: t('outdoor')
     }
     return categoryLabels[category] || category
   }
@@ -225,32 +226,32 @@ export default function ProductsPage() {
   const categories = React.useMemo(() => {
     const uniqueCategories = Array.from(new Set(products.map(p => p.category).filter(Boolean)))
     return [
-      { value: 'all', label: '전체' },
+      { value: 'all', label: t('all') },
       ...uniqueCategories.map(category => ({
         value: category,
         label: getCategoryLabel(category)
       }))
     ]
-  }, [products])
+  }, [products, getCategoryLabel, t])
 
   // 실제 상품 데이터에서 태그 추출
   const tags = React.useMemo(() => {
     const allTags = products.flatMap(p => p.tags || []).filter(Boolean)
     const uniqueTags = Array.from(new Set(allTags))
     return [
-      { value: 'all', label: '전체' },
+      { value: 'all', label: t('all') },
       ...uniqueTags.map(tag => ({
         value: tag,
         label: tag
       }))
     ]
-  }, [products])
+  }, [products, t])
 
   const priceRanges = [
-    { value: 'all', label: '전체' },
-    { value: 'low', label: '$150 이하' },
-    { value: 'medium', label: '$151 - $300' },
-    { value: 'high', label: '$301 이상' }
+    { value: 'all', label: t('all') },
+        { value: 'low', label: t('priceRangeLow') },
+        { value: 'medium', label: t('priceRangeMedium') },
+        { value: 'high', label: t('priceRangeHigh') }
   ]
 
   return (
@@ -258,9 +259,9 @@ export default function ProductsPage() {
       {/* 헤더 */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <h1 className="text-4xl font-bold text-gray-900 text-center">투어 상품</h1>
+          <h1 className="text-4xl font-bold text-gray-900 text-center">{t('tourProducts')}</h1>
           <p className="mt-4 text-xl text-gray-600 text-center">
-            잊을 수 없는 특별한 여행 경험을 제공합니다
+            {t('unforgettableTravelExperience')}
           </p>
         </div>
       </div>
@@ -274,7 +275,7 @@ export default function ProductsPage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
               <input
                 type="text"
-                placeholder="상품명, 설명으로 검색..."
+                placeholder={t('searchProducts')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -327,7 +328,7 @@ export default function ProductsPage() {
               href="/ko/products/tags"
               className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm font-medium"
             >
-              🏷️ 태그별로 모아보기
+              🏷️ {t('viewByTags')}
             </Link>
           </div>
         </div>
@@ -348,7 +349,7 @@ export default function ProductsPage() {
               onClick={() => window.location.reload()} 
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
             >
-              다시 시도
+{t('tryAgain')}
             </button>
           </div>
         )}
@@ -376,7 +377,7 @@ export default function ProductsPage() {
                           {getCustomerDisplayName(product)}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
-                          이미지 준비 중
+                          {t('imagePreparing')}
                         </div>
                       </div>
                     </div>
@@ -405,7 +406,7 @@ export default function ProductsPage() {
 
                   {/* 설명 */}
                   <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                    {product.description || '상세 정보를 확인해주세요.'}
+                    {product.description || t('checkDetailsForMoreInfo')}
                   </p>
 
                   {/* 태그 */}
@@ -432,7 +433,7 @@ export default function ProductsPage() {
                     {product.max_participants && (
                       <div className="flex items-center">
                         <Users className="h-4 w-4 mr-2" />
-                        최대 {product.max_participants}명
+                        {t('maxParticipants')}: {product.max_participants}
                       </div>
                     )}
                   </div>
@@ -441,10 +442,10 @@ export default function ProductsPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-lg font-bold text-gray-900">
-                        ${product.base_price}부터
+                        ${product.base_price} {t('startingFrom')}
                       </div>
                       <div className="text-sm text-gray-500">
-                        성인 기준
+                        {t('perAdult')}
                       </div>
                     </div>
                   </div>
@@ -455,7 +456,7 @@ export default function ProductsPage() {
                       href={`/ko/products/${product.id}`}
                       className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-center block"
                     >
-                      상세보기
+{t('viewDetails')}
                     </Link>
                   </div>
                 </div>
@@ -468,8 +469,8 @@ export default function ProductsPage() {
         {!loading && !error && filteredProducts.length === 0 && (
           <div className="text-center py-12">
             <Search className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium text-gray-900">검색 결과가 없습니다</p>
-            <p className="text-gray-600">다른 검색어나 필터를 시도해보세요</p>
+            <p className="text-lg font-medium text-gray-900">{t('noSearchResults')}</p>
+            <p className="text-gray-600">{t('tryDifferentSearch')}</p>
           </div>
         )}
       </div>

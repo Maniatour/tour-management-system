@@ -4,12 +4,14 @@ import React, { useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useTranslations } from 'next-intl'
 
 export default function ReservationsRedirect() {
   const { user, simulatedUser, isSimulating } = useAuth()
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
+  const t = useTranslations('common')
 
   useEffect(() => {
     const redirectToCustomerReservations = async () => {
@@ -58,7 +60,7 @@ export default function ReservationsRedirect() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">예약 페이지로 이동 중...</p>
+        <p className="mt-4 text-gray-600">{t('redirectingToReservations')}</p>
       </div>
     </div>
   )
