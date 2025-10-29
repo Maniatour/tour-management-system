@@ -389,10 +389,12 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
                   })}
                 </tr>
               ))}
-            </tbody>
-          </table>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
 
       {/* 새 번역 키 추가 모달 */}
       {showAddModal && (
