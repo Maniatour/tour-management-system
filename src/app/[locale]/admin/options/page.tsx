@@ -75,8 +75,12 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
       const newOption = {
         id: crypto.randomUUID(), // UUID 생성
         name: option.name,
+        name_ko: (option as any).name_ko,
+        name_en: (option as any).name_en,
         category: option.category,
         description: option.description,
+        description_ko: (option as any).description_ko,
+        description_en: (option as any).description_en,
         adult_price: option.adult_price || 0,
         child_price: option.child_price || 0,
         infant_price: option.infant_price || 0,
@@ -112,8 +116,12 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
       try {
         const updatedOption = {
           name: option.name,
+          name_ko: (option as any).name_ko,
+          name_en: (option as any).name_en,
           category: option.category,
           description: option.description,
+          description_ko: (option as any).description_ko,
+          description_en: (option as any).description_en,
           adult_price: option.adult_price || 0,
           child_price: option.child_price || 0,
           infant_price: option.infant_price || 0,
@@ -173,10 +181,11 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
       return '미분류'
     }
     
-    // 안전한 번역 처리
+    // 안전한 번역 처리 - 메시지가 없으면 카테고리 이름을 그대로 반환
     try {
-      const result = t(`categories.${category}`, { fallback: category })
-      return result
+      const translation = t(`categories.${category}` as any)
+      // 번역이 실패하면 카테고리 이름을 그대로 반환
+      return translation || category
     } catch {
       return category
     }
@@ -189,8 +198,9 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
     }
     
     try {
-      const result = t(`priceTypes.${priceType}`, { fallback: priceType })
-      return result
+      const translation = t(`priceTypes.${priceType}` as any)
+      // 번역이 실패하면 가격 타입 이름을 그대로 반환
+      return translation || priceType
     } catch {
       return priceType
     }
@@ -331,6 +341,11 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-gray-900 truncate">{option.name}</h3>
+                    <p className="text-xs text-gray-600 truncate">
+                      {option.name_ko && <span>한글: {option.name_ko}</span>}
+                      {(option.name_ko && option.name_en) && <span className="mx-2">•</span>}
+                      {option.name_en && <span>EN: {option.name_en}</span>}
+                    </p>
                     <p className="text-xs text-gray-500 truncate">ID: {option.id}</p>
                   </div>
                 </div>
@@ -387,8 +402,16 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
               )}
 
               {/* 설명 */}
-              <div className="text-sm text-gray-700 line-clamp-2" title={option.description}>
-                {option.description}
+              <div className="text-sm text-gray-700 line-clamp-2">
+                {option.description && (
+                  <p className="text-xs text-gray-500 mb-1">내부용: {option.description}</p>
+                )}
+                {(option as any).description_ko && (
+                  <p className="text-xs text-gray-500 mb-1">한글: {(option as any).description_ko}</p>
+                )}
+                {(option as any).description_en && (
+                  <p className="text-xs text-gray-500 mb-1">EN: {(option as any).description_en}</p>
+                )}
               </div>
 
               {/* 가격 정보 - 한 줄에 표시 */}
@@ -473,8 +496,12 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
   
   const [formData, setFormData] = useState({
     name: isCopying ? `${option?.name || ''} (복사본)` : (option?.name || ''),
+    name_ko: (option as any)?.name_ko || '',
+    name_en: (option as any)?.name_en || '',
     category: option?.category || '',
     description: option?.description || '',
+    description_ko: (option as any)?.description_ko || '',
+    description_en: (option as any)?.description_en || '',
     adult_price: option?.adult_price || 0,
     child_price: option?.child_price || 0,
     infant_price: option?.infant_price || 0,
@@ -519,14 +546,21 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
     if (option) {
       setFormData({
         name: option.name || '',
+        name_ko: (option as any)?.name_ko || '',
+        name_en: (option as any)?.name_en || '',
         category: option.category || '',
         description: option.description || '',
+        description_ko: (option as any)?.description_ko || '',
+        description_en: (option as any)?.description_en || '',
         adult_price: option.adult_price || 0,
         child_price: option.child_price || 0,
         infant_price: option.infant_price || 0,
         price_type: option.price_type || 'perPerson',
         status: option.status || 'active',
-        tags: option.tags || []
+        tags: option.tags || [],
+        image_url: (option as any)?.image_url || '',
+        image_alt: (option as any)?.image_alt || '',
+        thumbnail_url: (option as any)?.thumbnail_url || ''
       })
     }
   }, [option])
@@ -602,17 +636,43 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
            {isCopying ? '옵션 복사' : (option ? t('form.editTitle') : t('form.title'))}
          </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 옵션명 - 내부용 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">옵션명(내부)</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+          </div>
+
+          {/* 옵션명 - 고객용 */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.name')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">옵션명(고객 한글)</label>
               <input
                 type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                value={formData.name_ko}
+                onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
+                placeholder="한글 옵션명"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">옵션명(고객 영어)</label>
+              <input
+                type="text"
+                value={formData.name_en}
+                onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="English option name"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.category')}</label>
               <div className="relative">
@@ -671,15 +731,40 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
             </div>
           </div>
 
+          {/* 설명 - 내부용 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.description')}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">설명(내부)</label>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              rows={3}
+              rows={2}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
+              placeholder="내부용 설명"
             />
+          </div>
+
+          {/* 설명 - 고객용 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">설명(고객 한글)</label>
+              <textarea
+                value={formData.description_ko}
+                onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="한글 설명"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">설명(고객 영어)</label>
+              <textarea
+                value={formData.description_en}
+                onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="English description"
+              />
+            </div>
           </div>
 
           {/* 가격 설정 */}

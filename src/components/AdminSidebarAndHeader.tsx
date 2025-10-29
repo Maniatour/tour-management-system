@@ -32,7 +32,8 @@ import {
   UserCheck,
   HelpCircle,
   CreditCard,
-  Wrench
+  Wrench,
+  Tag
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -267,6 +268,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('products'), href: `/${locale}/admin/products`, icon: BookOpen },
     { name: tAdmin('guideFeeManagement'), href: `/${locale}/admin/guide-costs`, icon: Calculator },
     { name: t('options'), href: `/${locale}/admin/options`, icon: Settings },
+    { name: '태그 번역 관리', href: `/${locale}/admin/tag-translations`, icon: Tag },
     { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },
     { name: t('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
     { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
