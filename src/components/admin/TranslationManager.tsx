@@ -349,7 +349,14 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
                   )}
                   <div className="text-left">
                     <h4 className="text-lg font-semibold text-gray-900">{namespace}</h4>
-                    <p className="text-sm text-gray-500">{groupedTranslations[namespace].length}개의 번역</p>
+                    {(() => {
+                      const stats = getTranslationStats(namespace)
+                      return (
+                        <p className="text-sm text-gray-500">
+                          total {stats.total}개 키 한국어 {stats.koCount}, 영어 {stats.enCount}
+                        </p>
+                      )
+                    })()}
                   </div>
                 </div>
               </button>
