@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, Save, X, Search } from 'lucide-react'
+import { Plus, Edit2, Trash2, Save, X, Search, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 
@@ -35,6 +35,7 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
   const [newNamespace, setNewNamespace] = useState('')
   const [newKeyPath, setNewKeyPath] = useState('')
   const [newTranslations, setNewTranslations] = useState<{ [locale: string]: string }>({})
+  const [collapsedNamespaces, setCollapsedNamespaces] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     fetchTranslations()
@@ -109,6 +110,18 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
   }, {} as Record<string, Translation[]>)
 
   const namespaceGroups = Object.keys(groupedTranslations).sort()
+
+  const toggleNamespace = (namespace: string) => {
+    setCollapsedNamespaces(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(namespace)) {
+        newSet.delete(namespace)
+      } else {
+        newSet.add(namespace)
+      }
+      return newSet
+    })
+  }
 
   const startEdit = (translationId: string, loc: string) => {
     const translation = translations.find(t => t.id === translationId)
@@ -308,13 +321,28 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
       </div>
 
       <div className="space-y-6">
-        {namespaceGroups.map((namespace) => (
-          <div key={namespace} className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="bg-gray-100 px-6 py-3 border-b border-gray-200">
-              <h4 className="text-lg font-semibold text-gray-900">{namespace}</h4>
-              <p className="text-sm text-gray-500 mt-1">{groupedTranslations[namespace].length}개의 번역</p>
-            </div>
-            <div className="overflow-x-auto">
+        {namespaceGroups.map((namespace) => {
+          const isCollapsed = collapsedNamespaces.has(namespace)
+          return (
+            <div key={namespace} className="bg-white rounded-lg shadow overflow-hidden">
+              <button
+                onClick={() => toggleNamespace(namespace)}
+                className="w-full bg-gray-100 px-6 py-3 border-b border-gray-200 hover:bg-gray-200 transition-colors flex items-center justify-between"
+              >
+                <div className="flex items-center space-x-3">
+                  {isCollapsed ? (
+                    <ChevronRight size={20} className="text-gray-600" />
+                  ) : (
+                    <ChevronDown size={20} className="text-gray-600" />
+                  )}
+                  <div className="text-left">
+                    <h4 className="text-lg font-semibold text-gray-900">{namespace}</h4>
+                    <p className="text-sm text-gray-500">{groupedTranslations[namespace].length}개의 번역</p>
+                  </div>
+                </div>
+              </button>
+              {!isCollapsed && (
+                <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -392,8 +420,10 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
-          ))}
+          )
+        })}
         </div>
 
       {/* 새 번역 키 추가 모달 */}
