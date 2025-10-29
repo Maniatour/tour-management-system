@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Download, Upload, RefreshCw } from 'lucide-react'
+import { Download, Upload, RefreshCw, Edit2, Save, X, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import koData from '@/i18n/locales/ko.json'
 import enData from '@/i18n/locales/en.json'
@@ -22,6 +22,7 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
   const [dbTranslations, setDbTranslations] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [syncStatus, setSyncStatus] = useState<string>('')
+  const [showOnlyMissing, setShowOnlyMissing] = useState(true)
 
   useEffect(() => {
     loadJsonTranslations()
@@ -201,6 +202,14 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
     !dbTranslations.has(`${t.namespace}.${t.key}`)
   ).length
 
+  const existingCount = jsonTranslations.filter(t => 
+    dbTranslations.has(`${t.namespace}.${t.key}`)
+  ).length
+
+  const filteredTranslations = jsonTranslations.filter(t => 
+    !showOnlyMissing || !dbTranslations.has(`${t.namespace}.${t.key}`)
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -236,6 +245,23 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
         </div>
       )}
 
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0">
+            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+              i
+            </div>
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-medium text-blue-900 mb-1">동기화된 항목 편집하기</h4>
+            <p className="text-sm text-blue-700">
+              동기화가 완료되면 <strong>"번역 관리"</strong> 탭으로 이동하여 DB에 저장된 번역을 편집할 수 있습니다.
+              번역 관리 탭에서는 모든 언어의 번역을 추가하고 편집할 수 있습니다.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto max-h-[600px]">
           <table className="min-w-full divide-y divide-gray-200">
@@ -249,7 +275,7 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {jsonTranslations.map((trans, index) => {
+              {filter suffixes.map((trans, index) => {
                 const exists = dbTranslations.has(`${trans.namespace}.${trans.key}`)
                 return (
                   <tr key={index} className={exists ? 'bg-gray-50' : ''}>
