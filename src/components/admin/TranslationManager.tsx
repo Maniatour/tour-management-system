@@ -98,6 +98,18 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
     return matchesSearch && matchesNamespace
   })
 
+  // 네임스페이스별로 그룹화
+  const groupedTranslations = filteredTranslations.reduce((acc, translation) => {
+    const ns = translation.namespace
+    if (!acc[ns]) {
+      acc[ns] = []
+    }
+    acc[ns].push(translation)
+    return acc
+  }, {} as Record<string, Translation[]>)
+
+  const namespaceGroups = Object.keys(groupedTranslations).sort()
+
   const startEdit = (translationId: string, loc: string) => {
     const translation = translations.find(t => t.id === translationId)
     const value = translation?.values[loc]
@@ -295,28 +307,30 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
         </select>
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">네임스페이스</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">키</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">시스템</th>
-                {locales.map(loc => (
-                  <th key={loc} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{loc.toUpperCase()}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredTranslations.map((translation) => (
-                <tr key={translation.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {translation.namespace}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {translation.key_path}
-                  </td>
+      <div className="space-y-6">
+        {namespaceGroups.map((namespace) => (
+          <div key={namespace} className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="bg-gray-100 px-6 py-3 border-b border-gray-200">
+              <h4 className="text-lg font-semibold text-gray-900">{namespace}</h4>
+              <p className="text-sm text-gray-500 mt-1">{groupedTranslations[namespace].length}개의 번역</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">키</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">시스템</th>
+                    {locales.map(loc => (
+                      <th key={loc} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{loc.toUpperCase()}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {groupedTranslations[namespace].map((translation) => (
+                    <tr key={translation.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {translation.key_path}
+                      </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {translation.is_system ? '✓' : '-'}
                   </td>
