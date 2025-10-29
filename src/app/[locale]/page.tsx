@@ -3,6 +3,7 @@
 import React from 'react'
 import { Star, MapPin, Users, Calendar, ArrowRight, Play, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useTranslations, useLocale } from 'next-intl'
 
 interface FeaturedProduct {
   id: string
@@ -16,6 +17,8 @@ interface FeaturedProduct {
 }
 
 export default function HomePage({ params }: { params: Promise<{ locale: string }> }) {
+  const t = useTranslations('common')
+  const locale = useLocale()
   // 자동 리다이렉트 기능 제거 - 사용자가 직접 메뉴에서 선택하도록 함
   const featuredProducts: FeaturedProduct[] = [
     {
@@ -51,32 +54,32 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
   ]
 
   const stats = [
-    { number: '10,000+', label: '만족한 고객' },
-    { number: '500+', label: '성공한 투어' },
-    { number: '50+', label: '전문 가이드' },
-    { number: '4.8', label: '평균 평점' }
+    { number: '10,000+', label: t('satisfiedCustomers') },
+    { number: '500+', label: t('successfulTours') },
+    { number: '50+', label: t('professionalGuides') },
+    { number: '4.8', label: t('averageRating') }
   ]
 
   const features = [
     {
       icon: CheckCircle,
-      title: '전문 가이드',
-      description: '경험 많은 전문 가이드가 안전하고 재미있는 여행을 도와드립니다'
+      title: t('professionalGuide'),
+      description: t('professionalGuideDesc')
     },
     {
       icon: CheckCircle,
-      title: '맞춤형 서비스',
-      description: '고객의 요구사항에 맞춘 개인화된 투어 경험을 제공합니다'
+      title: t('customizedService'),
+      description: t('customizedServiceDesc')
     },
     {
       icon: CheckCircle,
-      title: '안전 보장',
-      description: '모든 투어에 보험이 포함되어 안전하게 여행할 수 있습니다'
+      title: t('safetyGuaranteed'),
+      description: t('safetyGuaranteedDesc')
     },
     {
       icon: CheckCircle,
-      title: '24/7 지원',
-      description: '언제든지 문의할 수 있는 고객 지원 서비스를 제공합니다'
+      title: t('support24_7'),
+      description: t('support24_7Desc')
     }
   ]
 
@@ -88,26 +91,26 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-24">
           <div className="text-center">
             <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-4 sm:mb-6">
-              잊을 수 없는
+              {t('unforgettable')}
               <br />
-              특별한 여행 경험
+              {t('specialTravelExperience')}
             </h1>
             <p className="text-lg sm:text-xl md:text-2xl mb-6 sm:mb-8 text-blue-100">
-              전문 가이드와 함께하는 프리미엄 투어로
+              {t('heroSubtitle1')}
               <br />
-              평생 기억에 남을 추억을 만들어보세요
+              {t('heroSubtitle2')}
             </p>
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
               <Link
-                href="/ko/products"
+                href={`/${locale}/products`}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors flex items-center justify-center"
               >
-                투어 둘러보기
+                {t('browseTours')}
                 <ArrowRight className="ml-2" size={20} />
               </Link>
               <button className="bg-white/20 hover:bg-white/30 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors flex items-center justify-center">
                 <Play className="mr-2" size={20} />
-                소개 영상 보기
+                {t('watchIntroVideo')}
               </button>
             </div>
           </div>
@@ -119,10 +122,10 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8 sm:mb-12">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
-              카테고리별 투어 찾기
+              {t('findToursByCategory')}
             </h2>
             <p className="text-lg sm:text-xl text-gray-600">
-              관심 있는 카테고리를 선택하여 맞춤형 투어를 찾아보세요
+              {t('findToursByCategoryDesc')}
             </p>
           </div>
 
@@ -287,10 +290,10 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
           {/* 더 많은 태그 보기 링크 */}
           <div className="text-center mt-8 sm:mt-12">
             <Link
-              href="/ko/products/tags"
+              href={`/${locale}/products/tags`}
               className="inline-flex items-center px-6 py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-colors font-medium"
             >
-              🏷️ 모든 태그 보기
+              🏷️ {t('viewAllTags')}
               <ArrowRight className="ml-2" size={20} />
             </Link>
           </div>
@@ -318,10 +321,10 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8 sm:mb-12">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
-              인기 투어 상품
+              {t('popularTours')}
             </h2>
             <p className="text-lg sm:text-xl text-gray-600">
-              고객들이 가장 많이 선택하는 베스트 투어를 만나보세요
+              {t('popularToursDesc')}
             </p>
           </div>
 
@@ -362,10 +365,10 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
                     </div>
                   </div>
                   <Link
-                    href={`/ko/products/${product.id}`}
+                    href={`/${locale}/products/${product.id}`}
                     className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-center block text-sm sm:text-base"
                   >
-                    자세히 보기
+                    {t('viewDetails')}
                   </Link>
                 </div>
               </div>
@@ -377,7 +380,7 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
               href="/ko/products"
               className="inline-flex items-center px-6 py-3 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-colors font-medium"
             >
-              모든 투어 보기
+              {t('viewAllTours')}
               <ArrowRight className="ml-2" size={20} />
             </Link>
           </div>
@@ -389,10 +392,10 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8 sm:mb-12">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
-              왜 투어투어를 선택해야 할까요?
+              {t('whyChooseUs')}
             </h2>
             <p className="text-lg sm:text-xl text-gray-600">
-              우리만의 특별한 서비스로 최고의 여행 경험을 제공합니다
+              {t('whyChooseUsDesc')}
             </p>
           </div>
 
@@ -423,20 +426,20 @@ export default function HomePage({ params }: { params: Promise<{ locale: string 
       <section className="py-8 sm:py-12 lg:py-16 bg-blue-900 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4">
-            지금 바로 특별한 여행을 시작하세요
+            {t('startYourJourney')}
           </h2>
           <p className="text-lg sm:text-xl text-blue-100 mb-6 sm:mb-8">
-            궁금한 점이 있으시다면 언제든 문의해주세요
+            {t('contactUs')}
           </p>
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
             <Link
               href="/ko/products"
               className="bg-white text-blue-900 hover:bg-gray-100 px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-semibold transition-colors"
             >
-              투어 둘러보기
+              {t('browseTours')}
             </Link>
             <button className="border-2 border-white text-white hover:bg-white hover:text-blue-900 px-6 sm:px-8 py-3 sm:py-4 rounded-lg text-base sm:text-lg font-semibold transition-colors">
-              문의하기
+              {t('contact')}
             </button>
           </div>
         </div>
