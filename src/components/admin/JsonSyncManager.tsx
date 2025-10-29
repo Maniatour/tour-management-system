@@ -275,7 +275,7 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filter suffixes.map((trans, index) => {
+              {filteredTranslations.map((trans, index) => {
                 const exists = dbTranslations.has(`${trans.namespace}.${trans.key}`)
                 return (
                   <tr key={index} className={exists ? 'bg-gray-50' : ''}>
