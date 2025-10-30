@@ -767,6 +767,56 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
     return bySearch
   }, [sortedTourStats, selectedProducts, tourSearch])
 
+  // 1인당 지표 평균 계산 (표시/하이라이트 용도)
+  const perPersonAverages = useMemo(() => {
+    // 전체 평균 (헤더 표시용)
+    const items = visibleTourStats.filter(t => (t.totalPeople || 0) > 0)
+    const overall = (() => {
+      if (items.length === 0) return { revenuePer: 0, expensesPer: 0, profitPer: 0 }
+      const totals = items.reduce((acc, t) => {
+        const people = t.totalPeople || 0
+        acc.revenuePer += people > 0 ? t.revenue / people : 0
+        acc.expensesPer += people > 0 ? t.expenses / people : 0
+        acc.profitPer += people > 0 ? t.netProfit / people : 0
+        return acc
+      }, { revenuePer: 0, expensesPer: 0, profitPer: 0 })
+      return {
+        revenuePer: totals.revenuePer / items.length,
+        expensesPer: totals.expensesPer / items.length,
+        profitPer: totals.profitPer / items.length
+      }
+    })()
+
+    // 상품별 평균 (하이라이트 기준)
+    const groups = visibleTourStats.reduce((map, t) => {
+      const key = t.productName || 'UNKNOWN'
+      if (!map[key]) map[key] = { count: 0, revenueSum: 0, expensesSum: 0, profitSum: 0 }
+      const people = t.totalPeople || 0
+      if (people > 0) {
+        map[key].revenueSum += t.revenue / people
+        map[key].expensesSum += t.expenses / people
+        map[key].profitSum += t.netProfit / people
+        map[key].count += 1
+      }
+      return map
+    }, {} as Record<string, { count: number; revenueSum: number; expensesSum: number; profitSum: number }>)
+
+    const byProduct: Record<string, { revenuePer: number; expensesPer: number; profitPer: number }> = {}
+    Object.entries(groups).forEach(([product, v]) => {
+      if (v.count > 0) {
+        byProduct[product] = {
+          revenuePer: v.revenueSum / v.count,
+          expensesPer: v.expensesSum / v.count,
+          profitPer: v.profitSum / v.count
+        }
+      } else {
+        byProduct[product] = { revenuePer: 0, expensesPer: 0, profitPer: 0 }
+      }
+    })
+
+    return { overall, byProduct }
+  }, [visibleTourStats])
+
   if (loading || isCalculating) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1262,9 +1312,18 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">지출</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">순수익</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">수익률</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">1인당 수익</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">1인당 지출</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">1인당 순수익</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  1인당 수익
+                  <div className="text-[10px] text-gray-400 mt-0.5">전체 평균: ${perPersonAverages.overall.revenuePer.toFixed(2)}</div>
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  1인당 지출
+                  <div className="text-[10px] text-gray-400 mt-0.5">전체 평균: ${perPersonAverages.overall.expensesPer.toFixed(2)}</div>
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  1인당 순수익
+                  <div className="text-[10px] text-gray-400 mt-0.5">전체 평균: ${perPersonAverages.overall.profitPer.toFixed(2)}</div>
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상세</th>
               </tr>
             </thead>
@@ -1305,17 +1364,39 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {tour.revenue > 0 ? ((tour.netProfit / tour.revenue) * 100).toFixed(1) : 0}%
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                      ${tour.totalPeople > 0 ? (tour.revenue / tour.totalPeople).toFixed(2) : 0}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
-                      ${tour.totalPeople > 0 ? (tour.expenses / tour.totalPeople).toFixed(2) : 0}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
-                      tour.netProfit >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      ${tour.totalPeople > 0 ? (tour.netProfit / tour.totalPeople).toFixed(2) : 0}
-                    </td>
+                    {(() => {
+                      const people = tour.totalPeople || 0
+                      const revenuePer = people > 0 ? tour.revenue / people : 0
+                      const expPer = people > 0 ? tour.expenses / people : 0
+                      const profitPer = people > 0 ? tour.netProfit / people : 0
+                      const devBadge = (value: number, avg: number) => {
+                        if (avg <= 0) return ''
+                        const diffPct = Math.abs((value - avg) / avg)
+                        if (diffPct >= 0.4) return 'bg-red-100 text-red-800'
+                        if (diffPct >= 0.2) return 'bg-yellow-100 text-yellow-800'
+                        return ''
+                      }
+                      const productAvg = perPersonAverages.byProduct[tour.productName] || { revenuePer: 0, expensesPer: 0, profitPer: 0 }
+                      return (
+                        <>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <span className={`font-medium text-green-600 ${devBadge(revenuePer, productAvg.revenuePer)} rounded px-1`} title={`상품 평균: $${productAvg.revenuePer.toFixed(2)}`}>
+                              ${revenuePer.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <span className={`font-medium text-red-600 ${devBadge(expPer, productAvg.expensesPer)} rounded px-1`} title={`상품 평균: $${productAvg.expensesPer.toFixed(2)}`}>
+                              ${expPer.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <span className={`font-medium ${profitPer >= 0 ? 'text-green-600' : 'text-red-600'} ${devBadge(profitPer, productAvg.profitPer)} rounded px-1`} title={`상품 평균: $${productAvg.profitPer.toFixed(2)}`}>
+                              ${profitPer.toFixed(2)}
+                            </span>
+                          </td>
+                        </>
+                      )
+                    })()}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
                       <button
                         onClick={() => toggleExpenseDetails(tour.tourId, tour.tourDate)}
