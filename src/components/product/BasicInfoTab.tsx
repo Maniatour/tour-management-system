@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Info, Save, Settings } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import CategoryManagementModal from './CategoryManagementModal'
 
@@ -62,6 +62,7 @@ export default function BasicInfoTab({
   productId,
   isNewProduct
 }: BasicInfoTabProps) {
+  const locale = useLocale()
   const t = useTranslations('common')
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
@@ -193,15 +194,26 @@ export default function BasicInfoTab({
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
-            customer_name_ko: formData.customerNameKo?.trim() || null,
-            customer_name_en: formData.customerNameEn?.trim() || null
+            customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || '상품',
+            customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product'
           }] as never[])
           .select()
           .single()
 
         if (error) {
           console.error('상품 생성 오류:', error)
-          setSaveMessage('상품 생성에 실패했습니다.')
+          const errorMessage = error.message || '알 수 없는 오류'
+          const errorDetails = error.details || ''
+          const errorHint = error.hint || ''
+          setSaveMessage(`상품 생성에 실패했습니다: ${errorMessage}${errorDetails ? ` (${errorDetails})` : ''}${errorHint ? ` - ${errorHint}` : ''}`)
+          setSaving(false)
+          return
+        }
+
+        if (!data || !(data as { id?: string })?.id) {
+          console.error('상품 생성 후 데이터를 받지 못했습니다:', data)
+          setSaveMessage('상품이 생성되었지만 데이터를 확인할 수 없습니다.')
+          setSaving(false)
           return
         }
 
@@ -209,7 +221,7 @@ export default function BasicInfoTab({
         
         // 상품 편집 페이지로 이동 (새로 생성된 ID로)
         setTimeout(() => {
-          window.location.href = `/admin/products/${(data as { id: string }).id}`
+          window.location.href = `/${locale}/admin/products/${(data as { id: string }).id}`
         }, 1500)
       } else {
         // 기존 상품 업데이트
@@ -239,8 +251,8 @@ export default function BasicInfoTab({
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
-            customer_name_ko: formData.customerNameKo?.trim() || null,
-            customer_name_en: formData.customerNameEn?.trim() || null
+            customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || '상품',
+            customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product'
           } as never)
           .eq('id', productId)
 

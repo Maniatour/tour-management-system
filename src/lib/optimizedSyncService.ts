@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase, supabaseAdmin } from './supabase'
 import { readSheetDataDynamic } from './googleSheets'
 import { highPerformanceCache, databaseOptimizer } from './performanceOptimizer'
 
@@ -468,8 +468,11 @@ export class OptimizedSyncService {
       
       console.log(`🔧 RLS 우회 upsert: ${tableName} 테이블에 ${batch.length}개 행 처리`)
       
-      // 서비스 계정으로 직접 upsert (RLS 우회)
-      const { error } = await supabase
+      // 서버 환경에서는 서비스 계정 사용 (RLS 우회)
+      const client = supabaseAdmin ?? supabase
+
+      // 서비스/익명 클라이언트로 upsert 실행
+      const { error } = await client
         .from(tableName)
         .upsert(batch, { 
           onConflict: conflictColumn,
@@ -511,7 +514,8 @@ export class OptimizedSyncService {
       // 개별 행 처리
       for (const row of batch) {
         try {
-          const { error } = await supabase
+          const client = supabaseAdmin ?? supabase
+          const { error } = await client
             .from(tableName)
             .upsert([row], { 
               onConflict: conflictColumn,

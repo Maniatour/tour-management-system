@@ -905,9 +905,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.ok) {
         const result = await response.json()
         setTeamChatUnreadCount(result.unreadCount || 0)
+      } else {
+        // 응답이 실패한 경우 (401, 500 등)
+        // 네트워크 오류가 아닌 경우에만 콘솔에 기록
+        if (response.status !== 500) {
+          console.warn('팀 채팅 안읽은 메시지 수 조회 실패:', response.status, response.statusText)
+        }
+        // 실패 시에도 0으로 설정하여 UI가 깨지지 않도록
+        setTeamChatUnreadCount(0)
       }
     } catch (error) {
-      console.error('팀 채팅 안읽은 메시지 수 조회 오류:', error)
+      // 네트워크 오류 (ERR_CONNECTION_REFUSED 등)는 조용히 처리
+      // 개발 환경에서만 상세 로그 출력
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('팀 채팅 안읽은 메시지 수 조회 오류 (네트워크 오류일 수 있음):', error)
+      }
+      // 네트워크 오류 시에도 0으로 설정하여 UI가 깨지지 않도록
+      setTeamChatUnreadCount(0)
     }
   }, [user?.email])
 

@@ -698,17 +698,18 @@ export default function ProductDetailPage() {
                 return allImages.length > 0 ? (
                 <>
                   {/* 메인 이미지 */}
-                  <div className="relative h-96 bg-gray-200">
+                  <div className="relative w-full bg-gray-200 flex items-center justify-center" style={{ minHeight: '400px', maxHeight: '800px' }}>
                     <Image
                       src={allImages[selectedImageIndex].file_url}
                       alt={allImages[selectedImageIndex].alt_text || allImages[selectedImageIndex].file_name}
-                      fill
-                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      width={1200}
+                      height={800}
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 800px"
                       priority
-                      className="object-cover"
+                      className="w-auto h-auto max-w-full max-h-[800px] object-contain"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-                    <div className="absolute top-4 right-4 flex space-x-2">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+                    <div className="absolute top-4 right-4 flex space-x-2 z-10">
                       <button className="p-2 bg-white/80 rounded-full hover:bg-white transition-colors">
                         <Heart size={20} className="text-gray-600" />
                       </button>

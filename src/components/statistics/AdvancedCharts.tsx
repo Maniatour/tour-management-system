@@ -4,6 +4,7 @@ import React from 'react'
 import {
   BarChart,
   Bar,
+  LabelList,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -35,6 +36,16 @@ interface AdvancedChartsProps {
   height?: number
   showLegend?: boolean
   colors?: string[]
+  stacked?: boolean
+  showProfitLine?: boolean
+  xAxisSubLabelKey?: string
+  xAxisSubLabelFormatter?: (value: any) => string
+  xAxisShowMainLabel?: boolean
+  xAxisHeight?: number
+  xAxisBottomMargin?: number
+  xAxisInterval?: number | 'preserveStart' | 'preserveEnd' | 'preserveStartEnd'
+  bottomLabelKey?: string
+  bottomLabelFormatter?: (value: any) => string
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D']
@@ -45,15 +56,53 @@ export default function AdvancedCharts({
   title,
   height = 400,
   showLegend = true,
-  colors = COLORS
+  colors = COLORS,
+  stacked = false,
+  showProfitLine = false,
+  xAxisSubLabelKey,
+  xAxisSubLabelFormatter,
+  xAxisShowMainLabel = true,
+  xAxisHeight,
+  xAxisBottomMargin,
+  xAxisInterval,
+  bottomLabelKey,
+  bottomLabelFormatter
 }: AdvancedChartsProps) {
+  const CustomizedTick = (props: any) => {
+    const { x, y, payload } = props
+    const main = payload?.value
+    const subValue = xAxisSubLabelKey ? payload?.payload?.[xAxisSubLabelKey] : undefined
+    const sub = subValue !== undefined 
+      ? (xAxisSubLabelFormatter ? xAxisSubLabelFormatter(subValue) : String(subValue))
+      : undefined
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text textAnchor="middle" fontSize={12}>
+          {xAxisShowMainLabel && (
+            <tspan x={0} dy={0} fill="#374151">{main}</tspan>
+          )}
+          {sub !== undefined && (
+            <tspan x={0} dy={xAxisShowMainLabel ? 16 : 12} fill="#374151" fontWeight={600}>{sub}</tspan>
+          )}
+        </text>
+      </g>
+    )
+  }
+
   const renderChart = () => {
     switch (type) {
       case 'bar':
         return (
-          <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+          <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: xAxisBottomMargin || (xAxisSubLabelKey ? 60 : 20) }}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
+            <XAxis 
+              dataKey="name" 
+              height={xAxisHeight || (xAxisSubLabelKey ? 60 : 30)} 
+              tick={xAxisSubLabelKey ? <CustomizedTick /> : { fontSize: 12, fill: '#374151' }} 
+              interval={xAxisInterval !== undefined ? (xAxisInterval as any) : (xAxisSubLabelKey ? 0 : undefined)}
+              tickMargin={12}
+              minTickGap={0}
+            />
             <YAxis />
             <Tooltip 
               formatter={(value, name) => [
@@ -63,13 +112,28 @@ export default function AdvancedCharts({
             />
             {showLegend && <Legend />}
             {data[0]?.revenue !== undefined && (
-              <Bar dataKey="revenue" fill="#00C49F" name="수익" />
+              <Bar dataKey="revenue" fill="#00C49F" name="수익" stackId={stacked ? 'stack' : undefined}>
+                {bottomLabelKey && (
+                  <LabelList dataKey={bottomLabelKey} position="bottom" offset={10} formatter={(v: any) => bottomLabelFormatter ? bottomLabelFormatter(v) : String(v)} style={{ fill: '#374151', fontWeight: 600 }} />
+                )}
+              </Bar>
             )}
             {data[0]?.expenses !== undefined && (
-              <Bar dataKey="expenses" fill="#FF8042" name="지출" />
+              <Bar dataKey="expenses" fill="#FF8042" name="지출" stackId={stacked ? 'stack' : undefined}>
+                {!data[0]?.revenue && bottomLabelKey && (
+                  <LabelList dataKey={bottomLabelKey} position="bottom" offset={10} formatter={(v: any) => bottomLabelFormatter ? bottomLabelFormatter(v) : String(v)} style={{ fill: '#374151', fontWeight: 600 }} />
+                )}
+              </Bar>
             )}
-            {data[0]?.profit !== undefined && (
-              <Bar dataKey="profit" fill="#0088FE" name="순수익" />
+            {showProfitLine && data[0]?.profit !== undefined && (
+              <Line type="monotone" dataKey="profit" stroke="#0088FE" strokeWidth={2} name="순수익" />
+            )}
+            {!showProfitLine && data[0]?.profit !== undefined && (
+              <Bar dataKey="profit" fill="#0088FE" name="순수익">
+                {!data[0]?.revenue && !data[0]?.expenses && bottomLabelKey && (
+                  <LabelList dataKey={bottomLabelKey} position="bottom" offset={10} formatter={(v: any) => bottomLabelFormatter ? bottomLabelFormatter(v) : String(v)} style={{ fill: '#374151', fontWeight: 600 }} />
+                )}
+              </Bar>
             )}
             {data[0]?.revenue === undefined && data[0]?.expenses === undefined && data[0]?.profit === undefined && (
               <Bar dataKey="value" fill="#0088FE" />

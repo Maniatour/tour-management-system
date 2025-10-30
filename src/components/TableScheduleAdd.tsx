@@ -2598,6 +2598,16 @@ export default function TableScheduleAdd({
               >
                 닫기
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTextModal(false)
+                  setTextModalIndex(null)
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                저장
+              </button>
             </div>
           </div>
         </div>

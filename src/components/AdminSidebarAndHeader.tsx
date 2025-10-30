@@ -274,7 +274,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
     { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
-    { name: 'Consultation', href: `/${locale}/admin/consultation`, icon: HelpCircle },
+    { name: t('consultation'), href: `/${locale}/admin/consultation`, icon: HelpCircle },
     { name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
     { name: t('documentTemplates'), href: `/${locale}/admin/reservations/templates`, icon: FileText },
     { name: t('team'), href: `/${locale}/admin/team`, icon: Users },
@@ -330,7 +330,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                     router.push(`/${locale}/admin/consultation`)
                   }}
                 >
-                  Consultation
+                  {t('consultation')}
                 </Link>
                 <Link
                   href={`/${locale}/admin/customers`}
@@ -710,10 +710,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       )}
 
       {/* 모바일 사이드바 */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:hidden ${
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:hidden flex flex-col ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
-        <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
+        <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 flex-shrink-0">
           <button
             onClick={() => { router.push(`/${locale}/admin`); setSidebarOpen(false) }}
             className="text-left text-xl font-bold text-gray-900 hover:text-blue-600"
@@ -728,7 +728,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
             <X size={24} />
           </button>
         </div>
-        <nav className="mt-4 px-4">
+        <nav className="flex-1 mt-4 px-4 overflow-y-auto overflow-x-hidden">
           {/* 모바일 네비게이션 메뉴 */}
           <div className="mb-4">
           </div>
@@ -769,23 +769,25 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           </div>
           
           {/* 모바일 로그아웃 버튼 */}
-          <button
-            onClick={() => {
-              handleLogout()
-              setSidebarOpen(false)
-            }}
-            className="flex items-center w-full px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
-          >
-            <LogOut size={16} className="mr-3" />
-            {tAdmin('logout')}
-          </button>
+          <div className="pb-4 border-t border-gray-200 mt-4 pt-4">
+            <button
+              onClick={() => {
+                handleLogout()
+                setSidebarOpen(false)
+              }}
+              className="flex items-center w-full px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"
+            >
+              <LogOut size={16} className="mr-3" />
+              {tAdmin('logout')}
+            </button>
+          </div>
         </nav>
       </div>
 
       {/* 데스크톱 사이드바 - 헤더 아래에 위치 */}
       <div className="hidden lg:fixed lg:top-16 lg:left-0 lg:bottom-0 lg:flex lg:w-64 lg:flex-col">
-        <div className="flex flex-col flex-grow bg-white shadow-lg">
-          <nav className="flex-1 px-4 mt-4">
+        <div className="flex flex-col flex-grow bg-white shadow-lg overflow-hidden">
+          <nav className="flex-1 px-4 mt-4 overflow-y-auto overflow-x-hidden">
             {navigation.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
@@ -819,7 +821,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           </nav>
           
           {/* 데스크톱 로그아웃 버튼 */}
-          <div className="px-4 pb-2">
+          <div className="px-4 pb-2 border-t border-gray-200 bg-white flex-shrink-0">
             <button
               onClick={handleLogout}
               className="flex items-center w-full px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-red-600 rounded-lg transition-colors"

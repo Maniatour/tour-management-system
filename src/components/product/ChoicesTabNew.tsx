@@ -32,6 +32,7 @@ interface ProductChoiceData {
   id: string
   choice_group: string
   choice_group_ko: string
+  choice_group_en?: string
   choice_type: 'single' | 'multiple' | 'quantity'
   is_required: boolean
   min_selections: number
@@ -91,6 +92,7 @@ interface ProductChoice {
   id: string
   choice_group: string
   choice_group_ko: string
+  choice_group_en?: string
   choice_type: 'single' | 'multiple' | 'quantity'
   is_required: boolean
   min_selections: number
@@ -163,7 +165,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             child_price: option.child_price || 0,
             infant_price: option.infant_price || 0,
             capacity: 1,
-            is_default: option.id === firstItem.id, // 첫 번째 옵션을 기본값으로
+            is_default: option.id === firstItem.id, // 첫 번째 초이스를 기본값으로
             is_active: option.status === 'active',
             sort_order: option.sort_order || 0,
             image_url: option.image_url,
@@ -205,6 +207,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           id,
           choice_group,
           choice_group_ko,
+          choice_group_en,
           choice_type,
           is_required,
           min_selections,
@@ -291,6 +294,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             product_id: productId,
             choice_group: choice.choice_group,
             choice_group_ko: choice.choice_group_ko,
+            choice_group_en: choice.choice_group_en || null,
             choice_type: choice.choice_type,
             is_required: choice.is_required,
             min_selections: choice.min_selections,
@@ -302,7 +306,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
         if (choiceError) throw choiceError
 
-        // 옵션들 저장
+        // 초이스들 저장
         if (choice.options && choice.options.length > 0) {
           const optionsToInsert = choice.options.map(option => ({
             choice_id: choiceData.id,
@@ -351,6 +355,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       id: `temp_${Date.now()}`,
       choice_group: '',
       choice_group_ko: '',
+      choice_group_en: '',
       choice_type: 'single',
       is_required: true,
       min_selections: 1,
@@ -373,7 +378,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     ))
   }, [])
 
-  // 초이스 옵션 추가
+  // 초이스 추가
   const addChoiceOption = useCallback((groupIndex: number) => {
     const existingOptions = productChoices[groupIndex]?.options || []
     const nextOptionNumber = existingOptions.length + 1
@@ -403,7 +408,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     ))
   }, [productChoices])
 
-  // 초이스 옵션 삭제
+  // 초이스 삭제
   const removeChoiceOption = useCallback((groupIndex: number, optionIndex: number) => {
     setProductChoices(prev => prev.map((group, i) => 
       i === groupIndex 
@@ -412,7 +417,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     ))
   }, [])
 
-  // 초이스 옵션 업데이트
+  // 초이스 업데이트
   const updateChoiceOption = useCallback((groupIndex: number, optionIndex: number, field: keyof ChoiceOption, value: string | number | boolean) => {
     setProductChoices(prev => prev.map((group, i) => 
       i === groupIndex 
@@ -445,21 +450,40 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         return
       }
 
+      // 버킷 확인
+      const bucketName = 'product-media'
+      const { data: buckets, error: listError } = await supabase.storage.listBuckets()
+      
+      if (listError) {
+        console.error('버킷 목록 조회 오류:', listError)
+        alert('저장소를 확인할 수 없습니다. 관리자에게 문의하세요.')
+        return
+      }
+
+      const bucketExists = buckets?.some(bucket => bucket.name === bucketName)
+      if (!bucketExists) {
+        alert(`'${bucketName}' 버킷이 존재하지 않습니다. 관리자에게 문의하여 버킷을 생성해주세요.`)
+        return
+      }
+
       // Supabase Storage에 업로드
-      const fileName = `choice-option-${Date.now()}-${file.name}`
+      const fileName = `choice-options/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
       const { error } = await supabase.storage
-        .from('product-images')
-        .upload(fileName, file)
+        .from(bucketName)
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
 
       if (error) {
         console.error('이미지 업로드 오류:', error)
-        alert('이미지 업로드 중 오류가 발생했습니다.')
+        alert(`이미지 업로드 중 오류가 발생했습니다: ${error.message}`)
         return
       }
 
       // 업로드된 이미지의 공개 URL 가져오기
       const { data: urlData } = supabase.storage
-        .from('product-images')
+        .from(bucketName)
         .getPublicUrl(fileName)
 
       // 이미지 URL과 alt 텍스트 업데이트
@@ -467,7 +491,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       updateChoiceOption(groupIndex, optionIndex, 'image_alt', file.name)
     } catch (error) {
       console.error('이미지 업로드 오류:', error)
-      alert('이미지 업로드 중 오류가 발생했습니다.')
+      alert(`이미지 업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
     } finally {
       setUploadingImages(prev => ({ ...prev, [uploadKey]: false }))
     }
@@ -511,6 +535,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           id: `temp_${Date.now()}_${Math.random()}`,
           choice_group: choice.choice_group,
           choice_group_ko: choice.choice_group_ko,
+          choice_group_en: choice.choice_group_en,
           choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
           is_required: choice.is_required,
           min_selections: choice.min_selections,
@@ -552,6 +577,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       choices: productChoices.map(choice => ({
         choice_group: choice.choice_group,
         choice_group_ko: choice.choice_group_ko,
+        choice_group_en: choice.choice_group_en,
         choice_type: choice.choice_type,
         is_required: choice.is_required,
         min_selections: choice.min_selections,
@@ -597,6 +623,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           id: `temp_${Date.now()}_${index}`,
           choice_group: choice.choice_group || '',
           choice_group_ko: choice.choice_group_ko || '',
+          choice_group_en: choice.choice_group_en || '',
           choice_type: (choice.choice_type || 'single') as 'single' | 'multiple' | 'quantity',
           is_required: choice.is_required !== false,
           min_selections: choice.min_selections || 1,
@@ -687,7 +714,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-lg font-medium text-gray-900">초이스 관리</h3>
-          <p className="text-sm text-gray-600">상품의 선택 옵션을 관리합니다.</p>
+          <p className="text-sm text-gray-600">상품의 선택 초이스를 관리합니다.</p>
         </div>
         <div className="flex space-x-2">
           <button
@@ -749,19 +776,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             <div key={choice.id} className="border border-gray-200 rounded-lg p-4">
               {/* 초이스 그룹 헤더 */}
               <div className="flex justify-between items-start mb-4">
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      초이스 그룹 ID
-                    </label>
-                    <input
-                      type="text"
-                      value={choice.choice_group}
-                      onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="예: accommodation"
-                    />
-                  </div>
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       초이스 그룹명 (한국어)
@@ -772,6 +787,18 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                       onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_ko', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="예: 숙박 선택"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      초이스 그룹명 (영어)
+                    </label>
+                    <input
+                      type="text"
+                      value={choice.choice_group_en || ''}
+                      onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_en', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="예: Accommodation"
                     />
                   </div>
                   <div>
@@ -796,44 +823,44 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                       <option value="quantity">수량 선택</option>
                     </select>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={choice.is_required}
-                        onChange={(e) => updateChoiceGroup(groupIndex, 'is_required', e.target.checked)}
-                        className="mr-2"
-                      />
-                      필수 선택
-                    </label>
-                  </div>
                 </div>
-                <button
-                  onClick={() => removeChoiceGroup(groupIndex)}
-                  className="ml-4 p-2 text-red-600 hover:bg-red-50 rounded-md"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center space-x-4 ml-4">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={choice.is_required}
+                      onChange={(e) => updateChoiceGroup(groupIndex, 'is_required', e.target.checked)}
+                      className="mr-2"
+                    />
+                    필수 선택
+                  </label>
+                  <button
+                    onClick={() => removeChoiceGroup(groupIndex)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-md"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
-              {/* 초이스 옵션 목록 */}
+              {/* 초이스 목록 */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <h4 className="text-sm font-medium text-gray-700">초이스 옵션</h4>
+                  <h4 className="text-sm font-medium text-gray-700">초이스</h4>
                   <button
                     onClick={() => addChoiceOption(groupIndex)}
                     className="flex items-center px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
                   >
                     <Plus className="w-3 h-3 mr-1" />
-                    옵션 추가
+                    초이스 추가
                   </button>
                 </div>
 
-                {/* 2열 그리드 레이아웃 */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* 가로형 1열 레이아웃 */}
+                <div className="space-y-4">
                  {choice.options.map((option, optionIndex) => (
                    <div key={option.id} className="bg-white rounded-2xl border border-gray-100 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group">
-                     {/* 옵션 헤더 */}
+                     {/* 초이스 헤더 */}
                      <div className="bg-gradient-to-r from-slate-50 to-gray-50 px-4 py-3 border-b border-gray-100">
                        <div className="flex items-center justify-between">
                          <div className="flex items-center space-x-3">
@@ -841,7 +868,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              {optionIndex + 1}
                            </div>
                            <h4 className="text-sm font-semibold text-gray-800">
-                             옵션 {optionIndex + 1}
+                             초이스 {optionIndex + 1}
                            </h4>
                          </div>
                          <div className="flex items-center space-x-3">
@@ -857,7 +884,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                            <button
                              onClick={() => removeChoiceOption(groupIndex, optionIndex)}
                              className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl transition-all duration-200 group-hover:scale-105"
-                             title="옵션 삭제"
+                             title="초이스 삭제"
                            >
                              <Trash2 className="w-4 h-4" />
                            </button>
@@ -865,13 +892,176 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                        </div>
                      </div>
 
-                     {/* 옵션 내용 */}
-                     <div className="p-6 space-y-6">
-                       {/* 옵션명 섹션 */}
+                     {/* 초이스 내용 - 가로형 레이아웃 */}
+                     <div className="p-6">
+                       {/* 메인 컨텐츠: 이미지(왼쪽) + 정보(오른쪽) */}
+                       <div className="flex gap-6">
+                         {/* 왼쪽: 이미지 섹션 */}
+                         <div className="flex-shrink-0 w-48">
+                           <div className="space-y-3">
+                             <h5 className="text-sm font-semibold text-gray-700 flex items-center">
+                               <div className="w-2 h-2 bg-orange-500 rounded-full mr-2"></div>
+                               이미지
+                             </h5>
+                             
+                             {/* 이미지 미리보기 */}
+                             {option.image_url ? (
+                               <div className="space-y-2">
+                                 <div 
+                                   className="relative group"
+                                   onDragOver={(e) => {
+                                     e.preventDefault()
+                                     e.stopPropagation()
+                                     setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: true }))
+                                   }}
+                                   onDragLeave={(e) => {
+                                     e.preventDefault()
+                                     e.stopPropagation()
+                                     setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                                   }}
+                                   onDrop={async (e) => {
+                                     e.preventDefault()
+                                     e.stopPropagation()
+                                     setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                                     
+                                     const files = Array.from(e.dataTransfer.files)
+                                     const imageFiles = files.filter(file => file.type.startsWith('image/'))
+                                     
+                                     if (imageFiles.length > 0) {
+                                       await handleImageUpload(imageFiles[0], groupIndex, optionIndex)
+                                     }
+                                   }}
+                                 >
+                                   <Image
+                                     src={option.image_url}
+                                     alt={option.image_alt || option.option_name_ko}
+                                     width={200}
+                                     height={150}
+                                     className={`w-full h-32 object-cover rounded-xl border-2 shadow-md transition-all ${
+                                       dragOverStates[`${groupIndex}-${optionIndex}`]
+                                         ? 'border-blue-400 scale-105'
+                                         : 'border-gray-200'
+                                     }`}
+                                   />
+                                   {dragOverStates[`${groupIndex}-${optionIndex}`] && (
+                                     <div className="absolute inset-0 bg-blue-500 bg-opacity-20 rounded-xl flex items-center justify-center">
+                                       <p className="text-sm font-medium text-blue-700">이미지 놓기</p>
+                                     </div>
+                                   )}
+                                 </div>
+                                 <div className="flex flex-col gap-2">
+                                   <input
+                                     type="file"
+                                     accept="image/*"
+                                     disabled={uploadingImages[`${groupIndex}-${optionIndex}`]}
+                                     onChange={async (e) => {
+                                       const file = e.target.files?.[0]
+                                       if (file) {
+                                         await handleImageUpload(file, groupIndex, optionIndex)
+                                         e.target.value = ''
+                                       }
+                                     }}
+                                     className="hidden"
+                                     id={`file-upload-${groupIndex}-${optionIndex}`}
+                                   />
+                                   <button
+                                     onClick={() => {
+                                       if (!uploadingImages[`${groupIndex}-${optionIndex}`]) {
+                                         document.getElementById(`file-upload-${groupIndex}-${optionIndex}`)?.click()
+                                       }
+                                     }}
+                                     className="w-full px-3 py-1.5 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors font-medium"
+                                   >
+                                     변경
+                                   </button>
+                                   <button
+                                     onClick={() => {
+                                       updateChoiceOption(groupIndex, optionIndex, 'image_url', '')
+                                       updateChoiceOption(groupIndex, optionIndex, 'image_alt', '')
+                                     }}
+                                     className="w-full px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors font-medium"
+                                   >
+                                     삭제
+                                   </button>
+                                 </div>
+                               </div>
+                             ) : (
+                               <div 
+                                 className={`border-2 border-dashed rounded-xl p-4 transition-all ${
+                                   dragOverStates[`${groupIndex}-${optionIndex}`]
+                                     ? 'border-blue-400 bg-blue-50'
+                                     : 'border-gray-200'
+                                 } ${uploadingImages[`${groupIndex}-${optionIndex}`] ? 'pointer-events-none opacity-50' : ''}`}
+                                 onDragOver={(e) => {
+                                   e.preventDefault()
+                                   e.stopPropagation()
+                                   setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: true }))
+                                 }}
+                                 onDragLeave={(e) => {
+                                   e.preventDefault()
+                                   e.stopPropagation()
+                                   setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                                 }}
+                                 onDrop={async (e) => {
+                                   e.preventDefault()
+                                   e.stopPropagation()
+                                   setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                                   
+                                   const files = Array.from(e.dataTransfer.files)
+                                   const imageFiles = files.filter(file => file.type.startsWith('image/'))
+                                   
+                                   if (imageFiles.length > 0) {
+                                     await handleImageUpload(imageFiles[0], groupIndex, optionIndex)
+                                   }
+                                 }}
+                               >
+                                 <input
+                                   type="file"
+                                   accept="image/*"
+                                   disabled={uploadingImages[`${groupIndex}-${optionIndex}`]}
+                                   onChange={async (e) => {
+                                     const file = e.target.files?.[0]
+                                     if (file) {
+                                       await handleImageUpload(file, groupIndex, optionIndex)
+                                       e.target.value = ''
+                                     }
+                                   }}
+                                   className="hidden"
+                                   id={`file-upload-${groupIndex}-${optionIndex}`}
+                                 />
+                                 <div
+                                   className="text-center cursor-pointer"
+                                   onClick={() => {
+                                     if (!uploadingImages[`${groupIndex}-${optionIndex}`]) {
+                                       document.getElementById(`file-upload-${groupIndex}-${optionIndex}`)?.click()
+                                     }
+                                   }}
+                                 >
+                                   {uploadingImages[`${groupIndex}-${optionIndex}`] ? (
+                                     <div className="flex flex-col items-center justify-center py-4">
+                                       <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
+                                       <p className="text-xs text-blue-600">업로드 중...</p>
+                                     </div>
+                                   ) : (
+                                     <div className="flex flex-col items-center justify-center py-4">
+                                       <Upload className="w-6 h-6 text-gray-400 mb-2" />
+                                       <p className="text-xs text-gray-600 mb-1">클릭하여 업로드</p>
+                                       <p className="text-xs text-gray-400">또는 드래그</p>
+                                     </div>
+                                   )}
+                                 </div>
+                               </div>
+                             )}
+                           </div>
+                         </div>
+
+                         {/* 오른쪽: 정보 섹션 */}
+                         <div className="flex-1 space-y-4">
+                       {/* 초이스명 섹션 */}
                        <div className="space-y-3">
                          <h5 className="text-sm font-semibold text-gray-700 flex items-center">
                            <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                           옵션명
+                           초이스명
                          </h5>
                          <div className="grid grid-cols-2 gap-4">
                            <div className="space-y-2">
@@ -880,7 +1070,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                type="text"
                                value={option.option_name_ko}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name_ko', e.target.value)}
-                               placeholder="옵션명 (한국어)"
+                               placeholder="초이스명 (한국어)"
                                className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
@@ -890,7 +1080,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                type="text"
                                value={option.option_name}
                                onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name', e.target.value)}
-                               placeholder="옵션명 (영어)"
+                               placeholder="초이스명 (영어)"
                                className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
                              />
                            </div>
@@ -987,174 +1177,12 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                            </label>
                          </div>
                        </div>
-
-                       {/* 이미지 업로드 섹션 */}
-                       <div className="space-y-3">
-                         <h5 className="text-sm font-semibold text-gray-700 flex items-center">
-                           <div className="w-2 h-2 bg-orange-500 rounded-full mr-2"></div>
-                           이미지
-                         </h5>
-                         
-                         <div className="space-y-4">
-                           {/* 이미지 미리보기와 업로드 영역 */}
-                           <div className="grid grid-cols-2 gap-4">
-                             {/* 왼쪽: 이미지 미리보기 */}
-                             <div className="flex flex-col justify-center h-full">
-                               {/* 현재 이미지 미리보기 */}
-                               {option.image_url ? (
-                                 <div className="space-y-3 text-center">
-                                   <div className="relative inline-block">
-                                     <Image
-                                       src={option.image_url}
-                                       alt={option.image_alt || option.option_name_ko}
-                                       width={80}
-                                       height={80}
-                                       className="w-20 h-20 object-cover rounded-2xl border-2 border-gray-200 shadow-md"
-                                     />
-                                   </div>
-                                   <div className="flex space-x-2 justify-center">
-                                     <button
-                                       onClick={() => {
-                                         updateChoiceOption(groupIndex, optionIndex, 'image_url', '')
-                                         updateChoiceOption(groupIndex, optionIndex, 'image_alt', '')
-                                       }}
-                                       className="px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors font-medium"
-                                     >
-                                       삭제
-                                     </button>
-                                     <button
-                                       onClick={() => {
-                                         const url = prompt('새 이미지 URL:', option.image_url || '')
-                                         if (url !== null) {
-                                           updateChoiceOption(groupIndex, optionIndex, 'image_url', url)
-                                         }
-                                       }}
-                                       className="px-3 py-1.5 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors font-medium"
-                                     >
-                                       변경
-                                     </button>
-                                   </div>
-                                 </div>
-                               ) : (
-                                 <div className="text-sm text-gray-500 py-8 text-center border-2 border-dashed border-gray-200 rounded-2xl h-full flex items-center justify-center bg-gray-50">
-                                   이미지 없음
-                                 </div>
-                               )}
-                             </div>
-
-                             {/* 오른쪽: 드래그앤드롭 업로드 영역 */}
-                             <div className="relative h-full">
-                               <input
-                                 type="file"
-                                 accept="image/*"
-                                 disabled={uploadingImages[`${groupIndex}-${optionIndex}`]}
-                                 onChange={async (e) => {
-                                   const file = e.target.files?.[0]
-                                   if (file) {
-                                     await handleImageUpload(file, groupIndex, optionIndex)
-                                     e.target.value = ''
-                                   }
-                                 }}
-                                 className="hidden"
-                                 id={`file-upload-${groupIndex}-${optionIndex}`}
-                               />
-                               
-                               <div
-                                 className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all duration-300 h-full ${
-                                   dragOverStates[`${groupIndex}-${optionIndex}`]
-                                     ? 'border-blue-400 bg-blue-50 scale-105'
-                                     : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                                 } ${uploadingImages[`${groupIndex}-${optionIndex}`] ? 'pointer-events-none opacity-50' : ''}`}
-                                 onDragOver={(e) => {
-                                   e.preventDefault()
-                                   e.stopPropagation()
-                                   setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: true }))
-                                 }}
-                                 onDragLeave={(e) => {
-                                   e.preventDefault()
-                                   e.stopPropagation()
-                                   setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
-                                 }}
-                                 onDrop={async (e) => {
-                                   e.preventDefault()
-                                   e.stopPropagation()
-                                   setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
-                                   
-                                   const files = Array.from(e.dataTransfer.files)
-                                   const imageFiles = files.filter(file => file.type.startsWith('image/'))
-                                   
-                                   if (imageFiles.length > 0) {
-                                     await handleImageUpload(imageFiles[0], groupIndex, optionIndex)
-                                   }
-                                 }}
-                                 onClick={() => {
-                                   if (!uploadingImages[`${groupIndex}-${optionIndex}`]) {
-                                     document.getElementById(`file-upload-${groupIndex}-${optionIndex}`)?.click()
-                                   }
-                                 }}
-                                 onPaste={async (e) => {
-                                   const items = e.clipboardData?.items
-                                   if (!items) return
-
-                                   for (let i = 0; i < items.length; i++) {
-                                     const item = items[i]
-                                     if (item.type.startsWith('image/')) {
-                                       e.preventDefault()
-                                       const file = item.getAsFile()
-                                       if (file) {
-                                         await handleImageUpload(file, groupIndex, optionIndex)
-                                       }
-                                       break
-                                     }
-                                   }
-                                 }}
-                                 tabIndex={0}
-                               >
-                                 {uploadingImages[`${groupIndex}-${optionIndex}`] ? (
-                                   <div className="flex flex-col items-center justify-center h-full">
-                                     <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
-                                     <p className="text-sm text-blue-600 font-medium">업로드 중...</p>
-                                   </div>
-                                 ) : (
-                                   <div className="flex flex-col items-center justify-center h-full">
-                                     <Upload className="w-8 h-8 text-gray-400 mb-3" />
-                                     <p className="text-sm text-gray-600 mb-1 font-medium">드래그하거나 클릭</p>
-                                     <p className="text-xs text-gray-500">Ctrl+V 붙여넣기</p>
-                                   </div>
-                                 )}
-                               </div>
-                             </div>
-                           </div>
-
-                           {/* URL과 Alt 입력 필드 */}
-                           <div className="grid grid-cols-2 gap-4">
-                             <div className="space-y-2">
-                               <label className="block text-sm font-medium text-gray-600">URL</label>
-                               <input
-                                 type="url"
-                                 value={option.image_url || ''}
-                                 onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'image_url', e.target.value)}
-                                 placeholder="https://example.com/image.jpg"
-                                 className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
-                               />
-                             </div>
-                             <div className="space-y-2">
-                               <label className="block text-sm font-medium text-gray-600">Alt</label>
-                               <input
-                                 type="text"
-                                 value={option.image_alt || ''}
-                                 onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'image_alt', e.target.value)}
-                                 placeholder="이미지 설명"
-                                 className="w-full px-4 py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
-                               />
-                             </div>
-                           </div>
                          </div>
                        </div>
                      </div>
                    </div>
                  ))}
-                </div>
+               </div>
               </div>
             </div>
           ))}
@@ -1313,7 +1341,7 @@ function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
                     </div>
                   </div>
                   <div className="text-sm text-gray-500">
-                    {template.count}개 옵션
+                    {template.count}개 초이스
                   </div>
                 </div>
               </button>
@@ -1456,19 +1484,19 @@ function ChoiceTypeInfoModal({ onClose }: ChoiceTypeInfoModalProps) {
             </div>
             <div className="ml-11 space-y-2">
               <p className="text-gray-700">
-                <strong>설명:</strong> 여러 옵션 중 하나만 선택할 수 있는 타입입니다.
+                <strong>설명:</strong> 여러 초이스 중 하나만 선택할 수 있는 타입입니다.
               </p>
               <div className="bg-gray-50 p-3 rounded-md">
                 <p className="text-sm text-gray-600 mb-2"><strong>사용 예시:</strong></p>
                 <ul className="text-sm text-gray-600 space-y-1">
                   <li>• 숙박 타입 선택 (호텔, 펜션, 게스트하우스)</li>
-                  <li>• 식사 옵션 선택 (조식 포함, 조식 불포함)</li>
+                  <li>• 식사 초이스 선택 (조식 포함, 조식 불포함)</li>
                   <li>• 교통편 선택 (버스, 기차, 항공)</li>
                 </ul>
               </div>
               <div className="bg-blue-50 p-3 rounded-md">
                 <p className="text-sm text-blue-800">
-                  <strong>특징:</strong> 라디오 버튼 형태로 표시되며, 하나의 옵션만 선택 가능합니다.
+                  <strong>특징:</strong> 라디오 버튼 형태로 표시되며, 하나의 초이스만 선택 가능합니다.
                 </p>
               </div>
             </div>
@@ -1484,19 +1512,19 @@ function ChoiceTypeInfoModal({ onClose }: ChoiceTypeInfoModalProps) {
             </div>
             <div className="ml-11 space-y-2">
               <p className="text-gray-700">
-                <strong>설명:</strong> 여러 옵션을 동시에 선택할 수 있는 타입입니다.
+                <strong>설명:</strong> 여러 초이스를 동시에 선택할 수 있는 타입입니다.
               </p>
               <div className="bg-gray-50 p-3 rounded-md">
                 <p className="text-sm text-gray-600 mb-2"><strong>사용 예시:</strong></p>
                 <ul className="text-sm text-gray-600 space-y-1">
                   <li>• 추가 서비스 선택 (WiFi, 조식, 픽업 서비스)</li>
                   <li>• 관광지 선택 (여러 관광지를 동시에 선택)</li>
-                  <li>• 옵션 추가 (보험, 가이드, 장비 대여)</li>
+                  <li>• 초이스 추가 (보험, 가이드, 장비 대여)</li>
                 </ul>
               </div>
               <div className="bg-green-50 p-3 rounded-md">
                 <p className="text-sm text-green-800">
-                  <strong>특징:</strong> 체크박스 형태로 표시되며, 여러 옵션을 동시에 선택할 수 있습니다.
+                  <strong>특징:</strong> 체크박스 형태로 표시되며, 여러 초이스를 동시에 선택할 수 있습니다.
                 </p>
               </div>
             </div>
@@ -1512,7 +1540,7 @@ function ChoiceTypeInfoModal({ onClose }: ChoiceTypeInfoModalProps) {
             </div>
             <div className="ml-11 space-y-2">
               <p className="text-gray-700">
-                <strong>설명:</strong> 각 옵션에 대해 수량을 설정할 수 있는 타입입니다. 다중 선택과 유사하지만 각 옵션별로 개수를 지정할 수 있습니다.
+                <strong>설명:</strong> 각 초이스에 대해 수량을 설정할 수 있는 타입입니다. 다중 선택과 유사하지만 각 초이스별로 개수를 지정할 수 있습니다.
               </p>
               <div className="bg-gray-50 p-3 rounded-md">
                 <p className="text-sm text-gray-600 mb-2"><strong>사용 예시:</strong></p>
@@ -1524,7 +1552,7 @@ function ChoiceTypeInfoModal({ onClose }: ChoiceTypeInfoModalProps) {
               </div>
               <div className="bg-purple-50 p-3 rounded-md">
                 <p className="text-sm text-purple-800">
-                  <strong>특징:</strong> 각 옵션마다 수량 입력 필드가 제공되며, 가격이 수량에 따라 자동 계산됩니다.
+                  <strong>특징:</strong> 각 초이스마다 수량 입력 필드가 제공되며, 가격이 수량에 따라 자동 계산됩니다.
                 </p>
               </div>
             </div>
@@ -1539,12 +1567,12 @@ function ChoiceTypeInfoModal({ onClose }: ChoiceTypeInfoModalProps) {
                 </svg>
               </div>
               <div className="ml-3">
-                <h4 className="text-sm font-medium text-yellow-800">추가 설정 옵션</h4>
+                <h4 className="text-sm font-medium text-yellow-800">추가 설정 초이스</h4>
                 <div className="mt-2 text-sm text-yellow-700">
                   <ul className="space-y-1">
                     <li>• <strong>필수 선택:</strong> 해당 초이스 그룹을 반드시 선택해야 하는지 설정</li>
-                    <li>• <strong>최소/최대 선택:</strong> 선택할 수 있는 옵션의 개수 제한</li>
-                    <li>• <strong>기본 옵션:</strong> 미리 선택된 기본값 설정</li>
+                    <li>• <strong>최소/최대 선택:</strong> 선택할 수 있는 초이스의 개수 제한</li>
+                    <li>• <strong>기본 초이스:</strong> 미리 선택된 기본값 설정</li>
                   </ul>
                 </div>
               </div>

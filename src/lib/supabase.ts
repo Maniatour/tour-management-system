@@ -3,6 +3,7 @@ import type { Database } from './database.types'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 // 환경 변수 검증
 if (!supabaseUrl || !supabaseAnonKey) {
@@ -26,6 +27,17 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true
   }
 })
+
+// 서버 전용 서비스 롤 클라이언트 (RLS 우회용)
+export const supabaseAdmin = typeof window === 'undefined' && supabaseServiceRoleKey
+  ? createClient<Database>(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
+      }
+    })
+  : undefined
 
 // Supabase 연결 상태 확인 함수
 export const checkSupabaseConnection = async (): Promise<boolean> => {

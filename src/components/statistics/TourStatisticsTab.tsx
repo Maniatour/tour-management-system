@@ -79,10 +79,10 @@ async function getTourFinancialStats(tourId: string) {
   try {
     console.log('투어 정산 통계 조회 시작:', tourId)
 
-    // 먼저 투어가 존재하는지 확인
-    const { data: tourExists, error: tourExistsError } = await supabase
+    // 먼저 투어가 존재하는지 확인 (reservation_ids와 수수료 함께 조회)
+    const { data: tourRow, error: tourExistsError } = await supabase
       .from('tours')
-      .select('id')
+      .select('id, reservation_ids, guide_fee, assistant_fee')
       .eq('id', tourId)
       .maybeSingle()
 
@@ -90,7 +90,7 @@ async function getTourFinancialStats(tourId: string) {
       console.error('투어 존재 확인 오류:', tourExistsError)
     }
 
-    console.log(`투어 ${tourId} 존재 여부:`, !!tourExists)
+    console.log(`투어 ${tourId} 존재 여부:`, !!tourRow)
 
     // 투어 지출이 있는지 확인 (상태 무관)
     const { data: allExpenses, error: allExpensesError } = await supabase
@@ -105,15 +105,19 @@ async function getTourFinancialStats(tourId: string) {
     console.log(`투어 ${tourId}의 전체 지출 (상태 무관):`, allExpenses)
     console.log(`투어 ${tourId}의 전체 지출 개수:`, allExpenses?.length || 0)
 
-    // 예약 데이터 가져오기 (별도 쿼리로 고객 정보 조회)
-    const { data: reservations, error: reservationsError } = await supabase
-      .from('reservations')
-      .select('id, customer_id, adults, child, infant')
-      .eq('tour_id', tourId)
+    // 예약 데이터 가져오기: tour.reservation_ids 기준으로 합산
+    let reservations: any[] = []
+    if (tourRow?.reservation_ids && Array.isArray(tourRow.reservation_ids) && tourRow.reservation_ids.length > 0) {
+      const { data: reservationsData, error: reservationsError } = await supabase
+        .from('reservations')
+        .select('id, customer_id, total_people, adults, child, infant')
+        .in('id', tourRow.reservation_ids)
 
-    if (reservationsError) {
-      console.error('예약 데이터 조회 오류:', reservationsError)
-      throw reservationsError
+      if (reservationsError) {
+        console.error('예약 데이터 조회 오류:', reservationsError)
+        throw reservationsError
+      }
+      reservations = reservationsData || []
     }
 
     console.log('예약 데이터:', reservations)
@@ -140,25 +144,37 @@ async function getTourFinancialStats(tourId: string) {
 
     console.log('고객 데이터:', customersData)
 
-    // 예약 가격 정보 가져오기
+    // 예약 가격 정보 및 실입금 정보 가져오기
     const reservationIds = reservations?.map(r => r.id) || []
     let reservationPricing = []
+    let paymentRecords: Array<{ reservation_id: string; amount: number; payment_status?: string | null }> = []
     
     if (reservationIds.length > 0) {
-      const { data: pricingData, error: pricingError } = await supabase
-        .from('reservation_pricing')
-        .select('reservation_id, total_price')
-        .in('reservation_id', reservationIds)
+      const [{ data: pricingData, error: pricingError }, { data: paymentsData, error: paymentsError }] = await Promise.all([
+        supabase
+          .from('reservation_pricing')
+          .select('reservation_id, total_price')
+          .in('reservation_id', reservationIds),
+        supabase
+          .from('payment_records')
+          .select('reservation_id, amount, payment_status')
+          .in('reservation_id', reservationIds)
+      ])
 
       if (pricingError) {
         console.error('예약 가격 정보 조회 오류:', pricingError)
-        // 가격 정보가 없어도 계속 진행
       } else {
         reservationPricing = pricingData || []
+      }
+      if (paymentsError) {
+        console.error('실입금 정보 조회 오류:', paymentsError)
+      } else {
+        paymentRecords = paymentsData || []
       }
     }
 
     console.log('예약 가격 정보:', reservationPricing)
+    console.log('실입금 레코드:', paymentRecords)
 
     // 투어 지출 가져오기 (모든 상태의 지출 포함)
     const { data: expenses, error: expensesError } = await supabase
@@ -202,30 +218,15 @@ async function getTourFinancialStats(tourId: string) {
 
     console.log('호텔 부킹:', hotelBookings)
 
-    // 투어 수수료 가져오기 (투어가 존재하지 않을 수 있음)
-    let tour = null
-    try {
-      const { data: tourData, error: tourError } = await supabase
-        .from('tours')
-        .select('guide_fee, assistant_fee')
-        .eq('id', tourId)
-        .maybeSingle() // .single() 대신 .maybeSingle() 사용
+    // 투어 수수료: 위 조회에서 함께 가져옴
+    const tour = tourRow
+    console.log('투어 수수료:', { guide_fee: tour?.guide_fee, assistant_fee: tour?.assistant_fee })
 
-      if (tourError) {
-        console.error('투어 수수료 조회 오류:', tourError)
-        // 투어가 존재하지 않아도 계속 진행
-      } else {
-        tour = tourData
-      }
-    } catch (error) {
-      console.error('투어 수수료 조회 중 예외 발생:', error)
-      // 예외가 발생해도 계속 진행
-    }
-
-    console.log('투어 수수료:', tour)
-
-    // TourExpenseManager와 동일한 계산 로직 적용
-    const totalPayments = reservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0
+    // 결제 기준: payment_records 합계(지표 신뢰성 높임). 없으면 reservation_pricing로 폴백
+    const totalPaidFromPayments = paymentRecords?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0
+    const totalPayments = totalPaidFromPayments > 0
+      ? totalPaidFromPayments
+      : (reservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0)
     const totalExpenses = expenses?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0
     const totalFees = (tour?.guide_fee || 0) + (tour?.assistant_fee || 0)
     const totalTicketCosts = ticketBookings?.reduce((sum, booking) => sum + (booking.expense || 0), 0) || 0
@@ -248,6 +249,11 @@ async function getTourFinancialStats(tourId: string) {
       hotelBookingsCount: hotelBookings?.length || 0
     })
 
+    const totalPeopleFromReservations = reservations?.reduce((sum, r) => {
+      const val = (r.total_people ?? (r.adults + r.child + r.infant)) || 0
+      return sum + val
+    }, 0) || 0
+
     const result = {
       tourId,
       totalPayments,
@@ -259,7 +265,7 @@ async function getTourFinancialStats(tourId: string) {
       totalExpensesWithFeesAndBookings,
       profit,
       reservationCount: reservations?.length || 0,
-      totalPeople: reservations?.reduce((sum, r) => sum + (r.adults + r.child + r.infant), 0) || 0
+      totalPeople: totalPeopleFromReservations
     }
 
     console.log('투어 정산 통계 결과:', result)
@@ -295,7 +301,11 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
     loading
   } = useReservationData()
 
-  const [selectedChart, setSelectedChart] = useState<'profit' | 'expenses' | 'vehicles'>('profit')
+  const [selectedChart, setSelectedChart] = useState<'profit' | 'expenses' | 'vehicles' | 'daily'>('profit')
+  const [dailyMetric, setDailyMetric] = useState<'revenue' | 'expenses' | 'profit' | 'people'>('profit')
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
+  const [tourSearch, setTourSearch] = useState<string>('')
+  const [perPersonMetric, setPerPersonMetric] = useState<'none' | 'revenuePer' | 'expensesPer' | 'profitPer'>('none')
   const [selectedVehicle, setSelectedVehicle] = useState<string>('all')
   const [expandedExpenses, setExpandedExpenses] = useState<Record<string, boolean>>({})
   const [expenseDetails, setExpenseDetails] = useState<Record<string, any>>({})
@@ -310,6 +320,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
     vehicleStats: []
   })
   const [isCalculating, setIsCalculating] = useState(false)
+  const [dateSortDir, setDateSortDir] = useState<'asc' | 'desc'>('asc')
 
   // 지출 상세 내역 토글
   const toggleExpenseDetails = async (tourId: string, tourDate?: string) => {
@@ -385,11 +396,36 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         assistantName = assistantData?.name_ko || ''
       }
 
-      // 입금 내역 조회 (예약별 입금 정보) - 날짜 필터링 적용
+      // 입금 내역 조회 (예약별 입금/결제 정보) - 날짜 필터링 적용
+      // tour.reservation_ids 기준으로 조회
+      const { data: tourForReservations } = await supabase
+        .from('tours')
+        .select('reservation_ids')
+        .eq('id', tourId)
+        .maybeSingle()
+
+      if (!tourForReservations?.reservation_ids || tourForReservations.reservation_ids.length === 0) {
+        return {
+          expenses: expenses || [],
+          ticketBookings: ticketBookings || [],
+          hotelBookings: hotelBookings || [],
+          tourFees: { 
+            guide_fee: tour?.guide_fee || 0, 
+            assistant_fee: tour?.assistant_fee || 0, 
+            guide_name: guideName, 
+            assistant_name: assistantName
+          },
+          reservations: [],
+          customers: [],
+          reservationPricing: [],
+          paymentRecords: []
+        }
+      }
+
       let reservationsQuery = supabase
         .from('reservations')
-        .select('id, customer_id, adults, child, infant')
-        .eq('tour_id', tourId)
+        .select('id, customer_id, total_people, adults, child, infant')
+        .in('id', tourForReservations.reservation_ids)
 
       // 날짜 필터링이 있는 경우 적용
       if (tourDate) {
@@ -430,16 +466,24 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         }
       }
 
-      // 예약 가격 정보 조회
+      // 예약 가격/실입금 정보 조회
       let reservationPricing: any[] = []
+      let paymentRecords: any[] = []
       if (reservations && reservations.length > 0) {
         const reservationIds = reservations.map(r => r.id)
-        const { data: pricingData, error: pricingError } = await supabase
-          .from('reservation_pricing')
-          .select('reservation_id, total_price')
-          .in('reservation_id', reservationIds)
+        const [{ data: pricingData }, { data: paymentsData }] = await Promise.all([
+          supabase
+            .from('reservation_pricing')
+            .select('reservation_id, total_price')
+            .in('reservation_id', reservationIds),
+          supabase
+            .from('payment_records')
+            .select('id, reservation_id, amount, payment_status, submit_on, payment_method')
+            .in('reservation_id', reservationIds)
+        ])
 
         reservationPricing = pricingData || []
+        paymentRecords = paymentsData || []
       }
 
       return {
@@ -454,7 +498,8 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         },
         reservations: reservations || [],
         customers: customers || [],
-        reservationPricing: reservationPricing || []
+        reservationPricing: reservationPricing || [],
+        paymentRecords: paymentRecords || []
       }
     } catch (error) {
       console.error('상세 내역 조회 오류:', error)
@@ -545,9 +590,9 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             } else {
               console.log('투어 상태 데이터:', toursData)
               
-              // Recruiting 또는 Confirmed 상태인 투어만 필터링
+              // 통계 포함 상태: Recruiting, Confirmed, Completed
               const validTours = toursData?.filter(tour => 
-                tour.tour_status === 'Recruiting' || tour.tour_status === 'Confirmed'
+                tour.tour_status === 'Recruiting' || tour.tour_status === 'Confirmed' || tour.tour_status === 'Completed'
               ) || []
               
               validTourIds.push(...validTours.map(tour => tour.id))
@@ -696,6 +741,32 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
     return tourStatisticsData.vehicleStats.filter(v => v.vehicleType === selectedVehicle)
   }, [tourStatisticsData.vehicleStats, selectedVehicle])
 
+  const sortedTourStats = useMemo(() => {
+    const cloned = [...tourStatisticsData.tourStats]
+    cloned.sort((a, b) => {
+      const aTime = new Date(a.tourDate + 'T00:00:00').getTime()
+      const bTime = new Date(b.tourDate + 'T00:00:00').getTime()
+      return dateSortDir === 'asc' ? aTime - bTime : bTime - aTime
+    })
+    return cloned
+  }, [tourStatisticsData.tourStats, dateSortDir])
+
+  const visibleTourStats = useMemo(() => {
+    const byProduct = selectedProducts.length > 0
+      ? sortedTourStats.filter(t => selectedProducts.includes(t.productName))
+      : sortedTourStats
+    const bySearch = tourSearch.trim()
+      ? byProduct.filter(t => {
+          const keyword = tourSearch.trim().toLowerCase()
+          return (
+            t.productName.toLowerCase().includes(keyword) ||
+            formatDate(t.tourDate).toLowerCase().includes(keyword)
+          )
+        })
+      : byProduct
+    return bySearch
+  }, [sortedTourStats, selectedProducts, tourSearch])
+
   if (loading || isCalculating) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -766,9 +837,45 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
 
       {/* 차트 선택 탭 */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        {/* 투어 필터 */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">상품(투어) 필터</label>
+            <select
+              multiple
+              value={selectedProducts}
+              onChange={(e) => {
+                const options = Array.from(e.target.selectedOptions).map(o => o.value)
+                setSelectedProducts(options)
+              }}
+              className="w-full md:w-96 px-3 py-2 border border-gray-300 rounded-md h-28"
+            >
+              {Array.from(new Set(tourStatisticsData.tourStats.map(t => t.productName))).sort().map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">검색(상품명/날짜)</label>
+            <input
+              value={tourSearch}
+              onChange={(e) => setTourSearch(e.target.value)}
+              placeholder="예: 그랜드, 2025. 01. 20"
+              className="w-full md:w-80 px-3 py-2 border border-gray-300 rounded-md"
+            />
+          </div>
+          <div className="flex items-end gap-2">
+            <button
+              onClick={() => { setSelectedProducts([]); setTourSearch('') }}
+              className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+            >필터 초기화</button>
+            <div className="text-sm text-gray-500">표시: {visibleTourStats.length}개</div>
+          </div>
+        </div>
         <div className="flex space-x-4 mb-6">
           {[
             { key: 'profit', label: '투어별 손익', icon: BarChart3 },
+            { key: 'daily', label: '날짜별 집계', icon: LineChart },
             { key: 'expenses', label: '지출 상세', icon: PieChart },
             { key: 'vehicles', label: '차량별 가스비', icon: Car }
           ].map(({ key, label, icon: Icon }) => (
@@ -792,7 +899,21 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold text-gray-900">투어별 손익 분석</h3>
-              <div className="flex space-x-2">
+              <div className="flex items-center space-x-2">
+                <div className="hidden md:flex items-center bg-gray-100 rounded-md overflow-hidden">
+                  {[
+                    { key: 'none', label: '전체' },
+                    { key: 'revenuePer', label: '1인 수익' },
+                    { key: 'expensesPer', label: '1인 지출' },
+                    { key: 'profitPer', label: '1인 순수익' }
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => setPerPersonMetric(key as any)}
+                      className={`px-2.5 py-1 text-xs md:text-sm ${perPersonMetric === key ? 'bg-blue-600 text-white' : 'text-gray-700'}`}
+                    >{label}</button>
+                  ))}
+                </div>
                 <button 
                   onClick={() => generateTourStatisticsPDF({ data: tourStatisticsData, dateRange })}
                   className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -812,18 +933,73 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             
             {/* 고급 차트 */}
             <div id="profit-chart">
-              <AdvancedCharts
-                data={tourStatisticsData.tourStats.map(tour => ({
-                  name: `${tour.productName} (${formatDate(tour.tourDate)})`,
-                  revenue: tour.revenue,
-                  expenses: tour.expenses,
-                  profit: tour.netProfit,
-                  people: tour.totalPeople
-                }))}
-                type="bar"
-                title="투어별 손익 비교"
-                height={400}
-              />
+              {(() => {
+                const data = visibleTourStats.map(tour => {
+                  const denom = Math.max(tour.totalPeople || 0, 0)
+                  const name = `${tour.productName} (${formatDate(tour.tourDate)})`
+                  if (perPersonMetric === 'revenuePer') {
+                    return {
+                      name,
+                      revenue: denom > 0 ? tour.revenue / denom : 0,
+                      expenses: undefined,
+                      profit: undefined,
+                      people: tour.totalPeople
+                    }
+                  }
+                  if (perPersonMetric === 'expensesPer') {
+                    return {
+                      name,
+                      revenue: undefined,
+                      expenses: denom > 0 ? tour.expenses / denom : 0,
+                      profit: undefined,
+                      people: tour.totalPeople
+                    }
+                  }
+                  if (perPersonMetric === 'profitPer') {
+                    return {
+                      name,
+                      revenue: undefined,
+                      expenses: undefined,
+                      profit: denom > 0 ? tour.netProfit / denom : 0,
+                      people: tour.totalPeople
+                    }
+                  }
+                  return {
+                    name,
+                    revenue: tour.revenue,
+                    expenses: tour.expenses,
+                    profit: tour.netProfit,
+                    people: tour.totalPeople
+                  }
+                })
+
+                const title = perPersonMetric === 'revenuePer'
+                  ? '투어별 1인 수익'
+                  : perPersonMetric === 'expensesPer'
+                  ? '투어별 1인 지출'
+                  : perPersonMetric === 'profitPer'
+                  ? '투어별 1인 순수익'
+                  : '투어별 손익 비교'
+
+                return (
+                  <AdvancedCharts
+                    data={data}
+                    type="bar"
+                    title={title}
+                    stacked={perPersonMetric === 'none'}
+                    showProfitLine={perPersonMetric === 'none'}
+                    xAxisSubLabelKey="people"
+                    xAxisSubLabelFormatter={(v) => `${v}`}
+                    xAxisShowMainLabel={false}
+                    xAxisInterval={0}
+                    xAxisHeight={70}
+                    xAxisBottomMargin={70}
+                    bottomLabelKey="people"
+                    bottomLabelFormatter={(v) => `${v}`}
+                    height={400}
+                  />
+                )
+              })()}
             </div>
           </div>
         )}
@@ -990,6 +1166,73 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             </div>
           </div>
         )}
+
+        {/* 날짜별 집계 */}
+        {selectedChart === 'daily' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-900">날짜별 지출/입금/순수익/인원</h3>
+              <div className="flex items-center space-x-2">
+                {[
+                  { key: 'revenue', label: '입금' },
+                  { key: 'expenses', label: '지출' },
+                  { key: 'profit', label: '순수익' },
+                  { key: 'people', label: '인원' }
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setDailyMetric(key as any)}
+                    className={`px-3 py-1 text-sm rounded-md ${dailyMetric === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}
+                  >{label}</button>
+                ))}
+                <button 
+                  onClick={() => generateChartPDF('daily-chart', '날짜별집계.pdf')}
+                  className="flex items-center space-x-2 px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                  <Download size={16} />
+                  <span>차트 다운로드</span>
+                </button>
+              </div>
+            </div>
+
+            <div id="daily-chart">
+              {(() => {
+                // 날짜별 합계 계산 (항상 오름차순)
+                const byDate: Record<string, { revenue: number; expenses: number; profit: number; people: number }> = {}
+                visibleTourStats.forEach(t => {
+                  const d = formatDate(t.tourDate)
+                  if (!byDate[d]) byDate[d] = { revenue: 0, expenses: 0, profit: 0, people: 0 }
+                  byDate[d].revenue += t.revenue || 0
+                  byDate[d].expenses += t.expenses || 0
+                  byDate[d].profit += t.netProfit || 0
+                  byDate[d].people += t.totalPeople || 0
+                })
+                const sortedDates = Object.keys(byDate)
+                  .map(d => ({ d, time: new Date(d).getTime() }))
+                  .sort((a, b) => a.time - b.time)
+                const chartData = sortedDates.map(({ d }) => {
+                  const row = byDate[d]
+                  if (dailyMetric === 'people') return { name: d, value: row.people }
+                  return { name: d, revenue: row.revenue, expenses: row.expenses, profit: row.profit }
+                })
+
+                return (
+                  <AdvancedCharts
+                    data={chartData}
+                    type={dailyMetric === 'people' ? 'bar' : 'bar'}
+                    title={`날짜별 ${dailyMetric === 'revenue' ? '입금' : dailyMetric === 'expenses' ? '지출' : dailyMetric === 'profit' ? '순수익' : '인원'}`}
+                    height={400}
+                    stacked={dailyMetric !== 'people'}
+                    showProfitLine={dailyMetric !== 'people' && dailyMetric !== 'expenses' && dailyMetric !== 'revenue'}
+                    xAxisShowMainLabel={true}
+                    xAxisHeight={30}
+                    xAxisBottomMargin={30}
+                  />
+                )
+              })()}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 투어 통계 테이블 */}
@@ -1001,7 +1244,18 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">투어 날짜</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  <button
+                    onClick={() => setDateSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+                    className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900"
+                    title="투어 날짜로 정렬"
+                  >
+                    <span>투어 날짜</span>
+                    <span className={`transition-transform ${dateSortDir === 'asc' ? '-rotate-180' : 'rotate-0'}`}>
+                      <ChevronDown size={14} />
+                    </span>
+                  </button>
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상품명</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">인원</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">수익</th>
@@ -1015,7 +1269,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {tourStatisticsData.tourStats.map((tour, index) => (
+              {visibleTourStats.map((tour, index) => (
                 <React.Fragment key={index}>
                   <tr className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
