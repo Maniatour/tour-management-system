@@ -95,16 +95,19 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
         .from('vehicles')
         .select('vehicle_number')
         .eq('id', vehicleId)
-        .single()
+        .maybeSingle()
       
       if (error) {
-        console.error('Error fetching vehicle info:', error)
+        // PGRST116 에러는 결과가 없을 때 발생하는 정상적인 경우이므로 조용히 처리
+        if (error.code !== 'PGRST116') {
+          console.error('Error fetching vehicle info:', error)
+        }
         return null
       }
       
       return data
     } catch (error) {
-      console.error('Error fetching vehicle info:', error)
+      // 에러가 발생해도 조용히 처리 (차량 정보가 없는 경우)
       return null
     }
   }

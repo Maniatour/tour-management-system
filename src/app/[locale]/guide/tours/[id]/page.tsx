@@ -138,12 +138,17 @@ export default function GuideTourDetailPage() {
 
       // 차량 정보 가져오기
       if ((tourData as TourRow & { tour_car_id?: string }).tour_car_id) {
-        const { data: vehicleData } = await supabase
+        const { data: vehicleData, error: vehicleError } = await supabase
           .from('vehicles')
           .select('*')
           .eq('id', (tourData as TourRow & { tour_car_id: string }).tour_car_id)
-          .single()
-        setVehicle(vehicleData)
+          .maybeSingle()
+        
+        if (!vehicleError && vehicleData) {
+          setVehicle(vehicleData)
+        } else {
+          setVehicle(null)
+        }
       }
 
       // 예약 정보 가져오기 (투어에 배정된 예약만)

@@ -413,27 +413,31 @@ export function useTourDetailData() {
             .from('vehicles')
             .select('*')
             .eq('id', tourData.tour_car_id)
-            .single()
+            .maybeSingle()
           
           if (vehicleError) {
-            console.error('차량 정보 가져오기 오류:', vehicleError)
-            console.log('차량 오류 상세:', {
-              message: vehicleError.message,
-              details: vehicleError.details,
-              hint: vehicleError.hint,
-              code: vehicleError.code
-            })
-            console.log('차량 오류 전체 객체:', JSON.stringify(vehicleError, null, 2))
-            console.log('차량 오류 타입:', typeof vehicleError)
-            console.log('차량 오류 키들:', Object.keys(vehicleError))
+            // PGRST116 에러는 결과가 없을 때 발생하는 정상적인 경우이므로 조용히 처리
+            if (vehicleError.code !== 'PGRST116') {
+              console.error('차량 정보 가져오기 오류:', vehicleError)
+              console.log('차량 오류 상세:', {
+                message: vehicleError.message,
+                details: vehicleError.details,
+                hint: vehicleError.hint,
+                code: vehicleError.code
+              })
+            }
             
             // 차량을 찾을 수 없는 경우 상태 초기화
             setSelectedVehicleId(null)
             setAssignedVehicle(null)
-          } else {
+          } else if (vehicleData) {
             console.log('차량 정보 가져오기 성공:', vehicleData)
             setSelectedVehicleId(tourData.tour_car_id)
             setAssignedVehicle(vehicleData)
+          } else {
+            // 차량 데이터가 null인 경우
+            setSelectedVehicleId(null)
+            setAssignedVehicle(null)
           }
         } catch (vehicleFetchError) {
           console.error('차량 정보 가져오기 중 예외 발생:', vehicleFetchError)

@@ -544,9 +544,15 @@ export default function GuideChatPage() {
   }
 
   const formatDateWithDay = (dateString: string) => {
-    const date = new Date(dateString)
-    const days = ['일', '월', '화', '수', '목', '금', '토']
-    const dayName = days[date.getDay()]
+    const date = new Date(dateString + 'T00:00:00')
+    let dayName: string
+    if (locale === 'en') {
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      dayName = days[date.getDay()]
+    } else {
+      const days = ['일', '월', '화', '수', '목', '금', '토']
+      dayName = days[date.getDay()]
+    }
     return `${dateString} (${dayName})`
   }
 
@@ -633,11 +639,11 @@ export default function GuideChatPage() {
                 onChange={(e) => setFilterType(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <option value="all">전체</option>
-                <option value="general">일반</option>
-                <option value="department">부서</option>
-                <option value="project">프로젝트</option>
-                <option value="announcement">공지</option>
+                <option value="all">{t('roomType.all')}</option>
+                <option value="general">{t('roomType.general')}</option>
+                <option value="department">{t('roomType.department')}</option>
+                <option value="project">{t('roomType.project')}</option>
+                <option value="announcement">{t('roomType.announcement')}</option>
               </select>
             )}
           </div>
@@ -688,10 +694,10 @@ export default function GuideChatPage() {
                             ? 'bg-green-100 text-green-800'
                             : 'bg-gray-100 text-gray-800'
                         }`}>
-                          {room.room_type === 'general' ? '일반' :
-                           room.room_type === 'department' ? '부서' :
-                           room.room_type === 'project' ? '프로젝트' :
-                           room.room_type === 'announcement' ? '공지' : room.room_type}
+                          {room.room_type === 'general' ? t('roomType.general') :
+                           room.room_type === 'department' ? t('roomType.department') :
+                           room.room_type === 'project' ? t('roomType.project') :
+                           room.room_type === 'announcement' ? t('roomType.announcement') : room.room_type}
                         </span>
                       )}
                     </div>

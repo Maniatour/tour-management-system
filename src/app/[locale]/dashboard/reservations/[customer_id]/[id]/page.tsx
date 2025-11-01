@@ -1552,11 +1552,16 @@ export default function CustomerReservations() {
       // 차량 정보 조회
       if (tourDetailsTyped?.tour_car_id) {
         // 먼저 vehicles 테이블에서 vehicle_type (텍스트 값) 가져오기
-        const { data: vehicleData } = await supabase
+        const { data: vehicleData, error: vehicleError } = await supabase
           .from('vehicles')
           .select('vehicle_type, capacity, color')
           .eq('id', tourDetailsTyped.tour_car_id)
-          .single()
+          .maybeSingle()
+        
+        // 차량이 없는 경우 스킵
+        if (vehicleError && vehicleError.code !== 'PGRST116') {
+          console.error('차량 정보 조회 오류:', vehicleError)
+        }
 
         if (vehicleData && typeof vehicleData === 'object' && 'vehicle_type' in vehicleData && (vehicleData as SupabaseVehicleData).vehicle_type) {
           const vehicleDataTyped = vehicleData as SupabaseVehicleData

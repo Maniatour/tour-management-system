@@ -19,6 +19,7 @@ import PaymentRecordsList from '@/components/PaymentRecordsList'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import QuantityBasedAccommodationSelector from '@/components/reservation/QuantityBasedAccommodationSelector'
+import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import type { 
   Customer, 
@@ -94,6 +95,7 @@ export default function ReservationForm({
   layout = 'modal'
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
+  const [showPricingModal, setShowPricingModal] = useState(false)
   const t = useTranslations('reservations')
   const tCommon = useTranslations('common')
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
@@ -2000,23 +2002,39 @@ export default function ReservationForm({
                 t={t}
               />
 
-               <PricingSection
-                 formData={formData}
-                 setFormData={setFormData}
-                 savePricingInfo={savePricingInfo}
-                 calculateProductPriceTotal={calculateProductPriceTotal}
-                 calculateChoiceTotal={calculateRequiredOptionTotal}
-                 calculateCouponDiscount={calculateCouponDiscount}
-                 coupons={coupons}
-                 getOptionalOptionsForProduct={(productId) => getOptionalOptionsForProduct(productId, productOptions)}
-                 options={options}
-                 t={t}
-                 autoSelectCoupon={autoSelectCoupon}
-                 reservationOptionsTotalPrice={reservationOptionsTotalPrice}
-                 isExistingPricingLoaded={isExistingPricingLoaded}
-                 reservationId={reservation?.id}
-                 expenseUpdateTrigger={expenseUpdateTrigger}
-               />
+               <div className="space-y-2">
+                <PricingSection
+                  formData={formData}
+                  setFormData={setFormData}
+                  savePricingInfo={savePricingInfo}
+                  calculateProductPriceTotal={calculateProductPriceTotal}
+                  calculateChoiceTotal={calculateRequiredOptionTotal}
+                  calculateCouponDiscount={calculateCouponDiscount}
+                  coupons={coupons}
+                  getOptionalOptionsForProduct={(productId) => getOptionalOptionsForProduct(productId, productOptions)}
+                  options={options}
+                  t={t}
+                  autoSelectCoupon={autoSelectCoupon}
+                  reservationOptionsTotalPrice={reservationOptionsTotalPrice}
+                  isExistingPricingLoaded={isExistingPricingLoaded}
+                  reservationId={reservation?.id}
+                  expenseUpdateTrigger={expenseUpdateTrigger}
+                />
+                {reservation && (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowPricingModal(true)}
+                      className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      <span>reservation_pricing 수정</span>
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* 입금 내역, 지출 내역과 예약 옵션을 3열 그리드로 배치 - 예약이 있을 때만 표시 */}
               {reservation && (
@@ -2140,6 +2158,15 @@ export default function ReservationForm({
           channels={channels}
           onSubmit={handleAddCustomer}
           onCancel={() => setShowCustomerForm(false)}
+        />
+      )}
+
+      {/* 가격 정보 수정 모달 */}
+      {reservation && (
+        <PricingInfoModal
+          reservation={reservation}
+          isOpen={showPricingModal}
+          onClose={() => setShowPricingModal(false)}
         />
       )}
     </div>

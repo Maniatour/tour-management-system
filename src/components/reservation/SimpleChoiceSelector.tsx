@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 // 새로운 간결한 타입 정의
 interface ChoiceOption {
@@ -57,6 +57,8 @@ export default function SimpleChoiceSelector({
 }: SimpleChoiceSelectorProps) {
   const [selections, setSelections] = useState<SelectedChoice[]>(initialSelections);
   const [errors, setErrors] = useState<string[]>([]);
+  const prevInitialSelectionsRef = useRef<SelectedChoice[]>(initialSelections);
+  const prevSelectionsRef = useRef<SelectedChoice[]>(initialSelections);
 
   // 선택사항 변경 핸들러
   const handleSelectionChange = useCallback((
@@ -81,9 +83,13 @@ export default function SimpleChoiceSelector({
         });
       }
       
+      // 사용자 액션이므로 즉시 부모에 알림
+      onSelectionChange(newSelections);
+      prevSelectionsRef.current = newSelections;
+      
       return newSelections;
     });
-  }, []);
+  }, [onSelectionChange]);
 
   // 가격 계산 함수
   const calculatePrice = useCallback((
@@ -137,20 +143,34 @@ export default function SimpleChoiceSelector({
     return newErrors.length === 0;
   }, [selections, choices, adults, children, infants]);
 
-  // 선택사항 변경 시 부모 컴포넌트에 알림
+  // 초기 선택사항 설정 (실제 값이 변경된 경우에만)
   useEffect(() => {
-    onSelectionChange(selections);
-  }, [selections, onSelectionChange]);
+    // 초기값이 실제로 변경되었는지 확인 (참조가 아닌 값 비교)
+    const prev = prevInitialSelectionsRef.current;
+    const hasChanged = 
+      prev.length !== initialSelections.length ||
+      prev.some((prevSel, idx) => {
+        const currentSel = initialSelections[idx];
+        return !currentSel ||
+          prevSel.choice_id !== currentSel.choice_id ||
+          prevSel.option_id !== currentSel.option_id ||
+          prevSel.quantity !== currentSel.quantity;
+      });
+    
+    if (hasChanged) {
+      prevInitialSelectionsRef.current = initialSelections;
+      prevSelectionsRef.current = initialSelections;
+      setSelections(initialSelections);
+      // props에서 업데이트된 경우에는 onSelectionChange를 호출하지 않음 (무한 루프 방지)
+    }
+  }, [initialSelections]);
+
+  // selections가 props로부터 변경된 경우에만 추적 (useEffect는 제거, handleSelectionChange에서 직접 처리)
 
   // 유효성 검사 실행
   useEffect(() => {
     validateSelections();
   }, [validateSelections]);
-
-  // 초기 선택사항 설정
-  useEffect(() => {
-    setSelections(initialSelections);
-  }, [initialSelections]);
 
   return (
     <div className="space-y-3">
@@ -207,7 +227,10 @@ export default function SimpleChoiceSelector({
                             total_price: calculatePrice(option, 1, adults, children, infants)
                           });
                         }
+                        // 사용자 액션이므로 즉시 부모에 알림
                         setSelections(newSelections);
+                        onSelectionChange(newSelections);
+                        prevSelectionsRef.current = newSelections;
                       } else {
                         // multiple/quantity 타입: 현재 옵션 토글
                         if (currentQuantity > 0) {

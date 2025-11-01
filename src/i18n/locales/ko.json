@@ -136,6 +136,9 @@
     "stopSimulation": "시뮬레이션 중지",
     "simulating": "시뮬레이션 중",
     "simulatingAs": "시뮬레이션 중",
+    "medicalReport": "메디컬 리포트",
+    "cprCertificate": "CPR 자격증",
+    "backToAdmin": "관리자로 돌아가기",
     "logout": "로그아웃",
     "login": "로그인",
     "email": "이메일",
@@ -694,6 +697,25 @@
       "infants": "유아",
       "people": "명"
     },
+    "form": {
+      "title": "새 예약 추가",
+      "editTitle": "예약 정보 수정",
+      "status": "상태",
+      "adults": "성인",
+      "child": "아동",
+      "infant": "유아",
+      "eventNote": "이벤트 노트",
+      "eventNotePlaceholder": "이벤트 관련 특별 사항이나 노트를 입력하세요",
+      "customer": "고객",
+      "channelRN": "채널 RN",
+      "channelRNPlaceholder": "채널 예약번호를 입력하세요",
+      "tourDate": "투어 날짜",
+      "tourTime": "투어 시간",
+      "pickUpHotel": "픽업 호텔",
+      "pickUpTime": "픽업 시간",
+      "productSelection": "상품 선택",
+      "channel": "채널"
+    },
     "actions": {
       "price": "가격",
       "edit": "수정",
@@ -731,7 +753,32 @@
       "Payment Requested": "결제 요청됨",
       "Completed": "완료됨",
       "Cancelled": "취소됨",
-      "Canceled": "취소됨"
+      "Canceled": "취소됨",
+      "pending": "대기 중",
+      "confirmed": "확정됨",
+      "completed": "완료됨",
+      "cancelled": "취소됨"
+    },
+    "reservationOptions": {
+      "title": "예약 옵션",
+      "addOption": "옵션 추가",
+      "noOptions": "등록된 옵션이 없습니다.",
+      "optionId": "옵션",
+      "quantity": "수량",
+      "unitPrice": "단가",
+      "totalPrice": "총 가격",
+      "status": "상태",
+      "note": "메모",
+      "statusActive": "활성",
+      "statusCancelled": "취소",
+      "statusRefunded": "환불",
+      "totalOptionPrice": "총 옵션 가격",
+      "addNewOption": "새 옵션 추가",
+      "editOption": "옵션 편집",
+      "deleteOption": "옵션 삭제",
+      "confirmDelete": "이 옵션을 삭제하시겠습니까?",
+      "loadingOptions": "옵션 로딩 중...",
+      "errorLoading": "오류: {error}"
     }
   },
   "weather": {
@@ -899,6 +946,17 @@
   "tours": {
     "title": "투어 관리",
     "addTour": "투어 추가",
+    "guideTours": {
+      "loading": "투어 데이터를 불러오는 중...",
+      "backToDashboard": "가이드 대시보드로 돌아가기",
+      "adminMode": "투어 관리 (관리자 모드)",
+      "myTours": "내 투어 관리",
+      "calendarView": "달력 보기",
+      "scheduleView": "스케줄 뷰",
+      "searchPlaceholder": "투어 ID, 상품 ID로 검색...",
+      "navigatingToTour": "투어 상세 페이지로 이동 중...",
+      "noToursThisMonth": "해당 월에 배정된 투어가 없습니다."
+    },
     "ticketBookingEdit": "입장권 부킹 수정",
     "ticketBookingAdd": "입장권 부킹 추가",
     "tourHotelBookingEdit": "투어 호텔 부킹 수정",
@@ -1525,6 +1583,7 @@
     "title": "가이드 대시보드",
     "greeting": "안녕하세요",
     "loadingDashboard": "대시보드를 불러오는 중...",
+    "loadingTeamBoard": "팀 보드를 불러오는 중...",
     "welcome": "투어 가이드 대시보드에 오신 것을 환영합니다.",
     "welcomeAdmin": "투어 가이드 페이지를 확인하고 있습니다. (관리자 모드)",
     "tours": {
@@ -1590,7 +1649,26 @@
     "guideScript": "가이드 스크립트",
     "noTourMaterials": "투어 자료가 없습니다",
     "noAttraction": "관광지 없음",
-    "noCategory": "카테고리 없음"
+    "noCategory": "카테고리 없음",
+    "chat": "채팅",
+    "chatSubtitle": "팀과 소통하세요",
+    "createRoom": "채팅방 만들기",
+    "teamChat": "팀 채팅",
+    "tourChat": "투어 채팅",
+    "searchTeam": "팀 채팅방 검색...",
+    "searchTour": "투어 채팅방 검색...",
+    "selectRoom": "채팅방 선택",
+    "selectTeamRoom": "왼쪽에서 팀 채팅방을 선택하여 대화를 시작하세요",
+    "selectTour": "왼쪽에서 투어 채팅방을 선택하여 대화를 시작하세요",
+    "noRooms": "채팅방이 없습니다",
+    "noTours": "투어 채팅방이 없습니다",
+    "roomType": {
+      "all": "전체",
+      "general": "일반",
+      "department": "부서",
+      "project": "프로젝트",
+      "announcement": "공지"
+    }
   },
   "guideTour": {
     "errors": {

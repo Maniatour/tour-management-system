@@ -1,13 +1,14 @@
 'use client'
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt } from 'lucide-react'
+import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt, Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { 
   getProductName, 
   getChannelName, 
-  getStatusLabel 
+  getStatusLabel,
+  getCustomerName 
 } from '@/utils/reservationUtils'
 import TourStatisticsTab from '@/components/statistics/TourStatisticsTab'
 import ReservationSettlementTab from '@/components/statistics/ReservationSettlementTab'
@@ -114,6 +115,9 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     start: new Date().toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   })
+  const [selectedChannelId, setSelectedChannelId] = useState<string>('') // 모든 탭용 단일 선택
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['Pending', 'Confirmed', 'Completed'])
+  const [searchQuery, setSearchQuery] = useState<string>('')
 
   // 통계 데이터 계산
   const statisticsData = useMemo((): StatisticsData => {
@@ -130,12 +134,53 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     }
 
     // 날짜 필터링
-    const filteredReservations = reservations.filter(reservation => {
+    let filteredReservations = reservations.filter(reservation => {
       const reservationDate = new Date(reservation.addedTime)
       const startDate = new Date(dateRange.start)
       const endDate = new Date(dateRange.end)
       return reservationDate >= startDate && reservationDate <= endDate
     })
+
+    // 채널 필터링
+    if (selectedChannelId) {
+      filteredReservations = filteredReservations.filter(reservation =>
+        reservation.channelId === selectedChannelId
+      )
+    }
+
+    // 상태 필터링 (대소문자 구분)
+    if (selectedStatuses.length > 0) {
+      filteredReservations = filteredReservations.filter(reservation =>
+        selectedStatuses.includes(reservation.status)
+      )
+    }
+
+    // 검색 필터링
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      filteredReservations = filteredReservations.filter(reservation => {
+        // 고객명 검색
+        const customerName = getCustomerName(reservation.customerId, customers || []).toLowerCase()
+        if (customerName.includes(query)) return true
+
+        // 채널RN 검색
+        if (reservation.channelRN?.toLowerCase().includes(query)) return true
+
+        // 상품명 검색
+        const productName = getProductName(reservation.productId, products || []).toLowerCase()
+        if (productName.includes(query)) return true
+
+        // 투어 날짜 검색
+        const tourDate = new Date(reservation.tourDate).toLocaleDateString('ko-KR')
+        if (tourDate.includes(query)) return true
+
+        // 등록일 검색
+        const regDate = new Date(reservation.addedTime).toLocaleDateString('ko-KR')
+        if (regDate.includes(query)) return true
+
+        return false
+      })
+    }
 
     // 기본 통계
     const totalReservations = filteredReservations.length
@@ -251,7 +296,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       statusStats,
       trendData
     }
-  }, [reservations, products, channels, dateRange, timeRange])
+  }, [reservations, products, channels, customers, dateRange, timeRange, selectedChannelId, selectedStatuses, searchQuery])
 
   // 차트 데이터 준비
   const chartData = useMemo(() => {
@@ -365,16 +410,63 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
 
       {/* 필터 컨트롤 */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex flex-wrap gap-4 items-center">
+        <div className="flex items-center gap-6 flex-nowrap overflow-x-auto">
+          {/* 1. 채널 선택 - 가장 왼쪽에 배치, 모든 탭에서 동일한 UI */}
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">채널 선택:</label>
+            <select
+              value={selectedChannelId}
+              onChange={(e) => setSelectedChannelId(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[180px] flex-shrink-0"
+            >
+              <option value="">모든 채널</option>
+              {channels?.map(channel => (
+                <option key={channel.id} value={channel.id}>
+                  {channel.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 2. 상태 다중 선택 - 버튼식, 채널 선택 오른쪽 */}
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">상태 선택:</label>
+            <div className="flex space-x-1">
+              {(['Pending', 'Confirmed', 'Completed', 'Canceled', 'Recruiting'] as const).map((status) => {
+                const isSelected = selectedStatuses.includes(status)
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedStatuses(selectedStatuses.filter(s => s !== status))
+                      } else {
+                        setSelectedStatuses([...selectedStatuses, status])
+                      }
+                    }}
+                    className={`px-3 py-1 text-sm rounded-md transition-colors whitespace-nowrap ${
+                      isSelected
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {status}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           {/* 시간 범위 선택 */}
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">시간 범위:</label>
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">시간 범위:</label>
             <div className="flex space-x-1">
               {(['daily', 'monthly', 'yearly'] as TimeRange[]).map((range) => (
                 <button
                   key={range}
                   onClick={() => handleTimeRangeChange(range)}
-                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  className={`px-3 py-1 text-sm rounded-md transition-colors whitespace-nowrap ${
                     timeRange === range
                       ? 'bg-blue-500 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -387,21 +479,44 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           </div>
 
           {/* 날짜 선택 */}
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">기간:</label>
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">기간:</label>
             <input
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-shrink-0"
             />
             <span className="text-gray-500">~</span>
             <input
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-shrink-0"
             />
+          </div>
+
+          {/* 검색 기능 */}
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">검색:</label>
+            <div className="relative flex-shrink-0">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="고객명, 채널RN, 상품명, 날짜 검색..."
+                className="pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[280px] flex-shrink-0"
+              />
+            </div>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap"
+              >
+                초기화
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -595,7 +710,12 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
 
       {/* 채널별 정산 탭 */}
       {activeTab === 'channelSettlement' && (
-        <ChannelSettlementTab dateRange={dateRange} />
+        <ChannelSettlementTab 
+          dateRange={dateRange} 
+          selectedChannelId={selectedChannelId} 
+          selectedStatuses={selectedStatuses}
+          searchQuery={searchQuery}
+        />
       )}
     </div>
   )

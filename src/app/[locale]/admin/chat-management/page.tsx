@@ -527,9 +527,10 @@ export default function ChatManagementPage() {
           .from('vehicles')
           .select('*')
           .eq('id', (tourData as { tour_car_id: string }).tour_car_id)
-          .single()
+          .maybeSingle()
 
-        if (!vehicleError) {
+        // PGRST116 에러는 결과가 없을 때 발생하는 정상적인 경우
+        if (!vehicleError || vehicleError.code === 'PGRST116') {
           vehicleData = vehicle
         }
       }
