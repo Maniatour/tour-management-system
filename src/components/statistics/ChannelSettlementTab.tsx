@@ -334,15 +334,15 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
       setToursLoading(true)
       try {
         // 선택된 채널의 예약들 중 기간 필터에 맞는 것들
-        // 등록일 기준으로 먼저 필터링 (기간 필터 적용)
+        // 투어 날짜 기준으로 필터링 (기간 필터 적용)
         let tourDateFilteredReservations = reservations.filter(reservation => {
-          // 등록일 기준 기간 필터
-          const registrationDate = new Date(reservation.addedTime)
+          // 투어 날짜 기준 기간 필터
+          const tourDate = new Date(reservation.tourDate)
           const startDate = new Date(dateRange.start)
           const endDate = new Date(dateRange.end)
           endDate.setHours(23, 59, 59, 999)
           
-          if (!(registrationDate >= startDate && registrationDate <= endDate)) return false
+          if (!(tourDate >= startDate && tourDate <= endDate)) return false
           
           return true
         })
