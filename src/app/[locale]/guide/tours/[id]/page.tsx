@@ -944,7 +944,7 @@ export default function GuideTourDetailPage() {
                                   <div className="text-sm text-gray-600">
                                     {(() => {
                                       const choices = (reservation as ReservationRow & { choices?: unknown }).choices;
-                                      if (!choices) return '선택사항 없음';
+                                      if (!choices) return t('noOptions');
                                       if (typeof choices === 'string') return choices;
                                       if (typeof choices === 'object' && choices !== null) {
                                         // choices.required 배열에서 선택된 옵션들 추출
@@ -969,10 +969,10 @@ export default function GuideTourDetailPage() {
                                             })
                                             .filter(Boolean)
                                             .join(', ');
-                                          return selectedOptions || (locale === 'ko' ? '선택사항 없음' : 'No options selected');
+                                          return selectedOptions || t('noOptionsSelected');
                                         }
                                         // 기타 객체인 경우
-                                        return choicesObj.name || choicesObj.name_ko || '선택사항 없음';
+                                        return choicesObj.name || choicesObj.name_ko || t('noOptions');
                                       }
                                       return String(choices);
                                     })()}

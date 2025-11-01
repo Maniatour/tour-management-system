@@ -71,11 +71,21 @@ export default function GuideDashboard() {
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
   
-  // 오늘 날짜 (컴포넌트 레벨에서 정의)
-  const today = new Date().toISOString().split('T')[0]
+  // 라스베가스 시간대 기준 오늘 날짜 계산
+  const getLasVegasToday = () => {
+    const now = new Date()
+    // 라스베가스 시간대로 변환
+    const lasVegasDate = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+    const year = lasVegasDate.getFullYear()
+    const month = String(lasVegasDate.getMonth() + 1).padStart(2, '0')
+    const day = String(lasVegasDate.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  
+  const today = getLasVegasToday()
   
   // 디버깅을 위한 로그
-  console.log('Today date:', today)
+  console.log('Today date (Las Vegas timezone):', today)
 
   // 날짜에 요일 추가하는 함수
   const formatDateWithDay = (dateString: string) => {
@@ -837,8 +847,18 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
     }
   }
 
-  // 오늘 날짜인지 확인
-  const today = new Date().toISOString().split('T')[0]
+  // 라스베가스 시간대 기준 오늘 날짜 계산
+  const getLasVegasToday = () => {
+    const now = new Date()
+    // 라스베가스 시간대로 변환
+    const lasVegasDate = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+    const year = lasVegasDate.getFullYear()
+    const month = String(lasVegasDate.getMonth() + 1).padStart(2, '0')
+    const day = String(lasVegasDate.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  
+  const today = getLasVegasToday()
   const isToday = tour.tour_date === today
   
   console.log('TourCard date check:', {
@@ -895,7 +915,7 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
             }`}>
               <Calendar className="w-3 h-3 mr-1" />
               {tour.tour_date}
-              {isToday && <span className="ml-1 text-xs">(오늘)</span>}
+              {isToday && <span className="ml-1 text-xs">({t('tourCard.today')})</span>}
             </span>
 
             {/* 인원 배지 */}
