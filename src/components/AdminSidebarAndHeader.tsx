@@ -69,6 +69,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const [expiringDocumentsCount, setExpiringDocumentsCount] = useState(0)
   // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기
   const { teamChatUnreadCount } = useAuth()
+  const [isSuper, setIsSuper] = useState(false)
   
   // 출퇴근 동기화 훅 사용
   const {
@@ -212,6 +213,38 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     }
   }, [authUser?.email])
 
+  // Super 권한 체크
+  useEffect(() => {
+    const checkSuperPermission = async () => {
+      if (!authUser?.email) {
+        setIsSuper(false)
+        return
+      }
+      
+      try {
+        const { data: teamData, error } = await supabase
+          .from('team')
+          .select('position')
+          .eq('email', authUser.email)
+          .eq('is_active', true)
+          .single()
+        
+        if (error || !teamData) {
+          setIsSuper(false)
+          return
+        }
+        
+        const position = (teamData as any).position?.toLowerCase()
+        setIsSuper(position === 'super')
+      } catch (error) {
+        console.error('Super 권한 체크 오류:', error)
+        setIsSuper(false)
+      }
+    }
+    
+    checkSuperPermission()
+  }, [authUser?.email])
+
   useEffect(() => {
     fetchTeamBoardCount()
     fetchExpiringDocumentsCount()
@@ -275,7 +308,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
     { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
     { name: t('consultation'), href: `/${locale}/admin/consultation`, icon: HelpCircle },
-    { name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 },
+    // 예약 통계는 Super 권한만 표시
+    ...(isSuper ? [{ name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 }] : []),
     { name: t('documentTemplates'), href: `/${locale}/admin/reservations/templates`, icon: FileText },
     { name: t('team'), href: `/${locale}/admin/team`, icon: Users },
     { name: t('teamChat'), href: `/${locale}/admin/team-chat`, icon: MessageCircle },

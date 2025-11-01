@@ -222,11 +222,8 @@ async function getTourFinancialStats(tourId: string) {
     const tour = tourRow
     console.log('투어 수수료:', { guide_fee: tour?.guide_fee, assistant_fee: tour?.assistant_fee })
 
-    // 결제 기준: payment_records 합계(지표 신뢰성 높임). 없으면 reservation_pricing로 폴백
-    const totalPaidFromPayments = paymentRecords?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0
-    const totalPayments = totalPaidFromPayments > 0
-      ? totalPaidFromPayments
-      : (reservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0)
+    // 입금 내역 총합 사용 (상세 내역과 동일한 로직)
+    const totalPayments = reservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0
     const totalExpenses = expenses?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0
     const totalFees = (tour?.guide_fee || 0) + (tour?.assistant_fee || 0)
     const totalTicketCosts = ticketBookings?.reduce((sum, booking) => sum + (booking.expense || 0), 0) || 0
@@ -769,49 +766,42 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
 
   // 1인당 지표 평균 계산 (표시/하이라이트 용도)
   const perPersonAverages = useMemo(() => {
-    // 전체 평균 (헤더 표시용)
+    // 전체 가중 평균(인원 기준)
     const items = visibleTourStats.filter(t => (t.totalPeople || 0) > 0)
     const overall = (() => {
-      if (items.length === 0) return { revenuePer: 0, expensesPer: 0, profitPer: 0 }
       const totals = items.reduce((acc, t) => {
         const people = t.totalPeople || 0
-        acc.revenuePer += people > 0 ? t.revenue / people : 0
-        acc.expensesPer += people > 0 ? t.expenses / people : 0
-        acc.profitPer += people > 0 ? t.netProfit / people : 0
+        acc.rev += t.revenue || 0
+        acc.exp += t.expenses || 0
+        acc.profit += t.netProfit || 0
+        acc.people += people
         return acc
-      }, { revenuePer: 0, expensesPer: 0, profitPer: 0 })
+      }, { rev: 0, exp: 0, profit: 0, people: 0 })
+      if (totals.people === 0) return { revenuePer: 0, expensesPer: 0, profitPer: 0 }
       return {
-        revenuePer: totals.revenuePer / items.length,
-        expensesPer: totals.expensesPer / items.length,
-        profitPer: totals.profitPer / items.length
+        revenuePer: totals.rev / totals.people,
+        expensesPer: totals.exp / totals.people,
+        profitPer: totals.profit / totals.people
       }
     })()
 
-    // 상품별 평균 (하이라이트 기준)
+    // 상품별 가중 평균(인원 기준) - 하이라이트 기준
     const groups = visibleTourStats.reduce((map, t) => {
       const key = t.productName || 'UNKNOWN'
-      if (!map[key]) map[key] = { count: 0, revenueSum: 0, expensesSum: 0, profitSum: 0 }
+      if (!map[key]) map[key] = { rev: 0, exp: 0, profit: 0, people: 0 }
       const people = t.totalPeople || 0
-      if (people > 0) {
-        map[key].revenueSum += t.revenue / people
-        map[key].expensesSum += t.expenses / people
-        map[key].profitSum += t.netProfit / people
-        map[key].count += 1
-      }
+      map[key].rev += t.revenue || 0
+      map[key].exp += t.expenses || 0
+      map[key].profit += t.netProfit || 0
+      map[key].people += people
       return map
-    }, {} as Record<string, { count: number; revenueSum: number; expensesSum: number; profitSum: number }>)
+    }, {} as Record<string, { rev: number; exp: number; profit: number; people: number }>)
 
     const byProduct: Record<string, { revenuePer: number; expensesPer: number; profitPer: number }> = {}
     Object.entries(groups).forEach(([product, v]) => {
-      if (v.count > 0) {
-        byProduct[product] = {
-          revenuePer: v.revenueSum / v.count,
-          expensesPer: v.expensesSum / v.count,
-          profitPer: v.profitSum / v.count
-        }
-      } else {
-        byProduct[product] = { revenuePer: 0, expensesPer: 0, profitPer: 0 }
-      }
+      byProduct[product] = v.people > 0
+        ? { revenuePer: v.rev / v.people, expensesPer: v.exp / v.people, profitPer: v.profit / v.people }
+        : { revenuePer: 0, expensesPer: 0, profitPer: 0 }
     })
 
     return { overall, byProduct }
@@ -1426,7 +1416,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                   <div className="flex justify-between">
                                     <span className="text-gray-600">입금액</span>
                                     <span className="font-medium text-green-600">
-                                      ${expenseDetails[tour.tourId].reservationPricing.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0).toLocaleString()}
+                                      ${(expenseDetails[tour.tourId].reservationPricing?.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0) || 0).toLocaleString()}
                                     </span>
                                   </div>
                                   
@@ -1486,7 +1476,8 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                   <div className="flex justify-between font-semibold">
                                     <span className="text-gray-900">순수익</span>
                                     <span className={`${(() => {
-                                      const totalRevenue = expenseDetails[tour.tourId].reservationPricing.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0)
+                                      // 입금 내역 총합 사용
+                                      const totalRevenue = expenseDetails[tour.tourId].reservationPricing?.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0) || 0
                                       const totalExpenses = 
                                         expenseDetails[tour.tourId].expenses.reduce((sum: number, expense: any) => sum + (expense.amount || 0), 0) +
                                         expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + (booking.expense || 0), 0) +
@@ -1497,7 +1488,8 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                       return netProfit >= 0 ? 'text-green-600' : 'text-red-600'
                                     })()}`}>
                                       ${(() => {
-                                        const totalRevenue = expenseDetails[tour.tourId].reservationPricing.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0)
+                                        // 입금 내역 총합 사용
+                                        const totalRevenue = expenseDetails[tour.tourId].reservationPricing?.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0) || 0
                                         const totalExpenses = 
                                           expenseDetails[tour.tourId].expenses.reduce((sum: number, expense: any) => sum + (expense.amount || 0), 0) +
                                           expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + (booking.expense || 0), 0) +
@@ -1551,7 +1543,12 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                         <div key={idx} className="flex justify-between text-sm">
                                           <div className="flex flex-col">
                                             <span className="text-gray-600">{booking.ticket_name || '입장권'}</span>
-                                            <span className="text-xs text-gray-500">총 {totalPeople}명</span>
+                                            <span className="text-xs text-gray-500">
+                                              {booking.company && `${booking.company}`}
+                                              {booking.company && booking.ea && ' · '}
+                                              {booking.ea && `${booking.ea}매`}
+                                              {(!booking.company && !booking.ea) && `총 ${totalPeople}명`}
+                                            </span>
                                           </div>
                                           <div className="flex flex-col text-right">
                                             <span className="font-medium">${booking.expense?.toLocaleString() || 0}</span>

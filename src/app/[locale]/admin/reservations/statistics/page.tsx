@@ -11,6 +11,9 @@ import {
 } from '@/utils/reservationUtils'
 import TourStatisticsTab from '@/components/statistics/TourStatisticsTab'
 import ReservationSettlementTab from '@/components/statistics/ReservationSettlementTab'
+import ChannelSettlementTab from '@/components/statistics/ChannelSettlementTab'
+import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 
 interface AdminReservationStatisticsProps {
   params: Promise<{ locale: string }>
@@ -18,7 +21,7 @@ interface AdminReservationStatisticsProps {
 
 type TimeRange = 'daily' | 'monthly' | 'yearly'
 type ChartType = 'channel' | 'product' | 'trend'
-type TabType = 'reservations' | 'tours' | 'settlement'
+type TabType = 'reservations' | 'tours' | 'settlement' | 'channelSettlement'
 
 interface StatisticsData {
   totalReservations: number
@@ -54,6 +57,44 @@ interface StatisticsData {
 
 export default function AdminReservationStatistics({ }: AdminReservationStatisticsProps) {
   const t = useTranslations('reservations')
+  const { authUser } = useAuth()
+  const [isSuper, setIsSuper] = useState(false)
+  const [isCheckingPermission, setIsCheckingPermission] = useState(true)
+  
+  // 권한 체크
+  useEffect(() => {
+    const checkPermission = async () => {
+      if (!authUser?.email) {
+        setIsCheckingPermission(false)
+        return
+      }
+      
+      try {
+        const { data: teamData, error } = await supabase
+          .from('team')
+          .select('position')
+          .eq('email', authUser.email)
+          .eq('is_active', true)
+          .single()
+        
+        if (error || !teamData) {
+          setIsSuper(false)
+          setIsCheckingPermission(false)
+          return
+        }
+        
+        const position = (teamData as any).position?.toLowerCase()
+        setIsSuper(position === 'super')
+      } catch (error) {
+        console.error('권한 체크 오류:', error)
+        setIsSuper(false)
+      } finally {
+        setIsCheckingPermission(false)
+      }
+    }
+    
+    checkPermission()
+  }, [authUser?.email])
   
   // 데이터 관리
   const {
@@ -260,10 +301,23 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     })
   }
 
-  if (loading) {
+  if (isCheckingPermission || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+
+  // 권한이 없는 경우 접근 거부
+  if (!isSuper) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">접근 권한이 없습니다</h2>
+          <p className="text-gray-600">예약 통계 페이지는 Super 권한이 있는 사용자만 접근할 수 있습니다.</p>
+        </div>
       </div>
     )
   }
@@ -289,7 +343,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
             {[
               { key: 'reservations', label: '예약 통계', icon: BarChart3 },
               { key: 'tours', label: '투어 통계', icon: TrendingUp },
-              { key: 'settlement', label: '예약 정산', icon: Receipt }
+              { key: 'settlement', label: '예약 정산', icon: Receipt },
+              { key: 'channelSettlement', label: '채널별 정산', icon: Receipt }
             ].map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -536,6 +591,11 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       {/* 예약 정산 탭 */}
       {activeTab === 'settlement' && (
         <ReservationSettlementTab dateRange={dateRange} />
+      )}
+
+      {/* 채널별 정산 탭 */}
+      {activeTab === 'channelSettlement' && (
+        <ChannelSettlementTab dateRange={dateRange} />
       )}
     </div>
   )

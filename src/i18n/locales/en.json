@@ -138,11 +138,13 @@
     "user": "User",
     "admin": "Admin",
     "manager": "Manager",
+    "teamMember": "Team Member",
     "employee": "Employee",
     "guide": "Guide",
     "driver": "Driver",
     "simulation": "Simulation",
     "stopSimulation": "Stop Simulation",
+    "simulating": "Simulating",
     "simulatingAs": "Simulating as",
     "logout": "Logout",
     "login": "Login",
@@ -1423,5 +1425,75 @@
       "expenseDeleted": "Company expense has been deleted.",
       "confirmDelete": "Are you sure you want to delete this company expense?"
     }
+  },
+  "guide": {
+    "title": "Guide Dashboard",
+    "greeting": "Hello",
+    "loadingDashboard": "Loading dashboard...",
+    "welcome": "Welcome to the Tour Guide Dashboard",
+    "welcomeAdmin": "Checking the Tour Guide page. (Admin Mode)",
+    "tours": {
+      "upcoming": "Upcoming Tours",
+      "past": "Past Tours",
+      "noUpcoming": "No upcoming tours.",
+      "noPast": "No past tours.",
+      "management": "Tours",
+      "managementDesc": "View my tour list",
+      "calendar": "Calendar View",
+      "calendarDesc": "Tour schedule calendar"
+    },
+    "offSchedule": {
+      "title": "My Off Schedule",
+      "add": "Add Off Schedule",
+      "addTitle": "Add Off Schedule",
+      "editTitle": "Edit Off Schedule",
+      "noSchedules": "No off schedules applied.",
+      "reasonPlaceholder": "Please enter the reason for off schedule",
+      "startDate": "Start Date",
+      "endDate": "End Date",
+      "reason": "Reason",
+      "multiDay": "Apply for multiple consecutive days",
+      "today": "Today",
+      "pastDay": "Past Day",
+      "currentStatus": "Current Status",
+      "addButton": "Add",
+      "editButton": "Edit",
+      "deleteButton": "Delete",
+      "status": {
+        "approved": "Approved",
+        "pending": "Pending",
+        "rejected": "Rejected"
+      }
+    },
+    "quickActions": {
+      "title": "Quick Actions",
+      "offSchedule": "Off Schedule",
+      "offScheduleDesc": "Apply for vacation"
+    },
+    "tourCard": {
+      "unassigned": "Unassigned",
+      "status": {
+        "confirmed": "Confirmed",
+        "scheduled": "Scheduled",
+        "completed": "Completed",
+        "cancelled": "Cancelled",
+        "noStatus": "No Status"
+      }
+    },
+    "footer": {
+      "chat": "Chat",
+      "home": "Home",
+      "tours": "Tours",
+      "manual": "Manual",
+      "tourMaterials": "Data",
+      "documents": "Documents"
+    },
+    "tourMaterialsTitle": "Tour Materials",
+    "searchPlaceholder": "Search by title or description...",
+    "narrationAudio": "Narration Audio",
+    "guideScript": "Guide Script",
+    "noTourMaterials": "No tour materials available",
+    "noAttraction": "No attraction",
+    "noCategory": "No category"
   }
 }

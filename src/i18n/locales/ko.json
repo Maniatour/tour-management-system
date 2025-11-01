@@ -128,11 +128,13 @@
     "user": "사용자",
     "admin": "관리자",
     "manager": "매니저",
+    "teamMember": "팀원",
     "employee": "직원",
     "guide": "가이드",
     "driver": "운전자",
     "simulation": "시뮬레이션",
     "stopSimulation": "시뮬레이션 중지",
+    "simulating": "시뮬레이션 중",
     "simulatingAs": "시뮬레이션 중",
     "logout": "로그아웃",
     "login": "로그인",
@@ -1518,5 +1520,75 @@
       "addTagPlaceholder": "태그 입력",
       "addTag": "태그 추가"
     }
+  },
+  "guide": {
+    "title": "가이드 대시보드",
+    "greeting": "안녕하세요",
+    "loadingDashboard": "대시보드를 불러오는 중...",
+    "welcome": "투어 가이드 대시보드에 오신 것을 환영합니다.",
+    "welcomeAdmin": "투어 가이드 페이지를 확인하고 있습니다. (관리자 모드)",
+    "tours": {
+      "upcoming": "다가오는 투어",
+      "past": "지난 투어",
+      "noUpcoming": "다가오는 투어가 없습니다.",
+      "noPast": "지난 투어가 없습니다.",
+      "management": "투어 관리",
+      "managementDesc": "내 투어 목록 보기",
+      "calendar": "달력 보기",
+      "calendarDesc": "투어 일정 달력"
+    },
+    "offSchedule": {
+      "title": "내 오프 스케줄",
+      "add": "오프 스케줄 추가",
+      "addTitle": "오프 스케줄 추가",
+      "editTitle": "오프 스케줄 수정",
+      "noSchedules": "신청한 오프 스케줄이 없습니다.",
+      "reasonPlaceholder": "오프 스케줄 사유를 입력해주세요",
+      "startDate": "시작 날짜",
+      "endDate": "종료 날짜",
+      "reason": "사유",
+      "multiDay": "여러 날 연속 신청",
+      "today": "오늘",
+      "pastDay": "지난 날",
+      "currentStatus": "현재 상태",
+      "addButton": "추가하기",
+      "editButton": "수정하기",
+      "deleteButton": "삭제",
+      "status": {
+        "approved": "승인됨",
+        "pending": "대기중",
+        "rejected": "거부됨"
+      }
+    },
+    "quickActions": {
+      "title": "빠른 액션",
+      "offSchedule": "오프 스케줄",
+      "offScheduleDesc": "휴가 신청하기"
+    },
+    "tourCard": {
+      "unassigned": "미배정",
+      "status": {
+        "confirmed": "확정",
+        "scheduled": "예정",
+        "completed": "완료",
+        "cancelled": "취소",
+        "noStatus": "상태 없음"
+      }
+    },
+    "footer": {
+      "chat": "채팅",
+      "home": "홈",
+      "tours": "투어",
+      "manual": "매뉴얼",
+      "tourMaterials": "자료",
+      "documents": "문서"
+    },
+    "tourMaterialsTitle": "투어 자료",
+    "searchPlaceholder": "자료 제목이나 설명으로 검색...",
+    "narrationAudio": "나레이션 오디오",
+    "guideScript": "가이드 스크립트",
+    "noTourMaterials": "투어 자료가 없습니다",
+    "noAttraction": "관광지 없음",
+    "noCategory": "카테고리 없음"
   }
 }
