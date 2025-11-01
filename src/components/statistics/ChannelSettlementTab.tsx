@@ -439,19 +439,19 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
             balanceAmount: 0
           }
           return {
-            id: reservation.id,
-            tourDate: reservation.tourDate,
-            registrationDate: reservation.addedTime,
-            customerId: reservation.customerId,
-            customerName: getCustomerName(reservation.customerId, customers || []),
-            productId: reservation.productId,
-            productName: getProductName(reservation.productId, products || []),
-            totalPeople: reservation.totalPeople,
+          id: reservation.id,
+          tourDate: reservation.tourDate,
+          registrationDate: reservation.addedTime,
+          customerId: reservation.customerId,
+          customerName: getCustomerName(reservation.customerId, customers || []),
+          productId: reservation.productId,
+          productName: getProductName(reservation.productId, products || []),
+          totalPeople: reservation.totalPeople,
             adults: reservation.adults || 0,
             child: reservation.child || 0,
             infant: reservation.infant || 0,
-            status: reservation.status,
-            channelRN: reservation.channelRN || '',
+          status: reservation.status,
+          channelRN: reservation.channelRN || '',
             channelId: reservation.channelId,
             channelName: getChannelName(reservation.channelId, channels || []),
             totalPrice: pricesMap[reservation.id] || 0,
@@ -520,103 +520,103 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 overflow-x-hidden">
       {/* 요약 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Calendar className="h-6 w-6 text-blue-600" />
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Calendar className="h-6 w-6 text-blue-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">예약 건수</p>
+                  <p className="text-2xl font-bold text-gray-900">{totals.reservations.count}</p>
+                </div>
+              </div>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">예약 건수</p>
-              <p className="text-2xl font-bold text-gray-900">{totals.reservations.count}</p>
+
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Users className="h-6 w-6 text-green-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">예약 인원</p>
+                  <p className="text-2xl font-bold text-gray-900">{totals.reservations.totalPeople}명</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Calendar className="h-6 w-6 text-purple-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">투어 진행 예약</p>
+                  <p className="text-2xl font-bold text-gray-900">{totals.tours.count}건</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-2 bg-yellow-100 rounded-lg">
+                  <DollarSign className="h-6 w-6 text-yellow-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">투어 진행 총액</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    ${totals.tours.totalPrice.toLocaleString()}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <Users className="h-6 w-6 text-green-600" />
+          {/* 상세 내역 탭 */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            {/* 탭 네비게이션 */}
+            <div className="border-b border-gray-200">
+              <nav className="-mb-px flex space-x-8 px-6">
+                <button
+                  onClick={() => setActiveDetailTab('reservations')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeDetailTab === 'reservations'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  예약 내역
+                </button>
+                <button
+                  onClick={() => setActiveDetailTab('tours')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeDetailTab === 'tours'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  투어 진행 내역
+                </button>
+              </nav>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">예약 인원</p>
-              <p className="text-2xl font-bold text-gray-900">{totals.reservations.totalPeople}명</p>
-            </div>
-          </div>
-        </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Calendar className="h-6 w-6 text-purple-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">투어 진행 예약</p>
-              <p className="text-2xl font-bold text-gray-900">{totals.tours.count}건</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <DollarSign className="h-6 w-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">투어 진행 총액</p>
-              <p className="text-2xl font-bold text-green-600">
-                ${totals.tours.totalPrice.toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 상세 내역 탭 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        {/* 탭 네비게이션 */}
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8 px-6">
-            <button
-              onClick={() => setActiveDetailTab('reservations')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeDetailTab === 'reservations'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              예약 내역
-            </button>
-            <button
-              onClick={() => setActiveDetailTab('tours')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeDetailTab === 'tours'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              투어 진행 내역
-            </button>
-          </nav>
-        </div>
-
-        {/* 예약 내역 탭 */}
-        {activeDetailTab === 'reservations' && (
+            {/* 예약 내역 탭 */}
+            {activeDetailTab === 'reservations' && (
           <div className="divide-y divide-gray-200">
             {/* 정렬 버튼 */}
             <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-              <button
-                onClick={() => setReservationSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                      <button
+                        onClick={() => setReservationSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
                 className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
-                title="등록일로 정렬"
-              >
+                        title="등록일로 정렬"
+                      >
                 <span>등록일 정렬</span>
-                <span className={`transition-transform ${reservationSortOrder === 'asc' ? '-rotate-180' : 'rotate-0'}`}>
+                        <span className={`transition-transform ${reservationSortOrder === 'asc' ? '-rotate-180' : 'rotate-0'}`}>
                   <ChevronDown size={16} />
-                </span>
-              </button>
+                        </span>
+                      </button>
             </div>
 
             {channelGroups.length === 0 ? (
@@ -720,27 +720,27 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">채널</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">상품명</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">인원</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">성인 가격</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">상품가격 합계</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">할인총액</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">추가비용 총액</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Grand Total</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">커미션</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">총 가격</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">옵션 총합</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Net 가격</th>
-                               </tr>
-                             </thead>
-                             <tbody className="bg-white divide-y divide-gray-200">
+                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">상품명</th>
+                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">인원</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">할인총액</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">추가비용 총액</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Grand Total</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
+                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
                                {allChannelItems.length === 0 ? (
-                                 <tr>
+                    <tr>
                                    <td colSpan={16} className="px-2 py-3 text-center text-gray-500 text-xs">
                                      예약 내역이 없습니다.
-                                   </td>
-                                 </tr>
-                               ) : (
+                      </td>
+                    </tr>
+                  ) : (
                                  allChannelItems.map((item, idx) => {
                                    const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
                                    const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
@@ -749,9 +749,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                    return (
                                      <tr 
                                        key={`self-${item.id}-${idx}`} 
-                                       className="hover:bg-gray-50 cursor-pointer transition-colors"
-                                       onClick={() => router.push(`/${locale}/admin/reservations/${item.id}`)}
-                                     >
+                        className="hover:bg-gray-50 cursor-pointer transition-colors"
+                        onClick={() => router.push(`/${locale}/admin/reservations/${item.id}`)}
+                      >
                                        <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                          <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
                                            {item.status === 'Confirmed' ? '확정' :
@@ -760,50 +760,50 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                             item.status === 'Completed' ? '완료' :
                                             item.status}
                                          </span>
-                                       </td>
+                        </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-24">
                                          {new Date(item.registrationDate).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
                                        </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
-                                         {item.customerName}
-                                       </td>
+                          {item.customerName}
+                        </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
                                          {item.channelRN || '-'}
                                        </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate max-w-[120px]">
                                          {item.channelName}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate max-w-[120px]">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate w-32">
                                          {item.productName}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16">
                                          {item.totalPeople}
-                                       </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                        </td>
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                          ${(item.adultPrice || 0).toLocaleString()}
-                                       </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                        </td>
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-24">
                                          ${(item.productPriceTotal || 0).toLocaleString()}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-red-600 text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-red-600 text-right w-20">
                                          -${discountTotal.toLocaleString()}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right w-24">
                                          ${(item.additionalCost || 0).toLocaleString()}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-24">
                                          ${grandTotal.toLocaleString()}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right w-20">
                                          ${(item.commissionAmount || 0).toLocaleString()}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-20">
                                          ${totalPrice.toLocaleString()}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                          ${(item.optionTotal || 0).toLocaleString()}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
                                          ${netPrice.toLocaleString()}
                                        </td>
                                      </tr>
@@ -990,17 +990,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">등록일</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">상품명</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">인원</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">성인 가격</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">상품가격 합계</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">할인총액</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">추가비용 총액</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Grand Total</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">커미션</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">총 가격</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">옵션 총합</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Net 가격</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">상품명</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">인원</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">할인총액</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">추가비용 총액</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Grand Total</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
                                       </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
@@ -1028,9 +1028,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                                    item.status === 'Pending' ? '대기' :
                                                    item.status === 'Canceled' ? '취소' :
                                                    item.status === 'Completed' ? '완료' :
-                                                   item.status}
-                                                </span>
-                                              </td>
+                             item.status}
+                          </span>
+                        </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-24">
                                                 {new Date(item.registrationDate).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
                                               </td>
@@ -1038,57 +1038,57 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                                 {item.customerName}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
-                                                {item.channelRN || '-'}
-                                              </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate max-w-[120px]">
+                          {item.channelRN || '-'}
+                        </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate w-32">
                                                 {item.productName}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center">
-                                                {item.totalPeople}
-                                              </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16">
+                                         {item.totalPeople}
+                                       </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                                 ${(item.adultPrice || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-24">
                                                 ${(item.productPriceTotal || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-red-600 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-red-600 text-right w-20">
                                                 -${discountTotal.toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right w-24">
                                                 ${(item.additionalCost || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-24">
                                                 ${grandTotal.toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right w-20">
                                                 ${(item.commissionAmount || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-20">
                                                 ${totalPrice.toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                                 ${(item.optionTotal || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
                                                 ${netPrice.toLocaleString()}
-                                              </td>
-                                            </tr>
+                        </td>
+                      </tr>
                                           )
                                         })
-                                      )}
-                                    </tbody>
-                                    <tfoot className="bg-gray-50">
-                                      <tr>
+                  )}
+                </tbody>
+                <tfoot className="bg-gray-50">
+                  <tr>
                                         <td colSpan={6} className="px-2 py-2 text-xs font-medium text-gray-900">
-                                          합계
-                                        </td>
+                      합계
+                    </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                           ${channelItems.reduce((sum, item) => sum + (item.adultPrice || 0), 0).toLocaleString()}
-                                        </td>
+                    </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                           ${channelItems.reduce((sum, item) => sum + (item.productPriceTotal || 0), 0).toLocaleString()}
-                                        </td>
+                    </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-red-600 text-right">
                                           -${channelItems.reduce((sum, item) => sum + (item.couponDiscount || 0) + (item.additionalDiscount || 0), 0).toLocaleString()}
                                         </td>
@@ -1117,9 +1117,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
                                           ${channelStats.netPrice.toLocaleString()}
                                         </td>
-                                      </tr>
-                                    </tfoot>
-                                  </table>
+                  </tr>
+                </tfoot>
+              </table>
                                 </div>
                               )}
                             </div>
@@ -1131,11 +1131,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                 )
               })
             )}
-          </div>
-        )}
+            </div>
+            )}
 
-        {/* 투어 진행 내역 탭 */}
-        {activeDetailTab === 'tours' && (
+            {/* 투어 진행 내역 탭 */}
+            {activeDetailTab === 'tours' && (
           <div className="divide-y divide-gray-200">
             {/* 정렬 버튼 */}
             <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
@@ -1151,7 +1151,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
               </button>
             </div>
 
-            {toursLoading ? (
+                {toursLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               </div>
@@ -1183,7 +1183,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                   return (
                     <div key={group.type} className="border-b border-gray-200">
                       {/* 자체 채널 그룹 헤더 */}
-                      <button
+                        <button
                         onClick={() => toggleGroup(group.type)}
                         className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
                       >
@@ -1199,7 +1199,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                             총 ${groupTotal.toLocaleString()}
                           </span>
                         </div>
-                      </button>
+                        </button>
 
                       {/* 자체 채널의 모든 투어 내역 테이블 */}
                       {isGroupExpanded && (
@@ -1212,27 +1212,27 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">채널</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">상품명</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">인원</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">성인 가격</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">상품가격 합계</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">할인총액</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">추가비용 총액</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Grand Total</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">커미션</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">총 가격</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">옵션 총합</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Net 가격</th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">상품명</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">인원</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">할인총액</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">추가비용 총액</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Grand Total</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
                               {allTourItems.length === 0 ? (
-                                <tr>
+                      <tr>
                                   <td colSpan={16} className="px-2 py-3 text-center text-gray-500 text-xs">
                                     투어 진행 내역이 없습니다.
-                                  </td>
-                                </tr>
-                              ) : (
+                        </td>
+                      </tr>
+                    ) : (
                                 allTourItems.map((item, idx) => {
                                   const discountTotal = (item.couponDiscount || 0) + (item.additionalDiscount || 0)
                                   const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
@@ -1241,9 +1241,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                   return (
                                     <tr 
                                       key={`self-tour-${item.id}-${idx}`} 
-                                      className="hover:bg-gray-50 cursor-pointer transition-colors"
-                                      onClick={() => router.push(`/${locale}/admin/reservations/${item.id}`)}
-                                    >
+                          className="hover:bg-gray-50 cursor-pointer transition-colors"
+                          onClick={() => router.push(`/${locale}/admin/reservations/${item.id}`)}
+                        >
                                       <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                         <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
                                           {item.status === 'Confirmed' ? '확정' :
@@ -1252,50 +1252,50 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                            item.status === 'Completed' ? '완료' :
                                            item.status}
                                         </span>
-                                      </td>
+                          </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-24">
                                         {new Date(item.tourDate).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
                                       </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
-                                        {item.customerName}
-                                      </td>
+                            {item.customerName}
+                          </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
                                         {item.channelRN || '-'}
                                       </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate max-w-[120px]">
                                         {item.channelName || '-'}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate max-w-[120px]">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate w-32">
                                         {item.productName}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center">
-                                        {item.totalPeople}
-                                      </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16">
+                                         {item.totalPeople}
+                          </td>
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                         ${(item.adultPrice || 0).toLocaleString()}
-                                      </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                          </td>
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-24">
                                         ${(item.productPriceTotal || 0).toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-red-600 text-right">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-red-600 text-right w-20">
                                         -${discountTotal.toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right w-24">
                                         ${(item.additionalCost || 0).toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-24">
                                         ${grandTotal.toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right w-20">
                                         ${(item.commissionAmount || 0).toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-20">
                                         ${totalPrice.toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                         ${(item.optionTotal || 0).toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right">
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
                                         ${netPrice.toLocaleString()}
                                       </td>
                                     </tr>
@@ -1441,17 +1441,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">투어 날짜</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">상품명</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">인원</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">성인 가격</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">상품가격 합계</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">할인총액</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">추가비용 총액</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Grand Total</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">커미션</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">총 가격</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">옵션 총합</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Net 가격</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">상품명</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">인원</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">할인총액</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">추가비용 총액</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Grand Total</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">커미션</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
                                       </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
@@ -1479,9 +1479,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                                    item.status === 'Pending' ? '대기' :
                                                    item.status === 'Canceled' ? '취소' :
                                                    item.status === 'Completed' ? '완료' :
-                                                   item.status}
-                                                </span>
-                                              </td>
+                               item.status}
+                            </span>
+                          </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-24">
                                                 {new Date(item.tourDate).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
                                               </td>
@@ -1489,57 +1489,57 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                                 {item.customerName}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
-                                                {item.channelRN || '-'}
-                                              </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate max-w-[120px]">
+                            {item.channelRN || '-'}
+                          </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate w-32">
                                                 {item.productName}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center">
-                                                {item.totalPeople}
-                                              </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16">
+                                         {item.totalPeople}
+                                       </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                                 ${(item.adultPrice || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-24">
                                                 ${(item.productPriceTotal || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-red-600 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-red-600 text-right w-20">
                                                 -${discountTotal.toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-orange-600 text-right w-24">
                                                 ${(item.additionalCost || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-24">
                                                 ${grandTotal.toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-blue-600 text-right w-20">
                                                 ${(item.commissionAmount || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-green-600 font-semibold text-right w-20">
                                                 ${totalPrice.toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-700 text-right w-20">
                                                 ${(item.optionTotal || 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right">
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
                                                 ${netPrice.toLocaleString()}
-                                              </td>
-                                            </tr>
+                          </td>
+                        </tr>
                                           )
                                         })
-                                      )}
-                                    </tbody>
-                                    <tfoot className="bg-gray-50">
-                                      <tr>
+                    )}
+                  </tbody>
+                  <tfoot className="bg-gray-50">
+                    <tr>
                                         <td colSpan={6} className="px-2 py-2 text-xs font-medium text-gray-900">
-                                          합계
-                                        </td>
+                        합계
+                      </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                           ${sortedChannelItems.reduce((sum, item) => sum + (item.adultPrice || 0), 0).toLocaleString()}
-                                        </td>
+                      </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                           ${sortedChannelItems.reduce((sum, item) => sum + (item.productPriceTotal || 0), 0).toLocaleString()}
-                                        </td>
+                      </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-red-600 text-right">
                                           -${sortedChannelItems.reduce((sum, item) => sum + (item.couponDiscount || 0) + (item.additionalDiscount || 0), 0).toLocaleString()}
                                         </td>
@@ -1568,20 +1568,20 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
                                           ${channelStats.netPrice.toLocaleString()}
                                         </td>
-                                      </tr>
-                                    </tfoot>
-                                  </table>
-                                </div>
-                              )}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+                )}
                             </div>
                           )
                         })}
-                      </div>
-                    )}
-                  </div>
+              </div>
+            )}
+          </div>
                 )
               })
-            )}
+      )}
           </div>
         )}
       </div>

@@ -368,7 +368,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-[1664px] mx-auto overflow-x-hidden">
       {/* 헤더 */}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">통계 리포트</h1>
@@ -409,24 +409,26 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       </div>
 
       {/* 필터 컨트롤 */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex items-center gap-6 flex-nowrap overflow-x-auto">
-          {/* 1. 채널 선택 - 가장 왼쪽에 배치, 모든 탭에서 동일한 UI */}
-          <div className="flex items-center space-x-2 flex-shrink-0">
-            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">채널 선택:</label>
-            <select
-              value={selectedChannelId}
-              onChange={(e) => setSelectedChannelId(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[180px] flex-shrink-0"
-            >
-              <option value="">모든 채널</option>
-              {channels?.map(channel => (
-                <option key={channel.id} value={channel.id}>
-                  {channel.name}
-                </option>
-              ))}
-            </select>
-          </div>
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+        <div className="flex items-center gap-4 flex-nowrap overflow-x-auto">
+          {/* 1. 채널 선택 - 채널별 정산 탭에서는 숨김 */}
+          {activeTab !== 'channelSettlement' && (
+            <div className="flex items-center space-x-2 flex-shrink-0">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">채널 선택:</label>
+              <select
+                value={selectedChannelId}
+                onChange={(e) => setSelectedChannelId(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[180px] flex-shrink-0"
+              >
+                <option value="">모든 채널</option>
+                {channels?.map(channel => (
+                  <option key={channel.id} value={channel.id}>
+                    {channel.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* 2. 상태 다중 선택 - 버튼식, 채널 선택 오른쪽 */}
           <div className="flex items-center space-x-2 flex-shrink-0">
