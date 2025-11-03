@@ -1316,10 +1316,37 @@ export default function ProductDetailPage() {
                 <div className="text-3xl font-bold text-gray-900">
                   ${getSelectedOptionPrice()}
                 </div>
-                <div className="text-sm text-gray-600">
-                  {Object.keys(groupedChoices).length > 0
-                    ? (isEnglish ? 'Includes selected options' : '선택 옵션 포함')
-                    : (isEnglish ? 'Base price' : '기본 가격')}
+                <div className="text-sm text-gray-600 mb-2">
+                  {isEnglish ? 'Total price' : '총 가격'}
+                </div>
+                {/* 가격 상세 내역 */}
+                <div className="text-left border-t border-gray-200 pt-4 mt-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">{isEnglish ? 'Base price' : '기본 가격'}</span>
+                    <span className="font-medium text-gray-900">
+                      ${product.base_price || 0}
+                    </span>
+                  </div>
+                  {/* 선택 옵션 가격 표시 */}
+                  {Object.values(groupedChoices).map((group: ChoiceGroup) => {
+                    const selectedOptionId = selectedOptions[group.choice_id]
+                    if (selectedOptionId) {
+                      const option = group.options.find((opt) => opt.option_id === selectedOptionId)
+                      if (option && option.option_price && option.option_price > 0) {
+                        return (
+                          <div key={group.choice_id} className="flex justify-between text-sm">
+                            <span className="text-gray-600">
+                              {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
+                            </span>
+                            <span className="font-medium text-gray-900">
+                              +${option.option_price}
+                            </span>
+                          </div>
+                        )
+                      }
+                    }
+                    return null
+                  })}
                 </div>
               </div>
 

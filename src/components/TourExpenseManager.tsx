@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings } from 'lucide-react'
+import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import OptionManagementModal from './expense/OptionManagementModal'
+import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 
 interface TourExpense {
   id: string
@@ -92,6 +93,8 @@ export default function TourExpenseManager({
   const [showOptionManagement, setShowOptionManagement] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
+  const [showDriveImporter, setShowDriveImporter] = useState(false)
   
   // 투어 데이터 및 수수료 관련 상태
   const [tourData, setTourData] = useState<any>(null)
@@ -259,7 +262,62 @@ export default function TourExpenseManager({
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setExpenses(data || [])
+      
+      console.log('🔍 Raw expense data from database:', data?.length || 0, 'items')
+      
+      // file_path가 있지만 image_url이 없는 경우 공개 URL 생성
+      const processedExpenses = await Promise.all((data || []).map(async (expense: TourExpense) => {
+        // 원본 데이터 로그
+        console.log(`📄 Expense "${expense.paid_for}" (ID: ${expense.id}):`, {
+          original_image_url: expense.image_url,
+          original_file_path: expense.file_path,
+          has_original_url: !!(expense.image_url && expense.image_url.trim() !== '')
+        })
+        
+        // image_url이 없고 file_path가 있는 경우
+        if ((!expense.image_url || expense.image_url.trim() === '') && expense.file_path) {
+          try {
+            console.log(`  🔗 Generating public URL from file_path: ${expense.file_path}`)
+            // Supabase Storage에서 공개 URL 생성
+            const { data: urlData, error: urlError } = supabase.storage
+              .from('tour-expenses')
+              .getPublicUrl(expense.file_path)
+            
+            if (urlError) {
+              console.error('  ❌ Error generating URL:', urlError)
+              return expense
+            }
+            
+            console.log(`  ✅ Generated URL: ${urlData.publicUrl}`)
+            return {
+              ...expense,
+              image_url: urlData.publicUrl
+            }
+          } catch (urlError) {
+            console.error('  ❌ Exception generating public URL:', urlError)
+            return expense
+          }
+        }
+        
+        // 둘 다 없는 경우
+        if (!expense.image_url && !expense.file_path) {
+          console.log(`  ⚠️ No image_url and no file_path for expense ${expense.id}`)
+        }
+        
+        return expense
+      }))
+      
+      // 최종 결과 로그
+      console.log('📋 Processed expenses:', processedExpenses.length)
+      processedExpenses.forEach((expense, index) => {
+        const hasImage = !!(expense.image_url && expense.image_url.trim() !== '')
+        console.log(`  ${index + 1}. "${expense.paid_for}" - Image: ${hasImage ? '✅' : '❌'}`, {
+          image_url: expense.image_url || 'NULL',
+          file_path: expense.file_path || 'NULL'
+        })
+      })
+      
+      setExpenses(processedExpenses)
     } catch (error) {
       console.error('Error loading expenses:', error)
     } finally {
@@ -1079,6 +1137,28 @@ export default function TourExpenseManager({
         )}
       </div>
 
+      {/* 구글 드라이브 영수증 가져오기 */}
+      <div className="mb-4 flex justify-end">
+        <button
+          onClick={() => setShowDriveImporter(!showDriveImporter)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+        >
+          <Folder className="w-4 h-4" />
+          <span>구글 드라이브에서 영수증 가져오기</span>
+        </button>
+      </div>
+
+      {showDriveImporter && (
+        <div className="mb-4">
+          <GoogleDriveReceiptImporter
+            onImportComplete={() => {
+              setShowDriveImporter(false)
+              loadExpenses() // 지출 목록 새로고침
+            }}
+          />
+        </div>
+      )}
+
       {/* 지출 목록 */}
       {loading ? (
         <div className="text-center py-4">
@@ -1139,14 +1219,34 @@ export default function TourExpenseManager({
                   
                   {/* 액션 버튼들 (영수증 보기, 승인/거부) */}
                   <div className="flex items-center space-x-1">
-                    {expense.image_url && (
+                    {expense.image_url && expense.image_url.trim() !== '' ? (
                       <button
-                        onClick={() => window.open(expense.image_url!, '_blank')}
-                        className="p-1 text-gray-600 hover:text-blue-600"
+                        onClick={() => {
+                          console.log('📸 Opening receipt:', {
+                            expenseId: expense.id,
+                            imageUrl: expense.image_url,
+                            paidFor: expense.paid_for
+                          })
+                          setViewingReceipt({ 
+                            imageUrl: expense.image_url!, 
+                            expenseId: expense.id,
+                            paidFor: expense.paid_for 
+                          })
+                        }}
+                        className="p-1 text-gray-600 hover:text-blue-600 flex items-center gap-1"
                         title="영수증 보기"
                       >
-                        <Eye size={14} />
+                        <Receipt size={14} />
+                        <span className="text-xs">영수증</span>
                       </button>
+                    ) : (
+                      <span 
+                        className="text-xs text-gray-400 flex items-center gap-1 cursor-help" 
+                        title={`이미지 URL: ${expense.image_url || 'null'}, 파일 경로: ${expense.file_path || 'null'}`}
+                      >
+                        <Receipt size={14} />
+                        <span>영수증 없음</span>
+                      </span>
                     )}
                     
                     {expense.status === 'pending' && (
@@ -1177,6 +1277,53 @@ export default function TourExpenseManager({
         <div className="text-center py-8 text-gray-500">
           <DollarSign size={48} className="mx-auto mb-4 text-gray-300" />
           <p>{t('noExpenses')}</p>
+        </div>
+      )}
+
+      {/* 영수증 보기 모달 */}
+      {viewingReceipt && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-blue-600" />
+                <h3 className="text-lg font-semibold text-gray-900">
+                  영수증: {viewingReceipt.paidFor}
+                </h3>
+              </div>
+              <button
+                onClick={() => setViewingReceipt(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[calc(90vh-100px)]">
+              <div className="flex flex-col items-center">
+                <img
+                  src={viewingReceipt.imageUrl}
+                  alt={`${viewingReceipt.paidFor} 영수증`}
+                  className="max-w-full h-auto rounded-lg shadow-lg"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement
+                    target.src = '/placeholder-receipt.png'
+                    target.alt = '영수증 이미지를 불러올 수 없습니다'
+                  }}
+                />
+                <div className="mt-4 flex gap-2">
+                  <a
+                    href={viewingReceipt.imageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    새 창에서 열기
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -288,6 +288,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     customerNameKo: '',
     customerNameEn: '',
     tags: [],
+    transportationMethods: [],
     // 공통 세부정보 사용 여부 초기값
     useCommonDetails: false,
     // 팀 타입 초기값
@@ -613,6 +614,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             customerNameKo: productData.customer_name_ko || '',
             customerNameEn: productData.customer_name_en || '',
             tags: productData.tags || [],
+            transportationMethods: productData.transportation_methods || [],
             useCommonDetails: !!productData.use_common_details,
             team_type: productData.team_type || null,
             // product_details 데이터 설정 (다국어 지원)

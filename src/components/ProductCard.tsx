@@ -1,5 +1,12 @@
 import React, { useState } from 'react'
 import { Package, Users, DollarSign, Clock, Copy } from 'lucide-react'
+import { 
+  MdDirectionsCar,      // 밴
+  MdDirectionsBus,      // 버스
+  MdFlightTakeoff,      // 경비행기
+  MdLocalTaxi          // 리무진
+} from 'react-icons/md'
+import { FaHelicopter } from 'react-icons/fa'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -370,6 +377,65 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
     )
   }
 
+  // 운송수단 아이콘 매핑 함수
+  const getTransportationIcon = (method: string) => {
+    const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+      minivan: MdDirectionsCar,
+      van: MdDirectionsCar,
+      bus: MdDirectionsBus,
+      helicopter: FaHelicopter,
+      light_aircraft: MdFlightTakeoff,
+      aircraft: MdFlightTakeoff,
+      limousine: MdLocalTaxi,
+      car: MdDirectionsCar,
+      suv: MdDirectionsCar,
+    }
+    
+    const normalizedMethod = method.toLowerCase().trim()
+    return iconMap[normalizedMethod] || MdDirectionsCar
+  }
+
+  // 운송수단 데이터 유효성 검사
+  const hasValidTransportationMethods = (methods: string[] | null | undefined): boolean => {
+    if (!methods) return false
+    if (!Array.isArray(methods)) return false
+    if (methods.length === 0) return false
+    return methods.some(m => m && typeof m === 'string' && m.trim().length > 0)
+  }
+
+  // 운송수단 아이콘 렌더링
+  const renderTransportationMethods = (product: Product) => {
+    const methods = product.transportation_methods
+    
+    if (!hasValidTransportationMethods(methods)) {
+      return null
+    }
+
+    const validMethods = (methods as string[]).filter(m => m && typeof m === 'string' && m.trim().length > 0)
+    
+    return (
+      <div className="flex items-center gap-1.5">
+        {validMethods.slice(0, 5).map((method, index) => {
+          const Icon = getTransportationIcon(method)
+          return (
+            <span
+              key={`transport-${method}-${index}`}
+              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-50 text-blue-700 border border-blue-200"
+              title={method}
+            >
+              <Icon className="w-3.5 h-3.5" />
+            </span>
+          )
+        })}
+        {validMethods.length > 5 && (
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-50 text-gray-600 border border-gray-200 text-xs">
+            +{validMethods.length - 5}
+          </span>
+        )}
+      </div>
+    )
+  }
+
   return (
     <Link href={`/${locale}/admin/products/${product.id}`} className="block">
       <div className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-all duration-200 hover:scale-[1.02] cursor-pointer group">
@@ -397,9 +463,9 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
                     </span>
                   )}
                 </div>
-                {/* Choices 선택지 뱃지 */}
-                {renderChoicesBadges(product)}
-              </div>
+                 {/* Choices 선택지 뱃지 */}
+                 {renderChoicesBadges(product)}
+               </div>
             </div>
             <div className="flex items-center space-x-2">
               {/* 복사 버튼 */}
@@ -478,15 +544,17 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
             </div>
           )}
 
-          {/* 가격 */}
-          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-            <div className="flex items-center space-x-1.5">
-              <DollarSign className="h-4 w-4 text-green-600" />
-              <span className="text-lg font-bold text-green-600">
-                {getPriceDisplay(product)}
-              </span>
-            </div>
-          </div>
+           {/* 가격 및 운송수단 */}
+           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+             <div className="flex items-center space-x-1.5">
+               <DollarSign className="h-4 w-4 text-green-600" />
+               <span className="text-lg font-bold text-green-600">
+                 {getPriceDisplay(product)}
+               </span>
+             </div>
+             {/* 운송수단 아이콘 - 오른쪽 끝 정렬 */}
+             {renderTransportationMethods(product)}
+           </div>
         </div>
 
       </div>

@@ -317,8 +317,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('documents'), href: `/${locale}/admin/documents`, icon: FileText },
     { name: t('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
-    { name: tAdmin('reservationExpenseManagement'), href: `/${locale}/admin/reservation-expenses`, icon: DollarSign },
-    { name: tAdmin('companyExpenseManagement'), href: `/${locale}/admin/company-expenses`, icon: DollarSign },
+    { name: '지출 관리', href: `/${locale}/admin/expenses`, icon: DollarSign },
+    // 기존 개별 페이지는 유지 (하위 메뉴로 사용 가능)
+    // { name: tAdmin('reservationExpenseManagement'), href: `/${locale}/admin/reservation-expenses`, icon: DollarSign },
+    // { name: tAdmin('companyExpenseManagement'), href: `/${locale}/admin/company-expenses`, icon: DollarSign },
     { name: tAdmin('vehicleMaintenanceManagement'), href: `/${locale}/admin/vehicle-maintenance`, icon: Wrench },
     { name: tAdmin('paymentMethodManagement'), href: `/${locale}/admin/payment-methods`, icon: CreditCard },
     { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: BookOpen },

@@ -816,6 +816,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                  <td colSpan={7} className="px-2 py-2 text-xs font-medium text-gray-900">
                                    합계
                                  </td>
+                                 <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
+                                   {allChannelItems.reduce((sum, item) => sum + (item.totalPeople || 0), 0)}
+                                 </td>
                                  <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                    ${allChannelItems.reduce((sum, item) => sum + (item.adultPrice || 0), 0).toLocaleString()}
                                  </td>
@@ -1083,6 +1086,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <td colSpan={6} className="px-2 py-2 text-xs font-medium text-gray-900">
                       합계
                     </td>
+                                        <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
+                                          {channelItems.reduce((sum, item) => sum + (item.totalPeople || 0), 0)}
+                                        </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                           ${channelItems.reduce((sum, item) => sum + (item.adultPrice || 0), 0).toLocaleString()}
                     </td>
@@ -1254,7 +1260,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         </span>
                           </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-24">
-                                        {new Date(item.tourDate).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
+                                        {item.tourDate ? item.tourDate.split('T')[0] : '-'}
                                       </td>
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
                             {item.customerName}
@@ -1307,6 +1313,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                               <tr>
                                 <td colSpan={7} className="px-2 py-2 text-xs font-medium text-gray-900">
                                   합계
+                                </td>
+                                <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
+                                  {allTourItems.reduce((sum, item) => sum + (item.totalPeople || 0), 0)}
                                 </td>
                                 <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                   ${allTourItems.reduce((sum, item) => sum + (item.adultPrice || 0), 0).toLocaleString()}
@@ -1483,7 +1492,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                             </span>
                           </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-24">
-                                                {new Date(item.tourDate).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
+                                                {item.tourDate ? item.tourDate.split('T')[0] : '-'}
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-900 w-32 truncate">
                                                 {item.customerName}
@@ -1534,6 +1543,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <td colSpan={6} className="px-2 py-2 text-xs font-medium text-gray-900">
                         합계
                       </td>
+                                        <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
+                                          {sortedChannelItems.reduce((sum, item) => sum + (item.totalPeople || 0), 0)}
+                                        </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-right">
                                           ${sortedChannelItems.reduce((sum, item) => sum + (item.adultPrice || 0), 0).toLocaleString()}
                       </td>

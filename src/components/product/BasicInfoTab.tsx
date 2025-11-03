@@ -2,6 +2,13 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Info, Save, Settings } from 'lucide-react'
+import { 
+  MdDirectionsCar,      // 밴, 리무진
+  MdDirectionsBus,      // 버스
+  MdFlightTakeoff,      // 경비행기
+  MdLocalTaxi          // 리무진
+} from 'react-icons/md'
+import { FaHelicopter } from 'react-icons/fa'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import CategoryManagementModal from './CategoryManagementModal'
@@ -50,6 +57,7 @@ interface SubCategoryItem {
       customerNameKo?: string
       customerNameEn?: string
       tags?: string[]
+      transportationMethods?: string[]
     }
   setFormData: <T>(updater: React.SetStateAction<T>) => void
   productId: string
@@ -195,7 +203,8 @@ export default function BasicInfoTab({
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
             customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || '상품',
-            customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product'
+            customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product',
+            transportation_methods: formData.transportationMethods || []
           }] as never[])
           .select()
           .single()
@@ -252,7 +261,8 @@ export default function BasicInfoTab({
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
             customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || '상품',
-            customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product'
+            customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product',
+            transportation_methods: formData.transportationMethods || []
           } as never)
           .eq('id', productId)
 
@@ -640,6 +650,72 @@ export default function BasicInfoTab({
               />
             </div>
           </div>
+        </div>
+
+        {/* 운송수단 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">운송수단</label>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { value: 'van', label: '밴', icon: MdDirectionsCar },
+              { value: 'bus', label: '버스', icon: MdDirectionsBus },
+              { value: 'helicopter', label: '헬리콥터', icon: FaHelicopter },
+              { value: 'light_aircraft', label: '경비행기', icon: MdFlightTakeoff },
+              { value: 'limousine', label: '리무진', icon: MdLocalTaxi }
+            ].map((method) => {
+              const Icon = method.icon
+              const isChecked = formData.transportationMethods?.includes(method.value) || false
+              
+              return (
+                <label 
+                  key={method.value} 
+                  className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg border-2 transition-all ${
+                    isChecked 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={(e) => {
+                      const currentMethods = formData.transportationMethods || []
+                      if (e.target.checked) {
+                        setFormData({
+                          ...formData,
+                          transportationMethods: [...currentMethods, method.value]
+                        })
+                      } else {
+                        setFormData({
+                          ...formData,
+                          transportationMethods: currentMethods.filter(m => m !== method.value)
+                        })
+                      }
+                    }}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <Icon className="w-5 h-5 text-blue-600" />
+                  <span className={`text-sm font-medium ${isChecked ? 'text-blue-700' : 'text-gray-700'}`}>
+                    {method.label}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+          {(formData.transportationMethods && formData.transportationMethods.length > 0) && (
+            <p className="text-xs text-gray-500 mt-2">
+              선택된 운송수단: {formData.transportationMethods.map(m => {
+                const methodMap: Record<string, string> = {
+                  van: '밴',
+                  bus: '버스',
+                  helicopter: '헬리콥터',
+                  light_aircraft: '경비행기',
+                  limousine: '리무진'
+                }
+                return methodMap[m] || m
+              }).join(', ')}
+            </p>
+          )}
         </div>
 
         {/* 상품 태그 */}

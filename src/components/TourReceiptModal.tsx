@@ -5,7 +5,8 @@ import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLocale } from 'next-intl'
-import { X, Receipt, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle, Edit, Clock, Upload, Camera } from 'lucide-react'
+import { X, Receipt, Calendar, MapPin, Users, User, Car, CheckCircle, AlertCircle, Edit, Clock, Upload, Camera, Folder } from 'lucide-react'
+import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Tour & {
@@ -60,6 +61,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
   const [showCustomPaidFor, setShowCustomPaidFor] = useState(false)
   const [categories, setCategories] = useState<any[]>([])
   const [vendors, setVendors] = useState<any[]>([])
+  const [showDriveImporter, setShowDriveImporter] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -300,7 +302,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
       const filePath = `receipts/${fileName}`
 
       const { error: uploadError } = await supabase.storage
-        .from('tour-files')
+        .from('tour-expenses')
         .upload(filePath, file)
 
       if (uploadError) {
@@ -310,7 +312,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
       }
 
       const { data: { publicUrl } } = supabase.storage
-        .from('tour-files')
+        .from('tour-expenses')
         .getPublicUrl(filePath)
 
       setFormData(prev => ({
@@ -418,6 +420,27 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
         {!showReceiptForm ? (
           <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
             <div className="space-y-4">
+              {/* 구글 드라이브 연동 버튼 */}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowDriveImporter(!showDriveImporter)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
+                >
+                  <Folder className="w-4 h-4 mr-2" />
+                  {getText('구글 드라이브에서 가져오기', 'Import from Google Drive')}
+                </button>
+              </div>
+
+              {/* 구글 드라이브 연동 컴포넌트 */}
+              {showDriveImporter && (
+                <GoogleDriveReceiptImporter
+                  onImportComplete={() => {
+                    setShowDriveImporter(false)
+                    loadTours()
+                  }}
+                />
+              )}
+
               <div className="flex gap-4">
                 <div className="flex-1">
                   <input

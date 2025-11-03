@@ -72,24 +72,27 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
 
   const handleAddOption = async (option: Omit<Option, 'id' | 'created_at'>) => {
     try {
+      // 빈 문자열을 null로 변환 (데이터베이스 검증 트리거가 빈 문자열을 허용하지 않음)
+      const emptyToNull = (value: any) => (value === '' || value === null || value === undefined ? null : value)
+      
       const newOption = {
         id: crypto.randomUUID(), // UUID 생성
         name: option.name,
-        name_ko: (option as any).name_ko,
-        name_en: (option as any).name_en,
+        name_ko: emptyToNull((option as any).name_ko),
+        name_en: emptyToNull((option as any).name_en),
         category: option.category,
-        description: option.description,
-        description_ko: (option as any).description_ko,
-        description_en: (option as any).description_en,
+        description: emptyToNull(option.description),
+        description_ko: emptyToNull((option as any).description_ko),
+        description_en: emptyToNull((option as any).description_en),
         adult_price: option.adult_price || 0,
         child_price: option.child_price || 0,
         infant_price: option.infant_price || 0,
         price_type: option.price_type,
         status: option.status,
         tags: option.tags,
-        image_url: (option as any).image_url,
-        image_alt: (option as any).image_alt,
-        thumbnail_url: (option as any).thumbnail_url
+        image_url: emptyToNull((option as any).image_url),
+        image_alt: emptyToNull((option as any).image_alt),
+        thumbnail_url: emptyToNull((option as any).thumbnail_url)
       }
 
       const { data, error } = await supabase
@@ -99,38 +102,43 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
 
       if (error) {
         console.error('Error adding option:', error)
+        alert(`옵션 추가 중 오류가 발생했습니다: ${error.message}`)
         return
       }
 
-      if (data) {
-        setOptions([data[0], ...options])
-      }
       setShowAddForm(false)
+      // 저장 성공 후 최신 데이터 가져오기
+      await fetchOptions()
     } catch (error) {
       console.error('Error adding option:', error)
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류'
+      alert(`옵션 추가 중 오류가 발생했습니다: ${errorMessage}`)
     }
   }
 
   const handleEditOption = async (option: Omit<Option, 'id' | 'created_at'>) => {
     if (editingOption) {
       try {
+        // 빈 문자열을 null로 변환 (데이터베이스 검증 트리거가 빈 문자열을 허용하지 않음)
+        const emptyToNull = (value: any) => (value === '' || value === null || value === undefined ? null : value)
+        
         const updatedOption = {
           name: option.name,
-          name_ko: (option as any).name_ko,
-          name_en: (option as any).name_en,
+          name_ko: emptyToNull((option as any).name_ko),
+          name_en: emptyToNull((option as any).name_en),
           category: option.category,
-          description: option.description,
-          description_ko: (option as any).description_ko,
-          description_en: (option as any).description_en,
+          description: emptyToNull(option.description),
+          description_ko: emptyToNull((option as any).description_ko),
+          description_en: emptyToNull((option as any).description_en),
           adult_price: option.adult_price || 0,
           child_price: option.child_price || 0,
           infant_price: option.infant_price || 0,
           price_type: option.price_type,
           status: option.status,
           tags: option.tags,
-          image_url: (option as any).image_url,
-          image_alt: (option as any).image_alt,
-          thumbnail_url: (option as any).thumbnail_url
+          image_url: emptyToNull((option as any).image_url),
+          image_alt: emptyToNull((option as any).image_alt),
+          thumbnail_url: emptyToNull((option as any).thumbnail_url)
         }
 
         const { error } = await supabase
@@ -140,13 +148,17 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
 
         if (error) {
           console.error('Error updating option:', error)
+          alert(`옵션 수정 중 오류가 발생했습니다: ${error.message}`)
           return
         }
 
-        setOptions(options.map(o => o.id === editingOption.id ? { ...o, ...updatedOption } : o))
         setEditingOption(null)
+        // 저장 성공 후 최신 데이터 가져오기
+        await fetchOptions()
       } catch (error) {
         console.error('Error updating option:', error)
+        const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류'
+        alert(`옵션 수정 중 오류가 발생했습니다: ${errorMessage}`)
       }
     }
   }
@@ -182,13 +194,33 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
     }
     
     // 안전한 번역 처리 - 메시지가 없으면 카테고리 이름을 그대로 반환
+    const normalizedCategory = category.toLowerCase()
+    
+    // 먼저 원본 카테고리 이름으로 번역 시도
     try {
       const translation = t(`categories.${category}` as any)
-      // 번역이 실패하면 카테고리 이름을 그대로 반환
-      return translation || category
+      // 번역 결과가 번역 키와 다르면 번역 성공
+      if (translation && translation !== `categories.${category}`) {
+        return translation
+      }
     } catch {
-      return category
+      // 원본 키로 번역 실패
     }
+    
+    // 원본으로 실패하면 소문자로 변환해서 다시 시도
+    if (category !== normalizedCategory) {
+      try {
+        const translation = t(`categories.${normalizedCategory}` as any)
+        if (translation && translation !== `categories.${normalizedCategory}`) {
+          return translation
+        }
+      } catch {
+        // 소문자 키로도 번역 실패
+      }
+    }
+    
+    // 번역이 없으면 원본 카테고리 이름 반환
+    return category
   }
 
   const getPriceTypeLabel = (priceType: string) => {
@@ -672,7 +704,9 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* 카테고리, 가격 유형, 상태 - 한 줄에 배치 */}
+          <div className="grid grid-cols-3 gap-4">
+            {/* 카테고리 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.category')}</label>
               <div className="relative">
@@ -728,6 +762,35 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* 가격 유형 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.priceType')}</label>
+              <select
+                value={formData.price_type}
+                onChange={(e) => setFormData({ ...formData, price_type: e.target.value as 'perPerson' | 'perTour' | 'perHour' | 'fixed' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="perPerson">{t('priceTypes.perPerson')}</option>
+                <option value="perTour">{t('priceTypes.perTour')}</option>
+                <option value="perHour">{t('priceTypes.perHour')}</option>
+                <option value="fixed">{t('priceTypes.fixed')}</option>
+              </select>
+            </div>
+
+            {/* 상태 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'seasonal' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="active">{t('status.active')}</option>
+                <option value="inactive">{t('status.inactive')}</option>
+                <option value="seasonal">{t('status.seasonal')}</option>
+              </select>
             </div>
           </div>
 
@@ -823,33 +886,6 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
                 />
               </div>
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.priceType')}</label>
-            <select
-              value={formData.price_type}
-              onChange={(e) => setFormData({ ...formData, price_type: e.target.value as 'perPerson' | 'perTour' | 'perHour' | 'fixed' })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="perPerson">{t('priceTypes.perPerson')}</option>
-              <option value="perTour">{t('priceTypes.perTour')}</option>
-              <option value="perHour">{t('priceTypes.perHour')}</option>
-              <option value="fixed">{t('priceTypes.fixed')}</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
-            <select
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'seasonal' })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="active">{t('status.active')}</option>
-              <option value="inactive">{t('status.inactive')}</option>
-              <option value="seasonal">{t('status.seasonal')}</option>
-            </select>
           </div>
 
           {/* 이미지 업로드 */}
