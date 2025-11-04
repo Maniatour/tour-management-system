@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 
-// Stripe 객체 생성 (서버에서만 사용)
-// STRIPE_SECRET_KEY는 서버에서만 접근 가능하므로 NEXT_PUBLIC_ 접두사 없음
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-11-20.acacia',
-})
+// Stripe 객체를 지연 초기화 (환경 변수가 있을 때만 생성)
+let stripeInstance: Stripe | null = null
+
+function getStripe(): Stripe {
+  if (!stripeInstance) {
+    const secretKey = process.env.STRIPE_SECRET_KEY
+    if (!secretKey) {
+      throw new Error('STRIPE_SECRET_KEY가 환경 변수에 설정되지 않았습니다.')
+    }
+    stripeInstance = new Stripe(secretKey, {
+      apiVersion: '2024-11-20.acacia',
+    })
+  }
+  return stripeInstance
+}
 
 /**
  * POST /api/payment/create-payment-intent
@@ -50,9 +60,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 3. Stripe Secret Key 확인
-    if (!process.env.STRIPE_SECRET_KEY) {
-      console.error('STRIPE_SECRET_KEY가 환경 변수에 설정되지 않았습니다.')
+    // 3. Stripe Secret Key 확인 및 초기화
+    let stripe: Stripe
+    try {
+      stripe = getStripe()
+    } catch (error) {
+      console.error('Stripe 초기화 오류:', error)
       return NextResponse.json(
         { error: '결제 서비스 설정 오류' },
         { status: 500 }

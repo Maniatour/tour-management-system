@@ -256,6 +256,9 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   // 날짜별 동적 가격 정보 (date -> { adult_price, child_price, infant_price })
   const [datePrices, setDatePrices] = useState<Record<string, { adult_price: number; child_price: number; infant_price: number }>>({})
   
+  // 날짜별 초이스 판매 상태 (date -> { choiceCombinationKey -> is_sale_available })
+  const [choiceAvailability, setChoiceAvailability] = useState<Record<string, Record<string, boolean>>>({})
+  
   // 인증 관련 상태
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
@@ -309,10 +312,10 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       try {
         setLoading(true)
         
-        // 1. 먼저 dynamic_pricing에서 해당 상품의 모든 날짜들을 조회 (가격 정보 포함)
+        // 1. 먼저 dynamic_pricing에서 해당 상품의 모든 날짜들을 조회 (가격 정보 및 초이스 판매 상태 포함)
         const { data: pricingData, error: pricingError } = await supabase
           .from('dynamic_pricing')
-          .select('date, is_sale_available, adult_price, child_price, infant_price')
+          .select('date, is_sale_available, adult_price, child_price, infant_price, choices_pricing')
           .eq('product_id', product.id)
           .gte('date', new Date().toISOString().split('T')[0])
           .order('date', { ascending: true })
@@ -321,12 +324,20 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           console.error('Dynamic pricing 조회 오류:', pricingError)
         }
 
-        // 마감된 날짜들 추출 및 날짜별 가격 정보 저장
+        // 마감된 날짜들 추출 및 날짜별 가격 정보 저장, 초이스 판매 상태 저장
         const closedDatesSet = new Set<string>()
         const pricingMap: Record<string, { adult_price: number; child_price: number; infant_price: number }> = {}
+        const choiceAvailabilityMap: Record<string, Record<string, boolean>> = {}
         
         if (pricingData) {
-          pricingData.forEach((item: { date: string; is_sale_available: boolean; adult_price: number; child_price: number; infant_price: number }) => {
+          pricingData.forEach((item: { 
+            date: string
+            is_sale_available: boolean
+            adult_price: number
+            child_price: number
+            infant_price: number
+            choices_pricing?: Record<string, { is_sale_available?: boolean }>
+          }) => {
             if (item.is_sale_available === false) {
               closedDatesSet.add(item.date)
             }
@@ -336,10 +347,23 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               child_price: item.child_price || 0,
               infant_price: item.infant_price || 0
             }
+            
+            // 초이스별 판매 상태 저장
+            if (item.choices_pricing && typeof item.choices_pricing === 'object') {
+              const choiceStatus: Record<string, boolean> = {}
+              Object.entries(item.choices_pricing).forEach(([choiceId, choiceData]) => {
+                if (choiceData && typeof choiceData === 'object') {
+                  // is_sale_available이 명시적으로 false인 경우만 마감으로 처리
+                  choiceStatus[choiceId] = choiceData.is_sale_available !== false
+                }
+              })
+              choiceAvailabilityMap[item.date] = choiceStatus
+            }
           })
         }
         
         setDatePrices(pricingMap)
+        setChoiceAvailability(choiceAvailabilityMap)
         
         // 테스트를 위해 임시로 마감된 날짜 추가
         closedDatesSet.add('2025-11-01')
@@ -713,6 +737,43 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       selectedOptions: defaultOptions
     }))
   }, [productChoices])
+
+  // 선택된 초이스 조합의 판매 가능 여부 확인
+  const isChoiceCombinationAvailable = useCallback((choiceGroupId: string, optionId: string): boolean => {
+    if (!bookingData.tourDate) return true // 날짜가 선택되지 않았으면 판매 가능으로 간주
+    
+    const dateAvailability = choiceAvailability[bookingData.tourDate]
+    if (!dateAvailability) return true // 해당 날짜에 초이스별 설정이 없으면 판매 가능
+    
+    // 선택된 모든 필수 초이스 조합 생성
+    const selectedOptionIds: string[] = []
+    requiredChoices.forEach((group: ChoiceGroup) => {
+      const selectedOptionId = group.choice_id === choiceGroupId 
+        ? optionId 
+        : bookingData.selectedOptions[group.choice_id]
+      if (selectedOptionId) {
+        selectedOptionIds.push(selectedOptionId)
+      }
+    })
+    
+    // 조합 키 생성 (option_id들을 +로 연결)
+    const combinationKey = selectedOptionIds.sort().join('+')
+    
+    // 해당 조합의 판매 가능 여부 확인
+    // 직접 조합 키가 있으면 그것 사용, 없으면 각 option_id별로 확인
+    if (dateAvailability[combinationKey] !== undefined) {
+      return dateAvailability[combinationKey]
+    }
+    
+    // 조합 키가 없으면 각 option_id별로 확인 (하나라도 마감이면 마감)
+    for (const optionIdCheck of selectedOptionIds) {
+      if (dateAvailability[optionIdCheck] === false) {
+        return false
+      }
+    }
+    
+    return true // 기본적으로 판매 가능
+  }, [bookingData.tourDate, bookingData.selectedOptions, choiceAvailability, requiredChoices])
 
   // 가격 계산
   const calculateTotalPrice = () => {
@@ -1820,40 +1881,66 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                 )}
                               </div>
                               <div className="space-y-1.5">
-                                {group.options.map((option: ChoiceOption) => (
-                                  <label key={option.option_id} className="flex items-center space-x-2 cursor-pointer p-1.5 rounded hover:bg-white transition-colors">
-                                    <input
-                                      type="radio"
-                                      name={group.choice_id}
-                                      value={option.option_id}
-                                      checked={bookingData.selectedOptions[group.choice_id] === option.option_id}
-                                      onChange={(e) => {
-                                        setBookingData(prev => ({
-                                          ...prev,
-                                          selectedOptions: {
-                                            ...prev.selectedOptions,
-                                            [group.choice_id]: e.target.value
+                                {group.options.map((option: ChoiceOption) => {
+                                  const isAvailable = isChoiceCombinationAvailable(group.choice_id, option.option_id)
+                                  const isDisabled = !isAvailable
+                                  
+                                  return (
+                                    <label 
+                                      key={option.option_id} 
+                                      className={`flex items-center space-x-2 p-1.5 rounded transition-colors ${
+                                        isDisabled 
+                                          ? 'opacity-50 cursor-not-allowed bg-gray-100' 
+                                          : 'cursor-pointer hover:bg-white'
+                                      }`}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name={group.choice_id}
+                                        value={option.option_id}
+                                        checked={bookingData.selectedOptions[group.choice_id] === option.option_id}
+                                        onChange={(e) => {
+                                          if (!isDisabled) {
+                                            setBookingData(prev => ({
+                                              ...prev,
+                                              selectedOptions: {
+                                                ...prev.selectedOptions,
+                                                [group.choice_id]: e.target.value
+                                              }
+                                            }))
                                           }
-                                        }))
-                                      }}
-                                      className="w-3.5 h-3.5 text-red-600"
-                                      required
-                                    />
-                                    <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
-                                      <span className="text-gray-900 font-medium text-xs">{isEnglish ? option.option_name || option.option_name_ko : option.option_name_ko || option.option_name}</span>
-                                      <div className="flex items-center gap-1 flex-shrink-0">
-                                        {option.option_price && option.option_price > 0 && (
-                                          <span className="text-red-600 font-medium text-xs">
-                                            +${option.option_price}
+                                        }}
+                                        className="w-3.5 h-3.5 text-red-600"
+                                        required
+                                        disabled={isDisabled}
+                                      />
+                                      <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className={`font-medium text-xs ${
+                                            isDisabled ? 'text-gray-500' : 'text-gray-900'
+                                          }`}>
+                                            {isEnglish ? option.option_name || option.option_name_ko : option.option_name_ko || option.option_name}
                                           </span>
-                                        )}
-                                        {option.is_default && (
-                                          <span className="text-[10px] text-gray-500 bg-gray-200 px-1 py-0.5 rounded">{translate('기본', 'Default')}</span>
-                                        )}
+                                          {isDisabled && (
+                                            <span className="text-[10px] text-red-600 bg-red-100 px-1.5 py-0.5 rounded font-medium">
+                                              {translate('마감', 'Closed')}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                          {option.option_price && option.option_price > 0 && (
+                                            <span className="text-red-600 font-medium text-xs">
+                                              +${option.option_price}
+                                            </span>
+                                          )}
+                                          {option.is_default && (
+                                            <span className="text-[10px] text-gray-500 bg-gray-200 px-1 py-0.5 rounded">{translate('기본', 'Default')}</span>
+                                          )}
+                                        </div>
                                       </div>
-                                    </div>
-                                  </label>
-                                ))}
+                                    </label>
+                                  )
+                                })}
                               </div>
                             </div>
                           ))}

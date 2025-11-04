@@ -64,3 +64,5 @@ STRIPE_SECRET_KEY=여기에_sk_test_붙여넣기
 
 **모두 체크했으면 완료!** 🎊
 
+
+

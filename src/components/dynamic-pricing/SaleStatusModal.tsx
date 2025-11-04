@@ -1,16 +1,24 @@
 'use client';
 
 import React, { useState, useCallback, memo } from 'react';
-import { X, Calendar, ToggleLeft, ToggleRight } from 'lucide-react';
+import { X, Calendar, ToggleLeft, ToggleRight, ChevronRight } from 'lucide-react';
 import { DateRangeSelection } from '@/lib/types/dynamic-pricing';
 import { DateRangeSelector } from './DateRangeSelector';
+
+interface ChoiceCombination {
+  id: string;
+  combination_key: string;
+  combination_name: string;
+  combination_name_ko?: string;
+}
 
 interface SaleStatusModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (dates: Date[], status: 'sale' | 'closed') => void;
+  onSave: (dates: Date[], status: 'sale' | 'closed', choiceStatusMap?: Record<string, boolean>) => void;
   initialDates?: Date[];
   initialStatus?: 'sale' | 'closed';
+  choiceCombinations?: ChoiceCombination[];
 }
 
 export const SaleStatusModal = memo(function SaleStatusModal({
@@ -18,11 +26,16 @@ export const SaleStatusModal = memo(function SaleStatusModal({
   onClose,
   onSave,
   initialDates = [],
-  initialStatus = 'sale'
+  initialStatus = 'sale',
+  choiceCombinations = []
 }: SaleStatusModalProps) {
   const [selectedDates, setSelectedDates] = useState<Date[]>(initialDates);
   const [saleStatus, setSaleStatus] = useState<'sale' | 'closed'>(initialStatus);
   const [dateStatusMap, setDateStatusMap] = useState<Record<string, 'sale' | 'closed'>>({});
+  const [choiceStatusMap, setChoiceStatusMap] = useState<Record<string, boolean>>({});
+  const [selectedChoiceId, setSelectedChoiceId] = useState<string | null>(null);
+  // 초이스별 날짜별 판매 상태 (choiceId -> date -> 'sale' | 'closed')
+  const [choiceDateStatusMap, setChoiceDateStatusMap] = useState<Record<string, Record<string, 'sale' | 'closed'>>>({});
   const [dateRangeSelection, setDateRangeSelection] = useState<DateRangeSelection>({
     startDate: '',
     endDate: '',
@@ -51,25 +64,91 @@ export const SaleStatusModal = memo(function SaleStatusModal({
     // 현재 상태의 반대로 토글
     const newStatus = currentStatus === 'sale' ? 'closed' : 'sale';
     
-    setDateStatusMap(prev => ({
+    // 초이스가 선택된 경우 해당 초이스의 날짜 상태 업데이트
+    if (selectedChoiceId) {
+      setChoiceDateStatusMap(prev => ({
+        ...prev,
+        [selectedChoiceId]: {
+          ...(prev[selectedChoiceId] || {}),
+          [date]: newStatus
+        }
+      }));
+
+      // 즉시 저장
+      try {
+        const dateObj = new Date(date);
+        const choiceStatusMapForSave: Record<string, boolean> = {
+          [selectedChoiceId]: newStatus === 'sale'
+        };
+        await onSave([dateObj], newStatus, choiceStatusMapForSave);
+      } catch (error) {
+        console.error('초이스별 상태 저장 실패:', error);
+      }
+    } else {
+      // 전체 상품 날짜 상태 업데이트
+      setDateStatusMap(prev => ({
+        ...prev,
+        [date]: newStatus
+      }));
+
+      // 즉시 저장
+      try {
+        const dateObj = new Date(date);
+        await onSave([dateObj], newStatus);
+      } catch (error) {
+        console.error('상태 저장 실패:', error);
+      }
+    }
+  }, [onSave, selectedChoiceId]);
+
+  // 초이스 선택 핸들러
+  const handleChoiceSelect = useCallback((choiceId: string) => {
+    setSelectedChoiceId(prev => prev === choiceId ? null : choiceId);
+  }, []);
+
+  // 초이스별 날짜 상태 토글 핸들러
+  const handleChoiceDateStatusToggle = useCallback(async (date: string, currentStatus: 'sale' | 'closed') => {
+    if (!selectedChoiceId) return;
+    
+    const newStatus = currentStatus === 'sale' ? 'closed' : 'sale';
+    
+    setChoiceDateStatusMap(prev => ({
       ...prev,
-      [date]: newStatus
+      [selectedChoiceId]: {
+        ...(prev[selectedChoiceId] || {}),
+        [date]: newStatus
+      }
     }));
 
     // 즉시 저장
     try {
       const dateObj = new Date(date);
-      await onSave([dateObj], newStatus);
+      const choiceStatusMapForSave: Record<string, boolean> = {
+        [selectedChoiceId]: newStatus === 'sale'
+      };
+      await onSave([dateObj], 'sale', choiceStatusMapForSave);
     } catch (error) {
-      console.error('상태 저장 실패:', error);
+      console.error('초이스별 날짜 상태 저장 실패:', error);
     }
-  }, [onSave]);
+  }, [selectedChoiceId, onSave]);
 
   // 저장 핸들러
   const handleSave = useCallback(() => {
-    onSave(selectedDates, saleStatus);
+    // 초이스별 날짜별 상태가 있으면 통합하여 저장
+    if (selectedChoiceId && Object.keys(choiceDateStatusMap[selectedChoiceId] || {}).length > 0) {
+      const dates = Object.keys(choiceDateStatusMap[selectedChoiceId]).map(dateStr => new Date(dateStr));
+      const choiceStatusMapForSave: Record<string, boolean> = {};
+      Object.entries(choiceDateStatusMap[selectedChoiceId]).forEach(([date, status]) => {
+        choiceStatusMapForSave[selectedChoiceId] = status === 'sale';
+      });
+      onSave(dates, saleStatus, choiceStatusMapForSave);
+    } else {
+      // 초이스별 상태가 설정된 경우에만 choiceStatusMap 전달
+      const hasChoiceStatus = Object.keys(choiceStatusMap).length > 0;
+      onSave(selectedDates, saleStatus, hasChoiceStatus ? choiceStatusMap : undefined);
+    }
     onClose();
-  }, [selectedDates, saleStatus, onSave, onClose]);
+  }, [selectedDates, saleStatus, choiceStatusMap, choiceDateStatusMap, selectedChoiceId, onSave, onClose]);
 
   if (!isOpen) return null;
 
@@ -163,6 +242,92 @@ export const SaleStatusModal = memo(function SaleStatusModal({
               </div>
             </div>
           </div>
+
+          {/* 초이스별 판매 상태 설정 */}
+          {choiceCombinations.length > 0 && (
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">
+                초이스별 판매 상태 설정
+              </label>
+              
+              {/* 초이스 목록 */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="space-y-2 mb-4">
+                  {choiceCombinations.map((choice) => (
+                    <button
+                      key={choice.id}
+                      onClick={() => handleChoiceSelect(choice.id)}
+                      className={`w-full flex items-center justify-between p-3 bg-white rounded-lg border-2 transition-all ${
+                        selectedChoiceId === choice.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex-1 text-left">
+                        <div className="text-sm font-medium text-gray-900">
+                          {choice.combination_name_ko || choice.combination_name}
+                        </div>
+                        {choice.combination_key && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            {choice.combination_key}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {selectedChoiceId === choice.id && (
+                          <span className="text-xs text-blue-600 font-medium">선택됨</span>
+                        )}
+                        <ChevronRight className={`h-4 w-4 transition-transform ${
+                          selectedChoiceId === choice.id ? 'text-blue-600 rotate-90' : 'text-gray-400'
+                        }`} />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                
+                {/* 선택된 초이스의 달력 */}
+                {selectedChoiceId && (
+                  <div className="bg-white rounded-lg p-4 border border-gray-200">
+                    <div className="mb-3">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-1">
+                        {choiceCombinations.find(c => c.id === selectedChoiceId)?.combination_name_ko || 
+                         choiceCombinations.find(c => c.id === selectedChoiceId)?.combination_name || 
+                         '초이스'} 달력
+                      </h4>
+                      <p className="text-xs text-gray-500">
+                        날짜를 더블클릭하여 판매/마감 상태를 토글하세요
+                      </p>
+                    </div>
+                    <DateRangeSelector
+                      initialSelection={dateRangeSelection}
+                      onDateRangeSelect={handleDateRangeSelection}
+                      saleStatus={saleStatus}
+                      showStatusOnCalendar={true}
+                      onDateStatusToggle={handleChoiceDateStatusToggle}
+                      dateStatusMap={choiceDateStatusMap[selectedChoiceId] || {}}
+                      disableDateSelection={true}
+                    />
+                    <div className="mt-3 flex items-center space-x-4 text-xs text-gray-600">
+                      <div className="flex items-center space-x-1">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>판매중</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                        <span>마감</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {!selectedChoiceId && (
+                  <div className="text-xs text-gray-500 text-center py-4">
+                    💡 초이스를 선택하면 해당 초이스의 달력이 표시됩니다. 달력에서 날짜를 더블클릭하여 판매/마감 상태를 설정할 수 있습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 선택된 날짜 미리보기 */}
           {selectedDates.length > 0 && (

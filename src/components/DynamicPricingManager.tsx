@@ -258,7 +258,11 @@ export default function DynamicPricingManager({
     setIsSaleStatusModalOpen(false);
   }, []);
 
-  const handleSaveSaleStatus = useCallback(async (dates: Date[], status: 'sale' | 'closed') => {
+  const handleSaveSaleStatus = useCallback(async (
+    dates: Date[], 
+    status: 'sale' | 'closed',
+    choiceStatusMap?: Record<string, boolean>
+  ) => {
     if (dates.length === 0) {
       return;
     }
@@ -287,6 +291,38 @@ export default function DynamicPricingManager({
     }
 
     try {
+      // 초이스별 판매 상태가 설정된 경우 choices_pricing 구조 생성
+      let choicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; is_sale_available: boolean }> = {};
+      
+      if (choiceStatusMap && Object.keys(choiceStatusMap).length > 0) {
+        // 각 초이스 조합에 대해 판매 상태 설정
+        // choiceStatusMap의 키는 choiceId이고, 값은 boolean (true=판매, false=마감)
+        Object.entries(choiceStatusMap).forEach(([choiceId, isSaleAvailable]) => {
+          const choice = choiceCombinations.find(c => c.id === choiceId);
+          if (choice) {
+            choicesPricing[choiceId] = {
+              adult_price: choice.adult_price || 0,
+              child_price: choice.child_price || 0,
+              infant_price: choice.infant_price || 0,
+              is_sale_available: isSaleAvailable
+            };
+          }
+        });
+        
+        // choiceStatusMap에 없는 다른 초이스들은 기본값으로 설정 (선택사항)
+        // 주석 처리: 모든 초이스를 항상 포함하지 않고, 설정된 것만 포함
+        // choiceCombinations.forEach(choice => {
+        //   if (!choicesPricing[choice.id]) {
+        //     choicesPricing[choice.id] = {
+        //       adult_price: choice.adult_price || 0,
+        //       child_price: choice.child_price || 0,
+        //       infant_price: choice.infant_price || 0,
+        //       is_sale_available: true // 기본값은 판매 가능
+        //     };
+        //   }
+        // });
+      }
+
       // 각 날짜와 채널에 대해 판매 상태 저장
       for (const channelId of channelIds) {
         for (const date of dates) {
@@ -303,7 +339,7 @@ export default function DynamicPricingManager({
             is_sale_available: status === 'sale',
             not_included_price: 0,
             markup_percent: 0,
-            choices_pricing: {}
+            choices_pricing: Object.keys(choicesPricing).length > 0 ? choicesPricing : {}
           };
 
           await savePricingRule(ruleData, false); // 개별 메시지 표시 안함
@@ -311,7 +347,10 @@ export default function DynamicPricingManager({
       }
 
       // 성공 메시지 표시
-      setMessage(`${dates.length}개 날짜의 판매 상태가 ${status === 'sale' ? '판매중' : '마감'}으로 저장되었습니다.`);
+      const choiceStatusMsg = choiceStatusMap && Object.keys(choiceStatusMap).length > 0 
+        ? ` (초이스별 설정 포함)`
+        : '';
+      setMessage(`${dates.length}개 날짜의 판매 상태가 ${status === 'sale' ? '판매중' : '마감'}으로 저장되었습니다.${choiceStatusMsg}`);
       
       // 데이터 새로고침
       await loadDynamicPricingData();
@@ -319,7 +358,7 @@ export default function DynamicPricingManager({
       console.error('판매 상태 저장 실패:', error);
       setMessage('판매 상태 저장에 실패했습니다.');
     }
-  }, [selectedChannelType, selectedChannel, channelGroups, productId, savePricingRule, setMessage, loadDynamicPricingData]);
+  }, [selectedChannelType, selectedChannel, channelGroups, productId, choiceCombinations, savePricingRule, setMessage, loadDynamicPricingData]);
 
   // 가격 규칙 저장 핸들러
   const handleSavePricingRule = useCallback(async () => {
@@ -930,6 +969,12 @@ export default function DynamicPricingManager({
         onSave={handleSaveSaleStatus}
         initialDates={selectedDates.map(date => new Date(date))}
         initialStatus="sale"
+        choiceCombinations={choiceCombinations.map(choice => ({
+          id: choice.id,
+          combination_key: choice.combination_key,
+          combination_name: choice.combination_name,
+          combination_name_ko: choice.combination_name_ko
+        }))}
       />
     </div>
   );

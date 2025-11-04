@@ -136,6 +136,7 @@ export interface SimplePricingRuleDto {
     adult_price: number;
     child_price: number;
     infant_price: number;
+    is_sale_available?: boolean;
   }>;
 }
 
