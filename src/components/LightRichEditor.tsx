@@ -149,12 +149,25 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     { label: '72px', value: '72px' }
   ]
 
-  // 에디터 초기화 (한 번만 실행)
+  // 에디터 초기화 및 값 동기화
   React.useEffect(() => {
-    if (editorRef.current && value && !isInitializedRef.current) {
-      const htmlContent = markdownToHtml(value)
-      editorRef.current.innerHTML = htmlContent
-      isInitializedRef.current = true
+    if (editorRef.current) {
+      if (!isInitializedRef.current) {
+        // 초기화: value가 있으면 설정, 없으면 빈 문자열로 초기화
+        const htmlContent = value ? markdownToHtml(value) : ''
+        editorRef.current.innerHTML = htmlContent
+        isInitializedRef.current = true
+      } else {
+        // 이미 초기화된 경우, value가 변경되면 에디터 내용도 업데이트
+        // 단, 사용자가 현재 편집 중이 아닐 때만 (커서가 없을 때)
+        const currentContent = editorRef.current.innerHTML
+        const expectedContent = value ? markdownToHtml(value) : ''
+        const currentMarkdown = htmlToMarkdown(currentContent)
+        // 현재 내용과 새로운 value가 다를 때만 업데이트 (외부에서 value가 변경된 경우)
+        if (currentMarkdown !== value && !editorRef.current.matches(':focus-within')) {
+          editorRef.current.innerHTML = expectedContent
+        }
+      }
     }
   }, [value])
 
@@ -206,9 +219,19 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
 
   // 에디터 내용 업데이트
   const updateEditorContent = () => {
-    if (editorRef.current && isInitializedRef.current) {
+    if (editorRef.current) {
+      // 초기화되지 않았다면 초기화
+      if (!isInitializedRef.current) {
+        isInitializedRef.current = true
+      }
+      
       const htmlContent = editorRef.current.innerHTML
       const markdownContent = htmlToMarkdown(htmlContent)
+      console.log('LightRichEditor updateEditorContent:', {
+        htmlContent: htmlContent.substring(0, 100),
+        markdownContent: markdownContent.substring(0, 100),
+        markdownLength: markdownContent.length
+      })
       onChange(markdownContent)
     }
   }

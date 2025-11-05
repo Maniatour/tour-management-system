@@ -12,6 +12,7 @@ import { FaHelicopter } from 'react-icons/fa'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import CategoryManagementModal from './CategoryManagementModal'
+import TagSelector from '@/components/admin/TagSelector'
 
 interface CategoryItem {
   value: string
@@ -79,7 +80,6 @@ export default function BasicInfoTab({
   const [allSubCategories, setAllSubCategories] = useState<SubCategoryItem[]>([])
   const [newDepartureTime, setNewDepartureTime] = useState('')
   const [showCategoryModal, setShowCategoryModal] = useState(false)
-  const [newTag, setNewTag] = useState('')
 
   // 디버깅을 위한 로그
   console.log('BasicInfoTab - formData.tourDepartureTimes:', formData.tourDepartureTimes);
@@ -104,22 +104,95 @@ export default function BasicInfoTab({
     })
   }
 
-  // 태그 관련 핸들러 함수들
-  const addTag = () => {
-    if (newTag.trim() && !formData.tags?.includes(newTag.trim())) {
-      setFormData({
-        ...formData,
-        tags: [...(formData.tags || []), newTag.trim()]
-      })
-      setNewTag('')
-    }
-  }
-
-  const removeTag = (tagToRemove: string) => {
+  // 태그 변경 핸들러 (TagSelector에서 호출됨)
+  const handleTagsChange = async (tags: string[]) => {
     setFormData({
       ...formData,
-      tags: (formData.tags || []).filter(tag => tag !== tagToRemove)
+      tags
     })
+    
+    // 새로 추가된 태그가 있으면 tags 테이블에 추가
+    const currentTags = formData.tags || []
+    const newTags = tags.filter(tag => !currentTags.includes(tag))
+    
+    if (newTags.length > 0) {
+      // 각 새 태그를 tags 테이블에 추가
+      for (const tagKey of newTags) {
+        // 태그 키 형식 검증 (영어 소문자, 언더스코어만 허용)
+        const keyPattern = /^[a-z][a-z0-9_]*$/
+        
+        // 이미 태그 키 형식인 경우 그대로 사용, 아닌 경우 변환
+        let normalizedKey = tagKey
+        if (!keyPattern.test(tagKey)) {
+          // 한글이나 다른 문자를 태그 키 형식으로 변환
+          normalizedKey = tagKey
+            .toLowerCase()
+            .replace(/[^a-z0-9_]/g, '_')
+            .replace(/^[^a-z]/, 'tag_') // 첫 문자가 영어 소문자가 아니면 'tag_' 추가
+            .replace(/_+/g, '_') // 연속된 언더스코어를 하나로
+            .replace(/^_|_$/g, '') // 앞뒤 언더스코어 제거
+          
+          if (!normalizedKey) {
+            normalizedKey = `tag_${Date.now()}`
+          }
+        }
+        
+        try {
+          // 태그가 이미 존재하는지 확인
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: existingTag } = await (supabase as any)
+            .from('tags')
+            .select('id')
+            .eq('key', normalizedKey)
+            .maybeSingle()
+          
+          if (!existingTag) {
+            // 태그가 없으면 새로 생성
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: insertError } = await (supabase as any)
+              .from('tags')
+              .insert({
+                id: crypto.randomUUID(),
+                key: normalizedKey,
+                is_system: false
+              })
+            
+            if (insertError && insertError.code !== '23505') { // unique violation은 무시
+              console.error('태그 추가 오류:', insertError)
+            } else {
+              // 한국어 번역 자동 추가 (태그 키가 한글인 경우)
+              if (tagKey !== normalizedKey) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const { data: tagData } = await (supabase as any)
+                  .from('tags')
+                  .select('id')
+                  .eq('key', normalizedKey)
+                  .single()
+                
+                if (tagData) {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const { error: translationError } = await (supabase as any)
+                    .from('tag_translations')
+                    .insert({
+                      id: crypto.randomUUID(),
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      tag_id: (tagData as any).id,
+                      locale: 'ko',
+                      label: tagKey
+                    })
+                  
+                  if (translationError && translationError.code !== '23505') {
+                    console.error('태그 번역 추가 오류:', translationError)
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('태그 처리 오류:', error)
+        }
+      }
+    }
   }
 
   // 카테고리 관리 모달 업데이트 핸들러
@@ -721,40 +794,12 @@ export default function BasicInfoTab({
         {/* 상품 태그 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">상품 태그</label>
-          <div className="flex space-x-2 mb-2">
-            <input
-              type="text"
-              value={newTag}
-              onChange={(e) => setNewTag(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && addTag()}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="태그를 입력하고 Enter를 누르세요"
-            />
-            <button
-              type="button"
-              onClick={addTag}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              추가
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(formData.tags || []).map((tag, index) => (
-              <span
-                key={index}
-                className="inline-flex items-center px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm"
-              >
-                {tag}
-                <button
-                  type="button"
-                  onClick={() => removeTag(tag)}
-                  className="ml-2 text-gray-500 hover:text-gray-700"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
+          <TagSelector
+            selectedTags={formData.tags || []}
+            onTagsChange={handleTagsChange}
+            locale={locale}
+            placeholder="태그를 선택하세요"
+          />
         </div>
       </div>
 

@@ -269,11 +269,38 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     setSaveMessage('')
 
     try {
-      // 기존 choices 삭제
-      await supabase
-        .from('choice_options')
-        .delete()
-        .in('choice_id', productChoices.map(pc => pc.id))
+      // 유효성 검사: choice_group와 choice_group_ko가 비어있지 않은지 확인
+      const invalidChoices = productChoices.filter(
+        choice => !choice.choice_group || !choice.choice_group.trim() || !choice.choice_group_ko || !choice.choice_group_ko.trim()
+      )
+      
+      if (invalidChoices.length > 0) {
+        setSaveMessage('모든 초이스 그룹의 이름을 입력해주세요.')
+        setSaving(false)
+        return
+      }
+
+      // 중복 검사: 같은 product_id와 choice_group 조합이 있는지 확인
+      const choiceGroups = productChoices.map(c => c.choice_group.trim().toLowerCase())
+      const duplicates = choiceGroups.filter((group, index) => choiceGroups.indexOf(group) !== index)
+      
+      if (duplicates.length > 0) {
+        setSaveMessage('중복된 초이스 그룹명이 있습니다. 각 그룹의 이름은 고유해야 합니다.')
+        setSaving(false)
+        return
+      }
+
+      // 기존 choices 삭제 - 유효한 UUID만 필터링
+      const validIds = productChoices
+        .map(pc => pc.id)
+        .filter(id => !id.startsWith('temp_') && id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i))
+      
+      if (validIds.length > 0) {
+        await supabase
+          .from('choice_options')
+          .delete()
+          .in('choice_id', validIds)
+      }
 
       await supabase
         .from('product_choices')
@@ -282,6 +309,14 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       // 새로운 choices 저장
       for (const choice of productChoices) {
+        // choice_group가 비어있지 않은지 다시 확인
+        const trimmedChoiceGroup = choice.choice_group.trim()
+        const trimmedChoiceGroupKo = choice.choice_group_ko.trim()
+        
+        if (!trimmedChoiceGroup || !trimmedChoiceGroupKo) {
+          throw new Error('초이스 그룹명은 필수입니다.')
+        }
+
         const { data: choiceData, error: choiceError } = await (supabase as unknown as {
           from: (table: string) => {
             insert: (data: Record<string, unknown>) => {
@@ -292,9 +327,9 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           .from('product_choices')
           .insert({
             product_id: productId,
-            choice_group: choice.choice_group,
-            choice_group_ko: choice.choice_group_ko,
-            choice_group_en: choice.choice_group_en || null,
+            choice_group: trimmedChoiceGroup,
+            choice_group_ko: trimmedChoiceGroupKo,
+            choice_group_en: choice.choice_group_en?.trim() || null,
             choice_type: choice.choice_type,
             is_required: choice.is_required,
             min_selections: choice.min_selections,
@@ -353,7 +388,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const addChoiceGroup = useCallback(() => {
     const newGroup: ProductChoice = {
       id: `temp_${Date.now()}`,
-      choice_group: '',
+      choice_group: `choice_group_${Date.now()}`, // 빈 문자열 대신 임시 고유값 사용
       choice_group_ko: '',
       choice_group_en: '',
       choice_type: 'single',

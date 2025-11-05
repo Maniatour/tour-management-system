@@ -168,14 +168,15 @@ export default function TableScheduleAdd({
       console.log('저장할 좌표:', { lat, lng, address, googleMapsLink: mapsLink })
       
       if (schedules[mapModalIndex!].id) {
-        supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
           .from('product_schedules')
           .update({
             latitude: lat,
             longitude: lng,
             location_ko: address || schedules[mapModalIndex!].location_ko,
             google_maps_link: mapsLink
-          } as any)
+          })
           .eq('id', schedules[mapModalIndex!].id!)
           .select()
           .then(({ error, data, count }: { error: any; data: any; count: any }) => {
@@ -2600,6 +2601,7 @@ export default function TableScheduleAdd({
               </button>
               <button
                 type="button"
+                
                 onClick={() => {
                   setShowTextModal(false)
                   setTextModalIndex(null)

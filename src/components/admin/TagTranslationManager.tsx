@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, Save, X, Globe } from 'lucide-react'
+import { Plus, Edit2, Trash2, Save, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import TranslationManager from './TranslationManager'
@@ -40,9 +40,13 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
   const [newTagKey, setNewTagKey] = useState('')
   const [newTagIsSystem, setNewTagIsSystem] = useState(false)
   const [newTagTranslations, setNewTagTranslations] = useState<{ [locale: string]: { label: string; pronunciation?: string; notes?: string } }>({})
+  const [unmigratedTags, setUnmigratedTags] = useState<string[]>([])
+  const [showUnmigratedTags, setShowUnmigratedTags] = useState(false)
+  const [migrating, setMigrating] = useState(false)
 
   useEffect(() => {
     fetchTags()
+    fetchUnmigratedTags()
   }, [])
 
   const fetchTags = async () => {
@@ -69,9 +73,11 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
       }
 
       // 데이터 구조 변환
-      const tagsWithTranslations = tagsData?.map(tag => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tagsWithTranslations = (tagsData || []).map((tag: any) => ({
         ...tag,
-        translations: (tag.tag_translations as any[]).reduce((acc, trans) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        translations: ((tag.tag_translations as any[]) || []).reduce((acc: any, trans: any) => {
           acc[trans.locale] = {
             label: trans.label,
             pronunciation: trans.pronunciation,
@@ -79,7 +85,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
           }
           return acc
         }, {})
-      })) || []
+      }))
 
       setTags(tagsWithTranslations)
     } catch (error) {
@@ -127,14 +133,16 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
       if (tagTransData) {
         // 업데이트
-        const { error: updateError } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: updateError } = await (supabase as any)
           .from('tag_translations')
           .update({
             label: editingValues.label,
             pronunciation: editingValues.pronunciation || null,
             notes: editingValues.notes || null
           })
-          .eq('id', tagTransData.id)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .eq('id', (tagTransData as any).id)
 
         if (updateError) {
           console.error('Error updating translation:', updateError)
@@ -142,7 +150,8 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
         }
       } else {
         // 새로 생성
-        const { error: insertError } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: insertError } = await (supabase as any)
           .from('tag_translations')
           .insert({
             id: crypto.randomUUID(),
@@ -215,7 +224,8 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
     try {
       // 태그 생성
-      const { data: newTag, error: tagError } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: newTag, error: tagError } = await (supabase as any)
         .from('tags')
         .insert({
           id: crypto.randomUUID(),
@@ -236,10 +246,11 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
       // 번역 추가
       const translationsToInsert = Object.entries(newTagTranslations)
-        .filter(([_, trans]) => trans.label.trim()) // 번역이 있는 것만
+        .filter(([, trans]) => trans.label.trim()) // 번역이 있는 것만
         .map(([locale, trans]) => ({
           id: crypto.randomUUID(),
-          tag_id: newTag.id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tag_id: (newTag as any).id,
           locale,
           label: trans.label.trim(),
           pronunciation: trans.pronunciation?.trim() || null,
@@ -247,7 +258,8 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
         }))
 
       if (translationsToInsert.length > 0) {
-        const { error: translationError } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: translationError } = await (supabase as any)
           .from('tag_translations')
           .insert(translationsToInsert)
 
@@ -266,9 +278,158 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
       setNewTagIsSystem(false)
       setNewTagTranslations({})
       await fetchTags()
+      await fetchUnmigratedTags()
     } catch (error) {
       console.error('Error adding tag:', error)
       alert(t('addError'))
+    }
+  }
+
+  // 기존 상품 태그 가져오기
+  const fetchUnmigratedTags = async () => {
+    try {
+      // 모든 상품의 tags 배열에서 고유 태그 추출
+      const { data: products, error } = await supabase
+        .from('products')
+        .select('tags')
+        .not('tags', 'is', null)
+
+      if (error) {
+        console.error('Error fetching products:', error)
+        return
+      }
+
+      // 모든 태그를 평탄화하고 중복 제거
+      const allProductTags = new Set<string>()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      products?.forEach((product: any) => {
+        if (product.tags && Array.isArray(product.tags)) {
+          product.tags.forEach((tag: string) => {
+            if (tag && typeof tag === 'string') {
+              allProductTags.add(tag)
+            }
+          })
+        }
+      })
+
+      // tags 테이블에 이미 존재하는 태그 키 가져오기
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: existingTags } = await (supabase as any)
+        .from('tags')
+        .select('key')
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const existingTagKeys = new Set((existingTags || []).map((t: any) => t.key))
+
+      // 마이그레이션되지 않은 태그만 필터링
+      const unmigrated = Array.from(allProductTags).filter(tag => !existingTagKeys.has(tag))
+      setUnmigratedTags(unmigrated)
+    } catch (error) {
+      console.error('Error fetching unmigrated tags:', error)
+    }
+  }
+
+  // 기존 상품 태그를 tags 테이블로 마이그레이션
+  const migrateProductTags = async () => {
+    if (unmigratedTags.length === 0) {
+      alert('마이그레이션할 태그가 없습니다.')
+      return
+    }
+
+    if (!confirm(`${unmigratedTags.length}개의 태그를 마이그레이션하시겠습니까?`)) {
+      return
+    }
+
+    setMigrating(true)
+    try {
+      let successCount = 0
+      let errorCount = 0
+
+      for (const tagKey of unmigratedTags) {
+        // 태그 키 정규화
+        const keyPattern = /^[a-z][a-z0-9_]*$/
+        let normalizedKey = tagKey
+        
+        if (!keyPattern.test(tagKey)) {
+          normalizedKey = tagKey
+            .toLowerCase()
+            .replace(/[^a-z0-9_]/g, '_')
+            .replace(/^[^a-z]/, 'tag_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '')
+          
+          if (!normalizedKey) {
+            normalizedKey = `tag_${Date.now()}`
+          }
+        }
+
+        try {
+          // 태그가 이미 존재하는지 확인
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: existingTag } = await (supabase as any)
+            .from('tags')
+            .select('id')
+            .eq('key', normalizedKey)
+            .maybeSingle()
+
+          if (!existingTag) {
+            // 태그 생성
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: newTag, error: tagError } = await (supabase as any)
+              .from('tags')
+              .insert({
+                id: crypto.randomUUID(),
+                key: normalizedKey,
+                is_system: false
+              })
+              .select()
+              .single()
+
+            if (tagError) {
+              if (tagError.code !== '23505') { // unique violation은 무시
+                console.error(`태그 ${tagKey} 생성 오류:`, tagError)
+                errorCount++
+                continue
+              }
+            } else if (newTag) {
+              // 원본 태그가 한글이거나 다른 형식인 경우 한국어 번역 추가
+              if (tagKey !== normalizedKey) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const { error: translationError } = await (supabase as any)
+                  .from('tag_translations')
+                  .insert({
+                    id: crypto.randomUUID(),
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    tag_id: (newTag as any).id,
+                    locale: 'ko',
+                    label: tagKey
+                  })
+
+                if (translationError && translationError.code !== '23505') {
+                  console.error(`태그 ${tagKey} 번역 추가 오류:`, translationError)
+                }
+              }
+
+              successCount++
+            }
+          } else {
+            // 이미 존재하는 태그는 성공으로 간주
+            successCount++
+          }
+        } catch (error) {
+          console.error(`태그 ${tagKey} 처리 오류:`, error)
+          errorCount++
+        }
+      }
+
+      alert(`마이그레이션 완료: ${successCount}개 성공, ${errorCount}개 실패`)
+      await fetchTags()
+      await fetchUnmigratedTags()
+    } catch (error) {
+      console.error('마이그레이션 오류:', error)
+      alert('마이그레이션 중 오류가 발생했습니다.')
+    } finally {
+      setMigrating(false)
     }
   }
 
@@ -326,14 +487,56 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
         <>
           <div className="flex justify-between items-center">
             <h3 className="text-xl font-semibold">{t('title')}</h3>
-            <button
-              onClick={() => setShowAddTagModal(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-            >
-              <Plus size={20} />
-              <span>{t('addTag')}</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {unmigratedTags.length > 0 && (
+                <button
+                  onClick={() => setShowUnmigratedTags(!showUnmigratedTags)}
+                  className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 flex items-center space-x-2"
+                >
+                  <span>기존 상품 태그 ({unmigratedTags.length}개)</span>
+                </button>
+              )}
+              <button
+                onClick={() => setShowAddTagModal(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+              >
+                <Plus size={20} />
+                <span>{t('addTag')}</span>
+              </button>
+            </div>
           </div>
+
+          {/* 기존 상품 태그 표시 */}
+          {showUnmigratedTags && unmigratedTags.length > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="font-semibold text-yellow-800">
+                  마이그레이션되지 않은 상품 태그 ({unmigratedTags.length}개)
+                </h4>
+                <button
+                  onClick={migrateProductTags}
+                  disabled={migrating}
+                  className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {migrating ? '마이그레이션 중...' : '모두 마이그레이션'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {unmigratedTags.map(tag => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-yellow-700 mt-2">
+                이러한 태그들은 상품에 사용되고 있지만 중앙 태그 관리 시스템에 등록되지 않았습니다.
+                &quot;모두 마이그레이션&quot; 버튼을 클릭하여 tags 테이블로 이동시킬 수 있습니다.
+              </p>
+            </div>
+          )}
 
           {/* 안내 */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

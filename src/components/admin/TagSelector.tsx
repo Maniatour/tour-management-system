@@ -116,34 +116,78 @@ export default function TagSelector({
     if (!newTagKey.trim()) return
 
     const keyPattern = /^[a-z][a-z0-9_]*$/
-    if (!keyPattern.test(newTagKey.trim())) {
-      alert('태그 키는 영어 소문자로 시작하고, 숫자와 언더스코어(_)만 사용할 수 있습니다.')
-      return
+    let normalizedKey = newTagKey.trim()
+    
+    // 태그 키 형식이 아니면 변환
+    if (!keyPattern.test(normalizedKey)) {
+      normalizedKey = normalizedKey
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_')
+        .replace(/^[^a-z]/, 'tag_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '')
+      
+      if (!normalizedKey) {
+        normalizedKey = `tag_${Date.now()}`
+      }
+      
+      // 사용자에게 변환된 키를 알림
+      if (normalizedKey !== newTagKey.trim()) {
+        if (!confirm(`태그 키가 "${normalizedKey}"로 변환됩니다. 계속하시겠습니까?`)) {
+          return
+        }
+      }
     }
 
-    // 태그 추가
-    const { error } = await supabase
-      .from('tags')
-      .insert({
-        id: crypto.randomUUID(),
-        key: newTagKey.trim(),
-        is_system: false
-      })
+    try {
+      // 태그 추가
+      const { data: newTag, error } = await supabase
+        .from('tags')
+        .insert({
+          id: crypto.randomUUID(),
+          key: normalizedKey,
+          is_system: false
+        })
+        .select()
+        .single()
 
-    if (error) {
-      if (error.code === '23505') {
-        alert('이미 존재하는 태그입니다.')
+      if (error) {
+        if (error.code === '23505') {
+          alert('이미 존재하는 태그입니다.')
+          return
+        }
+        console.error('Error adding tag:', error)
+        alert('태그 추가 중 오류가 발생했습니다.')
         return
       }
+
+      // 원본 키가 한글이거나 다른 언어인 경우 한국어 번역 자동 추가
+      if (newTagKey.trim() !== normalizedKey) {
+        const { error: translationError } = await supabase
+          .from('tag_translations')
+          .insert({
+            id: crypto.randomUUID(),
+            tag_id: newTag.id,
+            locale: locale,
+            label: newTagKey.trim()
+          })
+
+        if (translationError && translationError.code !== '23505') {
+          console.error('태그 번역 추가 오류:', translationError)
+        }
+      }
+
+      // 선택된 태그 목록에 추가
+      onTagsChange([...selectedTags, normalizedKey])
+
+      alert('태그가 추가되었습니다.')
+      setNewTagKey('')
+      setShowAddModal(false)
+      await fetchTags()
+    } catch (error) {
       console.error('Error adding tag:', error)
       alert('태그 추가 중 오류가 발생했습니다.')
-      return
     }
-
-    alert('태그가 추가되었습니다. 태그 번역 관리 페이지에서 번역을 추가해주세요.')
-    setNewTagKey('')
-    setShowAddModal(false)
-    await fetchTags()
   }
 
   return (

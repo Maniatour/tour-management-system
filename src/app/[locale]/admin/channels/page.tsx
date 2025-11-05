@@ -253,7 +253,8 @@ export default function AdminChannels() {
       const statusValue = newStatus ? 'active' : 'inactive'
       
       // Supabase에서 status 필드는 'active' 또는 'inactive' 문자열
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('channels')
         .update({ status: statusValue })
         .eq('id', channel.id)

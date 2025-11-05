@@ -973,11 +973,11 @@ export default function DynamicPricingManager({
           id: choice.id,
           combination_key: choice.combination_key,
           combination_name: choice.combination_name,
-          combination_name_ko: choice.combination_name_ko
+          ...(choice.combination_name_ko && { combination_name_ko: choice.combination_name_ko })
         }))}
         productId={productId}
-        channelId={selectedChannel || undefined}
-        channelType={selectedChannelType || undefined}
+        {...(selectedChannel && { channelId: selectedChannel })}
+        {...(selectedChannelType && { channelType: selectedChannelType })}
       />
     </div>
   );
