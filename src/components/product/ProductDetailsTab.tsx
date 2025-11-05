@@ -2077,7 +2077,7 @@ export default function ProductDetailsTab({
                       onChange={(value) => handleInputChange('description', value || '')}
                       height={150}
                       placeholder="상품에 대한 자세한 설명을 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>
@@ -2095,7 +2095,7 @@ export default function ProductDetailsTab({
                         onChange={(value) => handleInputChange('included', value || '')}
                         height={150}
                         placeholder="포함되는 사항들을 입력해주세요"
-                        enableResize={false}
+                        enableResize={true}
                       />
                     </div>
                     <div>
@@ -2107,7 +2107,7 @@ export default function ProductDetailsTab({
                         onChange={(value) => handleInputChange('not_included', value || '')}
                         height={150}
                         placeholder="불포함되는 사항들을 입력해주세요"
-                        enableResize={false}
+                        enableResize={true}
                       />
                     </div>
                   </div>
@@ -2125,7 +2125,7 @@ export default function ProductDetailsTab({
                       onChange={(value) => handleInputChange('pickup_drop_info', value || '')}
                       height={120}
                       placeholder="픽업 및 드롭에 대한 정보를 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>
@@ -2142,7 +2142,7 @@ export default function ProductDetailsTab({
                       onChange={(value) => handleInputChange('luggage_info', value || '')}
                       height={120}
                       placeholder="수하물에 대한 정보를 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>
@@ -2159,7 +2159,7 @@ export default function ProductDetailsTab({
                       onChange={(value) => handleInputChange('tour_operation_info', value || '')}
                       height={120}
                       placeholder="투어 운영에 대한 정보를 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>
@@ -2176,7 +2176,7 @@ export default function ProductDetailsTab({
                       onChange={(value) => handleInputChange('preparation_info', value || '')}
                       height={120}
                       placeholder="준비해야 할 사항들을 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>
@@ -2193,7 +2193,7 @@ export default function ProductDetailsTab({
                       onChange={(value) => handleInputChange('small_group_info', value || '')}
                       height={120}
                       placeholder="소그룹 투어에 대한 정보를 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>
@@ -2210,7 +2210,7 @@ export default function ProductDetailsTab({
                       onChange={(value) => handleInputChange('notice_info', value || '')}
                       height={120}
                       placeholder="중요한 안내사항들을 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>
@@ -2241,7 +2241,7 @@ export default function ProductDetailsTab({
                       }}
                       height={120}
                       placeholder="단독투어에 대한 정보를 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>
@@ -2258,7 +2258,7 @@ export default function ProductDetailsTab({
                       onChange={(value) => handleInputChange('cancellation_policy', value || '')}
                       height={150}
                       placeholder="취소 및 환불 정책을 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>
@@ -2289,7 +2289,7 @@ export default function ProductDetailsTab({
                       }}
                       height={120}
                       placeholder="채팅방에 표시될 공지사항을 입력해주세요"
-                      enableResize={false}
+                      enableResize={true}
                     />
                   </div>
                 </div>

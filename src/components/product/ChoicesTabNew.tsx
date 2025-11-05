@@ -268,6 +268,60 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     setSaving(true)
     setSaveMessage('')
 
+    // 현재 데이터 백업 (저장 실패 시 복구용)
+    let backupData: ProductChoice[] = []
+    try {
+      const backup = await supabase
+        .from('product_choices')
+        .select(`
+          id,
+          choice_group,
+          choice_group_ko,
+          choice_group_en,
+          choice_type,
+          is_required,
+          min_selections,
+          max_selections,
+          sort_order,
+          options:choice_options (
+            id,
+            option_key,
+            option_name,
+            option_name_ko,
+            description,
+            description_ko,
+            adult_price,
+            child_price,
+            infant_price,
+            capacity,
+            is_default,
+            is_active,
+            sort_order,
+            image_url,
+            image_alt,
+            thumbnail_url
+          )
+        `)
+        .eq('product_id', productId)
+        .order('sort_order', { ascending: true }) as { data: ProductChoiceData[] | null, error: SupabaseError | null }
+      
+      if (!backup.error && backup.data) {
+        backupData = backup.data.map(choice => ({
+          ...choice,
+          choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
+          options: (choice.options || []).map(option => ({
+            ...option,
+            image_url: option.image_url || undefined,
+            image_alt: option.image_alt || undefined,
+            thumbnail_url: option.thumbnail_url || undefined
+          }))
+        }))
+      }
+    } catch (backupError) {
+      console.error('백업 데이터 로드 오류:', backupError)
+      // 백업 실패해도 계속 진행
+    }
+
     try {
       // 유효성 검사: choice_group와 choice_group_ko가 비어있지 않은지 확인
       const invalidChoices = productChoices.filter(
@@ -275,7 +329,12 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       )
       
       if (invalidChoices.length > 0) {
-        setSaveMessage('모든 초이스 그룹의 이름을 입력해주세요.')
+        // 어떤 그룹이 문제인지 확인
+        const invalidIndices = invalidChoices.map(invalid => {
+          const index = productChoices.indexOf(invalid)
+          return index + 1
+        })
+        setSaveMessage(`초이스 그룹 ${invalidIndices.join(', ')}번의 이름을 입력해주세요.`)
         setSaving(false)
         return
       }
@@ -375,10 +434,32 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       }
 
       setSaveMessage('초이스가 성공적으로 저장되었습니다.')
-      await loadProductChoices() // 다시 로드
+      
+      // 저장 성공 후 데이터 다시 로드
+      try {
+        await loadProductChoices()
+      } catch (loadError) {
+        console.error('Choices 재로드 오류:', loadError)
+        // 로드 실패해도 저장은 성공했으므로 경고만 표시
+        setSaveMessage('초이스가 저장되었지만 새로고침이 필요할 수 있습니다.')
+      }
     } catch (error) {
       console.error('Choices 저장 오류:', error)
-      setSaveMessage('초이스 저장 중 오류가 발생했습니다.')
+      const errorMessage = error instanceof Error ? error.message : '초이스 저장 중 오류가 발생했습니다.'
+      setSaveMessage(`초이스 저장 중 오류가 발생했습니다: ${errorMessage}`)
+      
+      // 저장 실패 시 백업된 데이터로 복구
+      if (backupData.length > 0) {
+        setProductChoices(backupData)
+        setSaveMessage('저장 중 오류가 발생했습니다. 이전 데이터로 복구되었습니다.')
+      } else {
+        // 백업 데이터가 없으면 서버에서 다시 로드 시도
+        try {
+          await loadProductChoices()
+        } catch (loadError) {
+          console.error('Choices 재로드 오류:', loadError)
+        }
+      }
     } finally {
       setSaving(false)
     }

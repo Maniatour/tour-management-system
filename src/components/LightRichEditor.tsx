@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useRef, useState, useCallback } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 
 // 마크다운을 HTML로 변환하는 함수
 const markdownToHtml = (markdown: string): string => {
@@ -112,6 +112,11 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   // 사이즈 조정 상태 관리
   const [currentHeight, setCurrentHeight] = useState(height)
   
+  // height prop이 변경되면 currentHeight도 업데이트
+  React.useEffect(() => {
+    setCurrentHeight(height)
+  }, [height])
+  
   // 미리 정의된 색상 팔레트 (고유한 색상들)
   const colorPalette = [
     // 기본 색상
@@ -190,31 +195,34 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
     }
   }, [showColorPicker, showFontSizePicker, showBackgroundColorPicker])
 
-  // 사이즈 조정 이벤트 핸들러 (단순화)
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  // 사이즈 조정 이벤트 핸들러
+  const handleMouseDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault()
     e.stopPropagation()
     
-    console.log('드래그 시작') // 디버깅용
-    
-    const startY = e.clientY
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    const startY = clientY
     const startHeight = currentHeight
     
-    const handleMouseMove = (e: MouseEvent) => {
-      e.preventDefault()
-      const deltaY = e.clientY - startY
+    const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
+      moveEvent.preventDefault()
+      const currentY = 'touches' in moveEvent ? moveEvent.touches[0].clientY : moveEvent.clientY
+      const deltaY = currentY - startY
       const newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight + deltaY))
       setCurrentHeight(newHeight)
     }
     
-    const handleMouseUp = () => {
-      console.log('드래그 종료') // 디버깅용
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
+    const handleEnd = () => {
+      document.removeEventListener('mousemove', handleMove as EventListener)
+      document.removeEventListener('mouseup', handleEnd)
+      document.removeEventListener('touchmove', handleMove as EventListener)
+      document.removeEventListener('touchend', handleEnd)
     }
     
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
+    document.addEventListener('mousemove', handleMove as EventListener)
+    document.addEventListener('mouseup', handleEnd)
+    document.addEventListener('touchmove', handleMove as EventListener, { passive: false })
+    document.addEventListener('touchend', handleEnd)
   }, [currentHeight, minHeight, maxHeight])
 
   // 에디터 내용 업데이트
@@ -304,10 +312,10 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
   }
 
   return (
-    <div className={`border border-gray-300 rounded overflow-hidden ${className}`}>
+    <div className={`border border-gray-300 rounded overflow-hidden flex flex-col ${className}`}>
       {/* 툴바 */}
       {showToolbar && (
-        <div className="bg-gray-50 border-b border-gray-200 p-2 flex flex-wrap gap-1">
+        <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 p-2 flex flex-wrap gap-1">
           {enableBold && (
             <button
               type="button"
@@ -516,9 +524,11 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
             setTimeout(updateEditorContent, 0)
           }
         }}
-        className="w-full p-4 focus:outline-none text-sm"
+        className="w-full p-4 focus:outline-none text-sm overflow-y-auto flex-shrink-0"
         style={{ 
           height: `${currentHeight}px`,
+          minHeight: `${minHeight}px`,
+          maxHeight: `${maxHeight}px`,
           lineHeight: '1.6',
           fontFamily: 'system-ui, -apple-system, sans-serif',
           whiteSpace: 'pre-wrap'
@@ -530,14 +540,19 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
       {enableResize && (
         <div
           onMouseDown={handleMouseDown}
-          className="w-full h-4 bg-gray-200 hover:bg-gray-300 cursor-ns-resize flex items-center justify-center group transition-colors border-t border-gray-300 relative"
+          onTouchStart={handleMouseDown}
+          className="w-full h-4 bg-gray-200 hover:bg-gray-300 cursor-ns-resize flex items-center justify-center group transition-colors border-t border-gray-300 relative flex-shrink-0"
           style={{ 
             cursor: 'ns-resize',
-            userSelect: 'none'
+            userSelect: 'none',
+            touchAction: 'none',
+            WebkitUserSelect: 'none',
+            MozUserSelect: 'none',
+            msUserSelect: 'none'
           }}
         >
           <div className="w-16 h-1 bg-gray-500 group-hover:bg-gray-600 rounded transition-colors"></div>
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
             드래그하여 크기 조정
           </div>
         </div>
