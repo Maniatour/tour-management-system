@@ -975,6 +975,9 @@ export default function DynamicPricingManager({
           combination_name: choice.combination_name,
           combination_name_ko: choice.combination_name_ko
         }))}
+        productId={productId}
+        channelId={selectedChannel || undefined}
+        channelType={selectedChannelType || undefined}
       />
     </div>
   );

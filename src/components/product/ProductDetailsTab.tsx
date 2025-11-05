@@ -1050,6 +1050,7 @@ export default function ProductDetailsTab({
         .select('id')
         .eq('product_id', productId)
         .eq('language_code', currentLang)
+        .is('channel_id', null) // channel_id가 NULL인 경우만 조회
         .maybeSingle() as { data: { id: string } | null, error: unknown }
 
       if (selectDetailsError) {
@@ -1059,6 +1060,7 @@ export default function ProductDetailsTab({
 
       const detailsData = {
         product_id: productId,
+        channel_id: null, // 채널 선택 없이 저장할 때는 NULL로 설정
         language_code: currentLang,
         slogan1: currentDetails.slogan1,
         slogan2: currentDetails.slogan2,
@@ -1089,6 +1091,7 @@ export default function ProductDetailsTab({
           })
           .eq('product_id', productId)
           .eq('language_code', currentLang)
+          .is('channel_id', null) // channel_id가 NULL인 경우만 업데이트
 
         if (detailsError) {
           console.error('product_details 업데이트 오류:', detailsError)

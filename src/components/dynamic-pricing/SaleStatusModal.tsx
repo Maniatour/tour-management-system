@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo, useEffect } from 'react';
 import { X, Calendar, ToggleLeft, ToggleRight, ChevronRight } from 'lucide-react';
 import { DateRangeSelection } from '@/lib/types/dynamic-pricing';
 import { DateRangeSelector } from './DateRangeSelector';
+import { supabase } from '@/lib/supabase';
 
 interface ChoiceCombination {
   id: string;
@@ -19,6 +20,9 @@ interface SaleStatusModalProps {
   initialDates?: Date[];
   initialStatus?: 'sale' | 'closed';
   choiceCombinations?: ChoiceCombination[];
+  productId?: string;
+  channelId?: string;
+  channelType?: string;
 }
 
 export const SaleStatusModal = memo(function SaleStatusModal({
@@ -27,7 +31,10 @@ export const SaleStatusModal = memo(function SaleStatusModal({
   onSave,
   initialDates = [],
   initialStatus = 'sale',
-  choiceCombinations = []
+  choiceCombinations = [],
+  productId,
+  channelId,
+  channelType
 }: SaleStatusModalProps) {
   const [selectedDates, setSelectedDates] = useState<Date[]>(initialDates);
   const [saleStatus, setSaleStatus] = useState<'sale' | 'closed'>(initialStatus);
@@ -41,6 +48,94 @@ export const SaleStatusModal = memo(function SaleStatusModal({
     endDate: '',
     selectedDays: [0, 1, 2, 3, 4, 5, 6]
   });
+  const [loadingStatus, setLoadingStatus] = useState(false);
+
+  // 현재 채널의 날짜별 판매 상태 로드
+  useEffect(() => {
+    if (!isOpen || !productId) return;
+    
+    const loadDateStatus = async () => {
+      setLoadingStatus(true);
+      try {
+        // 채널 ID 결정
+        let targetChannelId = channelId;
+        if (!targetChannelId && channelType === 'SELF') {
+          // 자체 채널 타입이면 해당 타입의 첫 번째 채널 사용
+          // type이 'self' 또는 'partner'이거나, category가 'Own', 'Self', 'Partner'인 채널 찾기
+          const { data: channels, error: channelError } = await supabase
+            .from('channels')
+            .select('id')
+            .or('type.eq.self,type.eq.partner,category.eq.Own,category.eq.Self,category.eq.Partner')
+            .eq('status', 'active')
+            .limit(1);
+          
+          if (!channelError && channels && channels.length > 0) {
+            targetChannelId = channels[0].id;
+          }
+        }
+        
+        if (!targetChannelId) {
+          setLoadingStatus(false);
+          return;
+        }
+        
+        // 현재 날짜부터 1년 후까지의 데이터 조회
+        const today = new Date().toISOString().split('T')[0];
+        const oneYearLater = new Date();
+        oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
+        const endDate = oneYearLater.toISOString().split('T')[0];
+        
+        const { data: pricingData, error } = await supabase
+          .from('dynamic_pricing')
+          .select('date, is_sale_available, choices_pricing')
+          .eq('product_id', productId)
+          .eq('channel_id', targetChannelId)
+          .gte('date', today)
+          .lte('date', endDate)
+          .order('date', { ascending: true });
+        
+        if (error) {
+          console.error('판매 상태 로드 오류:', error);
+          setLoadingStatus(false);
+          return;
+        }
+        
+        // 날짜별 판매 상태 맵 생성
+        const statusMap: Record<string, 'sale' | 'closed'> = {};
+        const choiceStatusMapLocal: Record<string, Record<string, 'sale' | 'closed'>> = {};
+        
+        if (pricingData) {
+          pricingData.forEach((item) => {
+            const dateStr = item.date;
+            // 데이터가 있으면 is_sale_available 값 사용, 없으면 마감(closed)
+            statusMap[dateStr] = item.is_sale_available === false ? 'closed' : 'sale';
+            
+            // 초이스별 판매 상태 로드
+            if (item.choices_pricing && typeof item.choices_pricing === 'object') {
+              Object.entries(item.choices_pricing).forEach(([choiceId, choiceData]) => {
+                if (choiceData && typeof choiceData === 'object') {
+                  const isSaleAvailable = (choiceData as any).is_sale_available !== false;
+                  if (!choiceStatusMapLocal[choiceId]) {
+                    choiceStatusMapLocal[choiceId] = {};
+                  }
+                  choiceStatusMapLocal[choiceId][dateStr] = isSaleAvailable ? 'sale' : 'closed';
+                }
+              });
+            }
+          });
+        }
+        
+        setDateStatusMap(statusMap);
+        setChoiceDateStatusMap(choiceStatusMapLocal);
+      } catch (error) {
+        console.error('판매 상태 로드 실패:', error);
+      } finally {
+        setLoadingStatus(false);
+      }
+    };
+    
+    loadDateStatus();
+  }, [isOpen, productId, channelId, channelType]);
 
   // 날짜 범위 선택 핸들러
   const handleDateRangeSelection = useCallback((selection: DateRangeSelection) => {

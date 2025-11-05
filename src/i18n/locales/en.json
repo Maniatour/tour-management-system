@@ -1444,6 +1444,54 @@
     "searchPlaceholder": "Search tags...",
     "addNewTranslation": "Add New Tag"
   },
+  "channels": {
+    "title": "Channel Management",
+    "addChannel": "Add New Channel",
+    "searchPlaceholder": "Search by channel name, type, or description...",
+    "deleteConfirm": "Are you sure you want to delete this channel?",
+    "basePrice": "Base Price",
+    "markup": "Markup",
+    "columns": {
+      "name": "Channel Name",
+      "type": "Type",
+      "pricing": "Pricing",
+      "commission": "Commission",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "types": {
+      "OTA": "OTA",
+      "Direct": "Direct",
+      "Partner": "Partner",
+      "Self": "Self"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "form": {
+      "title": "Add New Channel",
+      "editTitle": "Edit Channel Information",
+      "name": "Channel Name",
+      "type": "Type",
+      "website": "Website",
+      "customerWebsite": "Customer Website",
+      "adminWebsite": "Admin Website",
+      "commission": "Commission Rate",
+      "basePrice": "Base Price",
+      "markup": "Markup",
+      "status": "Status",
+      "description": "Description",
+      "selectType": "Select Type",
+      "selectStatus": "Select Status",
+      "favicon": "Favicon",
+      "faviconHelp": "Upload an image to use as the browser tab/app icon (PNG/SVG/ICO)",
+      "managerName": "Manager Name",
+      "managerContact": "Contact",
+      "contractUpload": "Contract Upload",
+      "contractView": "View Contract"
+    }
+  },
   "companyExpense": {
     "title": "Company Expense Management",
     "expenseList": "Expense List",

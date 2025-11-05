@@ -310,7 +310,9 @@ export default function ProductScheduleTab({
         const { id, ...scheduleData } = schedule
         console.log(`일정 업데이트 중: ${id}`, {
           two_guide_schedule: scheduleData.two_guide_schedule,
-          guide_driver_schedule: scheduleData.guide_driver_schedule
+          guide_driver_schedule: scheduleData.guide_driver_schedule,
+          description_ko: scheduleData.description_ko,
+          description_en: scheduleData.description_en
         })
         const { error: updateError } = await supabase
           .from('product_schedules')
@@ -320,7 +322,10 @@ export default function ProductScheduleTab({
             is_tour: schedule.is_tour ?? false,
             // 빈 문자열을 null로 변환
             two_guide_schedule: scheduleData.two_guide_schedule === '' ? null : scheduleData.two_guide_schedule,
-            guide_driver_schedule: scheduleData.guide_driver_schedule === '' ? null : scheduleData.guide_driver_schedule
+            guide_driver_schedule: scheduleData.guide_driver_schedule === '' ? null : scheduleData.guide_driver_schedule,
+            // description 필드 명시적으로 포함
+            description_ko: scheduleData.description_ko || null,
+            description_en: scheduleData.description_en || null
           } as any)
           .eq('id', id!)
 
@@ -346,7 +351,10 @@ export default function ProductScheduleTab({
           is_tour: schedule.is_tour ?? false,
           // 빈 문자열을 null로 변환
           two_guide_schedule: schedule.two_guide_schedule === '' ? null : schedule.two_guide_schedule,
-          guide_driver_schedule: schedule.guide_driver_schedule === '' ? null : schedule.guide_driver_schedule
+          guide_driver_schedule: schedule.guide_driver_schedule === '' ? null : schedule.guide_driver_schedule,
+          // description 필드 명시적으로 포함
+          description_ko: schedule.description_ko || null,
+          description_en: schedule.description_en || null
         }))
 
         console.log('삽입할 데이터:', insertData)

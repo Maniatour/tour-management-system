@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { ArrowLeft, Save, Globe, FileText, Users, Info, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { createClientSupabase } from '@/lib/supabase'
+import LightRichEditor from '@/components/LightRichEditor'
 
 interface Product {
   id: string
@@ -318,24 +319,24 @@ export default function ProductDetailsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   포함 사항
                 </label>
-                <textarea
+                <LightRichEditor
                   value={formData.included}
-                  onChange={(e) => handleInputChange('included', e.target.value)}
-                  rows={6}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(value) => handleInputChange('included', value || '')}
+                  height={150}
                   placeholder="포함된 서비스나 항목들을 입력하세요..."
+                  enableResize={false}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   불포함 사항
                 </label>
-                <textarea
+                <LightRichEditor
                   value={formData.not_included}
-                  onChange={(e) => handleInputChange('not_included', e.target.value)}
-                  rows={6}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(value) => handleInputChange('not_included', value || '')}
+                  height={150}
                   placeholder="포함되지 않은 서비스나 항목들을 입력하세요..."
+                  enableResize={false}
                 />
               </div>
             </div>

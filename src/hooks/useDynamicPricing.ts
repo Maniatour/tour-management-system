@@ -78,27 +78,40 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
     }
 
     try {
-      // 먼저 기존 레코드가 있는지 확인
+      // 먼저 기존 레코드가 있는지 확인 (choices_pricing 포함)
       const { data: existingData, error: selectError } = await supabase
         .from('dynamic_pricing')
-        .select('id')
+        .select('id, choices_pricing')
         .eq('product_id', ruleData.product_id)
         .eq('channel_id', ruleData.channel_id)
         .eq('date', ruleData.date)
-        .single();
+        .maybeSingle();
 
       let result;
       
+      // maybeSingle()은 레코드가 없으면 null을 반환하고 에러가 아님
       if (existingData && !selectError) {
         // 기존 레코드가 있으면 업데이트
+        // choices_pricing이 있으면 기존 데이터와 병합
+        if (ruleData.choices_pricing && Object.keys(ruleData.choices_pricing).length > 0) {
+          const existingChoicesPricing = existingData.choices_pricing || {};
+          // 기존 choices_pricing과 새로운 choices_pricing 병합
+          const mergedChoicesPricing = {
+            ...existingChoicesPricing,
+            ...ruleData.choices_pricing
+          };
+          ruleData.choices_pricing = mergedChoicesPricing;
+        }
+        
         const { data, error } = await supabase
           .from('dynamic_pricing')
           .update(ruleData)
           .eq('id', existingData.id)
           .select()
-          .single();
+          .maybeSingle();
         
         if (error) throw error;
+        if (!data) throw new Error('업데이트 실패: 데이터가 반환되지 않았습니다.');
         result = data;
       } else {
         // 기존 레코드가 없으면 삽입
@@ -106,9 +119,10 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           .from('dynamic_pricing')
           .insert(ruleData)
           .select()
-          .single();
+          .maybeSingle();
         
         if (error) throw error;
+        if (!data) throw new Error('삽입 실패: 데이터가 반환되지 않았습니다.');
         result = data;
       }
 
@@ -168,7 +182,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
               .eq('product_id', ruleData.product_id)
               .eq('channel_id', ruleData.channel_id)
               .eq('date', ruleData.date)
-              .single();
+              .maybeSingle();
 
             if (existingData && !selectError) {
               // 업데이트

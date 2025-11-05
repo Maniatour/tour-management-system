@@ -247,7 +247,10 @@ export const DateRangeSelector = memo(function DateRangeSelector({
               const isToday = dateString === new Date().toISOString().split('T')[0];
               
               // 날짜별 상태 확인 (우선순위: 개별 설정 > 전역 설정)
-              const dateStatus = dateStatusMap[dateString] || saleStatus;
+              // dateStatusMap에 없으면 기본값은 마감(closed) - 데이터가 없다는 의미
+              const dateStatus = dateStatusMap[dateString] !== undefined 
+                ? dateStatusMap[dateString] 
+                : 'closed';
               
               return (
                 <button

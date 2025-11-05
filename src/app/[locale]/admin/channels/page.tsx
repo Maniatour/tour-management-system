@@ -140,7 +140,13 @@ export default function AdminChannels() {
         return
       }
 
-      setChannels((data as Channel[]) || [])
+      // status 필드를 is_active boolean으로 변환
+      const channelsWithStatus = (data || []).map((channel: any) => ({
+        ...channel,
+        is_active: channel.status === 'active' || channel.is_active === true
+      }))
+
+      setChannels(channelsWithStatus as Channel[])
     } catch (error) {
       console.error('Error fetching channels:', error)
     } finally {
@@ -236,6 +242,37 @@ export default function AdminChannels() {
         console.error('Error deleting channel:', error)
         alert('채널 삭제 중 오류가 발생했습니다.')
       }
+    }
+  }
+
+  const handleToggleChannelStatus = async (channel: Channel, e: React.MouseEvent) => {
+    e.stopPropagation() // 이벤트 버블링 방지
+    
+    try {
+      const newStatus = !channel.is_active
+      const statusValue = newStatus ? 'active' : 'inactive'
+      
+      // Supabase에서 status 필드는 'active' 또는 'inactive' 문자열
+      const { error } = await supabase
+        .from('channels')
+        .update({ status: statusValue })
+        .eq('id', channel.id)
+
+      if (error) {
+        console.error('Error toggling channel status:', error)
+        alert('채널 상태 변경 중 오류가 발생했습니다.')
+        return
+      }
+
+      // 로컬 상태 업데이트
+      setChannels(channels.map(c => 
+        c.id === channel.id 
+          ? { ...c, is_active: newStatus } 
+          : c
+      ))
+    } catch (error) {
+      console.error('Error toggling channel status:', error)
+      alert('채널 상태 변경 중 오류가 발생했습니다.')
     }
   }
 
@@ -559,12 +596,19 @@ export default function AdminChannels() {
                     {channel.commission_rate || 0}%
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      channel.is_active ? 'bg-green-100 text-green-800' : 
-                      'bg-red-100 text-red-800'
-                    }`}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToggleChannelStatus(channel, e)
+                      }}
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity ${
+                        channel.is_active ? 'bg-green-100 text-green-800 hover:bg-green-200' : 
+                        'bg-red-100 text-red-800 hover:bg-red-200'
+                      }`}
+                      title={channel.is_active ? '비활성화하려면 클릭' : '활성화하려면 클릭'}
+                    >
                       {getStatusLabel(channel.is_active)}
-                    </span>
+                    </button>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex space-x-2">
@@ -642,13 +686,17 @@ export default function AdminChannels() {
                         {channel.description || '설명 없음'}
                       </p>
                     </div>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      channel.is_active 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-red-100 text-red-800'
-                    }`}>
+                    <button
+                      onClick={(e) => handleToggleChannelStatus(channel, e)}
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full cursor-pointer hover:opacity-80 transition-opacity ${
+                        channel.is_active 
+                          ? 'bg-green-100 text-green-800 hover:bg-green-200' 
+                          : 'bg-red-100 text-red-800 hover:bg-red-200'
+                      }`}
+                      title={channel.is_active ? '비활성화하려면 클릭' : '활성화하려면 클릭'}
+                    >
                       {getStatusLabel(channel.is_active)}
-                    </span>
+                    </button>
                   </div>
 
                   {/* 카드 내용 */}
