@@ -196,23 +196,51 @@ export default function ProductDetailPage() {
           .select('*')
           .eq('product_id', productId)
           .eq('language_code', locale)
+          .limit(1)
           .maybeSingle()
         
         if (!detailsError && detailsData) {
           setProductDetails(detailsData)
-        } else if ((detailsStatus === 404 || detailsStatus === 406) && locale !== 'ko') {
-          const { data: fallbackDetails, error: fallbackError } = await supabase
-            .from('product_details_multilingual')
-            .select('*')
-            .eq('product_id', productId)
-            .eq('language_code', 'ko')
-            .maybeSingle()
-
-          if (!fallbackError && fallbackDetails) {
-            setProductDetails(fallbackDetails)
-          }
         } else if (detailsError) {
-          throw detailsError
+          // PGRST116은 여러 행이 반환되었을 때 발생 (이미 .limit(1)로 처리했지만 혹시 모를 경우 대비)
+          if (detailsError.code === 'PGRST116') {
+            // 여러 행이 있으면 첫 번째 행을 가져오기
+            const { data: multipleDetails } = await supabase
+              .from('product_details_multilingual')
+              .select('*')
+              .eq('product_id', productId)
+              .eq('language_code', locale)
+              .limit(1)
+            
+            if (multipleDetails && multipleDetails.length > 0) {
+              setProductDetails(multipleDetails[0])
+            } else if (locale !== 'ko') {
+              // 폴백: 한국어로 시도
+              const { data: fallbackDetails } = await supabase
+                .from('product_details_multilingual')
+                .select('*')
+                .eq('product_id', productId)
+                .eq('language_code', 'ko')
+                .limit(1)
+              
+              if (fallbackDetails && fallbackDetails.length > 0) {
+                setProductDetails(fallbackDetails[0])
+              }
+            }
+          } else if ((detailsStatus === 404 || detailsStatus === 406) && locale !== 'ko') {
+            // 데이터가 없을 때 폴백 시도
+            const { data: fallbackDetails, error: fallbackError } = await supabase
+              .from('product_details_multilingual')
+              .select('*')
+              .eq('product_id', productId)
+              .eq('language_code', 'ko')
+              .limit(1)
+              .maybeSingle()
+
+            if (!fallbackError && fallbackDetails) {
+              setProductDetails(fallbackDetails)
+            }
+          }
         }
         
         // 3. 투어 코스 정보 가져오기
