@@ -5,6 +5,8 @@ import { ChevronDown } from 'lucide-react'
 
 // 마크다운을 HTML로 변환하는 함수
 const markdownToHtml = (markdown: string): string => {
+  if (!markdown) return ''
+  
   let html = markdown
   
   // 이미지 변환: ![alt](src) -> <img src="src" alt="alt" />
@@ -22,7 +24,7 @@ const markdownToHtml = (markdown: string): string => {
   // 목록 변환: - item -> <li>item</li>
   html = html.replace(/^- (.+)$/gm, '<li>$1</li>')
   
-  // 줄바꿈을 <br>로 변환
+  // 줄바꿈을 <br>로 변환 (여러 줄바꿈도 처리)
   html = html.replace(/\n/g, '<br>')
   
   return html
@@ -50,11 +52,23 @@ const htmlToMarkdown = (html: string): string => {
   // 목록 변환: <li>item</li> -> - item
   markdown = markdown.replace(/<li[^>]*>(.*?)<\/li>/g, '- $1')
   
+  // div, p 태그를 줄바꿈으로 변환 (블록 요소 처리)
+  markdown = markdown.replace(/<\/div>/gi, '\n')
+  markdown = markdown.replace(/<\/p>/gi, '\n')
+  markdown = markdown.replace(/<div[^>]*>/gi, '')
+  markdown = markdown.replace(/<p[^>]*>/gi, '')
+  
   // 줄바꿈 변환: <br> -> \n
-  markdown = markdown.replace(/<br\s*\/?>/g, '\n')
+  markdown = markdown.replace(/<br\s*\/?>/gi, '\n')
   
   // HTML 태그 제거
   markdown = markdown.replace(/<[^>]*>/g, '')
+  
+  // 연속된 줄바꿈을 최대 2개로 제한 (너무 많은 빈 줄 방지)
+  markdown = markdown.replace(/\n{3,}/g, '\n\n')
+  
+  // 앞뒤 공백 제거
+  markdown = markdown.trim()
   
   return markdown
 }
@@ -505,8 +519,28 @@ const LightRichEditor: React.FC<LightRichEditorProps> = ({
           }, 0)
         }}
         onKeyDown={(e) => {
+          // Enter 키: 명시적으로 <br> 태그 삽입
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            const selection = window.getSelection()
+            if (selection && selection.rangeCount > 0) {
+              const range = selection.getRangeAt(0)
+              const br = document.createElement('br')
+              range.deleteContents()
+              range.insertNode(br)
+              range.setStartAfter(br)
+              range.collapse(true)
+              selection.removeAllRanges()
+              selection.addRange(range)
+              setTimeout(updateEditorContent, 0)
+            }
+          }
+          // Shift+Enter: 기본 동작 허용 (줄바꿈)
+          else if (e.key === 'Enter' && e.shiftKey) {
+            // 기본 동작 허용
+          }
           // Ctrl+B: 굵게
-          if (e.ctrlKey && e.key === 'b' && enableBold) {
+          else if (e.ctrlKey && e.key === 'b' && enableBold) {
             e.preventDefault()
             document.execCommand('bold')
             setTimeout(updateEditorContent, 0)

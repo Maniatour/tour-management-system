@@ -91,21 +91,55 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
       
       // maybeSingle()은 레코드가 없으면 null을 반환하고 에러가 아님
       if (existingData && !selectError) {
-        // 기존 레코드가 있으면 업데이트
+        // 기존 레코드가 있으면 부분 업데이트 수행
+        // 전달되지 않은 필드는 기존 값을 유지
+        
+        // 기존 레코드의 전체 정보 가져오기
+        const { data: fullExistingData, error: fullDataError } = await supabase
+          .from('dynamic_pricing')
+          .select('*')
+          .eq('id', existingData.id)
+          .single();
+        
+        if (fullDataError || !fullExistingData) {
+          throw new Error('기존 데이터 조회 실패');
+        }
+        
+        // 업데이트할 데이터 준비: 전달된 필드만 업데이트, 나머지는 기존 값 유지
+        const updateData: Partial<SimplePricingRuleDto> = {
+          // 필수 필드는 항상 포함
+          product_id: ruleData.product_id,
+          channel_id: ruleData.channel_id,
+          date: ruleData.date,
+          
+          // 전달된 필드만 업데이트, 전달되지 않은 필드는 기존 값 유지
+          adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : fullExistingData.adult_price,
+          child_price: ruleData.child_price !== undefined ? ruleData.child_price : fullExistingData.child_price,
+          infant_price: ruleData.infant_price !== undefined ? ruleData.infant_price : fullExistingData.infant_price,
+          commission_percent: ruleData.commission_percent !== undefined ? ruleData.commission_percent : (fullExistingData.commission_percent ?? 0),
+          markup_amount: ruleData.markup_amount !== undefined ? ruleData.markup_amount : (fullExistingData.markup_amount ?? 0),
+          coupon_percent: ruleData.coupon_percent !== undefined ? ruleData.coupon_percent : (fullExistingData.coupon_percent ?? 0),
+          is_sale_available: ruleData.is_sale_available !== undefined ? ruleData.is_sale_available : (fullExistingData.is_sale_available ?? true),
+          not_included_price: ruleData.not_included_price !== undefined ? ruleData.not_included_price : (fullExistingData.not_included_price ?? 0),
+          markup_percent: ruleData.markup_percent !== undefined ? ruleData.markup_percent : (fullExistingData.markup_percent ?? 0),
+        };
+        
         // choices_pricing이 있으면 기존 데이터와 병합
         if (ruleData.choices_pricing && Object.keys(ruleData.choices_pricing).length > 0) {
-          const existingChoicesPricing = existingData.choices_pricing || {};
+          const existingChoicesPricing = fullExistingData.choices_pricing || {};
           // 기존 choices_pricing과 새로운 choices_pricing 병합
-          const mergedChoicesPricing = {
+          updateData.choices_pricing = {
             ...existingChoicesPricing,
             ...ruleData.choices_pricing
           };
-          ruleData.choices_pricing = mergedChoicesPricing;
+        } else if (fullExistingData.choices_pricing) {
+          // choices_pricing이 전달되지 않았으면 기존 값 유지
+          updateData.choices_pricing = fullExistingData.choices_pricing;
         }
         
         const { data, error } = await supabase
           .from('dynamic_pricing')
-          .update(ruleData)
+          .update(updateData)
           .eq('id', existingData.id)
           .select()
           .maybeSingle();
@@ -115,9 +149,26 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         result = data;
       } else {
         // 기존 레코드가 없으면 삽입
+        // 필수 필드가 없으면 기본값 설정
+        const insertData: SimplePricingRuleDto = {
+          product_id: ruleData.product_id,
+          channel_id: ruleData.channel_id,
+          date: ruleData.date,
+          adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : 0,
+          child_price: ruleData.child_price !== undefined ? ruleData.child_price : 0,
+          infant_price: ruleData.infant_price !== undefined ? ruleData.infant_price : 0,
+          commission_percent: ruleData.commission_percent !== undefined ? ruleData.commission_percent : 0,
+          markup_amount: ruleData.markup_amount !== undefined ? ruleData.markup_amount : 0,
+          coupon_percent: ruleData.coupon_percent !== undefined ? ruleData.coupon_percent : 0,
+          is_sale_available: ruleData.is_sale_available !== undefined ? ruleData.is_sale_available : true,
+          not_included_price: ruleData.not_included_price ?? 0,
+          markup_percent: ruleData.markup_percent ?? 0,
+          choices_pricing: ruleData.choices_pricing
+        };
+        
         const { data, error } = await supabase
           .from('dynamic_pricing')
-          .insert(ruleData)
+          .insert(insertData)
           .select()
           .maybeSingle();
         

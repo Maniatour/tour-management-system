@@ -324,25 +324,20 @@ export default function DynamicPricingManager({
       }
 
       // 각 날짜와 채널에 대해 판매 상태 저장
+      // 판매 상태만 변경하므로 가격 정보는 전달하지 않음 (기존 값 유지)
       for (const channelId of channelIds) {
         for (const date of dates) {
-          const ruleData: SimplePricingRuleDto = {
+          const ruleData: Partial<SimplePricingRuleDto> = {
             product_id: productId,
             channel_id: channelId,
             date: date.toISOString().split('T')[0],
-            adult_price: 0,
-            child_price: 0,
-            infant_price: 0,
-            commission_percent: 0,
-            markup_amount: 0,
-            coupon_percent: 0,
+            // 판매 상태만 설정, 가격 정보는 전달하지 않음 (기존 값 유지)
             is_sale_available: status === 'sale',
-            not_included_price: 0,
-            markup_percent: 0,
-            choices_pricing: Object.keys(choicesPricing).length > 0 ? choicesPricing : {}
+            // choices_pricing이 있으면 포함
+            ...(Object.keys(choicesPricing).length > 0 ? { choices_pricing: choicesPricing } : {})
           };
 
-          await savePricingRule(ruleData, false); // 개별 메시지 표시 안함
+          await savePricingRule(ruleData as SimplePricingRuleDto, false); // 개별 메시지 표시 안함
         }
       }
 
