@@ -323,24 +323,52 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     }
 
     try {
-      // 유효성 검사: choice_group와 choice_group_ko가 비어있지 않은지 확인
-      const invalidChoices = productChoices.filter(
-        choice => !choice.choice_group || !choice.choice_group.trim() || !choice.choice_group_ko || !choice.choice_group_ko.trim()
+      // choice_group_ko를 기반으로 choice_group 자동 생성
+      const processedChoices = productChoices.map(choice => {
+        const trimmedKo = choice.choice_group_ko?.trim() || ''
+        let generatedGroup = choice.choice_group?.trim() || ''
+        
+        // choice_group_ko가 있고 choice_group가 임시값이거나 비어있으면 자동 생성
+        if (trimmedKo && (!generatedGroup || generatedGroup.startsWith('choice_group_'))) {
+          // 한국어 이름을 URL-friendly ID로 변환
+          // 영문, 숫자만 추출하고 나머지는 언더스코어로 변환
+          generatedGroup = trimmedKo
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '_') // 영문, 숫자만 허용, 나머지는 언더스코어
+            .replace(/_+/g, '_') // 연속된 언더스코어를 하나로
+            .replace(/^_|_$/g, '') // 앞뒤 언더스코어 제거
+            .substring(0, 50) // 최대 50자로 제한
+          
+          // 빈 문자열이거나 너무 짧으면 타임스탬프 사용
+          if (!generatedGroup || generatedGroup.length < 2) {
+            generatedGroup = `choice_group_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+          }
+        }
+        
+        return {
+          ...choice,
+          choice_group: generatedGroup
+        }
+      })
+
+      // 유효성 검사: choice_group_ko가 비어있지 않은지 확인 (choice_group는 자동 생성됨)
+      const invalidChoices = processedChoices.filter(
+        choice => !choice.choice_group_ko || !choice.choice_group_ko.trim()
       )
       
       if (invalidChoices.length > 0) {
         // 어떤 그룹이 문제인지 확인
         const invalidIndices = invalidChoices.map(invalid => {
-          const index = productChoices.indexOf(invalid)
+          const index = processedChoices.indexOf(invalid)
           return index + 1
         })
-        setSaveMessage(`초이스 그룹 ${invalidIndices.join(', ')}번의 이름을 입력해주세요.`)
+        setSaveMessage(`초이스 그룹 ${invalidIndices.join(', ')}번의 이름(한국어)을 입력해주세요.`)
         setSaving(false)
         return
       }
 
       // 중복 검사: 같은 product_id와 choice_group 조합이 있는지 확인
-      const choiceGroups = productChoices.map(c => c.choice_group.trim().toLowerCase())
+      const choiceGroups = processedChoices.map(c => c.choice_group.trim().toLowerCase())
       const duplicates = choiceGroups.filter((group, index) => choiceGroups.indexOf(group) !== index)
       
       if (duplicates.length > 0) {
@@ -366,9 +394,9 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         .delete()
         .eq('product_id', productId)
 
-      // 새로운 choices 저장
-      for (const choice of productChoices) {
-        // choice_group가 비어있지 않은지 다시 확인
+      // 새로운 choices 저장 (processedChoices 사용)
+      for (const choice of processedChoices) {
+        // choice_group와 choice_group_ko 확인
         const trimmedChoiceGroup = choice.choice_group.trim()
         const trimmedChoiceGroupKo = choice.choice_group_ko.trim()
         
