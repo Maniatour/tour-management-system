@@ -578,6 +578,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
               child: 0, // child_base_price 필드가 데이터베이스에 없음
               infant: 0, // infant_base_price 필드가 데이터베이스에 없음
             },
+            // BasicInfoTab용 basePrice (단순 숫자)
+            basePriceNumber: productData.base_price || 0,
             maxParticipants: productData.max_participants || 10,
             status: (productData.status as 'active' | 'inactive' | 'draft') || 'active',
             departureCity: productData.departure_city || '',
@@ -1140,8 +1142,25 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         {/* 기본정보 탭 */}
         {activeTab === 'basic' && (
           <BasicInfoTab
-            formData={formData}
-            setFormData={setFormData as <T>(updater: React.SetStateAction<T>) => void}
+            formData={{
+              ...formData,
+              basePrice: typeof formData.basePrice === 'object' ? formData.basePrice.adult : (formData.basePrice as number || 0)
+            }}
+            setFormData={(updater: React.SetStateAction<typeof formData>) => {
+              setFormData((prev) => {
+                const next = typeof updater === 'function' ? updater({
+                  ...prev,
+                  basePrice: typeof prev.basePrice === 'object' ? prev.basePrice.adult : (prev.basePrice as number || 0)
+                } as any) : updater
+                return {
+                  ...prev,
+                  ...(next as any),
+                  basePrice: typeof next === 'object' && 'basePrice' in next 
+                    ? { adult: next.basePrice as number || 0, child: prev.basePrice.child || 0, infant: prev.basePrice.infant || 0 }
+                    : prev.basePrice
+                }
+              })
+            }}
             productId={id}
             isNewProduct={isNewProduct}
           />

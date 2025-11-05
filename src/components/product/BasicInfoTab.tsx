@@ -41,6 +41,7 @@ interface SubCategoryItem {
       summaryKo?: string
       summaryEn?: string
       duration: number
+      basePrice?: number
       maxParticipants: number
       departureCity: string
       arrivalCity: string
@@ -80,6 +81,8 @@ export default function BasicInfoTab({
   const [allSubCategories, setAllSubCategories] = useState<SubCategoryItem[]>([])
   const [newDepartureTime, setNewDepartureTime] = useState('')
   const [showCategoryModal, setShowCategoryModal] = useState(false)
+  const [defaultChoicesPrice, setDefaultChoicesPrice] = useState(0)
+  const [loadingChoices, setLoadingChoices] = useState(false)
 
   // 디버깅을 위한 로그
   console.log('BasicInfoTab - formData.tourDepartureTimes:', formData.tourDepartureTimes);
@@ -261,7 +264,7 @@ export default function BasicInfoTab({
             summary_ko: formData.summaryKo?.trim() || null,
             summary_en: formData.summaryEn?.trim() || null,
             duration: formData.duration.toString(),
-            base_price: 0, // 기본값
+            base_price: formData.basePrice || 0,
             max_participants: formData.maxParticipants,
             status: formData.status,
             departure_city: formData.departureCity.trim(),
@@ -319,7 +322,7 @@ export default function BasicInfoTab({
             summary_ko: formData.summaryKo?.trim() || null,
             summary_en: formData.summaryEn?.trim() || null,
             duration: formData.duration.toString(),
-            base_price: 0, // 기본 가격은 동적 가격에서 설정
+            base_price: formData.basePrice || 0,
             max_participants: formData.maxParticipants,
             status: formData.status,
             departure_city: formData.departureCity.trim(),
@@ -499,6 +502,67 @@ export default function BasicInfoTab({
   useEffect(() => {
     fetchCategoriesAndSubCategories()
   }, [fetchCategoriesAndSubCategories])
+
+  // 초이스의 기본 선택 옵션 가격 로드
+  const loadDefaultChoicesPrice = useCallback(async () => {
+    if (isNewProduct || !productId) {
+      setDefaultChoicesPrice(0)
+      return
+    }
+
+    try {
+      setLoadingChoices(true)
+      const { data, error } = await supabase
+        .from('product_choices')
+        .select(`
+          id,
+          options:choice_options (
+            id,
+            adult_price,
+            child_price,
+            infant_price,
+            is_default
+          )
+        `)
+        .eq('product_id', productId)
+        .order('sort_order', { ascending: true })
+
+      if (error) {
+        console.error('초이스 가격 로드 오류:', error)
+        setDefaultChoicesPrice(0)
+        return
+      }
+
+      // 기본 선택된 옵션들의 성인 가격 합산
+      let totalPrice = 0
+      if (data && Array.isArray(data)) {
+        data.forEach((choice: any) => {
+          if (choice.options && Array.isArray(choice.options)) {
+            // 각 초이스 그룹에서 기본 선택된 옵션 찾기
+            const defaultOption = choice.options.find((opt: any) => opt.is_default === true)
+            if (defaultOption && defaultOption.adult_price) {
+              totalPrice += defaultOption.adult_price || 0
+            }
+          }
+        })
+      }
+
+      setDefaultChoicesPrice(totalPrice)
+    } catch (error) {
+      console.error('초이스 가격 로드 오류:', error)
+      setDefaultChoicesPrice(0)
+    } finally {
+      setLoadingChoices(false)
+    }
+  }, [productId, isNewProduct])
+
+  // 초이스 가격 로드
+  useEffect(() => {
+    loadDefaultChoicesPrice()
+  }, [loadDefaultChoicesPrice])
+
+  // 총 가격 계산 (기본 가격 + 기본 선택 초이스 가격)
+  const totalPrice = (formData.basePrice || 0) + defaultChoicesPrice
 
   // 카테고리 선택 시 서브카테고리 필터링
   const filterSubCategories = useCallback(() => {
@@ -1032,6 +1096,47 @@ export default function BasicInfoTab({
 
       <div className="grid grid-cols-3 gap-4">
         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">기본 가격 ($) *</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={formData.basePrice || 0}
+            onChange={(e) => setFormData({ ...formData, basePrice: parseFloat(e.target.value) || 0 })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="예: 100"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">상품의 기본 가격 (동적 가격이 설정되어 있으면 우선 적용됩니다)</p>
+          
+          {/* 가격 미리보기 */}
+          {!isNewProduct && (
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">고객에게 표시될 총 가격:</span>
+                {loadingChoices ? (
+                  <span className="text-xs text-gray-500">로딩 중...</span>
+                ) : (
+                  <span className="text-lg font-bold text-blue-600">${totalPrice.toFixed(2)}</span>
+                )}
+              </div>
+              <div className="space-y-1 text-xs text-gray-600">
+                <div className="flex justify-between">
+                  <span>기본 가격:</span>
+                  <span>${(formData.basePrice || 0).toFixed(2)}</span>
+                </div>
+                {defaultChoicesPrice > 0 && (
+                  <div className="flex justify-between">
+                    <span>기본 선택 초이스:</span>
+                    <span>+${defaultChoicesPrice.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">총 투어 시간 (시간) *</label>
           <input
             type="number"
@@ -1064,6 +1169,9 @@ export default function BasicInfoTab({
           />
         </div>
 
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 mt-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">{t('tourDepartureTimes')}</label>
           
