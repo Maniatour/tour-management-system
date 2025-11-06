@@ -913,17 +913,23 @@ export default function ProductDetailPage() {
                         {productDetails.included && (
                           <div>
                             <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Included' : '포함 사항'}</h3>
-                            <div className="text-gray-700 whitespace-pre-line">
-                              {productDetails.included}
-                            </div>
+                            <div 
+                              className="text-gray-700"
+                              dangerouslySetInnerHTML={{ 
+                                __html: markdownToHtml(productDetails.included || '') 
+                              }}
+                            />
                           </div>
                         )}
                         {productDetails.not_included && (
                           <div>
                             <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Excluded' : '불포함 사항'}</h3>
-                            <div className="text-gray-700 whitespace-pre-line">
-                              {productDetails.not_included}
-                            </div>
+                            <div 
+                              className="text-gray-700"
+                              dangerouslySetInnerHTML={{ 
+                                __html: markdownToHtml(productDetails.not_included || '') 
+                              }}
+                            />
                           </div>
                         )}
                       </div>
@@ -963,9 +969,12 @@ export default function ProductDetailPage() {
                             </h3>
                             
                             {tourCourse.description && (
-                              <p className="text-gray-700 mb-4 whitespace-pre-wrap">
-                                {tourCourse.description}
-                              </p>
+                              <div 
+                                className="text-gray-700 mb-4"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(tourCourse.description || '') 
+                                }}
+                              />
                             )}
                             
                             {tourCourse.duration && (
@@ -1199,17 +1208,23 @@ export default function ProductDetailPage() {
                           {productDetails?.included && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Included' : '포함 사항'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-green-50 p-4 rounded-lg">
-                                {productDetails.included}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-green-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.included || '') 
+                                }}
+                              />
                             </div>
                           )}
                           {productDetails?.not_included && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Excluded' : '불포함 사항'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-red-50 p-4 rounded-lg">
-                                {productDetails.not_included}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-red-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.not_included || '') 
+                                }}
+                              />
                             </div>
                           )}
                         </div>
@@ -1230,54 +1245,72 @@ export default function ProductDetailPage() {
                           {productDetails?.pickup_drop_info && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Pickup & Drop-off Information' : '픽업/드롭 정보'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-blue-50 p-4 rounded-lg">
-                                {productDetails.pickup_drop_info}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.pickup_drop_info || '') 
+                                }}
+                              />
                             </div>
                           )}
                           
                           {productDetails?.luggage_info && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Luggage Information' : '짐 정보'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-yellow-50 p-4 rounded-lg">
-                                {productDetails.luggage_info}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-yellow-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.luggage_info || '') 
+                                }}
+                              />
                             </div>
                           )}
                           
                           {productDetails?.tour_operation_info && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Tour Operations' : '투어 운영 정보'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-purple-50 p-4 rounded-lg">
-                                {productDetails.tour_operation_info}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-purple-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.tour_operation_info || '') 
+                                }}
+                              />
                             </div>
                           )}
                           
                           {productDetails?.preparation_info && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Preparation Tips' : '준비사항'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-orange-50 p-4 rounded-lg">
-                                {productDetails.preparation_info}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-orange-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.preparation_info || '') 
+                                }}
+                              />
                             </div>
                           )}
                           
                           {productDetails?.small_group_info && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Small Group Details' : '소그룹 정보'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-indigo-50 p-4 rounded-lg">
-                                {productDetails.small_group_info}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-indigo-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.small_group_info || '') 
+                                }}
+                              />
                             </div>
                           )}
                           
                           {productDetails?.notice_info && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Important Notes' : '주의사항'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-red-50 p-4 rounded-lg">
-                                {productDetails.notice_info}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-red-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.notice_info || '') 
+                                }}
+                              />
                             </div>
                           )}
                         </div>
@@ -1300,27 +1333,36 @@ export default function ProductDetailPage() {
                           {productDetails?.private_tour_info && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Private Tour Information' : '프라이빗 투어 정보'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-purple-50 p-4 rounded-lg">
-                                {productDetails.private_tour_info}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-purple-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.private_tour_info || '') 
+                                }}
+                              />
                             </div>
                           )}
                           
                           {productDetails?.cancellation_policy && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Cancellation Policy' : '취소 정책'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-red-50 p-4 rounded-lg">
-                                {productDetails.cancellation_policy}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-red-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.cancellation_policy || '') 
+                                }}
+                              />
                             </div>
                           )}
                           
                           {productDetails?.chat_announcement && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Announcements' : '공지사항'}</h4>
-                              <div className="text-sm text-gray-600 whitespace-pre-line bg-blue-50 p-4 rounded-lg">
-                                {productDetails.chat_announcement}
-                              </div>
+                              <div 
+                                className="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: markdownToHtml(productDetails.chat_announcement || '') 
+                                }}
+                              />
                             </div>
                           )}
                         </div>
@@ -1431,7 +1473,12 @@ export default function ProductDetailPage() {
                           ))}
                         </select>
                         {group.choice_description && (
-                          <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{group.choice_description}</p>
+                          <div 
+                            className="text-xs text-gray-500 mt-1"
+                            dangerouslySetInnerHTML={{ 
+                              __html: markdownToHtml(group.choice_description || '') 
+                            }}
+                          />
                         )}
                       </div>
                     ))}

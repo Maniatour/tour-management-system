@@ -21,11 +21,37 @@ export const markdownToHtml = (markdown: string): string => {
   // 링크 변환: [text](url) -> <a href="url" target="_blank">text</a>
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline;">$1</a>')
   
-  // 목록 변환: - item -> <li>item</li>
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>')
+  // 단락 구분 처리: 연속된 줄바꿈(2개 이상)을 단락 구분으로 처리
+  // 먼저 연속된 줄바꿈을 단락 구분자로 정규화
+  html = html.replace(/\n\n+/g, '\n\n')
   
-  // 줄바꿈을 <br>로 변환 (여러 줄바꿈도 처리)
-  html = html.replace(/\n/g, '<br>')
+  // 단락으로 분리
+  const paragraphs = html.split(/\n\n/)
+  
+  // 각 단락을 처리
+  html = paragraphs.map(paragraph => {
+    if (!paragraph.trim()) return ''
+    
+    // 목록 변환: - item -> <li>item</li> (단락 내에서 처리)
+    const hasListItems = /^- (.+)$/m.test(paragraph)
+    if (hasListItems) {
+      paragraph = paragraph.replace(/^- (.+)$/gm, '<li>$1</li>')
+      // 목록 단락은 <ul>로 감싸기
+      paragraph = `<ul style="margin: 0.5em 0; padding-left: 1.5em;">${paragraph}</ul>`
+      return paragraph
+    }
+    
+    // 단락 내의 단일 줄바꿈을 <br>로 변환
+    paragraph = paragraph.replace(/\n/g, '<br>')
+    
+    // 이미 HTML 태그가 있으면 그대로 반환
+    if (paragraph.trim().startsWith('<p') || paragraph.trim().startsWith('<div') || paragraph.trim().startsWith('<ul')) {
+      return paragraph
+    }
+    
+    // 일반 단락은 <p> 태그로 감싸기
+    return `<p style="margin-bottom: 1em; line-height: 1.6;">${paragraph}</p>`
+  }).filter(p => p).join('')
   
   return html
 }
