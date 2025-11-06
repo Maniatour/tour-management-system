@@ -51,7 +51,7 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
     commission_percent: 0,
     markup_amount: 0,
     coupon_percent: 0,
-    is_sale_available: true,
+    is_sale_available: true, // 기본값: 판매중
     choices_pricing: {} as ChoicePricing
   });
 
@@ -179,14 +179,18 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
           }
         }
         
+        // is_sale_available 처리: 페이지 로드 시 항상 true(판매중)로 시작
+        // 데이터베이스에 저장된 값과 관계없이 초기 로드 시에는 항상 판매중으로 설정
+        const isSaleAvailable = true;
+        
         setPricingConfig({
-          adult_price: latestData.adult_price,
-          child_price: latestData.child_price,
-          infant_price: latestData.infant_price,
-          commission_percent: latestData.commission_percent,
-          markup_amount: latestData.markup_amount,
-          coupon_percent: latestData.coupon_percent,
-          is_sale_available: latestData.is_sale_available ?? true,
+          adult_price: latestData.adult_price || 0,
+          child_price: latestData.child_price || 0,
+          infant_price: latestData.infant_price || 0,
+          commission_percent: latestData.commission_percent || 0,
+          markup_amount: latestData.markup_amount || 0,
+          coupon_percent: latestData.coupon_percent || 0,
+          is_sale_available: isSaleAvailable,
           choices_pricing: choicesPricing
         });
         
@@ -194,9 +198,24 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
           selectedChannelId,
           selectedChannelType,
           latestData: latestData,
+          isSaleAvailable: isSaleAvailable,
           choicesPricing: choicesPricing,
           combinationsCount: Object.keys(choicesPricing.combinations || {}).length
         });
+      } else {
+        // 데이터가 없으면 기본값 유지 (이미 초기값이 true로 설정되어 있음)
+        // 하지만 다른 필드들은 초기화
+        setPricingConfig(prev => ({
+          ...prev,
+          adult_price: 0,
+          child_price: 0,
+          infant_price: 0,
+          commission_percent: 0,
+          markup_amount: 0,
+          coupon_percent: 0,
+          is_sale_available: true, // 데이터가 없으면 기본값: 판매중
+          choices_pricing: { combinations: {} }
+        }));
       }
     } catch (error) {
       console.error('가격 히스토리 로드 실패:', error);

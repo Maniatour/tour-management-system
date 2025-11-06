@@ -83,6 +83,20 @@ export default function BasicInfoTab({
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [defaultChoicesPrice, setDefaultChoicesPrice] = useState(0)
   const [loadingChoices, setLoadingChoices] = useState(false)
+  const [choicesGroups, setChoicesGroups] = useState<Array<{
+    id: string
+    choice_group: string
+    choice_group_ko: string
+    options: Array<{
+      id: string
+      option_name: string
+      option_name_ko: string
+      adult_price: number
+      child_price: number
+      infant_price: number
+      is_default: boolean
+    }>
+  }>>([])
 
   // 디버깅을 위한 로그
   console.log('BasicInfoTab - formData.tourDepartureTimes:', formData.tourDepartureTimes);
@@ -503,10 +517,11 @@ export default function BasicInfoTab({
     fetchCategoriesAndSubCategories()
   }, [fetchCategoriesAndSubCategories])
 
-  // 초이스의 기본 선택 옵션 가격 로드
+  // 초이스 그룹별 모든 옵션 가격 로드
   const loadDefaultChoicesPrice = useCallback(async () => {
     if (isNewProduct || !productId) {
       setDefaultChoicesPrice(0)
+      setChoicesGroups([])
       return
     }
 
@@ -516,12 +531,17 @@ export default function BasicInfoTab({
         .from('product_choices')
         .select(`
           id,
+          choice_group,
+          choice_group_ko,
           options:choice_options (
             id,
+            option_name,
+            option_name_ko,
             adult_price,
             child_price,
             infant_price,
-            is_default
+            is_default,
+            is_active
           )
         `)
         .eq('product_id', productId)
@@ -530,27 +550,65 @@ export default function BasicInfoTab({
       if (error) {
         console.error('초이스 가격 로드 오류:', error)
         setDefaultChoicesPrice(0)
+        setChoicesGroups([])
         return
       }
+
+      // 초이스 그룹별 데이터 저장
+      const groups: Array<{
+        id: string
+        choice_group: string
+        choice_group_ko: string
+        options: Array<{
+          id: string
+          option_name: string
+          option_name_ko: string
+          adult_price: number
+          child_price: number
+          infant_price: number
+          is_default: boolean
+        }>
+      }> = []
 
       // 기본 선택된 옵션들의 성인 가격 합산
       let totalPrice = 0
       if (data && Array.isArray(data)) {
         data.forEach((choice: any) => {
           if (choice.options && Array.isArray(choice.options)) {
+            // 활성화된 옵션만 필터링
+            const activeOptions = choice.options.filter((opt: any) => opt.is_active !== false)
+            
             // 각 초이스 그룹에서 기본 선택된 옵션 찾기
-            const defaultOption = choice.options.find((opt: any) => opt.is_default === true)
+            const defaultOption = activeOptions.find((opt: any) => opt.is_default === true)
             if (defaultOption && defaultOption.adult_price) {
               totalPrice += defaultOption.adult_price || 0
             }
+
+            // 그룹 정보 저장
+            groups.push({
+              id: choice.id,
+              choice_group: choice.choice_group || '',
+              choice_group_ko: choice.choice_group_ko || choice.choice_group || '',
+              options: activeOptions.map((opt: any) => ({
+                id: opt.id,
+                option_name: opt.option_name || '',
+                option_name_ko: opt.option_name_ko || opt.option_name || '',
+                adult_price: opt.adult_price || 0,
+                child_price: opt.child_price || 0,
+                infant_price: opt.infant_price || 0,
+                is_default: opt.is_default || false
+              }))
+            })
           }
         })
       }
 
       setDefaultChoicesPrice(totalPrice)
+      setChoicesGroups(groups)
     } catch (error) {
       console.error('초이스 가격 로드 오류:', error)
       setDefaultChoicesPrice(0)
+      setChoicesGroups([])
     } finally {
       setLoadingChoices(false)
     }
@@ -789,82 +847,6 @@ export default function BasicInfoTab({
           </div>
         </div>
 
-        {/* 운송수단 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">운송수단</label>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { value: 'van', label: '밴', icon: MdDirectionsCar },
-              { value: 'bus', label: '버스', icon: MdDirectionsBus },
-              { value: 'helicopter', label: '헬리콥터', icon: FaHelicopter },
-              { value: 'light_aircraft', label: '경비행기', icon: MdFlightTakeoff },
-              { value: 'limousine', label: '리무진', icon: MdLocalTaxi }
-            ].map((method) => {
-              const Icon = method.icon
-              const isChecked = formData.transportationMethods?.includes(method.value) || false
-              
-              return (
-                <label 
-                  key={method.value} 
-                  className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg border-2 transition-all ${
-                    isChecked 
-                      ? 'border-blue-500 bg-blue-50' 
-                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={(e) => {
-                      const currentMethods = formData.transportationMethods || []
-                      if (e.target.checked) {
-                        setFormData({
-                          ...formData,
-                          transportationMethods: [...currentMethods, method.value]
-                        })
-                      } else {
-                        setFormData({
-                          ...formData,
-                          transportationMethods: currentMethods.filter(m => m !== method.value)
-                        })
-                      }
-                    }}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <Icon className="w-5 h-5 text-blue-600" />
-                  <span className={`text-sm font-medium ${isChecked ? 'text-blue-700' : 'text-gray-700'}`}>
-                    {method.label}
-                  </span>
-                </label>
-              )
-            })}
-          </div>
-          {(formData.transportationMethods && formData.transportationMethods.length > 0) && (
-            <p className="text-xs text-gray-500 mt-2">
-              선택된 운송수단: {formData.transportationMethods.map(m => {
-                const methodMap: Record<string, string> = {
-                  van: '밴',
-                  bus: '버스',
-                  helicopter: '헬리콥터',
-                  light_aircraft: '경비행기',
-                  limousine: '리무진'
-                }
-                return methodMap[m] || m
-              }).join(', ')}
-            </p>
-          )}
-        </div>
-
-        {/* 상품 태그 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">상품 태그</label>
-          <TagSelector
-            selectedTags={formData.tags || []}
-            onTagsChange={handleTagsChange}
-            locale={locale}
-            placeholder="태그를 선택하세요"
-          />
-        </div>
       </div>
 
       {/* 출발/도착 정보 - 한 줄에 배치 */}
@@ -937,8 +919,61 @@ export default function BasicInfoTab({
         </div>
       </div>
       
-      {/* 투어 언어 및 그룹 크기 */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* 운송수단, 투어 언어, 그룹 크기 - 한 줄에 배치 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* 운송수단 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">운송수단</label>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { value: 'van', label: '밴', icon: MdDirectionsCar },
+              { value: 'bus', label: '버스', icon: MdDirectionsBus },
+              { value: 'helicopter', label: '헬리콥터', icon: FaHelicopter },
+              { value: 'light_aircraft', label: '경비행기', icon: MdFlightTakeoff },
+              { value: 'limousine', label: '리무진', icon: MdLocalTaxi }
+            ].map((method) => {
+              const Icon = method.icon
+              const isChecked = formData.transportationMethods?.includes(method.value) || false
+              
+              return (
+                <label 
+                  key={method.value} 
+                  className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg border-2 transition-all text-xs ${
+                    isChecked 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={(e) => {
+                      const currentMethods = formData.transportationMethods || []
+                      if (e.target.checked) {
+                        setFormData({
+                          ...formData,
+                          transportationMethods: [...currentMethods, method.value]
+                        })
+                      } else {
+                        setFormData({
+                          ...formData,
+                          transportationMethods: currentMethods.filter(m => m !== method.value)
+                        })
+                      }
+                    }}
+                    className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <Icon className="w-4 h-4 text-blue-600" />
+                  <span className={`text-xs font-medium ${isChecked ? 'text-blue-700' : 'text-gray-700'}`}>
+                    {method.label}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+        
+        {/* 투어 언어 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">투어 언어 *</label>
           <div className="space-y-2">
@@ -1087,16 +1122,13 @@ export default function BasicInfoTab({
         </div>
       </div>
 
-      {/* 추가 정보 섹션 */}
-      <div className="border-t pt-6 mt-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-          <Info className="h-5 w-5 mr-2" />
-          추가 정보
-        </h3>
-
-      <div className="grid grid-cols-3 gap-4">
+      {/* 기본 가격 및 상품 태그 - 한 줄에 배치 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">기본 가격 ($) *</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-gray-700">기본 가격 ($) *</label>
+            <span className="text-xs text-gray-500">(우리 홈페이지 가격)</span>
+          </div>
           <input
             type="number"
             min="0"
@@ -1107,35 +1139,82 @@ export default function BasicInfoTab({
             placeholder="예: 100"
             required
           />
-          <p className="text-xs text-gray-500 mt-1">상품의 기본 가격 (동적 가격이 설정되어 있으면 우선 적용됩니다)</p>
-          
           {/* 가격 미리보기 */}
           {!isNewProduct && (
             <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">고객에게 표시될 총 가격:</span>
-                {loadingChoices ? (
-                  <span className="text-xs text-gray-500">로딩 중...</span>
-                ) : (
-                  <span className="text-lg font-bold text-blue-600">${totalPrice.toFixed(2)}</span>
-                )}
-              </div>
-              <div className="space-y-1 text-xs text-gray-600">
-                <div className="flex justify-between">
-                  <span>기본 가격:</span>
-                  <span>${(formData.basePrice || 0).toFixed(2)}</span>
+              <div className="space-y-3 text-sm">
+                {/* 기본 가격 */}
+                <div className="flex justify-between font-medium">
+                  <span className="text-gray-700">기본 가격:</span>
+                  <span className="text-gray-900">${(formData.basePrice || 0).toFixed(2)}</span>
                 </div>
-                {defaultChoicesPrice > 0 && (
-                  <div className="flex justify-between">
-                    <span>기본 선택 초이스:</span>
-                    <span>+${defaultChoicesPrice.toFixed(2)}</span>
+                
+                {/* 각 초이스 그룹별 옵션 가격 표시 */}
+                {loadingChoices ? (
+                  <div className="text-xs text-gray-500">로딩 중...</div>
+                ) : choicesGroups.length > 0 ? (
+                  <div className="space-y-3">
+                    {choicesGroups.map((group) => (
+                      <div key={group.id} className="bg-white rounded p-3 border border-blue-100">
+                        <div className="font-medium text-gray-800 mb-2">
+                          {group.choice_group_ko || group.choice_group}
+                        </div>
+                        <div className="space-y-1.5 ml-2">
+                          {group.options.length > 0 ? (
+                            group.options.map((option) => {
+                              const optionTotal = (formData.basePrice || 0) + option.adult_price
+                              return (
+                                <div 
+                                  key={option.id} 
+                                  className={`flex items-center justify-between ${
+                                    option.is_default ? 'text-blue-600 font-semibold' : 'text-gray-600'
+                                  }`}
+                                >
+                                  <span className="flex items-center">
+                                    {option.option_name_ko || option.option_name}
+                                    {option.is_default && <span className="ml-1 text-xs text-blue-500">(기본)</span>}
+                                  </span>
+                                  <span className="text-xs">
+                                    ${option.adult_price.toFixed(2)} + ${(formData.basePrice || 0).toFixed(2)} = <span className="font-semibold">${optionTotal.toFixed(2)}</span>
+                                  </span>
+                                </div>
+                              )
+                            })
+                          ) : (
+                            <div className="text-gray-400 text-xs">옵션이 없습니다</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
+                ) : (
+                  <div className="text-xs text-gray-500">초이스가 없습니다</div>
                 )}
               </div>
             </div>
           )}
         </div>
 
+        {/* 상품 태그 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">상품 태그</label>
+          <TagSelector
+            selectedTags={formData.tags || []}
+            onTagsChange={handleTagsChange}
+            locale={locale}
+            placeholder="태그를 선택하세요"
+          />
+        </div>
+      </div>
+
+      {/* 추가 정보 섹션 */}
+      <div className="border-t pt-6 mt-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+          <Info className="h-5 w-5 mr-2" />
+          추가 정보
+        </h3>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">총 투어 시간 (시간) *</label>
           <input
@@ -1169,9 +1248,6 @@ export default function BasicInfoTab({
           />
         </div>
 
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 mt-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">{t('tourDepartureTimes')}</label>
           
@@ -1272,17 +1348,6 @@ export default function BasicInfoTab({
       </div>
       </div>
 
-      {/* 저장 버튼 */}
-      <div className="flex justify-end pt-6 border-t border-gray-200">
-        <button
-          onClick={handleSave}
-          disabled={saving || isNewProduct}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
-        >
-          <Save className="w-4 h-4 mr-2" />
-          {saving ? '저장 중...' : '기본 정보 저장'}
-        </button>
-      </div>
 
       {/* 카테고리 관리 모달 */}
       <CategoryManagementModal

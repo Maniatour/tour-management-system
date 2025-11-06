@@ -131,6 +131,12 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
         return
       }
 
+      // 발음에서 쉼표를 |로 변환하여 일관성 유지
+      let pronunciation = editingValues.pronunciation?.trim() || null
+      if (pronunciation) {
+        pronunciation = pronunciation.replace(/,/g, '|')
+      }
+
       if (tagTransData) {
         // 업데이트
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,7 +144,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
           .from('tag_translations')
           .update({
             label: editingValues.label,
-            pronunciation: editingValues.pronunciation || null,
+            pronunciation: pronunciation,
             notes: editingValues.notes || null
           })
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -158,7 +164,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
             tag_id: tag.id,
             locale: locale,
             label: editingValues.label,
-            pronunciation: editingValues.pronunciation || null,
+            pronunciation: pronunciation,
             notes: editingValues.notes || null
           })
 
@@ -247,15 +253,22 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
       // 번역 추가
       const translationsToInsert = Object.entries(newTagTranslations)
         .filter(([, trans]) => trans.label.trim()) // 번역이 있는 것만
-        .map(([locale, trans]) => ({
-          id: crypto.randomUUID(),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          tag_id: (newTag as any).id,
-          locale,
-          label: trans.label.trim(),
-          pronunciation: trans.pronunciation?.trim() || null,
-          notes: trans.notes?.trim() || null
-        }))
+        .map(([locale, trans]) => {
+          // 발음에서 쉼표를 |로 변환하여 일관성 유지
+          let pronunciation = trans.pronunciation?.trim() || null
+          if (pronunciation) {
+            pronunciation = pronunciation.replace(/,/g, '|')
+          }
+          return {
+            id: crypto.randomUUID(),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            tag_id: (newTag as any).id,
+            locale,
+            label: trans.label.trim(),
+            pronunciation: pronunciation,
+            notes: trans.notes?.trim() || null
+          }
+        })
 
       if (translationsToInsert.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

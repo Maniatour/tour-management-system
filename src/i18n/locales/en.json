@@ -1412,6 +1412,7 @@
     "title": "Tag & Translation Management",
     "addTag": "Add New Tag",
     "tagKey": "Tag Key",
+    "tagLabel": "Tag Label",
     "tagKeyDescription": "Starts with lowercase English, only numbers and underscore(_) allowed",
     "tagKeyPlaceholder": "e.g: my_custom_tag",
     "systemTag": "Create as System Tag",

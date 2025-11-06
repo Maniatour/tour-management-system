@@ -5,6 +5,7 @@ import {
   Calendar,
   List
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { SimplePricingRuleDto, SimplePricingRule, DateRangeSelection } from '@/lib/types/dynamic-pricing';
 
 // 커스텀 훅들
@@ -156,7 +157,7 @@ export default function DynamicPricingManager({
       markup_amount: (updates.markup_amount as number) ?? pricingConfig.markup_amount ?? 0,
       markup_percent: (updates.markup_percent as number) ?? ((pricingConfig as Record<string, unknown>).markup_percent as number) ?? 0,
       coupon_percent: (updates.coupon_percent as number) ?? pricingConfig.coupon_percent ?? 0,
-      is_sale_available: (updates.is_sale_available as boolean) ?? pricingConfig.is_sale_available ?? true,
+      is_sale_available: updates.is_sale_available !== undefined ? (updates.is_sale_available as boolean) : (pricingConfig.is_sale_available ?? true),
       not_included_price: (updates.not_included_price as number) ?? ((pricingConfig as Record<string, unknown>).not_included_price as number) ?? 0,
       inclusions_ko: (updates.inclusions_ko as string) ?? ((pricingConfig as Record<string, unknown>).inclusions_ko as string) ?? '',
       exclusions_ko: (updates.exclusions_ko as string) ?? ((pricingConfig as Record<string, unknown>).exclusions_ko as string) ?? '',
@@ -173,45 +174,82 @@ export default function DynamicPricingManager({
   ) => {
     try {
       // 새로운 가격 구조에 맞게 choices_pricing 업데이트
+      // 구조: { choiceId: { adult: 50, child: 30, infant: 20 } }
       const currentPricing = pricingConfig.choices_pricing || {};
+      const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combinationId] || {};
+      
+      // priceType을 새로운 구조에 맞게 변환 (adult_price -> adult)
+      const newPriceKey = priceType === 'adult_price' ? 'adult' : 
+                         priceType === 'child_price' ? 'child' : 
+                         'infant';
+      
       const updatedChoicesPricing = {
         ...currentPricing,
         [combinationId]: {
-          ...(currentPricing as unknown as Record<string, Record<string, unknown>>)[combinationId],
+          ...currentChoiceData,
+          [newPriceKey]: value,
+          // 하위 호환성을 위해 기존 키도 유지
           [priceType]: value
         }
       };
 
-      // pricingConfig 업데이트
+      // pricingConfig 업데이트 (choices_pricing만 업데이트하여 useEffect 재실행 방지)
       updatePricingConfig({
-        ...pricingConfig,
         choices_pricing: updatedChoicesPricing
       });
 
-      // 기존 초이스 조합도 업데이트 (호환성 유지)
+      // 기존 초이스 조합도 즉시 업데이트 (호환성 유지)
       updateChoiceCombinationPrice(combinationId, priceType, value);
       
-      console.log(`초이스 가격 업데이트: ${combinationId} - ${priceType}: ${value}`);
+      console.log(`초이스 가격 업데이트: ${combinationId} - ${priceType}: ${value}`, {
+        updatedChoicesPricing,
+        newPriceKey
+      });
     } catch (error) {
       console.error('초이스 가격 업데이트 실패:', error);
     }
-  }, [pricingConfig, updatePricingConfig, updateChoiceCombinationPrice]);
+  }, [pricingConfig.choices_pricing, updatePricingConfig, updateChoiceCombinationPrice]);
 
   // 새로운 가격 구조에 맞게 초이스 가격 데이터 동기화
+  // 초기 로드 시에만 실행되도록 플래그 사용
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [lastLoadedPricing, setLastLoadedPricing] = useState<string>('');
+  
+  // 채널 변경 시 초기 로드 플래그 리셋
   useEffect(() => {
-    if (pricingConfig.choices_pricing && Object.keys(pricingConfig.choices_pricing).length > 0) {
-      console.log('새로운 choices_pricing 데이터 감지됨:', pricingConfig.choices_pricing);
+    setIsInitialLoad(true);
+    setLastLoadedPricing('');
+  }, [selectedChannel, selectedChannelType]);
+  
+  useEffect(() => {
+    const pricingKey = JSON.stringify(pricingConfig.choices_pricing);
+    
+    // 초기 로드이거나 choices_pricing이 실제로 변경된 경우에만 실행
+    // (같은 데이터로 다시 실행되는 것을 방지)
+    if (pricingConfig.choices_pricing && Object.keys(pricingConfig.choices_pricing).length > 0 && 
+        (isInitialLoad || pricingKey !== lastLoadedPricing)) {
+      console.log('새로운 choices_pricing 데이터 감지됨 (초기 로드):', pricingConfig.choices_pricing);
       
       // 새로운 구조: { choiceId: { adult: 50, child: 30, infant: 20 } }
       Object.entries(pricingConfig.choices_pricing).forEach(([choiceId, choiceData]: [string, Record<string, unknown>]) => {
         if (choiceData && typeof choiceData === 'object') {
-          updateChoiceCombinationPrice(choiceId, 'adult_price', (choiceData as Record<string, unknown>).adult as number || 0);
-          updateChoiceCombinationPrice(choiceId, 'child_price', (choiceData as Record<string, unknown>).child as number || 0);
-          updateChoiceCombinationPrice(choiceId, 'infant_price', (choiceData as Record<string, unknown>).infant as number || 0);
+          const adultPrice = (choiceData as Record<string, unknown>).adult as number || 
+                           (choiceData as Record<string, unknown>).adult_price as number || 0;
+          const childPrice = (choiceData as Record<string, unknown>).child as number || 
+                           (choiceData as Record<string, unknown>).child_price as number || 0;
+          const infantPrice = (choiceData as Record<string, unknown>).infant as number || 
+                            (choiceData as Record<string, unknown>).infant_price as number || 0;
+          
+          updateChoiceCombinationPrice(choiceId, 'adult_price', adultPrice);
+          updateChoiceCombinationPrice(choiceId, 'child_price', childPrice);
+          updateChoiceCombinationPrice(choiceId, 'infant_price', infantPrice);
         }
       });
+      
+      setIsInitialLoad(false);
+      setLastLoadedPricing(pricingKey);
     }
-  }, [pricingConfig.choices_pricing, updateChoiceCombinationPrice]);
+  }, [pricingConfig.choices_pricing, updateChoiceCombinationPrice, isInitialLoad, lastLoadedPricing, selectedChannel, selectedChannelType]);
 
   // 초이스 조합이 로드되면 초기 가격 설정
   useEffect(() => {
@@ -227,6 +265,62 @@ export default function DynamicPricingManager({
       });
     }
   }, [choiceCombinations, updateChoicePricing]);
+
+  // 채널별 연도별 날짜 수 계산
+  const [channelPricingStats, setChannelPricingStats] = useState<Record<string, Record<string, number>>>({});
+  
+  useEffect(() => {
+    const loadChannelPricingStats = async () => {
+      if (!productId) return;
+
+      try {
+        // 모든 채널의 동적 가격 데이터 가져오기
+        const { data, error } = await supabase
+          .from('dynamic_pricing')
+          .select('channel_id, date')
+          .eq('product_id', productId);
+
+        if (error) {
+          console.error('채널별 가격 통계 로드 오류:', error);
+          return;
+        }
+
+        // 채널별로 그룹화하고 연도별 날짜 수 계산
+        const stats: Record<string, Record<string, Set<string>>> = {};
+        
+        if (data) {
+          data.forEach((item) => {
+            const channelId = item.channel_id;
+            const date = item.date;
+            const year = date.split('-')[0];
+
+            if (!stats[channelId]) {
+              stats[channelId] = {};
+            }
+            if (!stats[channelId][year]) {
+              stats[channelId][year] = new Set();
+            }
+            stats[channelId][year].add(date);
+          });
+        }
+
+        // Set을 개수로 변환
+        const formattedStats: Record<string, Record<string, number>> = {};
+        Object.keys(stats).forEach(channelId => {
+          formattedStats[channelId] = {};
+          Object.keys(stats[channelId]).forEach(year => {
+            formattedStats[channelId][year] = stats[channelId][year].size;
+          });
+        });
+
+        setChannelPricingStats(formattedStats);
+      } catch (error) {
+        console.error('채널별 가격 통계 로드 오류:', error);
+      }
+    };
+
+    loadChannelPricingStats();
+  }, [productId, dynamicPricingData]);
 
   // 기본 가격 설정이 변경되면 calculationConfig도 업데이트
   useEffect(() => {
@@ -393,7 +487,7 @@ export default function DynamicPricingManager({
           commission_percent: pricingConfig.commission_percent,
           markup_amount: pricingConfig.markup_amount,
           coupon_percent: pricingConfig.coupon_percent,
-          is_sale_available: pricingConfig.is_sale_available,
+          is_sale_available: pricingConfig.is_sale_available !== undefined ? pricingConfig.is_sale_available : true,
           not_included_price: ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0,
           markup_percent: ((pricingConfig as Record<string, unknown>).markup_percent as number) || 0,
           inclusions_ko: ((pricingConfig as Record<string, unknown>).inclusions_ko as string) || null,
@@ -545,6 +639,7 @@ export default function DynamicPricingManager({
             onChannelSelect={handleChannelSelect}
             onMultiChannelToggle={handleMultiChannelToggle}
             onChannelToggle={handleChannelToggle}
+            channelPricingStats={channelPricingStats}
             onSelectAllChannelsInType={handleSelectAllChannelsInType}
           />
              </div>
@@ -686,16 +781,28 @@ export default function DynamicPricingManager({
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-md font-semibold text-gray-900">기본 가격</h4>
-              <button
-                onClick={() => handlePricingConfigUpdate({ is_sale_available: !pricingConfig.is_sale_available })}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  pricingConfig.is_sale_available
-                    ? 'bg-green-100 text-green-700 border border-green-200 hover:bg-green-200'
-                    : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
-                }`}
-              >
-                <span>{pricingConfig.is_sale_available ? '✓ 판매중' : '판매중지'}</span>
-              </button>
+              <div className="flex items-center space-x-3">
+                <span className="text-sm font-medium text-gray-700">
+                  {pricingConfig.is_sale_available ? '판매중' : '판매중지'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handlePricingConfigUpdate({ is_sale_available: !pricingConfig.is_sale_available })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    pricingConfig.is_sale_available
+                      ? 'bg-blue-600'
+                      : 'bg-gray-300'
+                  }`}
+                  role="switch"
+                  aria-checked={pricingConfig.is_sale_available}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      pricingConfig.is_sale_available ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
             
             <div className="space-y-4">
@@ -812,8 +919,7 @@ export default function DynamicPricingManager({
           {/* 초이스별 가격 설정 */}
           {choiceCombinations.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <h4 className="text-md font-semibold text-gray-900 mb-2">초이스별 가격 설정</h4>
-              <p className="text-xs text-gray-600 mb-4">※ 각 초이스 조합의 가격은 포함된 옵션들의 가격 합산입니다</p>
+              <h4 className="text-md font-semibold text-gray-900 mb-4">초이스별 가격 설정</h4>
               
               <div className="space-y-3">
                 {choiceCombinations.map((combination) => (
@@ -822,17 +928,13 @@ export default function DynamicPricingManager({
                     className="p-3 border border-gray-200 rounded-lg bg-gray-50"
                   >
                     <div className="mb-3">
-                      <h5 className="text-sm font-semibold text-gray-900 mb-1">
-                        {combination.combination_name_ko || combination.combination_name}
-                      </h5>
-                      <p className="text-xs text-gray-600">
-                        {combination.combination_name}
-                      </p>
-                      
-                      {/* 조합 구성 요소 표시 */}
-                      {combination.combination_details && combination.combination_details.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs text-gray-500 mb-1">구성 요소:</p>
+                      {/* 제목과 옵션 뱃지를 같은 줄에 배치 */}
+                      <div className="flex items-center justify-between mb-1">
+                        <h5 className="text-sm font-semibold text-gray-900">
+                          {combination.combination_name_ko || combination.combination_name}
+                        </h5>
+                        {/* 조합 구성 요소 표시 - 오른쪽 끝에 배치 */}
+                        {combination.combination_details && combination.combination_details.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {combination.combination_details.map((detail, index) => {
                               console.log(`조합 ${combination.id}의 detail ${index}:`, detail);
@@ -851,8 +953,11 @@ export default function DynamicPricingManager({
                               );
                             })}
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        {combination.combination_name}
+                      </p>
                     </div>
                     
                     <div className="grid grid-cols-3 gap-2">

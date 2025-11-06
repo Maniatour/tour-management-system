@@ -324,6 +324,81 @@ export const PriceCalculator = memo(function PriceCalculator({
                  </table>
                </div>
              </div>
+
+             {/* OTA 판매가 (최대 판매가 × 0.8 / (1 - 수수료%)) */}
+             <div>
+               <h5 className="text-sm font-semibold text-purple-600 mb-3">
+                 OTA 판매가 (최대 판매가 × 0.8 / (1 - 수수료%))
+               </h5>
+               <div className="overflow-x-auto">
+                 {/* 수수료 계산을 테이블 바깥에서 수행 */}
+                 {(() => {
+                   const commissionPercent = pricingConfig?.commission_percent || 0;
+                   const commissionRate = commissionPercent / 100;
+                   
+                   return (
+                     <>
+                       <table className="w-full text-xs bg-purple-50">
+                         <thead>
+                           <tr className="border-b border-gray-200">
+                             <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
+                             <th className="text-right py-1 px-2 font-medium text-gray-700">성인</th>
+                             <th className="text-right py-1 px-2 font-medium text-gray-700">아동</th>
+                             <th className="text-right py-1 px-2 font-medium text-gray-700">유아</th>
+                           </tr>
+                         </thead>
+                         <tbody>
+                           {Object.entries(choiceCalculations).map(([choiceId, choiceCalc]) => {
+                             const combination = choiceCombinations.find(c => c.id === choiceId);
+                             // 최대 판매가 = 기본가격 + 초이스가격 (마크업 포함)
+                             const maxAdultPrice = (calculation?.basePrice?.adult || 0) + (choiceCalc.markupPrice.adult || 0);
+                             const maxChildPrice = (calculation?.basePrice?.child || 0) + (choiceCalc.markupPrice.child || 0);
+                             const maxInfantPrice = (calculation?.basePrice?.infant || 0) + (choiceCalc.markupPrice.infant || 0);
+                             
+                             // 최대 판매가 × 0.8 (20% 할인 고정값)
+                             const discountedAdultPrice = maxAdultPrice * 0.8;
+                             const discountedChildPrice = maxChildPrice * 0.8;
+                             const discountedInfantPrice = maxInfantPrice * 0.8;
+                             
+                             // OTA 판매가 = (최대 판매가 × 0.8) / (1 - 수수료율)
+                             const denominator = 1 - commissionRate;
+                             const otaAdultPrice = denominator > 0 && denominator !== 0 ? discountedAdultPrice / denominator : discountedAdultPrice;
+                             const otaChildPrice = denominator > 0 && denominator !== 0 ? discountedChildPrice / denominator : discountedChildPrice;
+                             const otaInfantPrice = denominator > 0 && denominator !== 0 ? discountedInfantPrice / denominator : discountedInfantPrice;
+                             
+                             // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
+                             const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
+                             const isLowerAntelope = combinationName.includes('로어') || combinationName.includes('Lower');
+                             const rowClass = isLowerAntelope ? 'bg-purple-100' : 'bg-purple-50';
+                             const textClass = isLowerAntelope ? 'text-purple-800' : 'text-purple-700';
+                             
+                             return (
+                               <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
+                                 <td className={`py-1 px-2 font-medium ${textClass}`}>
+                                   {combinationName}
+                                 </td>
+                                 <td className="py-1 px-2 text-right font-bold text-purple-700">
+                                   {formatPrice(otaAdultPrice)}
+                                 </td>
+                                 <td className="py-1 px-2 text-right font-bold text-purple-700">
+                                   {formatPrice(otaChildPrice)}
+                                 </td>
+                                 <td className="py-1 px-2 text-right font-bold text-purple-700">
+                                   {formatPrice(otaInfantPrice)}
+                                 </td>
+                               </tr>
+                             );
+                           })}
+                         </tbody>
+                       </table>
+                       <div className="mt-2 text-xs text-gray-600 px-2">
+                         최대 판매가 × 0.8 (20% 할인 고정) / (1 - {commissionPercent}%) = OTA 판매가
+                       </div>
+                     </>
+                   );
+                 })()}
+               </div>
+             </div>
            </div>
          </div>
        )}

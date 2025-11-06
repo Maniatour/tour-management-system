@@ -1504,6 +1504,7 @@
     "title": "태그 & 번역 관리",
     "addTag": "새 태그 추가",
     "tagKey": "태그 키",
+    "tagLabel": "태그 이름",
     "tagKeyDescription": "영문 소문자로 시작, 숫자와 언더스코어(_)만 사용 가능",
     "tagKeyPlaceholder": "예: my_custom_tag",
     "systemTag": "시스템 태그로 만들기",

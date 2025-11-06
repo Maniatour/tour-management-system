@@ -50,9 +50,9 @@ export default function TagDisplay({
           }
         })()
 
-        // pronunciation 처리 (여러 발음이 |로 구분된 경우 첫 번째 사용)
-        const displayLabel = translatedTag.includes('|') 
-          ? translatedTag.split('|')[0] 
+        // pronunciation 처리 (여러 발음이 | 또는 쉼표로 구분된 경우 첫 번째 사용)
+        const displayLabel = /[|,]/.test(translatedTag)
+          ? translatedTag.split(/[|,]/)[0].trim()
           : translatedTag
 
         return (

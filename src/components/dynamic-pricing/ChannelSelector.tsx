@@ -15,6 +15,10 @@ interface ChannelGroup {
   channels: Channel[];
 }
 
+interface ChannelPricingStats {
+  [year: string]: number; // 연도별 설정된 날짜 수
+}
+
 interface ChannelSelectorProps {
   channelGroups: ChannelGroup[];
   isLoadingChannels: boolean;
@@ -27,6 +31,7 @@ interface ChannelSelectorProps {
   onMultiChannelToggle: () => void;
   onChannelToggle: (channelId: string) => void;
   onSelectAllChannelsInType: () => void;
+  channelPricingStats?: Record<string, ChannelPricingStats>; // 채널 ID별 연도별 날짜 수
 }
 
 export const ChannelSelector = memo(function ChannelSelector({
@@ -40,8 +45,22 @@ export const ChannelSelector = memo(function ChannelSelector({
   onChannelSelect,
   onMultiChannelToggle,
   onChannelToggle,
-  onSelectAllChannelsInType
+  onSelectAllChannelsInType,
+  channelPricingStats = {}
 }: ChannelSelectorProps) {
+  
+  // 연도별 날짜 수를 표시 형식으로 변환
+  const formatPricingStats = (stats: ChannelPricingStats | undefined) => {
+    if (!stats || Object.keys(stats).length === 0) return null;
+    
+    const sortedYears = Object.keys(stats).sort();
+    return sortedYears.map(year => {
+      const daysCount = stats[year];
+      const isLeapYear = (parseInt(year) % 4 === 0 && parseInt(year) % 100 !== 0) || (parseInt(year) % 400 === 0);
+      const totalDays = isLeapYear ? 366 : 365;
+      return `${year} (${daysCount}/${totalDays})`;
+    }).join(', ');
+  };
   if (isLoadingChannels) {
     return (
       <div className="flex items-center justify-center p-4">
@@ -69,11 +88,30 @@ export const ChannelSelector = memo(function ChannelSelector({
           >
             <div className="flex items-center space-x-3">
               <Users className="h-5 w-5" />
-              <div>
+              <div className="flex-1">
                 <div className="font-medium">자체 채널 (전체선택)</div>
                 <div className="text-sm text-gray-500">
                   {selfGroup.channels.length}개 채널
                 </div>
+                {/* 자체 채널 통계 - 모든 자체 채널의 날짜 수 합계 */}
+                {(() => {
+                  const allStats: ChannelPricingStats = {};
+                  selfGroup.channels.forEach(channel => {
+                    const channelStats = channelPricingStats[channel.id];
+                    if (channelStats) {
+                      Object.keys(channelStats).forEach(year => {
+                        if (!allStats[year]) {
+                          allStats[year] = 0;
+                        }
+                        allStats[year] += channelStats[year];
+                      });
+                    }
+                  });
+                  const statsText = formatPricingStats(allStats);
+                  return statsText ? (
+                    <div className="text-xs text-gray-500 mt-1">{statsText}</div>
+                  ) : null;
+                })()}
               </div>
             </div>
           </button>
@@ -91,6 +129,8 @@ export const ChannelSelector = memo(function ChannelSelector({
           <div className="space-y-1">
             {otaGroup.channels.map((channel) => {
               const isSelected = selectedChannel === channel.id;
+              const stats = channelPricingStats[channel.id];
+              const statsText = formatPricingStats(stats);
 
               return (
                 <button
@@ -102,7 +142,14 @@ export const ChannelSelector = memo(function ChannelSelector({
                       : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  <span className="text-sm font-medium">{channel.name}</span>
+                  <div className="flex flex-col">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{channel.name}</span>
+                    </div>
+                    {statsText && (
+                      <div className="text-xs text-gray-500 mt-1">{statsText}</div>
+                    )}
+                  </div>
                 </button>
               );
             })}
