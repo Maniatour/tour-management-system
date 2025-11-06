@@ -155,11 +155,7 @@ export default function ProductScheduleTab({
 
   // 뷰 모드에 따라 필터링된 일정 반환
   const getFilteredSchedules = () => {
-    if (viewMode === 'customer') {
-      // 고객뷰: 고객에게 표시 옵션이 선택된 일정만
-      return schedules.filter(schedule => schedule.show_to_customers)
-    }
-    // 가이드뷰: 모든 일정
+    // 어드민에서는 고객뷰 모드에서도 모든 일정을 보여줌 (고객이 보는 것과 동일하게)
     return schedules
   }
 

@@ -47,7 +47,7 @@ export default function SyncConfig({
               checked={truncateTable}
               onChange={(e) => onTruncateTableChange(e.target.checked)}
               className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500"
-              disabled={!selectedTable}
+              disabled={!selectedTable || selectedTable.trim() === ''}
             />
             <span className="text-sm font-medium text-gray-700">
               동기화 전에 {selectedTable || '선택된 테이블'} 전체 삭제

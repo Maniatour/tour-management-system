@@ -23,6 +23,7 @@ import { PricingControls } from './dynamic-pricing/PricingControls';
 import { DateRangeSelector } from './dynamic-pricing/DateRangeSelector';
 import { PriceCalculator } from './dynamic-pricing/PriceCalculator';
 import { SaleStatusModal } from './dynamic-pricing/SaleStatusModal';
+import BulkPricingTableModal from './dynamic-pricing/BulkPricingTableModal';
 
 // 기존 컴포넌트들 (필요시 사용)
 // import ChangeHistory from './ChangeHistory';
@@ -48,6 +49,9 @@ export default function DynamicPricingManager({
   
   // 판매 상태 모달 상태
   const [isSaleStatusModalOpen, setIsSaleStatusModalOpen] = useState(false);
+  
+  // 가격 일괄 추가 테이블 뷰 모달 상태
+  const [isBulkPricingModalOpen, setIsBulkPricingModalOpen] = useState(false);
   
   // 배치 저장 진행률 상태
   const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
@@ -651,6 +655,13 @@ export default function DynamicPricingManager({
             {/* 뷰 모드 토글 및 판매 상태 설정 버튼 */}
             <div className="flex items-center space-x-2">
           <button
+                onClick={() => setIsBulkPricingModalOpen(true)}
+                className="flex items-center space-x-2 px-3 py-2 rounded-md bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200 transition-colors"
+          >
+                <List className="h-4 w-4" />
+                <span>가격 일괄 추가 테이블 뷰</span>
+          </button>
+          <button
                 onClick={handleOpenSaleStatusModal}
                 className="flex items-center space-x-2 px-3 py-2 rounded-md bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 transition-colors"
           >
@@ -1078,6 +1089,18 @@ export default function DynamicPricingManager({
         productId={productId}
         {...(selectedChannel && { channelId: selectedChannel })}
         {...(selectedChannelType && { channelType: selectedChannelType })}
+      />
+
+      {/* 가격 일괄 추가 테이블 뷰 모달 */}
+      <BulkPricingTableModal
+        isOpen={isBulkPricingModalOpen}
+        onClose={() => setIsBulkPricingModalOpen(false)}
+        productId={productId}
+        channels={channelGroups.flatMap(group => group.channels)}
+        choiceCombinations={choiceCombinations}
+        onSave={() => {
+          loadDynamicPricingData();
+        }}
       />
     </div>
   );

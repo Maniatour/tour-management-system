@@ -77,7 +77,7 @@ export default function TourScheduleSection({
     try {
       setLoading(true)
       
-      // 모든 일정을 가져오되, 담당 정보는 라벨로 표시
+      // 고객 페이지에서는 show_to_customers가 true인 일정만 가져오기
       const { data, error } = await supabase
         .from('product_schedules')
         .select(`
@@ -86,6 +86,7 @@ export default function TourScheduleSection({
           guide_driver_schedule
         `)
         .eq('product_id', productId)
+        .eq('show_to_customers', true)
         .order('day_number', { ascending: true })
         .order('order_index', { ascending: true })
         .order('start_time', { ascending: true })
@@ -114,6 +115,11 @@ export default function TourScheduleSection({
     if (ko) return ko
     return fallback || ''
   }
+
+  // 모든 개별 아코디언이 열려있는지 확인
+  const schedulesWithDescription = schedules.filter(s => getLocalizedText(s.description_ko, s.description_en, ''))
+  const allSchedulesExpanded = schedulesWithDescription.length > 0 && 
+    schedulesWithDescription.every(s => expandedSchedules.has(s.id))
 
   // 구글맵 네비게이션 함수
   const openGoogleMapsNavigation = (schedule: ScheduleItem) => {
@@ -268,9 +274,9 @@ export default function TourScheduleSection({
     return (
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          {teamType === '2guide' ? getText('2가이드 담당 일정 (전체)', '2-Guide Assigned Schedules (All)') : 
-           teamType === 'guide+driver' ? getText('가이드+드라이버 담당 일정 (전체)', 'Guide+Driver Assigned Schedules (All)') : 
-           getText('투어 일정 (전체)', 'Tour Schedules (All)')}
+          {teamType === '2guide' ? getText('2가이드 담당 일정 (제목만 보기)', '2-Guide Assigned Schedules (Title Only)') : 
+           teamType === 'guide+driver' ? getText('가이드+드라이버 담당 일정 (제목만 보기)', 'Guide+Driver Assigned Schedules (Title Only)') : 
+           getText('투어 일정 (제목만 보기)', 'Tour Schedules (Title Only)')}
         </h3>
         <div className="text-center py-8">
           <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
@@ -285,14 +291,36 @@ export default function TourScheduleSection({
       {/* 아코디언 헤더 */}
       <div 
         className="flex items-center justify-between cursor-pointer mb-4 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          // 모든 개별 아코디언이 열려있으면 닫기, 아니면 열기
+          if (allSchedulesExpanded) {
+            // 제목만 보기: 모든 개별 아코디언 닫기
+            setExpandedSchedules(new Set())
+          } else {
+            // 상세보기: 모든 개별 아코디언 열기 (설명이 있는 것만)
+            const allScheduleIds = schedules
+              .filter(s => getLocalizedText(s.description_ko, s.description_en, ''))
+              .map(s => s.id)
+            setExpandedSchedules(new Set(allScheduleIds))
+          }
+        }}
       >
         <h3 className="text-lg font-semibold text-gray-900">
-          {teamType === '2guide' ? getText('2가이드 담당 일정 (전체)', '2-Guide Assigned Schedules (All)') : 
-           teamType === 'guide+driver' ? getText('가이드+드라이버 담당 일정 (전체)', 'Guide+Driver Assigned Schedules (All)') : 
-           getText('투어 일정 (전체)', 'Tour Schedules (All)')}
+          {teamType === '2guide' ? (
+            allSchedulesExpanded 
+              ? getText('2가이드 담당 일정 (상세보기)', '2-Guide Assigned Schedules (Detail View)')
+              : getText('2가이드 담당 일정 (제목만 보기)', '2-Guide Assigned Schedules (Title Only)')
+          ) : teamType === 'guide+driver' ? (
+            allSchedulesExpanded 
+              ? getText('가이드+드라이버 담당 일정 (상세보기)', 'Guide+Driver Assigned Schedules (Detail View)')
+              : getText('가이드+드라이버 담당 일정 (제목만 보기)', 'Guide+Driver Assigned Schedules (Title Only)')
+          ) : (
+            allSchedulesExpanded 
+              ? getText('투어 일정 (상세보기)', 'Tour Schedules (Detail View)')
+              : getText('투어 일정 (제목만 보기)', 'Tour Schedules (Title Only)')
+          )}
         </h3>
-        {isExpanded ? (
+        {allSchedulesExpanded ? (
           <ChevronUp className="w-5 h-5 text-gray-500" />
         ) : (
           <ChevronDown className="w-5 h-5 text-gray-500" />
@@ -309,31 +337,18 @@ export default function TourScheduleSection({
             return (
               <div key={dayNum} className="space-y-3">
                 {/* 일차 헤더 */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full text-sm font-medium">
-                      {dayNum}
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">
-                        {getText(`${dayNum}일차`, `Day ${dayNum}`)}
-                      </h4>
-                      <p className="text-sm text-gray-500">
-                        {getText(`${daySchedules.length}개 일정`, `${daySchedules.length} schedules`)}
-                      </p>
-                    </div>
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full text-sm font-medium">
+                    {dayNum}
                   </div>
-                  {generateRouteUrl(dayNum) && (
-                    <a
-                      href={generateRouteUrl(dayNum)!}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
-                      title="전체 일정 경로 보기"
-                    >
-                      <Car className="w-4 h-4" />
-                    </a>
-                  )}
+                  <div>
+                    <h4 className="font-medium text-gray-900">
+                      {getText(`${dayNum}일차`, `Day ${dayNum}`)}
+                    </h4>
+                    <p className="text-sm text-gray-500">
+                      {getText(`${daySchedules.length}개 일정`, `${daySchedules.length} schedules`)}
+                    </p>
+                  </div>
                 </div>
                 
                 {/* 일정 목록 - 항상 표시 */}
@@ -349,22 +364,36 @@ export default function TourScheduleSection({
                           className={`${hasDescription ? 'cursor-pointer' : ''}`}
                           onClick={() => hasDescription && toggleScheduleExpansion(schedule.id)}
                         >
-                          {/* 첫 번째 줄: 시작 종료시간, 소요시간 */}
+                          {/* 첫 번째 줄: 시작 종료시간, 소요시간, 제목, 담당자 라벨 */}
                           <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center space-x-3">
-                              <div className="flex items-center space-x-2 text-sm text-gray-700">
+                            <div className="flex items-center space-x-3 flex-1 min-w-0">
+                              {/* 시간 영역 - 고정 너비 */}
+                              <div className="flex items-center space-x-2 text-sm text-gray-700 flex-shrink-0 w-28">
                                 {getTimeIcon(schedule)}
-                                <span className="font-medium">
+                                <span className="font-medium whitespace-nowrap">
                                   {schedule.start_time ? formatTime(schedule.start_time) : ''}
                                   {schedule.end_time ? `-${formatTime(schedule.end_time)}` : ''}
                                 </span>
                               </div>
-                              {schedule.duration_minutes && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                  <Clock className="w-3 h-3 mr-1" />
-                                  {schedule.duration_minutes}
-                                </span>
-                              )}
+                              {/* 소요시간 영역 - 고정 너비 */}
+                              <div className="flex-shrink-0 w-16">
+                                {schedule.duration_minutes && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    {schedule.duration_minutes}
+                                  </span>
+                                )}
+                              </div>
+                              <h5 className="font-medium text-gray-900 text-sm flex-1 min-w-0">
+                                {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
+                              </h5>
+                              <div className="flex items-center space-x-2 flex-shrink-0">
+                                {getResponsibleLabels(schedule).map((label, index) => (
+                                  <span key={index} className={`px-2 py-1 text-xs rounded ${label.color}`}>
+                                    {label.text}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
                             {hasDescription && (
                               <button
@@ -372,38 +401,12 @@ export default function TourScheduleSection({
                                   e.stopPropagation()
                                   toggleScheduleExpansion(schedule.id)
                                 }}
-                                className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                                className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors flex-shrink-0 ml-2"
                                 title={isExpanded ? '접기' : '펼치기'}
                               >
                                 {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                               </button>
                             )}
-                          </div>
-                          
-                          {/* 두 번째 줄: 제목, 담당자 라벨, 맵 버튼 */}
-                          <div className="flex items-center justify-between">
-                            <h5 className="font-medium text-gray-900 text-sm flex-1">
-                              {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
-                            </h5>
-                            <div className="flex items-center space-x-2">
-                              {getResponsibleLabels(schedule).map((label, index) => (
-                                <span key={index} className={`px-2 py-1 text-xs rounded ${label.color}`}>
-                                  {label.text}
-                                </span>
-                              ))}
-                              {(schedule.latitude && schedule.longitude) || getLocalizedText(schedule.location_ko, schedule.location_en, '') ? (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    openGoogleMapsNavigation(schedule)
-                                  }}
-                                  className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                                  title="구글맵에서 네비게이션 열기"
-                                >
-                                  <MapPin className="w-4 h-4" />
-                                </button>
-                              ) : null}
-                            </div>
                           </div>
                         </div>
                         
