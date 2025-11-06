@@ -4,7 +4,7 @@ import React, { useRef, useState, useCallback } from 'react'
 import { ChevronDown } from 'lucide-react'
 
 // 마크다운을 HTML로 변환하는 함수
-const markdownToHtml = (markdown: string): string => {
+export const markdownToHtml = (markdown: string): string => {
   if (!markdown) return ''
   
   let html = markdown

@@ -333,11 +333,9 @@ export const readSheetData = async (spreadsheetId: string, sheetName: string) =>
   try {
     console.log(`📊 readSheetData 시작: ${sheetName}`)
     
-    // 실제 사용된 컬럼 수를 빠르게 파악
-    const actualColumnCount = await getQuickColumnCount(spreadsheetId, sheetName)
-    const columnRange = getColumnRange(actualColumnCount)
-    
-    const range = `${sheetName}!A:${columnRange}`
+    // getQuickColumnCount 호출을 건너뛰고 바로 청크 단위로 읽기
+    // 더 넓은 범위 사용 (ZZ까지 = 26*26 = 676개 컬럼)으로 충분한 범위 확보
+    const range = `${sheetName}!A:ZZ` // 더 넓은 범위 사용
     console.log(`📊 읽기 범위: ${range}`)
     
     // 간단한 청크 크기 설정
@@ -350,8 +348,13 @@ export const readSheetData = async (spreadsheetId: string, sheetName: string) =>
     console.error('readSheetData error:', error)
     
     // 중단 오류인 경우 간단한 폴백 재시도
-    if (error instanceof Error && error.message.includes('aborted')) {
-      console.log(`🔄 readSheetData: API 중단 오류 감지 - 폴백 재시도 중...`)
+    if (error instanceof Error && (
+      error.message.includes('aborted') ||
+      error.message.includes('timeout') ||
+      error.message.includes('ECONNRESET') ||
+      error.message.includes('ETIMEDOUT')
+    )) {
+      console.log(`🔄 readSheetData: API 오류 감지 - 폴백 재시도 중...`)
       
       try {
         await sleep(2000)
@@ -585,17 +588,17 @@ const getQuickColumnCount = async (spreadsheetId: string, sheetName: string): Pr
   }
   
   try {
-    console.log(`🔍 Google Sheets API 호출 시작: ${sheetName}!A1:AX1`)
+    console.log(`🔍 Google Sheets API 호출 시작: ${sheetName}!A1:Z1`)
     const auth = getAuthClient()
     const sheets = google.sheets({ 
       version: 'v4', 
       auth,
-      timeout: 30000 // 30초 타임아웃
+      timeout: 60000 // 60초 타임아웃으로 증가
     })
     
     try {
       // 더 간단한 방법으로 컬럼 수 파악 (A1:Z1만 확인)
-      // 타임아웃을 15초로 증가하고 재시도 로직 추가
+      // 타임아웃을 30초로 증가하고 재시도 로직 개선
       console.log(`🔍 간단한 컬럼 수 파악: ${sheetName}!A1:Z1`)
       const simpleResponse = await Promise.race([
         retryWithBackoff(async () => {
@@ -604,9 +607,9 @@ const getQuickColumnCount = async (spreadsheetId: string, sheetName: string): Pr
             range: `${sheetName}!A1:Z1`, // A부터 Z까지 (26개 컬럼만)
             valueRenderOption: 'UNFORMATTED_VALUE'
           })
-        }, 2, 1000, 5000), // 최대 2회 재시도, 1초부터 시작하여 최대 5초까지
+        }, 3, 1000, 5000), // 최대 3회 재시도, 1초부터 시작하여 최대 5초까지
         new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Simple column count timeout after 15 seconds')), 15000)
+          setTimeout(() => reject(new Error('Simple column count timeout after 30 seconds')), 30000)
         )
       ])
       
@@ -663,11 +666,11 @@ export const readSheetDataDynamic = async (spreadsheetId: string, sheetName: str
     console.log(`📊 readSheetDataDynamic 시작: ${sheetName}`)
     
     // 대용량 데이터 처리를 위해 청크 단위 읽기 직접 사용
-    // 타임아웃 제거 - 청크 단위 읽기가 자체적으로 처리하므로 불필요
-    console.log(`📊 청크 단위 읽기로 데이터 읽기: ${sheetName}!A:Z`)
+    // 더 넓은 범위 사용 (ZZ까지 = 676개 컬럼)
+    console.log(`📊 청크 단위 읽기로 데이터 읽기: ${sheetName}!A:ZZ`)
     
     // 청크 크기를 1000으로 설정하여 청크 단위 읽기 활성화
-    const data = await readGoogleSheet(spreadsheetId, `${sheetName}!A:Z`, DEFAULT_CHUNK_SIZE)
+    const data = await readGoogleSheet(spreadsheetId, `${sheetName}!A:ZZ`, DEFAULT_CHUNK_SIZE)
     
     console.log(`✅ ${sheetName} 데이터 읽기 완료: ${data.length}개 행`)
     return data
@@ -687,7 +690,7 @@ export const readSheetDataDynamic = async (spreadsheetId: string, sheetName: str
         await sleep(2000)
         console.log(`🔄 폴백: 더 작은 청크 크기(500)로 재시도`)
         // 더 작은 청크 크기로 재시도
-        const retryData = await readGoogleSheet(spreadsheetId, `${sheetName}!A:Z`, 500)
+        const retryData = await readGoogleSheet(spreadsheetId, `${sheetName}!A:ZZ`, 500)
         console.log(`✅ 폴백 재시도 성공: ${retryData.length}개 행`)
         return retryData
       } catch (retryError) {
@@ -708,7 +711,7 @@ export const readSheetDataDynamic = async (spreadsheetId: string, sheetName: str
       // 최후의 수단: 매우 작은 청크로 읽기 시도
       console.log(`🔄 최후의 수단: 작은 청크(250)로 읽기 시도`)
       try {
-        const simpleData = await readGoogleSheet(spreadsheetId, `${sheetName}!A:Z`, 250)
+        const simpleData = await readGoogleSheet(spreadsheetId, `${sheetName}!A:ZZ`, 250)
         console.log(`✅ 최후의 수단 성공: ${simpleData.length}개 행`)
         return simpleData
       } catch (finalError) {

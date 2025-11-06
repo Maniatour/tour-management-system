@@ -85,6 +85,21 @@ GOOGLE_TRANSLATE_API_KEY=your_google_translate_api_key_here
 # https://platform.openai.com/ 에서 API 키 생성
 # GPT-3.5-turbo 모델 사용
 NEXT_PUBLIC_OPENAI_API_KEY=your_openai_api_key_here
+
+# Stripe 결제 설정 (카드 결제 기능용)
+# https://dashboard.stripe.com/ 에서 API 키 생성
+# Developers > API keys에서 테스트 키 또는 라이브 키 복사
+# 자세한 설정 방법은 STRIPE_SETUP_GUIDE.md 참고
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key_here
+STRIPE_SECRET_KEY=your_stripe_secret_key_here
+
+# Resend 이메일 발송 설정 (결제 완료 후 영수증/바우처 발송용)
+# https://resend.com/ 에서 API 키 생성
+# API Keys에서 API 키 생성 후 복사
+RESEND_API_KEY=your_resend_api_key_here
+# 발신자 이메일 주소 (선택사항, 기본값: onboarding@resend.dev)
+# Resend에서 도메인을 인증하면 자신의 도메인을 사용할 수 있습니다
+RESEND_FROM_EMAIL=noreply@yourdomain.com
 ```
 
 ### 3. Supabase 인증 설정
@@ -135,6 +150,15 @@ Google Cloud Console에서 OAuth 2.0 클라이언트 ID를 생성하고 다음 �
 2. **Google Translate API** 활성화
 3. 별도 API 키 생성 또는 기존 키 사용
 4. API 키를 `.env.local`의 `GOOGLE_TRANSLATE_API_KEY`에 설정
+
+#### Resend 이메일 발송 설정 (결제 완료 후 영수증/바우처 발송용)
+1. **Resend** (https://resend.com/) 회원가입 및 로그인
+2. **API Keys** 메뉴로 이동
+3. **Create API Key** 클릭하여 새 API 키 생성
+4. 생성된 API 키를 `.env.local`의 `RESEND_API_KEY`에 설정
+5. (선택사항) **Domains**에서 도메인을 인증하면 `RESEND_FROM_EMAIL`에 자신의 도메인 사용 가능
+   - 예: `RESEND_FROM_EMAIL=noreply@yourdomain.com`
+   - 도메인 미인증 시 기본값 `onboarding@resend.dev` 사용
 
 ### 🔧 Google OAuth 오류 해결
 

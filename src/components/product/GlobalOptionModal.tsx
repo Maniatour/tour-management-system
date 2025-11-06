@@ -1,7 +1,7 @@
 'use client'
 
-import React from 'react'
-import { X } from 'lucide-react'
+import React, { useState, useMemo } from 'react'
+import { X, Search } from 'lucide-react'
 import Link from 'next/link'
 
 interface GlobalOption {
@@ -34,6 +34,25 @@ export default function GlobalOptionModal({
   locale,
   onSelectOption
 }: GlobalOptionModalProps) {
+  const [searchTerm, setSearchTerm] = useState('')
+
+  // 검색 필터링
+  const filteredOptions = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return globalOptions
+    }
+
+    const searchLower = searchTerm.toLowerCase()
+    return globalOptions.filter(option => {
+      const nameMatch = option.name.toLowerCase().includes(searchLower)
+      const descriptionMatch = option.description?.toLowerCase().includes(searchLower)
+      const categoryMatch = option.category?.toLowerCase().includes(searchLower)
+      const tagsMatch = option.tags?.some(tag => tag.toLowerCase().includes(searchLower))
+      
+      return nameMatch || descriptionMatch || categoryMatch || tagsMatch
+    })
+  }, [globalOptions, searchTerm])
+
   if (!show) return null
 
   return (
@@ -65,13 +84,51 @@ export default function GlobalOptionModal({
           </div>
         ) : (
           <div className="space-y-4">
+            {/* 검색 입력 필드 */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="옵션명, 설명, 카테고리, 태그로 검색..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+
+            {/* 검색 결과 개수 */}
+            {searchTerm && (
+              <div className="text-sm text-gray-600">
+                {filteredOptions.length}개의 옵션을 찾았습니다. (전체 {globalOptions.length}개)
+              </div>
+            )}
+
             <div className="text-sm text-gray-600 mb-4">
               아래 옵션 중에서 이 상품에 추가할 옵션을 선택하세요.
               선택한 옵션은 자동으로 상품 옵션에 추가되며, 필요에 따라 수정할 수 있습니다.
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {globalOptions.map((option) => (
+            {filteredOptions.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-gray-500 mb-4">검색 결과가 없습니다.</div>
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="text-blue-600 hover:text-blue-800 underline"
+                >
+                  검색 초기화
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredOptions.map((option) => (
                 <div
                   key={option.id}
                   className="border border-gray-200 rounded-lg p-4 hover:border-purple-300 hover:shadow-md transition-all cursor-pointer"
@@ -134,7 +191,8 @@ export default function GlobalOptionModal({
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            )}
           </div>
         )}
 

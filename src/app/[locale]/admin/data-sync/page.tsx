@@ -920,6 +920,33 @@ export default function DataSyncPage() {
     setTruncateTable(false) // 테이블 삭제 옵션 초기화
     
     if (tableName) {
+      // 테이블 선택 시 자동으로 시트 선택
+      const tableToSheetMap: { [key: string]: string } = {
+        'reservations': 'S_Reservation',
+        'tours': 'S_Tours',
+        'customers': 'S_Customers',
+        'reservation_pricing': 'S_Reservation_acct',
+        'reservation_options': 'S_Reservation_options',
+        'ticket_bookings': 'S_Antelope',
+        'tour_hotel_bookings': 'S_TourHotel',
+        'tour_expenses': 'S_Tour_Expenses',
+        'payment_records': 'S_Payment',
+        'reservation_expenses': 'S_Reservation_expenses',
+        'company_expenses': 'S_company_expenses'
+      }
+      
+      const mappedSheetName = tableToSheetMap[tableName]
+      if (mappedSheetName) {
+        // 시트 목록에서 해당 시트가 있는지 확인
+        const sheetExists = sheetInfo.some(sheet => sheet.name === mappedSheetName)
+        if (sheetExists) {
+          console.log('Auto-selecting sheet:', mappedSheetName)
+          handleSheetSelect(mappedSheetName)
+        } else {
+          console.log('Sheet not found in sheetInfo:', mappedSheetName)
+        }
+      }
+      
       // 테이블 스키마 가져오기
       console.log('Fetching schema for table:', tableName)
       getTableSchema(tableName)
@@ -1541,11 +1568,33 @@ export default function DataSyncPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">테이블을 선택하세요</option>
-                {availableTables.map((table) => (
-                  <option key={table.name} value={table.name}>
-                    {table.displayName} ({table.name})
-                  </option>
-                ))}
+                {availableTables.map((table) => {
+                  // 빨간색으로 표시할 테이블 목록
+                  const redTableNames = [
+                    'reservations',
+                    'tours',
+                    'customers',
+                    'reservation_pricing',
+                    'reservation_options',
+                    'ticket_bookings',
+                    'tour_hotel_bookings',
+                    'tour_expenses',
+                    'payment_records',
+                    'reservation_expenses',
+                    'company_expenses'
+                  ]
+                  const isRedTable = redTableNames.includes(table.name)
+                  
+                  return (
+                    <option 
+                      key={table.name} 
+                      value={table.name}
+                      style={isRedTable ? { color: '#dc2626' } : {}}
+                    >
+                      {table.displayName} ({table.name})
+                    </option>
+                  )
+                })}
               </select>
             </div>
 

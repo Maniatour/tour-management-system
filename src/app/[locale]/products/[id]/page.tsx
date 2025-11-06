@@ -9,9 +9,11 @@ import ProductFaqDisplay from '@/components/ProductFaqDisplay'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import BookingFlow from '@/components/booking/BookingFlow'
 import { CartProvider, CartIcon, CartSidebar } from '@/components/cart/CartProvider'
+import CartCheckout from '@/components/cart/CartCheckout'
 import PaymentProcessor from '@/components/payment/PaymentProcessor'
 import { supabase } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
+import { markdownToHtml } from '@/components/LightRichEditor'
 
 interface Product {
   id: string
@@ -163,9 +165,23 @@ export default function ProductDetailPage() {
   // 부킹 시스템 상태
   const [showBookingFlow, setShowBookingFlow] = useState(false)
   const [showCart, setShowCart] = useState(false)
+  const [showCheckout, setShowCheckout] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
   const [paymentData, setPaymentData] = useState<any>(null)
   const [cartItems, setCartItems] = useState<any[]>([])
+
+  // Navigation에서 장바구니 결제 열기 이벤트 리스너
+  useEffect(() => {
+    const handleOpenCartCheckout = () => {
+      setShowCart(false)
+      setShowCheckout(true)
+    }
+
+    window.addEventListener('openCartCheckout', handleOpenCartCheckout)
+    return () => {
+      window.removeEventListener('openCartCheckout', handleOpenCartCheckout)
+    }
+  }, [])
 
   // 실제 데이터 로드
   useEffect(() => {
@@ -573,20 +589,13 @@ export default function ProductDetailPage() {
   }
 
   const handleCheckout = () => {
-    if (cartItems.length === 0) return
-    
-    const totalAmount = cartItems.reduce((sum, item) => sum + item.totalPrice, 0)
-    const firstItem = cartItems[0]
-    
-    setPaymentData({
-      method: 'card',
-      amount: totalAmount,
-      currency: 'USD',
-      customerInfo: firstItem.customerInfo
-    })
-    
     setShowCart(false)
-    setShowPayment(true)
+    setShowCheckout(true)
+  }
+
+  const handleCheckoutSuccess = () => {
+    setShowCheckout(false)
+    setCartItems([])
   }
 
   const handlePaymentSuccess = (result: any) => {
@@ -695,9 +704,6 @@ export default function ProductDetailPage() {
                   </div>
                 </div>
               </div>
-              
-              {/* 장바구니 아이콘 */}
-              <CartIcon onClick={() => setShowCart(true)} />
             </div>
           </div>
         </div>
@@ -853,9 +859,12 @@ export default function ProductDetailPage() {
                     {/* 투어 소개 */}
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Tour Overview' : '투어 소개'}</h3>
-                      <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-                        {productDetails?.description || product.description || getCustomerDisplayName(product)}
-                      </p>
+                      <div 
+                        className="text-gray-700 leading-relaxed"
+                        dangerouslySetInnerHTML={{ 
+                          __html: markdownToHtml(productDetails?.description || product.description || getCustomerDisplayName(product) || '') 
+                        }}
+                      />
                     </div>
 
                     {/* 기본 정보 */}
@@ -1495,6 +1504,13 @@ export default function ProductDetailPage() {
         isOpen={showCart}
         onClose={() => setShowCart(false)}
         onCheckout={handleCheckout}
+      />
+
+      {/* 장바구니 결제 페이지 (쿠폰 적용 + 여러 상품 결제) */}
+      <CartCheckout
+        isOpen={showCheckout}
+        onClose={() => setShowCheckout(false)}
+        onSuccess={handleCheckoutSuccess}
       />
 
       {/* 결제 처리 모달 */}

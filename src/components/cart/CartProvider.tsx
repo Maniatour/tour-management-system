@@ -1,8 +1,20 @@
 'use client'
 
-import React, { useState, useEffect, createContext, useContext } from 'react'
-import { ShoppingCart, Plus, Minus, Trash2, X, CreditCard, Calendar } from 'lucide-react'
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react'
+import { ShoppingCart, Plus, Minus, Trash2, X, CreditCard, Calendar, Clock } from 'lucide-react'
 import { useLocale } from 'next-intl'
+
+interface SelectedChoice {
+  choiceId: string
+  choiceName: string
+  choiceNameKo: string | null
+  choiceNameEn: string | null
+  optionId: string
+  optionName: string
+  optionNameKo: string | null
+  optionNameEn: string | null
+  optionPrice: number | null
+}
 
 interface CartItem {
   id: string
@@ -18,6 +30,7 @@ interface CartItem {
     infants: number
   }
   selectedOptions: Record<string, string>
+  selectedChoices?: SelectedChoice[] // 선택된 초이스 상세 정보
   basePrice: number
   totalPrice: number
   customerInfo: {
@@ -52,23 +65,113 @@ export const useCart = () => {
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<CartItem[]>([])
+  const [isInitialized, setIsInitialized] = useState(false)
+  const isUpdatingRef = React.useRef(false)
 
   // 로컬 스토리지에서 카트 데이터 로드
   useEffect(() => {
-    const savedCart = localStorage.getItem('tour-cart')
-    if (savedCart) {
-      try {
-        setItems(JSON.parse(savedCart))
-      } catch (error) {
-        console.error('카트 데이터 로드 오류:', error)
+    const loadCart = () => {
+      // 무한 루프 방지
+      if (isUpdatingRef.current) {
+        return
+      }
+
+      const savedCart = localStorage.getItem('tour-cart')
+      if (savedCart) {
+        try {
+          const parsedCart = JSON.parse(savedCart)
+          // 현재 상태와 비교하여 같으면 업데이트하지 않음
+          setItems(prevItems => {
+            const prevItemsStr = JSON.stringify(prevItems)
+            const newItemsStr = JSON.stringify(parsedCart)
+            if (prevItemsStr === newItemsStr) {
+              return prevItems
+            }
+            console.log('장바구니 로드됨:', parsedCart.length, '개 아이템')
+            return parsedCart
+          })
+        } catch (error) {
+          console.error('카트 데이터 로드 오류:', error)
+        }
+      } else {
+        // localStorage에 없으면 빈 배열로 설정
+        setItems(prevItems => {
+          if (prevItems.length === 0) {
+            return prevItems
+          }
+          return []
+        })
       }
     }
-  }, [])
+
+    // 초기 로드
+    if (!isInitialized) {
+      loadCart()
+      setIsInitialized(true)
+    }
+
+    // 다른 탭/윈도우에서 localStorage 변경 감지
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'tour-cart') {
+        console.log('다른 탭에서 장바구니 변경 감지, 동기화 중...')
+        isUpdatingRef.current = true
+        loadCart()
+        setTimeout(() => {
+          isUpdatingRef.current = false
+        }, 100)
+      }
+    }
+
+    // window storage 이벤트 리스너 (다른 탭/윈도우)
+    window.addEventListener('storage', handleStorageChange)
+
+    // 같은 탭 내에서 localStorage 변경 감지 (CustomEvent 사용)
+    const handleCustomStorageChange = () => {
+      // 자신이 dispatch한 이벤트는 무시
+      if (isUpdatingRef.current) {
+        return
+      }
+      console.log('같은 탭에서 장바구니 변경 감지, 동기화 중...')
+      isUpdatingRef.current = true
+      loadCart()
+      setTimeout(() => {
+        isUpdatingRef.current = false
+      }, 100)
+    }
+
+    window.addEventListener('cart-storage-change', handleCustomStorageChange)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('cart-storage-change', handleCustomStorageChange)
+    }
+  }, [isInitialized])
 
   // 카트 데이터 저장
   useEffect(() => {
-    localStorage.setItem('tour-cart', JSON.stringify(items))
-  }, [items])
+    if (!isInitialized) {
+      return
+    }
+
+    // localStorage에 저장된 값과 비교
+    const currentStorage = localStorage.getItem('tour-cart')
+    const currentItemsStr = JSON.stringify(items)
+    
+    if (currentStorage === currentItemsStr) {
+      // 이미 같은 값이면 저장하지 않음
+      return
+    }
+
+    isUpdatingRef.current = true
+    localStorage.setItem('tour-cart', currentItemsStr)
+    console.log('장바구니 저장됨:', items.length, '개 아이템')
+    
+    // 같은 탭의 다른 CartProvider 인스턴스에 알림 (약간의 지연 후)
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('cart-storage-change'))
+      isUpdatingRef.current = false
+    }, 50)
+  }, [items, isInitialized])
 
   const addItem = (item: Omit<CartItem, 'id' | 'addedAt'>) => {
     const newItem: CartItem = {
@@ -76,7 +179,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: `cart_${Date.now()}_${Math.random().toString(36).substring(2)}`,
       addedAt: new Date().toISOString()
     }
-    setItems(prev => [...prev, newItem])
+    console.log('장바구니에 아이템 추가:', newItem)
+    setItems(prev => {
+      const updated = [...prev, newItem]
+      console.log('장바구니 업데이트됨. 총 아이템 수:', updated.length)
+      return updated
+    })
   }
 
   const removeItem = (id: string) => {
@@ -102,7 +210,13 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const getTotalPrice = () => {
-    return items.reduce((total, item) => total + item.totalPrice, 0)
+    const total = items.reduce((total, item) => {
+      const itemPrice = item.totalPrice || 0
+      console.log('아이템 가격 계산:', { itemId: item.id, productId: item.productId, totalPrice: item.totalPrice, itemPrice })
+      return total + itemPrice
+    }, 0)
+    console.log('총 장바구니 금액:', total, '아이템 수:', items.length)
+    return total
   }
 
   const getTotalItems = () => {
@@ -147,7 +261,11 @@ export const CartIcon: React.FC<{ onClick: () => void }> = ({ onClick }) => {
 }
 
 // 카트 사이드바 컴포넌트
-export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onCheckout: () => void }> = ({
+export const CartSidebar: React.FC<{ 
+  isOpen: boolean
+  onClose: () => void
+  onCheckout: () => void
+}> = ({
   isOpen,
   onClose,
   onCheckout
@@ -281,6 +399,37 @@ export const CartSidebar: React.FC<{ isOpen: boolean; onClose: () => void; onChe
                         </div>
                       )}
                     </div>
+
+                    {/* 선택된 초이스 표시 */}
+                    {item.selectedChoices && item.selectedChoices.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="text-xs font-medium text-gray-700 mb-2">
+                          {translate('선택 사항', 'Selected Options')}
+                        </div>
+                        <div className="space-y-1">
+                          {item.selectedChoices.map((choice, idx) => (
+                            <div key={idx} className="text-xs text-gray-600">
+                              <span className="font-medium">
+                                {isEnglish 
+                                  ? choice.choiceNameEn || choice.choiceNameKo || choice.choiceName 
+                                  : choice.choiceNameKo || choice.choiceName}
+                              </span>
+                              <span className="mx-1">:</span>
+                              <span>
+                                {isEnglish 
+                                  ? choice.optionNameEn || choice.optionNameKo || choice.optionName 
+                                  : choice.optionNameKo || choice.optionName}
+                              </span>
+                              {choice.optionPrice !== null && choice.optionPrice > 0 && (
+                                <span className="ml-1 text-green-600">
+                                  (+${choice.optionPrice})
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* 가격 */}
                     <div className="mt-3 pt-3 border-t border-gray-200">

@@ -1,11 +1,15 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Calendar, Users, Clock, CreditCard, ShoppingCart, ArrowLeft, ArrowRight, Check, X, ChevronLeft, ChevronRight, Lock } from 'lucide-react'
+import { Calendar, Users, CreditCard, ShoppingCart, ArrowLeft, ArrowRight, Check, X, ChevronLeft, ChevronRight, Lock, Ticket, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
 import LoginForm from '@/components/auth/LoginForm'
 import SignUpForm from '@/components/auth/SignUpForm'
+import Image from 'next/image'
+import { loadStripe } from '@stripe/stripe-js'
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
+import { useCart } from '@/components/cart/CartProvider'
 
 interface Product {
   id: string
@@ -149,6 +153,19 @@ interface BookingData {
   }
 }
 
+interface Coupon {
+  id: string
+  coupon_code: string | null
+  discount_type: string | null
+  percentage_value: number | null
+  fixed_value: number | null
+  status: string | null
+  start_date: string | null
+  end_date: string | null
+  product_id: string | null
+  channel_id: string | null
+}
+
 interface BookingFlowProps {
   product: Product
   productChoices: ProductChoice[]
@@ -207,12 +224,192 @@ const tourLanguages = [
   { code: 'en', nameKo: '영어', nameEn: 'English' }
 ]
 
+// Stripe Elements를 사용하는 결제 컴포넌트
+interface BookingDataForPayment {
+  customerInfo: {
+    name: string
+    email: string
+  }
+}
+
+function PaymentForm({ 
+  paymentMethod, 
+  bookingData, 
+  totalPrice, 
+  onPaymentComplete, 
+  translate,
+  onPaymentSubmit
+}: {
+  paymentMethod: string
+  bookingData: BookingDataForPayment
+  totalPrice: number
+  onPaymentComplete: (result: { success: boolean; transactionId?: string | null }) => Promise<void>
+  translate: (ko: string, en: string) => string
+  onPaymentSubmit?: (submitHandler: () => Promise<void>) => void
+}) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const [cardError, setCardError] = useState<string>('')
+  const [processing, setProcessing] = useState(false)
+
+  const handleSubmit = async (event?: React.FormEvent) => {
+    if (event) {
+      event.preventDefault()
+    }
+
+    if (!stripe || !elements) {
+      return
+    }
+
+    setProcessing(true)
+    setCardError('')
+
+    const cardElement = elements.getElement(CardElement)
+    if (!cardElement) {
+      setCardError(translate('카드 정보를 불러올 수 없습니다.', 'Unable to load card information.'))
+      setProcessing(false)
+      return
+    }
+
+    // Payment Intent 생성
+    try {
+      const reservationId = `reservation_${Date.now()}_${Math.random().toString(36).substring(2)}`
+      
+      const response = await fetch('/api/payment/create-payment-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: totalPrice,
+          currency: 'usd',
+          reservationId: reservationId,
+          customerInfo: {
+            name: bookingData.customerInfo.name,
+            email: bookingData.customerInfo.email
+          }
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || translate('결제 요청 생성에 실패했습니다.', 'Failed to create payment request.'))
+      }
+
+      const { clientSecret } = await response.json()
+
+      if (!clientSecret) {
+        throw new Error(
+          translate(
+            '결제 시크릿을 받지 못했습니다. 서버 설정을 확인해주세요.',
+            'Failed to receive payment secret. Please check server configuration.'
+          )
+        )
+      }
+
+      // Stripe Elements로 결제 확인
+      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: cardElement,
+          billing_details: {
+            name: bookingData.customerInfo.name,
+            email: bookingData.customerInfo.email,
+          },
+        },
+      })
+
+      if (error) {
+        setCardError(error.message || translate('결제에 실패했습니다.', 'Payment failed.'))
+        setProcessing(false)
+        return
+      }
+
+      if (paymentIntent?.status === 'succeeded') {
+        await onPaymentComplete({
+          success: true,
+          transactionId: paymentIntent.id
+        })
+      } else {
+        throw new Error(translate('결제가 완료되지 않았습니다.', 'Payment was not completed.'))
+      }
+    } catch (error) {
+      console.error('Stripe 결제 처리 오류:', error)
+      setCardError(error instanceof Error ? error.message : translate('결제 처리 중 오류가 발생했습니다.', 'An error occurred during payment processing.'))
+      setProcessing(false)
+    }
+  }
+
+  // 외부에서 제출할 수 있도록 핸들러 노출
+  useEffect(() => {
+    if (onPaymentSubmit && stripe && elements) {
+      onPaymentSubmit(async () => {
+        await handleSubmit()
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onPaymentSubmit, stripe, elements])
+
+  const cardElementOptions = {
+    style: {
+      base: {
+        fontSize: '16px',
+        color: '#424770',
+        '::placeholder': {
+          color: '#aab7c4',
+        },
+      },
+      invalid: {
+        color: '#9e2146',
+      },
+    },
+  }
+
+  if (paymentMethod !== 'card') {
+    return null
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+        <h4 className="font-medium text-gray-900 mb-4 flex items-center">
+          <CreditCard className="h-5 w-5 mr-2 text-gray-600" />
+          {translate('카드 정보', 'Card Information')}
+        </h4>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {translate('카드 정보', 'Card Details')} *
+            </label>
+            <div className="px-3 py-2 border border-gray-300 rounded-lg bg-white">
+              <CardElement options={cardElementOptions} />
+            </div>
+            {cardError && (
+              <p className="text-xs text-red-500 mt-1">{cardError}</p>
+            )}
+          </div>
+        </div>
+        <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <div className="flex items-start">
+            <Lock className="h-4 w-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
+            <span className="text-xs text-blue-800">
+              {translate('카드 정보는 Stripe를 통해 안전하게 처리됩니다. 서버에 저장되지 않습니다.', 'Card information is securely processed through Stripe. It is not stored on our servers.')}
+            </span>
+          </div>
+        </div>
+      </div>
+    </form>
+  )
+}
+
 export default function BookingFlow({ product, productChoices, onClose, onComplete }: BookingFlowProps) {
   const locale = useLocale()
   const isEnglish = locale === 'en'
   const translate = useCallback((ko: string, en: string) => (isEnglish ? en : ko), [isEnglish])
   const localeTag = isEnglish ? 'en-US' : 'ko-KR'
   const dayNames = isEnglish ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['일', '월', '화', '수', '목', '금', '토']
+  
+  // 장바구니 훅
+  const cart = useCart()
   const statusLabelMap: Record<string, string> = {
     available: translate('예약 가능', 'Available'),
     recruiting: translate('동행 모집중', 'More guests needed'),
@@ -267,18 +464,56 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
   // 결제 관련 상태
   const [paymentMethod, setPaymentMethod] = useState<string>('card')
-  const [cardDetails, setCardDetails] = useState({
-    number: '',
-    expiry: '',
-    cvv: '',
-    name: ''
-  })
-  const [cardErrors, setCardErrors] = useState({
-    number: '',
-    expiry: '',
-    cvv: '',
-    name: ''
-  })
+  const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null)
+
+  // 쿠폰 관련 상태
+  const [couponCode, setCouponCode] = useState<string>('')
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null)
+  const [couponError, setCouponError] = useState<string>('')
+  const [validatingCoupon, setValidatingCoupon] = useState(false)
+
+  // PaymentForm의 handleSubmit 저장
+  const [paymentSubmitHandler, setPaymentSubmitHandler] = useState<(() => Promise<void>) | null>(null)
+  const [paymentProcessing, setPaymentProcessing] = useState(false)
+
+  // Stripe 초기화
+  useEffect(() => {
+    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    if (publishableKey) {
+      // Stripe 로딩 시 에러 처리 및 옵션 추가
+      const stripePromiseValue = loadStripe(publishableKey, {
+        // Stripe.js 로딩 최적화 옵션
+        locale: isEnglish ? 'en' : 'ko',
+      })
+      
+      // Promise에 에러 핸들러 추가
+      stripePromiseValue.catch((error) => {
+        console.error('Stripe 로딩 오류:', error)
+        // 에러가 발생해도 계속 진행 (사용자에게 알림)
+      })
+      
+      setStripePromise(stripePromiseValue)
+    }
+  }, [isEnglish])
+
+  // locale에 따른 기본값 설정
+  const getDefaultCustomerInfo = () => {
+    if (locale === 'ko') {
+      return {
+        country: 'KR', // 대한민국
+        customerLanguage: 'ko', // 한국어
+        tourLanguages: ['ko'] // 한국어
+      }
+    } else {
+      return {
+        country: 'US', // 미국
+        customerLanguage: 'en', // 영어
+        tourLanguages: ['en'] // 영어
+      }
+    }
+  }
+
+  const defaultCustomerInfo = getDefaultCustomerInfo()
 
   const [bookingData, setBookingData] = useState<BookingData>({
     productId: product.id,
@@ -295,9 +530,9 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       name: '',
       email: '',
       phone: '',
-      country: '',
-      customerLanguage: '',
-      tourLanguages: [],
+      country: defaultCustomerInfo.country,
+      customerLanguage: defaultCustomerInfo.customerLanguage,
+      tourLanguages: defaultCustomerInfo.tourLanguages,
       specialRequests: ''
     }
   })
@@ -402,9 +637,16 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
         if (pricingData && pricingData.length > 0) {
           // Dynamic pricing에 날짜가 있으면 해당 날짜들 우선 표시
-          console.log('Dynamic pricing에서 가져온 날짜들:', pricingData.map(item => item.date))
+          console.log('Dynamic pricing에서 가져온 날짜들:', pricingData.map((item: { date: string }) => item.date))
           
-          const pricingDates = pricingData.map((item: { date: string; is_sale_available: boolean }) => item.date)
+          const pricingDates = pricingData.map((item: { 
+            date: string
+            is_sale_available: boolean
+            adult_price: number
+            child_price: number
+            infant_price: number
+            choices_pricing?: Record<string, { is_sale_available?: boolean }>
+          }) => item.date)
           
           // Dynamic pricing 날짜들을 스케줄로 생성
           pricingDates.forEach(date => {
@@ -539,7 +781,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }
 
     loadTourSchedules()
-  }, [product.id, product.max_participants, translate])
+  }, [product.id, product.max_participants, product.base_price, translate])
 
   // product_options 테이블에서 추가 선택 옵션 로드
   useEffect(() => {
@@ -575,10 +817,23 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         // linked_option_id가 있으면 options 테이블에서 상세 정보 가져오기
         if (data && data.length > 0) {
           const linkedOptionIds = data
-            .map(opt => opt.linked_option_id)
+            .map((opt: ProductOption) => opt.linked_option_id)
             .filter((id): id is string => id !== null && id !== undefined)
           
-          let optionsData: Record<string, any> = {}
+          const optionsData: Record<string, {
+            id: string
+            name: string
+            name_ko: string | null
+            name_en: string | null
+            description: string | null
+            description_ko: string | null
+            description_en: string | null
+            image_url: string | null
+            thumbnail_url: string | null
+            adult_price: number | null
+            child_price: number | null
+            infant_price: number | null
+          }> = {}
           
           if (linkedOptionIds.length > 0) {
             const { data: options, error: optionsError } = await supabase
@@ -600,14 +855,27 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               .in('id', linkedOptionIds)
             
             if (!optionsError && options) {
-              options.forEach(opt => {
+              options.forEach((opt: {
+                id: string
+                name: string
+                name_ko: string | null
+                name_en: string | null
+                description: string | null
+                description_ko: string | null
+                description_en: string | null
+                image_url: string | null
+                thumbnail_url: string | null
+                adult_price: number | null
+                child_price: number | null
+                infant_price: number | null
+              }) => {
                 optionsData[opt.id] = opt
               })
             }
           }
           
           // product_options 데이터에 options 정보 병합
-          const enrichedData = data.map(po => ({
+          const enrichedData = data.map((po: ProductOption) => ({
             ...po,
             option_name: po.linked_option_id ? (optionsData[po.linked_option_id]?.name || po.name) : po.name,
             option_name_ko: po.linked_option_id ? optionsData[po.linked_option_id]?.name_ko : null,
@@ -738,6 +1006,58 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }))
   }, [productChoices])
 
+  // 필수 선택: productChoices에서 필수인 것들 (현재 추가 선택에 있던 내용을 필수로 이동)
+  const groupedChoices = productChoices.reduce((groups, choice) => {
+    const groupKey = choice.choice_id
+    if (!groups[groupKey]) {
+      groups[groupKey] = {
+        choice_id: choice.choice_id,
+        choice_name: choice.choice_name,
+        choice_name_ko: choice.choice_name_ko,
+        choice_type: choice.choice_type,
+        choice_description: choice.choice_description,
+        is_required: true, // 모든 productChoices를 필수로 설정
+        options: []
+      }
+    }
+    groups[groupKey].options.push({
+      option_id: choice.option_id,
+      option_name: choice.option_name,
+      option_name_ko: choice.option_name_ko,
+      option_price: choice.option_price,
+      is_default: choice.is_default
+    })
+    return groups
+  }, {} as Record<string, ChoiceGroup>)
+
+  // 필수 선택: productChoices의 모든 내용
+  const requiredChoices = Object.values(groupedChoices)
+  
+  // 추가 선택: product_options 테이블에서 가져온 내용
+  const optionalChoices: ChoiceGroup[] = productOptions.map(option => ({
+    choice_id: option.id,
+    choice_name: isEnglish ? (option.option_name_en || option.option_name || option.name) : (option.option_name_ko || option.option_name || option.name),
+    choice_name_ko: option.option_name_ko || option.option_name || option.name,
+    choice_name_en: option.option_name_en || option.option_name || option.name,
+    choice_type: 'optional',
+    choice_description: isEnglish ? (option.option_description_en || option.option_description || option.description) : (option.option_description_ko || option.option_description || option.description),
+    choice_description_ko: option.option_description_ko || option.option_description || option.description || null,
+    choice_description_en: option.option_description_en || option.option_description || option.description || null,
+    choice_image_url: option.option_image_url || option.option_thumbnail_url || null,
+    choice_thumbnail_url: option.option_thumbnail_url || option.option_image_url || null,
+    is_required: false,
+    options: [{
+      option_id: option.id,
+      option_name: isEnglish ? (option.option_name_en || option.option_name || option.name) : (option.option_name_ko || option.option_name || option.name),
+      option_name_ko: option.option_name_ko || option.option_name || option.name,
+      option_name_en: option.option_name_en || option.option_name || option.name,
+      option_price: option.option_adult_price || option.adult_price_adjustment || 0,
+      option_child_price: option.option_child_price || option.child_price_adjustment || 0,
+      option_infant_price: option.option_infant_price || option.infant_price_adjustment || 0,
+      is_default: option.is_default || false
+    }]
+  }))
+
   // 선택된 초이스 조합의 판매 가능 여부 확인
   const isChoiceCombinationAvailable = useCallback((choiceGroupId: string, optionId: string): boolean => {
     if (!bookingData.tourDate) return true // 날짜가 선택되지 않았으면 판매 가능으로 간주
@@ -778,7 +1098,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   // 가격 계산
   const calculateTotalPrice = () => {
     // 선택된 날짜의 동적 가격 사용 (있으면)
-    let basePrice = product.base_price || 0
+    const basePrice = product.base_price || 0
     
     if (bookingData.tourDate && datePrices[bookingData.tourDate]) {
       // 동적 가격이 있으면 인원별로 계산
@@ -826,57 +1146,73 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }
   }
 
-  // 필수 선택: productChoices에서 필수인 것들 (현재 추가 선택에 있던 내용을 필수로 이동)
-  const groupedChoices = productChoices.reduce((groups, choice) => {
-    const groupKey = choice.choice_id
-    if (!groups[groupKey]) {
-      groups[groupKey] = {
-        choice_id: choice.choice_id,
-        choice_name: choice.choice_name,
-        choice_name_ko: choice.choice_name_ko,
-        choice_type: choice.choice_type,
-        choice_description: choice.choice_description,
-        is_required: true, // 모든 productChoices를 필수로 설정
-        options: []
-      }
+  // 쿠폰 할인 계산 함수
+  const calculateCouponDiscount = useCallback((coupon: Coupon | null, subtotal: number) => {
+    if (!coupon) return 0
+    
+    if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
+      return (subtotal * (Number(coupon.percentage_value) || 0)) / 100
+    } else if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
+      return Number(coupon.fixed_value) || 0
     }
-    groups[groupKey].options.push({
-      option_id: choice.option_id,
-      option_name: choice.option_name,
-      option_name_ko: choice.option_name_ko,
-      option_price: choice.option_price,
-      is_default: choice.is_default
-    })
-    return groups
-  }, {} as Record<string, ChoiceGroup>)
+    
+    return 0
+  }, [])
 
-  // 필수 선택: productChoices의 모든 내용
-  const requiredChoices = Object.values(groupedChoices)
-  
-  // 추가 선택: product_options 테이블에서 가져온 내용
-  const optionalChoices = productOptions.map(option => ({
-    choice_id: option.id,
-    choice_name: isEnglish ? (option.option_name_en || option.option_name || option.name) : (option.option_name_ko || option.option_name || option.name),
-    choice_name_ko: option.option_name_ko || option.option_name || option.name,
-    choice_name_en: option.option_name_en || option.option_name || option.name,
-    choice_type: 'optional',
-    choice_description: isEnglish ? (option.option_description_en || option.option_description || option.description) : (option.option_description_ko || option.option_description || option.description),
-    choice_description_ko: option.option_description_ko || option.option_description || option.description,
-    choice_description_en: option.option_description_en || option.option_description || option.description,
-    choice_image_url: option.option_image_url || option.option_thumbnail_url,
-    choice_thumbnail_url: option.option_thumbnail_url || option.option_image_url,
-    is_required: false,
-    options: [{
-      option_id: option.id,
-      option_name: isEnglish ? (option.option_name_en || option.option_name || option.name) : (option.option_name_ko || option.option_name || option.name),
-      option_name_ko: option.option_name_ko || option.option_name || option.name,
-      option_name_en: option.option_name_en || option.option_name || option.name,
-      option_price: option.option_adult_price || option.adult_price_adjustment || 0,
-      option_child_price: option.option_child_price || option.child_price_adjustment || 0,
-      option_infant_price: option.option_infant_price || option.infant_price_adjustment || 0,
-      is_default: option.is_default || false
-    }]
-  }))
+  // 쿠폰 검증 및 적용 함수
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError(translate('쿠폰 코드를 입력해주세요.', 'Please enter a coupon code.'))
+      return
+    }
+
+    setValidatingCoupon(true)
+    setCouponError('')
+
+    try {
+      const response = await fetch('/api/coupons/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          couponCode: couponCode.toUpperCase(),
+          productId: product.id,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.valid) {
+        setCouponError(data.message || translate('유효하지 않은 쿠폰입니다.', 'Invalid coupon code.'))
+        setAppliedCoupon(null)
+        return
+      }
+
+      setAppliedCoupon(data.coupon)
+      setCouponError('')
+    } catch (error) {
+      console.error('쿠폰 검증 오류:', error)
+      setCouponError(translate('쿠폰 검증 중 오류가 발생했습니다.', 'An error occurred while validating the coupon.'))
+      setAppliedCoupon(null)
+    } finally {
+      setValidatingCoupon(false)
+    }
+  }
+
+  // 쿠폰 제거 함수
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null)
+    setCouponCode('')
+    setCouponError('')
+  }
+
+  // 쿠폰 할인이 적용된 최종 가격 계산
+  const calculateFinalPrice = () => {
+    const subtotal = calculateTotalPrice()
+    const discount = appliedCoupon ? calculateCouponDiscount(appliedCoupon, subtotal) : 0
+    return Math.max(0, subtotal - discount)
+  }
 
   // 전화번호를 국제 형식으로 변환하는 함수
   const getFullPhoneNumber = () => {
@@ -899,154 +1235,146 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }
   }
 
-  // 카드 정보 검증
-  const validateCardDetails = () => {
-    const errors = {
-      number: '',
-      expiry: '',
-      cvv: '',
-      name: ''
-    }
-    let isValid = true
-
-    // 카드 번호 검증 (16자리 숫자)
-    const cardNumber = cardDetails.number.replace(/\s/g, '')
-    if (!cardNumber || cardNumber.length < 13 || cardNumber.length > 19) {
-      errors.number = translate('올바른 카드 번호를 입력해주세요.', 'Please enter a valid card number.')
-      isValid = false
-    }
-
-    // 만료일 검증 (MM/YY 형식)
-    const expiryMatch = cardDetails.expiry.match(/^(\d{2})\/(\d{2})$/)
-    if (!expiryMatch) {
-      errors.expiry = translate('올바른 만료일을 입력해주세요. (MM/YY)', 'Please enter a valid expiry date (MM/YY).')
-      isValid = false
-    } else {
-      const month = parseInt(expiryMatch[1])
-      const year = parseInt('20' + expiryMatch[2])
-      const currentDate = new Date()
-      const expiryDate = new Date(year, month - 1)
-      
-      if (month < 1 || month > 12 || expiryDate < currentDate) {
-        errors.expiry = translate('만료일이 지났거나 올바르지 않습니다.', 'Expiry date is invalid or has passed.')
-        isValid = false
-      }
-    }
-
-    // CVV 검증 (3-4자리 숫자)
-    if (!cardDetails.cvv || cardDetails.cvv.length < 3 || cardDetails.cvv.length > 4) {
-      errors.cvv = translate('올바른 CVV를 입력해주세요.', 'Please enter a valid CVV.')
-      isValid = false
-    }
-
-    // 카드 소유자명 검증
-    if (!cardDetails.name || cardDetails.name.trim().length < 2) {
-      errors.name = translate('카드 소유자명을 입력해주세요.', 'Please enter the cardholder name.')
-      isValid = false
-    }
-
-    setCardErrors(errors)
-    return isValid
-  }
-
-  // Stripe 결제 처리 함수
-  const processPayment = async (reservationId: string, amount: number) => {
-    if (paymentMethod === 'card') {
-      // 카드 정보 검증
-      if (!validateCardDetails()) {
-        throw new Error(translate('카드 정보를 확인해주세요.', 'Please check your card information.'))
-      }
-
-      try {
-        // 1단계: Payment Intent 생성 (서버에서)
-        const response = await fetch('/api/payment/create-payment-intent', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            amount: amount,
-            currency: 'usd',
-            reservationId: reservationId,
-            customerInfo: {
-              name: bookingData.customerInfo.name,
-              email: bookingData.customerInfo.email
-            }
-          })
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || translate('결제 요청 생성에 실패했습니다.', 'Failed to create payment request.'))
-        }
-
-        const { clientSecret, paymentIntentId } = await response.json()
-
-        // 2단계: Stripe Elements로 결제 완료 (클라이언트에서)
-        // @ts-ignore - Stripe.js는 동적 로딩
-        const stripe = (await import('@stripe/stripe-js')).loadStripe(
-          process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ''
-        )
-
-        const stripeInstance = await stripe
-        
-        if (!stripeInstance) {
-          throw new Error(translate('Stripe 로드에 실패했습니다.', 'Failed to load Stripe.'))
-        }
-
-        // 3단계: 카드 정보로 결제 확인
-        const { error: confirmError, paymentIntent } = await stripeInstance.confirmCardPayment(clientSecret, {
-          payment_method: {
-            card: {
-              number: cardDetails.number.replace(/\s/g, ''),
-              exp_month: parseInt(cardDetails.expiry.split('/')[0]),
-              exp_year: parseInt('20' + cardDetails.expiry.split('/')[1]),
-              cvc: cardDetails.cvv,
-            },
-            billing_details: {
-              name: cardDetails.name,
-              email: bookingData.customerInfo.email,
-            },
-          },
-        })
-
-        if (confirmError) {
-          throw new Error(confirmError.message || translate('결제에 실패했습니다.', 'Payment failed.'))
-        }
-
-        if (paymentIntent?.status === 'succeeded') {
-          return {
-            success: true,
-            transactionId: paymentIntent.id
-          }
-        } else {
-          throw new Error(translate('결제가 완료되지 않았습니다.', 'Payment was not completed.'))
-        }
-
-      } catch (error) {
-        console.error('Stripe 결제 처리 오류:', error)
-        throw error
-      }
-    } else if (paymentMethod === 'bank_transfer') {
-      // 은행 이체는 결제 기록만 생성하고 상태는 pending으로 유지
-      return {
-        success: true,
-        transactionId: null
-      }
-    } else {
-      throw new Error(translate('지원하지 않는 결제 방법입니다.', 'Unsupported payment method.'))
-    }
-  }
-
-  const handleComplete = async () => {
+  // 장바구니에 추가
+  const handleAddToCart = () => {
     try {
-      setLoading(true)
+      const fullPhoneNumber = getFullPhoneNumber()
+      const totalPrice = calculateTotalPrice()
       
-      // 결제 방법이 카드인 경우 카드 정보 검증
-      if (paymentMethod === 'card' && !validateCardDetails()) {
-        setLoading(false)
+      // 고객 정보 검증
+      const { name, email, phone, country, customerLanguage } = bookingData.customerInfo
+      if (!name || !email || !phone || !country || !customerLanguage) {
+        alert(isEnglish 
+          ? 'Please complete customer information before adding to cart.' 
+          : '장바구니에 추가하기 전에 고객 정보를 완성해주세요.')
         return
       }
+
+      // 예약 정보 검증
+      if (!bookingData.tourDate || bookingData.participants.adults === 0) {
+        alert(isEnglish 
+          ? 'Please select a tour date and at least one adult participant.' 
+          : '투어 날짜와 최소 1명의 성인을 선택해주세요.')
+        return
+      }
+
+      // CartProvider 확인
+      if (!cart || !cart.addItem) {
+        console.error('CartProvider가 제대로 초기화되지 않았습니다.')
+        alert(isEnglish 
+          ? 'Cart system error. Please refresh the page.' 
+          : '장바구니 시스템 오류가 발생했습니다. 페이지를 새로고침해주세요.')
+        return
+      }
+
+      // 선택된 초이스 상세 정보 생성
+      const selectedChoices: Array<{
+        choiceId: string
+        choiceName: string
+        choiceNameKo: string | null
+        choiceNameEn: string | null
+        optionId: string
+        optionName: string
+        optionNameKo: string | null
+        optionNameEn: string | null
+        optionPrice: number | null
+      }> = []
+
+      // 필수 선택에서 선택된 항목 찾기
+      requiredChoices.forEach((group) => {
+        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+        if (selectedOptionId) {
+          const selectedOption = group.options.find((opt) => opt.option_id === selectedOptionId)
+          if (selectedOption) {
+            selectedChoices.push({
+              choiceId: group.choice_id,
+              choiceName: group.choice_name,
+              choiceNameKo: group.choice_name_ko,
+              choiceNameEn: group.choice_name_en || null,
+              optionId: selectedOption.option_id,
+              optionName: selectedOption.option_name,
+              optionNameKo: selectedOption.option_name_ko,
+              optionNameEn: selectedOption.option_name_en || null,
+              optionPrice: selectedOption.option_price
+            })
+          }
+        }
+      })
+
+      // 추가 선택에서 선택된 항목 찾기
+      optionalChoices.forEach((group) => {
+        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+        if (selectedOptionId) {
+          const selectedOption = group.options.find((opt) => opt.option_id === selectedOptionId)
+          if (selectedOption) {
+            selectedChoices.push({
+              choiceId: group.choice_id,
+              choiceName: group.choice_name,
+              choiceNameKo: group.choice_name_ko,
+              choiceNameEn: group.choice_name_en || null,
+              optionId: selectedOption.option_id,
+              optionName: selectedOption.option_name,
+              optionNameKo: selectedOption.option_name_ko,
+              optionNameEn: selectedOption.option_name_en || null,
+              optionPrice: selectedOption.option_price
+            })
+          }
+        }
+      })
+
+      // 장바구니에 추가할 아이템 생성
+      const cartItem = {
+        productId: product.id,
+        productName: product.name,
+        productNameKo: product.customer_name_ko || product.name_ko || product.name,
+        productNameEn: product.customer_name_en || product.name_en || product.name,
+        tourDate: bookingData.tourDate,
+        departureTime: bookingData.departureTime || '',
+        participants: bookingData.participants,
+        selectedOptions: bookingData.selectedOptions,
+        selectedChoices: selectedChoices,
+        basePrice: product.base_price || 0,
+        totalPrice: totalPrice,
+        customerInfo: {
+          name: bookingData.customerInfo.name,
+          email: bookingData.customerInfo.email,
+          phone: fullPhoneNumber,
+          nationality: bookingData.customerInfo.country || '',
+          specialRequests: bookingData.customerInfo.specialRequests || ''
+        }
+      }
+
+      console.log('장바구니에 추가할 아이템:', cartItem)
+      
+      // 장바구니에 추가
+      cart.addItem(cartItem)
+
+      console.log('장바구니에 추가 완료. 현재 장바구니 아이템 수:', cart.items?.length || 0)
+
+      alert(isEnglish 
+        ? 'Item added to cart successfully!' 
+        : '장바구니에 추가되었습니다!')
+      onClose()
+    } catch (error) {
+      console.error('장바구니 추가 오류:', error)
+      alert(isEnglish 
+        ? `Failed to add item to cart: ${error instanceof Error ? error.message : 'Unknown error'}` 
+        : `장바구니 추가 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    }
+  }
+
+  // 결제 완료 핸들러 (PaymentForm에서 호출)
+  const handlePaymentComplete = async (result: { success: boolean; transactionId?: string | null }) => {
+    // 결제가 성공하면 예약 생성 진행
+    if (result.success) {
+      await handleCompleteBooking(result.transactionId)
+    }
+  }
+
+  // 예약 생성 (결제 완료 후)
+  const handleCompleteBooking = async (transactionId: string | null | undefined) => {
+    try {
+      setLoading(true)
       
       // 전화번호를 국제 형식으로 변환하여 저장
       const fullPhoneNumber = getFullPhoneNumber()
@@ -1068,44 +1396,46 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         infants: bookingData.participants.infants,
         total_people: bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants,
         total_price: totalPrice,
-        choices_total: 0, // 나중에 계산
-        status: 'pending',
+        choices_total: 0,
+        status: transactionId ? 'confirmed' : 'pending',
         notes: bookingData.customerInfo.specialRequests || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
 
       // 2. 예약 생성
-      const { data: newReservation, error: reservationError } = await supabase
+      const { error: reservationError } = await supabase
         .from('reservations')
-        .insert(reservationData)
-        .select()
-        .single()
+        .insert(reservationData as never)
 
       if (reservationError) {
         throw new Error(`예약 생성 오류: ${reservationError.message}`)
       }
 
-      // 3. 선택된 필수/선택 옵션들을 reservation_choices에 저장
-      const choicesToInsert: any[] = []
+      // 3. 선택된 필수/선택 옵션들을 저장
+      const choicesToInsert: Array<{
+        reservation_id: string
+        choice_id: string
+        option_id: string
+        quantity: number
+        total_price: number
+      }> = []
       let choicesTotal = 0
 
       // 필수 선택 (productChoices)
-      requiredChoices.forEach((group: ChoiceGroup) => {
+      requiredChoices.forEach((group) => {
         const selectedOptionId = bookingData.selectedOptions[group.choice_id]
         if (selectedOptionId) {
           const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
           if (option) {
-            // choice_id는 product_choices의 UUID, option_id는 choice_options의 UUID
-            // 하지만 현재 productChoices 구조에서는 choice_id와 option_id가 이미 올바르게 매핑되어 있음
             const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
             const optionPrice = option.option_price || 0
             const totalPrice = optionPrice * totalParticipants
             
             choicesToInsert.push({
               reservation_id: reservationId,
-              choice_id: group.choice_id, // UUID
-              option_id: selectedOptionId, // UUID
+              choice_id: group.choice_id,
+              option_id: selectedOptionId,
               quantity: totalParticipants,
               total_price: totalPrice
             })
@@ -1115,12 +1445,18 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         }
       })
 
-      // 추가 선택 (productOptions) - reservation_options 테이블에 저장
-      const optionsToInsert: any[] = []
-      optionalChoices.forEach((group: ChoiceGroup) => {
+      // 추가 선택 (productOptions)
+      const optionsToInsert: Array<{
+        reservation_id: string
+        option_id: string
+        ea: number
+        price: number
+        total_price: number
+        status: string
+      }> = []
+      optionalChoices.forEach((group) => {
         const selectedOptionId = bookingData.selectedOptions[group.choice_id]
         if (selectedOptionId) {
-          // productOptions에서 해당 선택된 옵션 찾기
           const productOption = productOptions.find(po => po.id === selectedOptionId)
           const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
           
@@ -1129,97 +1465,49 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
             const optionPrice = option.option_price || 0
             const totalPrice = optionPrice * totalParticipants
             
-            // linked_option_id가 있으면 그것을 사용, 없으면 product_options의 id 사용
-            // reservation_options의 option_id는 options 테이블의 id를 참조
-            const actualOptionId = productOption.linked_option_id || selectedOptionId
-            
             optionsToInsert.push({
               reservation_id: reservationId,
-              option_id: actualOptionId,
+              option_id: selectedOptionId,
               ea: totalParticipants,
               price: optionPrice,
               total_price: totalPrice,
-              status: 'active'
+              status: 'confirmed'
             })
-            
-            choicesTotal += totalPrice
           }
         }
       })
 
-      // reservation_options에 삽입 (추가 선택 상품)
+      // reservation_options에 삽입
       if (optionsToInsert.length > 0) {
         const { error: optionsError } = await supabase
           .from('reservation_options')
-          .insert(optionsToInsert)
+          .insert(optionsToInsert as never)
 
         if (optionsError) {
           console.error('예약 추가 선택 상품 저장 오류:', optionsError)
-          // 추가 선택 상품 저장 실패해도 예약은 성공으로 처리
         }
       }
 
-      // reservation_choices에 삽입 (필수 선택만)
+      // reservation_choices에 삽입
       if (choicesToInsert.length > 0) {
         const { error: choicesError } = await supabase
           .from('reservation_choices')
-          .insert(choicesToInsert)
+          .insert(choicesToInsert as never)
 
         if (choicesError) {
           console.error('예약 선택사항 저장 오류:', choicesError)
-          // 선택사항 저장 실패해도 예약은 성공으로 처리
         }
       }
 
-      // 4. choices_total 업데이트
+      // choices_total 업데이트
       if (choicesTotal > 0) {
         await supabase
           .from('reservations')
-          .update({ choices_total: choicesTotal })
+          .update({ choices_total: choicesTotal } as never)
           .eq('id', reservationId)
       }
 
-      // 5. 결제 처리
-      let paymentStatus = 'pending'
-      let transactionId: string | null = null
-      
-      if (paymentMethod === 'card') {
-        try {
-          const paymentResult = await processPayment(reservationId, totalPrice)
-          
-          if (!paymentResult.success) {
-            // 결제 실패 시 예약 상태를 pending으로 유지하고 오류 메시지 표시
-            throw new Error(paymentResult.error || translate('결제 처리에 실패했습니다.', 'Payment processing failed.'))
-          }
-          
-          transactionId = paymentResult.transactionId || null
-          paymentStatus = 'confirmed'
-          
-          // 결제 성공 시 예약 상태를 confirmed로 업데이트
-          await supabase
-            .from('reservations')
-            .update({ status: 'confirmed' })
-            .eq('id', reservationId)
-        } catch (paymentError) {
-          // 결제 실패 시 예약은 생성되었지만 pending 상태
-          console.error('결제 처리 오류:', paymentError)
-          alert(isEnglish 
-            ? `Reservation created but payment failed: ${paymentError instanceof Error ? paymentError.message : 'Unknown error'}. We will contact you regarding payment.` 
-            : `예약은 생성되었지만 결제에 실패했습니다: ${paymentError instanceof Error ? paymentError.message : '알 수 없는 오류'}. 결제 관련해서 곧 연락드리겠습니다.`)
-          onComplete({
-            ...bookingData,
-            totalPrice: totalPrice,
-            customerInfo: {
-              ...bookingData.customerInfo,
-              phone: fullPhoneNumber
-            },
-            reservationId: reservationId
-          })
-          return
-        }
-      }
-
-      // 6. 결제 기록 생성 (payment_records 테이블에 저장)
+      // 결제 기록 생성
       if (paymentMethod === 'card' && transactionId) {
         try {
           const { data: { session } } = await supabase.auth.getSession()
@@ -1232,7 +1520,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               },
               body: JSON.stringify({
                 reservation_id: reservationId,
-                payment_status: paymentStatus,
+                payment_status: 'confirmed',
                 amount: totalPrice,
                 payment_method: paymentMethod,
                 note: transactionId ? `Transaction ID: ${transactionId}` : null
@@ -1241,7 +1529,6 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           }
         } catch (error) {
           console.error('결제 기록 생성 오류:', error)
-          // 결제 기록 생성 실패해도 예약은 성공으로 처리
         }
       }
 
@@ -1251,15 +1538,37 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         customerInfo: {
           ...bookingData.customerInfo,
           phone: fullPhoneNumber
-        },
-        reservationId: reservationId
+        }
+      }
+
+      // 이메일 발송 (결제 완료 시)
+      if (paymentMethod === 'card' && transactionId) {
+        try {
+          await fetch('/api/send-email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              reservationId: reservationId,
+              email: bookingData.customerInfo.email,
+              type: 'both', // 영수증과 투어 바우처 모두 발송
+              locale: isEnglish ? 'en' : 'ko'
+            })
+          }).catch(error => {
+            console.error('이메일 발송 오류 (무시):', error)
+            // 이메일 발송 실패해도 예약은 완료된 것으로 처리
+          })
+        } catch (error) {
+          console.error('이메일 발송 오류 (무시):', error)
+        }
       }
 
       // 성공 메시지 표시
-      if (paymentMethod === 'card' && paymentStatus === 'confirmed') {
+      if (paymentMethod === 'card' && transactionId) {
         alert(isEnglish 
-          ? `Payment successful! Your reservation has been confirmed. Reservation ID: ${reservationId}` 
-          : `결제가 완료되었습니다! 예약이 확정되었습니다. 예약 ID: ${reservationId}`)
+          ? `Payment successful! Your reservation has been confirmed. Receipt and tour voucher have been sent to ${bookingData.customerInfo.email}. Reservation ID: ${reservationId}` 
+          : `결제가 완료되었습니다! 예약이 확정되었습니다. 영수증과 투어 바우처가 ${bookingData.customerInfo.email}로 발송되었습니다. 예약 ID: ${reservationId}`)
       } else {
         alert(isEnglish 
           ? 'Your reservation has been submitted successfully! We will contact you soon.' 
@@ -1277,6 +1586,30 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       setLoading(false)
     }
   }
+
+  const handleComplete = async () => {
+    // 카드 결제는 PaymentForm에서 처리하므로, 여기서는 은행 이체만 처리
+    if (paymentMethod === 'card') {
+      // PaymentForm에서 결제가 완료되면 handlePaymentComplete가 호출됨
+      // 여기서는 아무것도 하지 않음
+      return
+    }
+
+    // 은행 이체인 경우
+    try {
+      setLoading(true)
+      await handleCompleteBooking(null)
+    } catch (error) {
+      console.error('예약 생성 오류:', error)
+      alert(isEnglish 
+        ? `Failed to create reservation: ${error instanceof Error ? error.message : 'Unknown error'}` 
+        : `예약 생성에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 기존 예약 생성 로직은 handleCompleteBooking으로 이동됨
 
   // 인증 핸들러
   useEffect(() => {
@@ -1461,29 +1794,13 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           customerLanguage
         )
       case 3: // 결제
-        // 카드 결제 방법 선택 시 카드 정보 검증
-        if (paymentMethod === 'card') {
-          const cardNumber = cardDetails.number.replace(/\s/g, '')
-          const expiryMatch = cardDetails.expiry.match(/^(\d{2})\/(\d{2})$/)
-          
-          return !!(
-            cardNumber && 
-            cardNumber.length >= 13 && 
-            cardNumber.length <= 19 &&
-            expiryMatch &&
-            cardDetails.cvv && 
-            cardDetails.cvv.length >= 3 && 
-            cardDetails.cvv.length <= 4 &&
-            cardDetails.name && 
-            cardDetails.name.trim().length >= 2
-          )
-        }
-        // 은행 이체나 기타 결제 방법은 항상 유효
+        // Stripe Elements가 자동으로 카드 정보를 검증하므로 여기서는 항상 true
+        // 카드 결제는 PaymentForm에서 처리
         return true
       default:
         return false
     }
-  }, [currentStep, bookingData, requiredChoices, paymentMethod, cardDetails])
+  }, [currentStep, bookingData, requiredChoices])
 
   const renderStepContent = () => {
     switch (currentStep) {
@@ -1981,8 +2298,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                 </div>
               ) : optionalChoices.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {optionalChoices.map((group: any) => (
-                    group.options.map((option: any) => {
+                  {optionalChoices.map((group) => (
+                    group.options.map((option) => {
                       const adultPrice = option.option_price || 0
                       const childPrice = option.option_child_price || 0
                       const infantPrice = option.option_infant_price || 0
@@ -2000,7 +2317,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           <input
                             type="checkbox"
                             checked={bookingData.selectedOptions[group.choice_id] === option.option_id}
-                            onChange={(e) => {
+                            onChange={() => {
                               setBookingData(prev => {
                                 // 이미 선택된 옵션이면 선택 취소
                                 if (prev.selectedOptions[group.choice_id] === option.option_id) {
@@ -2027,13 +2344,14 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           
                           {/* 이미지 */}
                           {group.choice_image_url && (
-                            <div className="w-full h-48 overflow-hidden rounded-t-lg">
-                              <img
+                            <div className="w-full h-48 overflow-hidden rounded-t-lg relative">
+                              <Image
                                 src={group.choice_thumbnail_url || group.choice_image_url}
                                 alt={isEnglish ? group.choice_name_en || group.choice_name : group.choice_name_ko || group.choice_name}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none'
+                                fill
+                                className="object-cover"
+                                onError={() => {
+                                  // 이미지 로드 실패 시 처리
                                 }}
                               />
                             </div>
@@ -2386,15 +2704,90 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     })
                   })()}
                   <div className="border-t pt-2 mt-2">
+                    {appliedCoupon && (
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-gray-600">{translate('쿠폰 할인', 'Coupon Discount')}</span>
+                        <span className="text-red-600">-${calculateCouponDiscount(appliedCoupon, calculateTotalPrice()).toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-semibold text-lg">
                       <span>{translate('총 가격', 'Total price')}</span>
-                      <span className="text-blue-600">${calculateTotalPrice()}</span>
+                      <span className="text-blue-600">${calculateFinalPrice().toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
               </div>
               
               <div className="space-y-4">
+                {/* 쿠폰 입력 필드 */}
+                <div>
+                  <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+                    <Ticket className="h-4 w-4 mr-2 text-gray-600" />
+                    {translate('쿠폰', 'Coupon')}
+                  </label>
+                  {!appliedCoupon ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={couponCode}
+                        onChange={(e) => {
+                          setCouponCode(e.target.value.toUpperCase())
+                          setCouponError('')
+                        }}
+                        placeholder={translate('쿠폰 코드 입력', 'Enter coupon code')}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleApplyCoupon()
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyCoupon}
+                        disabled={validatingCoupon || !couponCode.trim()}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                          validatingCoupon || !couponCode.trim()
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                      >
+                        {validatingCoupon ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          translate('적용', 'Apply')
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg p-3">
+                      <div className="flex items-center">
+                        <Check className="h-4 w-4 text-green-600 mr-2" />
+                        <span className="text-sm text-green-800">
+                          {appliedCoupon.coupon_code}
+                          {appliedCoupon.discount_type === 'percentage' && appliedCoupon.percentage_value && (
+                            <span className="ml-2">({appliedCoupon.percentage_value}% {translate('할인', 'off')})</span>
+                          )}
+                          {appliedCoupon.discount_type === 'fixed' && appliedCoupon.fixed_value && (
+                            <span className="ml-2">(${appliedCoupon.fixed_value} {translate('할인', 'off')})</span>
+                          )}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRemoveCoupon}
+                        className="text-sm text-red-600 hover:text-red-800"
+                      >
+                        {translate('제거', 'Remove')}
+                      </button>
+                    </div>
+                  )}
+                  {couponError && (
+                    <p className="text-xs text-red-500 mt-1">{couponError}</p>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{translate('결제 방법', 'Payment method')}</label>
                   <select 
@@ -2408,120 +2801,25 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   </select>
                 </div>
 
-                {/* 카드 정보 입력 폼 */}
-                {paymentMethod === 'card' && (
-                  <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                    <h4 className="font-medium text-gray-900 mb-4 flex items-center">
-                      <CreditCard className="h-5 w-5 mr-2 text-gray-600" />
-                      {translate('카드 정보', 'Card Information')}
-                    </h4>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          {translate('카드 번호', 'Card Number')} *
-                        </label>
-                        <input
-                          type="text"
-                          value={cardDetails.number}
-                          onChange={(e) => {
-                            let value = e.target.value.replace(/\s/g, '').replace(/\D/g, '')
-                            if (value.length <= 16) {
-                              value = value.match(/.{1,4}/g)?.join(' ') || value
-                              setCardDetails(prev => ({ ...prev, number: value }))
-                              setCardErrors(prev => ({ ...prev, number: '' }))
-                            }
-                          }}
-                          placeholder="1234 5678 9012 3456"
-                          className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            cardErrors.number ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                          maxLength={19}
-                        />
-                        {cardErrors.number && (
-                          <p className="text-xs text-red-500 mt-1">{cardErrors.number}</p>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            {translate('만료일', 'Expiry Date')} * (MM/YY)
-                          </label>
-                          <input
-                            type="text"
-                            value={cardDetails.expiry}
-                            onChange={(e) => {
-                              let value = e.target.value.replace(/\D/g, '')
-                              if (value.length <= 4) {
-                                if (value.length >= 2) {
-                                  value = value.substring(0, 2) + '/' + value.substring(2)
-                                }
-                                setCardDetails(prev => ({ ...prev, expiry: value }))
-                                setCardErrors(prev => ({ ...prev, expiry: '' }))
-                              }
-                            }}
-                            placeholder="MM/YY"
-                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                              cardErrors.expiry ? 'border-red-500' : 'border-gray-300'
-                            }`}
-                            maxLength={5}
-                          />
-                          {cardErrors.expiry && (
-                            <p className="text-xs text-red-500 mt-1">{cardErrors.expiry}</p>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            CVV *
-                          </label>
-                          <input
-                            type="text"
-                            value={cardDetails.cvv}
-                            onChange={(e) => {
-                              const value = e.target.value.replace(/\D/g, '').substring(0, 4)
-                              setCardDetails(prev => ({ ...prev, cvv: value }))
-                              setCardErrors(prev => ({ ...prev, cvv: '' }))
-                            }}
-                            placeholder="123"
-                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                              cardErrors.cvv ? 'border-red-500' : 'border-gray-300'
-                            }`}
-                            maxLength={4}
-                          />
-                          {cardErrors.cvv && (
-                            <p className="text-xs text-red-500 mt-1">{cardErrors.cvv}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          {translate('카드 소유자명', 'Cardholder Name')} *
-                        </label>
-                        <input
-                          type="text"
-                          value={cardDetails.name}
-                          onChange={(e) => {
-                            setCardDetails(prev => ({ ...prev, name: e.target.value }))
-                            setCardErrors(prev => ({ ...prev, name: '' }))
-                          }}
-                          placeholder={translate('홍길동', 'John Doe')}
-                          className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            cardErrors.name ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        />
-                        {cardErrors.name && (
-                          <p className="text-xs text-red-500 mt-1">{cardErrors.name}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <div className="flex items-start">
-                        <Lock className="h-4 w-4 text-blue-600 mr-2 mt-0.5 flex-shrink-0" />
-                        <span className="text-xs text-blue-800">
-                          {translate('모든 결제 정보는 SSL로 암호화되어 안전하게 전송됩니다.', 'All payment information is securely transmitted using SSL encryption.')}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                {/* 카드 정보 입력 폼 - Stripe Elements 사용 */}
+                {paymentMethod === 'card' && stripePromise && (
+                  <Elements 
+                    stripe={stripePromise}
+                    options={{
+                      appearance: {
+                        theme: 'stripe',
+                      },
+                    }}
+                  >
+                    <PaymentForm
+                      paymentMethod={paymentMethod}
+                      bookingData={bookingData}
+                      totalPrice={calculateFinalPrice()}
+                      onPaymentComplete={handlePaymentComplete}
+                      translate={translate}
+                      onPaymentSubmit={setPaymentSubmitHandler}
+                    />
+                  </Elements>
                 )}
 
                 {/* 은행 이체 안내 */}
@@ -2636,24 +2934,83 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
             </button>
 
             {currentStep === steps.length - 1 ? (
-              <button
-                onClick={handleComplete}
-                disabled={!isStepValid() || loading}
-                className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
-                  isStepValid() && !loading
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-              >
-                {loading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    {translate('처리 중...', 'Processing...')}
-                  </>
-                ) : (
-                  translate('예약 완료', 'Complete booking')
-                )}
-              </button>
+              // 카드 결제는 PaymentForm에서 처리하므로 버튼 숨김
+              paymentMethod === 'card' ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleAddToCart}
+                    disabled={!isStepValid()}
+                    className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                      isStepValid()
+                        ? 'bg-green-600 text-white hover:bg-green-700'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <ShoppingCart className="h-4 w-4 mr-2" />
+                    {translate('장바구니에 추가', 'Add to Cart')}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (paymentSubmitHandler) {
+                        setPaymentProcessing(true)
+                        try {
+                          await paymentSubmitHandler()
+                        } finally {
+                          setPaymentProcessing(false)
+                        }
+                      }
+                    }}
+                    disabled={!isStepValid() || !paymentSubmitHandler || paymentProcessing || !stripePromise}
+                    className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
+                      isStepValid() && paymentSubmitHandler && !paymentProcessing && stripePromise
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {paymentProcessing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        {translate('처리 중...', 'Processing...')}
+                      </>
+                    ) : (
+                      translate('결제하기', 'Pay Now')
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleAddToCart}
+                    disabled={!isStepValid()}
+                    className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                      isStepValid()
+                        ? 'bg-green-600 text-white hover:bg-green-700'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <ShoppingCart className="h-4 w-4 mr-2" />
+                    {translate('장바구니에 추가', 'Add to Cart')}
+                  </button>
+                  <button
+                    onClick={handleComplete}
+                    disabled={!isStepValid() || loading}
+                    className={`flex items-center px-6 py-2 rounded-lg font-medium transition-colors ${
+                      isStepValid() && !loading
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {loading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        {translate('처리 중...', 'Processing...')}
+                      </>
+                    ) : (
+                      translate('예약 완료', 'Complete booking')
+                    )}
+                  </button>
+                </div>
+              )
             ) : (
               <button
                 onClick={handleNext}

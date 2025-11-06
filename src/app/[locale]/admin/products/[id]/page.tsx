@@ -63,6 +63,8 @@ interface ProductOption {
   adultPrice?: number
   childPrice?: number
   infantPrice?: number
+  imageUrl?: string
+  imageAlt?: string
   priceAdjustment?: {
     adult: number
     child: number
@@ -504,12 +506,39 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
 
           if (optionsError) throw optionsError
 
+          // 3. linked_option_id가 있는 경우 options 테이블에서 이미지 정보 가져오기
+          const linkedOptionIds = optionsData
+            ?.filter((opt: any) => opt.linked_option_id)
+            .map((opt: any) => opt.linked_option_id)
+            .filter((id: string, index: number, self: string[]) => self.indexOf(id) === index) || []
+
+          let linkedOptionsMap: Record<string, any> = {}
+          if (linkedOptionIds.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: linkedOptionsData, error: linkedOptionsError } = await (supabase as any)
+              .from('options')
+              .select('id, image_url, image_alt, thumbnail_url')
+              .in('id', linkedOptionIds)
+
+            if (!linkedOptionsError && linkedOptionsData) {
+              linkedOptionsMap = linkedOptionsData.reduce((acc: Record<string, any>, option: any) => {
+                acc[option.id] = option
+                return acc
+              }, {})
+            }
+          }
+
           // optionsData 안전성 확인
           console.log('=== Options Data Debug ===')
           console.log('optionsData:', optionsData)
           console.log('optionsData type:', Array.isArray(optionsData) ? 'array' : typeof optionsData)
           if (Array.isArray(optionsData) && optionsData.length > 0) {
             console.log('optionsData length:', optionsData.length)
+            // 첫 번째 옵션의 이미지 필드 확인
+            console.log('First option image fields:', {
+              image_url: optionsData[0]?.image_url,
+              image_alt: optionsData[0]?.image_alt
+            })
           }
 
           // 3. 상품 세부정보 로드 (공통 여부 반영)
@@ -791,6 +820,23 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                   const optionKey = option.name || 'unnamed'
                   
                   if (!groupedOptions[optionKey]) {
+                    // 이미지 우선순위: product_options의 이미지 > linked_option의 이미지
+                    const linkedOption = option.linked_option_id ? linkedOptionsMap[option.linked_option_id] : null
+                    const imageUrl = option.image_url || (linkedOption?.image_url) || undefined
+                    const imageAlt = option.image_alt || (linkedOption?.image_alt) || undefined
+                    
+                    // 이미지 필드 디버깅
+                    console.log(`Option ${option.name} image fields:`, {
+                      product_image_url: option.image_url,
+                      product_image_alt: option.image_alt,
+                      linked_option_id: option.linked_option_id,
+                      linked_option_image_url: linkedOption?.image_url,
+                      linked_option_image_alt: linkedOption?.image_alt,
+                      final_imageUrl: imageUrl,
+                      final_imageAlt: imageAlt,
+                      hasImageUrl: !!imageUrl
+                    })
+                    
                     groupedOptions[optionKey] = {
                       id: option.id,
                       name: option.name,
@@ -801,8 +847,13 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                       adultPrice: option.adult_price_adjustment || 0,
                       childPrice: option.child_price_adjustment || 0,
                       infantPrice: option.infant_price_adjustment || 0,
+                      imageUrl: imageUrl,
+                      imageAlt: imageAlt,
                       choices: []
                     }
+                    
+                    // 변환된 옵션의 이미지 필드 확인
+                    console.log(`Converted option ${option.name} imageUrl:`, groupedOptions[optionKey].imageUrl)
                   }
                   
                   // choice가 있는 경우에만 추가

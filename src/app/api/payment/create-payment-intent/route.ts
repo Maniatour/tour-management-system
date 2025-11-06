@@ -10,8 +10,11 @@ function getStripe(): Stripe {
     if (!secretKey) {
       throw new Error('STRIPE_SECRET_KEY가 환경 변수에 설정되지 않았습니다.')
     }
+    // API 버전을 명시하지 않으면 최신 버전 사용
     stripeInstance = new Stripe(secretKey, {
-      apiVersion: '2024-11-20.acacia',
+      // 타임아웃 및 재시도 설정
+      timeout: 30000,
+      maxNetworkRetries: 3,
     })
   }
   return stripeInstance
@@ -66,8 +69,13 @@ export async function POST(request: NextRequest) {
       stripe = getStripe()
     } catch (error) {
       console.error('Stripe 초기화 오류:', error)
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류'
       return NextResponse.json(
-        { error: '결제 서비스 설정 오류' },
+        { 
+          error: errorMessage.includes('STRIPE_SECRET_KEY') 
+            ? 'Stripe 환경변수가 설정되지 않았습니다. STRIPE_SECRET_KEY를 확인해주세요.' 
+            : `결제 서비스 설정 오류: ${errorMessage}`
+        },
         { status: 500 }
       )
     }
@@ -83,45 +91,107 @@ export async function POST(request: NextRequest) {
       amountInSmallestUnit = Math.round(amount) // 원화는 그대로
     }
 
-    // 5. Payment Intent 생성
-    // Payment Intent는 결제를 위한 "의도"를 나타냅니다
-    // 실제 결제는 클라이언트에서 이 시크릿을 사용하여 완료됩니다
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountInSmallestUnit,
-      currency: currency.toLowerCase(),
-      metadata: {
-        reservationId: reservationId,
-        customerName: customerInfo?.name || '',
-        customerEmail: customerInfo?.email || ''
-      },
-      // 자동 승인 설정 (필요에 따라 변경 가능)
-      automatic_payment_methods: {
-        enabled: true,
-      },
-    })
-
-    // 6. 클라이언트 시크릿 반환
-    // 이 시크릿은 클라이언트에서 결제를 완료하는 데 사용됩니다
-    return NextResponse.json({
-      clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id,
-      amount: amountInSmallestUnit,
-      currency: currency.toLowerCase()
-    })
-
-  } catch (error) {
-    console.error('Payment Intent 생성 오류:', error)
-    
-    // Stripe 에러인 경우
-    if (error instanceof Stripe.errors.StripeError) {
+    // 최소 금액 검증 (Stripe는 최소 $0.50 또는 동등한 금액이 필요)
+    if (amountInSmallestUnit < 50 && currency.toLowerCase() === 'usd') {
       return NextResponse.json(
-        { error: `Stripe 오류: ${error.message}` },
+        { error: '최소 결제 금액은 $0.50입니다.' },
         { status: 400 }
       )
     }
 
+    if (amountInSmallestUnit < 1) {
+      return NextResponse.json(
+        { error: '결제 금액이 너무 작습니다.' },
+        { status: 400 }
+      )
+    }
+
+    console.log('Payment Intent 생성 시도:', {
+      amount: amountInSmallestUnit,
+      currency: currency.toLowerCase(),
+      reservationId
+    })
+
+    // 5. Payment Intent 생성
+    // Payment Intent는 결제를 위한 "의도"를 나타냅니다
+    // 실제 결제는 클라이언트에서 이 시크릿을 사용하여 완료됩니다
+    try {
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amountInSmallestUnit,
+        currency: currency.toLowerCase(),
+        metadata: {
+          reservationId: reservationId,
+          customerName: customerInfo?.name || '',
+          customerEmail: customerInfo?.email || ''
+        },
+        // 자동 승인 설정 (필요에 따라 변경 가능)
+        automatic_payment_methods: {
+          enabled: true,
+        },
+      })
+
+      console.log('Payment Intent 생성 성공:', paymentIntent.id)
+
+      // 6. 클라이언트 시크릿 반환
+      // 이 시크릿은 클라이언트에서 결제를 완료하는 데 사용됩니다
+      return NextResponse.json({
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        amount: amountInSmallestUnit,
+        currency: currency.toLowerCase()
+      })
+    } catch (stripeError) {
+      console.error('Stripe Payment Intent 생성 오류:', stripeError)
+      
+      // Stripe 에러 타입별 처리
+      if (stripeError instanceof Stripe.errors.StripeError) {
+        let errorMessage = stripeError.message
+        
+        // 더 친절한 에러 메시지 제공
+        if (stripeError.type === 'StripeConnectionError') {
+          errorMessage = 'Stripe 서버에 연결할 수 없습니다. 네트워크 연결을 확인하거나 잠시 후 다시 시도해주세요.'
+        } else if (stripeError.type === 'StripeAPIError') {
+          errorMessage = 'Stripe API 오류가 발생했습니다. API 키를 확인해주세요.'
+        } else if (stripeError.type === 'StripeAuthenticationError') {
+          errorMessage = 'Stripe 인증에 실패했습니다. API 키가 올바른지 확인해주세요.'
+        } else if (stripeError.type === 'StripeInvalidRequestError') {
+          errorMessage = `잘못된 요청입니다: ${stripeError.message}`
+        }
+        
+        return NextResponse.json(
+          { error: `Stripe 오류: ${errorMessage}` },
+          { status: 400 }
+        )
+      }
+      
+      throw stripeError
+    }
+  } catch (error) {
+    console.error('Payment Intent 생성 오류 (최상위):', error)
+    
+    // Stripe 에러인 경우
+    if (error instanceof Stripe.errors.StripeError) {
+      let errorMessage = error.message
+      
+      // 에러 타입별 처리
+      if (error.type === 'StripeConnectionError') {
+        errorMessage = 'Stripe 서버에 연결할 수 없습니다. 네트워크 연결을 확인하거나 잠시 후 다시 시도해주세요.'
+      } else if (error.type === 'StripeAPIError') {
+        errorMessage = 'Stripe API 오류가 발생했습니다. API 키와 계정 상태를 확인해주세요.'
+      } else if (error.type === 'StripeAuthenticationError') {
+        errorMessage = 'Stripe 인증에 실패했습니다. STRIPE_SECRET_KEY가 올바른지 확인해주세요.'
+      }
+      
+      return NextResponse.json(
+        { error: `Stripe 오류: ${errorMessage}` },
+        { status: 400 }
+      )
+    }
+
+    // 일반 에러
+    const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류'
     return NextResponse.json(
-      { error: '결제 처리 중 오류가 발생했습니다.' },
+      { error: `결제 처리 중 오류가 발생했습니다: ${errorMessage}` },
       { status: 500 }
     )
   }

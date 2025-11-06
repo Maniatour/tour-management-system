@@ -13,8 +13,9 @@ import Link from 'next/link'
 import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User, ArrowLeft, Search } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
 import { useAuth } from '@/contexts/AuthContext'
+import { CartProvider, CartIcon, CartSidebar } from '@/components/cart/CartProvider'
 
-const Navigation = () => {
+const NavigationContent = () => {
   const t = useTranslations('common')
   const pathname = usePathname()
   const locale = useLocale()
@@ -26,11 +27,15 @@ const Navigation = () => {
   const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const [showCart, setShowCart] = useState(false)
   
   // Admin 페이지에서는 네비게이션을 숨김
   if (pathname.startsWith(`/${locale}/admin`)) {
     return null
   }
+
+  // 상품 관련 페이지인지 확인
+  const isProductPage = pathname.includes('/products')
 
   const handleLogout = async () => {
     try {
@@ -127,6 +132,10 @@ const Navigation = () => {
               </div>
             ) : currentUser ? (
               <div className="flex items-center space-x-4">
+                {/* 상품 페이지에서만 장바구니 아이콘 표시 */}
+                {isProductPage && (
+                  <CartIcon onClick={() => setShowCart(true)} />
+                )}
                 {/* 사용자 드롭다운 메뉴 */}
                 <div className="relative">
                   <button
@@ -349,18 +358,28 @@ const Navigation = () => {
                 </div>
               </div>
             ) : (
-              <Link
-                href={`/${locale}/auth`}
-                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                <LogIn className="w-4 h-4 mr-2" />
-                {t('login')}
-              </Link>
+              <div className="flex items-center space-x-4">
+                {/* 상품 페이지에서만 장바구니 아이콘 표시 */}
+                {isProductPage && (
+                  <CartIcon onClick={() => setShowCart(true)} />
+                )}
+                <Link
+                  href={`/${locale}/auth`}
+                  className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+                >
+                  <LogIn className="w-4 h-4 mr-2" />
+                  {t('login')}
+                </Link>
+              </div>
             )}
           </div>
 
           {/* 모바일 메뉴 버튼 */}
           <div className="md:hidden flex items-center space-x-2">
+            {/* 상품 페이지에서만 장바구니 아이콘 표시 */}
+            {isProductPage && (
+              <CartIcon onClick={() => setShowCart(true)} />
+            )}
             <LanguageSwitcher />
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -551,7 +570,31 @@ const Navigation = () => {
           </div>
         )}
       </div>
+
+      {/* 장바구니 사이드바 (상품 페이지에서만) */}
+      {isProductPage && (
+        <CartSidebar
+          isOpen={showCart}
+          onClose={() => setShowCart(false)}
+          onCheckout={() => {
+            setShowCart(false)
+            // 상품 상세 페이지로 이동하여 결제 페이지 열기
+            if (pathname.includes('/products/')) {
+              // 상품 상세 페이지에서 결제 처리
+              window.dispatchEvent(new CustomEvent('openCartCheckout'))
+            }
+          }}
+        />
+      )}
     </nav>
+  )
+}
+
+const Navigation = () => {
+  return (
+    <CartProvider>
+      <NavigationContent />
+    </CartProvider>
   )
 }
 

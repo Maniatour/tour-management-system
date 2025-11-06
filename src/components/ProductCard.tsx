@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Package, Users, DollarSign, Clock, Copy } from 'lucide-react'
 import { 
   MdDirectionsCar,      // 밴
@@ -25,6 +25,7 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
   const [isUpdating, setIsUpdating] = useState(false)
   const [localStatus, setLocalStatus] = useState(product.status || 'inactive')
   const [isCopying, setIsCopying] = useState(false)
+  const [choicePriceRange, setChoicePriceRange] = useState<{ min: number; max: number } | null>(null)
 
   const handleStatusToggle = async (e: React.MouseEvent) => {
     e.preventDefault() // Link 클릭 방지
@@ -278,9 +279,59 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
     }
   }
 
-  const getPriceDisplay = (product: Product) => {
-    return `$${product.base_price}`
-  }
+  // 초이스 옵션 가격 범위 로드
+  useEffect(() => {
+    const loadChoicePriceRange = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('product_choices')
+          .select(`
+            id,
+            options:choice_options (
+              adult_price
+            )
+          `)
+          .eq('product_id', product.id)
+
+        if (error) {
+          console.error('초이스 가격 범위 로드 오류:', error)
+          return
+        }
+
+        if (!data || data.length === 0) {
+          setChoicePriceRange(null)
+          return
+        }
+
+        // 모든 옵션의 adult_price 수집
+        const prices: number[] = []
+        data.forEach((choice: any) => {
+          if (choice.options && Array.isArray(choice.options)) {
+            choice.options.forEach((option: any) => {
+              if (option.adult_price !== null && option.adult_price !== undefined) {
+                prices.push(option.adult_price)
+              }
+            })
+          }
+        })
+
+        if (prices.length === 0) {
+          setChoicePriceRange(null)
+          return
+        }
+
+        const minPrice = Math.min(...prices)
+        const maxPrice = Math.max(...prices)
+
+        setChoicePriceRange({ min: minPrice, max: maxPrice })
+      } catch (error) {
+        console.error('초이스 가격 범위 로드 중 오류:', error)
+        setChoicePriceRange(null)
+      }
+    }
+
+    loadChoicePriceRange()
+  }, [product.id])
 
   // choices 데이터를 파싱하여 선택지 옵션들을 추출하는 함수 (그룹 정보 포함)
   const getChoicesOptions = (product: Product) => {
@@ -546,11 +597,24 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
 
            {/* 가격 및 운송수단 */}
            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-             <div className="flex items-center space-x-1.5">
-               <DollarSign className="h-4 w-4 text-green-600" />
-               <span className="text-lg font-bold text-green-600">
-                 {getPriceDisplay(product)}
-               </span>
+             <div className="flex-1">
+               <div className="flex items-center space-x-1.5">
+                 <DollarSign className="h-4 w-4 text-green-600" />
+                 <div className="flex flex-col">
+                   {choicePriceRange ? (
+                     <div className="text-lg font-bold text-green-600">
+                       <span className="text-xs font-medium text-gray-600 mr-1">자체 채널 판매 가격: </span>
+                       ${(product.base_price || 0) + choicePriceRange.min}
+                       {choicePriceRange.min !== choicePriceRange.max && ` ~ $${(product.base_price || 0) + choicePriceRange.max}`}
+                     </div>
+                   ) : (
+                     <div className="text-lg font-bold text-green-600">
+                       <span className="text-xs font-medium text-gray-600 mr-1">자체 채널 판매 가격: </span>
+                       ${product.base_price || 0}
+                     </div>
+                   )}
+                 </div>
+               </div>
              </div>
              {/* 운송수단 아이콘 - 오른쪽 끝 정렬 */}
              {renderTransportationMethods(product)}

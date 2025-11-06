@@ -7,6 +7,7 @@ import UserFooter from "@/components/UserFooter";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { FloatingChatProvider } from "@/contexts/FloatingChatContext";
 import FloatingChatContainer from "@/components/FloatingChatContainer";
+import StripeErrorHandler from "@/components/StripeErrorHandler";
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { headers } from 'next/headers';
@@ -81,6 +82,7 @@ export default async function LocaleLayout({
       <NextIntlClientProvider messages={messages} locale={locale}>
         <AuthProvider>
           <FloatingChatProvider>
+            <StripeErrorHandler />
             <div className="min-h-screen bg-gray-50">
               {children}
               <FloatingChatContainer />
@@ -96,6 +98,7 @@ export default async function LocaleLayout({
     <NextIntlClientProvider messages={messages} locale={locale}>
       <AuthProvider>
         <FloatingChatProvider>
+          <StripeErrorHandler />
           <div className="min-h-screen bg-gray-50">
             <Navigation />
             <div className="flex flex-col lg:flex-row">

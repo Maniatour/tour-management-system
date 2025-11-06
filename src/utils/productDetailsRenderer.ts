@@ -2,6 +2,8 @@
  * 상품 세부정보를 HTML로 렌더링하는 유틸리티 함수들
  */
 
+import { markdownToHtml } from '@/components/LightRichEditor'
+
 export interface ProductDetails {
   slogan1?: string
   slogan2?: string
@@ -80,10 +82,11 @@ export function renderProductDetails(details: ProductDetails, locale: 'ko' | 'en
 
   // 상품 설명
   if (details.description) {
+    const descriptionHtml = markdownToHtml(details.description)
     html += `
       <div class="description-section" style="margin-bottom: 20px; padding: 16px; background-color: #f8fafc; border-left: 4px solid #3b82f6; border-radius: 4px;">
         <h3 style="margin: 0 0 8px 0; color: #1e40af; font-size: 16px; font-weight: bold;">${labelSet.description}</h3>
-        <p style="margin: 0; color: #374151; line-height: 1.6;">${details.description}</p>
+        <div style="margin: 0; color: #374151; line-height: 1.6;">${descriptionHtml}</div>
       </div>
     `
   }
