@@ -52,7 +52,10 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
     markup_amount: 0,
     coupon_percent: 0,
     is_sale_available: true, // 기본값: 판매중
-    choices_pricing: {} as ChoicePricing
+    choices_pricing: {} as ChoicePricing,
+    price_adjustment_adult: undefined as number | undefined,
+    price_adjustment_child: undefined as number | undefined,
+    price_adjustment_infant: undefined as number | undefined
   });
 
   const loadPriceHistory = useCallback(async (channelId?: string) => {
@@ -86,7 +89,26 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
         query = query.like('channel_id', 'B%');
       }
 
-      const { data, error } = await query.order('updated_at', { ascending: false });
+      const { data, error } = await query
+        .select(`
+          id,
+          channel_id,
+          date,
+          adult_price,
+          child_price,
+          infant_price,
+          commission_percent,
+          markup_amount,
+          coupon_percent,
+          is_sale_available,
+          choices_pricing,
+          price_adjustment_adult,
+          price_adjustment_child,
+          price_adjustment_infant,
+          created_at,
+          updated_at
+        `)
+        .order('updated_at', { ascending: false });
 
       if (error) throw error;
 
@@ -191,7 +213,10 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
           markup_amount: latestData.markup_amount || 0,
           coupon_percent: latestData.coupon_percent || 0,
           is_sale_available: isSaleAvailable,
-          choices_pricing: choicesPricing
+          choices_pricing: choicesPricing,
+          price_adjustment_adult: (latestData as any).price_adjustment_adult,
+          price_adjustment_child: (latestData as any).price_adjustment_child,
+          price_adjustment_infant: (latestData as any).price_adjustment_infant
         });
         
         console.log('최신 가격 데이터 로드됨:', {

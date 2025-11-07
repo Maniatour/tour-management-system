@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Globe, Users } from 'lucide-react';
+import { Globe, Users, Edit2 } from 'lucide-react';
 
 interface Channel {
   id: string;
@@ -31,6 +31,7 @@ interface ChannelSelectorProps {
   onMultiChannelToggle: () => void;
   onChannelToggle: (channelId: string) => void;
   onSelectAllChannelsInType: () => void;
+  onChannelEdit?: (channelId: string) => void; // 채널 편집 핸들러
   channelPricingStats?: Record<string, ChannelPricingStats>; // 채널 ID별 연도별 날짜 수
 }
 
@@ -46,6 +47,7 @@ export const ChannelSelector = memo(function ChannelSelector({
   onMultiChannelToggle,
   onChannelToggle,
   onSelectAllChannelsInType,
+  onChannelEdit,
   channelPricingStats = {}
 }: ChannelSelectorProps) {
   
@@ -133,24 +135,44 @@ export const ChannelSelector = memo(function ChannelSelector({
               const statsText = formatPricingStats(stats);
 
               return (
-                <button
+                <div
                   key={channel.id}
-                  onClick={() => onChannelSelect(channel.id)}
-                  className={`w-full p-2 rounded-md border transition-all text-left ${
+                  className={`w-full p-2 rounded-md border transition-all ${
                     isSelected
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
-                  <div className="flex flex-col">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{channel.name}</span>
-                    </div>
-                    {statsText && (
-                      <div className="text-xs text-gray-500 mt-1">{statsText}</div>
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => onChannelSelect(channel.id)}
+                      className="flex-1 text-left"
+                    >
+                      <div className="flex flex-col">
+                        <div className="flex items-center justify-between">
+                          <span className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                            {channel.name}
+                          </span>
+                        </div>
+                        {statsText && (
+                          <div className="text-xs text-gray-500 mt-1">{statsText}</div>
+                        )}
+                      </div>
+                    </button>
+                    {onChannelEdit && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onChannelEdit(channel.id);
+                        }}
+                        className="ml-2 p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                        title="채널 편집"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
                     )}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

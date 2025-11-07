@@ -39,29 +39,67 @@ export default function AttendanceEditModal({
     notes: ''
   })
 
-  // 라스베가스 현지 날짜/시간을 UTC로 변환하는 함수 (최종 해결책)
+  // 라스베가스 현지 날짜/시간을 UTC로 변환하는 함수 (썸머타임 자동 처리)
   const convertToUTC = (localDate: string, localTime: string) => {
     if (!localDate || !localTime) return null
     
     console.log('변환할 로컬 날짜/시간:', localDate, localTime)
     
-    // 라스베가스 시간대를 명시적으로 처리
-    // 1. 라스베가스 시간을 UTC로 직접 변환 (브라우저 시간대 무시)
+    // 라스베가스 시간대를 명시적으로 처리 (썸머타임 자동 처리)
+    // 1. 라스베가스 날짜/시간을 파싱
     const [year, month, day] = localDate.split('-').map(Number)
     const [hours, minutes] = localTime.split(':').map(Number)
     
-    // 2. 라스베가스 시간을 UTC로 변환 (PDT: UTC-7)
-    // 라스베가스 시간에 7시간을 더하면 UTC가 됨
-    const utcHours = hours + 7
-    const utcMinutes = minutes
+    // 2. 라스베가스 시간대의 특정 날짜/시간에 대한 UTC 오프셋을 정확히 계산
+    // 라스베가스 시간대의 날짜/시간을 나타내는 ISO 문자열 생성
+    const lasVegasDateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
     
-    // 3. UTC 시간으로 Date 객체 생성
-    const utcDate = new Date(Date.UTC(year, month - 1, day, utcHours, utcMinutes))
+    // 3. 라스베가스 시간대의 오프셋을 계산
+    // 라스베가스 시간대의 특정 날짜/시간에 대한 UTC 오프셋을 정확히 계산
+    // 라스베가스 시간대의 날짜/시간을 나타내는 Date 객체 생성 (로컬 시간대로 해석)
+    const lasVegasLocalDate = new Date(year, month - 1, day, hours, minutes, 0)
+    
+    // 같은 시각을 라스베가스 시간대로 해석한 것과 UTC로 해석한 것의 차이를 계산
+    // 먼저 임시로 UTC로 해석된 Date 객체를 만들고, 그 시각을 라스베가스 시간대로 포맷팅하여 오프셋 계산
+    const tempUTC = new Date(`${lasVegasDateString}Z`) // UTC로 해석
+    
+    // 라스베가스 시간대로 포맷팅하여 실제 라스베가스 시간 확인
+    const lasVegasFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+    
+    const lasVegasParts = lasVegasFormatter.formatToParts(tempUTC)
+    const lvYear = parseInt(lasVegasParts.find(p => p.type === 'year')?.value || '0')
+    const lvMonth = parseInt(lasVegasParts.find(p => p.type === 'month')?.value || '0')
+    const lvDay = parseInt(lasVegasParts.find(p => p.type === 'day')?.value || '0')
+    const lvHour = parseInt(lasVegasParts.find(p => p.type === 'hour')?.value || '0')
+    const lvMinute = parseInt(lasVegasParts.find(p => p.type === 'minute')?.value || '0')
+    
+    // 라스베가스 시간대의 날짜/시간을 나타내는 Date 객체 생성
+    const lasVegasTime = new Date(lvYear, lvMonth - 1, lvDay, lvHour, lvMinute, 0)
+    
+    // 오프셋 계산 (밀리초 단위)
+    // tempUTC는 UTC 시간이고, lasVegasTime은 그 UTC 시간을 라스베가스 시간대로 변환한 것
+    // 따라서 오프셋은 tempUTC - lasVegasTime (라스베가스가 UTC보다 느리므로)
+    const offsetMs = tempUTC.getTime() - lasVegasTime.getTime()
+    
+    // 4. 라스베가스 시간을 UTC로 변환
+    // 라스베가스 시간에서 오프셋을 더하면 UTC가 됨 (라스베가스가 UTC보다 느리므로)
+    const utcDateResult = new Date(lasVegasLocalDate.getTime() + offsetMs)
     
     console.log('원본 라스베가스 시간:', `${localDate} ${localTime}`)
-    console.log('변환된 UTC 시간:', utcDate.toISOString())
+    console.log('계산된 오프셋 (밀리초):', offsetMs)
+    console.log('계산된 오프셋 (시간):', offsetMs / (60 * 60 * 1000))
+    console.log('변환된 UTC 시간:', utcDateResult.toISOString())
     
-    return utcDate.toISOString()
+    return utcDateResult.toISOString()
   }
 
   // 모달이 열릴 때마다 현재 레코드 데이터로 폼 초기화

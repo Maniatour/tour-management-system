@@ -170,6 +170,10 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     summaryEn?: string
     duration: number
     basePrice: { adult: number; child: number; infant: number }
+    basePriceAdult?: number
+    basePriceChild?: number
+    basePriceInfant?: number
+    basePriceNumber?: number
     channelPricing: ChannelPricing[]
     seasonalPricing: SeasonalPricing[]
     coupons: Coupon[]
@@ -603,12 +607,15 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             summaryEn: productData.summary_en || undefined,
             duration: typeof productData.duration === 'string' ? parseInt(productData.duration) || 1 : productData.duration || 1,
             basePrice: {
-              adult: productData.base_price || 0,
-              child: 0, // child_base_price 필드가 데이터베이스에 없음
-              infant: 0, // infant_base_price 필드가 데이터베이스에 없음
+              adult: ((productData as any).adult_base_price ?? productData.base_price) || 0,
+              child: (productData as any).child_base_price || 0,
+              infant: (productData as any).infant_base_price || 0,
             },
+            basePriceAdult: ((productData as any).adult_base_price ?? productData.base_price) || 0,
+            basePriceChild: (productData as any).child_base_price || 0,
+            basePriceInfant: (productData as any).infant_base_price || 0,
             // BasicInfoTab용 basePrice (단순 숫자)
-            basePriceNumber: productData.base_price || 0,
+            basePriceNumber: ((productData as any).adult_base_price ?? productData.base_price) || 0,
             maxParticipants: productData.max_participants || 10,
             status: (productData.status as 'active' | 'inactive' | 'draft') || 'active',
             departureCity: productData.departure_city || '',

@@ -73,7 +73,14 @@ interface PricingSectionProps {
     commission_amount: number
     onlinePaymentAmount?: number
     onSiteBalanceAmount?: number
+    not_included_price?: number
   }
+  channels?: Array<{
+    id: string
+    name: string
+    commission_base_price_only?: boolean
+    [key: string]: unknown
+  }>
   reservationId?: string
   expenseUpdateTrigger?: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,7 +117,8 @@ export default function PricingSection({
   reservationOptionsTotalPrice = 0,
   isExistingPricingLoaded,
   reservationId,
-  expenseUpdateTrigger
+  expenseUpdateTrigger,
+  channels = []
 }: PricingSectionProps) {
   const [showHelp, setShowHelp] = useState(false)
   const [reservationExpensesTotal, setReservationExpensesTotal] = useState(0)
@@ -171,13 +179,39 @@ export default function PricingSection({
     return undefined
   }, [expenseUpdateTrigger, fetchReservationExpenses])
 
+  // 선택된 채널 정보 가져오기
+  const selectedChannel = channels.find(ch => ch.id === formData.channelId)
+  const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false
+
   // Net 가격 계산
   const calculateNetPrice = () => {
     const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal + reservationOptionsTotalPrice
-    if (formData.commission_amount > 0) {
-      return totalPrice - formData.commission_amount
+    
+    // commission_base_price_only가 true인 경우, 판매가격에만 커미션 적용
+    if (commissionBasePriceOnly) {
+      const baseProductPrice = calculateProductPriceTotal()
+      const choicesTotal = formData.choicesTotal || formData.choiceTotal || 0
+      const notIncludedTotal = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+      
+      // 판매가격만 계산 (초이스와 불포함 금액 제외)
+      const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
+      
+      let commissionAmount = 0
+      if (formData.commission_amount > 0) {
+        commissionAmount = formData.commission_amount
+      } else {
+        commissionAmount = basePriceForCommission * (formData.commission_percent / 100)
+      }
+      
+      // Net = 판매가격 - 커미션 + 초이스 + 불포함 금액 (커미션 적용 안 됨)
+      return basePriceForCommission - commissionAmount + choicesTotal + notIncludedTotal
     } else {
-      return totalPrice * (1 - formData.commission_percent / 100)
+      // 기존 로직: 전체 가격에 커미션 적용
+      if (formData.commission_amount > 0) {
+        return totalPrice - formData.commission_amount
+      } else {
+        return totalPrice * (1 - formData.commission_percent / 100)
+      }
     }
   }
 
@@ -689,7 +723,12 @@ export default function PricingSection({
             
             {/* 커미션 */}
             <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-700">커미션</span>
+              <span className="text-sm font-medium text-gray-700">
+                커미션
+                {commissionBasePriceOnly && (
+                  <span className="ml-2 text-xs text-blue-600">(판매가격만)</span>
+                )}
+              </span>
               <div className="flex items-center space-x-2">
                 <div className="flex items-center space-x-1">
                   <input
@@ -697,8 +736,19 @@ export default function PricingSection({
                     value={formData.commission_percent}
                     onChange={(e) => {
                       const percent = Number(e.target.value) || 0
-                      const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal
-                      const calculatedAmount = totalPrice * (percent / 100)
+                      
+                      let calculatedAmount = 0
+                      if (commissionBasePriceOnly) {
+                        // 판매가격에만 커미션 적용
+                        const baseProductPrice = calculateProductPriceTotal()
+                        const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
+                        calculatedAmount = basePriceForCommission * (percent / 100)
+                      } else {
+                        // 전체 가격에 커미션 적용
+                        const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal
+                        calculatedAmount = totalPrice * (percent / 100)
+                      }
+                      
                       setFormData({ 
                         ...formData, 
                         commission_percent: percent,
@@ -735,14 +785,7 @@ export default function PricingSection({
             <div className="flex justify-between items-center mb-2">
               <span className="text-base font-bold text-green-800">Net 가격</span>
               <span className="text-lg font-bold text-green-600">
-                ${(() => {
-                  const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal
-                  if (formData.commission_amount > 0) {
-                    return (totalPrice - formData.commission_amount).toFixed(2)
-                  } else {
-                    return (totalPrice * (1 - formData.commission_percent / 100)).toFixed(2)
-                  }
-                })()}
+                ${calculateNetPrice().toFixed(2)}
               </span>
             </div>
             
@@ -764,13 +807,36 @@ export default function PricingSection({
             
             {/* Balance */}
             <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-700">Balance</span>
+              <span className="text-sm font-medium text-gray-700">
+                Balance
+                {commissionBasePriceOnly && (
+                  <span className="ml-2 text-xs text-blue-600">(초이스+불포함)</span>
+                )}
+              </span>
               <div className="relative">
                 <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                 <input
                   type="number"
                   value={formData.onSiteBalanceAmount || 0}
-                  onChange={(e) => setFormData({ ...formData, onSiteBalanceAmount: Number(e.target.value) || 0, balanceAmount: Number(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const newBalance = Number(e.target.value) || 0
+                    setFormData({ ...formData, onSiteBalanceAmount: newBalance, balanceAmount: newBalance })
+                  }}
+                  onFocus={() => {
+                    // commission_base_price_only가 true이고 밸런스가 0이면 자동 계산
+                    if (commissionBasePriceOnly && !formData.onSiteBalanceAmount) {
+                      const choicesTotal = formData.choicesTotal || formData.choiceTotal || 0
+                      const notIncludedTotal = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                      const autoBalance = choicesTotal + notIncludedTotal
+                      if (autoBalance > 0) {
+                        setFormData({ 
+                          ...formData, 
+                          onSiteBalanceAmount: autoBalance, 
+                          balanceAmount: autoBalance 
+                        })
+                      }
+                    }
+                  }}
                   className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
                   step="0.01"
                   placeholder="90.00"

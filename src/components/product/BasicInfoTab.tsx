@@ -41,7 +41,10 @@ interface SubCategoryItem {
       summaryKo?: string
       summaryEn?: string
       duration: number
-      basePrice?: number
+      basePrice?: number | { adult: number; child: number; infant: number }
+      basePriceAdult?: number
+      basePriceChild?: number
+      basePriceInfant?: number
       maxParticipants: number
       departureCity: string
       arrivalCity: string
@@ -278,7 +281,18 @@ export default function BasicInfoTab({
             summary_ko: formData.summaryKo?.trim() || null,
             summary_en: formData.summaryEn?.trim() || null,
             duration: formData.duration.toString(),
-            base_price: formData.basePrice || 0,
+            base_price: typeof formData.basePrice === 'object' && formData.basePrice 
+              ? formData.basePrice.adult 
+              : (formData.basePrice || 0),
+            adult_base_price: typeof formData.basePrice === 'object' && formData.basePrice 
+              ? formData.basePrice.adult 
+              : (formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0)),
+            child_base_price: typeof formData.basePrice === 'object' && formData.basePrice 
+              ? formData.basePrice.child 
+              : (formData.basePriceChild ?? 0),
+            infant_base_price: typeof formData.basePrice === 'object' && formData.basePrice 
+              ? formData.basePrice.infant 
+              : (formData.basePriceInfant ?? 0),
             max_participants: formData.maxParticipants,
             status: formData.status,
             departure_city: formData.departureCity.trim(),
@@ -336,7 +350,18 @@ export default function BasicInfoTab({
             summary_ko: formData.summaryKo?.trim() || null,
             summary_en: formData.summaryEn?.trim() || null,
             duration: formData.duration.toString(),
-            base_price: formData.basePrice || 0,
+            base_price: typeof formData.basePrice === 'object' && formData.basePrice 
+              ? formData.basePrice.adult 
+              : (formData.basePrice || 0),
+            adult_base_price: typeof formData.basePrice === 'object' && formData.basePrice 
+              ? formData.basePrice.adult 
+              : (formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0)),
+            child_base_price: typeof formData.basePrice === 'object' && formData.basePrice 
+              ? formData.basePrice.child 
+              : (formData.basePriceChild ?? 0),
+            infant_base_price: typeof formData.basePrice === 'object' && formData.basePrice 
+              ? formData.basePrice.infant 
+              : (formData.basePriceInfant ?? 0),
             max_participants: formData.maxParticipants,
             status: formData.status,
             departure_city: formData.departureCity.trim(),
@@ -620,7 +645,10 @@ export default function BasicInfoTab({
   }, [loadDefaultChoicesPrice])
 
   // 총 가격 계산 (기본 가격 + 기본 선택 초이스 가격)
-  const totalPrice = (formData.basePrice || 0) + defaultChoicesPrice
+  const baseAdultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+    ? formData.basePrice.adult 
+    : (formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0));
+  const totalPrice = baseAdultPrice + defaultChoicesPrice
 
   // 카테고리 선택 시 서브카테고리 필터링
   const filterSubCategories = useCallback(() => {
@@ -1127,26 +1155,136 @@ export default function BasicInfoTab({
         <div>
           <div className="flex items-center justify-between mb-1">
             <label className="block text-sm font-medium text-gray-700">기본 가격 ($) *</label>
-            <span className="text-xs text-gray-500">(우리 홈페이지 가격)</span>
+            <span className="text-xs text-gray-500">(모든 채널 공통 기본 가격)</span>
           </div>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={formData.basePrice || 0}
-            onChange={(e) => setFormData({ ...formData, basePrice: parseFloat(e.target.value) || 0 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 100"
-            required
-          />
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">성인</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={(() => {
+                  if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                    return formData.basePrice.adult || 0;
+                  }
+                  return formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0);
+                })()}
+                onChange={(e) => {
+                  const adultPrice = parseFloat(e.target.value) || 0;
+                  const childPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                    ? formData.basePrice.child 
+                    : (formData.basePriceChild ?? 0);
+                  const infantPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                    ? formData.basePrice.infant 
+                    : (formData.basePriceInfant ?? 0);
+                  setFormData({ 
+                    ...formData, 
+                    basePrice: { adult: adultPrice, child: childPrice, infant: infantPrice },
+                    basePriceAdult: adultPrice
+                  });
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="0"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">아동</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={(() => {
+                  if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                    return formData.basePrice.child || 0;
+                  }
+                  return formData.basePriceChild ?? 0;
+                })()}
+                onChange={(e) => {
+                  const childPrice = parseFloat(e.target.value) || 0;
+                  const adultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                    ? formData.basePrice.adult 
+                    : (formData.basePriceAdult ?? 0);
+                  const infantPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                    ? formData.basePrice.infant 
+                    : (formData.basePriceInfant ?? 0);
+                  setFormData({ 
+                    ...formData, 
+                    basePrice: { adult: adultPrice, child: childPrice, infant: infantPrice },
+                    basePriceChild: childPrice
+                  });
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="0"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">유아</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={(() => {
+                  if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                    return formData.basePrice.infant || 0;
+                  }
+                  return formData.basePriceInfant ?? 0;
+                })()}
+                onChange={(e) => {
+                  const infantPrice = parseFloat(e.target.value) || 0;
+                  const adultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                    ? formData.basePrice.adult 
+                    : (formData.basePriceAdult ?? 0);
+                  const childPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                    ? formData.basePrice.child 
+                    : (formData.basePriceChild ?? 0);
+                  setFormData({ 
+                    ...formData, 
+                    basePrice: { adult: adultPrice, child: childPrice, infant: infantPrice },
+                    basePriceInfant: infantPrice
+                  });
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="0"
+                required
+              />
+            </div>
+          </div>
           {/* 가격 미리보기 */}
           {!isNewProduct && (
             <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="space-y-3 text-sm">
                 {/* 기본 가격 */}
-                <div className="flex justify-between font-medium">
-                  <span className="text-gray-700">기본 가격:</span>
-                  <span className="text-gray-900">${(formData.basePrice || 0).toFixed(2)}</span>
+                <div className="grid grid-cols-3 gap-3 font-medium">
+                  <div className="flex justify-between">
+                    <span className="text-gray-700">성인:</span>
+                    <span className="text-gray-900">${(() => {
+                      if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                        return formData.basePrice.adult || 0;
+                      }
+                      return formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0);
+                    })().toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-700">아동:</span>
+                    <span className="text-gray-900">${(() => {
+                      if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                        return formData.basePrice.child || 0;
+                      }
+                      return formData.basePriceChild ?? 0;
+                    })().toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-700">유아:</span>
+                    <span className="text-gray-900">${(() => {
+                      if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                        return formData.basePrice.infant || 0;
+                      }
+                      return formData.basePriceInfant ?? 0;
+                    })().toFixed(2)}</span>
+                  </div>
                 </div>
                 
                 {/* 각 초이스 그룹별 옵션 가격 표시 */}
@@ -1162,7 +1300,10 @@ export default function BasicInfoTab({
                         <div className="space-y-1.5 ml-2">
                           {group.options.length > 0 ? (
                             group.options.map((option) => {
-                              const optionTotal = (formData.basePrice || 0) + option.adult_price
+                              const baseAdultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                                ? formData.basePrice.adult 
+                                : (formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0));
+                              const optionTotal = baseAdultPrice + option.adult_price
                               return (
                                 <div 
                                   key={option.id} 
@@ -1175,7 +1316,7 @@ export default function BasicInfoTab({
                                     {option.is_default && <span className="ml-1 text-xs text-blue-500">(기본)</span>}
                                   </span>
                                   <span className="text-xs">
-                                    ${option.adult_price.toFixed(2)} + ${(formData.basePrice || 0).toFixed(2)} = <span className="font-semibold">${optionTotal.toFixed(2)}</span>
+                                    ${option.adult_price.toFixed(2)} + ${baseAdultPrice.toFixed(2)} = <span className="font-semibold">${optionTotal.toFixed(2)}</span>
                                   </span>
                                 </div>
                               )

@@ -122,6 +122,9 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           is_sale_available: ruleData.is_sale_available !== undefined ? ruleData.is_sale_available : (fullExistingData.is_sale_available ?? true),
           not_included_price: ruleData.not_included_price !== undefined ? ruleData.not_included_price : (fullExistingData.not_included_price ?? 0),
           markup_percent: ruleData.markup_percent !== undefined ? ruleData.markup_percent : (fullExistingData.markup_percent ?? 0),
+          price_adjustment_adult: ruleData.price_adjustment_adult !== undefined ? ruleData.price_adjustment_adult : (fullExistingData.price_adjustment_adult ?? 0),
+          price_adjustment_child: ruleData.price_adjustment_child !== undefined ? ruleData.price_adjustment_child : (fullExistingData.price_adjustment_child ?? 0),
+          price_adjustment_infant: ruleData.price_adjustment_infant !== undefined ? ruleData.price_adjustment_infant : (fullExistingData.price_adjustment_infant ?? 0),
         };
         
         // choices_pricing이 있으면 기존 데이터와 병합
@@ -163,6 +166,9 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           is_sale_available: ruleData.is_sale_available !== undefined ? ruleData.is_sale_available : true,
           not_included_price: ruleData.not_included_price ?? 0,
           markup_percent: ruleData.markup_percent ?? 0,
+          price_adjustment_adult: ruleData.price_adjustment_adult ?? 0,
+          price_adjustment_child: ruleData.price_adjustment_child ?? 0,
+          price_adjustment_infant: ruleData.price_adjustment_infant ?? 0,
           choices_pricing: ruleData.choices_pricing
         };
         

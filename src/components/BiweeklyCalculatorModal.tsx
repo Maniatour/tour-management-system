@@ -726,11 +726,16 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   // 시간 포맷팅 함수
   const formatTime = (timeString: string | null) => {
     if (!timeString) return '-'
-    return new Date(timeString).toLocaleTimeString('ko-KR', {
+    // UTC 시간을 라스베가스 시간대로 정확하게 변환 (썸머타임 자동 처리)
+    const utcDate = new Date(timeString)
+    // Intl.DateTimeFormat을 사용하여 썸머타임을 자동으로 처리
+    const formatter = new Intl.DateTimeFormat('ko-KR', {
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: 'America/Los_Angeles',
       hour12: false
     })
+    return formatter.format(utcDate)
   }
 
   // 근무시간을 시간과 분으로 변환하는 함수

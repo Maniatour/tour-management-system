@@ -418,11 +418,16 @@ export default function AttendancePage() {
 
   const formatTime = (timeString: string | null) => {
     if (!timeString) return '-'
-    return new Date(timeString).toLocaleTimeString('ko-KR', {
+    // UTC 시간을 라스베가스 시간대로 정확하게 변환 (썸머타임 자동 처리)
+    const utcDate = new Date(timeString)
+    // Intl.DateTimeFormat을 사용하여 썸머타임을 자동으로 처리
+    const formatter = new Intl.DateTimeFormat('ko-KR', {
       hour: '2-digit',
       minute: '2-digit',
-      timeZone: 'America/Los_Angeles' // 라스베가스 현지시간으로 표시
+      timeZone: 'America/Los_Angeles',
+      hour12: false
     })
+    return formatter.format(utcDate)
   }
 
   // UTC 시간을 라스베가스 현지 날짜로 변환 (요일 포함)

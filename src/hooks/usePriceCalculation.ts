@@ -20,11 +20,12 @@ export function usePriceCalculation() {
     basePrice: { adult: number; child: number; infant: number },
     config: PricingConfig
   ): RealTimePriceCalculation => {
-    // 1. 기본 가격 (불포함 금액 차감)
+    // 1. 기본 가격 (불포함 금액은 가격 계산에서 제외, 별도로 밸런스로 처리)
+    // 불포함 금액은 최대판매가, 할인가격, net price 계산에 포함되지 않음
     const adjustedBasePrice = {
-      adult: Math.max(0, basePrice.adult - config.not_included_price),
-      child: Math.max(0, basePrice.child - config.not_included_price),
-      infant: Math.max(0, basePrice.infant - config.not_included_price)
+      adult: basePrice.adult,
+      child: basePrice.child,
+      infant: basePrice.infant
     };
 
     // 2. 마크업 적용 (금액 + 퍼센트)
@@ -80,10 +81,11 @@ export function usePriceCalculation() {
     const choicePricing = config.choicePricing[choiceId];
     if (!choicePricing) return null;
 
+    // 상품 기본 가격 + 초이스 가격
     const basePrice = {
-      adult: choicePricing.adult_price,
-      child: choicePricing.child_price,
-      infant: choicePricing.infant_price
+      adult: (config.adult_price || 0) + choicePricing.adult_price,
+      child: (config.child_price || 0) + choicePricing.child_price,
+      infant: (config.infant_price || 0) + choicePricing.infant_price
     };
 
     return calculatePrice(basePrice, config);

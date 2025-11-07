@@ -128,6 +128,9 @@ export interface SimplePricingRuleDto {
   is_sale_available: boolean;
   not_included_price?: number;
   markup_percent?: number;
+  price_adjustment_adult?: number; // 채널별 증차감 금액 (성인)
+  price_adjustment_child?: number; // 채널별 증차감 금액 (아동)
+  price_adjustment_infant?: number; // 채널별 증차감 금액 (유아)
   inclusions_ko?: string | null;
   exclusions_ko?: string | null;
   inclusions_en?: string | null;

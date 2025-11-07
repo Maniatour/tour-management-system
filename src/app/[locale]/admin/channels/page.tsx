@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
+import { ChannelForm } from '@/components/channels/ChannelForm'
 
 interface Channel {
   id: string
@@ -14,6 +15,7 @@ interface Channel {
   type?: string
   description?: string
   website_url?: string
+  website?: string
   contact_email?: string
   contact_phone?: string
   manager_name?: string
@@ -27,6 +29,11 @@ interface Channel {
   admin_website?: string
   manager_contact?: string
   contract_url?: string
+  commission_base_price_only?: boolean
+  has_not_included_price?: boolean
+  not_included_type?: 'none' | 'amount_only' | 'amount_and_choice'
+  not_included_price?: number
+  pricing_type?: 'separate' | 'single'
 }
 
 interface Product {
@@ -140,10 +147,17 @@ export default function AdminChannels() {
         return
       }
 
-      // status 필드를 is_active boolean으로 변환
+      // status 필드를 is_active boolean으로 변환, commission_percent를 commission_rate로 매핑
+      // 불포함 금액 관련 필드도 포함
       const channelsWithStatus = (data || []).map((channel: any) => ({
         ...channel,
-        is_active: channel.status === 'active' || channel.is_active === true
+        is_active: channel.status === 'active' || channel.is_active === true,
+        commission_rate: channel.commission_percent || channel.commission || channel.commission_rate || 0,
+        website: channel.website || channel.website_url || '',
+        has_not_included_price: channel.has_not_included_price || false,
+        not_included_type: channel.not_included_type || 'none',
+        not_included_price: channel.not_included_price || 0,
+        pricing_type: channel.pricing_type || 'separate'
       }))
 
       setChannels(channelsWithStatus as Channel[])
@@ -167,10 +181,31 @@ export default function AdminChannels() {
 
   const handleAddChannel = async (channel: Omit<Channel, 'id' | 'created_at'>) => {
     try {
+      // commission_rate를 commission_percent로 매핑, is_active를 status로 매핑, website 필드 사용
+      const channelData: any = {
+        name: channel.name,
+        type: channel.type,
+        website: channel.website || (channel as any).website_url || '',
+        customer_website: channel.customer_website || '',
+        admin_website: channel.admin_website || '',
+        commission_percent: (channel as any).commission_rate || 0,
+        status: channel.is_active ? 'active' : 'inactive',
+        description: channel.description || '',
+        favicon_url: (channel as any).favicon_url || '',
+        manager_name: (channel as any).manager_name || '',
+        manager_contact: (channel as any).manager_contact || '',
+        contract_url: (channel as any).contract_url || '',
+        commission_base_price_only: (channel as any).commission_base_price_only ?? false,
+        has_not_included_price: (channel as any).has_not_included_price !== undefined ? (channel as any).has_not_included_price : false,
+        not_included_type: (channel as any).not_included_type !== undefined ? (channel as any).not_included_type : 'none',
+        not_included_price: (channel as any).not_included_price !== undefined ? (channel as any).not_included_price : 0,
+        pricing_type: (channel as any).pricing_type || 'separate'
+      }
+      
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('channels')
-        .insert([channel])
+        .insert([channelData])
         .select()
 
       if (error) {
@@ -179,9 +214,11 @@ export default function AdminChannels() {
         return
       }
 
+      // 채널 목록을 다시 불러와서 최신 데이터 반영
+      await fetchChannels()
+      
       if (data && data.length > 0) {
         const newChannel = data[0] as Channel
-        setChannels([...channels, newChannel])
         // 새로 추가된 채널의 타입에 맞는 탭으로 이동
         if (newChannel.type) {
           setActiveTab(newChannel.type)
@@ -196,21 +233,56 @@ export default function AdminChannels() {
   }
 
   const handleEditChannel = async (channel: Omit<Channel, 'id' | 'created_at'>) => {
+    console.log('handleEditChannel called with channel:', channel);
+    console.log('editingChannel:', editingChannel);
     if (editingChannel) {
       try {
+        // commission_rate를 commission_percent로 매핑, is_active를 status로 매핑, website 필드 사용
+        // formData에서 직접 값을 가져오기 위해 channel 객체의 모든 속성 확인
+        const channelAny = channel as any;
+        const channelData: any = {
+          name: channel.name,
+          type: channel.type,
+          website: channel.website || channelAny.website_url || '',
+          customer_website: channel.customer_website || '',
+          admin_website: channel.admin_website || '',
+          commission_percent: channelAny.commission_rate || 0,
+          status: channel.is_active ? 'active' : 'inactive',
+          description: channel.description || '',
+          favicon_url: channelAny.favicon_url || '',
+          manager_name: channelAny.manager_name || '',
+          manager_contact: channelAny.manager_contact || '',
+          contract_url: channelAny.contract_url || '',
+          commission_base_price_only: channelAny.commission_base_price_only ?? false,
+          has_not_included_price: channelAny.has_not_included_price !== undefined ? channelAny.has_not_included_price : false,
+          not_included_type: channelAny.not_included_type !== undefined && channelAny.not_included_type !== null && channelAny.not_included_type !== '' ? channelAny.not_included_type : 'none',
+          not_included_price: channelAny.not_included_price !== undefined ? channelAny.not_included_price : 0,
+          pricing_type: channelAny.pricing_type || 'separate'
+        }
+        
+        console.log('Saving channel data:', channelData);
+        console.log('Original channel object:', channel);
+        console.log('not_included_type from channel:', channel.not_included_type);
+        console.log('has_not_included_price from channel:', channel.has_not_included_price);
+        
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error } = await (supabase as any)
+        const { data: updateData, error } = await (supabase as any)
           .from('channels')
-          .update(channel)
+          .update(channelData)
           .eq('id', editingChannel.id)
+          .select()
 
         if (error) {
           console.error('Error updating channel:', error)
-          alert('채널 수정 중 오류가 발생했습니다.')
+          console.error('Error details:', JSON.stringify(error, null, 2))
+          alert('채널 수정 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'))
           return
         }
 
-        setChannels(channels.map(c => c.id === editingChannel.id ? { ...c, ...channel } : c))
+        console.log('Updated channel data:', updateData);
+        
+        // 채널 목록을 다시 불러와서 최신 데이터 반영
+        await fetchChannels()
         setEditingChannel(null)
         alert('채널이 성공적으로 수정되었습니다!')
       } catch (error) {
@@ -843,7 +915,17 @@ export default function AdminChannels() {
       {(showAddForm || editingChannel) && (
         <ChannelForm
           channel={editingChannel}
-          onSubmit={editingChannel ? handleEditChannel : handleAddChannel}
+          onSubmit={(channelData) => {
+            console.log('onSubmit called in page.tsx, editingChannel:', editingChannel);
+            console.log('onSubmit channelData:', channelData);
+            if (editingChannel) {
+              console.log('Calling handleEditChannel');
+              handleEditChannel(channelData);
+            } else {
+              console.log('Calling handleAddChannel');
+              handleAddChannel(channelData);
+            }
+          }}
           onCancel={() => {
             setShowAddForm(false)
             setEditingChannel(null)
@@ -894,284 +976,6 @@ export default function AdminChannels() {
       )}
     </div>
     </ProtectedRoute>
-  )
-}
-
-interface ChannelFormProps {
-  channel?: Channel | null
-  onSubmit: (channel: Omit<Channel, 'id' | 'created_at'>) => void
-  onCancel: () => void
-}
-
-function ChannelForm({ channel, onSubmit, onCancel }: ChannelFormProps) {
-  const t = useTranslations('channels')
-  const tCommon = useTranslations('common')
-  
-  const [formData, setFormData] = useState({
-    name: channel?.name || '',
-    type: channel?.type || '',
-    website: channel?.website_url || '',
-    customer_website: channel?.customer_website || '',
-    admin_website: channel?.admin_website || '',
-    commission_rate: channel?.commission_rate || 0,
-    is_active: channel?.is_active || false,
-    description: channel?.description || '',
-    favicon_url: channel?.favicon_url || '',
-    manager_name: channel?.manager_name || '',
-    manager_contact: channel?.manager_contact || '',
-    contract_url: channel?.contract_url || ''
-  })
-
-  const [uploadingFavicon, setUploadingFavicon] = useState(false)
-  const [uploadingContract, setUploadingContract] = useState(false)
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
-  const contractInputRef = React.useRef<HTMLInputElement | null>(null)
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSubmit(formData)
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">
-          {channel ? t('form.editTitle') : t('form.title')}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 첫 번째 줄: 채널명, 타입 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.name')}</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.type')}</label>
-              <select
-                value={formData.type || ''}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">{t('form.selectType')}</option>
-                <option value="self">Self</option>
-                <option value="ota">OTA</option>
-                <option value="partner">Partner</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.customerWebsite')}</label>
-            <input
-              type="url"
-              value={formData.customer_website || ''}
-              onChange={(e) => setFormData({ ...formData, customer_website: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="https://example.com"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.adminWebsite')}</label>
-            <input
-              type="url"
-              value={formData.admin_website || ''}
-              onChange={(e) => setFormData({ ...formData, admin_website: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="https://admin.example.com"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.favicon')}</label>
-            <div className="flex items-center space-x-3">
-              {formData.favicon_url ? (
-                <Image src={formData.favicon_url} alt="favicon preview" width={32} height={32} className="w-8 h-8 rounded" />
-              ) : (
-                <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">-</div>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon,image/jpeg,image/webp"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0]
-                  if (!file) return
-                  try {
-                    setUploadingFavicon(true)
-                    const fileExt = file.name.split('.').pop()
-                    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
-                    const filePath = `channels/${fileName}`
-                    const { error: uploadError } = await supabase.storage
-                      .from('channel-icons')
-                      .upload(filePath, file)
-                    if (uploadError) throw uploadError
-                    const { data: urlData } = supabase.storage
-                      .from('channel-icons')
-                      .getPublicUrl(filePath)
-                    setFormData({ ...formData, favicon_url: urlData.publicUrl })
-                  } catch (err) {
-                    console.error('Error uploading favicon:', err)
-                    alert('파비콘 업로드 중 오류가 발생했습니다.')
-                  } finally {
-                    setUploadingFavicon(false)
-                    if (fileInputRef.current) fileInputRef.current.value = ''
-                  }
-                }}
-                className="flex-1 text-sm"
-              />
-            </div>
-            <p className="mt-1 text-xs text-gray-500">{t('form.faviconHelp')}</p>
-            {uploadingFavicon && (
-              <div className="mt-1 text-xs text-gray-500">업로드 중...</div>
-            )}
-          </div>
-          {/* 두 번째 줄: 수수료율, 상태 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.commission')} (%)</label>
-              <input
-                type="number"
-                value={formData.commission_rate || ''}
-                onChange={(e) => setFormData({ ...formData, commission_rate: Number(e.target.value) || 0 })}
-                min="0"
-                max="100"
-                step="0.1"
-                className="w-full px-2 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
-              <select
-                value={formData.is_active ? 'true' : 'false'}
-                onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="true">{t('status.active')}</option>
-                <option value="false">{t('status.inactive')}</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.description')}</label>
-            <textarea
-              value={formData.description || ''}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          
-          {/* 담당자 정보 섹션 */}
-          <div className="border-t pt-4">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">담당자 정보</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.managerName')}</label>
-                <input
-                  type="text"
-                  value={formData.manager_name || ''}
-                  onChange={(e) => setFormData({ ...formData, manager_name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="담당자 이름을 입력하세요"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.managerContact')}</label>
-                <input
-                  type="text"
-                  value={formData.manager_contact || ''}
-                  onChange={(e) => setFormData({ ...formData, manager_contact: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="전화번호 또는 이메일을 입력하세요"
-                />
-              </div>
-            </div>
-          </div>
-          
-          {/* 계약서 업로드 섹션 */}
-          <div className="border-t pt-4">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">계약서</h3>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.contractUpload')}</label>
-              <div className="flex items-center space-x-3">
-                {formData.contract_url ? (
-                  <div className="flex items-center space-x-2">
-                    <div className="w-8 h-8 rounded bg-green-100 flex items-center justify-center">
-                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                      </svg>
-                    </div>
-                    <a 
-                      href={formData.contract_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-600 hover:text-blue-800 underline"
-                    >
-{t('form.contractView')}
-                    </a>
-                  </div>
-                ) : (
-                  <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">-</div>
-                )}
-                <input
-                  ref={contractInputRef}
-                  type="file"
-                  accept=".pdf,.doc,.docx,.txt"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0]
-                    if (!file) return
-                    try {
-                      setUploadingContract(true)
-                      const fileExt = file.name.split('.').pop()
-                      const fileName = `contract-${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
-                      const filePath = `contracts/${fileName}`
-                      const { error: uploadError } = await supabase.storage
-                        .from('channel-contracts')
-                        .upload(filePath, file)
-                      if (uploadError) throw uploadError
-                      const { data: urlData } = supabase.storage
-                        .from('channel-contracts')
-                        .getPublicUrl(filePath)
-                      setFormData({ ...formData, contract_url: urlData.publicUrl })
-                    } catch (err) {
-                      console.error('Error uploading contract:', err)
-                      alert('계약서 업로드 중 오류가 발생했습니다.')
-                    } finally {
-                      setUploadingContract(false)
-                      if (contractInputRef.current) contractInputRef.current.value = ''
-                    }
-                  }}
-                  className="flex-1 text-sm"
-                />
-              </div>
-              <p className="mt-1 text-xs text-gray-500">PDF, DOC, DOCX, TXT 파일만 업로드 가능합니다</p>
-              {uploadingContract && (
-                <div className="mt-1 text-xs text-gray-500">업로드 중...</div>
-              )}
-            </div>
-          </div>
-          <div className="flex space-x-3 pt-4">
-            <button
-              type="submit"
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
-            >
-              {channel ? tCommon('save') : tCommon('add')}
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
-            >
-              {tCommon('cancel')}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
   )
 }
 

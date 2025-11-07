@@ -192,6 +192,7 @@ export default function ReservationForm({
     privateTourAdditionalCost: number
     commission_percent: number
     commission_amount: number
+    not_included_price?: number
     // OTA/현장 결제 분리
     onlinePaymentAmount: number
     onSiteBalanceAmount: number
@@ -276,6 +277,7 @@ export default function ReservationForm({
     privateTourAdditionalCost: 0,
     commission_percent: 0,
     commission_amount: 0,
+    not_included_price: 0,
     onlinePaymentAmount: 0,
     onSiteBalanceAmount: 0,
     productRequiredOptions: []
@@ -1355,6 +1357,7 @@ export default function ReservationForm({
         infantProductPrice: (pricing?.infant_price as number) || 0,
         commission_percent: (pricing?.commission_percent as number) || 0,
         commission_amount: (pricing?.commission_amount as number) || 0,
+        not_included_price: (pricing?.not_included_price as number) || 0,
         // Derive OTA per-adult amount when not_included_price is provided
         onlinePaymentAmount: pricing?.not_included_price != null
           ? Math.max(0, ((pricing?.adult_price || 0) - (pricing?.not_included_price || 0)) * (prev.adults || 0))
@@ -2019,6 +2022,7 @@ export default function ReservationForm({
                   isExistingPricingLoaded={isExistingPricingLoaded}
                   reservationId={reservation?.id}
                   expenseUpdateTrigger={expenseUpdateTrigger}
+                  channels={channels}
                 />
                 {reservation && (
                   <div className="flex justify-end">

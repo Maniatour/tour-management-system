@@ -7,6 +7,8 @@ interface Channel {
   type: string;
   category: string;
   status: string;
+  commission_base_price_only?: boolean;
+  [key: string]: unknown;
 }
 
 interface ChannelGroup {
@@ -67,6 +69,12 @@ export function useChannelManagement() {
       }
       
       console.log('로드된 채널 데이터:', data);
+      // 각 채널의 commission_percent 필드 확인
+      if (data && data.length > 0) {
+        data.forEach((channel: any) => {
+          console.log(`채널 ${channel.name} (${channel.id}): commission_percent=${channel.commission_percent}, commission=${channel.commission}`);
+        });
+      }
       setChannels(data || []);
     } catch (error) {
       console.error('채널 로드 실패:', error);
