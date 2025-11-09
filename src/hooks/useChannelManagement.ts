@@ -25,18 +25,25 @@ export function useChannelManagement() {
   const [isMultiChannelMode, setIsMultiChannelMode] = useState(false);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
 
-  // 채널을 타입별로 그룹화
+  // 채널을 타입별로 그룹화 (type 컬럼만 참조)
   const channelGroups = useMemo(() => {
+    // OTA 채널: type이 'ota'인 채널만
     const otaChannels = channels.filter(channel => 
-      channel.type.toLowerCase() === 'ota' || channel.category === 'OTA'
+      (channel.type || '').toLowerCase() === 'ota'
     );
-    const selfChannels = channels.filter(channel => 
-      channel.type.toLowerCase() === 'self' || 
-      channel.type.toLowerCase() === 'partner' || 
-      channel.category === 'Own' ||
-      channel.category === 'Self' ||
-      channel.category === 'Partner'
-    );
+    
+    // 자체 채널: ID가 'M00001'인 홈페이지 채널만 (Self 채널 제외)
+    const selfChannels = channels.filter(channel => {
+      // ID가 'M00001'인 채널만 자체 채널로 분류
+      return channel.id === 'M00001';
+    });
+    
+    // 디버깅: 자체 채널 필터링 결과 출력
+    console.log('useChannelManagement - 자체 채널 필터링:', {
+      totalChannels: channels.length,
+      selfChannelsCount: selfChannels.length,
+      selfChannels: selfChannels.map(c => ({ id: c.id, name: c.name, type: c.type, category: c.category }))
+    });
 
     return [
       {
@@ -46,7 +53,7 @@ export function useChannelManagement() {
       },
       {
         type: 'SELF' as const,
-        label: '자체 채널 (Self & Partner)',
+        label: '자체 채널 (홈페이지)',
         channels: selfChannels
       }
     ];
@@ -55,27 +62,51 @@ export function useChannelManagement() {
   const loadChannels = useCallback(async () => {
     try {
       setIsLoadingChannels(true);
-      const { data, error } = await supabase
-        .from('channels')
-        .select('*')
-        .eq('status', 'active')
-        .order('name');
+      
+      // 활성 채널과 M00001 채널을 모두 가져오기
+      const [activeChannelsResult, m00001Result] = await Promise.all([
+        supabase
+          .from('channels')
+          .select('*')
+          .eq('status', 'active')
+          .order('name'),
+        supabase
+          .from('channels')
+          .select('*')
+          .eq('id', 'M00001')
+          .single()
+      ]);
 
-      if (error) {
-        console.error('채널 로드 실패:', error);
-        // 에러가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
-        setChannels([]);
-        return;
+      if (activeChannelsResult.error) {
+        console.error('활성 채널 로드 실패:', activeChannelsResult.error);
+      }
+
+      const activeChannels = activeChannelsResult.data || [];
+      
+      // M00001 채널이 활성 채널 목록에 없으면 추가
+      let allChannels = [...activeChannels];
+      if (m00001Result.data && !activeChannels.find((ch: any) => ch.id === 'M00001')) {
+        allChannels.push(m00001Result.data);
+        console.log('M00001 채널 추가됨 (status와 관계없이):', m00001Result.data);
       }
       
-      console.log('로드된 채널 데이터:', data);
+      // 중복 제거 (ID 기준)
+      const uniqueChannels = allChannels.filter((channel, index, self) =>
+        index === self.findIndex((ch) => ch.id === channel.id)
+      );
+      
+      console.log('로드된 채널 데이터:', uniqueChannels);
+      // M00001 채널 확인
+      const m00001Channel = uniqueChannels.find((ch: any) => ch.id === 'M00001');
+      console.log('M00001 채널 확인:', m00001Channel ? { id: m00001Channel.id, name: m00001Channel.name, status: m00001Channel.status } : 'M00001 채널 없음');
+      
       // 각 채널의 commission_percent 필드 확인
-      if (data && data.length > 0) {
-        data.forEach((channel: any) => {
+      if (uniqueChannels.length > 0) {
+        uniqueChannels.forEach((channel: any) => {
           console.log(`채널 ${channel.name} (${channel.id}): commission_percent=${channel.commission_percent}, commission=${channel.commission}`);
         });
       }
-      setChannels(data || []);
+      setChannels(uniqueChannels);
     } catch (error) {
       console.error('채널 로드 실패:', error);
       setChannels([]);
@@ -100,17 +131,15 @@ export function useChannelManagement() {
     
     if (selectedChannelData) {
       // 채널 타입 결정 로직
-      if (selectedChannelData.type.toLowerCase() === 'ota' || selectedChannelData.category === 'OTA') {
+      const channelTypeLower = (selectedChannelData.type || '').toLowerCase();
+      
+      if (channelTypeLower === 'ota') {
         channelType = 'OTA';
-      } else if (
-        selectedChannelData.type.toLowerCase() === 'self' || 
-        selectedChannelData.type.toLowerCase() === 'partner' || 
-        selectedChannelData.category === 'Own' ||
-        selectedChannelData.category === 'Self' ||
-        selectedChannelData.category === 'Partner'
-      ) {
+      } else if (selectedChannelData.id === 'M00001') {
+        // ID가 'M00001'인 채널만 자체 채널로 분류
         channelType = 'SELF';
       }
+      // Partner (type === 'partner')는 자동 감지되지 않음
     }
     
     console.log('감지된 채널 타입:', channelType);

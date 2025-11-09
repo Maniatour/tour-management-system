@@ -37,6 +37,7 @@ interface TourExpense {
     id: string
     name: string | null
     name_en: string | null
+    name_ko: string | null
   }
 }
 
@@ -130,7 +131,7 @@ export default function AllTourExpensesManager() {
       if (productIds.length > 0) {
         const { data: productsData } = await supabase
           .from('products')
-          .select('id, name, name_en')
+          .select('id, name, name_en, name_ko')
           .in('id', productIds)
         
         productsData?.forEach(product => {
@@ -192,6 +193,7 @@ export default function AllTourExpensesManager() {
       expense.tour_id?.toLowerCase().includes(searchLower) ||
       expense.products?.name?.toLowerCase().includes(searchLower) ||
       expense.products?.name_en?.toLowerCase().includes(searchLower) ||
+      expense.products?.name_ko?.toLowerCase().includes(searchLower) ||
       expense.note?.toLowerCase().includes(searchLower)
     )
   })
@@ -367,12 +369,7 @@ export default function AllTourExpensesManager() {
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm">
-                      <div className="font-medium text-gray-900">{expense.tour_id}</div>
-                      {expense.products && (
-                        <div className="text-xs text-gray-500">
-                          {expense.products.name || expense.products.name_en || '-'}
-                        </div>
-                      )}
+                      {expense.products?.name_ko || expense.products?.name || expense.products?.name_en || '-'}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-900">{expense.paid_for}</td>

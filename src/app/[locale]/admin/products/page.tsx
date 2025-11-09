@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2 } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -31,6 +31,12 @@ export default function AdminProducts({ params }: AdminProductsProps) {
   const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [statusCounts, setStatusCounts] = useState<{ value: string; label: string; count: number }[]>([])
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card')
+  const [updatingProducts, setUpdatingProducts] = useState<Set<string>>(new Set())
+  const [copyingProducts, setCopyingProducts] = useState<Set<string>>(new Set())
+  const [editingField, setEditingField] = useState<{ productId: string; fieldName: string } | null>(null)
+  const [editingValue, setEditingValue] = useState<string | number>('')
+  const [savingProducts, setSavingProducts] = useState<Set<string>>(new Set())
 
   // Supabase에서 상품 데이터 가져오기
   useEffect(() => {
@@ -200,6 +206,320 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     setSelectedSubCategory('all')
     setSelectedStatus('active')
     setSubCategories(allSubCategories) // 서브카테고리를 전체 목록으로 복원
+  }
+
+  // 상태 레이블 및 색상 헬퍼 함수
+  const getStatusLabel = (status: string) => {
+    const statusLabels: { [key: string]: string } = {
+      active: '활성',
+      inactive: '비활성',
+      draft: '초안'
+    }
+    return statusLabels[status] || status
+  }
+
+  const getStatusColor = (status: string) => {
+    const statusColors: { [key: string]: string } = {
+      active: 'bg-green-100 text-green-800',
+      inactive: 'bg-gray-100 text-gray-800',
+      draft: 'bg-yellow-100 text-yellow-800'
+    }
+    return statusColors[status] || 'bg-gray-100 text-gray-800'
+  }
+
+  const getCategoryLabel = (category: string) => {
+    const categoryLabels: { [key: string]: string } = {
+      city: '도시',
+      nature: '자연',
+      culture: '문화',
+      adventure: '모험',
+      food: '음식',
+      history: '역사',
+      shopping: '쇼핑',
+      entertainment: '엔터테인먼트',
+      beach: '해변',
+      mountain: '산',
+      museum: '박물관',
+      park: '공원',
+      temple: '사원',
+      market: '시장',
+      restaurant: '레스토랑',
+      cafe: '카페',
+      hotel: '호텔',
+      resort: '리조트',
+      spa: '스파',
+      wellness: '웰니스',
+      sports: '스포츠',
+      outdoor: '아웃도어',
+      indoor: '실내',
+      family: '가족',
+      couple: '커플',
+      solo: '솔로',
+      group: '단체',
+      luxury: '럭셔리',
+      budget: '예산',
+      midrange: '중급',
+      premium: '프리미엄'
+    }
+    return categoryLabels[category] || category
+  }
+
+  const getSubCategoryLabel = (subCategory: string) => {
+    const subCategoryLabels: { [key: string]: string } = {
+      downtown: '시내',
+      old_town: '구시가지',
+      modern: '현대',
+      traditional: '전통',
+      forest: '숲',
+      river: '강',
+      lake: '호수',
+      ocean: '바다',
+      waterfall: '폭포',
+      cave: '동굴',
+      art: '예술',
+      music: '음악',
+      theater: '극장',
+      festival: '축제',
+      workshop: '워크샵',
+      hiking: '등산',
+      climbing: '클라이밍',
+      rafting: '래프팅',
+      diving: '다이빙',
+      zip_line: '지프라인',
+      local: '로컬',
+      fine_dining: '파인다이닝',
+      street_food: '길거리음식',
+      seafood: '해산물',
+      vegetarian: '채식',
+      ancient: '고대',
+      medieval: '중세',
+      modern_history: '근현대사',
+      archaeological: '고고학',
+      mall: '쇼핑몰',
+      boutique: '부티크',
+      souvenir: '기념품',
+      local_market: '전통시장',
+      theme_park: '테마파크',
+      casino: '카지노',
+      nightlife: '야간생활',
+      show: '쇼',
+      luxury_hotel: '럭셔리호텔',
+      boutique_hotel: '부티크호텔',
+      resort_hotel: '리조트호텔',
+      budget_hotel: '예산호텔',
+      golf: '골프',
+      tennis: '테니스',
+      swimming: '수영',
+      skiing: '스키',
+      surfing: '서핑'
+    }
+    return subCategoryLabels[subCategory] || subCategory
+  }
+
+  // 상태 토글 핸들러
+  const handleStatusToggle = async (productId: string, currentStatus: string) => {
+    if (updatingProducts.has(productId)) return
+    
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active'
+    
+    try {
+      setUpdatingProducts(prev => new Set(prev).add(productId))
+      
+      // 로컬 상태 즉시 업데이트
+      setProducts(prevProducts => 
+        prevProducts.map(p => 
+          p.id === productId ? { ...p, status: newStatus } : p
+        )
+      )
+      
+      // 데이터베이스에 상태 업데이트
+      const { error } = await supabase
+        .from('products')
+        .update({ status: newStatus })
+        .eq('id', productId)
+      
+      if (error) {
+        console.error('상품 상태 업데이트 오류:', error)
+        // 에러 시 원래 상태로 되돌리기
+        setProducts(prevProducts => 
+          prevProducts.map(p => 
+            p.id === productId ? { ...p, status: currentStatus } : p
+          )
+        )
+      }
+    } catch (error) {
+      console.error('상품 상태 업데이트 중 예상치 못한 오류:', error)
+      // 에러 시 원래 상태로 되돌리기
+      setProducts(prevProducts => 
+        prevProducts.map(p => 
+          p.id === productId ? { ...p, status: currentStatus } : p
+        )
+      )
+    } finally {
+      setUpdatingProducts(prev => {
+        const next = new Set(prev)
+        next.delete(productId)
+        return next
+      })
+    }
+  }
+
+  // 인라인 편집 시작
+  const startEdit = (productId: string, fieldName: string, currentValue: string | number | null) => {
+    setEditingField({ productId, fieldName })
+    setEditingValue(currentValue ?? '')
+  }
+
+  // 인라인 편집 취소
+  const cancelEdit = () => {
+    setEditingField(null)
+    setEditingValue('')
+  }
+
+  // 인라인 편집 저장
+  const saveEdit = async (productId: string, fieldName: string) => {
+    if (savingProducts.has(productId)) return
+
+    try {
+      setSavingProducts(prev => new Set(prev).add(productId))
+
+      // 업데이트할 데이터 준비
+      const updateData: any = {}
+      
+      // 필드 타입에 따라 값 변환
+      if (fieldName === 'base_price' || fieldName === 'max_participants') {
+        updateData[fieldName] = editingValue === '' ? null : Number(editingValue)
+      } else {
+        updateData[fieldName] = editingValue === '' ? null : String(editingValue)
+      }
+
+      // Supabase 업데이트
+      const { error } = await supabase
+        .from('products')
+        .update(updateData)
+        .eq('id', productId)
+
+      if (error) {
+        console.error('상품 업데이트 오류:', error)
+        alert('상품 정보 업데이트 중 오류가 발생했습니다.')
+        return
+      }
+
+      // 로컬 상태 업데이트
+      setProducts(prevProducts => 
+        prevProducts.map(p => 
+          p.id === productId ? { ...p, ...updateData } : p
+        )
+      )
+
+      // 편집 모드 종료
+      cancelEdit()
+    } catch (error) {
+      console.error('상품 업데이트 중 예상치 못한 오류:', error)
+      alert('상품 정보 업데이트 중 오류가 발생했습니다.')
+    } finally {
+      setSavingProducts(prev => {
+        const next = new Set(prev)
+        next.delete(productId)
+        return next
+      })
+    }
+  }
+
+  // 카테고리 옵션 목록 (드롭다운용)
+  const getCategoryOptions = () => {
+    return categories.filter(c => c.value !== 'all').map(c => ({
+      value: c.value,
+      label: getCategoryLabel(c.value)
+    }))
+  }
+
+  // 서브카테고리 옵션 목록 (드롭다운용)
+  const getSubCategoryOptions = (category?: string | null) => {
+    if (!category) {
+      return allSubCategories.filter(c => c.value !== 'all').map(c => ({
+        value: c.value,
+        label: getSubCategoryLabel(c.value)
+      }))
+    }
+    
+    const filtered = products
+      .filter(p => p.category === category && p.sub_category)
+      .reduce((acc, p) => {
+        const subCat = p.sub_category!
+        if (!acc.find(item => item.value === subCat)) {
+          acc.push({
+            value: subCat,
+            label: getSubCategoryLabel(subCat)
+          })
+        }
+        return acc
+      }, [] as { value: string; label: string }[])
+    
+    return filtered
+  }
+
+  // 상품 복사 핸들러
+  const handleCopyProduct = async (product: Product) => {
+    if (copyingProducts.has(product.id)) return
+    
+    try {
+      setCopyingProducts(prev => new Set(prev).add(product.id))
+      
+      const copyData = {
+        name: `${product.name} (복사본)`,
+        name_en: product.name_en ? `${product.name_en} (Copy)` : null,
+        product_code: product.product_code ? `${product.product_code}_COPY` : null,
+        category: product.category,
+        sub_category: product.sub_category,
+        description: product.description,
+        duration: product.duration,
+        base_price: product.base_price,
+        max_participants: product.max_participants,
+        status: 'draft' as const,
+        departure_city: product.departure_city,
+        arrival_city: product.arrival_city,
+        departure_country: product.departure_country,
+        arrival_country: product.arrival_country,
+        languages: product.languages,
+        group_size: product.group_size,
+        adult_age: product.adult_age,
+        child_age_min: product.child_age_min,
+        child_age_max: product.child_age_max,
+        infant_age: product.infant_age,
+        tags: product.tags
+      }
+      
+      const { data: newProduct, error: productError } = await supabase
+        .from('products')
+        .insert(copyData)
+        .select()
+        .single()
+      
+      if (productError) {
+        console.error('상품 복사 오류:', productError)
+        alert('상품 복사 중 오류가 발생했습니다.')
+        return
+      }
+      
+      alert(`상품이 성공적으로 복사되었습니다! 새 상품 ID: ${newProduct?.id}`)
+      
+      // 목록 새로고침
+      fetchProducts()
+      
+      // 새 상품 편집 페이지로 이동
+      window.location.href = `/${locale}/admin/products/${newProduct?.id}`
+      
+    } catch (error) {
+      console.error('상품 복사 중 예상치 못한 오류:', error)
+      alert('상품 복사 중 오류가 발생했습니다.')
+    } finally {
+      setCopyingProducts(prev => {
+        const next = new Set(prev)
+        next.delete(product.id)
+        return next
+      })
+    }
   }
 
   if (loading) {
@@ -376,7 +696,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                       </div>
                     </div>
 
-      {/* 결과 요약 */}
+      {/* 결과 요약 및 뷰 전환 */}
       <div className="flex items-center justify-between text-sm text-gray-600">
         <span>
           총 {filteredProducts.length}개의 상품
@@ -384,17 +704,44 @@ export default function AdminProducts({ params }: AdminProductsProps) {
           {selectedSubCategory !== 'all' && ` (${subCategories.find(c => c.value === selectedSubCategory)?.label})`}
           {selectedStatus !== 'all' && ` (${statusCounts.find(s => s.value === selectedStatus)?.label})`}
         </span>
-        {searchTerm && (
-          <span>&ldquo;<strong>{searchTerm}</strong>&rdquo; 검색 결과</span>
-        )}
-        {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all' || selectedStatus !== 'all') && (
-          <button
-            onClick={clearFilters}
-            className="text-blue-600 hover:text-blue-800 underline"
-          >
-            필터 초기화
-          </button>
-        )}
+        <div className="flex items-center space-x-4">
+          {searchTerm && (
+            <span>&ldquo;<strong>{searchTerm}</strong>&rdquo; 검색 결과</span>
+          )}
+          {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all' || selectedStatus !== 'all') && (
+            <button
+              onClick={clearFilters}
+              className="text-blue-600 hover:text-blue-800 underline"
+            >
+              필터 초기화
+            </button>
+          )}
+          {/* 뷰 전환 버튼 */}
+          <div className="flex items-center space-x-2 border border-gray-300 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('card')}
+              className={`p-1.5 rounded transition-colors ${
+                viewMode === 'card'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              title="카드뷰"
+            >
+              <Grid3x3 size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              title="테이블뷰"
+            >
+              <List size={18} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* 상품 목록 */}
@@ -402,39 +749,457 @@ export default function AdminProducts({ params }: AdminProductsProps) {
         <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
           <div className="text-gray-400 mb-4">
             <Search className="mx-auto h-12 w-12" />
-                      </div>
+          </div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">검색 결과가 없습니다</h3>
           <p className="text-gray-600 mb-4">
             검색어나 카테고리를 변경해보세요.
           </p>
-                      <button
+          <button
             onClick={clearFilters}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                      >
+          >
             필터 초기화
-                      </button>
-                    </div>
-      ) : (
+          </button>
+        </div>
+      ) : viewMode === 'card' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                     {filteredProducts.map((product) => (
-             <ProductCard
-               key={product.id}
-               product={product}
-               locale={locale}
-               onStatusChange={(productId, newStatus) => {
-                 // 로컬 상태 업데이트
-                 setProducts(prevProducts => 
-                   prevProducts.map(p => 
-                     p.id === productId ? { ...p, status: newStatus } : p
-                   )
-                 )
-               }}
-               onProductCopied={() => {
-                 // 상품 복사 후 목록 새로고침
-                 fetchProducts()
-               }}
-             />
-           ))}
+          {filteredProducts.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              locale={locale}
+              onStatusChange={(productId, newStatus) => {
+                // 로컬 상태 업데이트
+                setProducts(prevProducts => 
+                  prevProducts.map(p => 
+                    p.id === productId ? { ...p, status: newStatus } : p
+                  )
+                )
+              }}
+              onProductCopied={() => {
+                // 상품 복사 후 목록 새로고침
+                fetchProducts()
+              }}
+            />
+          ))}
+        </div>
+      ) : (
+        /* 테이블 뷰 */
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">
+                    상품명
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    상태
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    카테고리
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    서브카테고리
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    가격
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    기간
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    최대 참가자
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    액션
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredProducts.map((product) => {
+                  const productStatus = (product as any).status || 'inactive'
+                  const isUpdating = updatingProducts.has(product.id)
+                  const isCopying = copyingProducts.has(product.id)
+                  
+                  const isEditing = editingField?.productId === product.id
+                  const isSaving = savingProducts.has(product.id)
+                  
+                  return (
+                    <tr key={product.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-4 sticky left-0 bg-white z-10">
+                        {isEditing && editingField?.fieldName === 'name' ? (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={editingValue}
+                              onChange={(e) => setEditingValue(e.target.value)}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  saveEdit(product.id, 'name')
+                                } else if (e.key === 'Escape') {
+                                  cancelEdit()
+                                }
+                              }}
+                            />
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => saveEdit(product.id, 'name')}
+                                disabled={isSaving}
+                                className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
+                                title="저장"
+                              >
+                                <Save size={14} />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="p-1 text-gray-600 hover:text-gray-900"
+                                title="취소"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between group">
+                            <div className="flex-1 min-w-0">
+                              <Link 
+                                href={`/${locale}/admin/products/${product.id}`}
+                                className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline block truncate"
+                              >
+                                {product.name}
+                              </Link>
+                              {product.description && (
+                                <p className="text-xs text-gray-500 mt-1 line-clamp-1">
+                                  {product.description}
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => startEdit(product.id, 'name', product.name)}
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              title="상품명 수정"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(productStatus)}`}>
+                          {getStatusLabel(productStatus)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        {isEditing && editingField?.fieldName === 'category' ? (
+                          <div className="space-y-2">
+                            <select
+                              value={editingValue as string}
+                              onChange={(e) => setEditingValue(e.target.value)}
+                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              autoFocus
+                            >
+                              <option value="">선택 안함</option>
+                              {getCategoryOptions().map(opt => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => saveEdit(product.id, 'category')}
+                                disabled={isSaving}
+                                className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
+                                title="저장"
+                              >
+                                <Save size={14} />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="p-1 text-gray-600 hover:text-gray-900"
+                                title="취소"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between group">
+                            {product.category ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {getCategoryLabel(product.category)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
+                            <button
+                              onClick={() => startEdit(product.id, 'category', product.category || '')}
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              title="카테고리 수정"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        {isEditing && editingField?.fieldName === 'sub_category' ? (
+                          <div className="space-y-2">
+                            <select
+                              value={editingValue as string}
+                              onChange={(e) => setEditingValue(e.target.value)}
+                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              autoFocus
+                            >
+                              <option value="">선택 안함</option>
+                              {getSubCategoryOptions(product.category).map(opt => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => saveEdit(product.id, 'sub_category')}
+                                disabled={isSaving}
+                                className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
+                                title="저장"
+                              >
+                                <Save size={14} />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="p-1 text-gray-600 hover:text-gray-900"
+                                title="취소"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between group">
+                            {product.sub_category ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                {getSubCategoryLabel(product.sub_category)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
+                            <button
+                              onClick={() => startEdit(product.id, 'sub_category', product.sub_category || '')}
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              title="서브카테고리 수정"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        {isEditing && editingField?.fieldName === 'base_price' ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center">
+                              <span className="text-xs text-gray-500 mr-1">$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value === '' ? '' : Number(e.target.value))}
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    saveEdit(product.id, 'base_price')
+                                  } else if (e.key === 'Escape') {
+                                    cancelEdit()
+                                  }
+                                }}
+                              />
+                            </div>
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => saveEdit(product.id, 'base_price')}
+                                disabled={isSaving}
+                                className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
+                                title="저장"
+                              >
+                                <Save size={14} />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="p-1 text-gray-600 hover:text-gray-900"
+                                title="취소"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between group">
+                            <span className="text-sm font-medium text-green-600">
+                              ${product.base_price || 0}
+                            </span>
+                            <button
+                              onClick={() => startEdit(product.id, 'base_price', product.base_price || 0)}
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              title="가격 수정"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        {isEditing && editingField?.fieldName === 'duration' ? (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={editingValue}
+                              onChange={(e) => setEditingValue(e.target.value)}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  saveEdit(product.id, 'duration')
+                                } else if (e.key === 'Escape') {
+                                  cancelEdit()
+                                }
+                              }}
+                            />
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => saveEdit(product.id, 'duration')}
+                                disabled={isSaving}
+                                className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
+                                title="저장"
+                              >
+                                <Save size={14} />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="p-1 text-gray-600 hover:text-gray-900"
+                                title="취소"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between group">
+                            <span className="text-sm text-gray-600">
+                              {product.duration || '-'}
+                            </span>
+                            <button
+                              onClick={() => startEdit(product.id, 'duration', product.duration || '')}
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              title="기간 수정"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        {isEditing && editingField?.fieldName === 'max_participants' ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center">
+                              <input
+                                type="number"
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value === '' ? '' : Number(e.target.value))}
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    saveEdit(product.id, 'max_participants')
+                                  } else if (e.key === 'Escape') {
+                                    cancelEdit()
+                                  }
+                                }}
+                              />
+                              <span className="text-xs text-gray-500 ml-1">명</span>
+                            </div>
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => saveEdit(product.id, 'max_participants')}
+                                disabled={isSaving}
+                                className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
+                                title="저장"
+                              >
+                                <Save size={14} />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="p-1 text-gray-600 hover:text-gray-900"
+                                title="취소"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between group">
+                            <span className="text-sm text-gray-600">
+                              {product.max_participants || '-'}명
+                            </span>
+                            <button
+                              onClick={() => startEdit(product.id, 'max_participants', product.max_participants || 0)}
+                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                              title="최대 참가자 수정"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="flex items-center space-x-2">
+                          {/* 복사 버튼 */}
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault()
+                              handleCopyProduct(product)
+                            }}
+                            disabled={isCopying}
+                            className={`p-1.5 rounded transition-colors ${
+                              isCopying 
+                                ? 'text-gray-400 cursor-not-allowed' 
+                                : 'text-green-600 hover:text-green-800 hover:bg-green-50'
+                            }`}
+                            title="상품 복사"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
+                          
+                          {/* 상태 토글 스위치 */}
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault()
+                              handleStatusToggle(product.id, productStatus)
+                            }}
+                            disabled={isUpdating}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                              productStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
+                            } ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            title={productStatus === 'active' ? '비활성화' : '활성화'}
+                          >
+                            <span
+                              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                productStatus === 'active' ? 'translate-x-5' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

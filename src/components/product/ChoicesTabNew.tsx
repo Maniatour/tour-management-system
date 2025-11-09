@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Save, Copy, Download, Upload, FileText, Info } from 'lucide-react'
+import { Plus, Trash2, Save, Copy, Download, Upload, FileText, Info, Share2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -115,6 +115,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const [showImportModal, setShowImportModal] = useState(false)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [showTypeInfoModal, setShowTypeInfoModal] = useState(false)
+  const [showExportTemplateModal, setShowExportTemplateModal] = useState(false)
   const [uploadingImages, setUploadingImages] = useState<{[key: string]: boolean}>({})
   const [dragOverStates, setDragOverStates] = useState<{[key: string]: boolean}>({})
   const [products, setProducts] = useState<Array<{id: string, name: string, name_ko?: string}>>([])
@@ -128,7 +129,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         .from('options')
         .select('*')
         .eq('is_choice_template', true)
-        .eq('template_group', templateGroup)
+        .or(`template_group.eq.${templateGroup},template_group_ko.eq.${templateGroup}`)
         .order('sort_order', { ascending: true }) as { data: DatabaseOptions[] | null, error: SupabaseError | null }
 
       if (error) {
@@ -803,6 +804,108 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     }
   }, [importData])
 
+  // 초이스를 템플릿으로 내보내기
+  const exportChoicesAsTemplates = useCallback(async () => {
+    if (productChoices.length === 0) {
+      alert('내보낼 초이스가 없습니다.')
+      return
+    }
+
+    try {
+      // 상품 정보 가져오기
+      const { data: product, error: productError } = await supabase
+        .from('products')
+        .select('name, name_ko')
+        .eq('id', productId)
+        .single()
+
+      if (productError) {
+        console.error('Error fetching product:', productError)
+        setSaveMessage('상품 정보를 가져오는 중 오류가 발생했습니다.')
+        return
+      }
+
+      // 각 초이스 그룹을 템플릿으로 변환
+      let exportedCount = 0
+      for (const choice of productChoices) {
+        const templateGroupKo = choice.choice_group_ko || choice.choice_group || '템플릿'
+        // template_group은 영문 키로 변환 (URL-friendly)
+        const templateGroup = choice.choice_group || 
+          templateGroupKo
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '')
+            .substring(0, 50) || 'template'
+
+        // 템플릿 그룹이 이미 존재하는지 확인 (template_group 또는 template_group_ko로 검색)
+        const { data: existingTemplate } = await supabase
+          .from('options')
+          .select('id')
+          .eq('is_choice_template', true)
+          .or(`template_group.eq.${templateGroup},template_group_ko.eq.${templateGroupKo}`)
+          .limit(1)
+
+        if (existingTemplate && existingTemplate.length > 0) {
+          // 이미 존재하는 경우 업데이트할지 물어보기
+          if (!confirm(`템플릿 "${templateGroupKo}"이 이미 존재합니다. 덮어쓰시겠습니까?`)) {
+            continue
+          }
+          // 기존 템플릿 삭제
+          await supabase
+            .from('options')
+            .delete()
+            .eq('is_choice_template', true)
+            .or(`template_group.eq.${templateGroup},template_group_ko.eq.${templateGroupKo}`)
+        }
+
+        // 각 옵션을 템플릿으로 변환
+        for (const option of choice.options || []) {
+          const newTemplate = {
+            id: crypto.randomUUID(),
+            name: option.option_name || option.option_name_ko || '템플릿',
+            name_ko: option.option_name_ko || option.option_name || '템플릿',
+            description: `${product.name_ko || product.name}에서 가져온 초이스`,
+            category: 'imported',
+            adult_price: option.adult_price || 0,
+            child_price: option.child_price || 0,
+            infant_price: option.infant_price || 0,
+            price_type: 'per_person',
+            status: option.is_active ? 'active' : 'inactive',
+            tags: ['imported', product.name_ko || product.name],
+            is_choice_template: true,
+            choice_type: choice.choice_type,
+            min_selections: choice.min_selections,
+            max_selections: choice.max_selections,
+            template_group: choice.choice_group,
+            template_group_ko: templateGroupKo,
+            is_required: choice.is_required,
+            sort_order: option.sort_order || 0,
+            image_url: option.image_url || null,
+            image_alt: option.image_alt || null,
+            thumbnail_url: option.thumbnail_url || null
+          }
+
+          const { error } = await supabase
+            .from('options')
+            .insert([newTemplate])
+
+          if (error) {
+            console.error('Error exporting template:', error)
+          } else {
+            exportedCount++
+          }
+        }
+      }
+
+      setSaveMessage(`${exportedCount}개의 초이스가 템플릿으로 성공적으로 내보내졌습니다. 옵션 관리 > 초이스 관리에서 확인할 수 있습니다.`)
+      setShowExportTemplateModal(false)
+    } catch (error) {
+      console.error('Error exporting choices as templates:', error)
+      setSaveMessage('템플릿 내보내기 중 오류가 발생했습니다.')
+    }
+  }, [productChoices, productId])
+
   useEffect(() => {
     if (productId && !isNewProduct) {
       loadProductChoices()
@@ -867,6 +970,13 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           >
             <FileText className="w-4 h-4 mr-2" />
             템플릿 불러오기
+          </button>
+          <button
+            onClick={() => setShowExportTemplateModal(true)}
+            className="flex items-center px-3 py-2 text-sm text-green-700 bg-white border border-green-300 rounded-md hover:bg-green-50"
+          >
+            <Share2 className="w-4 h-4 mr-2" />
+            템플릿으로 내보내기
           </button>
           <button
             onClick={() => setShowCopyModal(true)}
@@ -1349,6 +1459,15 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           onClose={() => setShowTypeInfoModal(false)}
         />
       )}
+
+      {/* 템플릿으로 내보내기 모달 */}
+      {showExportTemplateModal && (
+        <ExportTemplateModal
+          onExport={exportChoicesAsTemplates}
+          onClose={() => setShowExportTemplateModal(false)}
+          choiceCount={productChoices.length}
+        />
+      )}
     </div>
   )
 }
@@ -1545,6 +1664,48 @@ function CopyToModal({ products, selectedTargetProductId, setSelectedTargetProdu
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             복사
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 템플릿으로 내보내기 모달 컴포넌트
+interface ExportTemplateModalProps {
+  onExport: () => void
+  onClose: () => void
+  choiceCount: number
+}
+
+function ExportTemplateModal({ onExport, onClose, choiceCount }: ExportTemplateModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">템플릿으로 내보내기</h3>
+        <div className="space-y-4">
+          <div className="text-sm text-gray-600">
+            <p>현재 상품의 초이스 {choiceCount}개를 템플릿으로 내보냅니다.</p>
+            <p className="mt-2">내보낸 템플릿은 <strong>옵션 관리 &gt; 초이스 관리</strong>에서 확인할 수 있으며, 다른 상품에서도 사용할 수 있습니다.</p>
+          </div>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <p className="text-xs text-yellow-800">
+              <strong>주의:</strong> 같은 이름의 템플릿 그룹이 이미 존재하는 경우 덮어쓰기 여부를 확인합니다.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end space-x-3 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+          >
+            취소
+          </button>
+          <button
+            onClick={onExport}
+            className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700"
+          >
+            내보내기
           </button>
         </div>
       </div>

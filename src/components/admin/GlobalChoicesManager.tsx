@@ -46,6 +46,7 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<ChoiceTemplate | null>(null)
   const [showImportChoicesModal, setShowImportChoicesModal] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<{template_group: string, template_group_ko: string} | null>(null)
 
   useEffect(() => {
     fetchTemplates()
@@ -194,6 +195,50 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
       } catch (error) {
         console.error('Error deleting template:', error)
       }
+    }
+  }
+
+  // 템플릿 그룹 수정 함수
+  const handleEditGroup = async (oldGroup: {template_group: string, template_group_ko: string}, newGroup: {template_group: string, template_group_ko: string}) => {
+    try {
+      // 해당 그룹에 속한 모든 템플릿 찾기
+      const groupTemplates = templates.filter(t => 
+        t.template_group === oldGroup.template_group
+      )
+
+      if (groupTemplates.length === 0) {
+        alert('수정할 템플릿을 찾을 수 없습니다.')
+        return
+      }
+
+      // 모든 템플릿의 그룹 정보 업데이트
+      const { error } = await supabase
+        .from('options')
+        .update({
+          template_group: newGroup.template_group,
+          template_group_ko: newGroup.template_group_ko
+        })
+        .eq('is_choice_template', true)
+        .eq('template_group', oldGroup.template_group)
+
+      if (error) {
+        console.error('Error updating template group:', error)
+        alert('템플릿 그룹 수정 중 오류가 발생했습니다.')
+        return
+      }
+
+      // 로컬 상태 업데이트
+      setTemplates(templates.map(t => 
+        t.template_group === oldGroup.template_group
+          ? { ...t, template_group: newGroup.template_group, template_group_ko: newGroup.template_group_ko }
+          : t
+      ))
+
+      setEditingGroup(null)
+      alert('템플릿 그룹이 성공적으로 수정되었습니다.')
+    } catch (error) {
+      console.error('Error updating template group:', error)
+      alert('템플릿 그룹 수정 중 오류가 발생했습니다.')
     }
   }
 
@@ -412,11 +457,28 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
       </div>
 
       {/* 템플릿 목록 - 그룹별 표시 */}
-      {Object.entries(groupedTemplates).map(([groupName, groupTemplates]) => (
+      {Object.entries(groupedTemplates).map(([groupName, groupTemplates]) => {
+        // 그룹의 원본 정보 가져오기 (첫 번째 템플릿에서)
+        const firstTemplate = groupTemplates[0]
+        const groupInfo = {
+          template_group: firstTemplate.template_group || '',
+          template_group_ko: firstTemplate.template_group_ko || firstTemplate.template_group || ''
+        }
+        
+        return (
         <div key={groupName} className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-2">
-            {groupName} ({groupTemplates.length}개)
-          </h3>
+          <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {groupName} ({groupTemplates.length}개)
+            </h3>
+            <button
+              onClick={() => setEditingGroup(groupInfo)}
+              className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+              title="그룹 수정"
+            >
+              <Edit size={16} />
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {groupTemplates.map((template) => (
               <div key={template.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
@@ -535,7 +597,8 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
             ))}
           </div>
         </div>
-      ))}
+        )
+      })}
 
       {/* 템플릿 추가/편집 모달 */}
       {(showAddForm || editingTemplate) && (
@@ -554,6 +617,15 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
         <ImportChoicesModal
           onImport={importChoicesAsTemplates}
           onClose={() => setShowImportChoicesModal(false)}
+        />
+      )}
+
+      {/* 템플릿 그룹 편집 모달 */}
+      {editingGroup && (
+        <GroupEditModal
+          group={editingGroup}
+          onSubmit={(newGroup) => handleEditGroup(editingGroup, newGroup)}
+          onClose={() => setEditingGroup(null)}
         />
       )}
     </div>
@@ -984,6 +1056,83 @@ function ImportChoicesModal({ onImport, onClose }: ImportChoicesModalProps) {
             가져오기
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// 템플릿 그룹 편집 모달 컴포넌트
+interface GroupEditModalProps {
+  group: {template_group: string, template_group_ko: string}
+  onSubmit: (newGroup: {template_group: string, template_group_ko: string}) => void
+  onClose: () => void
+}
+
+function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
+  const [formData, setFormData] = useState({
+    template_group: group.template_group || '',
+    template_group_ko: group.template_group_ko || ''
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.template_group.trim()) {
+      alert('템플릿 그룹 이름(영문)을 입력해주세요.')
+      return
+    }
+    onSubmit(formData)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">템플릿 그룹 수정</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              템플릿 그룹 이름 (영문)
+            </label>
+            <input
+              type="text"
+              value={formData.template_group}
+              onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="예: Accommodation"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              템플릿 그룹 이름 (한글)
+            </label>
+            <input
+              type="text"
+              value={formData.template_group_ko}
+              onChange={(e) => setFormData({ ...formData, template_group_ko: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="예: 숙박 선택"
+            />
+          </div>
+          <div className="text-sm text-gray-600 bg-yellow-50 p-3 rounded-lg">
+            <p className="font-medium mb-1">⚠️ 주의사항</p>
+            <p>이 그룹에 속한 모든 템플릿의 그룹 이름이 변경됩니다.</p>
+          </div>
+          <div className="flex justify-end space-x-3 mt-6">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+            >
+              수정
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )

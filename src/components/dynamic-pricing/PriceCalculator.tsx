@@ -229,12 +229,17 @@ export const PriceCalculator = memo(function PriceCalculator({
                  const hasNotIncludedPrice = (selectedChannel as any)?.has_not_included_price || false;
                  const pricingType = (selectedChannel as any)?.pricing_type || 'separate';
                  const isSinglePrice = pricingType === 'single';
+                 const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
                  
                  // 불포함 금액 입력값이거나 불포함 금액 입력값 + 초이스 값일 경우에만 불포함 금액/초이스 영역 표시
                  // 동적 가격에 불포함 금액이 있으면 항상 표시
                  const showNotIncludedColumn = dynamicNotIncludedPrice > 0 || (notIncludedType === 'amount_only' || notIncludedType === 'amount_and_choice');
                  // 불포함 금액이 설정되어 있으면 항상 계산 과정 표시
                  const showCalculationProcess = showNotIncludedColumn;
+                 
+                 // 테이블 형식 결정: 조건에 맞으면 할인 가격처럼 가로 형식 (성인/아동/유아 별도 컬럼)
+                 // 조건: pricing_type === 'separate' && commission_base_price_only === false && not_included_type === 'none'
+                 const useColumnFormat = !isSinglePrice && !commissionBasePriceOnly && notIncludedType === 'none' && !showNotIncludedColumn;
                  
                  return (
                    <div>
@@ -246,11 +251,21 @@ export const PriceCalculator = memo(function PriceCalculator({
                          <thead>
                            <tr className="border-b border-gray-200">
                              <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
-                             <th className="text-right py-1 px-2 font-medium text-gray-700">기본 가격</th>
-                             {showNotIncludedColumn && (
-                               <th className="text-right py-1 px-2 font-medium text-gray-700">불포함 금액 / 초이스</th>
+                             {useColumnFormat ? (
+                               <>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">성인</th>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">아동</th>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">유아</th>
+                               </>
+                             ) : (
+                               <>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">기본 가격</th>
+                                 {showNotIncludedColumn && (
+                                   <th className="text-right py-1 px-2 font-medium text-gray-700">불포함 금액 / 초이스</th>
+                                 )}
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">최종 가격</th>
+                               </>
                              )}
-                             <th className="text-right py-1 px-2 font-medium text-gray-700">최종 가격</th>
                            </tr>
                          </thead>
                          <tbody>
@@ -261,43 +276,6 @@ export const PriceCalculator = memo(function PriceCalculator({
                              const rowClass = isLowerAntelope ? 'bg-blue-50' : 'bg-green-50';
                              const textClass = isLowerAntelope ? 'text-blue-700' : 'text-green-700';
                              
-                             // 기본 가격 (마크업 적용 전) - 단일 가격 모드면 성인 가격만 사용
-                             const basePrice = isSinglePrice 
-                               ? (choiceCalc.basePrice?.adult || 0)
-                               : null;
-                             const baseAdultPrice = isSinglePrice ? basePrice : (choiceCalc.basePrice?.adult || 0);
-                             const baseChildPrice = isSinglePrice ? basePrice : (choiceCalc.basePrice?.child || 0);
-                             const baseInfantPrice = isSinglePrice ? basePrice : (choiceCalc.basePrice?.infant || 0);
-                             
-                             // 초이스 가격 - 단일 가격 모드면 성인 가격만 사용
-                             const choicePricing = pricingConfig?.choicePricing[choiceId];
-                             const choicePrice = isSinglePrice 
-                               ? (choicePricing?.adult_price || 0)
-                               : null;
-                             const choiceAdultPrice = isSinglePrice ? choicePrice : (choicePricing?.adult_price || 0);
-                             const choiceChildPrice = isSinglePrice ? choicePrice : (choicePricing?.child_price || 0);
-                             const choiceInfantPrice = isSinglePrice ? choicePrice : (choicePricing?.infant_price || 0);
-                             
-                             // 불포함 금액 및 초이스 계산
-                             let notIncludedAmount = 0;
-                             let notIncludedAdult = 0;
-                             let notIncludedChild = 0;
-                             let notIncludedInfant = 0;
-                             
-                             if (showNotIncludedColumn) {
-                               if (notIncludedType === 'amount_only') {
-                                 notIncludedAmount = notIncludedPrice;
-                                 notIncludedAdult = notIncludedPrice;
-                                 notIncludedChild = notIncludedPrice;
-                                 notIncludedInfant = notIncludedPrice;
-                               } else if (notIncludedType === 'amount_and_choice') {
-                                 notIncludedAmount = notIncludedPrice + (isSinglePrice ? choicePrice : 0);
-                                 notIncludedAdult = notIncludedPrice + choiceAdultPrice;
-                                 notIncludedChild = notIncludedPrice + choiceChildPrice;
-                                 notIncludedInfant = notIncludedPrice + choiceInfantPrice;
-                               }
-                             }
-                             
                              // 최종 가격 (마크업 적용 후) - 단일 가격 모드면 성인 가격만 사용
                              const totalPrice = isSinglePrice 
                                ? (choiceCalc.markupPrice.adult || 0)
@@ -306,48 +284,106 @@ export const PriceCalculator = memo(function PriceCalculator({
                              const totalChildPrice = isSinglePrice ? totalPrice : (choiceCalc.markupPrice.child || 0);
                              const totalInfantPrice = isSinglePrice ? totalPrice : (choiceCalc.markupPrice.infant || 0);
                              
-                             return (
-                               <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
-                                 <td className={`py-1 px-2 font-medium ${textClass}`}>
-                                   {combinationName}
-                                 </td>
-                                 <td className="py-1 px-2 text-right font-medium text-gray-900">
-                                   {isSinglePrice ? (
-                                     <div>{formatPrice(basePrice)}</div>
-                                   ) : (
-                                     <>
-                                       <div>성인: {formatPrice(baseAdultPrice)}</div>
-                                       <div>아동: {formatPrice(baseChildPrice)}</div>
-                                       <div>유아: {formatPrice(baseInfantPrice)}</div>
-                                     </>
-                                   )}
-                                 </td>
-                                 {showNotIncludedColumn && (
-                                   <td className="py-1 px-2 text-right font-medium text-gray-700">
+                             if (useColumnFormat) {
+                               // 할인 가격처럼 가로 형식 (성인/아동/유아 별도 컬럼)
+                               return (
+                                 <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
+                                   <td className={`py-1 px-2 font-medium ${textClass}`}>
+                                     {combinationName}
+                                   </td>
+                                   <td className="py-1 px-2 text-right font-bold text-green-600">
+                                     {formatPrice(totalAdultPrice)}
+                                   </td>
+                                   <td className="py-1 px-2 text-right font-bold text-green-600">
+                                     {formatPrice(totalChildPrice)}
+                                   </td>
+                                   <td className="py-1 px-2 text-right font-bold text-green-600">
+                                     {formatPrice(totalInfantPrice)}
+                                   </td>
+                                 </tr>
+                               );
+                             } else {
+                               // 기존 세로 형식
+                               // 기본 가격 (마크업 적용 전) - 단일 가격 모드면 성인 가격만 사용
+                               const basePrice = isSinglePrice 
+                                 ? (choiceCalc.basePrice?.adult || 0)
+                                 : null;
+                               const baseAdultPrice = isSinglePrice ? basePrice : (choiceCalc.basePrice?.adult || 0);
+                               const baseChildPrice = isSinglePrice ? basePrice : (choiceCalc.basePrice?.child || 0);
+                               const baseInfantPrice = isSinglePrice ? basePrice : (choiceCalc.basePrice?.infant || 0);
+                               
+                               // 초이스 가격 - 단일 가격 모드면 성인 가격만 사용
+                               const choicePricing = pricingConfig?.choicePricing[choiceId];
+                               const choicePrice = isSinglePrice 
+                                 ? (choicePricing?.adult_price || 0)
+                                 : null;
+                               const choiceAdultPrice = isSinglePrice ? choicePrice : (choicePricing?.adult_price || 0);
+                               const choiceChildPrice = isSinglePrice ? choicePrice : (choicePricing?.child_price || 0);
+                               const choiceInfantPrice = isSinglePrice ? choicePrice : (choicePricing?.infant_price || 0);
+                               
+                               // 불포함 금액 및 초이스 계산
+                               let notIncludedAmount = 0;
+                               let notIncludedAdult = 0;
+                               let notIncludedChild = 0;
+                               let notIncludedInfant = 0;
+                               
+                               if (showNotIncludedColumn) {
+                                 if (notIncludedType === 'amount_only') {
+                                   notIncludedAmount = notIncludedPrice;
+                                   notIncludedAdult = notIncludedPrice;
+                                   notIncludedChild = notIncludedPrice;
+                                   notIncludedInfant = notIncludedPrice;
+                                 } else if (notIncludedType === 'amount_and_choice') {
+                                   notIncludedAmount = notIncludedPrice + (isSinglePrice ? choicePrice : 0);
+                                   notIncludedAdult = notIncludedPrice + choiceAdultPrice;
+                                   notIncludedChild = notIncludedPrice + choiceChildPrice;
+                                   notIncludedInfant = notIncludedPrice + choiceInfantPrice;
+                                 }
+                               }
+                               
+                               return (
+                                 <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
+                                   <td className={`py-1 px-2 font-medium ${textClass}`}>
+                                     {combinationName}
+                                   </td>
+                                   <td className="py-1 px-2 text-right font-medium text-gray-900">
                                      {isSinglePrice ? (
-                                       <div>{formatPrice(notIncludedAmount)}</div>
+                                       <div>{formatPrice(basePrice)}</div>
                                      ) : (
                                        <>
-                                         <div>성인: {formatPrice(notIncludedAdult)}</div>
-                                         <div>아동: {formatPrice(notIncludedChild)}</div>
-                                         <div>유아: {formatPrice(notIncludedInfant)}</div>
+                                         <div>성인: {formatPrice(baseAdultPrice)}</div>
+                                         <div>아동: {formatPrice(baseChildPrice)}</div>
+                                         <div>유아: {formatPrice(baseInfantPrice)}</div>
                                        </>
                                      )}
                                    </td>
-                                 )}
-                                 <td className="py-1 px-2 text-right font-bold text-blue-600">
-                                   {isSinglePrice ? (
-                                     <div>{formatPrice((totalPrice || 0) + (showNotIncludedColumn ? notIncludedAmount : 0))}</div>
-                                   ) : (
-                                     <>
-                                       <div>성인: {formatPrice(totalAdultPrice + (showNotIncludedColumn ? notIncludedAdult : 0))}</div>
-                                       <div>아동: {formatPrice(totalChildPrice + (showNotIncludedColumn ? notIncludedChild : 0))}</div>
-                                       <div>유아: {formatPrice(totalInfantPrice + (showNotIncludedColumn ? notIncludedInfant : 0))}</div>
-                                     </>
+                                   {showNotIncludedColumn && (
+                                     <td className="py-1 px-2 text-right font-medium text-gray-700">
+                                       {isSinglePrice ? (
+                                         <div>{formatPrice(notIncludedAmount)}</div>
+                                       ) : (
+                                         <>
+                                           <div>성인: {formatPrice(notIncludedAdult)}</div>
+                                           <div>아동: {formatPrice(notIncludedChild)}</div>
+                                           <div>유아: {formatPrice(notIncludedInfant)}</div>
+                                         </>
+                                       )}
+                                     </td>
                                    )}
-                                 </td>
-                               </tr>
-                             );
+                                   <td className="py-1 px-2 text-right font-bold text-blue-600">
+                                     {isSinglePrice ? (
+                                       <div>{formatPrice((totalPrice || 0) + (showNotIncludedColumn ? notIncludedAmount : 0))}</div>
+                                     ) : (
+                                       <>
+                                         <div>성인: {formatPrice(totalAdultPrice + (showNotIncludedColumn ? notIncludedAdult : 0))}</div>
+                                         <div>아동: {formatPrice(totalChildPrice + (showNotIncludedColumn ? notIncludedChild : 0))}</div>
+                                         <div>유아: {formatPrice(totalInfantPrice + (showNotIncludedColumn ? notIncludedInfant : 0))}</div>
+                                       </>
+                                     )}
+                                   </td>
+                                 </tr>
+                               );
+                             }
                            })}
                          </tbody>
                        </table>
@@ -448,21 +484,36 @@ export const PriceCalculator = memo(function PriceCalculator({
                    const hasNotIncludedPrice = (selectedChannel as any)?.has_not_included_price || false;
                    const pricingType = (selectedChannel as any)?.pricing_type || 'separate';
                    const isSinglePrice = pricingType === 'single';
+                   const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
                    // 불포함 금액이 설정되어 있으면 항상 표시
                    const showNotIncludedColumn = dynamicNotIncludedPrice > 0 || (notIncludedType === 'amount_only' || notIncludedType === 'amount_and_choice');
                    // 불포함 금액이 설정되어 있으면 항상 계산 과정 표시
                    const showCalculationProcess = showNotIncludedColumn;
+                   
+                   // 테이블 형식 결정: 조건에 맞으면 할인 가격처럼 가로 형식 (성인/아동/유아 별도 컬럼)
+                   // 조건: pricing_type === 'separate' && commission_base_price_only === false && not_included_type === 'none'
+                   const useColumnFormat = !isSinglePrice && !commissionBasePriceOnly && notIncludedType === 'none' && !showNotIncludedColumn;
                    
                    return (
                      <table className="w-full text-xs bg-blue-50">
                        <thead>
                          <tr className="border-b border-gray-200">
                            <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
-                           <th className="text-right py-1 px-2 font-medium text-gray-700">Net Price</th>
-                           {showNotIncludedColumn && (
-                             <th className="text-right py-1 px-2 font-medium text-gray-700">불포함 금액</th>
+                           {useColumnFormat ? (
+                             <>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">성인</th>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">아동</th>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">유아</th>
+                             </>
+                           ) : (
+                             <>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">Net Price</th>
+                               {showNotIncludedColumn && (
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">불포함 금액</th>
+                               )}
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">최종 가격</th>
+                             </>
                            )}
-                           <th className="text-right py-1 px-2 font-medium text-gray-700">최종 가격</th>
                          </tr>
                        </thead>
                        <tbody>
@@ -578,48 +629,69 @@ export const PriceCalculator = memo(function PriceCalculator({
                            const rowClass = isLowerAntelope ? 'bg-blue-50' : 'bg-green-50';
                            const textClass = isLowerAntelope ? 'text-blue-700' : 'text-green-700';
                            
-                           return (
-                             <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
-                               <td className={`py-1 px-2 font-medium ${textClass}`}>
-                                 {combinationName}
-                               </td>
-                               <td className="py-1 px-2 text-right">
-                                 {isSinglePrice ? (
-                                   <div className="font-medium text-gray-900">{formatPrice(netPrice)}</div>
-                                 ) : (
-                                   <>
-                                     <div className="font-medium text-gray-900">성인: {formatPrice(netAdultPrice)}</div>
-                                     <div className="font-medium text-gray-900">아동: {formatPrice(netChildPrice)}</div>
-                                     <div className="font-medium text-gray-900">유아: {formatPrice(netInfantPrice)}</div>
-                                   </>
-                                 )}
-                               </td>
-                               {showNotIncludedColumn && (
+                           if (useColumnFormat) {
+                             // 할인 가격처럼 가로 형식 (성인/아동/유아 별도 컬럼)
+                             return (
+                               <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
+                                 <td className={`py-1 px-2 font-medium ${textClass}`}>
+                                   {combinationName}
+                                 </td>
+                                 <td className="py-1 px-2 text-right font-bold text-blue-600">
+                                   {formatPrice(netAdultPrice)}
+                                 </td>
+                                 <td className="py-1 px-2 text-right font-bold text-blue-600">
+                                   {formatPrice(netChildPrice)}
+                                 </td>
+                                 <td className="py-1 px-2 text-right font-bold text-blue-600">
+                                   {formatPrice(netInfantPrice)}
+                                 </td>
+                               </tr>
+                             );
+                           } else {
+                             // 기존 세로 형식
+                             return (
+                               <tr key={choiceId} className={`border-b border-gray-100 ${rowClass}`}>
+                                 <td className={`py-1 px-2 font-medium ${textClass}`}>
+                                   {combinationName}
+                                 </td>
                                  <td className="py-1 px-2 text-right">
                                    {isSinglePrice ? (
-                                     <div className="text-orange-600">{formatPrice(notIncludedAmount)}</div>
+                                     <div className="font-medium text-gray-900">{formatPrice(netPrice)}</div>
                                    ) : (
                                      <>
-                                       <div className="text-orange-600">{formatPrice(notIncludedAdult)}</div>
-                                       <div className="text-orange-600">{formatPrice(notIncludedChild)}</div>
-                                       <div className="text-orange-600">{formatPrice(notIncludedInfant)}</div>
+                                       <div className="font-medium text-gray-900">성인: {formatPrice(netAdultPrice)}</div>
+                                       <div className="font-medium text-gray-900">아동: {formatPrice(netChildPrice)}</div>
+                                       <div className="font-medium text-gray-900">유아: {formatPrice(netInfantPrice)}</div>
                                      </>
                                    )}
                                  </td>
-                               )}
-                               <td className="py-1 px-2 text-right font-bold text-green-600">
-                                 {isSinglePrice ? (
-                                   <div>{formatPrice(finalPrice || 0)}</div>
-                                 ) : (
-                                   <>
-                                     <div>성인: {formatPrice(finalAdultPrice)}</div>
-                                     <div>아동: {formatPrice(finalChildPrice)}</div>
-                                     <div>유아: {formatPrice(finalInfantPrice)}</div>
-                                   </>
+                                 {showNotIncludedColumn && (
+                                   <td className="py-1 px-2 text-right">
+                                     {isSinglePrice ? (
+                                       <div className="text-orange-600">{formatPrice(notIncludedAmount)}</div>
+                                     ) : (
+                                       <>
+                                         <div className="text-orange-600">{formatPrice(notIncludedAdult)}</div>
+                                         <div className="text-orange-600">{formatPrice(notIncludedChild)}</div>
+                                         <div className="text-orange-600">{formatPrice(notIncludedInfant)}</div>
+                                       </>
+                                     )}
+                                   </td>
                                  )}
-                               </td>
-                             </tr>
-                           );
+                                 <td className="py-1 px-2 text-right font-bold text-green-600">
+                                   {isSinglePrice ? (
+                                     <div>{formatPrice(finalPrice || 0)}</div>
+                                   ) : (
+                                     <>
+                                       <div>성인: {formatPrice(finalAdultPrice)}</div>
+                                       <div>아동: {formatPrice(finalChildPrice)}</div>
+                                       <div>유아: {formatPrice(finalInfantPrice)}</div>
+                                     </>
+                                   )}
+                                 </td>
+                               </tr>
+                             );
+                           }
                          })}
                        </tbody>
                      </table>

@@ -903,45 +903,45 @@ export default function DynamicPricingManager({
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">날짜 선택</h3>
             {/* 뷰 모드 토글 및 판매 상태 설정 버튼 */}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1.5">
           <button
                 onClick={() => setIsBulkPricingModalOpen(true)}
-                className="flex items-center space-x-2 px-3 py-2 rounded-md bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200 transition-colors"
+                className="flex items-center space-x-1 px-2 py-1 rounded text-xs bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200 transition-colors"
           >
-                <List className="h-4 w-4" />
-                <span>가격 일괄 추가 테이블 뷰</span>
+                <List className="h-3 w-3" />
+                <span className="text-xs">가격 일괄 추가</span>
           </button>
           <button
                 onClick={handleOpenSaleStatusModal}
-                className="flex items-center space-x-2 px-3 py-2 rounded-md bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 transition-colors"
+                className="flex items-center space-x-1 px-2 py-1 rounded text-xs bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 transition-colors"
           >
-                <Calendar className="h-4 w-4" />
-                <span>판매 상태 설정</span>
+                <Calendar className="h-3 w-3" />
+                <span className="text-xs">판매 상태</span>
           </button>
           <button
                  onClick={() => setViewMode('calendar')}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${
+                className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition-colors ${
                    viewMode === 'calendar'
                     ? 'bg-blue-100 text-blue-700 border border-blue-200'
                     : 'bg-gray-100 text-gray-700 border border-gray-200'
                  }`}
                >
-                <Calendar className="h-4 w-4" />
-                <span>캘린더</span>
+                <Calendar className="h-3 w-3" />
+                <span className="text-xs">캘린더</span>
                </button>
                <button
                  onClick={() => setViewMode('list')}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-colors ${
+                className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition-colors ${
                    viewMode === 'list'
                     ? 'bg-blue-100 text-blue-700 border border-blue-200'
                     : 'bg-gray-100 text-gray-700 border border-gray-200'
                  }`}
                >
-                <List className="h-4 w-4" />
-                <span>목록</span>
+                <List className="h-3 w-3" />
+                <span className="text-xs">목록</span>
                </button>
-           </div>
-         </div>
+            </div>
+          </div>
 
           {/* 기존 캘린더/목록 뷰 */}
           {viewMode === 'calendar' ? (

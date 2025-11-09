@@ -75,48 +75,136 @@ export const ChannelSelector = memo(function ChannelSelector({
   const selfGroup = channelGroups.find(group => group.type === 'SELF');
   const otaGroup = channelGroups.find(group => group.type === 'OTA');
 
+  // 자체 채널 중 홈페이지 채널만 필터링
+  // id가 'SELF'인 통합 채널만 제외하고, 나머지 모든 자체 채널 표시
+  // 만약 자체 채널이 1개만 있고 그것이 'SELF'인 경우, 모든 자체 채널 표시 (임시)
+  const finalDisplayChannels = (() => {
+    if (!selfGroup || selfGroup.channels.length === 0) return [];
+    
+    // id가 'SELF'가 아닌 채널만 필터링
+    const filtered = selfGroup.channels.filter(channel => {
+      const channelAny = channel as any;
+      const isSelfIntegrated = channel.id === 'SELF';
+      
+      console.log('ChannelSelector - 자체 채널 필터링:', {
+        channelId: channel.id,
+        channelName: channel.name,
+        channelType: channel.type,
+        channelCategory: channel.category,
+        sub_channels: channelAny.sub_channels,
+        isSelfIntegrated,
+        shouldDisplay: !isSelfIntegrated
+      });
+      
+      return !isSelfIntegrated;
+    });
+    
+    // 필터링 결과가 없고 자체 채널이 1개만 있는 경우, 모든 자체 채널 표시
+    if (filtered.length === 0 && selfGroup.channels.length === 1) {
+      console.log('ChannelSelector - 자체 채널이 1개만 있어서 모두 표시:', selfGroup.channels[0]);
+      return selfGroup.channels;
+    }
+    
+    return filtered;
+  })();
+
+  // 디버깅: 자체 채널 그룹 정보 출력
+  console.log('ChannelSelector - 자체 채널 그룹:', {
+    selfGroupExists: !!selfGroup,
+    selfGroupChannelsCount: selfGroup?.channels.length || 0,
+    finalDisplayChannelsCount: finalDisplayChannels.length,
+    selfGroupChannels: selfGroup?.channels.map(c => {
+      const cAny = c as any;
+      return {
+        id: c.id, 
+        name: c.name, 
+        type: c.type, 
+        category: c.category,
+        sub_channels: cAny.sub_channels,
+        website: cAny.website,
+        customer_website: cAny.customer_website,
+        admin_website: cAny.admin_website,
+        isHomepage: c.id === 'SELF' ? 'SELF는 통합 채널 (카카오톡, 블로그 등)' : 
+                    (c.name?.toLowerCase().includes('homepage') || 
+                     c.name?.toLowerCase().includes('홈페이지') ||
+                     c.name?.toLowerCase().includes('website') ||
+                     c.name?.toLowerCase().includes('웹사이트') ||
+                     cAny.website || cAny.customer_website || cAny.admin_website ? '홈페이지일 가능성' : '일반 자체 채널')
+      };
+    }),
+    finalDisplayChannels: finalDisplayChannels.map(c => ({ 
+      id: c.id, 
+      name: c.name, 
+      type: c.type, 
+      category: c.category 
+    })),
+    note: 'SELF 채널은 홈페이지가 아닌 통합 채널입니다. 홈페이지 채널이 별도로 있어야 합니다.'
+  });
+
   return (
     <div className="space-y-4">
-      {/* 자체 채널 전체 선택 */}
-      {selfGroup && selfGroup.channels.length > 0 && (
+      {/* 자체 채널 - 홈페이지만 표시 */}
+      {finalDisplayChannels.length > 0 && (
         <div className="space-y-2">
-          <button
-            onClick={() => onChannelTypeSelect('SELF')}
-            className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
-              selectedChannelType === 'SELF'
-                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center space-x-3">
-              <Users className="h-5 w-5" />
-              <div className="flex-1">
-                <div className="font-medium">자체 채널 (전체선택)</div>
-                <div className="text-sm text-gray-500">
-                  {selfGroup.channels.length}개 채널
+          <div className="flex items-center space-x-2 mb-2">
+            <Users className="h-4 w-4 text-gray-600" />
+            <span className="text-sm font-medium text-gray-700">자체 채널 (홈페이지)</span>
+          </div>
+          
+          <div className="space-y-1">
+            {finalDisplayChannels.map((channel) => {
+              const channelAny = channel as any;
+              const isSelected = selectedChannel === channel.id;
+              const stats = channelPricingStats[channel.id];
+              const statsText = formatPricingStats(stats);
+
+              return (
+                <div
+                  key={channel.id}
+                  className={`w-full p-2 rounded-md border transition-all ${
+                    isSelected
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => onChannelSelect(channel.id)}
+                      className="flex-1 text-left"
+                    >
+                      <div className="flex flex-col">
+                        <div className="flex items-center justify-between">
+                          <span className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                            {channel.name}
+                          </span>
+                        </div>
+                        {statsText && (
+                          <div className="text-xs text-gray-500 mt-1">{statsText}</div>
+                        )}
+                        {(channelAny.customer_website || channelAny.admin_website) && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            {channelAny.customer_website || channelAny.admin_website}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                    {onChannelEdit && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onChannelEdit(channel.id);
+                        }}
+                        className="ml-2 p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                        title="채널 편집"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {/* 자체 채널 통계 - 모든 자체 채널의 날짜 수 합계 */}
-                {(() => {
-                  const allStats: ChannelPricingStats = {};
-                  selfGroup.channels.forEach(channel => {
-                    const channelStats = channelPricingStats[channel.id];
-                    if (channelStats) {
-                      Object.keys(channelStats).forEach(year => {
-                        if (!allStats[year]) {
-                          allStats[year] = 0;
-                        }
-                        allStats[year] += channelStats[year];
-                      });
-                    }
-                  });
-                  const statsText = formatPricingStats(allStats);
-                  return statsText ? (
-                    <div className="text-xs text-gray-500 mt-1">{statsText}</div>
-                  ) : null;
-                })()}
-              </div>
-            </div>
-          </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
