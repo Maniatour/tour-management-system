@@ -1724,6 +1724,8 @@ export default function DynamicPricingManager({
             selectedChannel={selectedChannel ? channelGroups
               .flatMap(group => group.channels)
               .find(ch => ch.id === selectedChannel) || null : null}
+            channels={channelGroups.flatMap(group => group.channels)}
+            productBasePrice={productBasePrice}
           />
 
           {/* 선택된 날짜 정보 */}

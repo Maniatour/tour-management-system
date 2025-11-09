@@ -2,6 +2,13 @@ import React, { memo } from 'react';
 import { Calculator, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 import { RealTimePriceCalculation, PricingConfig } from '@/lib/types/dynamic-pricing';
 
+interface Channel {
+  id: string;
+  name: string;
+  commission_percent?: number;
+  [key: string]: unknown;
+}
+
 interface PriceCalculatorProps {
   calculation: RealTimePriceCalculation | null | undefined;
   pricingConfig: PricingConfig | null | undefined;
@@ -13,6 +20,12 @@ interface PriceCalculatorProps {
     commission_base_price_only?: boolean;
     [key: string]: unknown;
   } | null;
+  channels?: Channel[];
+  productBasePrice?: {
+    adult: number;
+    child: number;
+    infant: number;
+  };
 }
 
 export const PriceCalculator = memo(function PriceCalculator({
@@ -20,7 +33,9 @@ export const PriceCalculator = memo(function PriceCalculator({
   pricingConfig,
   choiceCalculations = {},
   choiceCombinations = [],
-  selectedChannel
+  selectedChannel,
+  channels = [],
+  productBasePrice = { adult: 0, child: 0, infant: 0 }
 }: PriceCalculatorProps) {
   const formatPrice = (price: number | undefined | null) => {
     if (price === undefined || price === null || isNaN(price)) {
@@ -211,11 +226,105 @@ export const PriceCalculator = memo(function PriceCalculator({
            (selectedChannel as any).category === 'OTA'
          );
          
+         // 홈페이지 채널 찾기
+         const homepageChannel = channels.find(ch => {
+           const id = ch.id?.toLowerCase() || '';
+           const name = ch.name?.toLowerCase() || '';
+           return id === 'm00001' || 
+                  id === 'homepage' ||
+                  name.includes('홈페이지') ||
+                  name.includes('homepage') ||
+                  name.includes('website') ||
+                  name.includes('웹사이트');
+         });
+
          return (
            <div className="bg-white border border-gray-200 rounded-lg p-4">
              <h4 className="text-md font-semibold text-gray-900 mb-4">
                초이스별 가격 계산
              </h4>
+             
+             {/* 홈페이지 Net Price - 초이스별 표시 */}
+             {homepageChannel && calculation && pricingConfig && (() => {
+               const homepageCommissionPercent = homepageChannel.commission_percent || 0;
+               const homepageCommissionRate = homepageCommissionPercent / 100;
+               const pricingType = (selectedChannel as any)?.pricing_type || 'separate';
+               const isSinglePrice = pricingType === 'single';
+
+               return (
+                 <div className="mb-3">
+                   <div className="flex items-center justify-between mb-1">
+                     <h5 className="text-xs font-semibold text-purple-700">
+                       홈페이지 Net Price (20%할인)
+                     </h5>
+                     <div className="text-xs text-purple-600">
+                       * 참고용
+                     </div>
+                   </div>
+                   <div className="overflow-x-auto">
+                     <table className="w-full text-xs bg-gradient-to-br from-purple-100 to-pink-100 border-2 border-purple-400 shadow-md">
+                       <thead>
+                         <tr className="border-b border-purple-500 bg-purple-600">
+                           <th className="text-left py-1 px-2 font-bold text-white text-xs">초이스</th>
+                           {isSinglePrice ? (
+                             <th className="text-right py-1 px-2 font-bold text-white text-xs">단일 가격</th>
+                           ) : (
+                             <>
+                               <th className="text-right py-1 px-2 font-bold text-white text-xs">성인</th>
+                               <th className="text-right py-1 px-2 font-bold text-white text-xs">아동</th>
+                               <th className="text-right py-1 px-2 font-bold text-white text-xs">유아</th>
+                             </>
+                           )}
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {Object.entries(choiceCalculations).map(([choiceId, choiceCalc]) => {
+                           const combination = choiceCombinations.find(c => c.id === choiceId);
+                           const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
+                           
+                           // 각 초이스의 할인 가격을 사용하여 홈페이지 Net Price 계산 (20% 할인 적용)
+                           const homepageNetPrice = {
+                             adult: choiceCalc.discountPrice.adult * (1 - homepageCommissionRate) * 0.8,
+                             child: choiceCalc.discountPrice.child * (1 - homepageCommissionRate) * 0.8,
+                             infant: choiceCalc.discountPrice.infant * (1 - homepageCommissionRate) * 0.8
+                           };
+                           
+                           // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
+                           const isLowerAntelope = combinationName.includes('로어') || combinationName.includes('Lower');
+                           const rowClass = isLowerAntelope ? 'bg-purple-200 hover:bg-purple-300' : 'bg-pink-200 hover:bg-pink-300';
+                           const textClass = isLowerAntelope ? 'text-purple-900 font-semibold' : 'text-pink-900 font-semibold';
+                           
+                           return (
+                             <tr key={choiceId} className={`border-b border-purple-300 ${rowClass} transition-colors`}>
+                               <td className={`py-1 px-2 font-semibold ${textClass} text-xs`}>
+                                 {combinationName}
+                               </td>
+                               {isSinglePrice ? (
+                                 <td className="py-1 px-2 text-right font-bold text-purple-900 text-xs">
+                                   {formatPrice(homepageNetPrice.adult)}
+                                 </td>
+                               ) : (
+                                 <>
+                                   <td className="py-1 px-2 text-right font-bold text-purple-900 text-xs">
+                                     {formatPrice(homepageNetPrice.adult)}
+                                   </td>
+                                   <td className="py-1 px-2 text-right font-bold text-purple-900 text-xs">
+                                     {formatPrice(homepageNetPrice.child)}
+                                   </td>
+                                   <td className="py-1 px-2 text-right font-bold text-purple-900 text-xs">
+                                     {formatPrice(homepageNetPrice.infant)}
+                                   </td>
+                                 </>
+                               )}
+                             </tr>
+                           );
+                         })}
+                       </tbody>
+                     </table>
+                   </div>
+                 </div>
+               );
+             })()}
              
              <div className="space-y-6">
                {/* 최대 판매가 (기본가격 + 초이스 가격 + 업차지) - OTA 채널이 아닐 때만 표시 */}

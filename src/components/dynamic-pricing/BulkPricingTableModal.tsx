@@ -572,6 +572,17 @@ export default function BulkPricingTableModal({
     }
   }, [rows, productId, savePricingRulesBatch, onClose, onSave]);
 
+  // 모달이 열릴 때 로그 출력
+  useEffect(() => {
+    if (isOpen) {
+      console.log('🔵 BulkPricingTableModal 열림');
+      console.log('channels 개수:', channels.length);
+      console.log('channels:', channels.map(ch => ({ id: ch.id, name: ch.name })));
+      console.log('rows 개수:', rows.length);
+      console.log('choiceCombinations 개수:', choiceCombinations.length);
+    }
+  }, [isOpen, channels, rows, choiceCombinations]);
+
   if (!isOpen) return null;
 
   return (
@@ -664,6 +675,9 @@ export default function BulkPricingTableModal({
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-blue-50" colSpan={headerIsSinglePrice ? 1 : 3}>
                               초이스별 가격
                             </th>
+                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-orange-50" colSpan={headerIsSinglePrice ? 1 : 3}>
+                              홈페이지 Net Price (20%할인)
+                            </th>
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-green-50" colSpan={headerIsSinglePrice ? 1 : 3}>
                               최대 판매가
                             </th>
@@ -691,6 +705,7 @@ export default function BulkPricingTableModal({
                         return headerIsSinglePrice ? (
                           <>
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-300">단일 가격</th>
+                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">단일 가격</th>
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-300">단일 가격</th>
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-300">단일 가격</th>
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-purple-50">단일 가격</th>
@@ -700,6 +715,9 @@ export default function BulkPricingTableModal({
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-300">성인</th>
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-300">아동</th>
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-300">유아</th>
+                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">성인</th>
+                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">아동</th>
+                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">유아</th>
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-300">성인</th>
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-300">아동</th>
                             <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-300">유아</th>
@@ -715,15 +733,63 @@ export default function BulkPricingTableModal({
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {rows.map((row) => {
-                      // 메인 행 (기본 정보)
-                      // rowSpan 계산: 메인 행 1개 + 서브 행 (choiceCombinations.length - 1)개 = choiceCombinations.length개
-                      const rowSpanValue = Math.max(choiceCombinations.length, 1);
-                      // 현재 행의 채널이 단일 가격인지 확인
-                      const selectedChannel = channels.find(ch => ch.id === row.channelId);
-                      const isRowSinglePrice = (selectedChannel as any)?.pricing_type === 'single';
-                      // 행이 없거나 채널이 선택되지 않았으면 isAllSinglePrice 사용
-                      const useSinglePrice = rows.length === 0 ? isAllSinglePrice : (selectedChannel ? isRowSinglePrice : isAllSinglePrice);
+                    {rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={20} className="px-4 py-8 text-center text-gray-500">
+                          <div className="space-y-2">
+                            <p>행이 없습니다. "행 추가" 버튼을 클릭하여 행을 추가하세요.</p>
+                            {(() => {
+                              const homepageChannel = channels.find(ch => {
+                                const id = ch.id?.toLowerCase() || '';
+                                const name = ch.name?.toLowerCase() || '';
+                                return id === 'm00001' || 
+                                       id === 'homepage' ||
+                                       name.includes('홈페이지') ||
+                                       name.includes('homepage') ||
+                                       name.includes('website') ||
+                                       name.includes('웹사이트');
+                              });
+                              console.log('🔍 rows가 비어있을 때 홈페이지 채널 확인:', homepageChannel ? '✅ 찾음' : '❌ 없음', homepageChannel);
+                              return (
+                                <p className="text-xs text-gray-400">
+                                  홈페이지 채널: {homepageChannel ? `✅ ${homepageChannel.name} (${homepageChannel.id})` : '❌ 없음'}
+                                </p>
+                              );
+                            })()}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      rows.map((row) => {
+                        // 메인 행 (기본 정보)
+                        // rowSpan 계산: 메인 행 1개 + 서브 행 (choiceCombinations.length - 1)개 = choiceCombinations.length개
+                        const rowSpanValue = Math.max(choiceCombinations.length, 1);
+                        // 현재 행의 채널이 단일 가격인지 확인
+                        const selectedChannel = channels.find(ch => ch.id === row.channelId);
+                        const isRowSinglePrice = (selectedChannel as any)?.pricing_type === 'single';
+                        // 행이 없거나 채널이 선택되지 않았으면 isAllSinglePrice 사용
+                        const useSinglePrice = rows.length === 0 ? isAllSinglePrice : (selectedChannel ? isRowSinglePrice : isAllSinglePrice);
+                        // 홈페이지 채널 찾기 (더 넓은 조건)
+                        const homepageChannel = channels.find(ch => {
+                          const id = ch.id?.toLowerCase() || '';
+                          const name = ch.name?.toLowerCase() || '';
+                          return id === 'm00001' || 
+                                 id === 'homepage' ||
+                                 name.includes('홈페이지') ||
+                                 name.includes('homepage') ||
+                                 name.includes('website') ||
+                                 name.includes('웹사이트');
+                        });
+                        
+                        // 디버깅: 홈페이지 채널 찾기 확인 (한 번만 로그)
+                        if (row.id === rows[0]?.id) {
+                          if (!homepageChannel) {
+                            console.warn('⚠️ 홈페이지 채널을 찾을 수 없습니다. channels:', channels.map(ch => ({ id: ch.id, name: ch.name, type: ch.type })));
+                          } else {
+                            console.log('✅ 홈페이지 채널 찾음:', { id: homepageChannel.id, name: homepageChannel.name, commission_percent: homepageChannel.commission_percent });
+                          }
+                        }
+                      
                       return (
                         <React.Fragment key={row.id}>
                           {/* 메인 행 */}
@@ -982,6 +1048,29 @@ export default function BulkPricingTableModal({
                             {choiceCombinations.length > 0 ? (() => {
                               const firstChoice = choiceCombinations[0];
                               const calculated = calculatePrices(row, firstChoice.id);
+                              
+                              // 홈페이지 채널의 net price 계산 (메인 행에서 찾은 homepageChannel 사용)
+                              const homepageNetPrice = homepageChannel ? (() => {
+                                try {
+                                  // 홈페이지 채널로 가격 계산 (현재 row 설정 사용)
+                                  const homepageRow: BulkPricingRow = {
+                                    ...row,
+                                    channelId: homepageChannel.id,
+                                    channelName: homepageChannel.name,
+                                    commissionPercent: homepageChannel.commission_percent || 0
+                                  };
+                                  const result = calculatePrices(homepageRow, firstChoice.id);
+                                  // 첫 번째 행에서만 로그 출력
+                                  if (row.id === rows[0]?.id) {
+                                    console.log('✅ 홈페이지 Net Price 계산 결과:', result);
+                                  }
+                                  return result;
+                                } catch (error) {
+                                  console.error('❌ 홈페이지 Net Price 계산 오류:', error);
+                                  return null;
+                                }
+                              })() : null;
+                              
                               return (
                                 <>
                                   {/* 초이스명 */}
@@ -1003,6 +1092,18 @@ export default function BulkPricingTableModal({
                                           className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                           step="0.01"
                                         />
+                                      </td>
+                                      {/* 홈페이지 Net Price - 단일 가격 (20% 할인) */}
+                                      <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '100px' }}>
+                                        {homepageNetPrice ? (
+                                          <div className="text-xs font-semibold text-purple-700 text-center">
+                                            ${(homepageNetPrice.netPrice.adult * 0.8).toFixed(2)}
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs text-gray-500 text-center">
+                                            {homepageChannel ? '계산 중...' : '-'}
+                                          </div>
+                                        )}
                                       </td>
                                       {/* 최대 판매가 - 단일 가격 */}
                                       <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium">
@@ -1047,6 +1148,40 @@ export default function BulkPricingTableModal({
                                           step="0.01"
                                         />
                                       </td>
+                                      {/* 홈페이지 Net Price - 일반 가격 (20% 할인) */}
+                                      <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
+                                        {homepageNetPrice ? (
+                                          <div className="text-xs font-semibold text-purple-700 text-center">
+                                            ${(homepageNetPrice.netPrice.adult * 0.8).toFixed(2)}
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs text-gray-500 text-center">
+                                            {homepageChannel ? '계산 중...' : '-'}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
+                                        {homepageNetPrice ? (
+                                          <div className="text-xs font-semibold text-purple-700 text-center">
+                                            ${(homepageNetPrice.netPrice.child * 0.8).toFixed(2)}
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs text-gray-500 text-center">
+                                            {homepageChannel ? '계산 중...' : '-'}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
+                                        {homepageNetPrice ? (
+                                          <div className="text-xs font-semibold text-purple-700 text-center">
+                                            ${(homepageNetPrice.netPrice.infant * 0.8).toFixed(2)}
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs text-gray-500 text-center">
+                                            {homepageChannel ? '계산 중...' : '-'}
+                                          </div>
+                                        )}
+                                      </td>
                                       {/* 최대 판매가 */}
                                       <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium">
                                         ${calculated.maxPrice.adult.toFixed(2)}
@@ -1083,6 +1218,29 @@ export default function BulkPricingTableModal({
                               );
                             })() : (() => {
                               const calculated = calculatePrices(row);
+                              
+                              // 홈페이지 채널의 net price 계산 (메인 행에서 찾은 homepageChannel 사용)
+                              const homepageNetPrice = homepageChannel ? (() => {
+                                try {
+                                  // 홈페이지 채널로 가격 계산 (현재 row 설정 사용)
+                                  const homepageRow: BulkPricingRow = {
+                                    ...row,
+                                    channelId: homepageChannel.id,
+                                    channelName: homepageChannel.name,
+                                    commissionPercent: homepageChannel.commission_percent || 0
+                                  };
+                                  const result = calculatePrices(homepageRow);
+                                  // 첫 번째 행에서만 로그 출력
+                                  if (row.id === rows[0]?.id) {
+                                    console.log('✅ 홈페이지 Net Price 계산 결과 (초이스 없음):', result);
+                                  }
+                                  return result;
+                                } catch (error) {
+                                  console.error('❌ 홈페이지 Net Price 계산 오류 (초이스 없음):', error);
+                                  return null;
+                                }
+                              })() : null;
+                              
                               return (
                                 <>
                                   {/* 초이스명 */}
@@ -1160,6 +1318,22 @@ export default function BulkPricingTableModal({
                           {/* 초이스별 서브 행들 */}
                           {choiceCombinations.slice(1).map((choice, choiceIndex) => {
                             const calculated = calculatePrices(row, choice.id);
+                            
+                            // 각 초이스의 홈페이지 Net Price 계산
+                            const homepageNetPrice = homepageChannel ? (() => {
+                              try {
+                                const homepageRow: BulkPricingRow = {
+                                  ...row,
+                                  channelId: homepageChannel.id,
+                                  channelName: homepageChannel.name,
+                                  commissionPercent: homepageChannel.commission_percent || 0
+                                };
+                                return calculatePrices(homepageRow, choice.id);
+                              } catch {
+                                return null;
+                              }
+                            })() : null;
+                            
                             return (
                               <tr key={`${row.id}-${choice.id}-${choiceIndex}`} className="hover:bg-gray-50">
                                 {/* 초이스명 */}
@@ -1181,6 +1355,18 @@ export default function BulkPricingTableModal({
                                         className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                         step="0.01"
                                       />
+                                    </td>
+                                    {/* 홈페이지 Net Price - 단일 가격 (20% 할인) */}
+                                    <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '100px' }}>
+                                      {homepageNetPrice ? (
+                                        <div className="text-xs font-semibold text-purple-700 text-center">
+                                          ${(homepageNetPrice.netPrice.adult * 0.8).toFixed(2)}
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-gray-500 text-center">
+                                          {homepageChannel ? '계산 중...' : '-'}
+                                        </div>
+                                      )}
                                     </td>
                                     {/* 최대 판매가 - 단일 가격 */}
                                     <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium">
@@ -1225,6 +1411,40 @@ export default function BulkPricingTableModal({
                                         step="0.01"
                                       />
                                     </td>
+                                    {/* 홈페이지 Net Price - 일반 가격 (20% 할인) */}
+                                    <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
+                                      {homepageNetPrice ? (
+                                        <div className="text-xs font-semibold text-purple-700 text-center">
+                                          ${(homepageNetPrice.netPrice.adult * 0.8).toFixed(2)}
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-gray-500 text-center">
+                                          {homepageChannel ? '계산 중...' : '-'}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
+                                      {homepageNetPrice ? (
+                                        <div className="text-xs font-semibold text-purple-700 text-center">
+                                          ${(homepageNetPrice.netPrice.child * 0.8).toFixed(2)}
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-gray-500 text-center">
+                                          {homepageChannel ? '계산 중...' : '-'}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
+                                      {homepageNetPrice ? (
+                                        <div className="text-xs font-semibold text-purple-700 text-center">
+                                          ${(homepageNetPrice.netPrice.infant * 0.8).toFixed(2)}
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-gray-500 text-center">
+                                          {homepageChannel ? '계산 중...' : '-'}
+                                        </div>
+                                      )}
+                                    </td>
                                     {/* 최대 판매가 */}
                                     <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium">
                                       ${calculated.maxPrice.adult.toFixed(2)}
@@ -1262,7 +1482,8 @@ export default function BulkPricingTableModal({
                           })}
                         </React.Fragment>
                       );
-                    })}
+                    })
+                    )}
                   </tbody>
                 </table>
               </div>
