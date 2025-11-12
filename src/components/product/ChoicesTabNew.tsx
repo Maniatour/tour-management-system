@@ -21,6 +21,8 @@ interface DatabaseOptions {
   thumbnail_url?: string
   template_group?: string
   template_group_ko?: string
+  template_group_description_ko?: string
+  template_group_description_en?: string
   choice_type?: string
   is_required?: boolean
   min_selections?: number
@@ -149,13 +151,16 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         const isRequired = firstItem.is_required || false
         const minSelections = firstItem.min_selections || 1
         const maxSelections = firstItem.max_selections || 1
+        // 템플릿 그룹 설명 가져오기
+        const descriptionKo = firstItem.template_group_description_ko || ''
+        const descriptionEn = firstItem.template_group_description_en || ''
 
         const newChoice: ProductChoice = {
           id: crypto.randomUUID(),
           choice_group: templateGroup,
           choice_group_ko: templateGroupName,
-          description_ko: '',
-          description_en: '',
+          description_ko: descriptionKo,
+          description_en: descriptionEn,
           choice_type: choiceType as 'single' | 'multiple' | 'quantity',
           is_required: isRequired,
           min_selections: minSelections,

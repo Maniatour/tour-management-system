@@ -556,17 +556,39 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
         
         return (
         <div key={groupName} className="space-y-4">
-          <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-            <h3 className="text-lg font-semibold text-gray-900">
-              {groupName} ({groupTemplates.length}개)
-            </h3>
-            <button
-              onClick={() => setEditingGroup(groupInfo)}
-              className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
-              title="그룹 수정"
-            >
-              <Edit size={16} />
-            </button>
+          <div className="border-b border-gray-200 pb-3">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  {groupName} ({groupTemplates.length}개)
+                </h3>
+                {(groupInfo.template_group_description_ko || groupInfo.template_group_description_en) && (
+                  <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {groupInfo.template_group_description_ko && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-1">설명 (한국어)</p>
+                          <p className="text-sm text-gray-700">{groupInfo.template_group_description_ko}</p>
+                        </div>
+                      )}
+                      {groupInfo.template_group_description_en && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 mb-1">설명 (영어)</p>
+                          <p className="text-sm text-gray-700">{groupInfo.template_group_description_en}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setEditingGroup(groupInfo)}
+                className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded ml-4"
+                title="그룹 수정"
+              >
+                <Edit size={16} />
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {groupTemplates

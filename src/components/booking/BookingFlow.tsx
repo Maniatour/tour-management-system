@@ -1083,15 +1083,21 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   const groupedChoices = productChoices.reduce((groups, choice) => {
     const groupKey = choice.choice_id
     if (!groups[groupKey]) {
+      // 같은 choice_id를 가진 모든 항목 중에서 설명이 있는 항목 찾기
+      const choiceWithDescription = productChoices.find(c => 
+        c.choice_id === choice.choice_id && 
+        (c.choice_description_ko || c.choice_description_en || c.choice_description)
+      ) || choice
+      
       groups[groupKey] = {
         choice_id: choice.choice_id,
         choice_name: choice.choice_name,
         choice_name_ko: choice.choice_name_ko,
         choice_name_en: (choice as any).choice_name_en || null,
         choice_type: choice.choice_type,
-        choice_description: choice.choice_description || null,
-        choice_description_ko: choice.choice_description_ko || null,
-        choice_description_en: choice.choice_description_en || null,
+        choice_description: choiceWithDescription.choice_description || null,
+        choice_description_ko: choiceWithDescription.choice_description_ko || null,
+        choice_description_en: choiceWithDescription.choice_description_en || null,
         choice_image_url: choice.choice_image_url || null,
         choice_thumbnail_url: choice.choice_thumbnail_url || null,
         is_required: true, // 모든 productChoices를 필수로 설정
@@ -2269,8 +2275,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   <div className="space-y-6">
                   {requiredChoices.map((group: ChoiceGroup, groupIndex: number) => {
                     const groupDescription = isEnglish 
-                      ? (group.choice_description_en || group.choice_description)
-                      : (group.choice_description_ko || group.choice_description)
+                      ? (group.choice_description_en || group.choice_description || '')
+                      : (group.choice_description_ko || group.choice_description || '')
                     
                     // 디버깅: 그룹 설명 확인
                     if (groupIndex === 0) {
@@ -2280,9 +2286,12 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         choice_description: group.choice_description,
                         choice_description_ko: group.choice_description_ko,
                         choice_description_en: group.choice_description_en,
-                        groupDescription
+                        groupDescription,
+                        hasDescription: !!groupDescription && groupDescription.trim().length > 0
                       })
                     }
+                    
+                    const hasDescription = groupDescription && groupDescription.trim().length > 0
                     
                     return (
                     <div key={group.choice_id} className="mb-6">
@@ -2290,7 +2299,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         <span className="text-blue-600 mr-1">*</span>
                         {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
                       </h4>
-                      {groupDescription && groupDescription.trim() && (
+                      {hasDescription && (
                         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
                           <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                             {groupDescription}
