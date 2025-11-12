@@ -590,14 +590,18 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))' }}>
             {groupTemplates
               .sort((a, b) => a.sort_order - b.sort_order)
               .map((template, index, sortedArray) => {
                 const isFirst = index === 0
                 const isLast = index === sortedArray.length - 1
                 return (
-                  <div key={template.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                  <div 
+                    key={template.id} 
+                    className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer max-w-full"
+                    onClick={() => setEditingTemplate(template)}
+                  >
                     {/* 카드 헤더 */}
                     <div className="p-4 border-b border-gray-100">
                       <div className="flex items-start justify-between">
@@ -607,12 +611,11 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
                           </div>
                           <div className="min-w-0 flex-1">
                             <h4 className="text-sm font-semibold text-gray-900 truncate">
-                              {template.name_ko || template.name}
+                              {template.name}
                             </h4>
-                            <p className="text-xs text-gray-500 truncate">{template.name}</p>
                           </div>
                         </div>
-                        <div className="flex space-x-1">
+                        <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
                           <div className="flex flex-col space-y-0.5 mr-1">
                             <button
                               onClick={() => handleChangeSortOrder(template.id, 'up')}
@@ -658,13 +661,26 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
                           </button>
                         </div>
                       </div>
+                      
+                      {/* 카테고리, 가격유형, 초이스 타입 뱃지 */}
+                      <div className="flex items-center gap-2 mt-3 flex-wrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(template.category)}`}>
+                          {getCategoryLabel(template.category)}
+                        </span>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                          {getPriceTypeLabel(template.price_type)}
+                        </span>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          {getChoiceTypeLabel(template.choice_type)}
+                        </span>
+                      </div>
                     </div>
 
                     {/* 카드 본문 */}
                     <div className="p-4 space-y-3">
                       {/* 이미지 */}
                       {template.image_url && (
-                        <div className="relative w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
+                        <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
                           <img
                             src={template.thumbnail_url || template.image_url}
                             alt={template.image_alt || template.name_ko || template.name}
@@ -676,14 +692,15 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
                         </div>
                       )}
 
-                      {/* 카테고리와 타입 */}
-                      <div className="flex items-center justify-between">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(template.category)}`}>
-                          {getCategoryLabel(template.category)}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {getChoiceTypeLabel(template.choice_type)}
-                        </span>
+                      {/* 옵션명(고객 한글), 옵션명(고객 영어), ID */}
+                      <div className="space-y-1">
+                        {template.name_ko && (
+                          <p className="text-sm text-gray-900 font-medium">{template.name_ko}</p>
+                        )}
+                        {template.name && (
+                          <p className="text-xs text-gray-600">{template.name}</p>
+                        )}
+                        <p className="text-xs text-gray-500">ID: {template.id}</p>
                       </div>
 
                       {/* 설명 */}
@@ -837,6 +854,15 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">초이스 이름 (한글)</label>
+              <input
+                type="text"
+                value={formData.name_ko}
+                onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">초이스 이름 (영문)</label>
               <input
                 type="text"
@@ -844,15 +870,6 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">초이스 이름 (한글)</label>
-              <input
-                type="text"
-                value={formData.name_ko}
-                onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
           </div>

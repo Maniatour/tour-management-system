@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2 } from 'lucide-react'
+import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -37,11 +37,203 @@ export default function AdminProducts({ params }: AdminProductsProps) {
   const [editingField, setEditingField] = useState<{ productId: string; fieldName: string } | null>(null)
   const [editingValue, setEditingValue] = useState<string | number>('')
   const [savingProducts, setSavingProducts] = useState<Set<string>>(new Set())
+  const [choiceCombinations, setChoiceCombinations] = useState<{ 
+    [productId: string]: Array<{
+      id: string
+      combinationName: string
+      combinationNameKo: string
+      totalPrice: number
+      isDefault: boolean
+      choices: Array<{
+        id: string
+        name: string
+        name_ko: string
+        adult_price: number
+        child_price: number
+        infant_price: number
+        is_default: boolean
+      }>
+    }>
+  }>({})
+  const [homepageChannel, setHomepageChannel] = useState<any>(null)
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
 
   // Supabase에서 상품 데이터 가져오기
   useEffect(() => {
     fetchProducts()
+    fetchHomepageChannel()
   }, [])
+
+  // 홈페이지 채널 정보 가져오기
+  const fetchHomepageChannel = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('channels')
+        .select('*')
+        .or('id.eq.M00001,name.ilike.%홈페이지%,name.ilike.%homepage%')
+        .limit(1)
+        .single()
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('홈페이지 채널 조회 오류:', error)
+      } else if (data) {
+        setHomepageChannel(data)
+      }
+    } catch (error) {
+      console.error('홈페이지 채널 조회 중 예상치 못한 오류:', error)
+    }
+  }
+
+  // 모든 초이스 조합 생성 함수
+  const generateCombinations = (groups: Array<Array<any>>): Array<Array<any>> => {
+    if (groups.length === 0) return [[]]
+    if (groups.length === 1) return groups[0].map(item => [item])
+    
+    const [firstGroup, ...restGroups] = groups
+    const restCombinations = generateCombinations(restGroups)
+    
+    const combinations: Array<Array<any>> = []
+    firstGroup.forEach(item => {
+      restCombinations.forEach(restCombo => {
+        combinations.push([item, ...restCombo])
+      })
+    })
+    
+    return combinations
+  }
+
+  // 상품별 초이스 조합 정보 가져오기
+  const fetchChoicePrices = async (productIds: string[]) => {
+    try {
+      const { data, error } = await supabase
+        .from('product_choices')
+        .select(`
+          product_id,
+          choice_group,
+          choice_group_ko,
+          sort_order,
+          options:choice_options (
+            id,
+            option_name,
+            option_name_ko,
+            adult_price,
+            child_price,
+            infant_price,
+            sort_order,
+            is_default
+          )
+        `)
+        .in('product_id', productIds)
+        .order('sort_order', { ascending: true })
+
+      if (error) {
+        console.error('초이스 가격 조회 오류:', error)
+        return
+      }
+
+      const combinationsMap: { 
+        [productId: string]: Array<{
+          id: string
+          combinationName: string
+          combinationNameKo: string
+          totalPrice: number
+          choices: Array<{
+            id: string
+            name: string
+            name_ko: string
+            adult_price: number
+            child_price: number
+            infant_price: number
+          }>
+        }>
+      } = {}
+      
+      if (data) {
+        // 상품별로 그룹화
+        const productGroups: { [productId: string]: any[] } = {}
+        data.forEach((choice: any) => {
+          const productId = choice.product_id
+          if (!productGroups[productId]) {
+            productGroups[productId] = []
+          }
+          
+          if (choice.options && Array.isArray(choice.options) && choice.options.length > 0) {
+            // 각 옵션을 정렬
+            const sortedOptions = [...choice.options].sort((a, b) => {
+              const sortA = a.sort_order || 0
+              const sortB = b.sort_order || 0
+              if (sortA !== sortB) return sortA - sortB
+              return (a.option_name_ko || a.option_name || '').localeCompare(b.option_name_ko || b.option_name || '', 'ko')
+            })
+            
+            productGroups[productId].push({
+              groupName: choice.choice_group_ko || choice.choice_group || '',
+              options: sortedOptions.map((option: any) => ({
+                id: option.id,
+                name: option.option_name || '',
+                name_ko: option.option_name_ko || option.option_name || '',
+                adult_price: parseFloat(option.adult_price) || 0,
+                child_price: parseFloat(option.child_price) || 0,
+                infant_price: parseFloat(option.infant_price) || 0,
+                is_default: option.is_default || false
+              }))
+            })
+          }
+        })
+        
+        // 각 상품별로 모든 조합 생성
+        Object.keys(productGroups).forEach(productId => {
+          const groups = productGroups[productId]
+          if (groups.length === 0) {
+            combinationsMap[productId] = []
+            return
+          }
+          
+          // 각 그룹의 옵션 배열 추출
+          const optionArrays = groups.map(group => group.options)
+          
+          // 모든 조합 생성
+          const allCombinations = generateCombinations(optionArrays)
+          
+          // 각 그룹에서 기본 옵션 찾기
+          const defaultOptions = groups.map(group => {
+            return group.options.find(opt => opt.is_default === true) || group.options[0]
+          })
+          
+          // 조합을 표시용 데이터로 변환
+          combinationsMap[productId] = allCombinations.map((combo, index) => {
+            const combinationNameKo = combo.map((option, idx) => {
+              const groupName = groups[idx]?.groupName || ''
+              return `${option.name_ko || option.name}`
+            }).join(' - ')
+            
+            const combinationName = combo.map(option => option.name || option.name_ko).join(' - ')
+            
+            const totalPrice = combo.reduce((sum, option) => sum + option.adult_price, 0)
+            
+            // 기본 조합인지 확인 (각 그룹의 기본 옵션과 일치하는지)
+            const isDefault = combo.every((option, idx) => {
+              const defaultOpt = defaultOptions[idx]
+              return defaultOpt && option.id === defaultOpt.id
+            })
+            
+            return {
+              id: `combo-${productId}-${index}`,
+              combinationName,
+              combinationNameKo,
+              totalPrice,
+              isDefault,
+              choices: combo
+            }
+          })
+        })
+        
+        setChoiceCombinations(combinationsMap)
+      }
+    } catch (error) {
+      console.error('초이스 가격 조회 중 예상치 못한 오류:', error)
+    }
+  }
 
   const fetchProducts = async () => {
     try {
@@ -72,7 +264,55 @@ export default function AdminProducts({ params }: AdminProductsProps) {
       }
 
       console.log('Products 데이터 조회 성공:', data?.length || 0, '개')
-      setProducts(data || [])
+      
+      // 각 상품의 대표사진 가져오기
+      const productsWithImages = await Promise.all(
+        (data || []).map(async (product: Product) => {
+          try {
+            // 1. product_media에서 대표사진 찾기
+            const { data: mediaData } = await supabase
+              .from('product_media')
+              .select('file_url')
+              .eq('product_id', product.id)
+              .eq('file_type', 'image')
+              .eq('is_active', true)
+              .eq('is_primary', true)
+              .maybeSingle()
+            
+            if (mediaData && 'file_url' in mediaData) {
+              return { ...product, primary_image: (mediaData as any).file_url }
+            }
+            
+            // 2. product_media에서 첫 번째 이미지 찾기
+            const { data: firstMediaData } = await supabase
+              .from('product_media')
+              .select('file_url')
+              .eq('product_id', product.id)
+              .eq('file_type', 'image')
+              .eq('is_active', true)
+              .order('order_index', { ascending: true })
+              .limit(1)
+              .maybeSingle()
+            
+            if (firstMediaData && 'file_url' in firstMediaData) {
+              return { ...product, primary_image: (firstMediaData as any).file_url }
+            }
+            
+            return { ...product, primary_image: null }
+          } catch (err) {
+            console.error(`Error fetching image for product ${product.id}:`, err)
+            return { ...product, primary_image: null }
+          }
+        })
+      )
+      
+      setProducts(productsWithImages)
+      
+      // 초이스 가격 정보 가져오기
+      if (data && data.length > 0) {
+        const productIds = data.map(p => p.id)
+        await fetchChoicePrices(productIds)
+      }
       
       // 카테고리별 상품 수 계산
       if (data && data.length > 0) {
@@ -762,7 +1002,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
           </button>
         </div>
       ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))' }}>
           {filteredProducts.map((product) => (
             <ProductCard
               key={product.id}
@@ -790,7 +1030,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10" style={{ width: '200px', maxWidth: '200px' }}>
                     상품명
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -803,7 +1043,16 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                     서브카테고리
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    가격
+                    기본 가격
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '250px', width: '250px' }}>
+                    초이스
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px', width: '120px' }}>
+                    초이스 가격
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px', width: '120px' }}>
+                    Net Price
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     기간
@@ -825,9 +1074,33 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                   const isEditing = editingField?.productId === product.id
                   const isSaving = savingProducts.has(product.id)
                   
+                  const isExpanded = expandedProducts.has(product.id)
+                  const combinations = choiceCombinations[product.id]
+                  const hasChoices = combinations && combinations.length > 0
+                  
                   return (
-                    <tr key={product.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-4 sticky left-0 bg-white z-10">
+                    <tr 
+                      key={product.id} 
+                      className={`hover:bg-gray-50 ${hasChoices ? 'cursor-pointer' : ''}`}
+                      onClick={() => {
+                        if (hasChoices) {
+                          setExpandedProducts(prev => {
+                            const next = new Set(prev)
+                            if (next.has(product.id)) {
+                              next.delete(product.id)
+                            } else {
+                              next.add(product.id)
+                            }
+                            return next
+                          })
+                        }
+                      }}
+                    >
+                      <td 
+                        className="px-4 py-4 sticky left-0 bg-white z-10" 
+                        style={{ width: '200px', maxWidth: '200px' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {isEditing && editingField?.fieldName === 'name' ? (
                           <div className="space-y-2">
                             <input
@@ -887,12 +1160,18 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td 
+                        className="px-4 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(productStatus)}`}>
                           {getStatusLabel(productStatus)}
                         </span>
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td 
+                        className="px-4 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {isEditing && editingField?.fieldName === 'category' ? (
                           <div className="space-y-2">
                             <select
@@ -945,7 +1224,10 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td 
+                        className="px-4 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {isEditing && editingField?.fieldName === 'sub_category' ? (
                           <div className="space-y-2">
                             <select
@@ -998,7 +1280,11 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      {/* 기본 가격 컬럼 */}
+                      <td 
+                        className="px-4 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {isEditing && editingField?.fieldName === 'base_price' ? (
                           <div className="space-y-2">
                             <div className="flex items-center">
@@ -1052,7 +1338,131 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      {/* 초이스 컬럼 */}
+                      <td 
+                        className="px-4 py-2" 
+                        style={{ minWidth: '250px', width: '250px' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {(() => {
+                          if (!combinations || combinations.length === 0) {
+                            return <span className="text-sm text-gray-400">-</span>
+                          }
+                          
+                          // 기본 조합 찾기
+                          const defaultCombo = combinations.find(c => c.isDefault)
+                          const displayCombinations = isExpanded ? combinations : (defaultCombo ? [defaultCombo] : [combinations[0]])
+                          
+                          return (
+                            <div className="space-y-1">
+                              {displayCombinations.map((combo) => (
+                                <div key={combo.id} className="text-xs flex items-center gap-1">
+                                  {!isExpanded && displayCombinations.length === 1 && (
+                                    <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
+                                  )}
+                                  {isExpanded && (
+                                    <ChevronDown size={12} className="text-gray-400 flex-shrink-0" />
+                                  )}
+                                  <span className="text-gray-600 font-medium">
+                                    {combo.combinationNameKo}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        })()}
+                      </td>
+                      {/* 초이스 가격 컬럼 */}
+                      <td 
+                        className="px-4 py-2" 
+                        style={{ minWidth: '120px', width: '120px' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {(() => {
+                          if (!combinations || combinations.length === 0) {
+                            return <span className="text-sm text-gray-400">-</span>
+                          }
+                          
+                          // 기본 조합 찾기
+                          const defaultCombo = combinations.find(c => c.isDefault)
+                          const displayCombinations = isExpanded ? combinations : (defaultCombo ? [defaultCombo] : [combinations[0]])
+                          
+                          return (
+                            <div className="space-y-1">
+                              {displayCombinations.map((combo) => (
+                                <div key={combo.id} className="text-xs">
+                                  <span className="text-blue-600 font-semibold">
+                                    ${combo.totalPrice > 0 ? combo.totalPrice.toFixed(2) : '0.00'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        })()}
+                      </td>
+                      {/* Net Price 컬럼 */}
+                      <td 
+                        className="px-4 py-2" 
+                        style={{ minWidth: '120px', width: '120px' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {(() => {
+                          if (!homepageChannel) {
+                            return <span className="text-sm text-gray-400">-</span>
+                          }
+                          
+                          const basePrice = product.base_price || 0
+                          const commissionRate = (homepageChannel.commission_percent || 0) / 100
+                          
+                          // 각 조합별로 Net Price 계산
+                          if (!combinations || combinations.length === 0) {
+                            // 초이스가 없으면 기본 가격만으로 계산
+                            const homepagePrice = (basePrice * 0.8) * (1 - commissionRate)
+                            if (homepagePrice <= 0) {
+                              return <span className="text-sm text-gray-400">-</span>
+                            }
+                            return (
+                              <span className="text-sm font-semibold text-purple-600">
+                                ${homepagePrice.toFixed(2)}
+                              </span>
+                            )
+                          }
+                          
+                          // 기본 조합 찾기
+                          const defaultCombo = combinations.find(c => c.isDefault)
+                          const displayCombinations = isExpanded ? combinations : (defaultCombo ? [defaultCombo] : [combinations[0]])
+                          
+                          return (
+                            <div className="space-y-1">
+                              {displayCombinations.map((combo) => {
+                                const totalChoicePrice = combo.totalPrice || 0
+                                // 홈페이지 Net Price = (기본 가격 * 0.8 + 초이스 가격 합계) * (1 - 수수료율)
+                                const homepagePrice = (basePrice * 0.8 + totalChoicePrice) * (1 - commissionRate)
+                                
+                                if (homepagePrice <= 0) {
+                                  return (
+                                    <div key={combo.id} className="text-xs">
+                                      <span className="text-gray-400">-</span>
+                                    </div>
+                                  )
+                                }
+                                
+                                return (
+                                  <div key={combo.id} className="text-xs">
+                                    <span className="text-purple-600 font-semibold">
+                                      ${homepagePrice.toFixed(2)}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
+                      </td>
+                      <td 
+                        className="px-4 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {isEditing && editingField?.fieldName === 'duration' ? (
                           <div className="space-y-2">
                             <input
@@ -1102,7 +1512,10 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td 
+                        className="px-4 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {isEditing && editingField?.fieldName === 'max_participants' ? (
                           <div className="space-y-2">
                             <div className="flex items-center">
@@ -1155,12 +1568,16 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td 
+                        className="px-4 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex items-center space-x-2">
                           {/* 복사 버튼 */}
                           <button
                             onClick={(e) => {
                               e.preventDefault()
+                              e.stopPropagation()
                               handleCopyProduct(product)
                             }}
                             disabled={isCopying}
@@ -1178,6 +1595,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                           <button
                             onClick={(e) => {
                               e.preventDefault()
+                              e.stopPropagation()
                               handleStatusToggle(product.id, productStatus)
                             }}
                             disabled={isUpdating}

@@ -11,6 +11,9 @@ interface DatabaseOptions {
   id: string
   name: string
   name_ko?: string
+  description?: string
+  description_ko?: string
+  description_en?: string
   adult_price?: number
   child_price?: number
   infant_price?: number
@@ -129,12 +132,15 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const [importData, setImportData] = useState('')
 
   // 템플릿에서 초이스 불러오기
+  // 초이스 관리 탭에 있는 아이템만 사용 (is_choice_template = true이고 template_group이 있는 것만)
   const loadFromTemplate = useCallback(async (templateGroup: string) => {
     try {
+      // 초이스 관리 탭의 아이템만 가져오기 (옵션 관리 탭의 아이템 제외)
       const { data, error } = await supabase
         .from('options')
         .select('*')
-        .eq('is_choice_template', true)
+        .eq('is_choice_template', true) // 반드시 초이스 관리 탭의 아이템만
+        .not('template_group', 'is', null) // template_group이 있는 것만
         .or(`template_group.eq.${templateGroup},template_group_ko.eq.${templateGroup}`)
         .order('sort_order', { ascending: true }) as { data: DatabaseOptions[] | null, error: SupabaseError | null }
 
@@ -143,52 +149,101 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         return
       }
 
-      if (data && data.length > 0) {
-        const firstItem = data[0] as DatabaseOptions
-        // 템플릿을 초이스 그룹으로 변환
-        const templateGroupName = firstItem.template_group_ko || firstItem.template_group || '템플릿'
-        const choiceType = firstItem.choice_type || 'single'
-        const isRequired = firstItem.is_required || false
-        const minSelections = firstItem.min_selections || 1
-        const maxSelections = firstItem.max_selections || 1
-        // 템플릿 그룹 설명 가져오기
-        const descriptionKo = firstItem.template_group_description_ko || ''
-        const descriptionEn = firstItem.template_group_description_en || ''
-
-        const newChoice: ProductChoice = {
-          id: crypto.randomUUID(),
-          choice_group: templateGroup,
-          choice_group_ko: templateGroupName,
-          description_ko: descriptionKo,
-          description_en: descriptionEn,
-          choice_type: choiceType as 'single' | 'multiple' | 'quantity',
-          is_required: isRequired,
-          min_selections: minSelections,
-          max_selections: maxSelections,
-          sort_order: productChoices.length,
-          options: data.map((option: DatabaseOptions) => ({
-            id: crypto.randomUUID(),
-            option_key: option.id,
-            option_name: option.name,
-            option_name_ko: option.name_ko || option.name,
-            description: undefined,
-            description_ko: undefined,
-            adult_price: option.adult_price || 0,
-            child_price: option.child_price || 0,
-            infant_price: option.infant_price || 0,
-            capacity: 1,
-            is_default: option.id === firstItem.id, // 첫 번째 초이스를 기본값으로
-            is_active: option.status === 'active',
-            sort_order: option.sort_order || 0,
-            image_url: option.image_url,
-            image_alt: option.image_alt,
-            thumbnail_url: option.thumbnail_url
-          }))
+      // 추가 검증: is_choice_template이 true이고 template_group이 있는 것만 사용
+      // 옵션 관리 탭의 아이템(is_choice_template = false)은 제외
+      const validData = data?.filter(item => {
+        // is_choice_template이 명시적으로 true인지 확인
+        if (item.is_choice_template !== true) {
+          return false
         }
+        // template_group이 존재하고 비어있지 않은지 확인
+        if (!item.template_group || (typeof item.template_group === 'string' && item.template_group.trim() === '')) {
+          return false
+        }
+        return true
+      }) || []
 
-        setProductChoices(prev => [...prev, newChoice])
-        setShowTemplateModal(false)
+      // 디버깅: 로드된 데이터 확인
+      if (data && data.length > 0) {
+        console.log('템플릿 불러오기 - 로드된 데이터:', {
+          totalCount: data.length,
+          validCount: validData.length,
+          firstItem: data[0] ? {
+            id: data[0].id,
+            name: data[0].name,
+            name_ko: data[0].name_ko,
+            is_choice_template: data[0].is_choice_template,
+            template_group: data[0].template_group,
+            template_group_ko: data[0].template_group_ko
+          } : null,
+          allItems: data.map(item => ({
+            id: item.id,
+            name: item.name,
+            is_choice_template: item.is_choice_template,
+            template_group: item.template_group
+          }))
+        })
       }
+
+      if (validData.length === 0) {
+        console.error('템플릿 불러오기 실패: 초이스 관리 탭의 유효한 템플릿이 없습니다.', {
+          templateGroup,
+          dataCount: data?.length || 0,
+          data: data?.map(item => ({
+            id: item.id,
+            name: item.name,
+            is_choice_template: item.is_choice_template,
+            template_group: item.template_group
+          }))
+        })
+        alert('템플릿을 불러올 수 없습니다. 초이스 관리 탭에 등록된 템플릿인지 확인해주세요.')
+        return
+      }
+
+      const firstItem = validData[0] as DatabaseOptions
+      // 템플릿을 초이스 그룹으로 변환
+      const templateGroupName = firstItem.template_group_ko || firstItem.template_group || '템플릿'
+      const choiceType = firstItem.choice_type || 'single'
+      const isRequired = firstItem.is_required || false
+      const minSelections = firstItem.min_selections || 1
+      const maxSelections = firstItem.max_selections || 1
+      // 템플릿 그룹 설명 가져오기
+      const descriptionKo = firstItem.template_group_description_ko || ''
+      const descriptionEn = firstItem.template_group_description_en || ''
+
+      const newChoice: ProductChoice = {
+        id: crypto.randomUUID(),
+        choice_group: templateGroup,
+        choice_group_ko: templateGroupName,
+        description_ko: descriptionKo,
+        description_en: descriptionEn,
+        choice_type: choiceType as 'single' | 'multiple' | 'quantity',
+        is_required: isRequired,
+        min_selections: minSelections,
+        max_selections: maxSelections,
+        sort_order: productChoices.length,
+        options: validData.map((option: DatabaseOptions) => ({
+          id: crypto.randomUUID(),
+          option_key: option.id,
+          option_name: option.name,
+          option_name_ko: option.name_ko || option.name,
+          description: option.description_en || option.description || undefined, // 영어 설명 우선, 없으면 내부용 설명
+          description_ko: option.description_ko || undefined, // 한글 설명
+          adult_price: option.adult_price || 0,
+          child_price: option.child_price || 0,
+          infant_price: option.infant_price || 0,
+          capacity: 1,
+          is_default: option.id === firstItem.id, // 첫 번째 초이스를 기본값으로
+          is_active: option.status === 'active',
+          sort_order: option.sort_order || 0,
+          image_url: option.image_url,
+          image_alt: option.image_alt,
+          thumbnail_url: option.thumbnail_url
+        }))
+      }
+
+      setProductChoices(prev => [...prev, newChoice])
+      setShowTemplateModal(false)
     } catch (error) {
       console.error('Error loading template:', error)
     }
@@ -1543,11 +1598,12 @@ function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
   const loadTemplateGroups = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      // 초이스 관리 탭에 있는 아이템만 가져오기 (is_choice_template = true이고 template_group이 있는 것만)
+      const { data, error } = await (supabase
         .from('options')
         .select('template_group, template_group_ko')
-        .eq('is_choice_template', true)
-        .not('template_group', 'is', null) as { data: DatabaseOptions[] | null, error: SupabaseError | null }
+        .eq('is_choice_template', true) // 초이스 관리 탭의 아이템만 사용
+        .not('template_group', 'is', null) as { data: DatabaseOptions[] | null, error: SupabaseError | null }) // template_group이 있는 것만
 
       if (error) {
         console.error('Error loading template groups:', error)

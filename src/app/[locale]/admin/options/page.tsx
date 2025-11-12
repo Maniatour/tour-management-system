@@ -361,9 +361,13 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
       </div>
 
       {/* 옵션 목록 - 카드뷰 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))' }}>
         {filteredOptions.map((option) => (
-          <div key={option.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+          <div 
+            key={option.id} 
+            className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer max-w-full"
+            onClick={() => setEditingOption(option)}
+          >
             {/* 카드 헤더 */}
             <div className="p-4 border-b border-gray-100">
               <div className="flex items-start justify-between">
@@ -373,15 +377,9 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-gray-900 truncate">{option.name}</h3>
-                    <p className="text-xs text-gray-600 truncate">
-                      {option.name_ko && <span>한글: {option.name_ko}</span>}
-                      {(option.name_ko && option.name_en) && <span className="mx-2">•</span>}
-                      {option.name_en && <span>EN: {option.name_en}</span>}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">ID: {option.id}</p>
                   </div>
                 </div>
-                <div className="flex space-x-1">
+                <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => setEditingOption(option)}
                     className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
@@ -405,23 +403,26 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                   </button>
                 </div>
               </div>
-            </div>
-
-            {/* 카드 본문 */}
-            <div className="p-4 space-y-3">
-              {/* 카테고리와 상태 */}
-              <div className="flex items-center justify-between">
+              
+              {/* 카테고리, 가격유형, 상태 뱃지 */}
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(option.category)}`}>
                   {getCategoryLabel(option.category)}
+                </span>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                  {getPriceTypeLabel(option.price_type)}
                 </span>
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(option.status)}`}>
                   {getStatusLabel(option.status)}
                 </span>
               </div>
+            </div>
 
+            {/* 카드 본문 */}
+            <div className="p-4 space-y-3">
               {/* 이미지 */}
               {(option as any).image_url && (
-                <div className="relative w-full h-24 bg-gray-100 rounded-lg overflow-hidden mb-3">
+                <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
                   <img
                     src={(option as any).thumbnail_url || (option as any).image_url}
                     alt={(option as any).image_alt || option.name}
@@ -432,6 +433,17 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                   />
                 </div>
               )}
+
+              {/* 옵션명(고객 한글), 옵션명(고객 영어), ID */}
+              <div className="space-y-1">
+                {(option as any).name_ko && (
+                  <p className="text-sm text-gray-900 font-medium">{(option as any).name_ko}</p>
+                )}
+                {(option as any).name_en && (
+                  <p className="text-xs text-gray-600">{(option as any).name_en}</p>
+                )}
+                <p className="text-xs text-gray-500">ID: {option.id}</p>
+              </div>
 
               {/* 설명 */}
               <div className="text-sm text-gray-700 line-clamp-2">
@@ -455,14 +467,6 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                     <span>유아: ${option.infant_price.toLocaleString()}</span>
                   </div>
                 </div>
-              </div>
-
-              {/* 가격 타입 */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">가격 타입</span>
-                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                  {getPriceTypeLabel(option.price_type)}
-                </span>
               </div>
 
               {/* 태그 */}

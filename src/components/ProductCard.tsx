@@ -489,44 +489,29 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
 
   return (
     <Link href={`/${locale}/admin/products/${product.id}`} className="block">
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-all duration-200 hover:scale-[1.02] cursor-pointer group">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow max-w-full">
         {/* 카드 헤더 */}
         <div className="p-4 border-b border-gray-100">
           <div className="flex items-start justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-                <Package className="h-4 w-4 text-blue-600" />
+            <div className="flex items-center space-x-3">
+              <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <Package className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
-                <h3 className="text-base font-semibold text-gray-900 line-clamp-2 group-hover:text-blue-600 transition-colors">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-gray-900 truncate">
                   {product.name}
                 </h3>
-                <div className="flex items-center space-x-1 mt-1">
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(localStatus)}`}>
-                    {getStatusLabel(localStatus)}
-                  </span>
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {getCategoryLabel(product.category || '')}
-                  </span>
-                  {product.sub_category && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      {getSubCategoryLabel(product.sub_category)}
-                    </span>
-                  )}
-                </div>
-                 {/* Choices 선택지 뱃지 */}
-                 {renderChoicesBadges(product)}
-               </div>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
               {/* 복사 버튼 */}
               <button
                 onClick={handleCopyProduct}
                 disabled={isCopying}
-                className={`p-1 rounded-full transition-colors ${
+                className={`p-1 rounded transition-colors ${
                   isCopying 
                     ? 'text-gray-400 cursor-not-allowed' 
-                    : 'text-green-600 hover:text-green-800 hover:bg-green-50'
+                    : 'text-green-600 hover:text-green-900 hover:bg-green-50'
                 }`}
                 title="상품 복사"
               >
@@ -549,13 +534,53 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
               </button>
             </div>
           </div>
+          
+          {/* 카테고리, 상태 뱃지 */}
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(localStatus)}`}>
+              {getStatusLabel(localStatus)}
+            </span>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+              {getCategoryLabel(product.category || '')}
+            </span>
+            {product.sub_category && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                {getSubCategoryLabel(product.sub_category)}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* 카드 본문 */}
         <div className="p-4 space-y-3">
+          {/* 이미지 */}
+          {(product.primary_image || (product as any).thumbnail_url) && (
+            <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+              <img
+                src={(product as any).thumbnail_url || product.primary_image}
+                alt={(product as any).name_ko || product.name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+              />
+            </div>
+          )}
+
+          {/* 상품명(고객 한글), 상품명(고객 영어), ID */}
+          <div className="space-y-1">
+            {(product as any).name_ko && (
+              <p className="text-sm text-gray-900 font-medium">{(product as any).name_ko}</p>
+            )}
+            {(product as any).name_en && (
+              <p className="text-xs text-gray-600">{(product as any).name_en}</p>
+            )}
+            <p className="text-xs text-gray-500">ID: {product.id}</p>
+          </div>
+
           {/* 설명 */}
           {product.description && (
-            <p className="text-gray-600 text-xs line-clamp-2">
+            <p className="text-sm text-gray-600 line-clamp-2">
               {product.description}
             </p>
           )}
