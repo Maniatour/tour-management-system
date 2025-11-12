@@ -519,7 +519,12 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
                         {isEnglish ? item.productNameEn || item.productName || item.productNameKo : item.productNameKo || item.productName}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {new Date(item.tourDate).toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR')}
+                        {(() => {
+                          // 날짜 문자열을 직접 파싱하여 시간대 문제 방지
+                          const [year, month, day] = item.tourDate.split('-').map(Number)
+                          const date = new Date(year, month - 1, day)
+                          return date.toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR')
+                        })()}
                         {item.departureTime && ` • ${item.departureTime}`}
                       </div>
                       {/* 선택된 초이스 표시 */}

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Edit, Trash2, Settings, Copy, Upload } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Settings, Copy, Upload, ChevronUp, ChevronDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ImageUpload from '@/components/common/ImageUpload'
@@ -11,6 +11,8 @@ interface ChoiceTemplate {
   name: string
   name_ko?: string
   description?: string
+  description_ko?: string
+  description_en?: string
   category: string
   adult_price: number
   child_price: number
@@ -24,6 +26,8 @@ interface ChoiceTemplate {
   max_selections: number
   template_group?: string
   template_group_ko?: string
+  template_group_description_ko?: string
+  template_group_description_en?: string
   is_required: boolean
   sort_order: number
   image_url?: string
@@ -46,7 +50,7 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<ChoiceTemplate | null>(null)
   const [showImportChoicesModal, setShowImportChoicesModal] = useState(false)
-  const [editingGroup, setEditingGroup] = useState<{template_group: string, template_group_ko: string} | null>(null)
+  const [editingGroup, setEditingGroup] = useState<{template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string} | null>(null)
 
   useEffect(() => {
     fetchTemplates()
@@ -82,6 +86,8 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
         name: template.name,
         name_ko: template.name_ko,
         description: template.description,
+        description_ko: template.description_ko,
+        description_en: template.description_en,
         category: template.category,
         adult_price: template.adult_price,
         child_price: template.child_price,
@@ -140,6 +146,8 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
           name: template.name,
           name_ko: template.name_ko,
           description: template.description,
+          description_ko: template.description_ko,
+          description_en: template.description_en,
           category: template.category,
           adult_price: template.adult_price,
           child_price: template.child_price,
@@ -198,8 +206,71 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
     }
   }
 
+  // 정렬순서 변경 함수
+  const handleChangeSortOrder = async (templateId: string, direction: 'up' | 'down') => {
+    try {
+      const currentTemplate = templates.find(t => t.id === templateId)
+      if (!currentTemplate) return
+
+      // 같은 그룹 내의 템플릿들만 가져오기
+      const sameGroupTemplates = templates
+        .filter(t => t.template_group === currentTemplate.template_group)
+        .sort((a, b) => a.sort_order - b.sort_order)
+
+      const currentIndex = sameGroupTemplates.findIndex(t => t.id === templateId)
+      if (currentIndex === -1) return
+
+      let targetIndex: number
+      if (direction === 'up') {
+        if (currentIndex === 0) return // 이미 맨 위
+        targetIndex = currentIndex - 1
+      } else {
+        if (currentIndex === sameGroupTemplates.length - 1) return // 이미 맨 아래
+        targetIndex = currentIndex + 1
+      }
+
+      const targetTemplate = sameGroupTemplates[targetIndex]
+      const currentSortOrder = currentTemplate.sort_order
+      const targetSortOrder = targetTemplate.sort_order
+
+      // 두 템플릿의 sort_order 교환
+      const { error: error1 } = await supabase
+        .from('options')
+        .update({ sort_order: targetSortOrder })
+        .eq('id', templateId)
+
+      if (error1) {
+        console.error('Error updating sort order:', error1)
+        return
+      }
+
+      const { error: error2 } = await supabase
+        .from('options')
+        .update({ sort_order: currentSortOrder })
+        .eq('id', targetTemplate.id)
+
+      if (error2) {
+        console.error('Error updating sort order:', error2)
+        return
+      }
+
+      // 로컬 상태 업데이트
+      setTemplates(templates.map(t => {
+        if (t.id === templateId) {
+          return { ...t, sort_order: targetSortOrder }
+        }
+        if (t.id === targetTemplate.id) {
+          return { ...t, sort_order: currentSortOrder }
+        }
+        return t
+      }))
+    } catch (error) {
+      console.error('Error changing sort order:', error)
+    }
+  }
+
   // 템플릿 그룹 수정 함수
-  const handleEditGroup = async (oldGroup: {template_group: string, template_group_ko: string}, newGroup: {template_group: string, template_group_ko: string}) => {
+  const handleEditGroup = async (oldGroup: {template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string}, newGroup: {template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string}) => {
     try {
       // 해당 그룹에 속한 모든 템플릿 찾기
       const groupTemplates = templates.filter(t => 
@@ -212,12 +283,22 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
       }
 
       // 모든 템플릿의 그룹 정보 업데이트
+      const updateData: any = {
+        template_group: newGroup.template_group,
+        template_group_ko: newGroup.template_group_ko
+      }
+      
+      // 설명 필드가 있으면 추가
+      if (newGroup.template_group_description_ko !== undefined) {
+        updateData.template_group_description_ko = newGroup.template_group_description_ko || null
+      }
+      if (newGroup.template_group_description_en !== undefined) {
+        updateData.template_group_description_en = newGroup.template_group_description_en || null
+      }
+
       const { error } = await supabase
         .from('options')
-        .update({
-          template_group: newGroup.template_group,
-          template_group_ko: newGroup.template_group_ko
-        })
+        .update(updateData)
         .eq('is_choice_template', true)
         .eq('template_group', oldGroup.template_group)
 
@@ -230,7 +311,13 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
       // 로컬 상태 업데이트
       setTemplates(templates.map(t => 
         t.template_group === oldGroup.template_group
-          ? { ...t, template_group: newGroup.template_group, template_group_ko: newGroup.template_group_ko }
+          ? { 
+              ...t, 
+              template_group: newGroup.template_group, 
+              template_group_ko: newGroup.template_group_ko,
+              ...(newGroup.template_group_description_ko !== undefined && { template_group_description_ko: newGroup.template_group_description_ko }),
+              ...(newGroup.template_group_description_en !== undefined && { template_group_description_en: newGroup.template_group_description_en })
+            } as ChoiceTemplate
           : t
       ))
 
@@ -462,7 +549,9 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
         const firstTemplate = groupTemplates[0]
         const groupInfo = {
           template_group: firstTemplate.template_group || '',
-          template_group_ko: firstTemplate.template_group_ko || firstTemplate.template_group || ''
+          template_group_ko: firstTemplate.template_group_ko || firstTemplate.template_group || '',
+          template_group_description_ko: firstTemplate.template_group_description_ko || '',
+          template_group_description_en: firstTemplate.template_group_description_en || ''
         }
         
         return (
@@ -480,121 +569,154 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {groupTemplates.map((template) => (
-              <div key={template.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-                {/* 카드 헤더 */}
-                <div className="p-4 border-b border-gray-100">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                        <Settings className="h-5 w-5 text-blue-600" />
+            {groupTemplates
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((template, index, sortedArray) => {
+                const isFirst = index === 0
+                const isLast = index === sortedArray.length - 1
+                return (
+                  <div key={template.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    {/* 카드 헤더 */}
+                    <div className="p-4 border-b border-gray-100">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                            <span className="text-sm font-semibold text-blue-600">{index + 1}</span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h4 className="text-sm font-semibold text-gray-900 truncate">
+                              {template.name_ko || template.name}
+                            </h4>
+                            <p className="text-xs text-gray-500 truncate">{template.name}</p>
+                          </div>
+                        </div>
+                        <div className="flex space-x-1">
+                          <div className="flex flex-col space-y-0.5 mr-1">
+                            <button
+                              onClick={() => handleChangeSortOrder(template.id, 'up')}
+                              disabled={isFirst}
+                              className={`p-0.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded ${
+                                isFirst ? 'opacity-30 cursor-not-allowed' : ''
+                              }`}
+                              title="위로 이동"
+                            >
+                              <ChevronUp size={12} />
+                            </button>
+                            <button
+                              onClick={() => handleChangeSortOrder(template.id, 'down')}
+                              disabled={isLast}
+                              className={`p-0.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded ${
+                                isLast ? 'opacity-30 cursor-not-allowed' : ''
+                              }`}
+                              title="아래로 이동"
+                            >
+                              <ChevronDown size={12} />
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => setEditingTemplate(template)}
+                            className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                            title="편집"
+                          >
+                            <Edit size={14} />
+                          </button>
+                          <button
+                            onClick={() => onTemplateSelect?.(template)}
+                            className="p-1 text-green-600 hover:text-green-900 hover:bg-green-50 rounded"
+                            title="사용하기"
+                          >
+                            <Copy size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTemplate(template.id)}
+                            className="p-1 text-red-600 hover:text-red-900 hover:bg-red-50 rounded"
+                            title="삭제"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <h4 className="text-sm font-semibold text-gray-900 truncate">
-                          {template.name_ko || template.name}
-                        </h4>
-                        <p className="text-xs text-gray-500 truncate">{template.name}</p>
-                      </div>
                     </div>
-                    <div className="flex space-x-1">
-                      <button
-                        onClick={() => setEditingTemplate(template)}
-                        className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
-                        title="편집"
-                      >
-                        <Edit size={14} />
-                      </button>
-                      <button
-                        onClick={() => onTemplateSelect?.(template)}
-                        className="p-1 text-green-600 hover:text-green-900 hover:bg-green-50 rounded"
-                        title="사용하기"
-                      >
-                        <Copy size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTemplate(template.id)}
-                        className="p-1 text-red-600 hover:text-red-900 hover:bg-red-50 rounded"
-                        title="삭제"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
 
-                {/* 카드 본문 */}
-                <div className="p-4 space-y-3">
-                  {/* 이미지 */}
-                  {template.image_url && (
-                    <div className="relative w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
-                      <img
-                        src={template.thumbnail_url || template.image_url}
-                        alt={template.image_alt || template.name_ko || template.name}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none'
-                        }}
-                      />
-                    </div>
-                  )}
+                    {/* 카드 본문 */}
+                    <div className="p-4 space-y-3">
+                      {/* 이미지 */}
+                      {template.image_url && (
+                        <div className="relative w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
+                          <img
+                            src={template.thumbnail_url || template.image_url}
+                            alt={template.image_alt || template.name_ko || template.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none'
+                            }}
+                          />
+                        </div>
+                      )}
 
-                  {/* 카테고리와 타입 */}
-                  <div className="flex items-center justify-between">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(template.category)}`}>
-                      {getCategoryLabel(template.category)}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {getChoiceTypeLabel(template.choice_type)}
-                    </span>
-                  </div>
-
-                  {/* 설명 */}
-                  {template.description && (
-                    <p className="text-sm text-gray-600 line-clamp-2">{template.description}</p>
-                  )}
-
-                  {/* 가격 정보 */}
-                  <div className="text-xs text-gray-500">
-                    <div className="flex justify-between">
-                      <span>성인: ${template.adult_price}</span>
-                      <span>아동: ${template.child_price}</span>
-                      <span>유아: ${template.infant_price}</span>
-                    </div>
-                    <div className="text-center mt-1">
-                      {getPriceTypeLabel(template.price_type)}
-                    </div>
-                  </div>
-
-                  {/* 태그 */}
-                  {template.tags && template.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {template.tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
-                        >
-                          {tag}
+                      {/* 카테고리와 타입 */}
+                      <div className="flex items-center justify-between">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCategoryColor(template.category)}`}>
+                          {getCategoryLabel(template.category)}
                         </span>
-                      ))}
-                    </div>
-                  )}
+                        <span className="text-xs text-gray-500">
+                          {getChoiceTypeLabel(template.choice_type)}
+                        </span>
+                      </div>
 
-                  {/* 상태 */}
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      template.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {template.status === 'active' ? '활성' : '비활성'}
-                    </span>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      template.is_required ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {template.is_required ? '필수' : '선택'}
-                    </span>
+                      {/* 설명 */}
+                      {template.description && (
+                        <p className="text-sm text-gray-600 line-clamp-2">{template.description}</p>
+                      )}
+
+                      {/* 가격 정보 */}
+                      <div className="text-xs text-gray-500">
+                        <div className="flex justify-between">
+                          <span>성인: ${template.adult_price}</span>
+                          <span>아동: ${template.child_price}</span>
+                          <span>유아: ${template.infant_price}</span>
+                        </div>
+                        <div className="text-center mt-1">
+                          {getPriceTypeLabel(template.price_type)}
+                        </div>
+                      </div>
+
+                      {/* 태그 */}
+                      {template.tags && template.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {template.tags.map((tag, index) => (
+                            <span
+                              key={index}
+                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 상태 */}
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          template.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {template.status === 'active' ? '활성' : '비활성'}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          template.is_required ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {template.is_required ? '필수' : '선택'}
+                        </span>
+                      </div>
+
+                      {/* 정렬순서 표시 */}
+                      <div className="text-xs text-gray-400 text-center pt-1">
+                        순서: {template.sort_order + 1}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                )
+              })}
           </div>
         </div>
         )
@@ -643,6 +765,8 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
     name: template?.name || '',
     name_ko: template?.name_ko || '',
     description: template?.description || '',
+    description_ko: template?.description_ko || '',
+    description_en: template?.description_en || '',
     category: template?.category || '',
     adult_price: template?.adult_price || 0,
     child_price: template?.child_price || 0,
@@ -691,7 +815,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">템플릿 이름 (영문)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">초이스 이름 (영문)</label>
               <input
                 type="text"
                 value={formData.name}
@@ -701,7 +825,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">템플릿 이름 (한글)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">초이스 이름 (한글)</label>
               <input
                 type="text"
                 value={formData.name_ko}
@@ -711,14 +835,25 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">설명</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              rows={3}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">설명 (한글)</label>
+              <textarea
+                value={formData.description_ko}
+                onChange={(e) => setFormData({ ...formData, description_ko: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows={3}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">설명 (영문)</label>
+              <textarea
+                value={formData.description_en}
+                onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows={3}
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -803,29 +938,6 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">템플릿 그룹 (영문)</label>
-              <input
-                type="text"
-                value={formData.template_group}
-                onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="예: Accommodation"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">템플릿 그룹 (한글)</label>
-              <input
-                type="text"
-                value={formData.template_group_ko}
-                onChange={(e) => setFormData({ ...formData, template_group_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="예: 숙박 선택"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">최소 선택 수</label>
               <input
                 type="number"
@@ -842,15 +954,6 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
                 min="1"
                 value={formData.max_selections}
                 onChange={(e) => setFormData({ ...formData, max_selections: parseInt(e.target.value) || 1 })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">정렬 순서</label>
-              <input
-                type="number"
-                value={formData.sort_order}
-                onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -1063,21 +1166,23 @@ function ImportChoicesModal({ onImport, onClose }: ImportChoicesModalProps) {
 
 // 템플릿 그룹 편집 모달 컴포넌트
 interface GroupEditModalProps {
-  group: {template_group: string, template_group_ko: string}
-  onSubmit: (newGroup: {template_group: string, template_group_ko: string}) => void
+  group: {template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string}
+  onSubmit: (newGroup: {template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string}) => void
   onClose: () => void
 }
 
 function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
   const [formData, setFormData] = useState({
     template_group: group.template_group || '',
-    template_group_ko: group.template_group_ko || ''
+    template_group_ko: group.template_group_ko || '',
+    template_group_description_ko: group.template_group_description_ko || '',
+    template_group_description_en: group.template_group_description_en || ''
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.template_group.trim()) {
-      alert('템플릿 그룹 이름(영문)을 입력해주세요.')
+      alert('초이스 그룹 이름(영문)을 입력해주세요.')
       return
     }
     onSubmit(formData)
@@ -1085,37 +1190,65 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">템플릿 그룹 수정</h3>
+      <div className="bg-white rounded-lg p-6 w-full max-w-2xl">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 그룹 수정</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              템플릿 그룹 이름 (영문)
-            </label>
-            <input
-              type="text"
-              value={formData.template_group}
-              onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="예: Accommodation"
-              required
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                초이스 그룹 이름 (영문)
+              </label>
+              <input
+                type="text"
+                value={formData.template_group}
+                onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="예: Accommodation"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                초이스 그룹 이름 (한글)
+              </label>
+              <input
+                type="text"
+                value={formData.template_group_ko}
+                onChange={(e) => setFormData({ ...formData, template_group_ko: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="예: 숙박 선택"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              템플릿 그룹 이름 (한글)
-            </label>
-            <input
-              type="text"
-              value={formData.template_group_ko}
-              onChange={(e) => setFormData({ ...formData, template_group_ko: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="예: 숙박 선택"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                설명 (한국어)
+              </label>
+              <textarea
+                value={formData.template_group_description_ko}
+                onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
+                rows={3}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                설명 (영어)
+              </label>
+              <textarea
+                value={formData.template_group_description_en}
+                onChange={(e) => setFormData({ ...formData, template_group_description_en: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder="Enter description for this choice group (English)"
+                rows={3}
+              />
+            </div>
           </div>
           <div className="text-sm text-gray-600 bg-yellow-50 p-3 rounded-lg">
             <p className="font-medium mb-1">⚠️ 주의사항</p>
-            <p>이 그룹에 속한 모든 템플릿의 그룹 이름이 변경됩니다.</p>
+            <p>이 그룹에 속한 모든 템플릿의 그룹 이름과 설명이 변경됩니다.</p>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
             <button

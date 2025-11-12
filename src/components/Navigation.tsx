@@ -13,7 +13,7 @@ import Link from 'next/link'
 import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User, ArrowLeft, Search } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
 import { useAuth } from '@/contexts/AuthContext'
-import { CartProvider, CartIcon, CartSidebar } from '@/components/cart/CartProvider'
+import { CartIcon, CartSidebar } from '@/components/cart/CartProvider'
 
 const NavigationContent = () => {
   const t = useTranslations('common')
@@ -591,11 +591,7 @@ const NavigationContent = () => {
 }
 
 const Navigation = () => {
-  return (
-    <CartProvider>
-      <NavigationContent />
-    </CartProvider>
-  )
+  return <NavigationContent />
 }
 
 export default Navigation

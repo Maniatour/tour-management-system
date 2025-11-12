@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, createContext, useContext, useRef } from 'react'
+import React, { useState, useEffect, createContext, useContext, useRef, useMemo } from 'react'
 import { ShoppingCart, Plus, Minus, Trash2, X, CreditCard, Calendar, Clock } from 'lucide-react'
 import { useLocale } from 'next-intl'
 
@@ -51,6 +51,8 @@ interface CartContextType {
   clearCart: () => void
   getTotalPrice: () => number
   getTotalItems: () => number
+  totalItems: number // 직접 접근 가능한 총 아이템 수
+  totalPrice: number // 직접 접근 가능한 총 가격
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined)
@@ -174,16 +176,49 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [items, isInitialized])
 
   const addItem = (item: Omit<CartItem, 'id' | 'addedAt'>) => {
-    const newItem: CartItem = {
-      ...item,
-      id: `cart_${Date.now()}_${Math.random().toString(36).substring(2)}`,
-      addedAt: new Date().toISOString()
-    }
-    console.log('장바구니에 아이템 추가:', newItem)
     setItems(prev => {
-      const updated = [...prev, newItem]
-      console.log('장바구니 업데이트됨. 총 아이템 수:', updated.length)
-      return updated
+      // 같은 상품 ID와 같은 날짜를 가진 아이템이 있는지 확인
+      const existingItemIndex = prev.findIndex(
+        existingItem => 
+          existingItem.productId === item.productId && 
+          existingItem.tourDate === item.tourDate &&
+          existingItem.departureTime === item.departureTime &&
+          // 선택된 옵션도 같은지 확인 (JSON.stringify로 비교)
+          JSON.stringify(existingItem.selectedOptions) === JSON.stringify(item.selectedOptions)
+      )
+
+      if (existingItemIndex !== -1) {
+        // 기존 아이템이 있으면 인원 수를 증가
+        const existingItem = prev[existingItemIndex]
+        const updatedItems = [...prev]
+        updatedItems[existingItemIndex] = {
+          ...existingItem,
+          participants: {
+            adults: existingItem.participants.adults + item.participants.adults,
+            children: existingItem.participants.children + item.participants.children,
+            infants: existingItem.participants.infants + item.participants.infants
+          },
+          // 총 가격 재계산
+          totalPrice: existingItem.basePrice * (
+            existingItem.participants.adults + item.participants.adults +
+            existingItem.participants.children + item.participants.children +
+            existingItem.participants.infants + item.participants.infants
+          )
+        }
+        console.log('기존 아이템 인원 증가:', updatedItems[existingItemIndex])
+        return updatedItems
+      } else {
+        // 기존 아이템이 없으면 새로 추가
+        const newItem: CartItem = {
+          ...item,
+          id: `cart_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+          addedAt: new Date().toISOString()
+        }
+        console.log('장바구니에 새 아이템 추가:', newItem)
+        const updated = [...prev, newItem]
+        console.log('장바구니 업데이트됨. 총 아이템 수:', updated.length)
+        return updated
+      }
     })
   }
 
@@ -209,21 +244,23 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setItems([])
   }
 
-  const getTotalPrice = () => {
-    const total = items.reduce((total, item) => {
+  // useMemo로 총 가격 계산 최적화
+  const totalPrice = useMemo(() => {
+    return items.reduce((total, item) => {
       const itemPrice = item.totalPrice || 0
-      console.log('아이템 가격 계산:', { itemId: item.id, productId: item.productId, totalPrice: item.totalPrice, itemPrice })
       return total + itemPrice
     }, 0)
-    console.log('총 장바구니 금액:', total, '아이템 수:', items.length)
-    return total
-  }
+  }, [items])
 
-  const getTotalItems = () => {
+  // useMemo로 총 아이템 수 계산 최적화
+  const totalItems = useMemo(() => {
     return items.reduce((total, item) => {
       return total + item.participants.adults + item.participants.children + item.participants.infants
     }, 0)
-  }
+  }, [items])
+
+  const getTotalPrice = () => totalPrice
+  const getTotalItems = () => totalItems
 
   return (
     <CartContext.Provider value={{
@@ -233,7 +270,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateQuantity,
       clearCart,
       getTotalPrice,
-      getTotalItems
+      getTotalItems,
+      totalItems,
+      totalPrice
     }}>
       {children}
     </CartContext.Provider>
@@ -242,8 +281,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 // 카트 아이콘 컴포넌트
 export const CartIcon: React.FC<{ onClick: () => void }> = ({ onClick }) => {
-  const { getTotalItems } = useCart()
-  const totalItems = getTotalItems()
+  const { totalItems } = useCart() // items를 직접 구독하여 리렌더링 보장
 
   return (
     <button
@@ -318,7 +356,12 @@ export const CartSidebar: React.FC<{
                         <div className="text-sm text-gray-600 mt-1">
                           <div className="flex items-center">
                             <Calendar className="h-4 w-4 mr-1" />
-                            {new Date(item.tourDate).toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR')}
+                            {(() => {
+                              // 날짜 문자열을 직접 파싱하여 시간대 문제 방지
+                              const [year, month, day] = item.tourDate.split('-').map(Number)
+                              const date = new Date(year, month - 1, day)
+                              return date.toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR')
+                            })()}
                           </div>
                           {item.departureTime && (
                             <div className="flex items-center mt-1">
@@ -477,9 +520,7 @@ export const CartSidebar: React.FC<{
 
 // 카트 미니 컴포넌트 (헤더용)
 export const CartMini: React.FC<{ onClick: () => void }> = ({ onClick }) => {
-  const { getTotalItems, getTotalPrice } = useCart()
-  const totalItems = getTotalItems()
-  const totalPrice = getTotalPrice()
+  const { totalItems, totalPrice } = useCart() // items를 직접 구독하여 리렌더링 보장
   const locale = useLocale()
   const isEnglish = locale === 'en'
   const translate = (ko: string, en: string) => (isEnglish ? en : ko)

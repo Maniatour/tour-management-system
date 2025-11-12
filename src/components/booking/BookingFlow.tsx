@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Calendar, Users, CreditCard, ShoppingCart, ArrowLeft, ArrowRight, Check, X, ChevronLeft, ChevronRight, Lock, Ticket, Loader2 } from 'lucide-react'
+import { Calendar, Users, CreditCard, ShoppingCart, ArrowLeft, ArrowRight, Check, X, ChevronLeft, ChevronRight, Lock, Ticket, Loader2, Minus, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
 import LoginForm from '@/components/auth/LoginForm'
@@ -84,6 +84,10 @@ interface ChoiceOption {
   option_child_price?: number | null
   option_infant_price?: number | null
   is_default: boolean | null
+  option_image_url?: string | null
+  option_thumbnail_url?: string | null
+  option_description?: string | null
+  option_description_ko?: string | null
 }
 
 interface ChoiceGroup {
@@ -109,11 +113,21 @@ interface ProductChoice {
   choice_name_ko: string | null
   choice_type: string
   choice_description: string | null
+  choice_description_ko?: string | null
+  choice_description_en?: string | null
+  choice_image_url?: string | null
+  choice_thumbnail_url?: string | null
   option_id: string
   option_name: string
   option_name_ko: string | null
   option_price: number | null
+  option_child_price?: number | null
+  option_infant_price?: number | null
   is_default: boolean | null
+  option_image_url?: string | null
+  option_thumbnail_url?: string | null
+  option_description?: string | null
+  option_description_ko?: string | null
 }
 
 interface TourSchedule {
@@ -251,8 +265,10 @@ function PaymentForm({
   const elements = useElements()
   const [cardError, setCardError] = useState<string>('')
   const [processing, setProcessing] = useState(false)
+  const handleSubmitRef = React.useRef<(() => Promise<void>) | null>(null)
+  const onPaymentSubmitRef = React.useRef(onPaymentSubmit)
 
-  const handleSubmit = async (event?: React.FormEvent) => {
+  const handleSubmit = React.useCallback(async (event?: React.FormEvent) => {
     if (event) {
       event.preventDefault()
     }
@@ -292,8 +308,21 @@ function PaymentForm({
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || translate('결제 요청 생성에 실패했습니다.', 'Failed to create payment request.'))
+        let errorMessage = translate('결제 요청 생성에 실패했습니다.', 'Failed to create payment request.')
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+        } catch (e) {
+          // JSON 파싱 실패 시 텍스트로 읽기 시도
+          try {
+            const text = await response.text()
+            errorMessage = text || errorMessage
+          } catch (textError) {
+            // 텍스트 읽기도 실패하면 기본 메시지 사용
+            errorMessage = `서버 오류 (${response.status}): ${response.statusText}`
+          }
+        }
+        throw new Error(errorMessage)
       }
 
       const { clientSecret } = await response.json()
@@ -337,16 +366,58 @@ function PaymentForm({
       setCardError(error instanceof Error ? error.message : translate('결제 처리 중 오류가 발생했습니다.', 'An error occurred during payment processing.'))
       setProcessing(false)
     }
-  }
+  }, [stripe, elements, totalPrice, bookingData, onPaymentComplete, translate])
 
   // 외부에서 제출할 수 있도록 핸들러 노출
+  // handleSubmit이 변경될 때마다 ref 업데이트
   useEffect(() => {
-    if (onPaymentSubmit && stripe && elements) {
-      onPaymentSubmit(async () => {
-        await handleSubmit()
-      })
+    handleSubmitRef.current = handleSubmit
+  }, [handleSubmit])
+
+  // onPaymentSubmit을 ref로 저장
+  useEffect(() => {
+    onPaymentSubmitRef.current = onPaymentSubmit
+  }, [onPaymentSubmit])
+
+  // onPaymentSubmit 호출을 완전히 분리하여 렌더링 완료 후 실행
+  // handleSubmit은 의존성 배열에서 제거하고 ref를 통해 접근
+  // 한 번만 실행되도록 플래그 사용
+  const hasRegisteredHandler = React.useRef(false)
+  
+  useEffect(() => {
+    // 이미 등록되었거나 필요한 조건이 없으면 리턴
+    if (hasRegisteredHandler.current || !onPaymentSubmit || !stripe || !elements) {
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // 여러 단계의 지연을 사용하여 렌더링 완료 보장
+    const timeoutId1 = setTimeout(() => {
+      requestAnimationFrame(() => {
+        const timeoutId2 = setTimeout(() => {
+          // onPaymentSubmit을 호출하기 전에 한 번 더 확인
+          // handleSubmit은 ref를 통해 접근하므로 항상 최신 버전 사용
+          if (onPaymentSubmitRef.current && !hasRegisteredHandler.current) {
+            try {
+              hasRegisteredHandler.current = true
+              onPaymentSubmitRef.current(async () => {
+                // ref를 통해 항상 최신 handleSubmit에 접근
+                if (handleSubmitRef.current) {
+                  await handleSubmitRef.current()
+                }
+              })
+            } catch (error) {
+              // 에러가 발생해도 무한 루프를 방지
+              hasRegisteredHandler.current = false
+              console.error('Payment submit handler error:', error)
+            }
+          }
+        }, 0)
+      })
+    }, 0)
+
+    return () => {
+      clearTimeout(timeoutId1)
+    }
   }, [onPaymentSubmit, stripe, elements])
 
   const cardElementOptions = {
@@ -1016,8 +1087,13 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         choice_id: choice.choice_id,
         choice_name: choice.choice_name,
         choice_name_ko: choice.choice_name_ko,
+        choice_name_en: (choice as any).choice_name_en || null,
         choice_type: choice.choice_type,
-        choice_description: choice.choice_description,
+        choice_description: choice.choice_description || null,
+        choice_description_ko: choice.choice_description_ko || null,
+        choice_description_en: choice.choice_description_en || null,
+        choice_image_url: choice.choice_image_url || null,
+        choice_thumbnail_url: choice.choice_thumbnail_url || null,
         is_required: true, // 모든 productChoices를 필수로 설정
         options: []
       }
@@ -1027,13 +1103,63 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       option_name: choice.option_name,
       option_name_ko: choice.option_name_ko,
       option_price: choice.option_price,
-      is_default: choice.is_default
+      option_child_price: choice.option_child_price || null,
+      option_infant_price: choice.option_infant_price || null,
+      is_default: choice.is_default,
+      option_image_url: choice.option_image_url || null,
+      option_thumbnail_url: choice.option_thumbnail_url || null,
+      option_description: choice.option_description || null,
+      option_description_ko: choice.option_description_ko || null
     })
     return groups
   }, {} as Record<string, ChoiceGroup>)
 
   // 필수 선택: productChoices의 모든 내용
   const requiredChoices = Object.values(groupedChoices)
+  
+  // 디버깅: productChoices와 requiredChoices 확인
+  useEffect(() => {
+    if (productChoices.length > 0) {
+      console.log('BookingFlow - productChoices:', productChoices)
+      const currentGroupedChoices = productChoices.reduce((groups, choice) => {
+        const groupKey = choice.choice_id
+        if (!groups[groupKey]) {
+          groups[groupKey] = {
+            choice_id: choice.choice_id,
+            choice_name: choice.choice_name,
+            choice_name_ko: choice.choice_name_ko,
+            choice_type: choice.choice_type,
+            choice_description: choice.choice_description || null,
+            choice_description_ko: choice.choice_description_ko || null,
+            choice_description_en: choice.choice_description_en || null,
+            choice_image_url: choice.choice_image_url || null,
+            choice_thumbnail_url: choice.choice_thumbnail_url || null,
+            is_required: true,
+            options: []
+          }
+        }
+        groups[groupKey].options.push({
+          option_id: choice.option_id,
+          option_name: choice.option_name,
+          option_name_ko: choice.option_name_ko,
+          option_price: choice.option_price,
+          option_child_price: choice.option_child_price || null,
+          option_infant_price: choice.option_infant_price || null,
+          is_default: choice.is_default,
+          option_image_url: choice.option_image_url || null,
+          option_thumbnail_url: choice.option_thumbnail_url || null,
+          option_description: choice.option_description || null,
+          option_description_ko: choice.option_description_ko || null
+        })
+        return groups
+      }, {} as Record<string, ChoiceGroup>)
+      const currentRequiredChoices = Object.values(currentGroupedChoices)
+      console.log('BookingFlow - groupedChoices:', currentGroupedChoices)
+      console.log('BookingFlow - requiredChoices:', currentRequiredChoices)
+    } else {
+      console.log('BookingFlow - productChoices가 비어있습니다. productChoices:', productChoices)
+    }
+  }, [productChoices])
   
   // 추가 선택: product_options 테이블에서 가져온 내용
   const optionalChoices: ChoiceGroup[] = productOptions.map(option => ({
@@ -1966,154 +2092,6 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   </div>
                     </div>
                   </div>
-                  
-                  {/* 오른쪽: 인원 선택 */}
-                  <div>
-                    {/* 인원 선택 */}
-                    <div className="bg-white border border-gray-200 rounded-lg p-4 sticky top-4">
-                      <h4 className="text-base font-semibold text-gray-900 mb-4">{translate('인원 선택', 'Select Participants')}</h4>
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between p-3 border rounded-lg">
-                          <div>
-                            <div className="font-medium text-gray-900 text-sm">{translate('성인', 'Adult')}</div>
-                            <div className="text-xs text-gray-600">
-                              {product.adult_age ? translate(`${product.adult_age}세 이상`, `${product.adult_age}+ years`) : translate('성인', 'Adult')}
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => {
-                                if (bookingData.participants.adults > 1) {
-                                  setBookingData(prev => ({
-                                    ...prev,
-                                    participants: {
-                                      ...prev.participants,
-                                      adults: prev.participants.adults - 1
-                                    }
-                                  }))
-                                }
-                              }}
-                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                            <span className="w-8 text-center font-medium text-sm">{bookingData.participants.adults}</span>
-                            <button
-                              onClick={() => {
-                                const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                                if (totalParticipants < (product.max_participants || 20)) {
-                                  setBookingData(prev => ({
-                                    ...prev,
-                                    participants: {
-                                      ...prev.participants,
-                                      adults: prev.participants.adults + 1
-                                    }
-                                  }))
-                                }
-                              }}
-                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                            >
-                              <Check className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {product.child_age_min && product.child_age_max && (
-                          <div className="flex items-center justify-between p-3 border rounded-lg">
-                            <div>
-                              <div className="font-medium text-gray-900 text-sm">{translate('아동', 'Child')}</div>
-                              <div className="text-xs text-gray-600">
-                                {translate(`${product.child_age_min}-${product.child_age_max}세`, `${product.child_age_min}-${product.child_age_max} years`)}
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={() => {
-                                  if (bookingData.participants.children > 0) {
-                                    setBookingData(prev => ({
-                                      ...prev,
-                                      participants: {
-                                        ...prev.participants,
-                                        children: prev.participants.children - 1
-                                      }
-                                    }))
-                                  }
-                                }}
-                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                              <span className="w-8 text-center font-medium text-sm">{bookingData.participants.children}</span>
-                              <button
-                                onClick={() => {
-                                  const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                                  if (totalParticipants < (product.max_participants || 20)) {
-                                    setBookingData(prev => ({
-                                      ...prev,
-                                      participants: {
-                                        ...prev.participants,
-                                        children: prev.participants.children + 1
-                                      }
-                                    }))
-                                  }
-                                }}
-                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                              >
-                                <Check className="h-3 w-3" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {product.infant_age && (
-                          <div className="flex items-center justify-between p-3 border rounded-lg">
-                            <div>
-                              <div className="font-medium text-gray-900 text-sm">{translate('유아', 'Infant')}</div>
-                              <div className="text-xs text-gray-600">
-                                {translate(`${product.infant_age}세 미만`, `Under ${product.infant_age} years`)}
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={() => {
-                                  if (bookingData.participants.infants > 0) {
-                                    setBookingData(prev => ({
-                                      ...prev,
-                                      participants: {
-                                        ...prev.participants,
-                                        infants: prev.participants.infants - 1
-                                      }
-                                    }))
-                                  }
-                                }}
-                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                              <span className="w-8 text-center font-medium text-sm">{bookingData.participants.infants}</span>
-                              <button
-                                onClick={() => {
-                                  const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                                  if (totalParticipants < (product.max_participants || 20)) {
-                                    setBookingData(prev => ({
-                                      ...prev,
-                                      participants: {
-                                        ...prev.participants,
-                                        infants: prev.participants.infants + 1
-                                      }
-                                    }))
-                                  }
-                                }}
-                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                              >
-                                <Check className="h-3 w-3" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -2125,15 +2103,15 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
           <div className="space-y-6">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">{translate('필수 선택', 'Required Options')}</h3>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
                 <div className="flex items-start">
                   <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                     </svg>
                   </div>
                   <div className="ml-3">
-                    <p className="text-sm text-red-800">
+                    <p className="text-sm text-blue-800">
                       <strong>{translate('필수 선택입니다!', 'These are required!')}</strong> {translate('초이스와 인원을 선택해주세요.', 'Please select your choice and number of participants.')}
                     </p>
                   </div>
@@ -2141,22 +2119,186 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               </div>
               
               {requiredChoices.length > 0 ? (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* 왼쪽: 필수 선택 카드들 */}
-                  <div className="lg:col-span-2 space-y-6">
-                  {requiredChoices.map((group: ChoiceGroup) => (
-                    <div key={group.choice_id}>
+                <div className="space-y-6">
+                  {/* 인원 선택 - 상단 가로 배치 */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <h4 className="text-base font-semibold text-gray-900 mb-4">{translate('인원 선택', 'Select Participants')}</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <div className="font-medium text-gray-900 text-sm">{translate('성인', 'Adult')}</div>
+                          <div className="text-xs text-gray-600">
+                            {product.adult_age ? translate(`${product.adult_age}세 이상`, `${product.adult_age}+ years`) : translate('성인', 'Adult')}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => {
+                              if (bookingData.participants.adults > 1) {
+                                setBookingData(prev => ({
+                                  ...prev,
+                                  participants: {
+                                    ...prev.participants,
+                                    adults: prev.participants.adults - 1
+                                  }
+                                }))
+                              }
+                            }}
+                            className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span className="w-8 text-center font-medium text-sm">{bookingData.participants.adults}</span>
+                          <button
+                            onClick={() => {
+                              const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+                              if (totalParticipants < (product.max_participants || 20)) {
+                                setBookingData(prev => ({
+                                  ...prev,
+                                  participants: {
+                                    ...prev.participants,
+                                    adults: prev.participants.adults + 1
+                                  }
+                                }))
+                              }
+                            }}
+                            className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {product.child_age_min && product.child_age_max && (
+                        <div className="flex items-center justify-between p-3 border rounded-lg">
+                          <div>
+                            <div className="font-medium text-gray-900 text-sm">{translate('아동', 'Child')}</div>
+                            <div className="text-xs text-gray-600">
+                              {translate(`${product.child_age_min}-${product.child_age_max}세`, `${product.child_age_min}-${product.child_age_max} years`)}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => {
+                                if (bookingData.participants.children > 0) {
+                                  setBookingData(prev => ({
+                                    ...prev,
+                                    participants: {
+                                      ...prev.participants,
+                                      children: prev.participants.children - 1
+                                    }
+                                  }))
+                                }
+                              }}
+                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="w-8 text-center font-medium text-sm">{bookingData.participants.children}</span>
+                            <button
+                              onClick={() => {
+                                const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+                                if (totalParticipants < (product.max_participants || 20)) {
+                                  setBookingData(prev => ({
+                                    ...prev,
+                                    participants: {
+                                      ...prev.participants,
+                                      children: prev.participants.children + 1
+                                    }
+                                  }))
+                                }
+                              }}
+                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {product.infant_age && (
+                        <div className="flex items-center justify-between p-3 border rounded-lg">
+                          <div>
+                            <div className="font-medium text-gray-900 text-sm">{translate('유아', 'Infant')}</div>
+                            <div className="text-xs text-gray-600">
+                              {translate(`${product.infant_age}세 미만`, `Under ${product.infant_age} years`)}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => {
+                                if (bookingData.participants.infants > 0) {
+                                  setBookingData(prev => ({
+                                    ...prev,
+                                    participants: {
+                                      ...prev.participants,
+                                      infants: prev.participants.infants - 1
+                                    }
+                                  }))
+                                }
+                              }}
+                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="w-8 text-center font-medium text-sm">{bookingData.participants.infants}</span>
+                            <button
+                              onClick={() => {
+                                const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+                                if (totalParticipants < (product.max_participants || 20)) {
+                                  setBookingData(prev => ({
+                                    ...prev,
+                                    participants: {
+                                      ...prev.participants,
+                                      infants: prev.participants.infants + 1
+                                    }
+                                  }))
+                                }
+                              }}
+                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 초이스 그룹들 */}
+                  <div className="space-y-6">
+                  {requiredChoices.map((group: ChoiceGroup, groupIndex: number) => {
+                    const groupDescription = isEnglish 
+                      ? (group.choice_description_en || group.choice_description)
+                      : (group.choice_description_ko || group.choice_description)
+                    
+                    // 디버깅: 그룹 설명 확인
+                    if (groupIndex === 0) {
+                      console.log('첫 번째 그룹 설명 확인:', {
+                        choice_id: group.choice_id,
+                        choice_name: group.choice_name,
+                        choice_description: group.choice_description,
+                        choice_description_ko: group.choice_description_ko,
+                        choice_description_en: group.choice_description_en,
+                        groupDescription
+                      })
+                    }
+                    
+                    return (
+                    <div key={group.choice_id} className="mb-6">
                       <h4 className="text-base font-semibold text-gray-900 mb-3 flex items-center">
-                        <span className="text-red-600 mr-1">*</span>
+                        <span className="text-blue-600 mr-1">*</span>
                         {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
                       </h4>
-                      {group.choice_description && (
-                        <p className="text-sm text-gray-600 mb-4">
-                          {isEnglish ? group.choice_description_en || group.choice_description : group.choice_description_ko || group.choice_description}
-                        </p>
+                      {groupDescription && groupDescription.trim() && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                            {groupDescription}
+                          </p>
+                        </div>
                       )}
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {group.options.map((option: ChoiceOption) => {
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {group.options.map((option: ChoiceOption, optionIndex: number) => {
                           const isAvailable = isChoiceCombinationAvailable(group.choice_id, option.option_id)
                           const isDisabled = !isAvailable
                           const adultPrice = option.option_price || 0
@@ -2168,12 +2310,12 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           return (
                             <label 
                               key={option.option_id} 
-                              className={`relative flex flex-col cursor-pointer rounded-lg border-2 bg-white transition-all ${
+                              className={`relative flex flex-col cursor-pointer rounded-lg border-2 bg-white transition-all overflow-hidden ${
                                 isDisabled
                                   ? 'opacity-50 cursor-not-allowed border-gray-200'
                                   : isSelected
-                                    ? 'border-red-500 shadow-md'
-                                    : 'border-gray-200 hover:border-red-400 hover:shadow-lg'
+                                    ? 'border-blue-500 shadow-lg ring-2 ring-blue-200'
+                                    : 'border-gray-200 hover:border-blue-400 hover:shadow-lg'
                               }`}
                             >
                               <input
@@ -2192,34 +2334,77 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                     }))
                                   }
                                 }}
-                                className="absolute top-3 right-3 w-5 h-5 text-red-600"
+                                className="absolute top-3 right-3 w-5 h-5 text-blue-600"
                                 required
                                 disabled={isDisabled}
                               />
                               
-                              {/* 이미지 */}
-                              {(group.choice_image_url || group.choice_thumbnail_url) && (
-                                <div className="w-full h-48 overflow-hidden rounded-t-lg relative">
+                              {/* 이미지 - 옵션 이미지 우선, 없으면 그룹 이미지 */}
+                              {(option.option_image_url || option.option_thumbnail_url || group.choice_image_url || group.choice_thumbnail_url) ? (
+                                <div className="w-full h-56 overflow-hidden relative bg-gray-100">
                                   <Image
-                                    src={group.choice_thumbnail_url || group.choice_image_url || ''}
+                                    src={option.option_thumbnail_url || option.option_image_url || group.choice_thumbnail_url || group.choice_image_url || ''}
                                     alt={isEnglish 
                                       ? (option.option_name_en || option.option_name || option.option_name_ko || '') 
                                       : (option.option_name_ko || option.option_name || option.option_name_en || '')}
                                     fill
                                     className="object-cover"
+                                    sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                                    priority={groupIndex === 0 && optionIndex === 0}
                                     onError={() => {
                                       // 이미지 로드 실패 시 처리
                                     }}
                                   />
+                                  {isSelected && (
+                                    <div className="absolute inset-0 bg-blue-500/10" />
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="w-full h-56 bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
+                                  <Ticket className="h-16 w-16 text-blue-300" />
                                 </div>
                               )}
                               
                               {/* 내용 영역 */}
                               <div className="flex flex-col flex-1 p-4">
                                 {/* 제목 */}
-                                <h5 className="font-semibold text-gray-900 text-lg mb-2 pr-8">
-                                  {isEnglish ? option.option_name_en || option.option_name || option.option_name_ko : option.option_name_ko || option.option_name || option.option_name_en}
-                                </h5>
+                                <div className="flex items-center gap-2 mb-2 pr-8 flex-wrap">
+                                  <h5 className="font-semibold text-gray-900 text-lg">
+                                    {isEnglish ? option.option_name_en || option.option_name || option.option_name_ko : option.option_name_ko || option.option_name || option.option_name_en}
+                                  </h5>
+                                  {/* 기본 옵션 배지 */}
+                                  {option.is_default && !isDisabled && (
+                                    <span className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
+                                      {translate('기본', 'Default')}
+                                    </span>
+                                  )}
+                                </div>
+                                
+                                {/* 설명 - 옵션 설명 */}
+                                {(() => {
+                                  const optionDescription = isEnglish 
+                                    ? (option.option_description || option.option_description_ko)
+                                    : (option.option_description_ko || option.option_description)
+                                  
+                                  // 디버깅: 첫 번째 옵션 설명 확인
+                                  if (groupIndex === 0 && optionIndex === 0) {
+                                    console.log('첫 번째 옵션 설명 확인:', {
+                                      option_id: option.option_id,
+                                      option_name: option.option_name,
+                                      option_description: option.option_description,
+                                      option_description_ko: option.option_description_ko,
+                                      optionDescription
+                                    })
+                                  }
+                                  
+                                  return optionDescription && optionDescription.trim() ? (
+                                    <div className="mb-3 flex-1">
+                                      <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                                        {optionDescription}
+                                      </p>
+                                    </div>
+                                  ) : null
+                                })()}
                                 
                                 {/* 가격 정보 */}
                                 {hasPrice && (
@@ -2228,7 +2413,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                       {adultPrice > 0 && (
                                         <div className="flex justify-between items-center">
                                           <span className="text-xs text-gray-600">{translate('성인', 'Adult')}</span>
-                                          <span className="text-red-600 font-semibold text-sm">
+                                          <span className="text-blue-600 font-semibold text-sm">
                                             +${adultPrice.toFixed(2)}
                                           </span>
                                         </div>
@@ -2236,7 +2421,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                       {childPrice > 0 && (
                                         <div className="flex justify-between items-center">
                                           <span className="text-xs text-gray-600">{translate('아동', 'Child')}</span>
-                                          <span className="text-red-600 font-medium text-xs">
+                                          <span className="text-blue-600 font-medium text-xs">
                                             +${childPrice.toFixed(2)}
                                           </span>
                                         </div>
@@ -2244,7 +2429,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                       {infantPrice > 0 && (
                                         <div className="flex justify-between items-center">
                                           <span className="text-xs text-gray-600">{translate('유아', 'Infant')}</span>
-                                          <span className="text-red-600 font-medium text-xs">
+                                          <span className="text-blue-600 font-medium text-xs">
                                             +${infantPrice.toFixed(2)}
                                           </span>
                                         </div>
@@ -2255,15 +2440,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                 
                                 {/* 마감 배지 */}
                                 {isDisabled && (
-                                  <span className="text-xs text-red-600 bg-red-100 px-2 py-1 rounded mt-3 inline-block self-start">
+                                  <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded mt-3 inline-block self-start">
                                     {translate('마감', 'Closed')}
-                                  </span>
-                                )}
-                                
-                                {/* 기본 옵션 배지 */}
-                                {option.is_default && !isDisabled && (
-                                  <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded mt-3 inline-block self-start">
-                                    {translate('기본', 'Default')}
                                   </span>
                                 )}
                               </div>
@@ -2272,154 +2450,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         })}
                       </div>
                     </div>
-                  ))}
-                  </div>
-                  
-                  {/* 오른쪽: 인원 선택 */}
-                  <div className="lg:col-span-1">
-                    <div className="bg-white border border-gray-200 rounded-lg p-4 sticky top-4">
-                      <h4 className="text-base font-semibold text-gray-900 mb-4">{translate('인원 선택', 'Select Participants')}</h4>
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between p-3 border rounded-lg">
-                          <div>
-                            <div className="font-medium text-gray-900 text-sm">{translate('성인', 'Adult')}</div>
-                            <div className="text-xs text-gray-600">
-                              {product.adult_age ? translate(`${product.adult_age}세 이상`, `${product.adult_age}+ years`) : translate('성인', 'Adult')}
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => {
-                                if (bookingData.participants.adults > 1) {
-                                  setBookingData(prev => ({
-                                    ...prev,
-                                    participants: {
-                                      ...prev.participants,
-                                      adults: prev.participants.adults - 1
-                                    }
-                                  }))
-                                }
-                              }}
-                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                            <span className="w-8 text-center font-medium text-sm">{bookingData.participants.adults}</span>
-                            <button
-                              onClick={() => {
-                                const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                                if (totalParticipants < (product.max_participants || 20)) {
-                                  setBookingData(prev => ({
-                                    ...prev,
-                                    participants: {
-                                      ...prev.participants,
-                                      adults: prev.participants.adults + 1
-                                    }
-                                  }))
-                                }
-                              }}
-                              className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                            >
-                              <Check className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {product.child_age_min && product.child_age_max && (
-                          <div className="flex items-center justify-between p-3 border rounded-lg">
-                            <div>
-                              <div className="font-medium text-gray-900 text-sm">{translate('아동', 'Child')}</div>
-                              <div className="text-xs text-gray-600">
-                                {translate(`${product.child_age_min}-${product.child_age_max}세`, `${product.child_age_min}-${product.child_age_max} years`)}
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={() => {
-                                  if (bookingData.participants.children > 0) {
-                                    setBookingData(prev => ({
-                                      ...prev,
-                                      participants: {
-                                        ...prev.participants,
-                                        children: prev.participants.children - 1
-                                      }
-                                    }))
-                                  }
-                                }}
-                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                              <span className="w-8 text-center font-medium text-sm">{bookingData.participants.children}</span>
-                              <button
-                                onClick={() => {
-                                  const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                                  if (totalParticipants < (product.max_participants || 20)) {
-                                    setBookingData(prev => ({
-                                      ...prev,
-                                      participants: {
-                                        ...prev.participants,
-                                        children: prev.participants.children + 1
-                                      }
-                                    }))
-                                  }
-                                }}
-                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                              >
-                                <Check className="h-3 w-3" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {product.infant_age && (
-                          <div className="flex items-center justify-between p-3 border rounded-lg">
-                            <div>
-                              <div className="font-medium text-gray-900 text-sm">{translate('유아', 'Infant')}</div>
-                              <div className="text-xs text-gray-600">
-                                {translate(`${product.infant_age}세 미만`, `Under ${product.infant_age} years`)}
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={() => {
-                                  if (bookingData.participants.infants > 0) {
-                                    setBookingData(prev => ({
-                                      ...prev,
-                                      participants: {
-                                        ...prev.participants,
-                                        infants: prev.participants.infants - 1
-                                      }
-                                    }))
-                                  }
-                                }}
-                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                              <span className="w-8 text-center font-medium text-sm">{bookingData.participants.infants}</span>
-                              <button
-                                onClick={() => {
-                                  const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-                                  if (totalParticipants < (product.max_participants || 20)) {
-                                    setBookingData(prev => ({
-                                      ...prev,
-                                      participants: {
-                                        ...prev.participants,
-                                        infants: prev.participants.infants + 1
-                                      }
-                                    }))
-                                  }
-                                }}
-                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
-                              >
-                                <Check className="h-3 w-3" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    )
+                  })}
                   </div>
                 </div>
               ) : (
@@ -2828,7 +2860,12 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                   <div className="flex justify-between">
                     <span className="text-gray-600">{translate('날짜', 'Date')}</span>
                     <span className="font-medium">
-                      {bookingData.tourDate && new Date(bookingData.tourDate).toLocaleDateString(localeTag)}
+                      {bookingData.tourDate && (() => {
+                        // 날짜 문자열을 직접 파싱하여 시간대 문제 방지
+                        const [year, month, day] = bookingData.tourDate.split('-').map(Number)
+                        const date = new Date(year, month - 1, day)
+                        return date.toLocaleDateString(localeTag)
+                      })()}
                     </span>
                   </div>
                   <div className="flex justify-between">

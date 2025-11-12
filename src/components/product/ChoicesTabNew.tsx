@@ -33,6 +33,8 @@ interface ProductChoiceData {
   choice_group: string
   choice_group_ko: string
   choice_group_en?: string
+  description_ko?: string
+  description_en?: string
   choice_type: 'single' | 'multiple' | 'quantity'
   is_required: boolean
   min_selections: number
@@ -93,6 +95,8 @@ interface ProductChoice {
   choice_group: string
   choice_group_ko: string
   choice_group_en?: string
+  description_ko?: string
+  description_en?: string
   choice_type: 'single' | 'multiple' | 'quantity'
   is_required: boolean
   min_selections: number
@@ -150,6 +154,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           id: crypto.randomUUID(),
           choice_group: templateGroup,
           choice_group_ko: templateGroupName,
+          description_ko: '',
+          description_en: '',
           choice_type: choiceType as 'single' | 'multiple' | 'quantity',
           is_required: isRequired,
           min_selections: minSelections,
@@ -209,6 +215,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           choice_group,
           choice_group_ko,
           choice_group_en,
+          description_ko,
+          description_en,
           choice_type,
           is_required,
           min_selections,
@@ -279,6 +287,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           choice_group,
           choice_group_ko,
           choice_group_en,
+          description_ko,
+          description_en,
           choice_type,
           is_required,
           min_selections,
@@ -418,6 +428,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             choice_group: trimmedChoiceGroup,
             choice_group_ko: trimmedChoiceGroupKo,
             choice_group_en: choice.choice_group_en?.trim() || null,
+            description_ko: choice.description_ko?.trim() || null,
+            description_en: choice.description_en?.trim() || null,
             choice_type: choice.choice_type,
             is_required: choice.is_required,
             min_selections: choice.min_selections,
@@ -501,6 +513,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       choice_group: `choice_group_${Date.now()}`, // 빈 문자열 대신 임시 고유값 사용
       choice_group_ko: '',
       choice_group_en: '',
+      description_ko: '',
+      description_en: '',
       choice_type: 'single',
       is_required: true,
       min_selections: 1,
@@ -681,6 +695,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           choice_group: choice.choice_group,
           choice_group_ko: choice.choice_group_ko,
           ...(choice.choice_group_en !== undefined && { choice_group_en: choice.choice_group_en }),
+          ...(choice.description_ko !== undefined && { description_ko: choice.description_ko }),
+          ...(choice.description_en !== undefined && { description_en: choice.description_en }),
           choice_type: choice.choice_type as 'single' | 'multiple' | 'quantity',
           is_required: choice.is_required,
           min_selections: choice.min_selections,
@@ -723,6 +739,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         choice_group: choice.choice_group,
         choice_group_ko: choice.choice_group_ko,
         choice_group_en: choice.choice_group_en,
+        description_ko: choice.description_ko,
+        description_en: choice.description_en,
         choice_type: choice.choice_type,
         is_required: choice.is_required,
         min_selections: choice.min_selections,
@@ -769,6 +787,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           choice_group: choice.choice_group || '',
           choice_group_ko: choice.choice_group_ko || '',
           choice_group_en: choice.choice_group_en || '',
+          description_ko: choice.description_ko || '',
+          description_en: choice.description_en || '',
           choice_type: (choice.choice_type || 'single') as 'single' | 'multiple' | 'quantity',
           is_required: choice.is_required !== false,
           min_selections: choice.min_selections || 1,
@@ -1030,52 +1050,80 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             <div key={choice.id} className="border border-gray-200 rounded-lg p-4">
               {/* 초이스 그룹 헤더 */}
               <div className="flex justify-between items-start mb-4">
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      초이스 그룹명 (한국어)
-                    </label>
-                    <input
-                      type="text"
-                      value={choice.choice_group_ko}
-                      onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_ko', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="예: 숙박 선택"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      초이스 그룹명 (영어)
-                    </label>
-                    <input
-                      type="text"
-                      value={choice.choice_group_en || ''}
-                      onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_en', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="예: Accommodation"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      초이스 타입
-                      <button
-                        type="button"
-                        onClick={() => setShowTypeInfoModal(true)}
-                        className="ml-2 inline-flex items-center justify-center w-4 h-4 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full transition-colors"
-                        title="초이스 타입 설명 보기"
+                <div className="flex-1 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        초이스 그룹명 (한국어)
+                      </label>
+                      <input
+                        type="text"
+                        value={choice.choice_group_ko}
+                        onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_ko', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="예: 숙박 선택"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        초이스 그룹명 (영어)
+                      </label>
+                      <input
+                        type="text"
+                        value={choice.choice_group_en || ''}
+                        onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_en', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="예: Accommodation"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        초이스 타입
+                        <button
+                          type="button"
+                          onClick={() => setShowTypeInfoModal(true)}
+                          className="ml-2 inline-flex items-center justify-center w-4 h-4 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full transition-colors"
+                          title="초이스 타입 설명 보기"
+                        >
+                          <Info className="w-3 h-3" />
+                        </button>
+                      </label>
+                      <select
+                        value={choice.choice_type}
+                        onChange={(e) => updateChoiceGroup(groupIndex, 'choice_type', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <Info className="w-3 h-3" />
-                      </button>
-                    </label>
-                    <select
-                      value={choice.choice_type}
-                      onChange={(e) => updateChoiceGroup(groupIndex, 'choice_type', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="single">단일 선택</option>
-                      <option value="multiple">다중 선택</option>
-                      <option value="quantity">수량 선택</option>
-                    </select>
+                        <option value="single">단일 선택</option>
+                        <option value="multiple">다중 선택</option>
+                        <option value="quantity">수량 선택</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        설명 (한국어)
+                      </label>
+                      <textarea
+                        value={choice.description_ko || ''}
+                        onChange={(e) => updateChoiceGroup(groupIndex, 'description_ko', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
+                        rows={3}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        설명 (영어)
+                      </label>
+                      <textarea
+                        value={choice.description_en || ''}
+                        onChange={(e) => updateChoiceGroup(groupIndex, 'description_en', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        placeholder="Enter description for this choice group (English)"
+                        rows={3}
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-4 ml-4">

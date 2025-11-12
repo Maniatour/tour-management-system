@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
-import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft, X } from 'lucide-react'
+import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft, X, Info } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import ProductFaqDisplay from '@/components/ProductFaqDisplay'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import BookingFlow from '@/components/booking/BookingFlow'
-import { CartProvider, CartIcon, CartSidebar } from '@/components/cart/CartProvider'
+import { CartIcon, CartSidebar } from '@/components/cart/CartProvider'
 import CartCheckout from '@/components/cart/CartCheckout'
 import PaymentProcessor from '@/components/payment/PaymentProcessor'
 import { supabase } from '@/lib/supabase'
@@ -93,8 +93,11 @@ interface ChoiceGroup {
   choice_id: string
   choice_name: string
   choice_name_ko: string | null
+  choice_name_en?: string | null
   choice_type: string
   choice_description: string | null
+  choice_description_ko?: string | null
+  choice_description_en?: string | null
   options: Array<{
     option_id: string
     option_name: string
@@ -110,6 +113,7 @@ interface ProductChoice {
   choice_id: string
   choice_name: string
   choice_name_ko: string | null
+  choice_name_en?: string | null
   choice_type: string
   choice_description: string | null
   option_id: string
@@ -117,6 +121,14 @@ interface ProductChoice {
   option_name_ko: string | null
   option_price: number | null
   is_default: boolean | null
+  option_image_url?: string | null
+  option_thumbnail_url?: string | null
+  option_description?: string | null
+  option_description_ko?: string | null
+  choice_image_url?: string | null
+  choice_thumbnail_url?: string | null
+  choice_description_ko?: string | null
+  choice_description_en?: string | null
 }
 
 export default function ProductDetailPage() {
@@ -161,6 +173,7 @@ export default function ProductDetailPage() {
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({})
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const [isAutoSlidePaused, setIsAutoSlidePaused] = useState(false)
   
   // 부킹 시스템 상태
   const [showBookingFlow, setShowBookingFlow] = useState(false)
@@ -169,6 +182,8 @@ export default function ProductDetailPage() {
   const [showPayment, setShowPayment] = useState(false)
   const [paymentData, setPaymentData] = useState<any>(null)
   const [cartItems, setCartItems] = useState<any[]>([])
+  const [showChoiceDescriptionModal, setShowChoiceDescriptionModal] = useState(false)
+  const [selectedChoiceGroupForModal, setSelectedChoiceGroupForModal] = useState<ChoiceGroup | null>(null)
 
   // Navigation에서 장바구니 결제 열기 이벤트 리스너
   useEffect(() => {
@@ -281,13 +296,26 @@ export default function ProductDetailPage() {
               product_id,
               choice_group,
               choice_group_ko,
+              choice_group_en,
+              description_ko,
+              description_en,
               choice_type,
               options:choice_options (
                 id,
+                option_key,
                 option_name,
                 option_name_ko,
+                description,
+                description_ko,
                 adult_price,
-                is_default
+                child_price,
+                infant_price,
+                is_default,
+                is_active,
+                sort_order,
+                image_url,
+                image_alt,
+                thumbnail_url
               )
             `)
             .eq('product_id', productId)
@@ -295,15 +323,16 @@ export default function ProductDetailPage() {
 
           if (fallbackError) {
             console.error('product_choices 로드 오류:', fallbackError)
+            console.error('에러 상세:', JSON.stringify(fallbackError, null, 2))
             // 에러가 발생해도 빈 배열로 설정
             setProductChoices([])
           } else if (fallbackChoices) {
             const flattenedChoices: ProductChoice[] = fallbackChoices.flatMap((choice: any) => {
               const choiceName = choice.choice_group || ''
               const choiceNameKo = choice.choice_group_ko || null
-              const choiceDescription = null
+              const choiceNameEn = choice.choice_group_en || null
               const choiceType = choice.choice_type || 'single'
-              const options = Array.isArray(choice.options) ? choice.options : []
+              const options = Array.isArray(choice.options) ? choice.options.filter((opt: any) => opt.is_active !== false) : []
 
               return options.map((option: any) => ({
                 product_id: choice.product_id,
@@ -311,18 +340,31 @@ export default function ProductDetailPage() {
                 choice_id: choice.id,
                 choice_name: choiceName,
                 choice_name_ko: choiceNameKo,
+                choice_name_en: choiceNameEn,
                 choice_type: choiceType,
-                choice_description: choiceDescription,
+                choice_description: choice.description_en || null,
+                choice_description_ko: choice.description_ko || null,
+                choice_description_en: choice.description_en || null,
+                choice_image_url: null, // product_choices 테이블에 image_url 필드가 없을 수 있음
+                choice_thumbnail_url: null,
                 option_id: option.id,
                 option_name: option.option_name || option.option_key || '',
                 option_name_ko: option.option_name_ko || null,
                 option_price: option.adult_price ?? null,
-                is_default: option.is_default ?? null
+                option_child_price: option.child_price ?? null,
+                option_infant_price: option.infant_price ?? null,
+                is_default: option.is_default ?? null,
+                option_image_url: option.image_url || null,
+                option_thumbnail_url: option.thumbnail_url || null,
+                option_description: option.description || null,
+                option_description_ko: option.description_ko || null
               }))
             })
 
             setProductChoices(flattenedChoices)
+            console.log('ProductDetailPage - productChoices 로드 완료:', flattenedChoices.length, '개')
           } else {
+            console.log('ProductDetailPage - productChoices 데이터 없음')
             setProductChoices([])
           }
         } catch (error) {
@@ -376,6 +418,34 @@ export default function ProductDetailPage() {
   useEffect(() => {
     setSelectedImageIndex(0)
   }, [productMedia, tourCoursePhotos])
+
+  // 자동 슬라이드 기능
+  useEffect(() => {
+    const mediaImages = productMedia.filter(item => item.file_type === 'image')
+    const tourCourseImages = tourCoursePhotos.map(photo => ({
+      id: `tour-course-${photo.id}`,
+      file_url: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.photo_url}`,
+      alt_text: photo.photo_alt_ko || photo.photo_alt_en || 'Tour course photo',
+      caption: photo.photo_alt_ko || photo.photo_alt_en || '',
+      file_name: photo.photo_url,
+      is_primary: photo.is_primary,
+      order_index: photo.sort_order
+    }))
+    const allImages = [...mediaImages, ...tourCourseImages]
+
+    // 이미지가 1개 이하면 자동 슬라이드 불필요
+    if (allImages.length <= 1 || isAutoSlidePaused) {
+      return
+    }
+
+    const interval = setInterval(() => {
+      setSelectedImageIndex((prevIndex) => {
+        return (prevIndex + 1) % allImages.length
+      })
+    }, 4000) // 4초마다 자동 슬라이드
+
+    return () => clearInterval(interval)
+  }, [productMedia, tourCoursePhotos, isAutoSlidePaused])
 
   const getDifficultyLabel = (difficulty: string) => {
     const difficultyLabels: { [key: string]: string } = isEnglish
@@ -496,8 +566,11 @@ export default function ProductDetailPage() {
         choice_id: choice.choice_id,
         choice_name: choice.choice_name,
         choice_name_ko: choice.choice_name_ko,
+        choice_name_en: choice.choice_name_en || null,
         choice_type: choice.choice_type,
         choice_description: choice.choice_description,
+        choice_description_ko: choice.choice_description_ko || null,
+        choice_description_en: choice.choice_description_en || null,
         options: []
       }
     }
@@ -678,8 +751,7 @@ export default function ProductDetailPage() {
   }
 
   return (
-    <CartProvider>
-      <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
         {/* 헤더 */}
         <div className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -732,15 +804,18 @@ export default function ProductDetailPage() {
                 return allImages.length > 0 ? (
                 <>
                   {/* 메인 이미지 */}
-                  <div className="relative w-full bg-gray-200 flex items-center justify-center" style={{ minHeight: '400px', maxHeight: '800px' }}>
+                  <div 
+                    className="relative w-full h-[600px] bg-gray-200 flex items-center justify-center" 
+                    onMouseEnter={() => setIsAutoSlidePaused(true)}
+                    onMouseLeave={() => setIsAutoSlidePaused(false)}
+                  >
                     <Image
                       src={allImages[selectedImageIndex].file_url}
                       alt={allImages[selectedImageIndex].alt_text || allImages[selectedImageIndex].file_name}
-                      width={1200}
-                      height={800}
+                      fill
                       sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 800px"
                       priority
-                      className="w-auto h-auto max-w-full max-h-[800px] object-contain"
+                      className="object-contain transition-opacity duration-500"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
                     <div className="absolute top-4 right-4 flex space-x-2 z-10">
@@ -754,17 +829,29 @@ export default function ProductDetailPage() {
                   </div>
                   
                   {/* 썸네일 갤러리 */}
-                  <div className="p-4">
+                  <div 
+                    className="p-4"
+                    onMouseEnter={() => setIsAutoSlidePaused(true)}
+                    onMouseLeave={() => setIsAutoSlidePaused(false)}
+                  >
                     <div className="flex space-x-2 overflow-x-auto">
                       {allImages.slice(0, 8).map((image, index) => (
-                        <div key={image.id} className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-gray-200 relative border-2 ${selectedImageIndex === index ? 'border-blue-500' : 'border-transparent'}`}>
+                        <div 
+                          key={image.id} 
+                          className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-gray-200 relative border-2 ${selectedImageIndex === index ? 'border-blue-500' : 'border-transparent'}`}
+                        >
                           <Image
                             src={image.file_url}
                             alt={image.alt_text || image.file_name}
                             fill
                             sizes="80px"
                             className="object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                            onClick={() => setSelectedImageIndex(index)}
+                            onClick={() => {
+                              setSelectedImageIndex(index)
+                              setIsAutoSlidePaused(true)
+                              // 3초 후 자동 슬라이드 재개
+                              setTimeout(() => setIsAutoSlidePaused(false), 3000)
+                            }}
                           />
                         </div>
                       ))}
@@ -1449,10 +1536,23 @@ export default function ProductDetailPage() {
                 )}
               </div>
 
-              {/* 선택 옵션 */}
+              {/* 필수 선택 */}
               {Object.keys(groupedChoices).length > 0 && (
                 <div className="mb-6">
-                  <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Optional add-ons' : '선택 옵션'}</h4>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-gray-900">{isEnglish ? 'Required Selection' : '필수 선택'}</h4>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // 모든 그룹의 설명을 하나의 모달에 표시
+                        setShowChoiceDescriptionModal(true)
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200"
+                    >
+                      <Info className="w-4 h-4" />
+                      <span>{isEnglish ? 'Compare Options' : '차이점 확인하기'}</span>
+                    </button>
+                  </div>
                   <div className="space-y-4">
                     {Object.values(groupedChoices).map((group: ChoiceGroup) => (
                       <div key={group.choice_id}>
@@ -1472,14 +1572,6 @@ export default function ProductDetailPage() {
                             </option>
                           ))}
                         </select>
-                        {group.choice_description && (
-                          <div 
-                            className="text-xs text-gray-500 mt-1"
-                            dangerouslySetInnerHTML={{ 
-                              __html: markdownToHtml(group.choice_description || '') 
-                            }}
-                          />
-                        )}
                       </div>
                     ))}
                   </div>
@@ -1534,7 +1626,6 @@ export default function ProductDetailPage() {
           </div>
         </div>
       </div>
-      </div>
 
       {/* 부킹 플로우 모달 */}
       {showBookingFlow && product && (
@@ -1587,6 +1678,63 @@ export default function ProductDetailPage() {
           </div>
         </div>
       )}
-    </CartProvider>
+
+      {/* 초이스 그룹 설명 모달 */}
+      {showChoiceDescriptionModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {isEnglish ? 'Choice Group Descriptions' : '초이스 그룹 설명'}
+                </h2>
+                <button
+                  onClick={() => setShowChoiceDescriptionModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[80vh]">
+              <div className="space-y-6">
+                {Object.values(groupedChoices).map((group: ChoiceGroup) => {
+                  const groupDescription = isEnglish 
+                    ? (group.choice_description_en || group.choice_description)
+                    : (group.choice_description_ko || group.choice_description)
+                  
+                  if (!groupDescription || !groupDescription.trim()) {
+                    return null
+                  }
+                  
+                  return (
+                    <div key={group.choice_id} className="border-b border-gray-200 pb-6 last:border-b-0 last:pb-0">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                        {isEnglish ? group.choice_name_en || group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
+                      </h3>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                          {groupDescription}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+                {Object.values(groupedChoices).every((group: ChoiceGroup) => {
+                  const groupDescription = isEnglish 
+                    ? (group.choice_description_en || group.choice_description)
+                    : (group.choice_description_ko || group.choice_description)
+                  return !groupDescription || !groupDescription.trim()
+                }) && (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>{isEnglish ? 'No descriptions available for choice groups.' : '초이스 그룹에 대한 설명이 없습니다.'}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
