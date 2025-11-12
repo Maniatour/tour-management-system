@@ -1050,21 +1050,29 @@ export default function BulkPricingTableModal({
                               const calculated = calculatePrices(row, firstChoice.id);
                               
                               // 홈페이지 채널의 net price 계산 (메인 행에서 찾은 homepageChannel 사용)
+                              // 홈페이지 Net Price = (기본 가격 * 0.8 + 초이스 가격) * (1 - commissionRate)
                               const homepageNetPrice = homepageChannel ? (() => {
                                 try {
-                                  // 홈페이지 채널로 가격 계산 (현재 row 설정 사용)
-                                  const homepageRow: BulkPricingRow = {
-                                    ...row,
-                                    channelId: homepageChannel.id,
-                                    channelName: homepageChannel.name,
-                                    commissionPercent: homepageChannel.commission_percent || 0
+                                  const homepageCommissionRate = (homepageChannel.commission_percent || 0) / 100;
+                                  
+                                  // 기본 가격 (마크업 포함)
+                                  const basePrice = row.adultPrice + row.markupAmount + (row.adultPrice * row.markupPercent / 100);
+                                  
+                                  // 초이스 가격
+                                  const choicePrice = row.choicePricing[firstChoice.id]?.adult || 0;
+                                  
+                                  // 홈페이지 Net Price: 기본 가격에 20% 할인 적용, 초이스 가격은 할인 없음
+                                  const homepageNetPriceValue = {
+                                    adult: (basePrice * 0.8 + choicePrice) * (1 - homepageCommissionRate),
+                                    child: ((row.childPrice + row.markupAmount + (row.childPrice * row.markupPercent / 100)) * 0.8 + (row.choicePricing[firstChoice.id]?.child || 0)) * (1 - homepageCommissionRate),
+                                    infant: ((row.infantPrice + row.markupAmount + (row.infantPrice * row.markupPercent / 100)) * 0.8 + (row.choicePricing[firstChoice.id]?.infant || 0)) * (1 - homepageCommissionRate)
                                   };
-                                  const result = calculatePrices(homepageRow, firstChoice.id);
-                                  // 첫 번째 행에서만 로그 출력
-                                  if (row.id === rows[0]?.id) {
-                                    console.log('✅ 홈페이지 Net Price 계산 결과:', result);
-                                  }
-                                  return result;
+                                  
+                                  return {
+                                    netPrice: homepageNetPriceValue,
+                                    maxPrice: { adult: 0, child: 0, infant: 0 },
+                                    otaPrice: { adult: 0, child: 0, infant: 0 }
+                                  };
                                 } catch (error) {
                                   console.error('❌ 홈페이지 Net Price 계산 오류:', error);
                                   return null;
@@ -1097,7 +1105,7 @@ export default function BulkPricingTableModal({
                                       <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '100px' }}>
                                         {homepageNetPrice ? (
                                           <div className="text-xs font-semibold text-purple-700 text-center">
-                                            ${(homepageNetPrice.netPrice.adult * 0.8).toFixed(2)}
+                                            ${homepageNetPrice.netPrice.adult.toFixed(2)}
                                           </div>
                                         ) : (
                                           <div className="text-xs text-gray-500 text-center">
@@ -1152,7 +1160,7 @@ export default function BulkPricingTableModal({
                                       <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
                                         {homepageNetPrice ? (
                                           <div className="text-xs font-semibold text-purple-700 text-center">
-                                            ${(homepageNetPrice.netPrice.adult * 0.8).toFixed(2)}
+                                            ${homepageNetPrice.netPrice.adult.toFixed(2)}
                                           </div>
                                         ) : (
                                           <div className="text-xs text-gray-500 text-center">
@@ -1163,7 +1171,7 @@ export default function BulkPricingTableModal({
                                       <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
                                         {homepageNetPrice ? (
                                           <div className="text-xs font-semibold text-purple-700 text-center">
-                                            ${(homepageNetPrice.netPrice.child * 0.8).toFixed(2)}
+                                            ${homepageNetPrice.netPrice.child.toFixed(2)}
                                           </div>
                                         ) : (
                                           <div className="text-xs text-gray-500 text-center">
@@ -1174,7 +1182,7 @@ export default function BulkPricingTableModal({
                                       <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
                                         {homepageNetPrice ? (
                                           <div className="text-xs font-semibold text-purple-700 text-center">
-                                            ${(homepageNetPrice.netPrice.infant * 0.8).toFixed(2)}
+                                            ${homepageNetPrice.netPrice.infant.toFixed(2)}
                                           </div>
                                         ) : (
                                           <div className="text-xs text-gray-500 text-center">
@@ -1320,16 +1328,35 @@ export default function BulkPricingTableModal({
                             const calculated = calculatePrices(row, choice.id);
                             
                             // 각 초이스의 홈페이지 Net Price 계산
+                            // 홈페이지 Net Price = (기본 가격 * 0.8 + 초이스 가격) * (1 - commissionRate)
                             const homepageNetPrice = homepageChannel ? (() => {
                               try {
-                                const homepageRow: BulkPricingRow = {
-                                  ...row,
-                                  channelId: homepageChannel.id,
-                                  channelName: homepageChannel.name,
-                                  commissionPercent: homepageChannel.commission_percent || 0
+                                const homepageCommissionRate = (homepageChannel.commission_percent || 0) / 100;
+                                
+                                // 기본 가격 (마크업 포함)
+                                const basePrice = row.adultPrice + row.markupAmount + (row.adultPrice * row.markupPercent / 100);
+                                const baseChildPrice = row.childPrice + row.markupAmount + (row.childPrice * row.markupPercent / 100);
+                                const baseInfantPrice = row.infantPrice + row.markupAmount + (row.infantPrice * row.markupPercent / 100);
+                                
+                                // 초이스 가격
+                                const choicePrice = row.choicePricing[choice.id]?.adult || 0;
+                                const choiceChildPrice = row.choicePricing[choice.id]?.child || 0;
+                                const choiceInfantPrice = row.choicePricing[choice.id]?.infant || 0;
+                                
+                                // 홈페이지 Net Price: 기본 가격에 20% 할인 적용, 초이스 가격은 할인 없음
+                                const homepageNetPriceValue = {
+                                  adult: (basePrice * 0.8 + choicePrice) * (1 - homepageCommissionRate),
+                                  child: (baseChildPrice * 0.8 + choiceChildPrice) * (1 - homepageCommissionRate),
+                                  infant: (baseInfantPrice * 0.8 + choiceInfantPrice) * (1 - homepageCommissionRate)
                                 };
-                                return calculatePrices(homepageRow, choice.id);
-                              } catch {
+                                
+                                return {
+                                  netPrice: homepageNetPriceValue,
+                                  maxPrice: { adult: 0, child: 0, infant: 0 },
+                                  otaPrice: { adult: 0, child: 0, infant: 0 }
+                                };
+                              } catch (error) {
+                                console.error('❌ 홈페이지 Net Price 계산 오류:', error);
                                 return null;
                               }
                             })() : null;
@@ -1360,7 +1387,7 @@ export default function BulkPricingTableModal({
                                     <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '100px' }}>
                                       {homepageNetPrice ? (
                                         <div className="text-xs font-semibold text-purple-700 text-center">
-                                          ${(homepageNetPrice.netPrice.adult * 0.8).toFixed(2)}
+                                          ${homepageNetPrice.netPrice.adult.toFixed(2)}
                                         </div>
                                       ) : (
                                         <div className="text-xs text-gray-500 text-center">
@@ -1415,7 +1442,7 @@ export default function BulkPricingTableModal({
                                     <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
                                       {homepageNetPrice ? (
                                         <div className="text-xs font-semibold text-purple-700 text-center">
-                                          ${(homepageNetPrice.netPrice.adult * 0.8).toFixed(2)}
+                                          ${homepageNetPrice.netPrice.adult.toFixed(2)}
                                         </div>
                                       ) : (
                                         <div className="text-xs text-gray-500 text-center">
@@ -1426,7 +1453,7 @@ export default function BulkPricingTableModal({
                                     <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
                                       {homepageNetPrice ? (
                                         <div className="text-xs font-semibold text-purple-700 text-center">
-                                          ${(homepageNetPrice.netPrice.child * 0.8).toFixed(2)}
+                                          ${homepageNetPrice.netPrice.child.toFixed(2)}
                                         </div>
                                       ) : (
                                         <div className="text-xs text-gray-500 text-center">
@@ -1437,7 +1464,7 @@ export default function BulkPricingTableModal({
                                     <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300" style={{ minWidth: '80px' }}>
                                       {homepageNetPrice ? (
                                         <div className="text-xs font-semibold text-purple-700 text-center">
-                                          ${(homepageNetPrice.netPrice.infant * 0.8).toFixed(2)}
+                                          ${homepageNetPrice.netPrice.infant.toFixed(2)}
                                         </div>
                                       ) : (
                                         <div className="text-xs text-gray-500 text-center">

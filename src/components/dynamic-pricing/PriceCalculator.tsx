@@ -282,11 +282,30 @@ export const PriceCalculator = memo(function PriceCalculator({
                            const combination = choiceCombinations.find(c => c.id === choiceId);
                            const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
                            
-                           // 각 초이스의 할인 가격을 사용하여 홈페이지 Net Price 계산 (20% 할인 적용)
+                           // 홈페이지 Net Price 계산: 기본 가격에 20% 할인 적용, 초이스 가격은 할인 없음
+                           // choiceCalc.basePrice는 이미 (상품 기본 가격 + 초이스 가격)이므로,
+                           // pricingConfig에서 기본 가격과 초이스 가격을 분리해야 함
+                           const baseProductPrice = {
+                             adult: pricingConfig?.adult_price || 0,
+                             child: pricingConfig?.child_price || 0,
+                             infant: pricingConfig?.infant_price || 0
+                           };
+                           const choicePrice = pricingConfig?.choicePricing?.[choiceId] || { adult_price: 0, child_price: 0, infant_price: 0 };
+                           
+                           // 마크업 적용된 기본 가격
+                           const markupAmount = pricingConfig?.markup_amount || 0;
+                           const markupPercent = pricingConfig?.markup_percent || 0;
+                           const basePriceWithMarkup = {
+                             adult: baseProductPrice.adult + markupAmount + (baseProductPrice.adult * markupPercent / 100),
+                             child: baseProductPrice.child + markupAmount + (baseProductPrice.child * markupPercent / 100),
+                             infant: baseProductPrice.infant + markupAmount + (baseProductPrice.infant * markupPercent / 100)
+                           };
+                           
+                           // 홈페이지 Net Price: (기본 가격 * 0.8 + 초이스 가격) * (1 - commissionRate)
                            const homepageNetPrice = {
-                             adult: choiceCalc.discountPrice.adult * (1 - homepageCommissionRate) * 0.8,
-                             child: choiceCalc.discountPrice.child * (1 - homepageCommissionRate) * 0.8,
-                             infant: choiceCalc.discountPrice.infant * (1 - homepageCommissionRate) * 0.8
+                             adult: (basePriceWithMarkup.adult * 0.8 + (choicePrice.adult_price || 0)) * (1 - homepageCommissionRate),
+                             child: (basePriceWithMarkup.child * 0.8 + (choicePrice.child_price || 0)) * (1 - homepageCommissionRate),
+                             infant: (basePriceWithMarkup.infant * 0.8 + (choicePrice.infant_price || 0)) * (1 - homepageCommissionRate)
                            };
                            
                            // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
