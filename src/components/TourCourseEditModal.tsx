@@ -290,10 +290,10 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
   useEffect(() => {
     const loadTourCourses = async () => {
       try {
+        // 부모 선택을 위해 모든 투어 코스를 가져옴 (is_active 필터 제거)
         const { data, error } = await supabase
           .from('tour_courses')
           .select('*')
-          .eq('is_active', true)
           .order('created_at', { ascending: false })
 
         if (error) throw error
@@ -664,6 +664,21 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         if (error) throw error
         result = data
         savedCourse = { ...course, ...result }
+      }
+
+      // 저장 후 투어 코스 목록 다시 로드하여 계층 구조 반영
+      // 부모 선택을 위해 모든 투어 코스를 가져옴 (is_active 필터 제거)
+      try {
+        const { data: refreshedData, error: refreshError } = await supabase
+          .from('tour_courses')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (!refreshError && refreshedData) {
+          setTourCourses(refreshedData)
+        }
+      } catch (refreshError) {
+        console.error('투어 코스 목록 새로고침 오류:', refreshError)
       }
 
       onSave(savedCourse)

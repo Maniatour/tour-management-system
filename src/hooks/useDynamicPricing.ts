@@ -41,27 +41,95 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         return;
       }
 
-      // 날짜별로 그룹화
-      const groupedData = data.reduce((acc, rule) => {
-        const date = rule.date;
-        if (!acc[date]) {
-          acc[date] = [];
+      // 날짜별로 그룹화 (날짜 정규화 포함)
+      // 시간대 문제를 방지하기 위해 문자열 파싱을 우선 사용
+      const normalizeDate = (dateStr: string): string => {
+        if (!dateStr) return '';
+        const str = String(dateStr).trim();
+        const dateOnly = str.split('T')[0].split(' ')[0];
+        
+        // 이미 YYYY-MM-DD 형식인지 확인 (시간대 문제 없이 그대로 반환)
+        if (dateOnly.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          return dateOnly;
         }
-        acc[date].push(rule);
+        
+        // YYYY-MM-DD 형식이 아닌 경우, 문자열에서 직접 추출 시도
+        const dateMatch = str.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+        if (dateMatch) {
+          const year = dateMatch[1];
+          const month = String(parseInt(dateMatch[2], 10)).padStart(2, '0');
+          const day = String(parseInt(dateMatch[3], 10)).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        }
+        
+        // Date 객체로 변환 후 다시 문자열로 (마지막 수단)
+        // 시간대 문제를 방지하기 위해 로컬 시간대에서 날짜 부분만 추출
+        try {
+          // YYYY-MM-DD 형식의 문자열을 직접 파싱하여 시간대 문제 방지
+          if (str.match(/^\d{4}-\d{2}-\d{2}/)) {
+            // 이미 YYYY-MM-DD 형식이면 그대로 반환 (위에서 처리되어야 하지만 안전장치)
+            return str.split('T')[0].split(' ')[0];
+          }
+          
+          const date = new Date(str);
+          if (isNaN(date.getTime())) return str;
+          // 로컬 시간대에서 날짜 부분만 추출 (시간대 변환 없이)
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        } catch (e) {
+          return str;
+        }
+      };
+
+      const groupedData = data.reduce((acc, rule) => {
+        // 날짜 정규화하여 그룹화
+        const normalizedDate = normalizeDate(rule.date);
+        if (!acc[normalizedDate]) {
+          acc[normalizedDate] = [];
+        }
+        acc[normalizedDate].push(rule);
         return acc;
       }, {} as Record<string, SimplePricingRule[]>);
 
       const formattedData = Object.entries(groupedData).map(([date, rules]) => ({
-        date,
+        date, // 이미 정규화된 날짜
         rules
       }));
-
+      
+      // 1일 데이터 확인
+      const firstDayData = data.filter(d => {
+        const dateStr = String(d.date);
+        return dateStr.includes('-01') || dateStr.endsWith('-01');
+      });
+      
+      // 2025-12-01 데이터 확인
+      const dec01Data = data.filter(d => {
+        const dateStr = String(d.date);
+        return dateStr.includes('2025-12-01') || dateStr === '2025-12-01';
+      });
+      
+      // 정규화된 날짜로 2025-12-01 확인
+      const normalizedDec01Data = formattedData.filter(d => {
+        const normalized = normalizeDate(d.date);
+        return normalized === '2025-12-01';
+      });
+      
       console.log('로드된 동적 가격 데이터:', {
         selectedChannelId,
         selectedChannelType,
         dataCount: data.length,
         formattedDataCount: formattedData.length,
-        sampleData: data.slice(0, 3) // 처음 3개 데이터 샘플
+        firstDayDataCount: firstDayData.length,
+        firstDayDates: firstDayData.map(d => ({ date: d.date, normalized: normalizeDate(d.date), channel_id: d.channel_id })).slice(0, 10),
+        dec01DataCount: dec01Data.length,
+        dec01Data: dec01Data.map(d => ({ date: d.date, normalized: normalizeDate(d.date), channel_id: d.channel_id })),
+        normalizedDec01DataCount: normalizedDec01Data.length,
+        normalizedDec01Data: normalizedDec01Data.map(d => ({ date: d.date, normalized: normalizeDate(d.date), rulesCount: d.rules.length })),
+        allDates: formattedData.map(d => ({ original: d.date, normalized: normalizeDate(d.date) })).slice(0, 30),
+        has2025_12_01: formattedData.some(d => normalizeDate(d.date) === '2025-12-01'),
+        sampleData: data.slice(0, 10).map(d => ({ date: d.date, normalized: normalizeDate(d.date), channel_id: d.channel_id }))
       });
 
       setDynamicPricingData(formattedData);

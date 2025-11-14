@@ -1,6 +1,72 @@
-import React, { memo, useState, useMemo } from 'react';
+import React, { memo, useState, useMemo, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Calendar, DollarSign, ChevronDown } from 'lucide-react';
 import { SimplePricingRule } from '@/lib/types/dynamic-pricing';
+
+const DATE_CAPTURE_REGEX = /(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/;
+const YYYYMMDD_REGEX = /^\d{8}$/;
+const NUMERIC_TIMESTAMP_REGEX = /^-?\d{10,}$/;
+
+const formatDateParts = (year: string | number, month: string | number, day: string | number) => {
+  const y = String(year).padStart(4, '0');
+  const m = String(month).padStart(2, '0');
+  const d = String(day).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const normalizeDateValue = (value: string | number | Date | null | undefined): string => {
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return '';
+    return formatDateParts(value.getFullYear(), value.getMonth() + 1, value.getDate());
+  }
+
+  if (typeof value === 'number') {
+    const normalizedNumber = value.toString().length === 10 ? value * 1000 : value;
+    const dateFromNumber = new Date(normalizedNumber);
+    if (!isNaN(dateFromNumber.getTime())) {
+      return formatDateParts(dateFromNumber.getFullYear(), dateFromNumber.getMonth() + 1, dateFromNumber.getDate());
+    }
+  }
+
+  if (value === null || value === undefined) return '';
+
+  const trimmed = String(value).trim();
+  if (!trimmed) return '';
+
+  if (YYYYMMDD_REGEX.test(trimmed)) {
+    return formatDateParts(trimmed.slice(0, 4), trimmed.slice(4, 6), trimmed.slice(6, 8));
+  }
+
+  const isoCandidate = trimmed.includes('T') ? trimmed.split('T')[0] : trimmed.split(' ')[0];
+  const isoMatch = isoCandidate.match(DATE_CAPTURE_REGEX);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return formatDateParts(year, month, day);
+  }
+
+  const generalMatch = trimmed.match(DATE_CAPTURE_REGEX);
+  if (generalMatch) {
+    const [, year, month, day] = generalMatch;
+    return formatDateParts(year, month, day);
+  }
+
+  if (NUMERIC_TIMESTAMP_REGEX.test(trimmed)) {
+    const numericValue = Number(trimmed);
+    if (!Number.isNaN(numericValue)) {
+      const timestamp = trimmed.length === 10 ? numericValue * 1000 : numericValue;
+      const date = new Date(timestamp);
+      if (!isNaN(date.getTime())) {
+        return formatDateParts(date.getFullYear(), date.getMonth() + 1, date.getDate());
+      }
+    }
+  }
+
+  const parsed = new Date(trimmed);
+  if (!isNaN(parsed.getTime())) {
+    return formatDateParts(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+  }
+
+  return '';
+};
 
 interface PricingCalendarProps {
   currentMonth: Date;
@@ -22,6 +88,13 @@ interface PricingCalendarProps {
   }>;
   selectedChannelId?: string;
   selectedChannelType?: 'OTA' | 'SELF' | '';
+  channelInfo?: {
+    id: string;
+    not_included_type?: 'none' | 'amount_only' | 'amount_and_choice';
+    not_included_price?: number;
+    commission_base_price_only?: boolean;
+    [key: string]: unknown;
+  } | null;
 }
 
 export const PricingCalendar = memo(function PricingCalendar({
@@ -33,32 +106,36 @@ export const PricingCalendar = memo(function PricingCalendar({
   onDateRangeSelect,
   choiceCombinations = [],
   selectedChannelId,
-  selectedChannelType
+  selectedChannelType,
+  channelInfo
 }: PricingCalendarProps) {
   const [selectedChoice, setSelectedChoice] = useState<string>('');
+  const [selectedPriceTypes, setSelectedPriceTypes] = useState<Set<string>>(
+    new Set(['maxSalePrice', 'discountPrice', 'netPrice']) // 기본값: 모두 선택
+  );
 
-  // 초이스별 가격 계산 함수
-  const calculateChoicePrice = (basePrice: number, markupAmount: number, markupPercent: number, couponPercent: number, commissionPercent: number) => {
-    // 최대 판매가 (기본 가격 + 마크업)
-    const markupPrice = basePrice + markupAmount + (basePrice * markupPercent / 100);
-    
-    // 할인 가격 (최대 판매가 × 쿠폰 할인)
-    const discountPrice = markupPrice * (1 - couponPercent / 100);
-    
-    // Net Price (할인 가격 - 수수료)
-    const netPrice = discountPrice - (discountPrice * commissionPercent / 100);
-    
-    return {
-      markupPrice: Math.round(markupPrice * 100) / 100,
-      discountPrice: Math.round(discountPrice * 100) / 100,
-      netPrice: Math.round(netPrice * 100) / 100
-    };
+  // 초이스 조합이 로드되면 첫 번째 초이스를 기본값으로 선택
+  useEffect(() => {
+    if (choiceCombinations.length > 0 && !selectedChoice) {
+      setSelectedChoice(choiceCombinations[0].id);
+    }
+  }, [choiceCombinations, selectedChoice]);
+
+  // 가격 타입 토글 함수
+  const togglePriceType = (priceType: string) => {
+    setSelectedPriceTypes(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(priceType)) {
+        newSet.delete(priceType);
+      } else {
+        newSet.add(priceType);
+      }
+      return newSet;
+    });
   };
 
   // 채널 ID 매핑 함수
   const mapChannelId = (channelId: string): string => {
-    console.log('mapChannelId 입력:', channelId);
-    
     // 실제로는 매핑이 필요 없을 수도 있음 - 데이터베이스에서 이미 올바른 ID 사용
     // 만약 UI에서 다른 ID를 사용한다면 여기서 매핑
     const channelMapping: Record<string, string> = {
@@ -66,87 +143,182 @@ export const PricingCalendar = memo(function PricingCalendar({
       // 'Partner5': 'Partner5', // 이미 올바른 ID
     };
     
-    const mappedId = channelMapping[channelId] || channelId;
-    console.log('mapChannelId 출력:', mappedId);
-    return mappedId;
+    return channelMapping[channelId] || channelId;
   };
 
-  // 선택된 초이스의 가격 정보 가져오기
-  const getChoicePriceForDate = (date: string) => {
-    if (!selectedChoice) return null;
-    
-    const dayData = dynamicPricingData.find(d => d.date === date);
-    if (!dayData || dayData.rules.length === 0) {
-      console.log(`No data found for date ${date}`);
-      return null;
+  const normalizedPricingMap = useMemo(() => {
+    return dynamicPricingData.reduce((acc, { date, rules }) => {
+      const normalized = normalizeDateValue(date);
+      if (!normalized) {
+        return acc;
+      }
+
+      const currentRules = acc[normalized] || [];
+      const nextRules = Array.isArray(rules) ? rules : [];
+      acc[normalized] = currentRules.length ? [...currentRules, ...nextRules] : [...nextRules];
+      return acc;
+    }, {} as Record<string, SimplePricingRule[]>);
+  }, [dynamicPricingData]);
+
+  const normalizedSelectedDates = useMemo(() => {
+    const set = new Set<string>();
+    selectedDates.forEach(date => {
+      const normalized = normalizeDateValue(date);
+      if (normalized) {
+        set.add(normalized);
+      }
+    });
+    return set;
+  }, [selectedDates]);
+
+  const todayString = useMemo(() => normalizeDateValue(new Date()), []);
+  const priceTooltip = useMemo(
+    () =>
+      [
+        '최대 판매가 : OTA 사이트에서 판매가',
+        '할인 가격 : OTA 사이트에서 쿠폰 적용 후 실 손님 구매가',
+        'Net Price  : 수수료 제하고, 우리에게 실제 입금되는 가격'
+      ].join('\n'),
+    []
+  );
+
+  const getPricingForDate = useCallback((dateString: string): SimplePricingRule[] => {
+    const normalizedSearchDate = normalizeDateValue(dateString);
+    if (!normalizedSearchDate) {
+      return [];
     }
-    
-    // 선택된 채널의 규칙 찾기
-    let rule: SimplePricingRule | undefined;
-    
+
+    const direct = normalizedPricingMap[normalizedSearchDate];
+    if (direct && direct.length > 0) {
+      return direct;
+    }
+
+    // 데이터 구조가 예상과 다를 경우를 대비한 보조 검색
+    const fallbackEntry = dynamicPricingData.find(({ date }) => normalizeDateValue(date) === normalizedSearchDate);
+    return fallbackEntry?.rules || [];
+  }, [dynamicPricingData, normalizedPricingMap]);
+
+  const pickRuleForChannel = useCallback((rules: SimplePricingRule[]): SimplePricingRule | undefined => {
+    if (!rules || rules.length === 0) return undefined;
+
     if (selectedChannelId) {
-      // 채널 ID 매핑 적용
       const mappedChannelId = mapChannelId(selectedChannelId);
-      console.log(`Looking for channel ${selectedChannelId} (mapped to ${mappedChannelId}) on ${date}:`, 
-        dayData.rules.find(r => r.channel_id === mappedChannelId));
-      
-      // 특정 채널이 선택된 경우
-      rule = dayData.rules.find(r => r.channel_id === mappedChannelId);
-    } else if (selectedChannelType === 'SELF') {
-      // 자체 채널 타입이 선택된 경우, 첫 번째 자체 채널 규칙 사용
-      rule = dayData.rules.find(r => {
-        // 자체 채널인지 확인 (type이 'self' 또는 'partner'인 경우)
-        const channelType = r.channel_id?.startsWith('B') ? 'SELF' : 'OTA';
-        return channelType === 'SELF';
-      });
-      console.log(`Looking for SELF channel on ${date}:`, rule);
+      const channelRule = rules.find(r => r.channel_id === mappedChannelId);
+      if (channelRule) {
+        return channelRule;
+      }
     }
-    
-    if (!rule) {
-      console.log(`No rule found for date ${date}`);
+
+    if (selectedChannelType === 'SELF') {
+      const selfRule = rules.find(r => r.channel_id?.startsWith('B'));
+      if (selfRule) return selfRule;
+    } else if (selectedChannelType === 'OTA') {
+      const otaRule = rules.find(r => !r.channel_id?.startsWith('B'));
+      if (otaRule) return otaRule;
+    }
+
+    return rules[0];
+  }, [selectedChannelId, selectedChannelType]);
+
+  // 날짜별 단일 가격 정보 가져오기 (최대 판매가, 할인 가격, Net Price)
+  // 초이스 선택 및 필터 기능 포함
+  const getSinglePriceForDate = (date: string): {
+    maxSalePrice: number;
+    discountPrice: number;
+    netPrice: number;
+    isOTA: boolean;
+  } | null => {
+    // 1. 날짜 정규화 및 데이터 찾기
+    const pricingRules = getPricingForDate(date);
+    if (!pricingRules || pricingRules.length === 0) {
       return null;
     }
     
-    // choices_pricing에서 선택된 초이스의 가격 정보 가져오기
-    let choicePricing: any = null;
+    const rule = pickRuleForChannel(pricingRules);
+    if (!rule) {
+      return null;
+    }
+    
+    // 3. OTA 채널 여부 확인
+    const isOTA = selectedChannelType === 'OTA' || 
+                  (channelInfo && (channelInfo as any).type?.toLowerCase() === 'ota');
+    
+    // 4. 초이스 가격 정보 가져오기
+    let otaSalePrice = 0;
+    let choicePrice = 0;
+    const basePrice = rule.adult_price || 0;
     
     if (rule.choices_pricing) {
-      console.log(`choices_pricing 원본 데이터 (${date}):`, rule.choices_pricing);
-      
-      // 중첩된 구조에서 선택된 초이스 찾기
-      const choicesData = typeof rule.choices_pricing === 'string' 
-        ? JSON.parse(rule.choices_pricing) 
-        : rule.choices_pricing;
-      
-      console.log(`파싱된 choicesData (${date}):`, choicesData);
-      console.log(`선택된 초이스: ${selectedChoice}`);
-      
-      // canyon_choice.options에서 선택된 초이스 찾기
-      if (choicesData.canyon_choice?.options) {
-        console.log(`canyon_choice.options:`, choicesData.canyon_choice.options);
-        choicePricing = choicesData.canyon_choice.options[selectedChoice];
-        console.log(`canyon_choice에서 찾은 choicePricing:`, choicePricing);
+      try {
+        // choices_pricing 파싱
+        const choicesData = typeof rule.choices_pricing === 'string' 
+          ? JSON.parse(rule.choices_pricing) 
+          : rule.choices_pricing;
+        
+        // 선택된 초이스 ID 결정 (선택된 초이스가 있으면 사용, 없으면 첫 번째 초이스)
+        const choiceId = selectedChoice || Object.keys(choicesData)[0];
+        
+        if (choiceId && choicesData[choiceId]) {
+          const choiceData = choicesData[choiceId];
+          otaSalePrice = choiceData?.ota_sale_price || 0;
+          choicePrice = choiceData?.adult_price || choiceData?.adult || 0;
+        }
+      } catch (e) {
+        console.warn('choices_pricing 파싱 오류:', e);
       }
-      
-      // 직접적인 구조도 확인
-      if (!choicePricing && choicesData[selectedChoice]) {
-        choicePricing = choicesData[selectedChoice];
-        console.log(`직접 구조에서 찾은 choicePricing:`, choicePricing);
-      }
-      
-      console.log(`최종 choicePricing (${date}):`, choicePricing);
     }
     
-    if (!choicePricing) return null;
+    // 5. 불포함 금액 확인
+    const notIncludedType = channelInfo?.not_included_type || 'none';
+    const notIncludedPrice = (notIncludedType !== 'none' && channelInfo?.not_included_price) 
+      ? channelInfo.not_included_price 
+      : (rule.not_included_price || 0);
     
-    return calculateChoicePrice(
-      choicePricing.adult_price,
-      rule.markup_amount || 0,
-      rule.markup_percent || 0,
-      rule.coupon_percent || 0,
-      rule.commission_percent || 0
-    );
+    // 6. 최대 판매가 계산
+    let maxSalePrice = 0;
+    if (isOTA && otaSalePrice > 0) {
+      // OTA 채널이고 OTA 판매가가 있으면 OTA 판매가 사용
+      maxSalePrice = otaSalePrice;
+    } else {
+      // 기본 가격 + 마크업
+      const markupAmount = rule.markup_amount || 0;
+      const markupPercent = rule.markup_percent || 0;
+      maxSalePrice = basePrice + markupAmount + (basePrice * markupPercent / 100);
+    }
+    
+    // 7. 할인 가격 계산 (최대 판매가 × (1 - 쿠폰%))
+    const couponPercent = rule.coupon_percent || 0;
+    const discountPrice = maxSalePrice * (1 - couponPercent / 100);
+    
+    // 8. Net Price 계산
+    let netPrice = 0;
+    const commissionPercent = rule.commission_percent || 0;
+    const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false;
+    
+    if (isOTA && otaSalePrice > 0) {
+      // OTA 채널인 경우
+      if (commissionBasePriceOnly && notIncludedType === 'amount_and_choice') {
+        // 수수료가 기본 가격에만 적용되고, 불포함 금액과 초이스 값이 별도로 추가되는 경우
+        const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
+        netPrice = baseNetPrice + notIncludedPrice + choicePrice;
+      } else {
+        // 기본 계산: OTA 판매가 × (1 - 쿠폰 할인%) × (1 - 수수료%)
+        netPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
+      }
+    } else {
+      // 일반 채널: 할인 가격 × (1 - 수수료%)
+      netPrice = discountPrice * (1 - commissionPercent / 100);
+    }
+    
+    // 9. 결과 반환 (소수점 2자리로 반올림)
+    return {
+      maxSalePrice: Math.round(maxSalePrice * 100) / 100,
+      discountPrice: Math.round(discountPrice * 100) / 100,
+      netPrice: Math.round(netPrice * 100) / 100,
+      isOTA
+    };
   };
+
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -160,19 +332,16 @@ export const PricingCalendar = memo(function PricingCalendar({
 
   const { daysInMonth, startingDayOfWeek } = getDaysInMonth(currentMonth);
 
-  const getDateString = (day: number) => {
+  const getDateString = (day: number): string => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth() + 1;
     return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
   };
 
-  const getPricingForDate = (dateString: string) => {
-    const dayData = dynamicPricingData.find(d => d.date === dateString);
-    return dayData?.rules || [];
-  };
-
   const isDateSelected = (dateString: string) => {
-    return selectedDates.includes(dateString);
+    const normalizedSearchDate = normalizeDateValue(dateString);
+    if (!normalizedSearchDate) return false;
+    return normalizedSelectedDates.has(normalizedSearchDate);
   };
 
   const handleDateClick = (day: number) => {
@@ -187,10 +356,11 @@ export const PricingCalendar = memo(function PricingCalendar({
 
   const renderDayCell = (day: number) => {
     const dateString = getDateString(day);
+    
     const pricingRules = getPricingForDate(dateString);
     const isSelected = isDateSelected(dateString);
-    const isToday = new Date().toDateString() === new Date(dateString).toDateString();
-    const choicePrice = getChoicePriceForDate(dateString);
+    const isToday = normalizeDateValue(dateString) === todayString;
+    const singlePrice = getSinglePriceForDate(dateString);
 
     return (
       <button
@@ -204,29 +374,39 @@ export const PricingCalendar = memo(function PricingCalendar({
         {/* 날짜를 오른쪽 상단에 작은 글씨로 표시 */}
         <div className="absolute top-1 right-1 text-xs text-gray-500">{day}</div>
         
-        {/* 초이스별 가격 표시 */}
-        {selectedChoice && choicePrice && (
-          <div className="absolute bottom-1 left-1 text-xs">
-            <div className="text-green-600 font-semibold">${choicePrice.markupPrice}</div>
-            <div className="text-blue-600">${choicePrice.discountPrice}</div>
-            <div className="text-purple-600">${choicePrice.netPrice}</div>
+        {/* 가격 표시 (선택된 항목만 표시) */}
+        {singlePrice && (
+          <div className="absolute bottom-1 left-1 text-xs space-y-0.5">
+            {selectedPriceTypes.has('maxSalePrice') && singlePrice.maxSalePrice > 0 && (
+              <div className="text-green-600 font-semibold">${singlePrice.maxSalePrice.toFixed(2)}</div>
+            )}
+            {selectedPriceTypes.has('discountPrice') && singlePrice.discountPrice > 0 && (
+              <div className="text-blue-600">${singlePrice.discountPrice.toFixed(2)}</div>
+            )}
+            {selectedPriceTypes.has('netPrice') && singlePrice.netPrice > 0 && (
+              <div className="text-purple-600 font-bold">${singlePrice.netPrice.toFixed(2)}</div>
+            )}
+            {/* 가격이 모두 0이거나 선택되지 않은 경우에도 표시 */}
+            {singlePrice.maxSalePrice === 0 && singlePrice.discountPrice === 0 && singlePrice.netPrice === 0 && (
+              <div className="text-gray-400 text-[10px]">가격 없음</div>
+            )}
           </div>
         )}
         
         {/* 데이터가 없을 때 표시 */}
-        {selectedChoice && !choicePrice && (
+        {!singlePrice && (
           <div className="absolute bottom-1 left-1 text-xs text-gray-400">
             데이터 없음
           </div>
         )}
         
         {/* 기존 가격 표시 아이콘 */}
-        {pricingRules.length > 0 && !selectedChoice && (
+        {pricingRules.length > 0 && !selectedChoice && !singlePrice && (
           <div className="absolute bottom-1 right-1">
             <DollarSign className="h-3 w-3 text-green-600" />
           </div>
         )}
-        {pricingRules.length > 1 && !selectedChoice && (
+        {pricingRules.length > 1 && !selectedChoice && !singlePrice && (
           <div className="absolute top-1 right-1 bg-blue-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
             {pricingRules.length}
           </div>
@@ -272,23 +452,48 @@ export const PricingCalendar = memo(function PricingCalendar({
             </div>
           </div>
           
-          {/* 가격 범례 */}
-          {selectedChoice && (
-            <div className="mt-3 flex items-center space-x-4 text-xs">
-              <div className="flex items-center space-x-1">
-                <div className="w-3 h-3 bg-green-600 rounded"></div>
-                <span className="text-gray-600">최대 판매가</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <div className="w-3 h-3 bg-blue-600 rounded"></div>
-                <span className="text-gray-600">할인 가격</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <div className="w-3 h-3 bg-purple-600 rounded"></div>
-                <span className="text-gray-600">Net Price</span>
-              </div>
-            </div>
-          )}
+          {/* 가격 범례 (다중 선택 가능) */}
+          <div className="mt-3 flex items-center space-x-4 text-xs">
+            <button
+              type="button"
+              onClick={() => togglePriceType('maxSalePrice')}
+              title={priceTooltip}
+              className={`flex items-center space-x-1 px-2 py-1 rounded transition-colors ${
+                selectedPriceTypes.has('maxSalePrice')
+                  ? 'bg-green-100 border border-green-600'
+                  : 'bg-gray-100 border border-gray-300 opacity-50'
+              }`}
+            >
+              <div className={`w-3 h-3 rounded ${selectedPriceTypes.has('maxSalePrice') ? 'bg-green-600' : 'bg-gray-400'}`}></div>
+              <span className="text-gray-600">최대 판매가</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => togglePriceType('discountPrice')}
+              title={priceTooltip}
+              className={`flex items-center space-x-1 px-2 py-1 rounded transition-colors ${
+                selectedPriceTypes.has('discountPrice')
+                  ? 'bg-blue-100 border border-blue-600'
+                  : 'bg-gray-100 border border-gray-300 opacity-50'
+              }`}
+            >
+              <div className={`w-3 h-3 rounded ${selectedPriceTypes.has('discountPrice') ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+              <span className="text-gray-600">할인 가격</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => togglePriceType('netPrice')}
+              title={priceTooltip}
+              className={`flex items-center space-x-1 px-2 py-1 rounded transition-colors ${
+                selectedPriceTypes.has('netPrice')
+                  ? 'bg-purple-100 border border-purple-600'
+                  : 'bg-gray-100 border border-gray-300 opacity-50'
+              }`}
+            >
+              <div className={`w-3 h-3 rounded ${selectedPriceTypes.has('netPrice') ? 'bg-purple-600' : 'bg-gray-400'}`}></div>
+              <span className="text-gray-600">Net Price</span>
+            </button>
+          </div>
         </div>
       )}
 

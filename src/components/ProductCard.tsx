@@ -489,16 +489,16 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
 
   return (
     <Link href={`/${locale}/admin/products/${product.id}`} className="block">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow max-w-full">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow max-w-full overflow-hidden">
         {/* 카드 헤더 */}
         <div className="p-4 border-b border-gray-100">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center space-x-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center space-x-3 min-w-0 flex-1">
               <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                 <Package className="h-5 w-5 text-blue-600" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold text-gray-900 truncate">
+                <h3 className="text-sm font-semibold text-gray-900 line-clamp-2" title={product.name}>
                   {product.name}
                 </h3>
               </div>
@@ -567,7 +567,7 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
             </div>
           )}
 
-          {/* 상품명(고객 한글), 상품명(고객 영어), ID */}
+          {/* 상품명(고객 한글), 상품명(고객 영어) */}
           <div className="space-y-1">
             {(product as any).name_ko && (
               <p className="text-sm text-gray-900 font-medium">{(product as any).name_ko}</p>
@@ -575,7 +575,6 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
             {(product as any).name_en && (
               <p className="text-xs text-gray-600">{(product as any).name_en}</p>
             )}
-            <p className="text-xs text-gray-500">ID: {product.id}</p>
           </div>
 
           {/* 설명 */}

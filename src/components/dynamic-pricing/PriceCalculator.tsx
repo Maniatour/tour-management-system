@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { Calculator, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
 import { RealTimePriceCalculation, PricingConfig } from '@/lib/types/dynamic-pricing';
+import { findHomepageChoiceData } from '@/utils/homepagePriceCalculator';
 
 interface Channel {
   id: string;
@@ -26,6 +27,11 @@ interface PriceCalculatorProps {
     child: number;
     infant: number;
   };
+  homepagePricingConfig?: {
+    markup_amount: number;
+    markup_percent: number;
+    choices_pricing: Record<string, any>;
+  };
 }
 
 export const PriceCalculator = memo(function PriceCalculator({
@@ -35,7 +41,8 @@ export const PriceCalculator = memo(function PriceCalculator({
   choiceCombinations = [],
   selectedChannel,
   channels = [],
-  productBasePrice = { adult: 0, child: 0, infant: 0 }
+  productBasePrice = { adult: 0, child: 0, infant: 0 },
+  homepagePricingConfig = { markup_amount: 0, markup_percent: 0, choices_pricing: {} }
 }: PriceCalculatorProps) {
   const formatPrice = (price: number | undefined | null) => {
     if (price === undefined || price === null || isNaN(price)) {
@@ -66,160 +73,8 @@ export const PriceCalculator = memo(function PriceCalculator({
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
-        <Calculator className="h-5 w-5" />
-        <span>실시간 가격 계산</span>
-      </h3>
-
-      {/* 초이스가 없을 때만 기본 가격 계산 표시 */}
-      {!hasChoices && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-            <DollarSign className="h-4 w-4" />
-            <span>기본 가격 계산</span>
-          </h4>
-
-          <div className="space-y-3">
-            {/* 기본 가격 */}
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-sm text-gray-600">기본 가격 (불포함 금액 차감)</span>
-              <div className="text-right">
-                <div className="text-sm font-medium">
-                  성인 {formatPrice(calculation.basePrice.adult)} | 
-                  아동 {formatPrice(calculation.basePrice.child)} | 
-                  유아 {formatPrice(calculation.basePrice.infant)}
-                </div>
-              </div>
-            </div>
-
-            {/* 마크업 적용 */}
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-sm text-gray-600 flex items-center space-x-1">
-                <TrendingUp className="h-3 w-3" />
-                <span>마크업 적용</span>
-              </span>
-              <div className="text-right">
-                <div className="text-sm font-medium">
-                  성인 {formatPrice(calculation.markupPrice.adult)} | 
-                  아동 {formatPrice(calculation.markupPrice.child)} | 
-                  유아 {formatPrice(calculation.markupPrice.infant)}
-                </div>
-                <div className="text-xs text-gray-500">
-                  +{pricingConfig?.markup_amount || 0}$ + {pricingConfig?.markup_percent || 0}%
-                </div>
-              </div>
-            </div>
-
-            {/* 할인 적용 */}
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-sm text-gray-600 flex items-center space-x-1">
-                <TrendingDown className="h-3 w-3" />
-                <span>할인 적용</span>
-              </span>
-              <div className="text-right">
-                <div className="text-sm font-medium">
-                  성인 {formatPrice(calculation.discountPrice.adult)} | 
-                  아동 {formatPrice(calculation.discountPrice.child)} | 
-                  유아 {formatPrice(calculation.discountPrice.infant)}
-                </div>
-                <div className="text-xs text-gray-500">
-                  -{pricingConfig?.coupon_percent || 0}% 쿠폰
-                </div>
-              </div>
-            </div>
-
-            {/* 최종 판매가 */}
-            {(() => {
-              // 동적 가격의 불포함 금액 우선, 없으면 채널의 불포함 금액 사용
-              const dynamicNotIncludedPrice = (pricingConfig as any)?.not_included_price || 0;
-              const channelNotIncludedPrice = (selectedChannel as any)?.not_included_price || 0;
-              const notIncludedPrice = dynamicNotIncludedPrice > 0 ? dynamicNotIncludedPrice : channelNotIncludedPrice;
-              
-              // 동적 가격에 불포함 금액이 있으면 항상 표시, 없으면 채널 설정 확인
-              const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
-              const showNotIncluded = dynamicNotIncludedPrice > 0 || (notIncludedType === 'amount_only' || notIncludedType === 'amount_and_choice');
-              
-              const finalPriceWithNotIncluded = {
-                adult: calculation.finalPrice.adult + (showNotIncluded ? notIncludedPrice : 0),
-                child: calculation.finalPrice.child + (showNotIncluded ? notIncludedPrice : 0),
-                infant: calculation.finalPrice.infant + (showNotIncluded ? notIncludedPrice : 0)
-              };
-              
-              return (
-                <div className="flex justify-between items-center py-2 border-b border-gray-200">
-                  <span className="text-sm font-semibold text-gray-900">최종 판매가</span>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-green-600">
-                      성인 {formatPrice(finalPriceWithNotIncluded.adult)} | 
-                      아동 {formatPrice(finalPriceWithNotIncluded.child)} | 
-                      유아 {formatPrice(finalPriceWithNotIncluded.infant)}
-                    </div>
-                    {showNotIncluded && notIncludedPrice > 0 && (
-                      <div className="text-xs text-gray-500">
-                        +{formatPrice(notIncludedPrice)} 불포함 금액
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* 수수료 */}
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-sm text-gray-600">수수료</span>
-              <div className="text-right">
-                <div className="text-sm font-medium text-red-600">
-                  성인 -{formatPrice(calculation.commission.adult)} | 
-                  아동 -{formatPrice(calculation.commission.child)} | 
-                  유아 -{formatPrice(calculation.commission.infant)}
-                </div>
-                <div className="text-xs text-gray-500">
-                  {pricingConfig?.commission_percent || 0}%
-                </div>
-              </div>
-            </div>
-
-            {/* 순수익 */}
-            {(() => {
-              // 동적 가격의 불포함 금액 우선, 없으면 채널의 불포함 금액 사용
-              const dynamicNotIncludedPrice = (pricingConfig as any)?.not_included_price || 0;
-              const channelNotIncludedPrice = (selectedChannel as any)?.not_included_price || 0;
-              const notIncludedPrice = dynamicNotIncludedPrice > 0 ? dynamicNotIncludedPrice : channelNotIncludedPrice;
-              
-              // 동적 가격에 불포함 금액이 있으면 항상 표시, 없으면 채널 설정 확인
-              const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
-              const showNotIncluded = dynamicNotIncludedPrice > 0 || (notIncludedType === 'amount_only' || notIncludedType === 'amount_and_choice');
-              
-              const netPriceWithNotIncluded = {
-                adult: calculation.netPrice.adult + (showNotIncluded ? notIncludedPrice : 0),
-                child: calculation.netPrice.child + (showNotIncluded ? notIncludedPrice : 0),
-                infant: calculation.netPrice.infant + (showNotIncluded ? notIncludedPrice : 0)
-              };
-              
-              return (
-                <div className="flex justify-between items-center py-3 bg-green-50 rounded-md px-3">
-                  <span className="text-sm font-semibold text-green-800">순수익</span>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-green-700">
-                      성인 {formatPrice(netPriceWithNotIncluded.adult)} | 
-                      아동 {formatPrice(netPriceWithNotIncluded.child)} | 
-                      유아 {formatPrice(netPriceWithNotIncluded.infant)}
-                    </div>
-                    {showNotIncluded && notIncludedPrice > 0 && (
-                      <div className="text-xs text-gray-500">
-                        +{formatPrice(notIncludedPrice)} 불포함 금액
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-       {/* 초이스가 있을 때만 초이스별 가격 계산 표시 */}
-       {hasChoices && (() => {
+       {/* 초이스별 가격 계산 제거 - 더 이상 표시하지 않음 */}
+       {false && hasChoices && (() => {
          // 채널이 OTA인지 확인
          const isOTAChannel = selectedChannel && (
            (selectedChannel as any).type?.toLowerCase() === 'ota' || 
@@ -255,7 +110,7 @@ export const PriceCalculator = memo(function PriceCalculator({
                  <div className="mb-3">
                    <div className="flex items-center justify-between mb-1">
                      <h5 className="text-xs font-semibold text-purple-700">
-                       홈페이지 Net Price (20%할인)
+                       홈페이지 가격 정보 (20%할인)
                      </h5>
                      <div className="text-xs text-purple-600">
                        * 참고용
@@ -266,46 +121,113 @@ export const PriceCalculator = memo(function PriceCalculator({
                        <thead>
                          <tr className="border-b border-purple-500 bg-purple-600">
                            <th className="text-left py-1 px-2 font-bold text-white text-xs">초이스</th>
-                           {isSinglePrice ? (
-                             <th className="text-right py-1 px-2 font-bold text-white text-xs">단일 가격</th>
-                           ) : (
-                             <>
-                               <th className="text-right py-1 px-2 font-bold text-white text-xs">성인</th>
-                               <th className="text-right py-1 px-2 font-bold text-white text-xs">아동</th>
-                               <th className="text-right py-1 px-2 font-bold text-white text-xs">유아</th>
-                             </>
-                           )}
+                           <th className="text-right py-1 px-2 font-bold text-white text-xs">기본</th>
+                           <th className="text-right py-1 px-2 font-bold text-white text-xs">초이스</th>
+                           <th className="text-right py-1 px-2 font-bold text-white text-xs">판매가</th>
+                           <th className="text-right py-1 px-2 font-bold text-white text-xs">Net</th>
                          </tr>
                        </thead>
                        <tbody>
-                         {Object.entries(choiceCalculations).map(([choiceId, choiceCalc]) => {
-                           const combination = choiceCombinations.find(c => c.id === choiceId);
-                           const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
+                        {Object.entries(choiceCalculations).map(([choiceId, choiceCalc]) => {
+                          const combination = choiceCombinations.find(c => c.id === choiceId);
+                          const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
+                          
+                          // 홈페이지 가격 계산
+                          // 홈페이지 가격은 홈페이지(M00001) 채널에 설정된 고정 가격이어야 하므로,
+                          // M00001 채널의 가격 설정을 사용
+                          const baseProductPrice = {
+                            adult: productBasePrice.adult || 0,
+                            child: productBasePrice.child || 0,
+                            infant: productBasePrice.infant || 0
+                          };
                            
-                           // 홈페이지 Net Price 계산: 기본 가격에 20% 할인 적용, 초이스 가격은 할인 없음
-                           // choiceCalc.basePrice는 이미 (상품 기본 가격 + 초이스 가격)이므로,
-                           // pricingConfig에서 기본 가격과 초이스 가격을 분리해야 함
-                           const baseProductPrice = {
-                             adult: pricingConfig?.adult_price || 0,
-                             child: pricingConfig?.child_price || 0,
-                             infant: pricingConfig?.infant_price || 0
+                          // 공통 함수를 사용하여 초이스 가격 찾기
+                          let homepageChoiceData = findHomepageChoiceData(
+                            combination || { id: choiceId },
+                            homepagePricingConfig || { choices_pricing: {} }
+                          );
+                          
+                          // homepagePricingConfig에서 찾지 못한 경우, choiceCombinations의 가격을 사용 (fallback)
+                          const hasHomepageConfigData = Object.keys(homepagePricingConfig?.choices_pricing || {}).length > 0;
+                          
+                          if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0 || 
+                               (homepageChoiceData.adult_price === 0 && homepageChoiceData.child_price === 0 && homepageChoiceData.infant_price === 0)) && 
+                              combination) {
+                            // homepagePricingConfig에 데이터가 없거나 찾지 못한 경우, combination의 가격 사용
+                            if (!hasHomepageConfigData || 
+                                (combination.adult_price !== undefined || combination.child_price !== undefined || combination.infant_price !== undefined)) {
+                              homepageChoiceData = {
+                                adult_price: combination.adult_price || 0,
+                                child_price: combination.child_price || 0,
+                                infant_price: combination.infant_price || 0
+                              };
+                            }
+                          }
+                          
+                          // 디버깅: 초이스 가격 로드 확인
+                          const foundInHomepageConfig = homepagePricingConfig?.choices_pricing?.[choiceId] || 
+                                                         homepagePricingConfig?.choices_pricing?.[combination?.combination_key || ''];
+                          const source = foundInHomepageConfig ? 'homepagePricingConfig' : 'combination';
+                          
+                          // 디버깅: 문제가 있는 경우에만 로그 출력
+                          if (hasHomepageConfigData && source === 'combination' && 
+                              (homepageChoiceData.adult_price === 0 && homepageChoiceData.child_price === 0 && homepageChoiceData.infant_price === 0)) {
+                            console.warn('⚠️ 홈페이지 초이스 가격 키 불일치:', {
+                              choiceId,
+                              combination_key: combination?.combination_key,
+                              homepagePricingConfig_keys: Object.keys(homepagePricingConfig?.choices_pricing || {}),
+                              homepagePricingConfig_sample: Object.entries(homepagePricingConfig?.choices_pricing || {}).slice(0, 2)
+                            });
+                          }
+                          
+                          // homepagePricingConfig에서 찾지 못했거나 0인 경우, choiceCombinations 사용하지 않음
+                          // (choiceCombinations는 현재 선택된 채널의 가격을 포함할 수 있음)
+                          if (source === 'combination' && hasHomepageConfigData && 
+                              (homepageChoiceData.adult_price === 0 && homepageChoiceData.child_price === 0 && homepageChoiceData.infant_price === 0)) {
+                            // homepagePricingConfig에 데이터가 있지만 키가 일치하지 않는 경우
+                            // 빈 객체로 설정하여 0으로 표시
+                            console.warn('홈페이지 초이스 가격 키 불일치 (M00001 채널):', {
+                              choiceId,
+                              combination_key: combination?.combination_key,
+                              availableKeys: Object.keys(homepagePricingConfig?.choices_pricing || {}),
+                              homepagePricingConfig_sample: Object.entries(homepagePricingConfig?.choices_pricing || {}).slice(0, 3)
+                            });
+                            homepageChoiceData = {};
+                          }
+                          
+                          // 찾은 homepageChoiceData를 사용하여 가격 계산
+                          const choicePrice = {
+                            adult_price: homepageChoiceData?.adult_price || homepageChoiceData?.adult || 0,
+                            child_price: homepageChoiceData?.child_price || homepageChoiceData?.child || 0,
+                            infant_price: homepageChoiceData?.infant_price || homepageChoiceData?.infant || 0
+                          };
+                           
+                           // 기본: 상품 기본가격 (마크업 적용 전)
+                           const basePrice = {
+                             adult: baseProductPrice.adult,
+                             child: baseProductPrice.child,
+                             infant: baseProductPrice.infant
                            };
-                           const choicePrice = pricingConfig?.choicePricing?.[choiceId] || { adult_price: 0, child_price: 0, infant_price: 0 };
                            
-                           // 마크업 적용된 기본 가격
-                           const markupAmount = pricingConfig?.markup_amount || 0;
-                           const markupPercent = pricingConfig?.markup_percent || 0;
-                           const basePriceWithMarkup = {
-                             adult: baseProductPrice.adult + markupAmount + (baseProductPrice.adult * markupPercent / 100),
-                             child: baseProductPrice.child + markupAmount + (baseProductPrice.child * markupPercent / 100),
-                             infant: baseProductPrice.infant + markupAmount + (baseProductPrice.infant * markupPercent / 100)
+                           // 초이스: 초이스별 가격 (M00001 채널의 고정값)
+                           const choicePriceValue = {
+                             adult: choicePrice.adult_price || 0,
+                             child: choicePrice.child_price || 0,
+                             infant: choicePrice.infant_price || 0
                            };
                            
-                           // 홈페이지 Net Price: (기본 가격 * 0.8 + 초이스 가격) * (1 - commissionRate)
-                           const homepageNetPrice = {
-                             adult: (basePriceWithMarkup.adult * 0.8 + (choicePrice.adult_price || 0)) * (1 - homepageCommissionRate),
-                             child: (basePriceWithMarkup.child * 0.8 + (choicePrice.child_price || 0)) * (1 - homepageCommissionRate),
-                             infant: (basePriceWithMarkup.infant * 0.8 + (choicePrice.infant_price || 0)) * (1 - homepageCommissionRate)
+                           // 판매가: 상품 기본가격 + 초이스별 가격
+                           const salePrice = {
+                             adult: basePrice.adult + choicePriceValue.adult,
+                             child: basePrice.child + choicePriceValue.child,
+                             infant: basePrice.infant + choicePriceValue.infant
+                           };
+                           
+                           // Net: 판매가에서 20% 할인가격
+                           const netPrice = {
+                             adult: salePrice.adult * 0.8,
+                             child: salePrice.child * 0.8,
+                             infant: salePrice.infant * 0.8
                            };
                            
                            // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
@@ -318,23 +240,18 @@ export const PriceCalculator = memo(function PriceCalculator({
                                <td className={`py-1 px-2 font-semibold ${textClass} text-xs`}>
                                  {combinationName}
                                </td>
-                               {isSinglePrice ? (
-                                 <td className="py-1 px-2 text-right font-bold text-purple-900 text-xs">
-                                   {formatPrice(homepageNetPrice.adult)}
-                                 </td>
-                               ) : (
-                                 <>
-                                   <td className="py-1 px-2 text-right font-bold text-purple-900 text-xs">
-                                     {formatPrice(homepageNetPrice.adult)}
-                                   </td>
-                                   <td className="py-1 px-2 text-right font-bold text-purple-900 text-xs">
-                                     {formatPrice(homepageNetPrice.child)}
-                                   </td>
-                                   <td className="py-1 px-2 text-right font-bold text-purple-900 text-xs">
-                                     {formatPrice(homepageNetPrice.infant)}
-                                   </td>
-                                 </>
-                               )}
+                               <td className="py-1 px-2 text-right text-purple-900 text-xs">
+                                 {formatPrice(basePrice.adult)}
+                               </td>
+                               <td className="py-1 px-2 text-right text-purple-900 text-xs">
+                                 {formatPrice(choicePriceValue.adult)}
+                               </td>
+                               <td className="py-1 px-2 text-right font-semibold text-purple-900 text-xs">
+                                 {formatPrice(salePrice.adult)}
+                               </td>
+                               <td className="py-1 px-2 text-right font-bold text-purple-900 text-xs">
+                                 {formatPrice(netPrice.adult)}
+                               </td>
                              </tr>
                            );
                          })}

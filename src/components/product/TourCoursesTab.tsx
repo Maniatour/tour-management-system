@@ -326,11 +326,27 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
   }
 
   // 투어 코스 편집 저장
-  const handleSaveCourse = (updatedCourse: TourCourse) => {
-    // 로컬 상태 업데이트
-    setTourCourses(prev => prev.map(course => 
-      course.id === updatedCourse.id ? updatedCourse : course
-    ))
+  const handleSaveCourse = async (updatedCourse: TourCourse) => {
+    // 데이터베이스에서 최신 데이터 다시 로드하여 계층 구조 반영
+    try {
+      const { data, error } = await supabase
+        .from('tour_courses')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      if (data) {
+        setTourCourses(data)
+      }
+    } catch (error) {
+      console.error('투어 코스 목록 새로고침 오류:', error)
+      // 오류 발생 시 로컬 상태만 업데이트
+      setTourCourses(prev => prev.map(course => 
+        course.id === updatedCourse.id ? updatedCourse : course
+      ))
+    }
     
     // 선택된 코스 목록도 업데이트
     if (selectedCourses.has(updatedCourse.id)) {
