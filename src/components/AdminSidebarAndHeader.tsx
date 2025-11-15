@@ -142,10 +142,35 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
       const { data, error } = await query
 
-      if (error) throw error
+      if (error) {
+        // Supabase 오류 객체의 상세 정보 로깅
+        console.error('만료 예정 문서 수 조회 오류:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          fullError: error
+        })
+        throw error
+      }
       setExpiringDocumentsCount(data?.length || 0)
     } catch (error) {
-      console.error('만료 예정 문서 수 조회 오류:', error)
+      // 오류 타입에 따라 상세 정보 로깅
+      if (error instanceof Error) {
+        console.error('만료 예정 문서 수 조회 오류:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        })
+      } else if (error && typeof error === 'object') {
+        console.error('만료 예정 문서 수 조회 오류:', {
+          error: JSON.stringify(error, null, 2),
+          type: typeof error,
+          keys: Object.keys(error)
+        })
+      } else {
+        console.error('만료 예정 문서 수 조회 오류:', error)
+      }
       setExpiringDocumentsCount(0)
     }
   }, [authUser, userRole])

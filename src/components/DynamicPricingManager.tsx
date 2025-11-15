@@ -1581,34 +1581,6 @@ export default function DynamicPricingManager({
               <div className="grid grid-cols-2 gap-3">
                  <div>
                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                    수수료 ($)
-                   </label>
-                     <input
-                       type="number"
-                    value={(((pricingConfig as Record<string, unknown>).commission_amount as number) || 0) === 0 ? '' : ((pricingConfig as Record<string, unknown>).commission_amount as number) || 0}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value === '' || value === '-') {
-                        handlePricingConfigUpdate({ commission_amount: 0 });
-                        return;
-                      }
-                      const numValue = parseFloat(value);
-                      if (!isNaN(numValue)) {
-                        handlePricingConfigUpdate({ commission_amount: numValue });
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const value = e.target.value;
-                      if (value === '' || value === '-') {
-                        handlePricingConfigUpdate({ commission_amount: 0 });
-                      }
-                    }}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                       placeholder="0"
-                     />
-                 </div>
-                 <div>
-                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     수수료 (%)
                    </label>
                      <input
@@ -1629,6 +1601,34 @@ export default function DynamicPricingManager({
                       const value = e.target.value;
                       if (value === '' || value === '-') {
                         handlePricingConfigUpdate({ commission_percent: 0 });
+                      }
+                    }}
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                       placeholder="0"
+                     />
+                 </div>
+                 <div>
+                   <label className="block text-xs font-medium text-gray-700 mb-1">
+                    수수료 ($)
+                   </label>
+                     <input
+                       type="number"
+                    value={(((pricingConfig as Record<string, unknown>).commission_amount as number) || 0) === 0 ? '' : ((pricingConfig as Record<string, unknown>).commission_amount as number) || 0}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || value === '-') {
+                        handlePricingConfigUpdate({ commission_amount: 0 });
+                        return;
+                      }
+                      const numValue = parseFloat(value);
+                      if (!isNaN(numValue)) {
+                        handlePricingConfigUpdate({ commission_amount: numValue });
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || value === '-') {
+                        handlePricingConfigUpdate({ commission_amount: 0 });
                       }
                     }}
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"

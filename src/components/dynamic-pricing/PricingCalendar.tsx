@@ -275,15 +275,17 @@ export const PricingCalendar = memo(function PricingCalendar({
       : (rule.not_included_price || 0);
     
     // 6. 최대 판매가 계산
+    // choices_pricing이 있으면 basePrice + choicePrice를 사용, 없으면 basePrice만 사용
+    const totalBasePrice = basePrice + choicePrice;
     let maxSalePrice = 0;
     if (isOTA && otaSalePrice > 0) {
       // OTA 채널이고 OTA 판매가가 있으면 OTA 판매가 사용
       maxSalePrice = otaSalePrice;
     } else {
-      // 기본 가격 + 마크업
+      // 기본 가격 + 초이스 가격 + 마크업
       const markupAmount = rule.markup_amount || 0;
       const markupPercent = rule.markup_percent || 0;
-      maxSalePrice = basePrice + markupAmount + (basePrice * markupPercent / 100);
+      maxSalePrice = totalBasePrice + markupAmount + (totalBasePrice * markupPercent / 100);
     }
     
     // 7. 할인 가격 계산 (최대 판매가 × (1 - 쿠폰%))
@@ -434,7 +436,6 @@ export const PricingCalendar = memo(function PricingCalendar({
       {choiceCombinations.length > 0 && (selectedChannelId || selectedChannelType) && (
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">초이스 선택:</label>
             <div className="relative">
               <select
                 value={selectedChoice}

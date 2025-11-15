@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Package, Users, DollarSign, Clock, Copy } from 'lucide-react'
+import { Package, Users, DollarSign, Clock, Copy, Star } from 'lucide-react'
 import { 
   MdDirectionsCar,      // 밴
   MdDirectionsBus,      // 버스
@@ -17,14 +17,18 @@ type Product = Database['public']['Tables']['products']['Row']
 interface ProductCardProps {
   product: Product
   locale: string
+  collapsed?: boolean
   onStatusChange?: (productId: string, newStatus: string) => void
   onProductCopied?: (newProductId: string) => void
+  onFavoriteToggle?: (productId: string, isFavorite: boolean) => void
 }
 
-export default function ProductCard({ product, locale, onStatusChange, onProductCopied }: ProductCardProps) {
+export default function ProductCard({ product, locale, collapsed = false, onStatusChange, onProductCopied, onFavoriteToggle }: ProductCardProps) {
   const [isUpdating, setIsUpdating] = useState(false)
   const [localStatus, setLocalStatus] = useState(product.status || 'inactive')
   const [isCopying, setIsCopying] = useState(false)
+  const [isTogglingFavorite, setIsTogglingFavorite] = useState(false)
+  const [isFavorite, setIsFavorite] = useState((product as any).is_favorite || false)
   const [choicePriceRange, setChoicePriceRange] = useState<{ min: number; max: number } | null>(null)
 
   const handleStatusToggle = async (e: React.MouseEvent) => {
@@ -65,6 +69,67 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
       setLocalStatus(product.status || 'inactive')
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  const handleFavoriteToggle = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (isTogglingFavorite) return
+    
+    const newFavoriteStatus = !isFavorite
+    
+    try {
+      setIsTogglingFavorite(true)
+      
+      // 로컬 상태 즉시 업데이트 (낙관적 업데이트)
+      setIsFavorite(newFavoriteStatus)
+      
+      // 즐겨찾기 순서 계산 (즐겨찾기로 설정할 때만)
+      let favoriteOrder: number | null = null
+      if (newFavoriteStatus) {
+        // 현재 즐겨찾기된 상품들의 최대 순서 가져오기
+        const { data: favorites } = await supabase
+          .from('products')
+          .select('favorite_order')
+          .eq('is_favorite', true)
+          .not('favorite_order', 'is', null)
+          .order('favorite_order', { ascending: false })
+          .limit(1)
+        
+        favoriteOrder = favorites && favorites.length > 0 
+          ? ((favorites[0] as any).favorite_order || 0) + 1 
+          : 1
+      }
+      
+      // 데이터베이스에 즐겨찾기 상태 업데이트
+      const { error } = await supabase
+        .from('products')
+        .update({ 
+          is_favorite: newFavoriteStatus,
+          favorite_order: favoriteOrder
+        })
+        .eq('id', product.id)
+      
+      if (error) {
+        console.error('즐겨찾기 상태 업데이트 오류:', error)
+        // 에러 시 원래 상태로 되돌리기
+        setIsFavorite((product as any).is_favorite || false)
+        return
+      }
+      
+      // 부모 컴포넌트에 상태 변경 알림
+      if (onFavoriteToggle) {
+        onFavoriteToggle(product.id, newFavoriteStatus)
+      }
+      
+    } catch (error) {
+      console.error('즐겨찾기 상태 업데이트 중 예상치 못한 오류:', error)
+      // 에러 시 원래 상태로 되돌리기
+      setIsFavorite((product as any).is_favorite || false)
+    } finally {
+      setIsTogglingFavorite(false)
     }
   }
 
@@ -504,6 +569,22 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
               </div>
             </div>
             <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+              {/* 즐겨찾기 버튼 */}
+              <button
+                onClick={handleFavoriteToggle}
+                disabled={isTogglingFavorite}
+                className={`p-1 rounded transition-colors ${
+                  isTogglingFavorite
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : isFavorite
+                    ? 'text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50'
+                    : 'text-gray-400 hover:text-yellow-500 hover:bg-yellow-50'
+                }`}
+                title={isFavorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+              >
+                <Star className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
+              </button>
+              
               {/* 복사 버튼 */}
               <button
                 onClick={handleCopyProduct}
@@ -552,98 +633,100 @@ export default function ProductCard({ product, locale, onStatusChange, onProduct
         </div>
 
         {/* 카드 본문 */}
-        <div className="p-4 space-y-3">
-          {/* 이미지 */}
-          {(product.primary_image || (product as any).thumbnail_url) && (
-            <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
-              <img
-                src={(product as any).thumbnail_url || product.primary_image}
-                alt={(product as any).name_ko || product.name}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-            </div>
-          )}
-
-          {/* 상품명(고객 한글), 상품명(고객 영어) */}
-          <div className="space-y-1">
-            {(product as any).name_ko && (
-              <p className="text-sm text-gray-900 font-medium">{(product as any).name_ko}</p>
+        {!collapsed && (
+          <div className="p-4 space-y-3">
+            {/* 이미지 */}
+            {(product.primary_image || (product as any).thumbnail_url) && (
+              <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+                <img
+                  src={(product as any).thumbnail_url || product.primary_image}
+                  alt={(product as any).name_ko || product.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none'
+                  }}
+                />
+              </div>
             )}
-            {(product as any).name_en && (
-              <p className="text-xs text-gray-600">{(product as any).name_en}</p>
-            )}
-          </div>
 
-          {/* 설명 */}
-          {product.description && (
-            <p className="text-sm text-gray-600 line-clamp-2">
-              {product.description}
-            </p>
-          )}
-
-          {/* 상품 정보 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex items-center space-x-1.5">
-              <Clock className="h-3.5 w-3.5 text-gray-400" />
-              <span className="text-xs text-gray-600">
-                {product.duration || '시간 미정'}
-              </span>
-            </div>
-            <div className="flex items-center space-x-1.5">
-              <Users className="h-3.5 w-3.5 text-gray-400" />
-              <span className="text-xs text-gray-600">
-                최대 {product.max_participants || 'N/A'}명
-              </span>
-            </div>
-          </div>
-
-          {/* 태그 */}
-          {product.tags && product.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {product.tags.slice(0, 3).map((tag, index) => (
-                <span
-                  key={index}
-                  className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-800"
-                >
-                  {tag}
-                </span>
-              ))}
-              {product.tags.length > 3 && (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500">
-                  +{product.tags.length - 3}
-                </span>
+            {/* 상품명(고객 한글), 상품명(고객 영어) */}
+            <div className="space-y-1">
+              {(product as any).name_ko && (
+                <p className="text-sm text-gray-900 font-medium">{(product as any).name_ko}</p>
+              )}
+              {(product as any).name_en && (
+                <p className="text-xs text-gray-600">{(product as any).name_en}</p>
               )}
             </div>
-          )}
 
-           {/* 가격 및 운송수단 */}
-           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-             <div className="flex-1">
-               <div className="flex items-center space-x-1.5">
-                 <DollarSign className="h-4 w-4 text-green-600" />
-                 <div className="flex flex-col">
-                   {choicePriceRange ? (
-                     <div className="text-lg font-bold text-green-600">
-                       <span className="text-xs font-medium text-gray-600 mr-1">자체 채널 판매 가격: </span>
-                       ${(product.base_price || 0) + choicePriceRange.min}
-                       {choicePriceRange.min !== choicePriceRange.max && ` ~ $${(product.base_price || 0) + choicePriceRange.max}`}
-                     </div>
-                   ) : (
-                     <div className="text-lg font-bold text-green-600">
-                       <span className="text-xs font-medium text-gray-600 mr-1">자체 채널 판매 가격: </span>
-                       ${product.base_price || 0}
-                     </div>
-                   )}
+            {/* 설명 */}
+            {product.description && (
+              <p className="text-sm text-gray-600 line-clamp-2">
+                {product.description}
+              </p>
+            )}
+
+            {/* 상품 정보 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center space-x-1.5">
+                <Clock className="h-3.5 w-3.5 text-gray-400" />
+                <span className="text-xs text-gray-600">
+                  {product.duration || '시간 미정'}
+                </span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <Users className="h-3.5 w-3.5 text-gray-400" />
+                <span className="text-xs text-gray-600">
+                  최대 {product.max_participants || 'N/A'}명
+                </span>
+              </div>
+            </div>
+
+            {/* 태그 */}
+            {product.tags && product.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {product.tags.slice(0, 3).map((tag, index) => (
+                  <span
+                    key={index}
+                    className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-800"
+                  >
+                    {tag}
+                  </span>
+                ))}
+                {product.tags.length > 3 && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500">
+                    +{product.tags.length - 3}
+                  </span>
+                )}
+              </div>
+            )}
+
+             {/* 가격 및 운송수단 */}
+             <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+               <div className="flex-1">
+                 <div className="flex items-center space-x-1.5">
+                   <DollarSign className="h-4 w-4 text-green-600" />
+                   <div className="flex flex-col">
+                     {choicePriceRange ? (
+                       <div className="text-lg font-bold text-green-600">
+                         <span className="text-xs font-medium text-gray-600 mr-1">자체 채널 판매 가격: </span>
+                         ${(product.base_price || 0) + choicePriceRange.min}
+                         {choicePriceRange.min !== choicePriceRange.max && ` ~ $${(product.base_price || 0) + choicePriceRange.max}`}
+                       </div>
+                     ) : (
+                       <div className="text-lg font-bold text-green-600">
+                         <span className="text-xs font-medium text-gray-600 mr-1">자체 채널 판매 가격: </span>
+                         ${product.base_price || 0}
+                       </div>
+                     )}
+                   </div>
                  </div>
                </div>
+               {/* 운송수단 아이콘 - 오른쪽 끝 정렬 */}
+               {renderTransportationMethods(product)}
              </div>
-             {/* 운송수단 아이콘 - 오른쪽 끝 정렬 */}
-             {renderTransportationMethods(product)}
-           </div>
-        </div>
+          </div>
+        )}
 
       </div>
     </Link>

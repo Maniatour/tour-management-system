@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator } from 'lucide-react'
+import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import AddAttendanceForm from '@/components/AddAttendanceForm'
@@ -9,6 +9,7 @@ import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import AttendanceEditModal from '@/components/attendance/AttendanceEditModal'
 import BiweeklyCalculatorModal from '@/components/BiweeklyCalculatorModal'
 import TotalEmployeesModal from '@/components/TotalEmployeesModal'
+import TipsShareModal from '@/components/TipsShareModal'
 import { useParams } from 'next/navigation'
 
 interface AttendanceRecord {
@@ -57,6 +58,7 @@ export default function AttendancePage() {
   const [isAddFormOpen, setIsAddFormOpen] = useState(false)
   const [isBiweeklyCalculatorOpen, setIsBiweeklyCalculatorOpen] = useState(false)
   const [isTotalEmployeesModalOpen, setIsTotalEmployeesModalOpen] = useState(false)
+  const [isTipsShareModalOpen, setIsTipsShareModalOpen] = useState(false)
   
   // 어드민 권한 체크
   const checkAdminPermission = async () => {
@@ -594,6 +596,13 @@ export default function AttendancePage() {
                   2주급 계산기
                 </button>
                 <button
+                  onClick={() => setIsTipsShareModalOpen(true)}
+                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  Tips 쉐어
+                </button>
+                <button
                   onClick={() => setIsTotalEmployeesModalOpen(true)}
                   className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                 >
@@ -921,6 +930,13 @@ export default function AttendancePage() {
       <TotalEmployeesModal
         isOpen={isTotalEmployeesModalOpen}
         onClose={() => setIsTotalEmployeesModalOpen(false)}
+        locale={locale}
+      />
+
+      {/* Tips 쉐어 모달 */}
+      <TipsShareModal
+        isOpen={isTipsShareModalOpen}
+        onClose={() => setIsTipsShareModalOpen(false)}
         locale={locale}
       />
     </div>

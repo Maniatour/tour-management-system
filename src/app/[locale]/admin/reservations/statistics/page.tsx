@@ -368,7 +368,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   }
 
   return (
-    <div className="space-y-6 max-w-[1664px] mx-auto overflow-x-hidden">
+    <div className="space-y-6 max-w-[1920px] mx-auto px-4 overflow-x-hidden">
       {/* 헤더 */}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">통계 리포트</h1>
@@ -410,7 +410,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
 
       {/* 필터 컨트롤 */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex items-center gap-4 flex-nowrap overflow-x-auto">
+        <div className="flex items-center gap-4 flex-wrap">
           {/* 1. 채널 선택 - 채널별 정산 탭에서는 숨김 */}
           {activeTab !== 'channelSettlement' && (
             <div className="flex items-center space-x-2 flex-shrink-0">
@@ -528,7 +528,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         <>
 
       {/* 요약 통계 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -649,7 +649,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           <h3 className="text-lg font-semibold text-gray-900">상세 통계</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">

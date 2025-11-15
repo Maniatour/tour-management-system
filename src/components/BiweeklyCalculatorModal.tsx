@@ -42,6 +42,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [totalPay, setTotalPay] = useState<number>(0)
   const [attendancePay, setAttendancePay] = useState<number>(0)
   const [tourPay, setTourPay] = useState<number>(0)
+  const [tipPay, setTipPay] = useState<number>(0)
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
@@ -156,8 +157,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   }
 
   // 총 급여 계산 함수
-  const calculateTotalPay = (attendanceSalary: number, tourSalary: number) => {
-    return attendanceSalary + tourSalary
+  const calculateTotalPay = (attendanceSalary: number, tourSalary: number, tipSalary: number) => {
+    return attendanceSalary + tourSalary + tipSalary
   }
 
   // 출퇴근 기록 조회
@@ -404,18 +405,164 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     }
   }, [selectedEmployee, startDate, endDate])
 
-  // attendancePay와 tourPay가 변경될 때마다 총 급여 계산
+  // attendancePay, tourPay, tipPay가 변경될 때마다 총 급여 계산
   useEffect(() => {
-    const total = calculateTotalPay(attendancePay, tourPay)
+    const total = calculateTotalPay(attendancePay, tourPay, tipPay)
     setTotalPay(total)
-  }, [attendancePay, tourPay])
+  }, [attendancePay, tourPay, tipPay])
 
   // 날짜나 직원이 변경될 때 투어 fee 조회
   useEffect(() => {
     if (selectedEmployee && startDate && endDate) {
       fetchTourFees()
+      fetchTipShares()
     }
   }, [selectedEmployee, startDate, endDate])
+
+  // 팁 쉐어 데이터 조회
+  const fetchTipShares = async () => {
+    if (!startDate || !endDate || !selectedEmployee) {
+      setTipPay(0)
+      return
+    }
+
+    try {
+      // 선택된 직원의 position 확인
+      const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
+      const isOp = selectedMember?.position?.toLowerCase() === 'op' || 
+                   selectedMember?.position?.toLowerCase() === 'office manager'
+
+      let tourIds: string[] = []
+
+      if (isOp) {
+        // OP의 경우 해당 기간의 모든 투어 조회
+        const { data: toursData, error: toursError } = await supabase
+          .from('tours')
+          .select('id')
+          .gte('tour_date', startDate)
+          .lte('tour_date', endDate)
+
+        if (toursError) {
+          console.error('투어 조회 오류:', toursError)
+          setTipPay(0)
+          return
+        }
+
+        tourIds = toursData?.map(t => t.id) || []
+      } else {
+        // 가이드/어시스턴트의 경우 배정된 투어만 조회
+        const { data: toursData, error: toursError } = await supabase
+          .from('tours')
+          .select('id')
+          .gte('tour_date', startDate)
+          .lte('tour_date', endDate)
+          .or(`tour_guide_id.eq.${selectedEmployee},assistant_id.eq.${selectedEmployee}`)
+
+        if (toursError) {
+          console.error('투어 조회 오류:', toursError)
+          setTipPay(0)
+          return
+        }
+
+        tourIds = toursData?.map(t => t.id) || []
+      }
+
+      if (tourIds.length === 0) {
+        setTipPay(0)
+        return
+      }
+
+      // 팁 쉐어 데이터 조회
+      const { data: tipSharesData, error: tipSharesError } = await supabase
+        .from('tour_tip_shares')
+        .select('*')
+        .in('tour_id', tourIds)
+
+      if (tipSharesError) {
+        // 테이블이 없을 수 있으므로 에러 무시
+        console.log('팁 쉐어 데이터 조회 오류 (테이블이 없을 수 있음):', tipSharesError)
+        setTipPay(0)
+        return
+      }
+
+      console.log('조회된 팁 쉐어 데이터:', {
+        tourIds,
+        tipSharesData,
+        selectedEmployee,
+        shareCount: tipSharesData?.length || 0
+      })
+
+      // 선택된 직원이 가이드, 어시스턴트인 경우의 팁 금액 합산
+      let totalTipPay = 0
+      const shareIds = tipSharesData?.map((s: any) => s.id) || []
+      
+      // 이메일 비교를 대소문자 구분 없이 처리
+      const normalizedSelectedEmail = selectedEmployee?.toLowerCase().trim()
+      
+      tipSharesData?.forEach((share: any) => {
+        const guideEmail = share.guide_email?.toLowerCase().trim()
+        const assistantEmail = share.assistant_email?.toLowerCase().trim()
+        
+        console.log('팁 쉐어 비교:', {
+          shareId: share.id,
+          tourId: share.tour_id,
+          guideEmail,
+          assistantEmail,
+          selectedEmail: normalizedSelectedEmail,
+          guideAmount: share.guide_amount,
+          assistantAmount: share.assistant_amount,
+          guideMatch: guideEmail === normalizedSelectedEmail,
+          assistantMatch: assistantEmail === normalizedSelectedEmail
+        })
+        
+        if (guideEmail === normalizedSelectedEmail) {
+          totalTipPay += share.guide_amount || 0
+        }
+        if (assistantEmail === normalizedSelectedEmail) {
+          totalTipPay += share.assistant_amount || 0
+        }
+      })
+
+      // OP의 경우 tour_tip_share_ops 테이블에서 조회
+      if (shareIds.length > 0) {
+        const { data: opSharesData, error: opSharesError } = await supabase
+          .from('tour_tip_share_ops')
+          .select('op_email, op_amount')
+          .in('tour_tip_share_id', shareIds)
+
+        if (opSharesError) {
+          console.log('OP 팁 쉐어 데이터 조회 오류:', opSharesError)
+        } else {
+          console.log('조회된 OP 팁 쉐어 데이터:', {
+            shareIds,
+            opSharesData,
+            selectedEmployee: normalizedSelectedEmail
+          })
+        }
+
+        if (!opSharesError && opSharesData) {
+          opSharesData.forEach((opShare: any) => {
+            const opEmail = opShare.op_email?.toLowerCase().trim()
+            console.log('OP 팁 쉐어 비교:', {
+              opEmail,
+              selectedEmail: normalizedSelectedEmail,
+              opAmount: opShare.op_amount,
+              match: opEmail === normalizedSelectedEmail
+            })
+            if (opEmail === normalizedSelectedEmail) {
+              totalTipPay += opShare.op_amount || 0
+            }
+          })
+        }
+      }
+
+      console.log('최종 팁 금액:', totalTipPay)
+      setTipPay(totalTipPay)
+    } catch (error) {
+      console.error('팁 쉐어 조회 오류:', error)
+      setTipPay(0)
+    }
+  }
 
   // 시급 입력 핸들러
   const handleHourlyRateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -473,6 +620,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     setTotalPay(0)
     setAttendancePay(0)
     setTourPay(0)
+    setTipPay(0)
     setAttendanceRecords([])
     setSelectedEmployee('')
     setTourFees([])
@@ -635,6 +783,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                 <div class="calculation-item">
                   <span>투어 Fee 소계:</span>
                   <span>$${formatCurrency(tourPay)}</span>
+                </div>
+                <div class="calculation-item">
+                  <span>Tips 쉐어 소계:</span>
+                  <span>$${formatCurrency(tipPay)}</span>
                 </div>
                 <div class="calculation-item total">
                   <span>총 급여:</span>
@@ -940,6 +1092,15 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                       </span>
                       <span className="text-sm font-bold text-purple-600">
                         ${formatCurrency(tourPay)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-600">
+                        <DollarSign className="w-3 h-3 inline mr-1" />
+                        Tips 쉐어 소계:
+                      </span>
+                      <span className="text-sm font-bold text-pink-600">
+                        ${formatCurrency(tipPay)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-t pt-1">

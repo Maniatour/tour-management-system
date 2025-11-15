@@ -520,7 +520,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
   }
 
   return (
-    <div className="space-y-4 overflow-x-hidden">
+    <div className="space-y-4 overflow-x-hidden max-w-full">
       {/* 요약 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
@@ -712,7 +712,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                        {/* 자체 채널의 모든 예약 내역 테이블 */}
                        {isGroupExpanded && (
                          <div className="overflow-x-auto bg-gray-50">
-                           <table className="min-w-full divide-y divide-gray-200 text-xs">
+                           <table className="w-full divide-y divide-gray-200 text-xs">
                              <thead className="bg-white">
                                <tr>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">상태</th>
@@ -986,7 +986,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                               {/* 채널 예약 내역 테이블 */}
                               {isChannelExpanded && (
                                 <div className="overflow-x-auto">
-                                  <table className="min-w-full divide-y divide-gray-200 text-xs">
+                                  <table className="w-full divide-y divide-gray-200 text-xs">
                                     <thead className="bg-white">
                                       <tr>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">상태</th>
@@ -1210,7 +1210,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                       {/* 자체 채널의 모든 투어 내역 테이블 */}
                       {isGroupExpanded && (
                         <div className="overflow-x-auto bg-gray-50">
-                          <table className="min-w-full divide-y divide-gray-200 text-xs">
+                          <table className="w-full divide-y divide-gray-200 text-xs">
                             <thead className="bg-white">
                               <tr>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">상태</th>
@@ -1443,7 +1443,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                               {/* 채널 투어 진행 내역 테이블 */}
                               {isChannelExpanded && (
                                 <div className="overflow-x-auto">
-                                  <table className="min-w-full divide-y divide-gray-200 text-xs">
+                                  <table className="w-full divide-y divide-gray-200 text-xs">
                                     <thead className="bg-white">
                                       <tr>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">상태</th>

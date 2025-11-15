@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, ChangeEvent } from 'react'
-import { Plus, Trash2, Settings, Save, Upload } from 'lucide-react'
+import { Plus, Trash2, Settings, Save, Upload, ChevronDown, ChevronUp } from 'lucide-react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
@@ -43,6 +43,7 @@ export default function OptionsTab({
   const [saveMessage, setSaveMessage] = useState('')
   const [uploadingImages, setUploadingImages] = useState<{[key: string]: boolean}>({})
   const [dragOverStates, setDragOverStates] = useState<{[key: string]: boolean}>({})
+  const [allCardsCollapsed, setAllCardsCollapsed] = useState(false)
 
   // 이미지 업로드 처리 함수
   const handleImageUpload = async (file: File, optionId: string) => {
@@ -181,6 +182,23 @@ export default function OptionsTab({
           </span>
         </div>
         <div className="flex space-x-2">
+          <button
+            type="button"
+            onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
+            className="px-3 py-2 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+          >
+            {allCardsCollapsed ? (
+              <>
+                <ChevronDown className="h-4 w-4" />
+                <span>상세보기</span>
+              </>
+            ) : (
+              <>
+                <ChevronUp className="h-4 w-4" />
+                <span>접어보기</span>
+              </>
+            )}
+          </button>
           <button
             type="button"
             onClick={() => setShowAddOptionModal(true)}
@@ -381,57 +399,61 @@ export default function OptionsTab({
                   </button>
                 </div>
 
-                {/* 옵션 설명 */}
-                {option.description && (
-                  <p className="text-sm text-gray-600 mb-3 line-clamp-2">{option.description}</p>
+                {!allCardsCollapsed && (
+                  <>
+                    {/* 옵션 설명 */}
+                    {option.description && (
+                      <p className="text-sm text-gray-600 mb-3 line-clamp-2">{option.description}</p>
+                    )}
+
+                    {/* 가격 정보 */}
+                    <div className="mb-3 p-3 bg-gray-50 rounded-lg">
+                      <div className="text-xs font-medium text-gray-700 mb-2">가격 정보</div>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <div className="text-gray-500 mb-1">성인</div>
+                          <div className="font-medium text-gray-900">
+                            {option.adultPrice !== undefined ? `$${option.adultPrice.toFixed(2)}` : '미설정'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-500 mb-1">아동</div>
+                          <div className="font-medium text-gray-900">
+                            {option.childPrice !== undefined ? `$${option.childPrice.toFixed(2)}` : '미설정'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-500 mb-1">유아</div>
+                          <div className="font-medium text-gray-900">
+                            {option.infantPrice !== undefined ? `$${option.infantPrice.toFixed(2)}` : '미설정'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 옵션 설정 - 필수/다중 선택 */}
+                    <div className="flex items-center space-x-4 text-sm pt-2 border-t border-gray-100">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={option.isRequired}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => updateProductOption(option.id, { isRequired: e.target.checked })}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                        />
+                        <span className="text-gray-700">필수</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={option.isMultiple}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => updateProductOption(option.id, { isMultiple: e.target.checked })}
+                          className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                        />
+                        <span className="text-gray-700">다중</span>
+                      </label>
+                    </div>
+                  </>
                 )}
-
-                {/* 가격 정보 */}
-                <div className="mb-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="text-xs font-medium text-gray-700 mb-2">가격 정보</div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <div className="text-gray-500 mb-1">성인</div>
-                      <div className="font-medium text-gray-900">
-                        {option.adultPrice !== undefined ? `$${option.adultPrice.toFixed(2)}` : '미설정'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 mb-1">아동</div>
-                      <div className="font-medium text-gray-900">
-                        {option.childPrice !== undefined ? `$${option.childPrice.toFixed(2)}` : '미설정'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 mb-1">유아</div>
-                      <div className="font-medium text-gray-900">
-                        {option.infantPrice !== undefined ? `$${option.infantPrice.toFixed(2)}` : '미설정'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 옵션 설정 - 필수/다중 선택 */}
-                <div className="flex items-center space-x-4 text-sm pt-2 border-t border-gray-100">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={option.isRequired}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => updateProductOption(option.id, { isRequired: e.target.checked })}
-                      className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                    />
-                    <span className="text-gray-700">필수</span>
-                  </label>
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={option.isMultiple}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => updateProductOption(option.id, { isMultiple: e.target.checked })}
-                      className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                    />
-                    <span className="text-gray-700">다중</span>
-                  </label>
-                </div>
               </div>
             </div>
           )

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Save, Copy, Download, Upload, FileText, Info, Share2 } from 'lucide-react'
+import { Plus, Trash2, Save, Copy, Download, Upload, FileText, Info, Share2, ChevronDown, ChevronUp } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -127,6 +127,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const [showExportTemplateModal, setShowExportTemplateModal] = useState(false)
   const [uploadingImages, setUploadingImages] = useState<{[key: string]: boolean}>({})
   const [dragOverStates, setDragOverStates] = useState<{[key: string]: boolean}>({})
+  const [draggedGroupIndex, setDraggedGroupIndex] = useState<number | null>(null)
+  const [allCardsCollapsed, setAllCardsCollapsed] = useState(false)
   const [products, setProducts] = useState<Array<{id: string, name: string, name_ko?: string}>>([])
   const [selectedProductId, setSelectedProductId] = useState('')
   const [importData, setImportData] = useState('')
@@ -466,7 +468,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         .eq('product_id', productId)
 
       // 새로운 choices 저장 (processedChoices 사용)
-      for (const choice of processedChoices) {
+      for (let index = 0; index < processedChoices.length; index++) {
+        const choice = processedChoices[index]
         // choice_group와 choice_group_ko 확인
         const trimmedChoiceGroup = choice.choice_group.trim()
         const trimmedChoiceGroupKo = choice.choice_group_ko.trim()
@@ -494,7 +497,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             is_required: choice.is_required,
             min_selections: choice.min_selections,
             max_selections: choice.max_selections,
-            sort_order: choice.sort_order
+            sort_order: choice.sort_order !== undefined ? choice.sort_order : index
           })
           .select()
           .single() as { data: ProductChoiceData, error: SupabaseError | null }
@@ -595,6 +598,20 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     setProductChoices(prev => prev.map((group, i) => 
       i === index ? { ...group, [field]: value } : group
     ))
+  }, [])
+
+  // 초이스 그룹 순서 변경
+  const moveChoiceGroup = useCallback((fromIndex: number, toIndex: number) => {
+    setProductChoices(prev => {
+      const newChoices = [...prev]
+      const [moved] = newChoices.splice(fromIndex, 1)
+      newChoices.splice(toIndex, 0, moved)
+      // sort_order 업데이트
+      return newChoices.map((choice, index) => ({
+        ...choice,
+        sort_order: index
+      }))
+    })
   }, [])
 
   // 초이스 추가
@@ -761,7 +778,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           is_required: choice.is_required,
           min_selections: choice.min_selections,
           max_selections: choice.max_selections,
-          sort_order: choice.sort_order,
+            sort_order: choice.sort_order || index,
           options: (choice.options || []).map((option: ChoiceOptionData) => ({
           id: `temp_option_${Date.now()}_${Math.random()}`,
           option_key: option.option_key,
@@ -805,7 +822,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         is_required: choice.is_required,
         min_selections: choice.min_selections,
         max_selections: choice.max_selections,
-        sort_order: choice.sort_order,
+            sort_order: choice.sort_order || index,
         options: choice.options.map(option => ({
           option_key: option.option_key,
           option_name: option.option_name,
@@ -1107,9 +1124,42 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       ) : (
         <div className="space-y-4">
           {productChoices.map((choice, groupIndex) => (
-            <div key={choice.id} className="border border-gray-200 rounded-lg p-4">
+            <div 
+              key={choice.id} 
+              className={`border border-gray-200 rounded-lg p-4 transition-all ${
+                draggedGroupIndex === groupIndex ? 'opacity-50' : ''
+              } ${draggedGroupIndex !== null && draggedGroupIndex !== groupIndex ? 'hover:border-blue-300' : ''}`}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (draggedGroupIndex !== null && draggedGroupIndex !== groupIndex) {
+                  moveChoiceGroup(draggedGroupIndex, groupIndex)
+                }
+                setDraggedGroupIndex(null)
+              }}
+            >
               {/* 초이스 그룹 헤더 */}
               <div className="flex justify-between items-start mb-4">
+                <div 
+                  className="flex items-center space-x-2 mr-2 cursor-move hover:text-gray-600 transition-colors" 
+                  title="드래그하여 순서 변경"
+                  draggable
+                  onDragStart={(e) => {
+                    setDraggedGroupIndex(groupIndex)
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.stopPropagation()
+                  }}
+                  onDragEnd={() => {
+                    setDraggedGroupIndex(null)
+                  }}
+                >
+                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                  </svg>
+                </div>
                 <div className="flex-1 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
@@ -1209,13 +1259,31 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <h4 className="text-sm font-medium text-gray-700">초이스</h4>
-                  <button
-                    onClick={() => addChoiceOption(groupIndex)}
-                    className="flex items-center px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
-                  >
-                    <Plus className="w-3 h-3 mr-1" />
-                    초이스 추가
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
+                      className="flex items-center px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded border border-gray-200"
+                    >
+                      {allCardsCollapsed ? (
+                        <>
+                          <ChevronDown className="w-3 h-3 mr-1" />
+                          상세보기
+                        </>
+                      ) : (
+                        <>
+                          <ChevronUp className="w-3 h-3 mr-1" />
+                          접어보기
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => addChoiceOption(groupIndex)}
+                      className="flex items-center px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      초이스 추가
+                    </button>
+                  </div>
                 </div>
 
                 {/* 세로형 카드뷰 그리드 레이아웃 */}
@@ -1400,103 +1468,107 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                          </div>
                        </div>
 
-                       {/* 초이스명 */}
-                       <div className="space-y-2 mb-3">
-                         <label className="block text-xs font-medium text-gray-600">한국어</label>
-                         <input
-                           type="text"
-                           value={option.option_name_ko}
-                           onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name_ko', e.target.value)}
-                           placeholder="초이스명 (한국어)"
-                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                         />
-                         <label className="block text-xs font-medium text-gray-600">영어</label>
-                         <input
-                           type="text"
-                           value={option.option_name}
-                           onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name', e.target.value)}
-                           placeholder="초이스명 (영어)"
-                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                         />
-                       </div>
+                       {!allCardsCollapsed && (
+                         <>
+                           {/* 초이스명 */}
+                           <div className="space-y-2 mb-3">
+                             <label className="block text-xs font-medium text-gray-600">한국어</label>
+                             <input
+                               type="text"
+                               value={option.option_name_ko}
+                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name_ko', e.target.value)}
+                               placeholder="초이스명 (한국어)"
+                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                             />
+                             <label className="block text-xs font-medium text-gray-600">영어</label>
+                             <input
+                               type="text"
+                               value={option.option_name}
+                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name', e.target.value)}
+                               placeholder="초이스명 (영어)"
+                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                             />
+                           </div>
 
-                       {/* 설명 */}
-                       <div className="space-y-2 mb-3">
-                         <label className="block text-xs font-medium text-gray-600">설명 (한국어)</label>
-                         <textarea
-                           value={option.description_ko || ''}
-                           onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'description_ko', e.target.value)}
-                           placeholder="설명 (한국어)"
-                           rows={2}
-                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
-                         />
-                         <label className="block text-xs font-medium text-gray-600">설명 (영어)</label>
-                         <textarea
-                           value={option.description || ''}
-                           onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'description', e.target.value)}
-                           placeholder="Description (English)"
-                           rows={2}
-                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
-                         />
-                       </div>
+                           {/* 설명 */}
+                           <div className="space-y-2 mb-3">
+                             <label className="block text-xs font-medium text-gray-600">설명 (한국어)</label>
+                             <textarea
+                               value={option.description_ko || ''}
+                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'description_ko', e.target.value)}
+                               placeholder="설명 (한국어)"
+                               rows={2}
+                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
+                             />
+                             <label className="block text-xs font-medium text-gray-600">설명 (영어)</label>
+                             <textarea
+                               value={option.description || ''}
+                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'description', e.target.value)}
+                               placeholder="Description (English)"
+                               rows={2}
+                               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
+                             />
+                           </div>
 
-                       {/* 가격 */}
-                       <div className="space-y-2 mb-3">
-                         <label className="block text-xs font-medium text-gray-600">가격</label>
-                         <div className="grid grid-cols-3 gap-2">
-                           <div>
-                             <label className="block text-xs text-gray-500 mb-1">성인</label>
-                             <input
-                               type="number"
-                               value={option.adult_price}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'adult_price', parseInt(e.target.value) || 0)}
-                               placeholder="0"
-                               className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                             />
+                           {/* 가격 */}
+                           <div className="space-y-2 mb-3">
+                             <label className="block text-xs font-medium text-gray-600">가격</label>
+                             <div className="grid grid-cols-3 gap-2">
+                               <div>
+                                 <label className="block text-xs text-gray-500 mb-1">성인</label>
+                                 <input
+                                   type="number"
+                                   value={option.adult_price}
+                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'adult_price', parseInt(e.target.value) || 0)}
+                                   placeholder="0"
+                                   className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                 />
+                               </div>
+                               <div>
+                                 <label className="block text-xs text-gray-500 mb-1">아동</label>
+                                 <input
+                                   type="number"
+                                   value={option.child_price}
+                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'child_price', parseInt(e.target.value) || 0)}
+                                   placeholder="0"
+                                   className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                 />
+                               </div>
+                               <div>
+                                 <label className="block text-xs text-gray-500 mb-1">유아</label>
+                                 <input
+                                   type="number"
+                                   value={option.infant_price}
+                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'infant_price', parseInt(e.target.value) || 0)}
+                                   placeholder="0"
+                                   className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                 />
+                               </div>
+                             </div>
+                             <div className="flex items-center justify-between pt-2">
+                               <div>
+                                 <label className="block text-xs text-gray-500 mb-1">수용</label>
+                                 <input
+                                   type="number"
+                                   value={option.capacity}
+                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'capacity', parseInt(e.target.value) || 1)}
+                                   placeholder="1"
+                                   className="w-20 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                 />
+                               </div>
+                               <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer">
+                                 <input
+                                   type="checkbox"
+                                   checked={option.is_active}
+                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'is_active', e.target.checked)}
+                                   className="mr-2 w-3 h-3 text-blue-600 rounded focus:ring-blue-500"
+                                 />
+                                 활성
+                               </label>
+                             </div>
                            </div>
-                           <div>
-                             <label className="block text-xs text-gray-500 mb-1">아동</label>
-                             <input
-                               type="number"
-                               value={option.child_price}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'child_price', parseInt(e.target.value) || 0)}
-                               placeholder="0"
-                               className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                             />
-                           </div>
-                           <div>
-                             <label className="block text-xs text-gray-500 mb-1">유아</label>
-                             <input
-                               type="number"
-                               value={option.infant_price}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'infant_price', parseInt(e.target.value) || 0)}
-                               placeholder="0"
-                               className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                             />
-                           </div>
-                         </div>
-                         <div className="flex items-center justify-between pt-2">
-                           <div>
-                             <label className="block text-xs text-gray-500 mb-1">수용</label>
-                             <input
-                               type="number"
-                               value={option.capacity}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'capacity', parseInt(e.target.value) || 1)}
-                               placeholder="1"
-                               className="w-20 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                             />
-                           </div>
-                           <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer">
-                             <input
-                               type="checkbox"
-                               checked={option.is_active}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'is_active', e.target.checked)}
-                               className="mr-2 w-3 h-3 text-blue-600 rounded focus:ring-blue-500"
-                             />
-                             활성
-                           </label>
-                         </div>
-                       </div>
+                         </>
+                       )}
                      </div>
                    </div>
                  ))}

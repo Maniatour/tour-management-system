@@ -1079,7 +1079,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                 <h4 className="font-semibold text-gray-700">지출 상세 내역</h4>
               </div>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
+                <table className="w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">항목</th>
@@ -1281,7 +1281,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           <h3 className="text-lg font-semibold text-gray-900">투어 상세 통계</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">

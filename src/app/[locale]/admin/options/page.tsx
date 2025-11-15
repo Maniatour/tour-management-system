@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Search, Edit, Trash2, Settings, DollarSign, Copy } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Settings, DollarSign, Copy, ChevronDown, ChevronUp } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -29,6 +29,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
   const [editingOption, setEditingOption] = useState<Option | null>(null)
   const [copyingOption, setCopyingOption] = useState<Option | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [allCardsCollapsed, setAllCardsCollapsed] = useState(false)
 
   useEffect(() => {
     fetchOptions()
@@ -338,26 +339,44 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
         />
       </div>
 
-      {/* 카테고리 탭 */}
-      <div className="flex flex-wrap gap-2">
-        {categories.map((category) => (
-          <button
-            key={category}
-            onClick={() => setSelectedCategory(category)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              selectedCategory === category
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {category === 'all' ? '전체' : getCategoryLabel(category)}
-            {category !== 'all' && (
-              <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
-                {options.filter(option => option.category === category).length}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* 카테고리 탭 및 일괄 제어 버튼 */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {categories.map((category) => (
+            <button
+              key={category}
+              onClick={() => setSelectedCategory(category)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                selectedCategory === category
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {category === 'all' ? '전체' : getCategoryLabel(category)}
+              {category !== 'all' && (
+                <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+                  {options.filter(option => option.category === category).length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
+          className="px-3 py-2 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+        >
+          {allCardsCollapsed ? (
+            <>
+              <ChevronDown size={16} />
+              <span>상세보기</span>
+            </>
+          ) : (
+            <>
+              <ChevronUp size={16} />
+              <span>접어보기</span>
+            </>
+          )}
+        </button>
       </div>
 
       {/* 옵션 목록 - 카드뷰 */}
@@ -419,78 +438,80 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
             </div>
 
             {/* 카드 본문 */}
-            <div className="p-4 space-y-3">
-              {/* 이미지 */}
-              {(option as any).image_url && (
-                <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
-                  <img
-                    src={(option as any).thumbnail_url || (option as any).image_url}
-                    alt={(option as any).image_alt || option.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none'
-                    }}
-                  />
+            {!allCardsCollapsed && (
+              <div className="p-4 space-y-3">
+                {/* 이미지 */}
+                {(option as any).image_url && (
+                  <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+                    <img
+                      src={(option as any).thumbnail_url || (option as any).image_url}
+                      alt={(option as any).image_alt || option.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* 옵션명(고객 한글), 옵션명(고객 영어), ID */}
+                <div className="space-y-1">
+                  {(option as any).name_ko && (
+                    <p className="text-sm text-gray-900 font-medium">{(option as any).name_ko}</p>
+                  )}
+                  {(option as any).name_en && (
+                    <p className="text-xs text-gray-600">{(option as any).name_en}</p>
+                  )}
+                  <p className="text-xs text-gray-500">ID: {option.id}</p>
                 </div>
-              )}
 
-              {/* 옵션명(고객 한글), 옵션명(고객 영어), ID */}
-              <div className="space-y-1">
-                {(option as any).name_ko && (
-                  <p className="text-sm text-gray-900 font-medium">{(option as any).name_ko}</p>
-                )}
-                {(option as any).name_en && (
-                  <p className="text-xs text-gray-600">{(option as any).name_en}</p>
-                )}
-                <p className="text-xs text-gray-500">ID: {option.id}</p>
-              </div>
+                {/* 설명 */}
+                <div className="text-sm text-gray-700 line-clamp-2">
+                  {option.description && (
+                    <p className="text-xs text-gray-500 mb-1">내부용: {option.description}</p>
+                  )}
+                  {(option as any).description_ko && (
+                    <p className="text-xs text-gray-500 mb-1">한글: {(option as any).description_ko}</p>
+                  )}
+                  {(option as any).description_en && (
+                    <p className="text-xs text-gray-500 mb-1">EN: {(option as any).description_en}</p>
+                  )}
+                </div>
 
-              {/* 설명 */}
-              <div className="text-sm text-gray-700 line-clamp-2">
-                {option.description && (
-                  <p className="text-xs text-gray-500 mb-1">내부용: {option.description}</p>
-                )}
-                {(option as any).description_ko && (
-                  <p className="text-xs text-gray-500 mb-1">한글: {(option as any).description_ko}</p>
-                )}
-                {(option as any).description_en && (
-                  <p className="text-xs text-gray-500 mb-1">EN: {(option as any).description_en}</p>
-                )}
-              </div>
+                {/* 가격 정보 - 한 줄에 표시 */}
+                <div className="text-sm text-gray-600">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <span>성인: ${option.adult_price.toLocaleString()}</span>
+                      <span>아동: ${option.child_price.toLocaleString()}</span>
+                      <span>유아: ${option.infant_price.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
 
-              {/* 가격 정보 - 한 줄에 표시 */}
-              <div className="text-sm text-gray-600">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <span>성인: ${option.adult_price.toLocaleString()}</span>
-                    <span>아동: ${option.child_price.toLocaleString()}</span>
-                    <span>유아: ${option.infant_price.toLocaleString()}</span>
+                {/* 태그 */}
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">태그</div>
+                  <div className="flex flex-wrap gap-1">
+                    {option.tags && option.tags.length > 0 ? (
+                      option.tags.slice(0, 3).map((tag: string, index: number) => (
+                        <span
+                          key={index}
+                          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                        >
+                          {tag}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-gray-400 text-xs">태그 없음</span>
+                    )}
+                    {option.tags && option.tags.length > 3 && (
+                      <span className="text-xs text-gray-500">+{option.tags.length - 3}개 더</span>
+                    )}
                   </div>
                 </div>
               </div>
-
-              {/* 태그 */}
-              <div>
-                <div className="text-xs text-gray-500 mb-1">태그</div>
-                <div className="flex flex-wrap gap-1">
-                  {option.tags && option.tags.length > 0 ? (
-                    option.tags.slice(0, 3).map((tag: string, index: number) => (
-                      <span
-                        key={index}
-                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
-                      >
-                        {tag}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-gray-400 text-xs">태그 없음</span>
-                  )}
-                  {option.tags && option.tags.length > 3 && (
-                    <span className="text-xs text-gray-500">+{option.tags.length - 3}개 더</span>
-                  )}
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         ))}
       </div>

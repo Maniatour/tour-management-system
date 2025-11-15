@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, ChevronUp, Star } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import ProductCard from '@/components/ProductCard'
+import FavoriteOrderModal from '@/components/admin/FavoriteOrderModal'
 
 type Product = Database['public']['Tables']['products']['Row']
 
@@ -56,7 +57,9 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     }>
   }>({})
   const [homepageChannel, setHomepageChannel] = useState<any>(null)
+  const [allCardsCollapsed, setAllCardsCollapsed] = useState(false)
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
+  const [isFavoriteOrderModalOpen, setIsFavoriteOrderModalOpen] = useState(false)
 
   // Supabase에서 상품 데이터 가져오기
   useEffect(() => {
@@ -823,13 +826,22 @@ export default function AdminProducts({ params }: AdminProductsProps) {
             투어 상품을 추가, 편집, 삭제할 수 있습니다
           </p>
         </div>
-        <Link
-                          href={`/${locale}/admin/products/new`}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-        >
-          <Plus size={20} />
-          <span>새 상품 추가</span>
-        </Link>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setIsFavoriteOrderModalOpen(true)}
+            className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 flex items-center space-x-2"
+          >
+            <Star size={20} />
+            <span>즐겨찾기 순서 조정</span>
+          </button>
+          <Link
+            href={`/${locale}/admin/products/new`}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+          >
+            <Plus size={20} />
+            <span>새 상품 추가</span>
+          </Link>
+        </div>
       </div>
 
       {/* 검색 및 필터 섹션 */}
@@ -957,29 +969,49 @@ export default function AdminProducts({ params }: AdminProductsProps) {
             </button>
           )}
           {/* 뷰 전환 버튼 */}
-          <div className="flex items-center space-x-2 border border-gray-300 rounded-lg p-1">
-            <button
-              onClick={() => setViewMode('card')}
-              className={`p-1.5 rounded transition-colors ${
-                viewMode === 'card'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-              title="카드뷰"
-            >
-              <Grid3x3 size={18} />
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded transition-colors ${
-                viewMode === 'table'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-              title="테이블뷰"
-            >
-              <List size={18} />
-            </button>
+          <div className="flex items-center space-x-2">
+            {viewMode === 'card' && (
+              <button
+                onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
+                className="px-3 py-1.5 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+              >
+                {allCardsCollapsed ? (
+                  <>
+                    <ChevronDown size={16} />
+                    <span>상세보기</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp size={16} />
+                    <span>접어보기</span>
+                  </>
+                )}
+              </button>
+            )}
+            <div className="flex items-center space-x-2 border border-gray-300 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('card')}
+                className={`p-1.5 rounded transition-colors ${
+                  viewMode === 'card'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+                title="카드뷰"
+              >
+                <Grid3x3 size={18} />
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                className={`p-1.5 rounded transition-colors ${
+                  viewMode === 'table'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+                title="테이블뷰"
+              >
+                <List size={18} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1008,6 +1040,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
               key={product.id}
               product={product}
               locale={locale}
+              collapsed={allCardsCollapsed}
               onStatusChange={(productId, newStatus) => {
                 // 로컬 상태 업데이트
                 setProducts(prevProducts => 
@@ -1019,6 +1052,14 @@ export default function AdminProducts({ params }: AdminProductsProps) {
               onProductCopied={() => {
                 // 상품 복사 후 목록 새로고침
                 fetchProducts()
+              }}
+              onFavoriteToggle={(productId, isFavorite) => {
+                // 로컬 상태 업데이트
+                setProducts(prevProducts => 
+                  prevProducts.map(p => 
+                    p.id === productId ? { ...p, is_favorite: isFavorite } : p
+                  )
+                )
               }}
             />
           ))}
@@ -1620,6 +1661,16 @@ export default function AdminProducts({ params }: AdminProductsProps) {
           </div>
         </div>
       )}
+
+      {/* 즐겨찾기 순서 조정 모달 */}
+      <FavoriteOrderModal
+        isOpen={isFavoriteOrderModalOpen}
+        onClose={() => setIsFavoriteOrderModalOpen(false)}
+        onUpdate={() => {
+          fetchProducts() // 상품 목록 새로고침
+        }}
+        locale={locale}
+      />
     </div>
   )
 }

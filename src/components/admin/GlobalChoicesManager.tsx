@@ -51,6 +51,7 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
   const [editingTemplate, setEditingTemplate] = useState<ChoiceTemplate | null>(null)
   const [showImportChoicesModal, setShowImportChoicesModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<{template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string} | null>(null)
+  const [allCardsCollapsed, setAllCardsCollapsed] = useState(false)
 
   useEffect(() => {
     fetchTemplates()
@@ -215,7 +216,7 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
       // 같은 그룹 내의 템플릿들만 가져오기
       const sameGroupTemplates = templates
         .filter(t => t.template_group === currentTemplate.template_group)
-        .sort((a, b) => a.sort_order - b.sort_order)
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
 
       const currentIndex = sameGroupTemplates.findIndex(t => t.id === templateId)
       if (currentIndex === -1) return
@@ -229,43 +230,35 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
         targetIndex = currentIndex + 1
       }
 
-      const targetTemplate = sameGroupTemplates[targetIndex]
-      const currentSortOrder = currentTemplate.sort_order
-      const targetSortOrder = targetTemplate.sort_order
+      // 배열에서 항목 위치 변경
+      const reorderedTemplates = [...sameGroupTemplates]
+      const [movedTemplate] = reorderedTemplates.splice(currentIndex, 1)
+      reorderedTemplates.splice(targetIndex, 0, movedTemplate)
 
-      // 두 템플릿의 sort_order 교환
-      const { error: error1 } = await supabase
-        .from('options')
-        .update({ sort_order: targetSortOrder })
-        .eq('id', templateId)
+      // 모든 템플릿의 sort_order를 0부터 순차적으로 재할당
+      const updatePromises = reorderedTemplates.map((template, index) => 
+        supabase
+          .from('options')
+          .update({ sort_order: index })
+          .eq('id', template.id)
+      )
 
-      if (error1) {
-        console.error('Error updating sort order:', error1)
+      const results = await Promise.all(updatePromises)
+      
+      // 오류 확인
+      const hasError = results.some(result => result.error)
+      if (hasError) {
+        const errors = results.filter(result => result.error).map(result => result.error)
+        console.error('Error updating sort orders:', errors)
+        alert('순서 변경 중 오류가 발생했습니다.')
         return
       }
 
-      const { error: error2 } = await supabase
-        .from('options')
-        .update({ sort_order: currentSortOrder })
-        .eq('id', targetTemplate.id)
-
-      if (error2) {
-        console.error('Error updating sort order:', error2)
-        return
-      }
-
-      // 로컬 상태 업데이트
-      setTemplates(templates.map(t => {
-        if (t.id === templateId) {
-          return { ...t, sort_order: targetSortOrder }
-        }
-        if (t.id === targetTemplate.id) {
-          return { ...t, sort_order: currentSortOrder }
-        }
-        return t
-      }))
+      // 데이터베이스에서 최신 데이터 다시 불러오기
+      await fetchTemplates()
     } catch (error) {
       console.error('Error changing sort order:', error)
+      alert('순서 변경 중 오류가 발생했습니다.')
     }
   }
 
@@ -528,6 +521,22 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
           ))}
         </select>
         <button
+          onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
+          className="px-3 py-2 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+        >
+          {allCardsCollapsed ? (
+            <>
+              <ChevronDown size={16} />
+              <span>상세보기</span>
+            </>
+          ) : (
+            <>
+              <ChevronUp size={16} />
+              <span>접어보기</span>
+            </>
+          )}
+        </button>
+        <button
           onClick={() => setShowImportChoicesModal(true)}
           className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
         >
@@ -677,82 +686,84 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
                     </div>
 
                     {/* 카드 본문 */}
-                    <div className="p-4 space-y-3">
-                      {/* 이미지 */}
-                      {template.image_url && (
-                        <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
-                          <img
-                            src={template.thumbnail_url || template.image_url}
-                            alt={template.image_alt || template.name_ko || template.name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none'
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      {/* 옵션명(고객 한글), 옵션명(고객 영어), ID */}
-                      <div className="space-y-1">
-                        {template.name_ko && (
-                          <p className="text-sm text-gray-900 font-medium">{template.name_ko}</p>
+                    {!allCardsCollapsed && (
+                      <div className="p-4 space-y-3">
+                        {/* 이미지 */}
+                        {template.image_url && (
+                          <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+                            <img
+                              src={template.thumbnail_url || template.image_url}
+                              alt={template.image_alt || template.name_ko || template.name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none'
+                              }}
+                            />
+                          </div>
                         )}
-                        {template.name && (
-                          <p className="text-xs text-gray-600">{template.name}</p>
+
+                        {/* 옵션명(고객 한글), 옵션명(고객 영어), ID */}
+                        <div className="space-y-1">
+                          {template.name_ko && (
+                            <p className="text-sm text-gray-900 font-medium">{template.name_ko}</p>
+                          )}
+                          {template.name && (
+                            <p className="text-xs text-gray-600">{template.name}</p>
+                          )}
+                          <p className="text-xs text-gray-500">ID: {template.id}</p>
+                        </div>
+
+                        {/* 설명 */}
+                        {template.description && (
+                          <p className="text-sm text-gray-600 line-clamp-2">{template.description}</p>
                         )}
-                        <p className="text-xs text-gray-500">ID: {template.id}</p>
-                      </div>
 
-                      {/* 설명 */}
-                      {template.description && (
-                        <p className="text-sm text-gray-600 line-clamp-2">{template.description}</p>
-                      )}
-
-                      {/* 가격 정보 */}
-                      <div className="text-xs text-gray-500">
-                        <div className="flex justify-between">
-                          <span>성인: ${template.adult_price}</span>
-                          <span>아동: ${template.child_price}</span>
-                          <span>유아: ${template.infant_price}</span>
+                        {/* 가격 정보 */}
+                        <div className="text-xs text-gray-500">
+                          <div className="flex justify-between">
+                            <span>성인: ${template.adult_price}</span>
+                            <span>아동: ${template.child_price}</span>
+                            <span>유아: ${template.infant_price}</span>
+                          </div>
+                          <div className="text-center mt-1">
+                            {getPriceTypeLabel(template.price_type)}
+                          </div>
                         </div>
-                        <div className="text-center mt-1">
-                          {getPriceTypeLabel(template.price_type)}
+
+                        {/* 태그 */}
+                        {template.tags && template.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {template.tags.map((tag, index) => (
+                              <span
+                                key={index}
+                                className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 상태 */}
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            template.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {template.status === 'active' ? '활성' : '비활성'}
+                          </span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            template.is_required ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {template.is_required ? '필수' : '선택'}
+                          </span>
+                        </div>
+
+                        {/* 정렬순서 표시 */}
+                        <div className="text-xs text-gray-400 text-center pt-1">
+                          순서: {template.sort_order + 1}
                         </div>
                       </div>
-
-                      {/* 태그 */}
-                      {template.tags && template.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {template.tags.map((tag, index) => (
-                            <span
-                              key={index}
-                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* 상태 */}
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          template.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {template.status === 'active' ? '활성' : '비활성'}
-                        </span>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          template.is_required ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {template.is_required ? '필수' : '선택'}
-                        </span>
-                      </div>
-
-                      {/* 정렬순서 표시 */}
-                      <div className="text-xs text-gray-400 text-center pt-1">
-                        순서: {template.sort_order + 1}
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )
               })}

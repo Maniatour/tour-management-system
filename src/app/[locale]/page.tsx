@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { ArrowRight, Play, CheckCircle } from 'lucide-react'
+import { ArrowRight, Play, CheckCircle, ChevronUp, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface PopularProduct {
   id: string
@@ -14,14 +15,20 @@ interface PopularProduct {
   category: string | null
   base_price: number | null
   primary_image: string | null
+  favorite_order: number | null
 }
 
 export default function HomePage() {
   const t = useTranslations('common')
   const locale = useLocale()
+  const { userRole } = useAuth()
   const [popularTours, setPopularTours] = useState<PopularProduct[]>([])
   const [popularLoading, setPopularLoading] = useState(true)
   const [popularError, setPopularError] = useState<string | null>(null)
+  const [isChangingOrder, setIsChangingOrder] = useState(false)
+  
+  // 관리자 권한 확인
+  const isAdmin = userRole === 'admin' || userRole === 'manager'
 
   const getProductName = (product: PopularProduct) => {
     if (locale === 'en') {
@@ -68,27 +75,55 @@ export default function HomePage() {
       setPopularError(null)
 
       try {
-        const { data, error } = await supabase
+        // 즐겨찾기된 상품 먼저 가져오기
+        const { data: favoriteProducts, error: favoriteError } = await supabase
           .from('products')
-          .select('id, name, name_en, description, base_price, category')
+          .select('id, name, name_en, description, base_price, category, is_favorite, favorite_order')
           .eq('status', 'active')
-          .order('created_at', { ascending: false })
+          .eq('is_favorite', true)
+          .order('favorite_order', { ascending: true })
           .limit(3)
 
-        if (error) {
-          console.error('Failed to load popular tours:', error)
-          setPopularError(locale === 'en' ? 'Failed to load popular tours.' : '인기 투어를 불러오지 못했습니다.')
+        let productsToShow: any[] = []
+
+        if (!favoriteError && favoriteProducts && favoriteProducts.length > 0) {
+          // 즐겨찾기 상품이 있으면 사용
+          productsToShow = favoriteProducts
+        } else {
+          // 즐겨찾기 상품이 없으면 최근 상품 가져오기
+          const { data: recentProducts, error: recentError } = await supabase
+            .from('products')
+            .select('id, name, name_en, description, base_price, category, is_favorite, favorite_order')
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .limit(3)
+
+          if (recentError) {
+            console.error('Failed to load recent tours:', recentError)
+            setPopularError(locale === 'en' ? 'Failed to load popular tours.' : '인기 투어를 불러오지 못했습니다.')
+            setPopularTours([])
+            return
+          }
+
+          if (recentProducts) {
+            productsToShow = recentProducts
+          }
+        }
+
+        if (productsToShow.length === 0) {
           setPopularTours([])
+          setPopularLoading(false)
           return
         }
 
-        const rows = (data ?? []).map((product) => ({
+        const rows = productsToShow.map((product) => ({
           id: product.id,
           name: product.name,
           name_en: product.name_en,
           description: product.description,
           base_price: product.base_price,
-          category: product.category
+          category: product.category,
+          favorite_order: product.favorite_order
         }))
 
         const productsWithImages = await Promise.all(
@@ -141,6 +176,127 @@ export default function HomePage() {
 
     fetchPopularTours()
   }, [locale])
+
+  // 즐겨찾기 상품 순서 변경 함수
+  const handleChangeFavoriteOrder = async (productId: string, direction: 'up' | 'down') => {
+    if (!isAdmin) return
+    
+    try {
+      setIsChangingOrder(true)
+      
+      const currentProduct = popularTours.find(p => p.id === productId)
+      if (!currentProduct) return
+
+      // 즐겨찾기된 상품만 필터링 (favorite_order가 있는 것들)
+      const favoriteProducts = popularTours
+        .filter(p => p.favorite_order !== null && p.favorite_order !== undefined)
+        .sort((a, b) => (a.favorite_order || 0) - (b.favorite_order || 0))
+
+      const currentIndex = favoriteProducts.findIndex(p => p.id === productId)
+      if (currentIndex === -1) return
+
+      let targetIndex: number
+      if (direction === 'up') {
+        if (currentIndex === 0) return // 이미 맨 위
+        targetIndex = currentIndex - 1
+      } else {
+        if (currentIndex === favoriteProducts.length - 1) return // 이미 맨 아래
+        targetIndex = currentIndex + 1
+      }
+
+      // 배열에서 항목 위치 변경
+      const reorderedProducts = [...favoriteProducts]
+      const [movedProduct] = reorderedProducts.splice(currentIndex, 1)
+      reorderedProducts.splice(targetIndex, 0, movedProduct)
+
+      // 모든 상품의 favorite_order를 0부터 순차적으로 재할당
+      const updatePromises = reorderedProducts.map((product, index) =>
+        supabase
+          .from('products')
+          .update({ favorite_order: index })
+          .eq('id', product.id)
+      )
+
+      const results = await Promise.all(updatePromises)
+
+      // 오류 확인
+      const hasError = results.some(result => result.error)
+      if (hasError) {
+        const errors = results.filter(result => result.error).map(result => result.error)
+        console.error('Error updating favorite orders:', errors)
+        alert(locale === 'en' ? 'Failed to update order.' : '순서 변경 중 오류가 발생했습니다.')
+        return
+      }
+
+      // 데이터베이스에서 최신 데이터 다시 불러오기
+      const { data: reloadedFavoriteProducts, error: favoriteError } = await supabase
+        .from('products')
+        .select('id, name, name_en, description, base_price, category, is_favorite, favorite_order')
+        .eq('status', 'active')
+        .eq('is_favorite', true)
+        .order('favorite_order', { ascending: true })
+        .limit(3)
+
+      if (favoriteError) {
+        console.error('Failed to reload favorite products:', favoriteError)
+        return
+      }
+
+      if (reloadedFavoriteProducts && reloadedFavoriteProducts.length > 0) {
+        // 이미지 정보 다시 가져오기
+        const productsWithImages = await Promise.all(
+          reloadedFavoriteProducts.map(async (product) => {
+            let primaryImage: string | null = null
+
+            const { data: primaryMedia } = await supabase
+              .from('product_media')
+              .select('file_url')
+              .eq('product_id', product.id)
+              .eq('file_type', 'image')
+              .eq('is_active', true)
+              .eq('is_primary', true)
+              .single()
+
+            if (primaryMedia && 'file_url' in primaryMedia) {
+              primaryImage = (primaryMedia as { file_url: string }).file_url
+            } else {
+              const { data: firstMedia } = await supabase
+                .from('product_media')
+                .select('file_url')
+                .eq('product_id', product.id)
+                .eq('file_type', 'image')
+                .eq('is_active', true)
+                .order('order_index', { ascending: true })
+                .limit(1)
+                .single()
+
+              if (firstMedia && 'file_url' in firstMedia) {
+                primaryImage = (firstMedia as { file_url: string }).file_url
+              }
+            }
+
+            return {
+              id: product.id,
+              name: product.name,
+              name_en: product.name_en,
+              description: product.description,
+              base_price: product.base_price,
+              category: product.category,
+              favorite_order: product.favorite_order,
+              primary_image: primaryImage
+            }
+          })
+        )
+
+        setPopularTours(productsWithImages)
+      }
+    } catch (error) {
+      console.error('Error changing favorite order:', error)
+      alert(locale === 'en' ? 'Failed to update order.' : '순서 변경 중 오류가 발생했습니다.')
+    } finally {
+      setIsChangingOrder(false)
+    }
+  }
 
   const stats = [
     { number: '10,000+', label: t('satisfiedCustomers') },
@@ -351,15 +507,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 인기 투어 섹션 - 모바일 최적화 */}
+      {/* 즐겨찾기/인기 투어 섹션 - 모바일 최적화 */}
       <section className="py-8 sm:py-12 lg:py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8 sm:mb-12">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
-              {t('popularTours')}
+              {locale === 'en' ? 'Featured Tours' : '추천 투어'}
             </h2>
             <p className="text-lg sm:text-xl text-gray-600">
-              {t('popularToursDesc')}
+              {locale === 'en' ? 'Our specially selected tours for you' : '특별히 추천하는 투어를 만나보세요'}
             </p>
           </div>
 
@@ -383,8 +539,47 @@ export default function HomePage() {
             )}
 
             {!popularLoading && !popularError &&
-              popularTours.map((product) => (
-                <div key={product.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow">
+              popularTours.map((product, index) => {
+                const isFavorite = product.favorite_order !== null && product.favorite_order !== undefined
+                const canMoveUp = isAdmin && isFavorite && index > 0
+                const canMoveDown = isAdmin && isFavorite && index < popularTours.length - 1
+                
+                return (
+                <div key={product.id} className="bg-white rounded-lg shadow-sm border overflow-hidden hover:shadow-md transition-shadow relative">
+                  {/* 관리자용 순서 조정 버튼 */}
+                  {isAdmin && isFavorite && (
+                    <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 bg-white/90 rounded-md p-1 shadow-md">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          handleChangeFavoriteOrder(product.id, 'up')
+                        }}
+                        disabled={!canMoveUp || isChangingOrder}
+                        className={`p-1 rounded hover:bg-gray-200 transition-colors ${
+                          !canMoveUp || isChangingOrder ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={locale === 'en' ? 'Move up' : '위로 이동'}
+                      >
+                        <ChevronUp size={16} className="text-gray-600" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          handleChangeFavoriteOrder(product.id, 'down')
+                        }}
+                        disabled={!canMoveDown || isChangingOrder}
+                        className={`p-1 rounded hover:bg-gray-200 transition-colors ${
+                          !canMoveDown || isChangingOrder ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={locale === 'en' ? 'Move down' : '아래로 이동'}
+                      >
+                        <ChevronDown size={16} className="text-gray-600" />
+                      </button>
+                    </div>
+                  )}
+                  
                   <div className="relative h-40 sm:h-48 bg-gray-200">
                     <img
                       src={product.primary_image ?? '/placeholder-tour.svg'}
@@ -421,7 +616,8 @@ export default function HomePage() {
                     </Link>
                   </div>
                 </div>
-              ))}
+                )
+              })}
           </div>
 
           <div className="text-center mt-12">
