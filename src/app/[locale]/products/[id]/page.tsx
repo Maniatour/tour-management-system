@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
-import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft, X, Info } from 'lucide-react'
+import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft, X, Info, ChevronLeft, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import ProductFaqDisplay from '@/components/ProductFaqDisplay'
@@ -75,11 +75,38 @@ interface TourCourse {
   name: string
   name_ko: string | null
   name_en: string | null
+  customer_name_ko: string | null
+  customer_name_en: string | null
+  customer_description_ko: string | null
+  customer_description_en: string | null
   description: string | null
   duration: string | null
+  duration_hours: number | null
   difficulty: string | null
+  difficulty_level: 'easy' | 'medium' | 'hard' | null
   highlights: string[] | null
   itinerary: Record<string, unknown> | null
+  location: string | null
+  category: string | null
+  level: number | null
+  path: string | null
+  parent_id: string | null
+  point_name: string | null
+  sort_order: number | null
+  min_participants: number | null
+  max_participants: number | null
+  parent?: TourCourse
+  photos?: Array<{
+    id: string
+    course_id: string
+    photo_url: string
+    photo_alt_ko: string | null
+    photo_alt_en: string | null
+    display_order: number
+    is_primary: boolean
+    sort_order: number
+    thumbnail_url: string | null
+  }>
 }
 
 interface ProductTourCourse {
@@ -131,6 +158,361 @@ interface ProductChoice {
   choice_description_en?: string | null
 }
 
+// 계층 구조 경로를 생성하는 함수
+function buildHierarchyPath(tourCourse: TourCourse, locale: string, allCoursesMap?: Map<string, any>): string[] {
+  const path: string[] = []
+  
+  // path 필드를 직접 파싱 (path는 "id1.id2.id3" 형식, id1이 루트)
+  if (tourCourse.path && allCoursesMap && allCoursesMap.size > 0) {
+    const pathIds = tourCourse.path.split('.').filter(Boolean)
+    
+    console.log('Building hierarchy path:', {
+      path: tourCourse.path,
+      pathIds,
+      mapSize: allCoursesMap.size
+    })
+    
+    // path의 각 ID에 해당하는 이름을 순서대로 가져오기
+    pathIds.forEach(id => {
+      const course = allCoursesMap.get(id)
+      if (course) {
+        const name = locale === 'en'
+          ? (course.customer_name_en || course.name_en || course.name_ko || course.name || '')
+          : (course.customer_name_ko || course.name_ko || course.name || '')
+        
+        if (name) {
+          path.push(name)
+        }
+      } else {
+        console.warn('Course not found in map for id:', id)
+      }
+    })
+    
+    console.log('Built path from path field:', path)
+  } else if (tourCourse.parent) {
+    // path가 없으면 parent 체인을 따라 올라가기
+    let current: TourCourse | undefined = tourCourse
+    const tempPath: string[] = []
+    
+    // 현재 코스부터 루트까지 수집
+    while (current) {
+      const name = locale === 'en'
+        ? (current.customer_name_en || current.name_en || current.name_ko || current.name || '')
+        : (current.customer_name_ko || current.name_ko || current.name || '')
+      
+      if (name) {
+        tempPath.push(name)
+      }
+      
+      current = current.parent
+    }
+    
+    // 역순으로 뒤집어서 루트부터 현재까지 순서로 만들기
+    const reversedPath = tempPath.reverse()
+    console.log('Built path from parent chain:', reversedPath)
+    return reversedPath
+  } else {
+    console.log('No path or parent available for course:', tourCourse.id)
+  }
+  
+  return path
+}
+
+// 투어 코스 카드 컴포넌트 (슬라이드쇼 포함)
+function TourCourseCard({
+  productTourCourse,
+  tourCourse,
+  coursePhotos,
+  customerName,
+  customerDescription,
+  difficulty,
+  locale,
+  isEnglish,
+  getDifficultyColor,
+  getDifficultyLabel,
+  allCoursesMap
+}: {
+  productTourCourse: ProductTourCourse
+  tourCourse: TourCourse
+  coursePhotos: Array<{
+    id: string
+    course_id: string
+    photo_url: string
+    photo_alt_ko: string | null
+    photo_alt_en: string | null
+    display_order: number
+    is_primary: boolean
+    sort_order: number
+    thumbnail_url: string | null
+  }>
+  customerName: string
+  customerDescription: string | null
+  difficulty: string | null
+  locale: string
+  isEnglish: boolean
+  getDifficultyColor: (difficulty: string) => string
+  getDifficultyLabel: (difficulty: string) => string
+  allCoursesMap?: Map<string, any>
+}) {
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0)
+  const [isAutoSlidePaused, setIsAutoSlidePaused] = useState(false)
+  
+  // 계층 구조 경로 생성
+  const hierarchyPath = buildHierarchyPath(tourCourse, locale, allCoursesMap)
+  
+  // 디버깅 로그
+  useEffect(() => {
+    console.log('TourCourseCard hierarchy path:', {
+      courseId: tourCourse.id,
+      courseName: customerName,
+      path: tourCourse.path,
+      parentId: tourCourse.parent_id,
+      hasParent: !!tourCourse.parent,
+      mapSize: allCoursesMap?.size || 0,
+      hierarchyPath,
+      hierarchyPathLength: hierarchyPath.length
+    })
+  }, [tourCourse.id, tourCourse.path, tourCourse.parent_id, customerName, hierarchyPath, allCoursesMap])
+
+  // 자동 슬라이드 기능
+  useEffect(() => {
+    if (coursePhotos.length <= 1 || isAutoSlidePaused) return
+
+    const interval = setInterval(() => {
+      setCurrentPhotoIndex((prevIndex) => (prevIndex + 1) % coursePhotos.length)
+    }, 4000) // 4초마다 자동 슬라이드
+
+    return () => clearInterval(interval)
+  }, [coursePhotos.length, isAutoSlidePaused])
+
+  const goToPrevious = () => {
+    setCurrentPhotoIndex((prevIndex) => 
+      prevIndex === 0 ? coursePhotos.length - 1 : prevIndex - 1
+    )
+    setIsAutoSlidePaused(true)
+    setTimeout(() => setIsAutoSlidePaused(false), 5000)
+  }
+
+  const goToNext = () => {
+    setCurrentPhotoIndex((prevIndex) => (prevIndex + 1) % coursePhotos.length)
+    setIsAutoSlidePaused(true)
+    setTimeout(() => setIsAutoSlidePaused(false), 5000)
+  }
+
+  const goToSlide = (index: number) => {
+    setCurrentPhotoIndex(index)
+    setIsAutoSlidePaused(true)
+    setTimeout(() => setIsAutoSlidePaused(false), 5000)
+  }
+
+  const currentPhoto = coursePhotos && coursePhotos.length > 0 ? coursePhotos[currentPhotoIndex] : null
+  const photoUrl = currentPhoto?.photo_url?.startsWith('http')
+    ? currentPhoto.photo_url
+    : currentPhoto?.photo_url
+    ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${currentPhoto.photo_url}`
+    : ''
+  const photoAlt = locale === 'en'
+    ? (currentPhoto?.photo_alt_en || currentPhoto?.photo_alt_ko || 'Tour course photo')
+    : (currentPhoto?.photo_alt_ko || currentPhoto?.photo_alt_en || '투어 코스 사진')
+
+  return (
+    <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
+      {/* 사진 슬라이드쇼 - 카드 상단 */}
+      {coursePhotos && coursePhotos.length > 0 && currentPhoto && photoUrl ? (
+        <div 
+          className="relative w-full aspect-[4/3] bg-gray-200"
+          onMouseEnter={() => setIsAutoSlidePaused(true)}
+          onMouseLeave={() => setIsAutoSlidePaused(false)}
+        >
+          <Image
+            src={photoUrl}
+            alt={photoAlt}
+            fill
+            sizes="100vw"
+            priority={currentPhotoIndex === 0}
+            className="object-cover transition-opacity duration-500"
+          />
+          
+          {/* 그라데이션 오버레이 */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+          
+          {/* 이전/다음 버튼 */}
+          {coursePhotos.length > 1 && (
+            <>
+              <button
+                onClick={goToPrevious}
+                className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-gray-800 rounded-full p-2 transition-all z-10"
+                aria-label={isEnglish ? 'Previous photo' : '이전 사진'}
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button
+                onClick={goToNext}
+                className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-gray-800 rounded-full p-2 transition-all z-10"
+                aria-label={isEnglish ? 'Next photo' : '다음 사진'}
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          )}
+          
+          {/* 인디케이터 (하단 중앙) */}
+          {coursePhotos.length > 1 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex space-x-2 z-10">
+              {coursePhotos.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => goToSlide(index)}
+                  className={`h-2 rounded-full transition-all ${
+                    index === currentPhotoIndex
+                      ? 'bg-white w-8'
+                      : 'bg-white/50 w-2 hover:bg-white/75'
+                  }`}
+                  aria-label={isEnglish ? `Go to slide ${index + 1}` : `${index + 1}번째 슬라이드로 이동`}
+                />
+              ))}
+            </div>
+          )}
+          
+          {/* 사진 번호 표시 */}
+          {coursePhotos.length > 1 && (
+            <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-full text-sm z-10">
+              {currentPhotoIndex + 1} / {coursePhotos.length}
+            </div>
+          )}
+        </div>
+      ) : (
+        // 사진이 없을 때 플레이스홀더
+        <div className="relative w-full aspect-[4/3] bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-6xl mb-4">📷</div>
+            <div className="text-lg font-medium text-gray-600">
+              {isEnglish ? 'No photos available' : '사진 없음'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 헤더 영역 */}
+      <div className="p-6 border-b border-gray-200">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex-1">
+            {/* 계층 구조 경로 (그랜드캐년 > 사우스림 > 그랜드뷰 포인트) */}
+            {hierarchyPath && hierarchyPath.length > 0 && (
+              <div className="mb-2 text-sm text-gray-600 flex items-center flex-wrap">
+                {hierarchyPath.map((name, index) => (
+                  <span key={index} className="flex items-center">
+                    <span>{name}</span>
+                    {index < hierarchyPath.length - 1 && (
+                      <span className="mx-2 text-gray-400">›</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+            
+            {/* 코스 이름과 포인트 라벨 */}
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <h3 className="text-xl font-semibold text-gray-900">
+                {customerName}
+              </h3>
+              {/* 투어 포인트 라벨 */}
+              {tourCourse.point_name && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
+                  {tourCourse.point_name}
+                </span>
+              )}
+            </div>
+            
+            {/* 카테고리 */}
+            {tourCourse.category && (
+              <div className="mb-2">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                  {tourCourse.category}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* 고객용 설명 */}
+        {customerDescription && (
+          <div 
+            className="text-gray-700 mb-4 leading-relaxed"
+            dangerouslySetInnerHTML={{ 
+              __html: markdownToHtml(customerDescription) 
+            }}
+          />
+        )}
+      </div>
+      
+      {/* 정보 영역 */}
+      <div className="p-6 bg-gray-50">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* 위치 정보 */}
+          {tourCourse.location && (
+            <div className="flex items-center text-sm text-gray-600">
+              <MapPin className="h-4 w-4 mr-2 text-red-500 flex-shrink-0" />
+              <span className="truncate">{tourCourse.location}</span>
+            </div>
+          )}
+          
+          {/* 소요 시간 */}
+          {(tourCourse.duration_hours || tourCourse.duration) && (
+            <div className="flex items-center text-sm text-gray-600">
+              <Clock className="h-4 w-4 mr-2 text-blue-500 flex-shrink-0" />
+              <span>
+                {isEnglish ? 'Duration: ' : '소요시간: '}
+                {tourCourse.duration_hours 
+                  ? `${tourCourse.duration_hours} ${isEnglish ? 'minutes' : '분'}`
+                  : tourCourse.duration}
+              </span>
+            </div>
+          )}
+          
+          {/* 난이도 */}
+          {difficulty && (
+            <div className="flex items-center text-sm text-gray-600">
+              <span className="mr-2">{isEnglish ? 'Difficulty: ' : '난이도: '}</span>
+              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(difficulty)}`}>
+                {getDifficultyLabel(difficulty)}
+              </span>
+            </div>
+          )}
+          
+        </div>
+        
+        {/* 하이라이트 */}
+        {tourCourse.highlights && tourCourse.highlights.length > 0 && (
+          <div className="mb-4">
+            <h4 className="font-medium text-gray-900 mb-2 text-sm">{isEnglish ? 'Highlights' : '하이라이트'}</h4>
+            <ul className="space-y-1">
+              {tourCourse.highlights.map((highlight, index) => (
+                <li key={index} className="flex items-start text-sm text-gray-600">
+                  <Star className="h-3 w-3 text-yellow-400 mr-2 flex-shrink-0 mt-0.5" />
+                  <span>{highlight}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {/* 상세 일정 */}
+        {tourCourse.itinerary && (
+          <div className="mb-4">
+            <h4 className="font-medium text-gray-900 mb-2 text-sm">{isEnglish ? 'Detailed Itinerary' : '상세 일정'}</h4>
+            <div className="text-sm text-gray-600 bg-white p-3 rounded border">
+              <pre className="whitespace-pre-wrap font-sans">
+                {JSON.stringify(tourCourse.itinerary, null, 2)}
+              </pre>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function ProductDetailPage() {
   const params = useParams()
   const productId = params.id as string
@@ -140,6 +522,7 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null)
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
   const [tourCourses, setTourCourses] = useState<ProductTourCourse[]>([])
+  const [tourCoursesMap, setTourCoursesMap] = useState<Map<string, any>>(new Map())
   const [productChoices, setProductChoices] = useState<ProductChoice[]>([])
   const [tourCoursePhotos, setTourCoursePhotos] = useState<Array<{
     id: string
@@ -275,16 +658,174 @@ export default function ProductDetailPage() {
         }
         
         // 3. 투어 코스 정보 가져오기
-        const { data: tourCoursesData, error: tourCoursesError } = await supabase
-          .from('product_tour_courses')
-          .select(`
-            *,
-            tour_course:tour_courses(*)
-          `)
-          .eq('product_id', productId)
-        
-        if (!tourCoursesError && tourCoursesData) {
-          setTourCourses(tourCoursesData)
+        // product_tour_courses에서 tour_course_id를 사용하여 tour_courses 조인
+        let tourCoursesData: any[] = []
+        try {
+          const { data: tourCoursesDataResult, error: tourCoursesError } = await supabase
+            .from('product_tour_courses')
+            .select(`
+              *,
+              tour_courses(
+                *,
+                photos:tour_course_photos(*)
+              )
+            `)
+            .eq('product_id', productId)
+            .order('created_at', { ascending: true })
+          
+          if (tourCoursesError) {
+            console.error('Error fetching tour courses:', tourCoursesError)
+            setTourCourses([])
+          } else if (tourCoursesDataResult && tourCoursesDataResult.length > 0) {
+            console.log('Tour courses data loaded:', tourCoursesDataResult)
+            tourCoursesData = tourCoursesDataResult
+            
+            // tour_courses 데이터를 tour_course로 매핑
+            const mappedData = tourCoursesData.map(item => {
+              // Supabase는 foreign key 조인 시 배열 또는 객체로 반환할 수 있음
+              let tourCourse = null
+              
+              if (item.tour_courses) {
+                if (Array.isArray(item.tour_courses)) {
+                  tourCourse = item.tour_courses[0] || null
+                } else {
+                  tourCourse = item.tour_courses
+                }
+              }
+              
+              return {
+                ...item,
+                tour_course: tourCourse
+              }
+            }).filter(item => item.tour_course !== null && item.tour_course !== undefined) // tour_course가 없는 항목 제거
+            
+            // path를 사용해서 부모 정보 가져오기
+            const allCourseIds = new Set<string>()
+            mappedData.forEach(item => {
+              if (item.tour_course?.path) {
+                // path는 "id1.id2.id3" 형식
+                const pathIds = item.tour_course.path.split('.').filter(Boolean)
+                pathIds.forEach(id => allCourseIds.add(id))
+              } else if (item.tour_course?.id) {
+                allCourseIds.add(item.tour_course.id)
+              }
+            })
+            
+            // 모든 관련 코스 정보 가져오기 (부모 포함)
+            if (allCourseIds.size > 0) {
+              const { data: allCoursesData, error: allCoursesError } = await supabase
+                .from('tour_courses')
+                .select('id, customer_name_ko, customer_name_en, name_ko, name_en, parent_id, path, level')
+                .in('id', Array.from(allCourseIds))
+              
+              if (allCoursesError) {
+                console.error('Error fetching all courses for hierarchy:', allCoursesError)
+              }
+              
+              if (allCoursesData) {
+                console.log('All courses data for hierarchy:', allCoursesData)
+                
+                // 코스 맵 생성
+                const courseMap = new Map<string, any>()
+                allCoursesData.forEach(course => {
+                  courseMap.set(course.id, course)
+                })
+                
+                console.log('Course map created:', {
+                  mapSize: courseMap.size,
+                  courseIds: Array.from(courseMap.keys())
+                })
+                
+                // courseMap을 state에 저장 (계층 구조 경로 표시용)
+                setTourCoursesMap(courseMap)
+                
+                // 각 투어 코스에 parent 정보 추가
+                mappedData.forEach(item => {
+                  if (item.tour_course?.path) {
+                    const pathIds = item.tour_course.path.split('.').filter(Boolean)
+                    const parents: any[] = []
+                    
+                    // path에서 현재 코스를 제외한 부모들만 가져오기
+                    for (let i = 0; i < pathIds.length - 1; i++) {
+                      const parentId = pathIds[i]
+                      const parent = courseMap.get(parentId)
+                      if (parent) {
+                        parents.push(parent)
+                      }
+                    }
+                    
+                    // parent 체인 구성
+                    if (parents.length > 0) {
+                      // 역순으로 parent 체인 구성
+                      let currentParent: any = null
+                      for (let i = parents.length - 1; i >= 0; i--) {
+                        const parent = { ...parents[i], parent: currentParent }
+                        currentParent = parent
+                      }
+                      item.tour_course.parent = currentParent
+                    }
+                  } else if (item.tour_course?.parent_id) {
+                    // path가 없으면 parent_id로 직접 찾기
+                    const parent = courseMap.get(item.tour_course.parent_id)
+                    if (parent) {
+                      item.tour_course.parent = parent
+                    }
+                  }
+                })
+              }
+            }
+            
+            // 계층별로 정렬
+            const sortedData = mappedData.sort((a, b) => {
+              const courseA = a.tour_course
+              const courseB = b.tour_course
+              
+              // 1. level 순서로 정렬 (낮은 레벨이 먼저)
+              const levelA = courseA?.level ?? 999
+              const levelB = courseB?.level ?? 999
+              if (levelA !== levelB) {
+                return levelA - levelB
+              }
+              
+              // 2. 같은 레벨 내에서는 path 순서로 정렬
+              const pathA = courseA?.path || ''
+              const pathB = courseB?.path || ''
+              if (pathA && pathB) {
+                // path 길이로 비교 (짧은 path가 먼저 = 부모가 먼저)
+                if (pathA.length !== pathB.length) {
+                  return pathA.length - pathB.length
+                }
+                // 같은 길이면 문자열 비교
+                return pathA.localeCompare(pathB)
+              }
+              
+              // 3. sort_order로 정렬
+              const sortOrderA = courseA?.sort_order ?? 999
+              const sortOrderB = courseB?.sort_order ?? 999
+              if (sortOrderA !== sortOrderB) {
+                return sortOrderA - sortOrderB
+              }
+              
+              // 4. 이름으로 정렬
+              const nameA = locale === 'en'
+                ? (courseA?.customer_name_en || courseA?.name_en || courseA?.name_ko || courseA?.name || '')
+                : (courseA?.customer_name_ko || courseA?.name_ko || courseA?.name || '')
+              const nameB = locale === 'en'
+                ? (courseB?.customer_name_en || courseB?.name_en || courseB?.name_ko || courseB?.name || '')
+                : (courseB?.customer_name_ko || courseB?.name_ko || courseB?.name || '')
+              
+              return nameA.localeCompare(nameB)
+            })
+            
+            console.log('Mapped tour courses:', sortedData)
+            setTourCourses(sortedData)
+          } else {
+            console.log('No tour courses data found for product:', productId)
+            setTourCourses([])
+          }
+        } catch (error) {
+          console.error('Exception while fetching tour courses:', error)
+          setTourCourses([])
         }
         
         // 4. 선택 옵션 정보 가져오기
@@ -385,8 +926,18 @@ export default function ProductDetailPage() {
         }
 
         // 6. 투어 코스 사진 가져오기
+        // 원본 투어 코스 데이터에서 course_id 추출
         if (tourCoursesData && tourCoursesData.length > 0) {
-          const courseIds = tourCoursesData.map(tc => (tc as { tour_course?: { id: string } }).tour_course?.id).filter(Boolean)
+          const courseIds = tourCoursesData
+            .map(tc => {
+              // tour_courses가 배열인 경우 첫 번째 요소, 아니면 객체 자체
+              const tourCourse = Array.isArray(tc.tour_courses) 
+                ? tc.tour_courses[0] 
+                : tc.tour_courses
+              return tourCourse?.id
+            })
+            .filter(Boolean) as string[]
+          
           if (courseIds.length > 0) {
             const { data: photosData, error: photosError } = await supabase
               .from('tour_course_photos')
@@ -1043,66 +1594,49 @@ export default function ProductDetailPage() {
 
                 {/* 일정 탭 */}
                 {activeTab === 'itinerary' && (
-                  <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {tourCourses.length > 0 ? (
                       tourCourses.map((productTourCourse) => {
                         const tourCourse = productTourCourse.tour_course
                         if (!tourCourse) return null
                         
+                        // 고객용 이름 (로케일에 따라)
+                        const customerName = locale === 'en' 
+                          ? (tourCourse.customer_name_en || tourCourse.name_en || tourCourse.name_ko || tourCourse.name)
+                          : (tourCourse.customer_name_ko || tourCourse.name_ko || tourCourse.name)
+                        
+                        // 고객용 설명 (로케일에 따라)
+                        const customerDescription = locale === 'en'
+                          ? (tourCourse.customer_description_en || tourCourse.description)
+                          : (tourCourse.customer_description_ko || tourCourse.description)
+                        
+                        // 난이도 (difficulty_level 우선, 없으면 difficulty 사용)
+                        const difficulty = tourCourse.difficulty_level || tourCourse.difficulty
+                        
+                        // 사진 가져오기 (tour_course의 photos 또는 tourCoursePhotos에서)
+                        const coursePhotos = (tourCourse.photos || tourCoursePhotos.filter(p => p.course_id === tourCourse.id))
+                          .sort((a, b) => {
+                            // is_primary 우선, 그 다음 sort_order
+                            if (a.is_primary && !b.is_primary) return -1
+                            if (!a.is_primary && b.is_primary) return 1
+                            return (a.sort_order || 0) - (b.sort_order || 0)
+                          })
+                        
                         return (
-                          <div key={productTourCourse.id} className="border rounded-lg p-6">
-                            <h3 className="text-xl font-semibold text-gray-900 mb-4">
-                              {locale === 'en' && tourCourse.name_en ? tourCourse.name_en : tourCourse.name_ko || tourCourse.name}
-                            </h3>
-                            
-                            {tourCourse.description && (
-                              <div 
-                                className="text-gray-700 mb-4"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(tourCourse.description || '') 
-                                }}
-                              />
-                            )}
-                            
-                            {tourCourse.duration && (
-                              <div className="flex items-center mb-4">
-                                <Clock className="h-5 w-5 text-blue-500 mr-2" />
-                                <span className="text-gray-600">{isEnglish ? 'Duration:' : '소요시간:'} {tourCourse.duration}</span>
-                              </div>
-                            )}
-                            
-                            {tourCourse.difficulty && (
-                              <div className="flex items-center mb-4">
-                                <span className="text-gray-600 mr-2">{isEnglish ? 'Difficulty:' : '난이도:'}</span>
-                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(tourCourse.difficulty)}`}>
-                                  {getDifficultyLabel(tourCourse.difficulty)}
-                                </span>
-                              </div>
-                            )}
-                            
-                            {tourCourse.highlights && tourCourse.highlights.length > 0 && (
-                              <div className="mb-4">
-                                <h4 className="font-medium text-gray-900 mb-2">{isEnglish ? 'Highlights' : '하이라이트'}</h4>
-                                <ul className="space-y-1">
-                                  {tourCourse.highlights.map((highlight, index) => (
-                                    <li key={index} className="flex items-center text-sm text-gray-600">
-                                      <Star className="h-3 w-3 text-yellow-400 mr-2 flex-shrink-0" />
-                                      {highlight}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            
-                            {tourCourse.itinerary && (
-                              <div>
-                                <h4 className="font-medium text-gray-900 mb-2">{isEnglish ? 'Detailed Itinerary' : '상세 일정'}</h4>
-                                <div className="text-sm text-gray-600 whitespace-pre-line">
-                                  {JSON.stringify(tourCourse.itinerary, null, 2)}
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          <TourCourseCard
+                            key={productTourCourse.id}
+                            productTourCourse={productTourCourse}
+                            tourCourse={tourCourse}
+                            coursePhotos={coursePhotos}
+                            customerName={customerName}
+                            customerDescription={customerDescription}
+                            difficulty={difficulty}
+                            locale={locale}
+                            isEnglish={isEnglish}
+                            getDifficultyColor={getDifficultyColor}
+                            getDifficultyLabel={getDifficultyLabel}
+                            allCoursesMap={tourCoursesMap}
+                          />
                         )
                       })
                     ) : (

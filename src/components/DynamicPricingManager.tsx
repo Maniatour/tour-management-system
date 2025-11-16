@@ -699,58 +699,102 @@ export default function DynamicPricingManager({
   // 채널별 연도별 날짜 수 계산
   const [channelPricingStats, setChannelPricingStats] = useState<Record<string, Record<string, number>>>({});
   
-  useEffect(() => {
-    const loadChannelPricingStats = async () => {
-      if (!productId) return;
+  // 채널별 가격 통계 로드 함수 (저장 후에도 호출 가능하도록 분리)
+  const loadChannelPricingStats = useCallback(async () => {
+    if (!productId) return;
 
-      try {
-        // 모든 채널의 동적 가격 데이터 가져오기
-        const { data, error } = await supabase
-          .from('dynamic_pricing')
-          .select('channel_id, date')
-          .eq('product_id', productId);
+    try {
+      // 모든 채널의 동적 가격 데이터 가져오기
+      const { data, error } = await supabase
+        .from('dynamic_pricing')
+        .select('channel_id, date')
+        .eq('product_id', productId);
 
-        if (error) {
-          console.error('채널별 가격 통계 로드 오류:', error);
-          return;
-        }
-
-        // 채널별로 그룹화하고 연도별 날짜 수 계산
-        const stats: Record<string, Record<string, Set<string>>> = {};
-        
-        if (data) {
-          data.forEach((item) => {
-            const channelId = item.channel_id;
-            const date = item.date;
-            const year = date.split('-')[0];
-
-            if (!stats[channelId]) {
-              stats[channelId] = {};
-            }
-            if (!stats[channelId][year]) {
-              stats[channelId][year] = new Set();
-            }
-            stats[channelId][year].add(date);
-          });
-        }
-
-        // Set을 개수로 변환
-        const formattedStats: Record<string, Record<string, number>> = {};
-        Object.keys(stats).forEach(channelId => {
-          formattedStats[channelId] = {};
-          Object.keys(stats[channelId]).forEach(year => {
-            formattedStats[channelId][year] = stats[channelId][year].size;
-          });
-        });
-
-        setChannelPricingStats(formattedStats);
-      } catch (error) {
+      if (error) {
         console.error('채널별 가격 통계 로드 오류:', error);
+        return;
       }
-    };
 
+      // 날짜 정규화 함수 (YYYY-MM-DD 형식으로 변환)
+      const normalizeDate = (dateStr: string | null | undefined): string | null => {
+        if (!dateStr) return null;
+        
+        const str = String(dateStr).trim();
+        // 이미 YYYY-MM-DD 형식인지 확인
+        if (str.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          return str;
+        }
+        
+        // 날짜 문자열에서 YYYY-MM-DD 추출
+        const dateMatch = str.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+        if (dateMatch) {
+          const year = dateMatch[1];
+          const month = String(parseInt(dateMatch[2], 10)).padStart(2, '0');
+          const day = String(parseInt(dateMatch[3], 10)).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        }
+        
+        // Date 객체로 파싱 시도
+        try {
+          const date = new Date(str);
+          if (!isNaN(date.getTime())) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          }
+        } catch (e) {
+          // 파싱 실패
+        }
+        
+        return null;
+      };
+
+      // 채널별로 그룹화하고 연도별 날짜 수 계산
+      const stats: Record<string, Record<string, Set<string>>> = {};
+      
+      if (data) {
+        data.forEach((item) => {
+          const channelId = item.channel_id;
+          const normalizedDate = normalizeDate(item.date);
+          
+          if (!normalizedDate) {
+            // 날짜가 유효하지 않으면 건너뛰기
+            return;
+          }
+          
+          const year = normalizedDate.split('-')[0];
+
+          if (!stats[channelId]) {
+            stats[channelId] = {};
+          }
+          if (!stats[channelId][year]) {
+            stats[channelId][year] = new Set();
+          }
+          // 정규화된 날짜를 사용하여 중복 제거
+          stats[channelId][year].add(normalizedDate);
+        });
+      }
+
+      // Set을 개수로 변환
+      const formattedStats: Record<string, Record<string, number>> = {};
+      Object.keys(stats).forEach(channelId => {
+        formattedStats[channelId] = {};
+        Object.keys(stats[channelId]).forEach(year => {
+          formattedStats[channelId][year] = stats[channelId][year].size;
+        });
+      });
+
+      setChannelPricingStats(formattedStats);
+    } catch (error) {
+      console.error('채널별 가격 통계 로드 오류:', error);
+    }
+  }, [productId]);
+
+  // 초기 로드 및 dynamicPricingData 변경 시 통계 업데이트
+  useEffect(() => {
     loadChannelPricingStats();
-  }, [productId, dynamicPricingData]);
+  }, [loadChannelPricingStats, dynamicPricingData]);
 
   // 기본 가격 설정이 변경되면 calculationConfig도 업데이트
   // 상품 기본 가격 + 증차감 금액을 포함하여 초이스별 가격 계산에 사용
@@ -1020,6 +1064,8 @@ export default function DynamicPricingManager({
         });
         
         setBatchProgress(null); // 진행률 초기화
+        // 저장 완료 후 통계 다시 로드
+        await loadChannelPricingStats();
       } catch (error) {
         console.error('배치 저장 실패:', error);
         setBatchProgress(null);
@@ -1041,11 +1087,15 @@ export default function DynamicPricingManager({
       
       if (savedCount === rulesData.length) {
         setMessage(`전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+        // 저장 완료 후 통계 다시 로드
+        await loadChannelPricingStats();
       } else {
         setMessage(`${savedCount}/${rulesData.length}개 가격 규칙이 저장되었습니다.`);
+        // 일부 저장 완료 후에도 통계 다시 로드
+        await loadChannelPricingStats();
       }
     }
-  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage]);
+  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage, loadChannelPricingStats]);
 
   // 규칙 편집 핸들러
   const handleEditRule = useCallback((rule: SimplePricingRule) => {
@@ -2304,8 +2354,9 @@ export default function DynamicPricingManager({
         productId={productId}
         channels={channelGroups.flatMap(group => group.channels)}
         choiceCombinations={choiceCombinations}
-        onSave={() => {
-          loadDynamicPricingData();
+        onSave={async () => {
+          await loadDynamicPricingData();
+          await loadChannelPricingStats();
         }}
       />
 
