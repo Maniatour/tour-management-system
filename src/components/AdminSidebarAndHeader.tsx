@@ -128,19 +128,39 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       const now = new Date()
       const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
       
-      let query = supabase
-        .from('documents')
-        .select('id, expiry_date')
-        .not('expiry_date', 'is', null)
-        .lte('expiry_date', thirtyDaysFromNow.toISOString().split('T')[0])
-        .gte('expiry_date', now.toISOString().split('T')[0])
+      // 재시도 로직이 포함된 쿼리 실행
+      const executeQuery = async (retries = 3): Promise<{ data: any[] | null; error: any }> => {
+        try {
+          let query = supabase
+            .from('documents')
+            .select('id, expiry_date')
+            .not('expiry_date', 'is', null)
+            .lte('expiry_date', thirtyDaysFromNow.toISOString().split('T')[0])
+            .gte('expiry_date', now.toISOString().split('T')[0])
 
-      // 관리자가 아닌 경우 자신이 생성한 문서만 조회
-      if (userRole !== 'admin') {
-        query = query.eq('created_by', authUser.id)
+          // 관리자가 아닌 경우 자신이 생성한 문서만 조회
+          if (userRole !== 'admin') {
+            query = query.eq('created_by', authUser.id)
+          }
+
+          const result = await query
+          return result
+        } catch (error) {
+          // 네트워크 오류인 경우 재시도
+          if (retries > 0 && error instanceof Error && (
+            error.message.includes('Failed to fetch') ||
+            error.message.includes('ERR_CONNECTION_CLOSED') ||
+            error.message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+            error.message.includes('network')
+          )) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)))
+            return executeQuery(retries - 1)
+          }
+          throw error
+        }
       }
 
-      const { data, error } = await query
+      const { data, error } = await executeQuery()
 
       if (error) {
         // Supabase 오류 객체의 상세 정보 로깅
@@ -184,37 +204,68 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       }
 
       const myEmail = authUser.email.toLowerCase()
+      
+      // 재시도 로직이 포함된 쿼리 실행 함수
+      const executeQueryWithRetry = async <T>(
+        queryFn: () => Promise<{ data: T | null; error: any }>,
+        retries = 3
+      ): Promise<{ data: T | null; error: any }> => {
+        try {
+          return await queryFn()
+        } catch (error) {
+          // 네트워크 오류인 경우 재시도
+          if (retries > 0 && error instanceof Error && (
+            error.message.includes('Failed to fetch') ||
+            error.message.includes('ERR_CONNECTION_CLOSED') ||
+            error.message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+            error.message.includes('network')
+          )) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)))
+            return executeQueryWithRetry(queryFn, retries - 1)
+          }
+          throw error
+        }
+      }
+
       // 내 포지션 조회 (공지 target_positions 매칭용)
-      const { data: me } = await (supabase as any)
-        .from('team' as any)
-        .select('position, is_active')
-        .eq('email', authUser.email)
-        .eq('is_active', true)
-        .maybeSingle()
+      const { data: me } = await executeQueryWithRetry(() => 
+        (supabase as any)
+          .from('team' as any)
+          .select('position, is_active')
+          .eq('email', authUser.email)
+          .eq('is_active', true)
+          .maybeSingle()
+      )
 
       const myPosition = (me?.position as string) || null
 
       // 내가 확인한 공지 목록
-      const { data: myAcks } = await (supabase as any)
-        .from('team_announcement_acknowledgments' as any)
-        .select('announcement_id')
-        .eq('ack_by', myEmail)
+      const { data: myAcks } = await executeQueryWithRetry(() =>
+        (supabase as any)
+          .from('team_announcement_acknowledgments' as any)
+          .select('announcement_id')
+          .eq('ack_by', myEmail)
+      )
 
       const ackedIds = (myAcks as any[] | null)?.map((r: any) => r.announcement_id) || []
 
       // recipients 에 내 이메일이 포함된 공지
-      const { data: annsByEmail } = await (supabase as any)
-        .from('team_announcements' as any)
-        .select('id, recipients, target_positions, is_archived')
-        .contains('recipients', [myEmail])
+      const { data: annsByEmail } = await executeQueryWithRetry(() =>
+        (supabase as any)
+          .from('team_announcements' as any)
+          .select('id, recipients, target_positions, is_archived')
+          .contains('recipients', [myEmail])
+      )
 
       // target_positions 에 내 포지션이 포함된 공지
       let annsByPos: any[] = []
       if (myPosition) {
-        const { data } = await (supabase as any)
-          .from('team_announcements' as any)
-          .select('id, recipients, target_positions, is_archived')
-          .contains('target_positions', [myPosition])
+        const { data } = await executeQueryWithRetry(() =>
+          (supabase as any)
+            .from('team_announcements' as any)
+            .select('id, recipients, target_positions, is_archived')
+            .contains('target_positions', [myPosition])
+        )
         annsByPos = (data as any[]) || []
       }
 
@@ -224,11 +275,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       const unackedAnnIds = targetedAnnIds.filter((id) => !ackedIds.includes(id))
 
       // 내게 할당된 진행중 업무 수
-      const { data: myOpenTasks } = await (supabase as any)
-        .from('tasks' as any)
-        .select('id')
-        .eq('assigned_to', myEmail)
-        .in('status', ['pending', 'in_progress'] as any)
+      const { data: myOpenTasks } = await executeQueryWithRetry(() =>
+        (supabase as any)
+          .from('tasks' as any)
+          .select('id')
+          .eq('assigned_to', myEmail)
+          .in('status', ['pending', 'in_progress'] as any)
+      )
 
       const taskCount = (myOpenTasks as any[] | null)?.length || 0
       setTeamBoardCount(unackedAnnIds.length + taskCount)
@@ -247,12 +300,31 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       }
       
       try {
-        const { data: teamData, error } = await supabase
-          .from('team')
-          .select('position')
-          .eq('email', authUser.email)
-          .eq('is_active', true)
-          .single()
+        // 재시도 로직이 포함된 쿼리 실행
+        const executeQuery = async (retries = 3): Promise<{ data: any; error: any }> => {
+          try {
+            return await supabase
+              .from('team')
+              .select('position')
+              .eq('email', authUser.email)
+              .eq('is_active', true)
+              .single()
+          } catch (error) {
+            // 네트워크 오류인 경우 재시도
+            if (retries > 0 && error instanceof Error && (
+              error.message.includes('Failed to fetch') ||
+              error.message.includes('ERR_CONNECTION_CLOSED') ||
+              error.message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+              error.message.includes('network')
+            )) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)))
+              return executeQuery(retries - 1)
+            }
+            throw error
+          }
+        }
+
+        const { data: teamData, error } = await executeQuery()
         
         if (error || !teamData) {
           setIsSuper(false)

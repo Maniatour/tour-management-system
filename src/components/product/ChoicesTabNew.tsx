@@ -123,6 +123,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
+  const [showTemplateInfoModal, setShowTemplateInfoModal] = useState(false)
   const [showTypeInfoModal, setShowTypeInfoModal] = useState(false)
   const [showExportTemplateModal, setShowExportTemplateModal] = useState(false)
   const [uploadingImages, setUploadingImages] = useState<{[key: string]: boolean}>({})
@@ -1061,13 +1062,23 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           <p className="text-sm text-gray-600">상품의 선택 초이스를 관리합니다.</p>
         </div>
         <div className="flex space-x-2">
-          <button
-            onClick={() => setShowTemplateModal(true)}
-            className="flex items-center px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            <FileText className="w-4 h-4 mr-2" />
-            템플릿 불러오기
-          </button>
+          <div className="flex items-center">
+            <button
+              onClick={() => setShowTemplateModal(true)}
+              className="flex items-center px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              템플릿 불러오기
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowTemplateInfoModal(true)}
+              className="ml-2 inline-flex items-center justify-center w-8 h-8 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full transition-colors"
+              title="템플릿 설명 보기"
+            >
+              <Info className="w-4 h-4" />
+            </button>
+          </div>
           <button
             onClick={() => setShowExportTemplateModal(true)}
             className="flex items-center px-3 py-2 text-sm text-green-700 bg-white border border-green-300 rounded-md hover:bg-green-50"
@@ -1633,6 +1644,13 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         />
       )}
 
+      {/* 템플릿 설명 모달 */}
+      {showTemplateInfoModal && (
+        <TemplateInfoModal
+          onClose={() => setShowTemplateInfoModal(false)}
+        />
+      )}
+
       {/* 초이스 타입 설명 모달 */}
       {showTypeInfoModal && (
         <ChoiceTypeInfoModal
@@ -1887,6 +1905,162 @@ function ExportTemplateModal({ onExport, onClose, choiceCount }: ExportTemplateM
             className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700"
           >
             내보내기
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 템플릿 설명 모달 컴포넌트
+interface TemplateInfoModalProps {
+  onClose: () => void
+}
+
+function TemplateInfoModal({ onClose }: TemplateInfoModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-lg font-medium text-gray-900">템플릿이란?</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        <div className="space-y-6">
+          {/* 템플릿 개요 */}
+          <div className="border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center mb-3">
+              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                <FileText className="w-4 h-4 text-blue-600" />
+              </div>
+              <h4 className="text-lg font-semibold text-gray-900">템플릿이란?</h4>
+            </div>
+            <div className="ml-11 space-y-2">
+              <p className="text-gray-700">
+                템플릿은 <strong>재사용 가능한 초이스 그룹</strong>입니다. 한 번 만들어두면 여러 상품에서 동일한 초이스 그룹을 빠르게 불러와 사용할 수 있습니다.
+              </p>
+              <div className="bg-blue-50 p-3 rounded-md">
+                <p className="text-sm text-blue-800">
+                  <strong>예시:</strong> "숙박 선택" 템플릿을 만들어두면, 여러 투어 상품에서 동일한 숙박 옵션을 쉽게 추가할 수 있습니다.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 템플릿 불러오기 */}
+          <div className="border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center mb-3">
+              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                <span className="text-green-600 font-semibold text-sm">1</span>
+              </div>
+              <h4 className="text-lg font-semibold text-gray-900">템플릿 불러오기</h4>
+            </div>
+            <div className="ml-11 space-y-2">
+              <p className="text-gray-700">
+                <strong>사용 방법:</strong>
+              </p>
+              <ol className="list-decimal list-inside text-sm text-gray-600 space-y-1 ml-2">
+                <li>"템플릿 불러오기" 버튼을 클릭합니다.</li>
+                <li>사용할 템플릿을 선택합니다.</li>
+                <li>선택한 템플릿의 초이스 그룹이 현재 상품에 추가됩니다.</li>
+              </ol>
+              <div className="bg-gray-50 p-3 rounded-md">
+                <p className="text-sm text-gray-600 mb-2"><strong>주의사항:</strong></p>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li>• 템플릿을 불러온 후에도 가격, 설명 등을 수정할 수 있습니다.</li>
+                  <li>• 템플릿을 불러와도 원본 템플릿은 변경되지 않습니다.</li>
+                  <li>• 여러 템플릿을 중복으로 불러올 수 있습니다.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* 템플릿으로 내보내기 */}
+          <div className="border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center mb-3">
+              <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+                <span className="text-purple-600 font-semibold text-sm">2</span>
+              </div>
+              <h4 className="text-lg font-semibold text-gray-900">템플릿으로 내보내기</h4>
+            </div>
+            <div className="ml-11 space-y-2">
+              <p className="text-gray-700">
+                <strong>사용 방법:</strong>
+              </p>
+              <ol className="list-decimal list-inside text-sm text-gray-600 space-y-1 ml-2">
+                <li>만든 초이스 그룹을 선택합니다.</li>
+                <li>"템플릿으로 내보내기" 버튼을 클릭합니다.</li>
+                <li>초이스 그룹이 템플릿으로 저장되어 다른 상품에서도 사용할 수 있습니다.</li>
+              </ol>
+              <div className="bg-gray-50 p-3 rounded-md">
+                <p className="text-sm text-gray-600 mb-2"><strong>저장 위치:</strong></p>
+                <p className="text-sm text-gray-600">
+                  내보낸 템플릿은 <strong>옵션 관리 &gt; 초이스 관리</strong>에서 확인하고 관리할 수 있습니다.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 템플릿 관리 */}
+          <div className="border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center mb-3">
+              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center mr-3">
+                <span className="text-orange-600 font-semibold text-sm">3</span>
+              </div>
+              <h4 className="text-lg font-semibold text-gray-900">템플릿 관리</h4>
+            </div>
+            <div className="ml-11 space-y-2">
+              <p className="text-gray-700">
+                템플릿은 <strong>옵션 관리 &gt; 초이스 관리</strong> 메뉴에서 관리할 수 있습니다.
+              </p>
+              <div className="bg-gray-50 p-3 rounded-md">
+                <p className="text-sm text-gray-600 mb-2"><strong>관리 기능:</strong></p>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li>• 템플릿 추가, 수정, 삭제</li>
+                  <li>• 템플릿 그룹별로 관리</li>
+                  <li>• 템플릿 활성/비활성 설정</li>
+                  <li>• 템플릿 순서 변경</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* 활용 팁 */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className="w-5 h-5 text-yellow-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h4 className="text-sm font-medium text-yellow-800">활용 팁</h4>
+                <div className="mt-2 text-sm text-yellow-700">
+                  <ul className="space-y-1">
+                    <li>• 자주 사용하는 초이스 그룹은 템플릿으로 만들어두면 시간을 절약할 수 있습니다.</li>
+                    <li>• 템플릿 이름을 명확하게 지으면 나중에 찾기 쉽습니다.</li>
+                    <li>• 비슷한 상품들에 공통으로 사용되는 초이스는 템플릿으로 관리하는 것이 좋습니다.</li>
+                    <li>• 템플릿을 불러온 후 상품별로 가격이나 설명을 수정하여 맞춤화할 수 있습니다.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors"
+          >
+            확인
           </button>
         </div>
       </div>

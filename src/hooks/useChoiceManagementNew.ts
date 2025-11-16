@@ -143,7 +143,12 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           const allCombinations = generateCartesianProduct(groupOptions);
           
           return allCombinations.map((combination, index) => {
-            const combinationKey = combination.map(item => `${item.groupId}_${item.optionId}`).join('+');
+            // combination_key를 그룹 순서에 상관없이 생성하기 위해 정렬
+            // 그룹 ID와 옵션 ID를 조합하여 정렬된 키 생성
+            const sortedKeyParts = combination
+              .map(item => `${item.groupId}_${item.optionId}`)
+              .sort(); // 알파벳 순서로 정렬하여 순서에 상관없이 같은 키 생성
+            const combinationKey = sortedKeyParts.join('+');
             const combinationName = combination.map(item => item.optionName).join(' + ');
             const combinationNameKo = combination.map(item => item.optionNameKo).join(' + ');
             

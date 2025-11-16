@@ -544,6 +544,57 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
     })
   }
 
+  // OP별 금액 변경 핸들러
+  const handleOpAmountChange = (tourId: string, opEmail: string, amount: number) => {
+    const tour = toursWithTips.find(t => t.id === tourId)
+    if (!tour) return
+
+    const currentShare = tipShares[tourId]
+    if (!currentShare) return
+
+    const totalTip = tour.total_prepaid_tip
+    const opTotalPercent = currentShare.op_percent // 10% 고정
+    const opTotalAmount = (totalTip * opTotalPercent) / 100
+
+    // 해당 OP의 금액 업데이트 (0 ~ opTotalAmount 사이로 제한)
+    const newAmount = Math.max(0, Math.min(opTotalAmount, amount))
+    
+    // 해당 OP를 제외한 나머지 OP들
+    const otherOps = currentShare.op_shares.filter(op => op.op_email !== opEmail)
+    const remainingAmount = opTotalAmount - newAmount
+    
+    // 나머지 OP들이 남은 금액을 균등하게 나눠가져감
+    const otherOpCount = otherOps.length
+    const otherOpAmount = otherOpCount > 0 ? remainingAmount / otherOpCount : 0
+    const otherOpPercent = otherOpCount > 0 ? (otherOpAmount / totalTip) * 100 : 0
+
+    const newOpShares = currentShare.op_shares.map(op => {
+      if (op.op_email === opEmail) {
+        const newPercent = (newAmount / totalTip) * 100
+        return {
+          ...op,
+          op_percent: newPercent,
+          op_amount: newAmount
+        }
+      } else {
+        return {
+          ...op,
+          op_percent: otherOpPercent,
+          op_amount: otherOpAmount
+        }
+      }
+    })
+
+    setTipShares({
+      ...tipShares,
+      [tourId]: {
+        ...currentShare,
+        op_shares: newOpShares,
+        op_amount: opTotalAmount
+      }
+    })
+  }
+
   // 저장
   const handleSave = async () => {
     setSaving(true)
@@ -894,9 +945,17 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
                                       className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded"
                                     />
                                     <span className="text-xs text-gray-500">%</span>
-                                    <span className="text-xs text-gray-600 w-20 text-right">
-                                      ${formatCurrency(opShare.op_amount)}
-                                    </span>
+                                    <div className="relative">
+                                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={opShare.op_amount.toFixed(2)}
+                                        onChange={(e) => handleOpAmountChange(tour.id, op.email, parseFloat(e.target.value) || 0)}
+                                        className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                                      />
+                                    </div>
                                   </div>
                                 )}
                               </div>

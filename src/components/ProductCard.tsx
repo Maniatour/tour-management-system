@@ -238,6 +238,36 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
     return categoryLabels[category] || category
   }
 
+  // 카테고리별 색상 매핑
+  const getCategoryColor = (category: string) => {
+    const categoryColors: { [key: string]: string } = {
+      tour: 'bg-blue-100 text-blue-800 border-blue-200',
+      service: 'bg-purple-100 text-purple-800 border-purple-200',
+      hotel: 'bg-amber-100 text-amber-800 border-amber-200',
+      transportation: 'bg-green-100 text-green-800 border-green-200',
+      meal: 'bg-red-100 text-red-800 border-red-200',
+      activity: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+      default: 'bg-gray-100 text-gray-800 border-gray-200'
+    }
+    const normalizedCategory = category?.toLowerCase() || ''
+    return categoryColors[normalizedCategory] || categoryColors.default
+  }
+
+  // 카테고리와 서브카테고리를 합친 라벨 생성
+  const getCombinedCategoryLabel = (category: string | null, subCategory: string | null) => {
+    const categoryLabel = category ? getCategoryLabel(category) : ''
+    const subCategoryLabel = subCategory ? getSubCategoryLabel(subCategory) : ''
+    
+    if (categoryLabel && subCategoryLabel) {
+      return `${categoryLabel} - ${subCategoryLabel}`
+    } else if (categoryLabel) {
+      return categoryLabel
+    } else if (subCategoryLabel) {
+      return subCategoryLabel
+    }
+    return '-'
+  }
+
   const getSubCategoryLabel = (subCategory: string) => {
     const subCategoryLabels: { [key: string]: string } = {
       // 도시 관련
@@ -616,17 +646,11 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
             </div>
           </div>
           
-          {/* 카테고리, 상태 뱃지 */}
+          {/* 카테고리 뱃지 */}
           <div className="flex items-center gap-2 mt-3 flex-wrap">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(localStatus)}`}>
-              {getStatusLabel(localStatus)}
-            </span>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-              {getCategoryLabel(product.category || '')}
-            </span>
-            {product.sub_category && (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                {getSubCategoryLabel(product.sub_category)}
+            {(product.category || product.sub_category) && (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getCategoryColor(product.category || '')}`}>
+                {getCombinedCategoryLabel(product.category || '', product.sub_category || null)}
               </span>
             )}
           </div>

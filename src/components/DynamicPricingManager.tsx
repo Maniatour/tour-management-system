@@ -543,9 +543,38 @@ export default function DynamicPricingManager({
           // 주의: homepagePricingConfig에서 M00001 채널의 고정 가격을 우선 사용
           const combination = choiceCombinations.find(c => c.id === choiceId);
           if (combination) {
-            // homepagePricingConfig에서 M00001 채널의 고정 가격 우선 사용
-            const homepageChoiceData = homepagePricingConfig?.choices_pricing?.[choiceId] || 
-                                      homepagePricingConfig?.choices_pricing?.[combination.combination_key || ''] || {};
+            // homepagePricingConfig에서 여러 키로 시도하여 가격 찾기
+            let homepageChoiceData: any = {};
+            if (homepagePricingConfig?.choices_pricing) {
+              // 1. choiceId로 시도
+              homepageChoiceData = homepagePricingConfig.choices_pricing[choiceId] || {};
+              
+              // 2. combination_key로 시도
+              if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
+                homepageChoiceData = homepagePricingConfig.choices_pricing[combination.combination_key] || {};
+              }
+              
+              // 3. 정렬된 combination_key로 시도 (그룹 순서에 상관없이 매칭)
+              if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
+                const sortedKey = combination.combination_key.split('+').sort().join('+');
+                if (sortedKey !== combination.combination_key) {
+                  homepageChoiceData = homepagePricingConfig.choices_pricing[sortedKey] || {};
+                }
+              }
+              
+              // 4. 모든 키를 순회하며 정렬된 키로 매칭 시도
+              if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
+                const sortedKey = combination.combination_key.split('+').sort().join('+');
+                const availableKeys = Object.keys(homepagePricingConfig.choices_pricing);
+                const matchingKey = availableKeys.find(key => {
+                  const sortedAvailableKey = key.split('+').sort().join('+');
+                  return sortedAvailableKey === sortedKey;
+                });
+                if (matchingKey) {
+                  homepageChoiceData = homepagePricingConfig.choices_pricing[matchingKey];
+                }
+              }
+            }
             
             // pricingConfig.choices_pricing의 값이 있으면 사용, 없으면 homepagePricingConfig 사용
             const finalAdultPrice = adultPrice || 
@@ -591,9 +620,38 @@ export default function DynamicPricingManager({
         let infantPrice = 0;
         
         if (hasHomepageConfig) {
-          // homepagePricingConfig에서 M00001 채널의 고정 가격 우선 사용
-          const homepageChoiceData = homepagePricingConfig?.choices_pricing?.[combination.id] || 
-                                    homepagePricingConfig?.choices_pricing?.[combination.combination_key || ''] || {};
+          // homepagePricingConfig에서 여러 키로 시도하여 가격 찾기
+          let homepageChoiceData: any = {};
+          if (homepagePricingConfig?.choices_pricing) {
+            // 1. combination.id로 시도
+            homepageChoiceData = homepagePricingConfig.choices_pricing[combination.id] || {};
+            
+            // 2. combination_key로 시도
+            if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
+              homepageChoiceData = homepagePricingConfig.choices_pricing[combination.combination_key] || {};
+            }
+            
+            // 3. 정렬된 combination_key로 시도 (그룹 순서에 상관없이 매칭)
+            if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
+              const sortedKey = combination.combination_key.split('+').sort().join('+');
+              if (sortedKey !== combination.combination_key) {
+                homepageChoiceData = homepagePricingConfig.choices_pricing[sortedKey] || {};
+              }
+            }
+            
+            // 4. 모든 키를 순회하며 정렬된 키로 매칭 시도
+            if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
+              const sortedKey = combination.combination_key.split('+').sort().join('+');
+              const availableKeys = Object.keys(homepagePricingConfig.choices_pricing);
+              const matchingKey = availableKeys.find(key => {
+                const sortedAvailableKey = key.split('+').sort().join('+');
+                return sortedAvailableKey === sortedKey;
+              });
+              if (matchingKey) {
+                homepageChoiceData = homepagePricingConfig.choices_pricing[matchingKey];
+              }
+            }
+          }
           
           adultPrice = (homepageChoiceData.adult_price as number) ||
                       (homepageChoiceData.adult as number) ||

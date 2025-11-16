@@ -1273,33 +1273,85 @@ export default function ReservationForm({
             coupon_discount_type: typeof existingPricing.coupon_discount
           })
           
-          setFormData(prev => ({
-            ...prev,
-            adultProductPrice: existingPricing.adult_product_price || 0,
-            childProductPrice: existingPricing.child_product_price || 0,
-            infantProductPrice: existingPricing.infant_product_price || 0,
-            productPriceTotal: existingPricing.product_price_total || 0,
-            requiredOptions: existingPricing.required_options || {},
-            requiredOptionTotal: existingPricing.required_option_total || 0,
-            subtotal: existingPricing.subtotal || 0,
-            couponCode: existingPricing.coupon_code || '',
-            couponDiscount: Number(existingPricing.coupon_discount) || 0,
-            additionalDiscount: Number(existingPricing.additional_discount) || 0,
-            additionalCost: Number(existingPricing.additional_cost) || 0,
-            cardFee: Number(existingPricing.card_fee) || 0,
-            tax: Number(existingPricing.tax) || 0,
-            prepaymentCost: Number(existingPricing.prepayment_cost) || 0,
-            prepaymentTip: Number(existingPricing.prepayment_tip) || 0,
-            selectedOptionalOptions: existingPricing.selected_options || {},
-            optionTotal: Number(existingPricing.option_total) || 0,
-            totalPrice: Number(existingPricing.total_price) || 0,
-            depositAmount: Number(existingPricing.deposit_amount) || 0,
-            balanceAmount: Number(existingPricing.balance_amount) || 0,
-            isPrivateTour: reservation?.isPrivateTour || false,
-            privateTourAdditionalCost: Number(existingPricing.private_tour_additional_cost) || 0,
-            commission_percent: Number((existingPricing as any).commission_percent) || 0,
-            commission_amount: Number((existingPricing as any).commission_amount) || 0
-          }))
+          // 채널의 pricing_type 확인 (단일 가격 모드 체크)
+          const selectedChannel = channels.find(c => c.id === channelId)
+          const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
+          const isSinglePrice = pricingType === 'single'
+          
+          // 단일 가격 모드인 경우 adult_product_price를 모든 가격에 적용
+          const adultPrice = existingPricing.adult_product_price || 0
+          const childPrice = isSinglePrice ? adultPrice : (existingPricing.child_product_price || 0)
+          const infantPrice = isSinglePrice ? adultPrice : (existingPricing.infant_product_price || 0)
+          
+          setFormData(prev => {
+            const updated = {
+              ...prev,
+              adultProductPrice: adultPrice,
+              childProductPrice: childPrice,
+              infantProductPrice: infantPrice,
+              requiredOptions: existingPricing.required_options || {},
+              couponCode: existingPricing.coupon_code || '',
+              couponDiscount: Number(existingPricing.coupon_discount) || 0,
+              additionalDiscount: Number(existingPricing.additional_discount) || 0,
+              additionalCost: Number(existingPricing.additional_cost) || 0,
+              cardFee: Number(existingPricing.card_fee) || 0,
+              tax: Number(existingPricing.tax) || 0,
+              prepaymentCost: Number(existingPricing.prepayment_cost) || 0,
+              prepaymentTip: Number(existingPricing.prepayment_tip) || 0,
+              selectedOptionalOptions: existingPricing.selected_options || {},
+              depositAmount: Number(existingPricing.deposit_amount) || 0,
+              isPrivateTour: reservation?.isPrivateTour || false,
+              privateTourAdditionalCost: Number(existingPricing.private_tour_additional_cost) || 0,
+              commission_percent: Number((existingPricing as any).commission_percent) || 0,
+              commission_amount: Number((existingPricing as any).commission_amount) || 0
+            }
+            
+            // 가격 계산 수행 (단일 가격 모드 적용 후 재계산)
+            const newProductPriceTotal = (updated.adultProductPrice * updated.adults) + 
+                                         (updated.childProductPrice * updated.child) + 
+                                         (updated.infantProductPrice * updated.infant)
+            
+            // requiredOptionTotal 계산
+            let requiredOptionTotal = 0
+            Object.entries(updated.requiredOptions).forEach(([optionId, option]) => {
+              const isSelected = updated.selectedOptions && 
+                updated.selectedOptions[optionId] && 
+                updated.selectedOptions[optionId].length > 0
+              if (isSelected) {
+                requiredOptionTotal += (option.adult * updated.adults) + 
+                                      (option.child * updated.child) + 
+                                      (option.infant * updated.infant)
+              }
+            })
+            
+            // choicesTotal 또는 requiredOptionTotal 사용
+            const choicesTotal = updated.choicesTotal || 0
+            const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal
+            
+            // 선택 옵션 총합 계산
+            let optionalOptionTotal = 0
+            Object.values(updated.selectedOptionalOptions).forEach(option => {
+              optionalOptionTotal += option.price * option.quantity
+            })
+            
+            const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal
+            const totalDiscount = updated.couponDiscount + updated.additionalDiscount
+            const totalAdditional = updated.additionalCost + updated.cardFee + updated.tax +
+              updated.prepaymentCost + updated.prepaymentTip +
+              (updated.isPrivateTour ? updated.privateTourAdditionalCost : 0) +
+              reservationOptionsTotalPrice
+            const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional)
+            const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
+            
+            return {
+              ...updated,
+              productPriceTotal: newProductPriceTotal,
+              requiredOptionTotal: requiredOptionTotal,
+              subtotal: newSubtotal,
+              totalPrice: newTotalPrice,
+              balanceAmount: updated.onSiteBalanceAmount > 0 ? updated.onSiteBalanceAmount : newBalance
+            }
+          })
           
           setIsExistingPricingLoaded(true)
           setPriceAutoFillMessage('기존 가격 정보가 로드되었습니다!')
@@ -1312,7 +1364,7 @@ export default function ReservationForm({
       
       const { data: pricingData, error } = await (supabase as any)
         .from('dynamic_pricing')
-        .select('adult_price, child_price, infant_price, commission_percent, commission_amount, options_pricing, not_included_price')
+        .select('adult_price, child_price, infant_price, commission_percent, options_pricing, not_included_price, choices_pricing')
         .eq('product_id', productId)
         .eq('date', tourDate)
         .eq('channel_id', channelId)
@@ -1349,20 +1401,130 @@ export default function ReservationForm({
       const pricing = pricingData[0] as any
       console.log('Dynamic pricing 데이터 조회 성공:', pricing)
 
-      // 가격 정보를 formData에 반영
-      setFormData(prev => ({
-        ...prev,
-        adultProductPrice: (pricing?.adult_price as number) || 0,
-        childProductPrice: (pricing?.child_price as number) || 0,
-        infantProductPrice: (pricing?.infant_price as number) || 0,
-        commission_percent: (pricing?.commission_percent as number) || 0,
-        commission_amount: (pricing?.commission_amount as number) || 0,
-        not_included_price: (pricing?.not_included_price as number) || 0,
-        // Derive OTA per-adult amount when not_included_price is provided
-        onlinePaymentAmount: pricing?.not_included_price != null
-          ? Math.max(0, ((pricing?.adult_price || 0) - (pricing?.not_included_price || 0)) * (prev.adults || 0))
-          : prev.onlinePaymentAmount || 0
-      }))
+      // 채널 정보 확인
+      const selectedChannel = channels.find(c => c.id === channelId)
+      const isOTAChannel = selectedChannel && (
+        (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
+        (selectedChannel as any)?.category === 'OTA'
+      )
+      const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
+      const isSinglePrice = pricingType === 'single'
+      
+      console.log('채널 정보:', { channelId, isOTAChannel, pricingType, isSinglePrice })
+
+      // OTA 채널이고 choices_pricing에 ota_sale_price가 있는 경우 사용
+      let adultPrice = (pricing?.adult_price as number) || 0
+      let childPrice = isSinglePrice ? adultPrice : ((pricing?.child_price as number) || 0)
+      let infantPrice = isSinglePrice ? adultPrice : ((pricing?.infant_price as number) || 0)
+
+      if (isOTAChannel && pricing?.choices_pricing) {
+        try {
+          const choicesPricing = typeof pricing.choices_pricing === 'string' 
+            ? JSON.parse(pricing.choices_pricing) 
+            : pricing.choices_pricing
+          
+          console.log('choices_pricing 데이터:', choicesPricing)
+          
+          // choices_pricing에서 ota_sale_price가 있는 첫 번째 초이스 찾기
+          let foundOtaSalePrice = false
+          for (const [choiceId, choiceData] of Object.entries(choicesPricing)) {
+            const data = choiceData as any
+            if (data.ota_sale_price && data.ota_sale_price > 0) {
+              const otaSalePrice = data.ota_sale_price
+              adultPrice = otaSalePrice
+              childPrice = isSinglePrice ? otaSalePrice : (data.child_price || data.child || otaSalePrice)
+              infantPrice = isSinglePrice ? otaSalePrice : (data.infant_price || data.infant || otaSalePrice)
+              foundOtaSalePrice = true
+              console.log('OTA 판매가 사용:', { choiceId, otaSalePrice, adultPrice, childPrice, infantPrice })
+              break
+            }
+          }
+          
+          // ota_sale_price가 없으면 첫 번째 초이스의 일반 가격 사용
+          if (!foundOtaSalePrice) {
+            const firstChoiceId = Object.keys(choicesPricing)[0]
+            if (firstChoiceId && choicesPricing[firstChoiceId]) {
+              const choiceData = choicesPricing[firstChoiceId] as any
+              adultPrice = choiceData.adult_price || choiceData.adult || adultPrice
+              childPrice = isSinglePrice ? adultPrice : (choiceData.child_price || choiceData.child || childPrice)
+              infantPrice = isSinglePrice ? adultPrice : (choiceData.infant_price || choiceData.infant || infantPrice)
+              console.log('초이스 가격 사용 (OTA 판매가 없음):', { firstChoiceId, adultPrice, childPrice, infantPrice })
+            }
+          }
+        } catch (e) {
+          console.warn('choices_pricing 파싱 오류:', e)
+        }
+      }
+      
+      setFormData(prev => {
+        const updated = {
+          ...prev,
+          adultProductPrice: adultPrice,
+          childProductPrice: childPrice,
+          infantProductPrice: infantPrice,
+          commission_percent: (pricing?.commission_percent as number) || 0,
+          not_included_price: (pricing?.not_included_price as number) || 0,
+          // Derive OTA per-adult amount when not_included_price is provided
+          onlinePaymentAmount: pricing?.not_included_price != null
+            ? Math.max(0, (adultPrice - (pricing?.not_included_price || 0)) * (prev.adults || 0))
+            : prev.onlinePaymentAmount || 0
+        }
+        
+        // 가격 계산 수행
+        const newProductPriceTotal = (updated.adultProductPrice * updated.adults) + 
+                                     (updated.childProductPrice * updated.child) + 
+                                     (updated.infantProductPrice * updated.infant)
+        
+        // requiredOptionTotal 계산
+        let requiredOptionTotal = 0
+        Object.entries(updated.requiredOptions).forEach(([optionId, option]) => {
+          const isSelected = updated.selectedOptions && 
+            updated.selectedOptions[optionId] && 
+            updated.selectedOptions[optionId].length > 0
+          if (isSelected) {
+            requiredOptionTotal += (option.adult * updated.adults) + 
+                                  (option.child * updated.child) + 
+                                  (option.infant * updated.infant)
+          }
+        })
+        
+        // OTA 채널인 경우 초이스 가격을 포함하지 않음 (OTA 판매가에 이미 포함됨)
+        const isOTAChannel = selectedChannel && (
+          (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
+          (selectedChannel as any)?.category === 'OTA'
+        )
+        
+        // choicesTotal 또는 requiredOptionTotal 사용
+        const choicesTotal = updated.choicesTotal || 0
+        const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal
+        
+        // 선택 옵션 총합 계산
+        let optionalOptionTotal = 0
+        Object.values(updated.selectedOptionalOptions).forEach(option => {
+          optionalOptionTotal += option.price * option.quantity
+        })
+        
+        // OTA 채널일 때는 초이스 가격을 포함하지 않음
+        const newSubtotal = isOTAChannel 
+          ? newProductPriceTotal + optionalOptionTotal
+          : newProductPriceTotal + optionTotal + optionalOptionTotal
+        const totalDiscount = updated.couponDiscount + updated.additionalDiscount
+        const totalAdditional = updated.additionalCost + updated.cardFee + updated.tax +
+          updated.prepaymentCost + updated.prepaymentTip +
+          (updated.isPrivateTour ? updated.privateTourAdditionalCost : 0) +
+          reservationOptionsTotalPrice
+        const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional)
+        const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
+        
+        return {
+          ...updated,
+          productPriceTotal: newProductPriceTotal,
+          requiredOptionTotal: requiredOptionTotal,
+          subtotal: newSubtotal,
+          totalPrice: newTotalPrice,
+          balanceAmount: updated.onSiteBalanceAmount > 0 ? updated.onSiteBalanceAmount : newBalance
+        }
+      })
 
       // choice 데이터를 먼저 로드
       await loadProductChoices(productId)
@@ -1378,7 +1540,7 @@ export default function ReservationForm({
     } catch (error) {
       console.error('Dynamic pricing 조회 중 오류:', error)
     }
-  }, [])
+  }, [channels, reservationOptionsTotalPrice])
 
   // 가격 계산 함수들
   const calculateProductPriceTotal = useCallback(() => {
@@ -1627,23 +1789,55 @@ export default function ReservationForm({
 
   // 가격 정보 자동 업데이트 (무한 렌더링 방지를 위해 useEffect 완전 제거)
   const updatePrices = useCallback(() => {
-    const newProductPriceTotal = calculateProductPriceTotal()
-    const newRequiredOptionTotal = calculateRequiredOptionTotal()
-    const newChoicesTotal = formData.choicesTotal || 0
-    const newSubtotal = calculateSubtotal()
-    const newTotalPrice = calculateTotalPrice()
-    const newBalance = calculateBalance()
-
-    setFormData(prev => ({
-      ...prev,
-      productPriceTotal: newProductPriceTotal,
-      requiredOptionTotal: newRequiredOptionTotal,
-      choicesTotal: newChoicesTotal,
-      subtotal: newSubtotal,
-      totalPrice: newTotalPrice,
-      balanceAmount: prev.onSiteBalanceAmount > 0 ? prev.onSiteBalanceAmount : newBalance
-    }))
-  }, [])
+    setFormData(prev => {
+      // 현재 상태를 기반으로 계산
+      const newProductPriceTotal = (prev.adultProductPrice * prev.adults) + 
+                                   (prev.childProductPrice * prev.child) + 
+                                   (prev.infantProductPrice * prev.infant)
+      
+      // requiredOptionTotal 계산
+      let requiredOptionTotal = 0
+      Object.entries(prev.requiredOptions).forEach(([optionId, option]) => {
+        const isSelected = prev.selectedOptions && 
+          prev.selectedOptions[optionId] && 
+          prev.selectedOptions[optionId].length > 0
+        if (isSelected) {
+          requiredOptionTotal += (option.adult * prev.adults) + 
+                                (option.child * prev.child) + 
+                                (option.infant * prev.infant)
+        }
+      })
+      
+      // choicesTotal 또는 requiredOptionTotal 사용
+      const choicesTotal = prev.choicesTotal || 0
+      const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal
+      
+      // 선택 옵션 총합 계산
+      let optionalOptionTotal = 0
+      Object.values(prev.selectedOptionalOptions).forEach(option => {
+        optionalOptionTotal += option.price * option.quantity
+      })
+      
+      const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal
+      const totalDiscount = prev.couponDiscount + prev.additionalDiscount
+      const totalAdditional = prev.additionalCost + prev.cardFee + prev.tax +
+        prev.prepaymentCost + prev.prepaymentTip +
+        (prev.isPrivateTour ? prev.privateTourAdditionalCost : 0) +
+        reservationOptionsTotalPrice
+      const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional)
+      const newBalance = Math.max(0, newTotalPrice - prev.depositAmount)
+      
+      return {
+        ...prev,
+        productPriceTotal: newProductPriceTotal,
+        requiredOptionTotal: requiredOptionTotal,
+        choicesTotal: choicesTotal,
+        subtotal: newSubtotal,
+        totalPrice: newTotalPrice,
+        balanceAmount: prev.onSiteBalanceAmount > 0 ? prev.onSiteBalanceAmount : newBalance
+      }
+    })
+  }, [reservationOptionsTotalPrice])
 
   // 예약 옵션 총 가격이 변경될 때 가격 재계산 (편집 모드에서는 자동 저장 방지)
   useEffect(() => {

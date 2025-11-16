@@ -26,6 +26,7 @@ interface ProductBasePrice {
 /**
  * 홈페이지 초이스 가격 데이터 찾기
  * 여러 키를 시도하여 매칭되는 데이터를 찾습니다
+ * 초이스 그룹 순서에 상관없이 매칭되도록 정렬된 키도 시도합니다
  */
 export function findHomepageChoiceData(
   combination: Combination,
@@ -47,9 +48,37 @@ export function findHomepageChoiceData(
     return choicesPricing[combination.combination_key];
   }
 
-  // 3. 모든 키를 순회하며 매칭 시도 (키가 부분적으로 일치하는 경우)
+  // 3. 정렬된 combination_key로 시도 (그룹 순서에 상관없이 매칭)
+  if (combination.combination_key) {
+    const sortedKey = combination.combination_key
+      .split('+')
+      .sort()
+      .join('+');
+    if (sortedKey !== combination.combination_key && choicesPricing[sortedKey]) {
+      return choicesPricing[sortedKey];
+    }
+  }
+
+  // 4. 모든 키를 순회하며 매칭 시도 (키가 부분적으로 일치하는 경우)
   if (Object.keys(choicesPricing).length > 0) {
     const availableKeys = Object.keys(choicesPricing);
+    
+    // 정렬된 키로 매칭 시도
+    if (combination.combination_key) {
+      const sortedKey = combination.combination_key
+        .split('+')
+        .sort()
+        .join('+');
+      const matchingKey = availableKeys.find(key => {
+        const sortedAvailableKey = key.split('+').sort().join('+');
+        return sortedAvailableKey === sortedKey;
+      });
+      if (matchingKey) {
+        return choicesPricing[matchingKey];
+      }
+    }
+    
+    // 부분 일치로 매칭 시도
     const matchingKey = availableKeys.find(key => {
       return key === combination.id || 
              key === combination.combination_key ||

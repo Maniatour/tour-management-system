@@ -182,9 +182,30 @@ export default function PricingSection({
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels.find(ch => ch.id === formData.channelId)
   const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false
+  const isOTAChannel = selectedChannel && (
+    (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
+    (selectedChannel as any)?.category === 'OTA'
+  )
+  const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
+  const isSinglePrice = pricingType === 'single'
 
   // Net 가격 계산
   const calculateNetPrice = () => {
+    // OTA 채널일 때는 단순 계산: OTA 판매가 - 쿠폰 할인 - 커미션
+    if (isOTAChannel) {
+      const otaSalePrice = formData.productPriceTotal // OTA 판매가 (초이스 포함)
+      const afterCoupon = otaSalePrice - formData.couponDiscount - formData.additionalDiscount
+      
+      let commissionAmount = 0
+      if (formData.commission_amount > 0) {
+        commissionAmount = formData.commission_amount
+      } else {
+        commissionAmount = afterCoupon * (formData.commission_percent / 100)
+      }
+      
+      return afterCoupon - commissionAmount
+    }
+    
     const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal + reservationOptionsTotalPrice
     
     // commission_base_price_only가 true인 경우, 판매가격에만 커미션 적용
@@ -220,6 +241,36 @@ export default function PricingSection({
     const netPrice = calculateNetPrice()
     return netPrice - reservationExpensesTotal
   }
+
+  // 커미션 금액 자동 계산
+  const calculateCommissionAmount = useCallback(() => {
+    if (formData.commission_percent <= 0) return 0
+    
+    if (isOTAChannel) {
+      // OTA 채널: Grand Total (쿠폰 할인 적용 후)에 커미션 적용
+      const grandTotal = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+      return grandTotal * (formData.commission_percent / 100)
+    } else if (commissionBasePriceOnly) {
+      // 판매가격에만 커미션 적용
+      const baseProductPrice = calculateProductPriceTotal()
+      const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
+      return basePriceForCommission * (formData.commission_percent / 100)
+    } else {
+      // 전체 가격에 커미션 적용
+      const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal
+      return totalPrice * (formData.commission_percent / 100)
+    }
+  }, [formData.commission_percent, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.subtotal, formData.optionTotal, isOTAChannel, commissionBasePriceOnly, calculateProductPriceTotal])
+
+  // 커미션 퍼센트나 가격이 변경될 때 커미션 금액 자동 계산
+  useEffect(() => {
+    if (formData.commission_percent > 0) {
+      const calculatedAmount = calculateCommissionAmount()
+      if (Math.abs(calculatedAmount - formData.commission_amount) > 0.01) {
+        setFormData(prev => ({ ...prev, commission_amount: calculatedAmount }))
+      }
+    }
+  }, [formData.commission_percent, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.subtotal, formData.optionTotal, calculateCommissionAmount])
 
   return (
     <div>
@@ -363,38 +414,43 @@ export default function PricingSection({
                   <span className="font-medium">${(formData.adultProductPrice * formData.adults).toFixed(2)}</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-600">아동</span>
-                <div className="flex items-center space-x-1">
-                  <span className="font-medium">$</span>
-                  <input
-                    type="number"
-                    value={formData.childProductPrice || ''}
-                    onChange={(e) => setFormData({ ...formData, childProductPrice: Number(e.target.value) || 0 })}
-                    className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                    step="0.01"
-                    placeholder="0"
-                  />
-                  <span className="text-gray-500">x{formData.child}</span>
-                  <span className="font-medium">${(formData.childProductPrice * formData.child).toFixed(2)}</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-600">유아</span>
-                <div className="flex items-center space-x-1">
-                  <span className="font-medium">$</span>
-                  <input
-                    type="number"
-                    value={formData.infantProductPrice || ''}
-                    onChange={(e) => setFormData({ ...formData, infantProductPrice: Number(e.target.value) || 0 })}
-                    className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                    step="0.01"
-                    placeholder="0"
-                  />
-                  <span className="text-gray-500">x{formData.infant}</span>
-                  <span className="font-medium">${(formData.infantProductPrice * formData.infant).toFixed(2)}</span>
-                </div>
-              </div>
+              {/* 단일 가격 모드일 때는 아동/유아 필드 숨김 */}
+              {!isSinglePrice && (
+                <>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600">아동</span>
+                    <div className="flex items-center space-x-1">
+                      <span className="font-medium">$</span>
+                      <input
+                        type="number"
+                        value={formData.childProductPrice || ''}
+                        onChange={(e) => setFormData({ ...formData, childProductPrice: Number(e.target.value) || 0 })}
+                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        step="0.01"
+                        placeholder="0"
+                      />
+                      <span className="text-gray-500">x{formData.child}</span>
+                      <span className="font-medium">${(formData.childProductPrice * formData.child).toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600">유아</span>
+                    <div className="flex items-center space-x-1">
+                      <span className="font-medium">$</span>
+                      <input
+                        type="number"
+                        value={formData.infantProductPrice || ''}
+                        onChange={(e) => setFormData({ ...formData, infantProductPrice: Number(e.target.value) || 0 })}
+                        className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        step="0.01"
+                        placeholder="0"
+                      />
+                      <span className="text-gray-500">x{formData.infant}</span>
+                      <span className="font-medium">${(formData.infantProductPrice * formData.infant).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </>
+              )}
               <div className="border-t pt-1 flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-900">합계</span>
                 <span className="text-sm font-bold text-blue-600">${formData.productPriceTotal.toFixed(2)}</span>
@@ -402,7 +458,8 @@ export default function PricingSection({
             </div>
           </div>
 
-          {/* 초이스 */}
+          {/* 초이스 - OTA 채널일 때는 숨김 */}
+          {!isOTAChannel && (
           <div className="bg-white p-3 rounded border border-gray-200">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-sm font-medium text-gray-900">초이스</h4>
@@ -485,6 +542,7 @@ export default function PricingSection({
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {/* 2열: 할인/추가 비용 + 옵션 */}
@@ -519,7 +577,10 @@ export default function PricingSection({
                     const selectedCouponCode = e.target.value
                     const selectedCoupon = coupons.find(coupon => coupon.coupon_code === selectedCouponCode)
                     
-                    const subtotal = calculateProductPriceTotal() + calculateChoiceTotal()
+                    // OTA 채널일 때는 OTA 판매가에 직접 쿠폰 할인 적용
+                    const subtotal = isOTAChannel 
+                      ? formData.productPriceTotal 
+                      : calculateProductPriceTotal() + calculateChoiceTotal()
                     const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
                     
                     setFormData({ 
@@ -665,61 +726,90 @@ export default function PricingSection({
               </button>
             </div>
             
-            {/* 소계 */}
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm text-gray-700">소계</span>
-              <span className="text-sm font-medium text-gray-900">${formData.subtotal.toFixed(2)}</span>
-            </div>
-            
-            {/* 할인 및 추가 비용 */}
-            {(formData.couponDiscount > 0 || formData.additionalDiscount > 0 || formData.additionalCost > 0) && (
-              <div className="space-y-1 mb-2">
+            {/* OTA 채널일 때는 단순화된 계산 */}
+            {isOTAChannel ? (
+              <>
+                {/* 소계 = OTA 판매가 */}
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-700">소계</span>
+                  <span className="text-sm font-medium text-gray-900">${formData.productPriceTotal.toFixed(2)}</span>
+                </div>
+                
+                {/* 쿠폰 할인 */}
                 {formData.couponDiscount > 0 && (
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center mb-2">
                     <span className="text-xs text-gray-600">쿠폰 할인</span>
                     <span className="text-xs text-green-600">-${formData.couponDiscount.toFixed(2)}</span>
                   </div>
                 )}
-                {formData.additionalDiscount > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-600">추가 할인</span>
-                    <span className="text-xs text-green-600">-${formData.additionalDiscount.toFixed(2)}</span>
+                
+                {/* Grand Total */}
+                <div className="flex justify-between items-center mb-2 border-t border-gray-200 pt-2">
+                  <span className="text-sm font-medium text-gray-700">Grand Total</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    ${(formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount).toFixed(2)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* 소계 */}
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-700">소계</span>
+                  <span className="text-sm font-medium text-gray-900">${formData.subtotal.toFixed(2)}</span>
+                </div>
+                
+                {/* 할인 및 추가 비용 */}
+                {(formData.couponDiscount > 0 || formData.additionalDiscount > 0 || formData.additionalCost > 0) && (
+                  <div className="space-y-1 mb-2">
+                    {formData.couponDiscount > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-600">쿠폰 할인</span>
+                        <span className="text-xs text-green-600">-${formData.couponDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {formData.additionalDiscount > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-600">추가 할인</span>
+                        <span className="text-xs text-green-600">-${formData.additionalDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {formData.additionalCost > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-600">추가 비용</span>
+                        <span className="text-xs text-red-600">+${formData.additionalCost.toFixed(2)}</span>
+                      </div>
+                    )}
                   </div>
                 )}
-                {formData.additionalCost > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-600">추가 비용</span>
-                    <span className="text-xs text-red-600">+${formData.additionalCost.toFixed(2)}</span>
+                
+                {/* Grand Total */}
+                <div className="flex justify-between items-center mb-2 border-t border-gray-200 pt-2">
+                  <span className="text-sm font-medium text-gray-700">Grand Total</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost).toFixed(2)}
+                  </span>
+                </div>
+                
+                {/* 옵션 총합 */}
+                {formData.optionTotal > 0 && (
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-gray-700">옵션 총합</span>
+                    <span className="text-sm font-semibold text-gray-900">
+                      ${formData.optionTotal.toFixed(2)}
+                    </span>
                   </div>
                 )}
-              </div>
+                
+                {/* 총 가격 */}
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-700">총 가격</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal).toFixed(2)}
+                  </span>
+                </div>
+              </>
             )}
-            
-            {/* Grand Total */}
-            <div className="flex justify-between items-center mb-2 border-t border-gray-200 pt-2">
-              <span className="text-sm font-medium text-gray-700">Grand Total</span>
-              <span className="text-sm font-semibold text-gray-900">
-                ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost).toFixed(2)}
-              </span>
-            </div>
-            
-            {/* 옵션 총합 */}
-            {formData.optionTotal > 0 && (
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-700">옵션 총합</span>
-                <span className="text-sm font-semibold text-gray-900">
-                  ${formData.optionTotal.toFixed(2)}
-                </span>
-              </div>
-            )}
-            
-            {/* 총 가격 */}
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-700">총 가격</span>
-              <span className="text-sm font-semibold text-gray-900">
-                ${(formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal).toFixed(2)}
-              </span>
-            </div>
             
             {/* 커미션 */}
             <div className="flex justify-between items-center mb-2">
@@ -738,7 +828,11 @@ export default function PricingSection({
                       const percent = Number(e.target.value) || 0
                       
                       let calculatedAmount = 0
-                      if (commissionBasePriceOnly) {
+                      if (isOTAChannel) {
+                        // OTA 채널: Grand Total (쿠폰 할인 적용 후)에 커미션 적용
+                        const grandTotal = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+                        calculatedAmount = grandTotal * (percent / 100)
+                      } else if (commissionBasePriceOnly) {
                         // 판매가격에만 커미션 적용
                         const baseProductPrice = calculateProductPriceTotal()
                         const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
@@ -768,8 +862,18 @@ export default function PricingSection({
                   <div className="relative">
                     <input
                       type="number"
-                      value={formData.commission_amount}
-                      onChange={(e) => setFormData({ ...formData, commission_amount: Number(e.target.value) || 0 })}
+                      value={formData.commission_amount.toFixed(2)}
+                      onChange={(e) => {
+                        const newAmount = Number(e.target.value) || 0
+                        setFormData({ ...formData, commission_amount: newAmount })
+                      }}
+                      onBlur={() => {
+                        // 포커스를 잃을 때 다시 자동 계산
+                        if (formData.commission_percent > 0) {
+                          const calculatedAmount = calculateCommissionAmount()
+                          setFormData(prev => ({ ...prev, commission_amount: calculatedAmount }))
+                        }
+                      }}
                       className="w-16 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                       step="0.01"
                       min="0"

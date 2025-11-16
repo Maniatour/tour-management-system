@@ -19,12 +19,89 @@ if (process.env.NODE_ENV === 'development') {
   })
 }
 
+// 재시도 로직이 포함된 fetch 함수
+const fetchWithRetry = async (
+  url: RequestInfo | URL,
+  options: RequestInit = {}
+): Promise<Response> => {
+  const maxRetries = 3
+  const retryDelay = 1000
+  let lastError: Error | null = null
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // 타임아웃 설정 (30초)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000)
+
+      // 헤더를 안전하게 병합
+      const headers = new Headers(options.headers)
+      // Connection 헤더가 없으면 추가 (기존 헤더를 덮어쓰지 않음)
+      if (!headers.has('Connection')) {
+        headers.set('Connection', 'keep-alive')
+      }
+
+      // 기존 signal이 있으면 타임아웃과 함께 사용
+      // (실제로는 Supabase가 signal을 전달하지 않으므로 controller.signal 사용)
+      const response = await fetch(url, {
+        ...options,
+        signal: options.signal || controller.signal,
+        headers: headers
+      })
+
+      clearTimeout(timeoutId)
+
+      // 성공적인 응답이거나 재시도할 수 없는 오류인 경우
+      if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 408)) {
+        return response
+      }
+
+      // 서버 오류인 경우 재시도
+      if (response.status >= 500 || response.status === 408) {
+        throw new Error(`Server error: ${response.status}`)
+      }
+
+      return response
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+
+      // 재시도 가능한 오류인지 확인
+      const isRetryableError = 
+        error instanceof Error && (
+          error.name === 'AbortError' ||
+          error.message.includes('Failed to fetch') ||
+          error.message.includes('ERR_CONNECTION_CLOSED') ||
+          error.message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+          error.message.includes('network') ||
+          error.message.includes('timeout') ||
+          error.message.includes('ECONNRESET') ||
+          error.message.includes('ETIMEDOUT')
+        )
+
+      // 마지막 시도이거나 재시도할 수 없는 오류인 경우
+      if (attempt === maxRetries || !isRetryableError) {
+        throw lastError
+      }
+
+      // 지수 백오프로 대기
+      const delay = retryDelay * Math.pow(2, attempt)
+      console.warn(`Supabase 요청 실패, ${delay}ms 후 재시도 (${attempt + 1}/${maxRetries}):`, lastError.message)
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
+
+  throw lastError || new Error('Unknown error')
+}
+
 // 전역 싱글톤 인스턴스 생성 (auth 설정 포함)
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true
+  },
+  global: {
+    fetch: fetchWithRetry
   }
 })
 

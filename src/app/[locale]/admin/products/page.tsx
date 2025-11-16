@@ -507,6 +507,36 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     return categoryLabels[category] || category
   }
 
+  // 카테고리별 색상 매핑
+  const getCategoryColor = (category: string) => {
+    const categoryColors: { [key: string]: { bg: string; text: string; border: string } } = {
+      tour: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' },
+      service: { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200' },
+      hotel: { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200' },
+      transportation: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200' },
+      meal: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-200' },
+      activity: { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200' },
+      default: { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' }
+    }
+    const normalizedCategory = category?.toLowerCase() || ''
+    return categoryColors[normalizedCategory] || categoryColors.default
+  }
+
+  // 카테고리와 서브카테고리를 합친 라벨 생성
+  const getCombinedCategoryLabel = (category: string | null, subCategory: string | null) => {
+    const categoryLabel = category ? getCategoryLabel(category) : ''
+    const subCategoryLabel = subCategory ? getSubCategoryLabel(subCategory) : ''
+    
+    if (categoryLabel && subCategoryLabel) {
+      return `${categoryLabel} - ${subCategoryLabel}`
+    } else if (categoryLabel) {
+      return categoryLabel
+    } else if (subCategoryLabel) {
+      return subCategoryLabel
+    }
+    return '-'
+  }
+
   const getSubCategoryLabel = (subCategory: string) => {
     const subCategoryLabels: { [key: string]: string } = {
       downtown: '시내',
@@ -620,7 +650,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
   }
 
   // 인라인 편집 저장
-  const saveEdit = async (productId: string, fieldName: string) => {
+  const saveEdit = async (productId: string, fieldName: string, value?: string | number) => {
     if (savingProducts.has(productId)) return
 
     try {
@@ -628,12 +658,13 @@ export default function AdminProducts({ params }: AdminProductsProps) {
 
       // 업데이트할 데이터 준비
       const updateData: any = {}
+      const valueToUse = value !== undefined ? value : editingValue
       
       // 필드 타입에 따라 값 변환
       if (fieldName === 'base_price' || fieldName === 'max_participants') {
-        updateData[fieldName] = editingValue === '' ? null : Number(editingValue)
+        updateData[fieldName] = valueToUse === '' ? null : Number(valueToUse)
       } else {
-        updateData[fieldName] = editingValue === '' ? null : String(editingValue)
+        updateData[fieldName] = valueToUse === '' ? null : String(valueToUse)
       }
 
       // Supabase 업데이트
@@ -1075,13 +1106,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                     상품명
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    상태
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     카테고리
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    서브카테고리
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     기본 가격
@@ -1205,32 +1230,62 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                         className="px-4 py-4 whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(productStatus)}`}>
-                          {getStatusLabel(productStatus)}
-                        </span>
-                      </td>
-                      <td 
-                        className="px-4 py-4 whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {isEditing && editingField?.fieldName === 'category' ? (
+                        {isEditing && (editingField?.fieldName === 'category' || editingField?.fieldName === 'sub_category') ? (
                           <div className="space-y-2">
-                            <select
-                              value={editingValue as string}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              autoFocus
-                            >
-                              <option value="">선택 안함</option>
-                              {getCategoryOptions().map(opt => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">카테고리</label>
+                              <select
+                                value={editingField?.fieldName === 'category' ? (editingValue as string) : (product.category || '')}
+                                onChange={(e) => {
+                                  if (editingField?.fieldName === 'category') {
+                                    setEditingValue(e.target.value)
+                                  } else {
+                                    saveEdit(product.id, 'category', e.target.value)
+                                  }
+                                }}
+                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                autoFocus={editingField?.fieldName === 'category'}
+                              >
+                                <option value="">선택 안함</option>
+                                {getCategoryOptions().map(opt => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">서브카테고리</label>
+                              <select
+                                value={editingField?.fieldName === 'sub_category' ? (editingValue as string) : (product.sub_category || '')}
+                                onChange={(e) => {
+                                  if (editingField?.fieldName === 'sub_category') {
+                                    setEditingValue(e.target.value)
+                                  } else {
+                                    saveEdit(product.id, 'sub_category', e.target.value)
+                                  }
+                                }}
+                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                autoFocus={editingField?.fieldName === 'sub_category'}
+                                disabled={!product.category && editingField?.fieldName !== 'sub_category'}
+                              >
+                                <option value="">선택 안함</option>
+                                {getSubCategoryOptions(product.category || editingValue as string).map(opt => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                             <div className="flex space-x-1">
                               <button
-                                onClick={() => saveEdit(product.id, 'category')}
+                                onClick={() => {
+                                  if (editingField?.fieldName === 'category') {
+                                    saveEdit(product.id, 'category')
+                                  } else {
+                                    saveEdit(product.id, 'sub_category')
+                                  }
+                                }}
                                 disabled={isSaving}
                                 className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
                                 title="저장"
@@ -1248,9 +1303,9 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                           </div>
                         ) : (
                           <div className="flex items-center justify-between group">
-                            {product.category ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {getCategoryLabel(product.category)}
+                            {(product.category || product.sub_category) ? (
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${getCategoryColor(product.category || '').bg} ${getCategoryColor(product.category || '').text} ${getCategoryColor(product.category || '').border}`}>
+                                {getCombinedCategoryLabel(product.category, product.sub_category)}
                               </span>
                             ) : (
                               <span className="text-xs text-gray-400">-</span>
@@ -1258,63 +1313,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                             <button
                               onClick={() => startEdit(product.id, 'category', product.category || '')}
                               className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
-                              title="카테고리 수정"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                      <td 
-                        className="px-4 py-4 whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {isEditing && editingField?.fieldName === 'sub_category' ? (
-                          <div className="space-y-2">
-                            <select
-                              value={editingValue as string}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              autoFocus
-                            >
-                              <option value="">선택 안함</option>
-                              {getSubCategoryOptions(product.category).map(opt => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                            <div className="flex space-x-1">
-                              <button
-                                onClick={() => saveEdit(product.id, 'sub_category')}
-                                disabled={isSaving}
-                                className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
-                                title="저장"
-                              >
-                                <Save size={14} />
-                              </button>
-                              <button
-                                onClick={cancelEdit}
-                                className="p-1 text-gray-600 hover:text-gray-900"
-                                title="취소"
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between group">
-                            {product.sub_category ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                {getSubCategoryLabel(product.sub_category)}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-400">-</span>
-                            )}
-                            <button
-                              onClick={() => startEdit(product.id, 'sub_category', product.sub_category || '')}
-                              className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
-                              title="서브카테고리 수정"
+                              title="카테고리/서브카테고리 수정"
                             >
                               <Edit2 size={14} />
                             </button>
