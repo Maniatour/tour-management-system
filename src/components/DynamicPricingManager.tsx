@@ -2089,6 +2089,22 @@ export default function DynamicPricingManager({
                                 </span>
                               )}
                             </div>
+                            {/* 불포함 금액 표시 */}
+                            {(notIncludedType === 'amount_only' || notIncludedType === 'amount_and_choice') && (
+                              <div className="text-sm font-semibold text-orange-600 mb-1 border-t border-orange-200 pt-1">
+                                불포함 금액: 
+                                {notIncludedType === 'amount_only' ? (
+                                  <span className="ml-2">${notIncludedPrice.toFixed(2)}</span>
+                                ) : (
+                                  <span className="ml-2">
+                                    ${(notIncludedPrice + choicePrice).toFixed(2)}
+                                    <span className="text-xs text-gray-600 ml-1">
+                                      (불포함: ${notIncludedPrice.toFixed(2)} + 초이스: ${choicePrice.toFixed(2)})
+                                    </span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <div className="text-xs text-gray-500 mt-1">
                               {commissionBasePriceOnly && notIncludedType === 'amount_and_choice' ? (
                                 <>
