@@ -144,6 +144,21 @@ export default function DynamicPricingManager({
     }
   }, [selectedChannel, selectedChannelType]);
 
+  // 페이지 로드 시 Homepage(M00001) 채널 자동 선택
+  useEffect(() => {
+    // 채널이 로드되었고, 선택된 채널이 없을 때만 실행
+    if (!isLoadingChannels && !selectedChannel && channelGroups.length > 0) {
+      // SELF 채널 그룹에서 M00001 채널 찾기
+      const selfChannelGroup = channelGroups.find(group => group.type === 'SELF');
+      const homepageChannel = selfChannelGroup?.channels.find(ch => ch.id === 'M00001');
+      
+      if (homepageChannel) {
+        console.log('🏠 Homepage 채널 자동 선택:', homepageChannel.id);
+        handleChannelSelect(homepageChannel.id);
+      }
+    }
+  }, [isLoadingChannels, selectedChannel, channelGroups, handleChannelSelect]);
+
   const {
     saving,
     saveMessage,

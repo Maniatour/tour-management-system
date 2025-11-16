@@ -363,6 +363,10 @@ export const PricingCalendar = memo(function PricingCalendar({
     const isSelected = isDateSelected(dateString);
     const isToday = normalizeDateValue(dateString) === todayString;
     const singlePrice = getSinglePriceForDate(dateString);
+    
+    // dynamicPricingData에서 해당 날짜에 데이터가 있는지 확인
+    const normalizedSearchDate = normalizeDateValue(dateString);
+    const hasDataForDate = normalizedSearchDate && normalizedPricingMap[normalizedSearchDate] && normalizedPricingMap[normalizedSearchDate].length > 0;
 
     return (
       <button
@@ -377,26 +381,31 @@ export const PricingCalendar = memo(function PricingCalendar({
         <div className="absolute top-1 right-1 text-xs text-gray-500">{day}</div>
         
         {/* 가격 표시 (선택된 항목만 표시) */}
-        {singlePrice && (
+        {hasDataForDate ? (
           <div className="absolute bottom-1 left-1 text-xs space-y-0.5">
-            {selectedPriceTypes.has('maxSalePrice') && singlePrice.maxSalePrice > 0 && (
-              <div className="text-green-600 font-semibold">${singlePrice.maxSalePrice.toFixed(2)}</div>
+            {singlePrice && (
+              <>
+                {selectedPriceTypes.has('maxSalePrice') && singlePrice.maxSalePrice > 0 && (
+                  <div className="text-green-600 font-semibold">${singlePrice.maxSalePrice.toFixed(2)}</div>
+                )}
+                {selectedPriceTypes.has('discountPrice') && singlePrice.discountPrice > 0 && (
+                  <div className="text-blue-600">${singlePrice.discountPrice.toFixed(2)}</div>
+                )}
+                {selectedPriceTypes.has('netPrice') && singlePrice.netPrice > 0 && (
+                  <div className="text-purple-600 font-bold">${singlePrice.netPrice.toFixed(2)}</div>
+                )}
+                {/* 가격이 모두 0이거나 선택되지 않은 경우에도 표시 */}
+                {singlePrice.maxSalePrice === 0 && singlePrice.discountPrice === 0 && singlePrice.netPrice === 0 && (
+                  <div className="text-gray-400 text-[10px]">가격 없음</div>
+                )}
+              </>
             )}
-            {selectedPriceTypes.has('discountPrice') && singlePrice.discountPrice > 0 && (
-              <div className="text-blue-600">${singlePrice.discountPrice.toFixed(2)}</div>
-            )}
-            {selectedPriceTypes.has('netPrice') && singlePrice.netPrice > 0 && (
-              <div className="text-purple-600 font-bold">${singlePrice.netPrice.toFixed(2)}</div>
-            )}
-            {/* 가격이 모두 0이거나 선택되지 않은 경우에도 표시 */}
-            {singlePrice.maxSalePrice === 0 && singlePrice.discountPrice === 0 && singlePrice.netPrice === 0 && (
+            {!singlePrice && (
               <div className="text-gray-400 text-[10px]">가격 없음</div>
             )}
           </div>
-        )}
-        
-        {/* 데이터가 없을 때 표시 */}
-        {!singlePrice && (
+        ) : (
+          /* 데이터가 없을 때만 표시 */
           <div className="absolute bottom-1 left-1 text-xs text-gray-400">
             데이터 없음
           </div>
