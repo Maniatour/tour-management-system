@@ -38,10 +38,12 @@ interface BulkPricingRow {
   priceAdjustmentChild: number;
   priceAdjustmentInfant: number;
   commissionPercent: number;
+  commissionAmount: number; // 수수료 금액 ($)
   couponPercent: number;
   markupAmount: number;
   markupPercent: number;
   notIncludedPrice: number;
+  otaSalePrice: Record<string, number>; // OTA 판매가 (초이스별)
   choicePricing: Record<string, {
     adult: number;
     child: number;
@@ -134,9 +136,18 @@ export default function BulkPricingTableModal({
     return allSingle;
   }, [channels]);
 
+  // OTA 채널만 필터링
+  const otaChannels = useMemo(() => {
+    return channels.filter(ch => {
+      const type = ch.type?.toLowerCase() || '';
+      const category = (ch as any)?.category?.toLowerCase() || '';
+      return type === 'ota' || category === 'ota';
+    });
+  }, [channels]);
+
   // 행 추가
   const handleAddRow = useCallback(() => {
-    const defaultChannel = channels.length > 0 ? channels[0] : null;
+    const defaultChannel = otaChannels.length > 0 ? otaChannels[0] : null;
     const defaultCommissionPercent = defaultChannel?.commission_percent || 0;
     
     const newRow: BulkPricingRow = {
@@ -152,14 +163,16 @@ export default function BulkPricingTableModal({
       priceAdjustmentChild: 0,
       priceAdjustmentInfant: 0,
       commissionPercent: defaultCommissionPercent,
+      commissionAmount: 0,
       couponPercent: 0,
       markupAmount: 0,
       markupPercent: 0,
       notIncludedPrice: 0,
+      otaSalePrice: {},
       choicePricing: {}
     };
     setRows([...rows, newRow]);
-  }, [rows, channels, productBasePrice]);
+  }, [rows, otaChannels, productBasePrice]);
 
   // 행 삭제
   const handleDeleteRow = useCallback((rowId: string) => {
@@ -238,8 +251,8 @@ export default function BulkPricingTableModal({
 
   // 가격 계산 함수 (초이스별 가격 포함)
   const calculatePrices = useCallback((row: BulkPricingRow, choiceId?: string) => {
-    // 선택된 채널 정보 확인
-    const selectedChannel = channels.find(ch => ch.id === row.channelId);
+    // 선택된 채널 정보 확인 (OTA 채널만)
+    const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
     const isOTAChannel = selectedChannel && (
       selectedChannel.type?.toLowerCase() === 'ota' || 
       selectedChannel.category === 'OTA'
@@ -487,7 +500,7 @@ export default function BulkPricingTableModal({
       netPrice,
       otaPrice
     };
-  }, [channels]);
+  }, [otaChannels]);
 
   // 저장
   const handleSave = useCallback(async () => {
@@ -519,15 +532,36 @@ export default function BulkPricingTableModal({
             adult_price: number;
             child_price: number;
             infant_price: number;
+            ota_sale_price?: number;
           }> = {};
 
+          // 초이스가 있는 경우
           Object.entries(row.choicePricing).forEach(([choiceId, prices]) => {
             choicesPricing[choiceId] = {
               adult_price: prices.adult || 0,
               child_price: prices.child || 0,
               infant_price: prices.infant || 0
             };
+            
+            // OTA 판매가가 있으면 추가
+            const otaSalePrice = row.otaSalePrice[choiceId] || 0;
+            if (otaSalePrice > 0) {
+              choicesPricing[choiceId].ota_sale_price = otaSalePrice;
+            }
           });
+
+          // 초이스가 없을 때 OTA 판매가 처리
+          const noChoiceKey = 'no_choice';
+          const noChoiceOtaSalePrice = row.otaSalePrice[noChoiceKey] || 0;
+          if (noChoiceOtaSalePrice > 0 && Object.keys(choicesPricing).length === 0) {
+            // 초이스가 없고 OTA 판매가가 있으면 기본 가격 구조에 추가
+            choicesPricing[''] = {
+              adult_price: row.adultPrice || 0,
+              child_price: row.childPrice || 0,
+              infant_price: row.infantPrice || 0,
+              ota_sale_price: noChoiceOtaSalePrice
+            };
+          }
 
           const ruleData: SimplePricingRuleDto = {
             product_id: productId,
@@ -621,55 +655,48 @@ export default function BulkPricingTableModal({
                       <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2} style={{ minWidth: '100px', width: '100px' }}>
                         종료일
                       </th>
-                      {/* 헤더는 첫 번째 행의 채널 타입에 따라 결정 (또는 모든 채널이 단일 가격인 경우) */}
-                      {(() => {
-                        // 첫 번째 행이 있으면 그 행의 채널 타입 사용, 없으면 isAllSinglePrice 사용
-                        const firstRowChannel = rows.length > 0 ? channels.find(ch => ch.id === rows[0].channelId) : null;
-                        const headerIsSinglePrice = firstRowChannel 
-                          ? ((firstRowChannel as any)?.pricing_type === 'single')
-                          : isAllSinglePrice;
-                        return headerIsSinglePrice ? (
-                          <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2}>
-                            단일가격
-                          </th>
-                        ) : (
-                          <>
-                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2}>
-                              성인가격
-                            </th>
-                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2}>
-                              아동가격
-                            </th>
-                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2}>
-                              유아가격
-                            </th>
-                          </>
-                        );
-                      })()}
+                      {/* OTA 채널은 단일가격/증차감 컬럼 제거 */}
                       <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-yellow-50" rowSpan={2}>
                         초이스명
                       </th>
                       {(() => {
-                        // 첫 번째 행이 있으면 그 행의 채널 타입 사용, 없으면 isAllSinglePrice 사용
-                        const firstRowChannel = rows.length > 0 ? channels.find(ch => ch.id === rows[0].channelId) : null;
-                        const headerIsSinglePrice = firstRowChannel 
-                          ? ((firstRowChannel as any)?.pricing_type === 'single')
-                          : isAllSinglePrice;
+                        // OTA 채널은 단일 가격 모드
                         return (
                           <>
-                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-blue-50" colSpan={headerIsSinglePrice ? 1 : 3}>
-                              초이스별 가격
+                            {/* OTA 판매가 컬럼 */}
+                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-pink-50" rowSpan={2}>
+                              OTA 판매가
                             </th>
-                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-indigo-50" colSpan={headerIsSinglePrice ? 1 : 3}>
+                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-cyan-50" rowSpan={2}>
+                              수수료 (%)
+                            </th>
+                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-cyan-50" rowSpan={2}>
+                              수수료 ($)
+                            </th>
+                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-cyan-50" rowSpan={2}>
+                              쿠폰 할인 (%)
+                            </th>
+                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-cyan-50" rowSpan={2}>
+                              불포함 금액 ($)
+                            </th>
+                            <th 
+                              className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-indigo-50 cursor-help" 
+                              rowSpan={2}
+                              title="OTA 판매가에서 쿠폰 할인 적용"
+                            >
                               Gross Price
                             </th>
-                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-green-50" colSpan={headerIsSinglePrice ? 1 : 3}>
+                            <th 
+                              className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-green-50 cursor-help" 
+                              rowSpan={2}
+                              title="Gross에서 수수료 적용"
+                            >
                               Net Price
                             </th>
-                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-orange-50" colSpan={headerIsSinglePrice ? 1 : 3}>
-                              홈페이지
+                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-orange-50" colSpan={5}>
+                              홈페이지 가격 정보 (20% 할인) 참고용
                             </th>
-                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider bg-purple-50" colSpan={headerIsSinglePrice ? 1 : 3}>
+                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider bg-purple-50" rowSpan={2}>
                               차액
                             </th>
                           </>
@@ -682,36 +709,13 @@ export default function BulkPricingTableModal({
                     {/* 서브 헤더 */}
                     <tr>
                       {(() => {
-                        // 첫 번째 행이 있으면 그 행의 채널 타입 사용, 없으면 isAllSinglePrice 사용
-                        const firstRowChannel = rows.length > 0 ? channels.find(ch => ch.id === rows[0].channelId) : null;
-                        const headerIsSinglePrice = firstRowChannel 
-                          ? ((firstRowChannel as any)?.pricing_type === 'single')
-                          : isAllSinglePrice;
-                        return headerIsSinglePrice ? (
+                        return (
                           <>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-300">단일 가격</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-indigo-50 border-r border-gray-300">단일 가격</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-300">단일 가격</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">단일 가격</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-purple-50">단일 가격</th>
-                          </>
-                        ) : (
-                          <>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-300">성인</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-300">아동</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-blue-50 border-r border-gray-300">유아</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-indigo-50 border-r border-gray-300">성인</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-indigo-50 border-r border-gray-300">아동</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-indigo-50 border-r border-gray-300">유아</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-300">성인</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-300">아동</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-green-50 border-r border-gray-300">유아</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">성인</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">아동</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">유아</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-purple-50 border-r border-gray-300">성인</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-purple-50 border-r border-gray-300">아동</th>
-                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-purple-50">유아</th>
+                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">기본</th>
+                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">초이스</th>
+                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">판매가</th>
+                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50 border-r border-gray-300">Gross</th>
+                            <th className="px-2 py-1 text-xs font-medium text-gray-600 bg-orange-50">Net</th>
                           </>
                         );
                       })()}
@@ -720,7 +724,7 @@ export default function BulkPricingTableModal({
                   <tbody className="bg-white divide-y divide-gray-200">
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={15} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={18} className="px-4 py-8 text-center text-gray-500">
                           <div className="space-y-2">
                             <p>행이 없습니다. "행 추가" 버튼을 클릭하여 행을 추가하세요.</p>
                             {(() => {
@@ -749,11 +753,8 @@ export default function BulkPricingTableModal({
                         // 메인 행 (기본 정보)
                         // rowSpan 계산: 메인 행 1개 + 서브 행 (choiceCombinations.length - 1)개 = choiceCombinations.length개
                         const rowSpanValue = Math.max(choiceCombinations.length, 1);
-                        // 현재 행의 채널이 단일 가격인지 확인
-                        const selectedChannel = channels.find(ch => ch.id === row.channelId);
-                        const isRowSinglePrice = (selectedChannel as any)?.pricing_type === 'single';
-                        // 행이 없거나 채널이 선택되지 않았으면 isAllSinglePrice 사용
-                        const useSinglePrice = rows.length === 0 ? isAllSinglePrice : (selectedChannel ? isRowSinglePrice : isAllSinglePrice);
+                        // OTA 채널만 사용하므로 항상 separate pricing
+                        const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
                         // 홈페이지 채널 찾기 (더 넓은 조건)
                         const homepageChannel = channels.find(ch => {
                           const id = ch.id?.toLowerCase() || '';
@@ -788,7 +789,7 @@ export default function BulkPricingTableModal({
                                   className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                 >
                                   <option value="">선택</option>
-                                  {channels.map((channel, channelIndex) => (
+                                  {otaChannels.map((channel, channelIndex) => (
                                     <option key={`channel-${channel.id}-${channelIndex}`} value={channel.id}>
                                       {channel.name}
                                     </option>
@@ -796,7 +797,7 @@ export default function BulkPricingTableModal({
                                 </select>
                                 {/* 채널 정보 표시 */}
                                 {(() => {
-                                  const selectedChannel = channels.find(ch => ch.id === row.channelId);
+                                  const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
                                   if (!selectedChannel) return null;
                                   
                                   const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
@@ -841,105 +842,7 @@ export default function BulkPricingTableModal({
                                 className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                               />
                             </td>
-                            {useSinglePrice ? (
-                              /* 단일가격 */
-                              <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-gray-50" rowSpan={rowSpanValue}>
-                                <div className="space-y-1">
-                                  <div className="text-xs text-gray-500 mb-1">
-                                    기본: ${productBasePrice.adult.toFixed(2)}
-                                  </div>
-                                  <input
-                                    type="number"
-                                    placeholder="증차감"
-                                    value={row.priceAdjustmentAdult || ''}
-                                    onChange={(e) => {
-                                      const adjustment = Number(e.target.value) || 0;
-                                      const finalPrice = productBasePrice.adult + adjustment;
-                                      // 단일 가격이므로 모든 가격을 동일하게 설정
-                                      setRows(rows.map(r => {
-                                        if (r.id === row.id) {
-                                          return {
-                                            ...r,
-                                            priceAdjustmentAdult: adjustment,
-                                            priceAdjustmentChild: adjustment,
-                                            priceAdjustmentInfant: adjustment,
-                                            adultPrice: finalPrice,
-                                            childPrice: finalPrice,
-                                            infantPrice: finalPrice
-                                          };
-                                        }
-                                        return r;
-                                      }));
-                                    }}
-                                    className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                    step="0.01"
-                                  />
-                                  <div className="text-xs font-medium text-gray-700 mt-1">
-                                    최종: ${row.adultPrice.toFixed(2)}
-                                  </div>
-                                </div>
-                              </td>
-                            ) : (
-                              <>
-                                {/* 성인가격 */}
-                                <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-gray-50" rowSpan={rowSpanValue}>
-                                  <div className="space-y-1">
-                                    <div className="text-xs text-gray-500 mb-1">
-                                      기본: ${productBasePrice.adult.toFixed(2)}
-                                    </div>
-                                    <input
-                                      type="number"
-                                      placeholder="증차감"
-                                      value={row.priceAdjustmentAdult || ''}
-                                      onChange={(e) => handleUpdateRow(row.id, 'priceAdjustmentAdult', Number(e.target.value) || 0)}
-                                      className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                      step="0.01"
-                                    />
-                                    <div className="text-xs font-medium text-gray-700 mt-1">
-                                      최종: ${row.adultPrice.toFixed(2)}
-                                    </div>
-                                  </div>
-                                </td>
-                                {/* 아동가격 */}
-                                <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-gray-50" rowSpan={rowSpanValue}>
-                                  <div className="space-y-1">
-                                    <div className="text-xs text-gray-500 mb-1">
-                                      기본: ${productBasePrice.child.toFixed(2)}
-                                    </div>
-                                    <input
-                                      type="number"
-                                      placeholder="증차감"
-                                      value={row.priceAdjustmentChild || ''}
-                                      onChange={(e) => handleUpdateRow(row.id, 'priceAdjustmentChild', Number(e.target.value) || 0)}
-                                      className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                      step="0.01"
-                                    />
-                                    <div className="text-xs font-medium text-gray-700 mt-1">
-                                      최종: ${row.childPrice.toFixed(2)}
-                                    </div>
-                                  </div>
-                                </td>
-                                {/* 유아가격 */}
-                                <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-gray-50" rowSpan={rowSpanValue}>
-                                  <div className="space-y-1">
-                                    <div className="text-xs text-gray-500 mb-1">
-                                      기본: ${productBasePrice.infant.toFixed(2)}
-                                    </div>
-                                    <input
-                                      type="number"
-                                      placeholder="증차감"
-                                      value={row.priceAdjustmentInfant || ''}
-                                      onChange={(e) => handleUpdateRow(row.id, 'priceAdjustmentInfant', Number(e.target.value) || 0)}
-                                      className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                      step="0.01"
-                                    />
-                                    <div className="text-xs font-medium text-gray-700 mt-1">
-                                      최종: ${row.infantPrice.toFixed(2)}
-                                    </div>
-                                  </div>
-                                </td>
-                              </>
-                            )}
+                            {/* OTA 채널은 증차감 컬럼 제거 */}
                             {/* 초이스별 가격 입력 및 계산 결과 - 첫 번째 초이스 또는 기본 가격 */}
                             {choiceCombinations.length > 0 ? (() => {
                               const firstChoice = choiceCombinations[0];
@@ -951,71 +854,59 @@ export default function BulkPricingTableModal({
                               // 홈페이지 = (기본 가격 + 초이스 가격) × 0.8
                               // 차액 = Net Price - 홈페이지
                               
-                              const selectedChannel = channels.find(ch => ch.id === row.channelId);
+                              const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
                               const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false;
                               const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
                               
-                              // 기본 가격 (상품 기본 가격)
-                              const basePrice = {
-                                adult: productBasePrice.adult || 0,
-                                child: productBasePrice.child || 0,
-                                infant: productBasePrice.infant || 0
-                              };
-                              
-                              // 초이스 가격
-                              const choicePrice = {
-                                adult: row.choicePricing[firstChoice.id]?.adult || 0,
-                                child: row.choicePricing[firstChoice.id]?.child || 0,
-                                infant: row.choicePricing[firstChoice.id]?.infant || 0
-                              };
-                              
-                              // 판매가 = 기본 가격 + 초이스 가격
-                              const salePrice = {
-                                adult: basePrice.adult + choicePrice.adult,
-                                child: basePrice.child + choicePrice.child,
-                                infant: basePrice.infant + choicePrice.infant
-                              };
-                              
-                              // Gross Price = 판매가 × 0.8 (20% 할인)
-                              const grossPrice = {
-                                adult: salePrice.adult * 0.8,
-                                child: salePrice.child * 0.8,
-                                infant: salePrice.infant * 0.8
-                              };
-                              
-                              // Net Price 계산
-                              let netPrice;
-                              if (commissionBasePriceOnly && notIncludedType === 'amount_and_choice') {
-                                // Net Price = (OTA 판매가 × (1 - 쿠폰%) × (1 - 수수료%)) + 불포함 금액 + 초이스 가격
-                                const otaSalePrice = calculated.otaPrice;
-                                const notIncludedPrice = row.notIncludedPrice || 0;
-                                netPrice = {
-                                  adult: otaSalePrice.adult * (1 - row.couponPercent / 100) * (1 - row.commissionPercent / 100) + notIncludedPrice + choicePrice.adult,
-                                  child: otaSalePrice.child * (1 - row.couponPercent / 100) * (1 - row.commissionPercent / 100) + notIncludedPrice + choicePrice.child,
-                                  infant: otaSalePrice.infant * (1 - row.couponPercent / 100) * (1 - row.commissionPercent / 100) + notIncludedPrice + choicePrice.infant
-                                };
+                              // 단일 가격 모드: adult 가격 사용
+                              const basePrice = row.adultPrice || 0;
+                              const choicePrice = row.choicePricing[firstChoice.id]?.adult || 0;
+                              const salePrice = basePrice + choicePrice;
+
+                              const commissionRate = row.commissionPercent / 100;
+                              const couponRate = row.couponPercent / 100;
+
+                              // Gross Price와 Net Price 계산
+                              const currentOtaSalePrice = row.otaSalePrice[firstChoice.id] || 0;
+                              let grossPrice = 0;
+                              let netPrice = 0;
+
+                              if (currentOtaSalePrice > 0) {
+                                // OTA 판매가가 입력되어 있으면
+                                // Gross Price = OTA 판매가 × (1 - 쿠폰%)
+                                grossPrice = currentOtaSalePrice * (1 - couponRate);
+                                
+                                // Net Price = Gross × (1 - 수수료%)
+                                netPrice = grossPrice * (1 - commissionRate);
+                                
+                                // commissionBasePriceOnly와 notIncludedType에 따라 조정
+                                if (commissionBasePriceOnly && notIncludedType === 'amount_and_choice') {
+                                  const notIncludedPrice = row.notIncludedPrice || 0;
+                                  netPrice = grossPrice * (1 - commissionRate) + notIncludedPrice + choicePrice;
+                                }
                               } else {
+                                // OTA 판매가가 없으면 기본 계산
+                                // Gross Price = 판매가 × 0.8 (20% 할인)
+                                grossPrice = salePrice * 0.8;
+                                
                                 // Net Price = Gross - 초이스 가격
-                                netPrice = {
-                                  adult: grossPrice.adult - choicePrice.adult,
-                                  child: grossPrice.child - choicePrice.child,
-                                  infant: grossPrice.infant - choicePrice.infant
-                                };
+                                netPrice = grossPrice - choicePrice;
                               }
-                              
-                              // 홈페이지 = (기본 가격 + 초이스 가격) × 0.8
-                              const homepagePrice = {
-                                adult: salePrice.adult * 0.8,
-                                child: salePrice.child * 0.8,
-                                infant: salePrice.infant * 0.8
-                              };
-                              
-                              // 차액 = Net Price - 홈페이지
-                              const priceDifference = {
-                                adult: netPrice.adult - homepagePrice.adult,
-                                child: netPrice.child - homepagePrice.child,
-                                infant: netPrice.infant - homepagePrice.infant
-                              };
+
+                              // 홈페이지 가격 정보 (20% 할인) 참고용
+                              // 초이스의 기본 성인 가격 사용
+                              const homepageBasePrice = basePrice;
+                              const homepageChoicePrice = firstChoice.adult_price || 0;
+                              const homepageSalePrice = homepageBasePrice + homepageChoicePrice;
+                              const homepageGross = homepageSalePrice * 0.8;
+                              const homepageNet = homepageGross - homepageChoicePrice;
+
+                              // 차액 계산: 불포함 금액 타입에 따라 다름
+                              // 불포함 금액 없음('none')이면 Net Price와 홈페이지 Gross 비교
+                              // 그 외에는 Net Price와 홈페이지 Net 비교
+                              const priceDifference = notIncludedType === 'none' 
+                                ? netPrice - homepageGross 
+                                : netPrice - homepageNet;
                               
                               return (
                                 <>
@@ -1023,160 +914,152 @@ export default function BulkPricingTableModal({
                                   <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-yellow-50 font-medium">
                                     {firstChoice.combination_name_ko || firstChoice.combination_name}
                                   </td>
-                                  {useSinglePrice ? (
-                                    <>
-                                      {/* 초이스별 가격 입력 - 단일 가격 (성인 가격만 입력) */}
-                                      <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-blue-50" style={{ minWidth: '70px', width: '70px' }}>
-                                        <input
-                                          type="number"
-                                          value={row.choicePricing[firstChoice.id]?.adult || ''}
-                                          onChange={(e) => {
-                                            const value = Number(e.target.value) || 0;
-                                            // 단일 가격 모드: 성인 가격만 입력하고, 자동으로 child와 infant도 동일하게 설정
-                                            handleUpdateChoicePricing(row.id, firstChoice.id, 'adult', value, true);
-                                          }}
-                                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                          step="0.01"
-                                        />
-                                      </td>
-                                      {/* Gross Price - 단일 가격 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                        ${grossPrice.adult.toFixed(2)}
-                                      </td>
-                                      {/* Net Price - 단일 가격 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                        ${netPrice.adult.toFixed(2)}
-                                      </td>
-                                      {/* 홈페이지 - 단일 가격 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                        ${homepagePrice.adult.toFixed(2)}
-                                      </td>
-                                      {/* 차액 - 단일 가격 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-purple-50 font-medium text-center">
-                                        <span className={priceDifference.adult >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                          {priceDifference.adult >= 0 ? '+' : ''}${priceDifference.adult.toFixed(2)}
-                                        </span>
-                                      </td>
-                                    </>
-                                  ) : (
-                                    <>
-                                      {/* 초이스별 가격 입력 */}
-                                      <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-blue-50" style={{ minWidth: '70px', width: '70px' }}>
-                                        <input
-                                          type="number"
-                                          value={row.choicePricing[firstChoice.id]?.adult || ''}
-                                          onChange={(e) => handleUpdateChoicePricing(row.id, firstChoice.id, 'adult', Number(e.target.value) || 0)}
-                                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                          step="0.01"
-                                        />
-                                      </td>
-                                      <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-blue-50" style={{ minWidth: '70px', width: '70px' }}>
-                                        <input
-                                          type="number"
-                                          value={row.choicePricing[firstChoice.id]?.child || ''}
-                                          onChange={(e) => handleUpdateChoicePricing(row.id, firstChoice.id, 'child', Number(e.target.value) || 0)}
-                                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                          step="0.01"
-                                        />
-                                      </td>
-                                      <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-blue-50" style={{ minWidth: '70px', width: '70px' }}>
-                                        <input
-                                          type="number"
-                                          value={row.choicePricing[firstChoice.id]?.infant || ''}
-                                          onChange={(e) => handleUpdateChoicePricing(row.id, firstChoice.id, 'infant', Number(e.target.value) || 0)}
-                                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                          step="0.01"
-                                        />
-                                      </td>
-                                      {/* Gross Price */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                        ${grossPrice.adult.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                        ${grossPrice.child.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                        ${grossPrice.infant.toFixed(2)}
-                                      </td>
-                                      {/* Net Price */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                        ${netPrice.adult.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                        ${netPrice.child.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                        ${netPrice.infant.toFixed(2)}
-                                      </td>
-                                      {/* 홈페이지 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                        ${homepagePrice.adult.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                        ${homepagePrice.child.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                        ${homepagePrice.infant.toFixed(2)}
-                                      </td>
-                                      {/* 차액 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-purple-50 font-medium text-center">
-                                        <span className={priceDifference.adult >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                          {priceDifference.adult >= 0 ? '+' : ''}${priceDifference.adult.toFixed(2)}
-                                        </span>
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-purple-50 font-medium text-center">
-                                        <span className={priceDifference.child >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                          {priceDifference.child >= 0 ? '+' : ''}${priceDifference.child.toFixed(2)}
-                                        </span>
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-purple-50 font-medium text-center">
-                                        <span className={priceDifference.infant >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                          {priceDifference.infant >= 0 ? '+' : ''}${priceDifference.infant.toFixed(2)}
-                                        </span>
-                                      </td>
-                                    </>
-                                  )}
+                                  {/* OTA 판매가 입력 필드 */}
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-pink-50" style={{ minWidth: '80px', width: '80px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.otaSalePrice[firstChoice.id] || ''}
+                                      onChange={(e) => {
+                                        const value = Number(e.target.value) || 0;
+                                        setRows(rows.map(r => {
+                                          if (r.id === row.id) {
+                                            return { 
+                                              ...r, 
+                                              otaSalePrice: {
+                                                ...r.otaSalePrice,
+                                                [firstChoice.id]: value
+                                              }
+                                            };
+                                          }
+                                          return r;
+                                        }));
+                                      }}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="OTA 판매가"
+                                    />
+                                  </td>
+                                  {/* 수수료/쿠폰/불포함 금액 입력 필드 */}
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.commissionPercent || ''}
+                                      onChange={(e) => handleUpdateRow(row.id, 'commissionPercent', Number(e.target.value) || 0)}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.commissionAmount || ''}
+                                      onChange={(e) => handleUpdateRow(row.id, 'commissionAmount', Number(e.target.value) || 0)}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.couponPercent || ''}
+                                      onChange={(e) => handleUpdateRow(row.id, 'couponPercent', Number(e.target.value) || 0)}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.notIncludedPrice || ''}
+                                      onChange={(e) => handleUpdateRow(row.id, 'notIncludedPrice', Number(e.target.value) || 0)}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
+                                    />
+                                  </td>
+                                  {/* Gross Price - 단일 가격 */}
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
+                                    ${grossPrice.toFixed(2)}
+                                  </td>
+                                  {/* Net Price - 단일 가격 */}
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
+                                    ${netPrice.toFixed(2)}
+                                  </td>
+                                  {/* 홈페이지 가격 정보 (20% 할인) 참고용 */}
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                    ${homepageBasePrice.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                    ${homepageChoicePrice.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                    ${homepageSalePrice.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                    ${homepageGross.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-orange-50 font-medium text-center">
+                                    ${homepageNet.toFixed(2)}
+                                  </td>
+                                  {/* 차액 - 단일 가격 */}
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-purple-50 font-medium text-center">
+                                    <span className={priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                      {priceDifference >= 0 ? '+' : ''}${priceDifference.toFixed(2)}
+                                    </span>
+                                  </td>
                                 </>
                               );
                             })() : (() => {
-                              // 초이스가 없을 때 계산
-                              const basePrice = {
-                                adult: productBasePrice.adult || 0,
-                                child: productBasePrice.child || 0,
-                                infant: productBasePrice.infant || 0
-                              };
+                              // 초이스가 없을 때 계산 - 단일 가격 모드
+                              const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
+                              const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
                               
-                              const choicePrice = { adult: 0, child: 0, infant: 0 };
+                              const basePrice = productBasePrice.adult || 0;
+                              const choicePrice = 0;
+                              const salePrice = basePrice + choicePrice;
                               
-                              const salePrice = {
-                                adult: basePrice.adult + choicePrice.adult,
-                                child: basePrice.child + choicePrice.child,
-                                infant: basePrice.infant + choicePrice.infant
-                              };
+                              const commissionRate = row.commissionPercent / 100;
+                              const couponRate = row.couponPercent / 100;
+
+                              // Gross Price와 Net Price 계산
+                              const noChoiceKey = 'no_choice';
+                              const currentOtaSalePrice = row.otaSalePrice[noChoiceKey] || 0;
+                              let grossPrice = 0;
+                              let netPrice = 0;
+
+                              if (currentOtaSalePrice > 0) {
+                                // OTA 판매가가 입력되어 있으면
+                                // Gross Price = OTA 판매가 × (1 - 쿠폰%)
+                                grossPrice = currentOtaSalePrice * (1 - couponRate);
+                                
+                                // Net Price = Gross × (1 - 수수료%)
+                                netPrice = grossPrice * (1 - commissionRate);
+                              } else {
+                                // OTA 판매가가 없으면 기본 계산
+                                // Gross Price = 판매가 × 0.8 (20% 할인)
+                                grossPrice = salePrice * 0.8;
+                                
+                                // Net Price = Gross - 초이스 가격
+                                netPrice = grossPrice - choicePrice;
+                              }
                               
-                              const grossPrice = {
-                                adult: salePrice.adult * 0.8,
-                                child: salePrice.child * 0.8,
-                                infant: salePrice.infant * 0.8
-                              };
+                              // 홈페이지 가격 정보 (20% 할인) 참고용
+                              // 초이스가 없을 때는 초이스 가격이 0
+                              const homepageBasePrice = basePrice;
+                              const homepageChoicePrice = 0;
+                              const homepageSalePrice = homepageBasePrice + homepageChoicePrice;
+                              const homepageGross = homepageSalePrice * 0.8;
+                              const homepageNet = homepageGross - homepageChoicePrice;
                               
-                              const netPrice = {
-                                adult: grossPrice.adult - choicePrice.adult,
-                                child: grossPrice.child - choicePrice.child,
-                                infant: grossPrice.infant - choicePrice.infant
-                              };
-                              
-                              const homepagePrice = {
-                                adult: salePrice.adult * 0.8,
-                                child: salePrice.child * 0.8,
-                                infant: salePrice.infant * 0.8
-                              };
-                              
-                              const priceDifference = {
-                                adult: netPrice.adult - homepagePrice.adult,
-                                child: netPrice.child - homepagePrice.child,
-                                infant: netPrice.infant - homepagePrice.infant
-                              };
+                              // 차액 계산: 불포함 금액 타입에 따라 다름
+                              // 불포함 금액 없음('none')이면 Net Price와 홈페이지 Gross 비교
+                              // 그 외에는 Net Price와 홈페이지 Net 비교
+                              let priceDifference = notIncludedType === 'none' 
+                                ? netPrice - homepageGross 
+                                : netPrice - homepageNet;
                               
                               return (
                                 <>
@@ -1184,83 +1067,102 @@ export default function BulkPricingTableModal({
                                   <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-gray-50 font-medium">
                                     기본 가격
                                   </td>
-                                  {useSinglePrice ? (
-                                    <>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-gray-50">
-                                        초이스 없음
-                                      </td>
-                                      {/* Gross Price - 단일 가격 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                        ${grossPrice.adult.toFixed(2)}
-                                      </td>
-                                      {/* Net Price - 단일 가격 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                        ${netPrice.adult.toFixed(2)}
-                                      </td>
-                                      {/* 홈페이지 - 단일 가격 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                        ${homepagePrice.adult.toFixed(2)}
-                                      </td>
-                                      {/* 차액 - 단일 가격 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-purple-50 font-medium text-center">
-                                        <span className={priceDifference.adult >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                          {priceDifference.adult >= 0 ? '+' : ''}${priceDifference.adult.toFixed(2)}
-                                        </span>
-                                      </td>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-gray-50" colSpan={3}>
-                                        초이스 없음
-                                      </td>
-                                      {/* Gross Price */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                        ${grossPrice.adult.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                        ${grossPrice.child.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                        ${grossPrice.infant.toFixed(2)}
-                                      </td>
-                                      {/* Net Price */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                        ${netPrice.adult.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                        ${netPrice.child.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                        ${netPrice.infant.toFixed(2)}
-                                      </td>
-                                      {/* 홈페이지 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                        ${homepagePrice.adult.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                        ${homepagePrice.child.toFixed(2)}
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                        ${homepagePrice.infant.toFixed(2)}
-                                      </td>
-                                      {/* 차액 */}
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-purple-50 font-medium text-center">
-                                        <span className={priceDifference.adult >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                          {priceDifference.adult >= 0 ? '+' : ''}${priceDifference.adult.toFixed(2)}
-                                        </span>
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-purple-50 font-medium text-center">
-                                        <span className={priceDifference.child >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                          {priceDifference.child >= 0 ? '+' : ''}${priceDifference.child.toFixed(2)}
-                                        </span>
-                                      </td>
-                                      <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-purple-50 font-medium text-center">
-                                        <span className={priceDifference.infant >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                          {priceDifference.infant >= 0 ? '+' : ''}${priceDifference.infant.toFixed(2)}
-                                        </span>
-                                      </td>
-                                    </>
-                                  )}
+                                  {/* OTA 판매가 입력 필드 */}
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-pink-50" style={{ minWidth: '80px', width: '80px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.otaSalePrice[noChoiceKey] || ''}
+                                      onChange={(e) => {
+                                        const value = Number(e.target.value) || 0;
+                                        setRows(rows.map(r => {
+                                          if (r.id === row.id) {
+                                            return { 
+                                              ...r, 
+                                              otaSalePrice: {
+                                                ...r.otaSalePrice,
+                                                [noChoiceKey]: value
+                                              }
+                                            };
+                                          }
+                                          return r;
+                                        }));
+                                      }}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="OTA 판매가"
+                                    />
+                                  </td>
+                                  {/* 수수료/쿠폰/불포함 금액 입력 필드 */}
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.commissionPercent || ''}
+                                      onChange={(e) => handleUpdateRow(row.id, 'commissionPercent', Number(e.target.value) || 0)}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.commissionAmount || ''}
+                                      onChange={(e) => handleUpdateRow(row.id, 'commissionAmount', Number(e.target.value) || 0)}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.couponPercent || ''}
+                                      onChange={(e) => handleUpdateRow(row.id, 'couponPercent', Number(e.target.value) || 0)}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                    <input
+                                      type="number"
+                                      value={row.notIncludedPrice || ''}
+                                      onChange={(e) => handleUpdateRow(row.id, 'notIncludedPrice', Number(e.target.value) || 0)}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
+                                    />
+                                  </td>
+                                  {/* Gross Price - 단일 가격 */}
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
+                                    ${grossPrice.toFixed(2)}
+                                  </td>
+                                  {/* Net Price - 단일 가격 */}
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
+                                    ${netPrice.toFixed(2)}
+                                  </td>
+                                  {/* 홈페이지 가격 정보 (20% 할인) 참고용 */}
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                    ${homepageBasePrice.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                    ${homepageChoicePrice.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                    ${homepageSalePrice.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                    ${homepageGross.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-orange-50 font-medium text-center">
+                                    ${homepageNet.toFixed(2)}
+                                  </td>
+                                  {/* 차액 - 단일 가격 */}
+                                  <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-purple-50 font-medium text-center">
+                                    <span className={priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                      {priceDifference >= 0 ? '+' : ''}${priceDifference.toFixed(2)}
+                                    </span>
+                                  </td>
                                 </>
                               );
                             })()}
@@ -1278,63 +1180,60 @@ export default function BulkPricingTableModal({
                           {choiceCombinations.slice(1).map((choice, choiceIndex) => {
                             const calculated = calculatePrices(row, choice.id);
                             
-                            // 계산식 업데이트 (첫 번째 초이스와 동일)
-                            const selectedChannel = channels.find(ch => ch.id === row.channelId);
+                            // 계산식 업데이트 (첫 번째 초이스와 동일) - 단일 가격 모드
+                            const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
                             const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false;
                             const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
                             
-                            const basePrice = {
-                              adult: productBasePrice.adult || 0,
-                              child: productBasePrice.child || 0,
-                              infant: productBasePrice.infant || 0
-                            };
+                            // 단일 가격 모드: adult 가격 사용
+                            const basePrice = row.adultPrice || 0;
+                            const choicePrice = row.choicePricing[choice.id]?.adult || 0;
+                            const salePrice = basePrice + choicePrice;
                             
-                            const choicePrice = {
-                              adult: row.choicePricing[choice.id]?.adult || 0,
-                              child: row.choicePricing[choice.id]?.child || 0,
-                              infant: row.choicePricing[choice.id]?.infant || 0
-                            };
-                            
-                            const salePrice = {
-                              adult: basePrice.adult + choicePrice.adult,
-                              child: basePrice.child + choicePrice.child,
-                              infant: basePrice.infant + choicePrice.infant
-                            };
-                            
-                            const grossPrice = {
-                              adult: salePrice.adult * 0.8,
-                              child: salePrice.child * 0.8,
-                              infant: salePrice.infant * 0.8
-                            };
-                            
-                            let netPrice;
-                            if (commissionBasePriceOnly && notIncludedType === 'amount_and_choice') {
-                              const otaSalePrice = calculated.otaPrice;
-                              const notIncludedPrice = row.notIncludedPrice || 0;
-                              netPrice = {
-                                adult: otaSalePrice.adult * (1 - row.couponPercent / 100) * (1 - row.commissionPercent / 100) + notIncludedPrice + choicePrice.adult,
-                                child: otaSalePrice.child * (1 - row.couponPercent / 100) * (1 - row.commissionPercent / 100) + notIncludedPrice + choicePrice.child,
-                                infant: otaSalePrice.infant * (1 - row.couponPercent / 100) * (1 - row.commissionPercent / 100) + notIncludedPrice + choicePrice.infant
-                              };
+                            const commissionRate = row.commissionPercent / 100;
+                            const couponRate = row.couponPercent / 100;
+
+                            // Gross Price와 Net Price 계산
+                            const currentOtaSalePrice = row.otaSalePrice[choice.id] || 0;
+                            let grossPrice = 0;
+                            let netPrice = 0;
+
+                            if (currentOtaSalePrice > 0) {
+                              // OTA 판매가가 입력되어 있으면
+                              // Gross Price = OTA 판매가 × (1 - 쿠폰%)
+                              grossPrice = currentOtaSalePrice * (1 - couponRate);
+                              
+                              // Net Price = Gross × (1 - 수수료%)
+                              netPrice = grossPrice * (1 - commissionRate);
+                              
+                              // commissionBasePriceOnly와 notIncludedType에 따라 조정
+                              if (commissionBasePriceOnly && notIncludedType === 'amount_and_choice') {
+                                const notIncludedPrice = row.notIncludedPrice || 0;
+                                netPrice = grossPrice * (1 - commissionRate) + notIncludedPrice + choicePrice;
+                              }
                             } else {
-                              netPrice = {
-                                adult: grossPrice.adult - choicePrice.adult,
-                                child: grossPrice.child - choicePrice.child,
-                                infant: grossPrice.infant - choicePrice.infant
-                              };
+                              // OTA 판매가가 없으면 기본 계산
+                              // Gross Price = 판매가 × 0.8 (20% 할인)
+                              grossPrice = salePrice * 0.8;
+                              
+                              // Net Price = Gross - 초이스 가격
+                              netPrice = grossPrice - choicePrice;
                             }
                             
-                            const homepagePrice = {
-                              adult: salePrice.adult * 0.8,
-                              child: salePrice.child * 0.8,
-                              infant: salePrice.infant * 0.8
-                            };
+                            // 홈페이지 가격 정보 (20% 할인) 참고용
+                            // 초이스의 기본 성인 가격 사용
+                            const homepageBasePrice = basePrice;
+                            const homepageChoicePrice = choice.adult_price || 0;
+                            const homepageSalePrice = homepageBasePrice + homepageChoicePrice;
+                            const homepageGross = homepageSalePrice * 0.8;
+                            const homepageNet = homepageGross - homepageChoicePrice;
                             
-                            const priceDifference = {
-                              adult: netPrice.adult - homepagePrice.adult,
-                              child: netPrice.child - homepagePrice.child,
-                              infant: netPrice.infant - homepagePrice.infant
-                            };
+                            // 차액 계산: 불포함 금액 타입에 따라 다름
+                            // 불포함 금액 없음('none')이면 Net Price와 홈페이지 Gross 비교
+                            // 그 외에는 Net Price와 홈페이지 Net 비교
+                            let priceDifference = notIncludedType === 'none' 
+                              ? netPrice - homepageGross 
+                              : netPrice - homepageNet;
                             
                             return (
                               <tr key={`${row.id}-${choice.id}-${choiceIndex}`} className="hover:bg-gray-50">
@@ -1342,119 +1241,102 @@ export default function BulkPricingTableModal({
                                 <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-yellow-50 font-medium">
                                   {choice.combination_name_ko || choice.combination_name}
                                 </td>
-                                {useSinglePrice ? (
-                                  <>
-                                    {/* 초이스별 가격 입력 - 단일 가격 (성인 가격만 입력) */}
-                                    <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-blue-50" style={{ minWidth: '70px', width: '70px' }}>
-                                      <input
-                                        type="number"
-                                        value={row.choicePricing[choice.id]?.adult || ''}
-                                        onChange={(e) => {
-                                          const value = Number(e.target.value) || 0;
-                                          // 단일 가격 모드: 성인 가격만 입력하고, 자동으로 child와 infant도 동일하게 설정
-                                          handleUpdateChoicePricing(row.id, choice.id, 'adult', value, true);
-                                        }}
-                                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                        step="0.01"
-                                      />
-                                    </td>
-                                    {/* Gross Price - 단일 가격 */}
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                      ${grossPrice.adult.toFixed(2)}
-                                    </td>
-                                    {/* Net Price - 단일 가격 */}
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                      ${netPrice.adult.toFixed(2)}
-                                    </td>
-                                    {/* 홈페이지 - 단일 가격 */}
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                      ${homepagePrice.adult.toFixed(2)}
-                                    </td>
-                                    {/* 차액 - 단일 가격 */}
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-purple-50 font-medium text-center">
-                                      <span className={priceDifference.adult >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                        {priceDifference.adult >= 0 ? '+' : ''}${priceDifference.adult.toFixed(2)}
-                                      </span>
-                                    </td>
-                                  </>
-                                ) : (
-                                  <>
-                                    {/* 초이스별 가격 입력 */}
-                                    <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-blue-50" style={{ minWidth: '70px', width: '70px' }}>
-                                      <input
-                                        type="number"
-                                        value={row.choicePricing[choice.id]?.adult || ''}
-                                        onChange={(e) => handleUpdateChoicePricing(row.id, choice.id, 'adult', Number(e.target.value) || 0)}
-                                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                        step="0.01"
-                                      />
-                                    </td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-blue-50" style={{ minWidth: '70px', width: '70px' }}>
-                                      <input
-                                        type="number"
-                                        value={row.choicePricing[choice.id]?.child || ''}
-                                        onChange={(e) => handleUpdateChoicePricing(row.id, choice.id, 'child', Number(e.target.value) || 0)}
-                                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                        step="0.01"
-                                      />
-                                    </td>
-                                    <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-blue-50" style={{ minWidth: '70px', width: '70px' }}>
-                                      <input
-                                        type="number"
-                                        value={row.choicePricing[choice.id]?.infant || ''}
-                                        onChange={(e) => handleUpdateChoicePricing(row.id, choice.id, 'infant', Number(e.target.value) || 0)}
-                                        className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                        step="0.01"
-                                      />
-                                    </td>
-                                    {/* Gross Price */}
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                      ${grossPrice.adult.toFixed(2)}
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                      ${grossPrice.child.toFixed(2)}
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
-                                      ${grossPrice.infant.toFixed(2)}
-                                    </td>
-                                    {/* Net Price */}
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                      ${netPrice.adult.toFixed(2)}
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                      ${netPrice.child.toFixed(2)}
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
-                                      ${netPrice.infant.toFixed(2)}
-                                    </td>
-                                    {/* 홈페이지 */}
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                      ${homepagePrice.adult.toFixed(2)}
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                      ${homepagePrice.child.toFixed(2)}
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
-                                      ${homepagePrice.infant.toFixed(2)}
-                                    </td>
-                                    {/* 차액 */}
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-purple-50 font-medium text-center">
-                                      <span className={priceDifference.adult >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                        {priceDifference.adult >= 0 ? '+' : ''}${priceDifference.adult.toFixed(2)}
-                                      </span>
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-purple-50 font-medium text-center">
-                                      <span className={priceDifference.child >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                        {priceDifference.child >= 0 ? '+' : ''}${priceDifference.child.toFixed(2)}
-                                      </span>
-                                    </td>
-                                    <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-purple-50 font-medium text-center">
-                                      <span className={priceDifference.infant >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                        {priceDifference.infant >= 0 ? '+' : ''}${priceDifference.infant.toFixed(2)}
-                                      </span>
-                                    </td>
-                                  </>
-                                )}
+                                {/* OTA 판매가 입력 필드 */}
+                                <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-pink-50" style={{ minWidth: '80px', width: '80px' }}>
+                                  <input
+                                    type="number"
+                                    value={row.otaSalePrice[choice.id] || ''}
+                                    onChange={(e) => {
+                                      const value = Number(e.target.value) || 0;
+                                      setRows(rows.map(r => {
+                                        if (r.id === row.id) {
+                                          return { 
+                                            ...r, 
+                                            otaSalePrice: {
+                                              ...r.otaSalePrice,
+                                              [choice.id]: value
+                                            }
+                                          };
+                                        }
+                                        return r;
+                                      }));
+                                    }}
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    step="0.01"
+                                    placeholder="OTA 판매가"
+                                  />
+                                </td>
+                                {/* 수수료/쿠폰/불포함 금액 입력 필드 */}
+                                <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                  <input
+                                    type="number"
+                                    value={row.commissionPercent || ''}
+                                    onChange={(e) => handleUpdateRow(row.id, 'commissionPercent', Number(e.target.value) || 0)}
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    step="0.01"
+                                    placeholder="0"
+                                  />
+                                </td>
+                                <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                  <input
+                                    type="number"
+                                    value={row.commissionAmount || ''}
+                                    onChange={(e) => handleUpdateRow(row.id, 'commissionAmount', Number(e.target.value) || 0)}
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    step="0.01"
+                                    placeholder="0"
+                                  />
+                                </td>
+                                <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                  <input
+                                    type="number"
+                                    value={row.couponPercent || ''}
+                                    onChange={(e) => handleUpdateRow(row.id, 'couponPercent', Number(e.target.value) || 0)}
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    step="0.01"
+                                    placeholder="0"
+                                  />
+                                </td>
+                                <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-cyan-50" style={{ minWidth: '70px', width: '70px' }}>
+                                  <input
+                                    type="number"
+                                    value={row.notIncludedPrice || ''}
+                                    onChange={(e) => handleUpdateRow(row.id, 'notIncludedPrice', Number(e.target.value) || 0)}
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    step="0.01"
+                                    placeholder="0"
+                                  />
+                                </td>
+                                {/* Gross Price - 단일 가격 */}
+                                <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-indigo-50 font-medium text-center">
+                                  ${grossPrice.toFixed(2)}
+                                </td>
+                                {/* Net Price - 단일 가격 */}
+                                <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-green-50 font-medium text-center">
+                                  ${netPrice.toFixed(2)}
+                                </td>
+                                {/* 홈페이지 가격 정보 (20% 할인) 참고용 */}
+                                <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                  ${homepageBasePrice.toFixed(2)}
+                                </td>
+                                <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                  ${homepageChoicePrice.toFixed(2)}
+                                </td>
+                                <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                  ${homepageSalePrice.toFixed(2)}
+                                </td>
+                                <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50 font-medium text-center">
+                                  ${homepageGross.toFixed(2)}
+                                </td>
+                                <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-orange-50 font-medium text-center">
+                                  ${homepageNet.toFixed(2)}
+                                </td>
+                                {/* 차액 - 단일 가격 */}
+                                <td className="px-2 py-1.5 whitespace-nowrap text-xs bg-purple-50 font-medium text-center">
+                                  <span className={priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                    {priceDifference >= 0 ? '+' : ''}${priceDifference.toFixed(2)}
+                                  </span>
+                                </td>
                               </tr>
                             );
                           })}
