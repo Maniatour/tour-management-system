@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import { DollarSign, Calendar, Edit, Trash2, Save, X } from 'lucide-react';
 import { SimplePricingRule, SimplePricingRuleDto } from '@/lib/types/dynamic-pricing';
 import { supabase } from '@/lib/supabase';
@@ -30,6 +30,19 @@ export const PricingListView = memo(function PricingListView({
   choiceCombinations = [],
   channels = []
 }: PricingListViewProps) {
+  // 디버깅: choiceCombinations 로드 확인
+  useEffect(() => {
+    if (choiceCombinations.length > 0) {
+      console.log('PricingListView - choiceCombinations 로드됨:', choiceCombinations.map(c => ({
+        id: c.id,
+        combination_key: c.combination_key,
+        name: c.combination_name_ko || c.combination_name
+      })));
+    } else {
+      console.warn('PricingListView - choiceCombinations가 비어있음');
+    }
+  }, [choiceCombinations]);
+
   // 편집 중인 초이스 상태 관리: { ruleId: string, choiceId: string }
   const [editingChoice, setEditingChoice] = useState<{ ruleId: string; choiceId: string } | null>(null);
   const [editValues, setEditValues] = useState<{ salePrice: number; notIncludedPrice: number }>({ salePrice: 0, notIncludedPrice: 0 });
@@ -57,11 +70,26 @@ export const PricingListView = memo(function PricingListView({
   };
 
   const getChoiceName = (choiceId: string): string => {
-    // choiceCombinations에서 찾기
-    const combination = choiceCombinations.find(c => c.combination_key === choiceId || c.id === choiceId);
+    // choiceCombinations에서 찾기 (여러 방법으로 시도)
+    let combination = choiceCombinations.find(c => 
+      c.id === choiceId || 
+      c.combination_key === choiceId ||
+      c.id?.includes(choiceId) ||
+      c.combination_key?.includes(choiceId)
+    );
+    
     if (combination) {
       return combination.combination_name_ko || combination.combination_name || choiceId;
     }
+    
+    // 찾지 못한 경우 디버깅 로그
+    if (choiceCombinations.length > 0) {
+      console.warn(`초이스 이름을 찾을 수 없음: choiceId=${choiceId}`, {
+        availableIds: choiceCombinations.map(c => ({ id: c.id, key: c.combination_key, name: c.combination_name })),
+        choiceCombinationsCount: choiceCombinations.length
+      });
+    }
+    
     return choiceId;
   };
 
@@ -175,12 +203,14 @@ export const PricingListView = memo(function PricingListView({
                 </span>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {(() => {
-                  // 같은 날짜의 모든 규칙에서 초이스를 수집하고 중복 제거
-                  const allChoicesMap = new Map<string, any>();
+                  // price_type별로 규칙 분리
+                  const dynamicRules = rules.filter(r => r.price_type === 'dynamic');
+                  const baseRules = rules.filter(r => r.price_type === 'base');
                   
-                  rules.forEach((rule) => {
+                  // 각 규칙의 초이스 수집 함수
+                  const collectChoicesFromRule = (rule: SimplePricingRule) => {
                     let choicesPricing: Record<string, any> = {};
                     if (rule.choices_pricing) {
                       try {
@@ -192,131 +222,47 @@ export const PricingListView = memo(function PricingListView({
                       }
                     }
                     
-                    Object.entries(choicesPricing).forEach(([choiceId, choiceData]: [string, any]) => {
+                    // 디버깅: choices_pricing의 키와 choiceCombinations 비교
+                    const pricingKeys = Object.keys(choicesPricing);
+                    if (pricingKeys.length > 0 && choiceCombinations.length > 0) {
+                      console.log('초이스 매칭 확인:', {
+                        ruleId: rule.id,
+                        priceType: rule.price_type,
+                        pricingKeys,
+                        availableCombinations: choiceCombinations.map(c => ({ id: c.id, key: c.combination_key, name: c.combination_name_ko || c.combination_name }))
+                      });
+                    }
+                    
+                    return Object.entries(choicesPricing).map(([choiceId, choiceData]) => ({
+                      choiceId,
+                      choiceData,
+                      rule
+                    })).filter(({ choiceData }) => {
                       const hasOtaSalePrice = choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price > 0;
                       const hasNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price > 0;
-                      
-                      if (!hasOtaSalePrice && !hasNotIncludedPrice) {
-                        return; // OTA 판매가와 불포함 금액이 모두 없으면 표시하지 않음
-                      }
-                      
-                      // 같은 초이스 ID가 이미 있으면, 불포함 금액이 있는 것을 우선
-                      if (!allChoicesMap.has(choiceId)) {
-                        allChoicesMap.set(choiceId, choiceData);
-                      } else {
-                        const existing = allChoicesMap.get(choiceId);
-                        const existingHasNotIncluded = existing.not_included_price !== undefined && existing.not_included_price > 0;
-                        // 기존에 불포함 금액이 없고 새로운 것에 있으면 업데이트
-                        if (!existingHasNotIncluded && hasNotIncludedPrice) {
-                          allChoicesMap.set(choiceId, choiceData);
-                        }
-                      }
+                      return hasOtaSalePrice || hasNotIncludedPrice;
                     });
-                  });
+                  };
                   
-                  // 초이스가 없으면 기본 가격만 표시 (첫 번째 규칙 사용)
-                  if (allChoicesMap.size === 0 && rules.length > 0) {
-                    const firstRule = rules[0];
-                    const singlePrice = isSinglePrice(firstRule.channel_id);
-                    
-                    return (
-                      <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            {!singlePrice && (
-                              <div className="grid grid-cols-3 gap-4 text-sm">
-                                <div>
-                                  <span className="text-gray-500">성인</span>
-                                  <div className="font-semibold text-gray-900">
-                                    {formatPrice(firstRule.adult_price)}
-                                  </div>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">아동</span>
-                                  <div className="font-semibold text-gray-900">
-                                    {formatPrice(firstRule.child_price)}
-                                  </div>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">유아</span>
-                                  <div className="font-semibold text-gray-900">
-                                    {formatPrice(firstRule.infant_price)}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                            {singlePrice && (
-                              <div className="text-sm">
-                                <span className="text-gray-500">가격: </span>
-                                <span className="font-semibold text-gray-900">
-                                  {formatPrice(firstRule.adult_price)}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-2 ml-4">
-                            <button
-                              onClick={() => onEditRule(firstRule)}
-                              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                              title="편집"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => onDeleteRule(firstRule.id)}
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                              title="삭제"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
+                  // 불포함 사항 있는 가격 (dynamic)
+                  const dynamicChoices = dynamicRules.flatMap(rule => collectChoicesFromRule(rule));
                   
-                  // 불포함 금액 유무로 분리
-                  const choicesWithNotIncluded: Array<[string, any]> = [];
-                  const choicesWithoutNotIncluded: Array<[string, any]> = [];
+                  // 불포함 사항 없는 가격 (base)
+                  const baseChoices = baseRules.flatMap(rule => collectChoicesFromRule(rule));
                   
-                  allChoicesMap.forEach((choiceData, choiceId) => {
-                    const hasNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price > 0;
-                    
-                    if (hasNotIncludedPrice) {
-                      choicesWithNotIncluded.push([choiceId, choiceData]);
-                    } else {
-                      choicesWithoutNotIncluded.push([choiceId, choiceData]);
-                    }
-                  });
-                  
-                  const renderChoice = (choiceId: string, choiceData: any) => {
+                  const renderChoice = (choiceId: string, choiceData: any, rule: SimplePricingRule) => {
                     const choiceName = getChoiceName(choiceId);
                     const hasOtaSalePrice = choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price > 0;
                     const hasNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price > 0;
                     
-                    // 편집 버튼을 위한 첫 번째 규칙 찾기
-                    const firstRuleWithChoice = rules.find(rule => {
-                      let choicesPricing: Record<string, any> = {};
-                      if (rule.choices_pricing) {
-                        try {
-                          choicesPricing = typeof rule.choices_pricing === 'string'
-                            ? JSON.parse(rule.choices_pricing)
-                            : rule.choices_pricing;
-                        } catch (e) {
-                          return false;
-                        }
-                      }
-                      return choicesPricing[choiceId] !== undefined;
-                    });
-                    
-                    // 규칙을 찾지 못하면 첫 번째 규칙 사용
-                    const ruleForEdit = firstRuleWithChoice || rules[0];
+                    // 전달받은 rule 사용
+                    const ruleForEdit = rule;
                     
                     if (!ruleForEdit) {
                       return null;
                     }
                     
-                    // 편집 모드인지 확인
+                    // 편집 모드인지 확인 (rule.id와 choiceId로 구분)
                     const isEditing = editingChoice?.ruleId === ruleForEdit.id && editingChoice?.choiceId === choiceId;
                     
                     // 가격 계산
@@ -333,7 +279,7 @@ export const PricingListView = memo(function PricingListView({
 
                     return (
                       <div
-                        key={choiceId}
+                        key={`${rule.id}_${choiceId}`}
                         className="p-3 bg-gray-50 rounded-lg border border-gray-200"
                       >
                         <div className="flex items-center justify-between mb-2">
@@ -465,28 +411,127 @@ export const PricingListView = memo(function PricingListView({
                     );
                   };
                   
+                  // 초이스가 없는 경우 기본 가격 표시
+                  const renderRuleWithoutChoices = (rule: SimplePricingRule) => {
+                    const singlePrice = isSinglePrice(rule.channel_id);
+                    
+                    return (
+                      <div key={rule.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-medium text-gray-800">
+                            기본 가격
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => onEditRule(rule)}
+                              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                              title="편집"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => onDeleteRule(rule.id)}
+                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                              title="삭제"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          {!singlePrice && (
+                            <div className="grid grid-cols-3 gap-4 text-sm">
+                              <div>
+                                <span className="text-gray-500">성인</span>
+                                <div className="font-semibold text-gray-900">
+                                  {formatPrice(rule.adult_price)}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">아동</span>
+                                <div className="font-semibold text-gray-900">
+                                  {formatPrice(rule.child_price)}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">유아</span>
+                                <div className="font-semibold text-gray-900">
+                                  {formatPrice(rule.infant_price)}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {singlePrice && (
+                            <div className="text-sm">
+                              <span className="text-gray-500">가격: </span>
+                              <span className="font-semibold text-gray-900">
+                                {formatPrice(rule.adult_price)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  };
+                  
                   return (
                     <div className="space-y-4">
-                      {/* 불포함 금액이 있는 초이스 */}
-                      {choicesWithNotIncluded.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="text-xs font-semibold text-gray-700 mb-2 px-2">
-                            불포함 금액 있음
+                      {/* 불포함 사항 있는 가격 (price_type='dynamic') */}
+                      {(dynamicChoices.length > 0 || dynamicRules.length > 0) && (
+                        <div className="space-y-3">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <div className="px-3 py-1.5 bg-orange-100 text-orange-800 rounded-lg text-sm font-semibold border border-orange-200">
+                              불포함 사항 있음
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              ({dynamicRules.length}개 규칙, {dynamicChoices.length}개 초이스)
+                            </span>
                           </div>
-                          {choicesWithNotIncluded.map(([choiceId, choiceData]) => 
-                            renderChoice(choiceId, choiceData)
+                          
+                          {/* 초이스가 있는 경우 */}
+                          {dynamicChoices.length > 0 && (
+                            <div className="space-y-2">
+                              {dynamicChoices.map(({ choiceId, choiceData, rule }) => 
+                                renderChoice(choiceId, choiceData, rule)
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* 초이스가 없는 규칙들 */}
+                          {dynamicChoices.length === 0 && dynamicRules.length > 0 && (
+                            <div className="space-y-2">
+                              {dynamicRules.map(rule => renderRuleWithoutChoices(rule))}
+                            </div>
                           )}
                         </div>
                       )}
                       
-                      {/* 불포함 금액이 없는 초이스 */}
-                      {choicesWithoutNotIncluded.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="text-xs font-semibold text-gray-700 mb-2 px-2">
-                            불포함 금액 없음
+                      {/* 불포함 사항 없는 가격 (price_type='base') */}
+                      {(baseChoices.length > 0 || baseRules.length > 0) && (
+                        <div className="space-y-3">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <div className="px-3 py-1.5 bg-blue-100 text-blue-800 rounded-lg text-sm font-semibold border border-blue-200">
+                              불포함 사항 없음
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              ({baseRules.length}개 규칙, {baseChoices.length}개 초이스)
+                            </span>
                           </div>
-                          {choicesWithoutNotIncluded.map(([choiceId, choiceData]) => 
-                            renderChoice(choiceId, choiceData)
+                          
+                          {/* 초이스가 있는 경우 */}
+                          {baseChoices.length > 0 && (
+                            <div className="space-y-2">
+                              {baseChoices.map(({ choiceId, choiceData, rule }) => 
+                                renderChoice(choiceId, choiceData, rule)
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* 초이스가 없는 규칙들 */}
+                          {baseChoices.length === 0 && baseRules.length > 0 && (
+                            <div className="space-y-2">
+                              {baseRules.map(rule => renderRuleWithoutChoices(rule))}
+                            </div>
                           )}
                         </div>
                       )}

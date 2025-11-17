@@ -205,24 +205,104 @@ export const PricingCalendar = memo(function PricingCalendar({
   const pickRuleForChannel = useCallback((rules: SimplePricingRule[]): SimplePricingRule | undefined => {
     if (!rules || rules.length === 0) return undefined;
 
+    // 먼저 채널로 필터링
+    let filteredRules = rules;
+    
     if (selectedChannelId) {
       const mappedChannelId = mapChannelId(selectedChannelId);
-      const channelRule = rules.find(r => r.channel_id === mappedChannelId);
-      if (channelRule) {
-        return channelRule;
+      filteredRules = rules.filter(r => r.channel_id === mappedChannelId);
+    } else if (selectedChannelType === 'SELF') {
+      filteredRules = rules.filter(r => r.channel_id?.startsWith('B'));
+    } else if (selectedChannelType === 'OTA') {
+      filteredRules = rules.filter(r => !r.channel_id?.startsWith('B'));
+    }
+
+    if (filteredRules.length === 0) {
+      return rules[0]; // 필터링 결과가 없으면 첫 번째 규칙 반환
+    }
+
+    // notIncludedFilter에 따라 price_type 필터링
+    if (notIncludedFilter === 'with') {
+      // 불포함 사항 있음: price_type='dynamic' 또는 not_included_price > 0
+      const withNotIncluded = filteredRules.filter(rule => {
+        if (rule.price_type === 'dynamic') return true;
+        if (rule.not_included_price && rule.not_included_price > 0) return true;
+        // choices_pricing에서 확인
+        if (rule.choices_pricing) {
+          try {
+            const choicesData = typeof rule.choices_pricing === 'string' 
+              ? JSON.parse(rule.choices_pricing) 
+              : rule.choices_pricing;
+            for (const choiceData of Object.values(choicesData as Record<string, any>)) {
+              if (choiceData.not_included_price && choiceData.not_included_price > 0) {
+                return true;
+              }
+            }
+          } catch (e) {
+            // 파싱 오류 무시
+          }
+        }
+        return false;
+      });
+      if (withNotIncluded.length > 0) {
+        return withNotIncluded[0];
+      }
+    } else if (notIncludedFilter === 'without') {
+      // 불포함 사항 없음: price_type='base' 또는 not_included_price = 0
+      const withoutNotIncluded = filteredRules.filter(rule => {
+        // price_type이 'base'이면 무조건 포함
+        if (rule.price_type === 'base') {
+          return true;
+        }
+        
+        // price_type이 'dynamic'이면 제외
+        if (rule.price_type === 'dynamic') {
+          return false;
+        }
+        
+        // price_type이 없거나 다른 값인 경우, not_included_price와 choices_pricing 확인
+        if (rule.not_included_price === 0 || !rule.not_included_price) {
+          // choices_pricing에서도 확인
+          if (rule.choices_pricing) {
+            try {
+              const choicesData = typeof rule.choices_pricing === 'string' 
+                ? JSON.parse(rule.choices_pricing) 
+                : rule.choices_pricing;
+              for (const choiceData of Object.values(choicesData as Record<string, any>)) {
+                if (choiceData.not_included_price && choiceData.not_included_price > 0) {
+                  return false; // 하나라도 불포함 금액이 있으면 제외
+                }
+              }
+            } catch (e) {
+              // 파싱 오류 무시
+            }
+          }
+          return true;
+        }
+        return false;
+      });
+      
+      // 디버깅: 필터링 결과 확인
+      if (filteredRules.length > 0 && withoutNotIncluded.length === 0) {
+        console.log('불포함 사항 없음 필터 - 매칭되는 규칙 없음:', {
+          filteredRulesCount: filteredRules.length,
+          rules: filteredRules.map(r => ({
+            id: r.id,
+            price_type: r.price_type,
+            not_included_price: r.not_included_price,
+            hasChoicesPricing: !!r.choices_pricing
+          }))
+        });
+      }
+      
+      if (withoutNotIncluded.length > 0) {
+        return withoutNotIncluded[0];
       }
     }
 
-    if (selectedChannelType === 'SELF') {
-      const selfRule = rules.find(r => r.channel_id?.startsWith('B'));
-      if (selfRule) return selfRule;
-    } else if (selectedChannelType === 'OTA') {
-      const otaRule = rules.find(r => !r.channel_id?.startsWith('B'));
-      if (otaRule) return otaRule;
-    }
-
-    return rules[0];
-  }, [selectedChannelId, selectedChannelType]);
+    // 필터가 'all'이거나 필터링 결과가 없으면 첫 번째 규칙 반환
+    return filteredRules[0];
+  }, [selectedChannelId, selectedChannelType, notIncludedFilter]);
 
   // 날짜별 단일 가격 정보 가져오기 (최대 판매가, 할인 가격, Net Price)
   // 초이스 선택 및 필터 기능 포함
@@ -375,9 +455,35 @@ export const PricingCalendar = memo(function PricingCalendar({
     const isToday = normalizeDateValue(dateString) === todayString;
     const singlePrice = getSinglePriceForDate(dateString);
     
-    // dynamicPricingData에서 해당 날짜에 데이터가 있는지 확인
+    // dynamicPricingData에서 해당 날짜에 데이터가 있는지 확인 (필터 고려)
     const normalizedSearchDate = normalizeDateValue(dateString);
-    const hasDataForDate = normalizedSearchDate && normalizedPricingMap[normalizedSearchDate] && normalizedPricingMap[normalizedSearchDate].length > 0;
+    let hasDataForDate = false;
+    
+    if (normalizedSearchDate && normalizedPricingMap[normalizedSearchDate]) {
+      const rulesForDate = normalizedPricingMap[normalizedSearchDate];
+      
+      // 필터가 'all'이면 모든 규칙이 있으면 데이터 있음
+      if (notIncludedFilter === 'all') {
+        hasDataForDate = rulesForDate.length > 0;
+      } else {
+        // 필터에 맞는 규칙이 있는지 확인
+        const filteredRule = pickRuleForChannel(rulesForDate);
+        hasDataForDate = filteredRule !== undefined;
+        
+        // 디버깅: 필터에 맞는 규칙이 없을 때
+        if (!hasDataForDate && rulesForDate.length > 0 && notIncludedFilter === 'without') {
+          console.log(`날짜 ${dateString} - 불포함 사항 없음 필터 매칭 실패:`, {
+            rulesCount: rulesForDate.length,
+            rules: rulesForDate.map(r => ({
+              id: r.id,
+              price_type: r.price_type,
+              channel_id: r.channel_id,
+              not_included_price: r.not_included_price
+            }))
+          });
+        }
+      }
+    }
 
     return (
       <button

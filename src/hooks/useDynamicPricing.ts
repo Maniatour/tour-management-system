@@ -41,6 +41,38 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         return;
       }
 
+      // 디버깅: 로드된 데이터 확인
+      const byPriceType = data?.reduce((acc, rule) => {
+        const priceType = rule.price_type || 'dynamic';
+        acc[priceType] = (acc[priceType] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>) || {};
+      
+      console.log('로드된 동적 가격 데이터:', {
+        totalCount: data?.length || 0,
+        byPriceType,
+        baseCount: byPriceType.base || 0,
+        dynamicCount: byPriceType.dynamic || 0,
+        sampleRules: data?.slice(0, 10).map(r => ({
+          id: r.id,
+          date: r.date,
+          channel_id: r.channel_id,
+          price_type: r.price_type,
+          hasPriceType: !!r.price_type,
+          choicesCount: r.choices_pricing ? Object.keys(typeof r.choices_pricing === 'string' ? JSON.parse(r.choices_pricing) : r.choices_pricing).length : 0
+        })) || []
+      });
+      
+      // base 타입이 없으면 경고
+      if (byPriceType.base === 0 && data && data.length > 0) {
+        console.warn('⚠️ base 타입 레코드가 없습니다. 모든 레코드:', data.map(r => ({
+          id: r.id,
+          date: r.date,
+          price_type: r.price_type,
+          channel_id: r.channel_id
+        })));
+      }
+
       // 날짜별로 그룹화 (날짜 정규화 포함)
       // 시간대 문제를 방지하기 위해 문자열 파싱을 우선 사용
       const normalizeDate = (dateStr: string): string => {
@@ -92,6 +124,21 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         acc[normalizedDate].push(rule);
         return acc;
       }, {} as Record<string, SimplePricingRule[]>);
+
+      // 디버깅: 그룹화된 데이터 확인
+      Object.entries(groupedData).forEach(([date, rules]) => {
+        if (rules.length > 1) {
+          console.log(`날짜 ${date}의 규칙들:`, {
+            count: rules.length,
+            rules: rules.map(r => ({
+              id: r.id,
+              price_type: r.price_type,
+              channel_id: r.channel_id,
+              choicesCount: r.choices_pricing ? Object.keys(typeof r.choices_pricing === 'string' ? JSON.parse(r.choices_pricing) : r.choices_pricing).length : 0
+            }))
+          });
+        }
+      });
 
       const formattedData = Object.entries(groupedData).map(([date, rules]) => ({
         date, // 이미 정규화된 날짜
@@ -183,7 +230,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           product_id: ruleData.product_id,
           channel_id: ruleData.channel_id,
           date: ruleData.date,
-          price_type: priceType,
+          price_type: ruleData.price_type !== undefined ? ruleData.price_type : priceType, // ruleData의 price_type 우선 사용
           
           // 전달된 필드만 업데이트, 전달되지 않은 필드는 기존 값 유지
           adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : fullExistingData.adult_price,
@@ -309,10 +356,11 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
             // 기존 레코드 확인 (choices_pricing 포함)
             const { data: existingData, error: selectError } = await supabase
               .from('dynamic_pricing')
-              .select('id, choices_pricing')
+              .select('id, choices_pricing, price_type')
               .eq('product_id', ruleData.product_id)
               .eq('channel_id', ruleData.channel_id)
               .eq('date', ruleData.date)
+              .eq('price_type', ruleData.price_type || 'dynamic') // price_type으로도 필터링
               .maybeSingle();
 
             if (existingData && !selectError) {
@@ -334,6 +382,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                 product_id: ruleData.product_id,
                 channel_id: ruleData.channel_id,
                 date: ruleData.date,
+                price_type: ruleData.price_type !== undefined ? ruleData.price_type : (fullExistingData.price_type || 'dynamic'), // price_type 필드 추가
                 
                 // 전달된 필드만 업데이트, 전달되지 않은 필드는 기존 값 유지
                 adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : fullExistingData.adult_price,
@@ -412,6 +461,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                 product_id: ruleData.product_id,
                 channel_id: ruleData.channel_id,
                 date: ruleData.date,
+                price_type: ruleData.price_type || 'dynamic', // price_type 필드 추가
                 adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : 0,
                 child_price: ruleData.child_price !== undefined ? ruleData.child_price : 0,
                 infant_price: ruleData.infant_price !== undefined ? ruleData.infant_price : 0,
