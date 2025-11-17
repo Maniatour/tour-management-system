@@ -991,15 +991,72 @@ export default function DynamicPricingManager({
         const priceAdjustmentInfant = (pricingConfig as Record<string, unknown>).price_adjustment_infant as number | undefined ?? 
           ((pricingConfig.infant_price ?? 0) - productBasePrice.infant);
 
-        // price_type 결정: not_included_price가 있으면 'dynamic', 없으면 'base'
-        const notIncludedPrice = ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0;
-        const priceType = notIncludedPrice > 0 ? 'dynamic' : 'base';
+        // 초이스별 가격 데이터 수집
+        const allChoicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }> = {};
         
-        const ruleData: SimplePricingRuleDto = {
+        // calculationConfig.choicePricing 우선 사용
+        Object.entries(calculationConfig.choicePricing).forEach(([choiceId, choice]) => {
+          const currentChoiceData = (pricingConfig.choices_pricing as any)?.[choiceId] || {};
+          const otaSalePrice = currentChoiceData.ota_sale_price;
+          const notIncludedPrice = currentChoiceData.not_included_price;
+          
+          allChoicesPricing[choiceId] = {
+            adult_price: choice.adult_price,
+            child_price: choice.child_price,
+            infant_price: choice.infant_price,
+            ...(otaSalePrice !== undefined && otaSalePrice > 0 ? { ota_sale_price: otaSalePrice } : {}),
+            ...(notIncludedPrice !== undefined && notIncludedPrice !== null ? { not_included_price: notIncludedPrice } : {})
+          };
+        });
+        
+        // pricingConfig.choices_pricing에서 ota_sale_price나 not_included_price가 있지만 calculationConfig에 없는 경우 추가
+        if (pricingConfig.choices_pricing) {
+          Object.entries(pricingConfig.choices_pricing as Record<string, any>).forEach(([choiceId, choiceData]) => {
+            const hasOtaSalePrice = choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price > 0;
+            const hasNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price !== null;
+            
+            if (!allChoicesPricing[choiceId] && (hasOtaSalePrice || hasNotIncludedPrice)) {
+              allChoicesPricing[choiceId] = {
+                adult_price: choiceData.adult_price || choiceData.adult || 0,
+                child_price: choiceData.child_price || choiceData.child || 0,
+                infant_price: choiceData.infant_price || choiceData.infant || 0,
+                ...(hasOtaSalePrice ? { ota_sale_price: choiceData.ota_sale_price } : {}),
+                ...(hasNotIncludedPrice ? { not_included_price: choiceData.not_included_price } : {})
+              };
+            } else if (allChoicesPricing[choiceId]) {
+              // 이미 있는 경우 ota_sale_price와 not_included_price 업데이트
+              if (hasOtaSalePrice) {
+                allChoicesPricing[choiceId].ota_sale_price = choiceData.ota_sale_price;
+              }
+              if (hasNotIncludedPrice) {
+                allChoicesPricing[choiceId].not_included_price = choiceData.not_included_price;
+              }
+            }
+          });
+        }
+        
+        // 불포함 금액 유무에 따라 초이스를 분리
+        const dynamicChoicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }> = {};
+        const baseChoicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }> = {};
+        
+        Object.entries(allChoicesPricing).forEach(([choiceId, choiceData]) => {
+          const hasNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price !== null && choiceData.not_included_price > 0;
+          
+          if (hasNotIncludedPrice) {
+            // 불포함 금액이 있는 초이스는 dynamic 레코드에 저장
+            dynamicChoicesPricing[choiceId] = choiceData;
+          } else {
+            // 불포함 금액이 없는 초이스는 base 레코드에 저장 (not_included_price 필드 제외)
+            const { not_included_price, ...baseChoiceData } = choiceData;
+            baseChoicesPricing[choiceId] = baseChoiceData;
+          }
+        });
+        
+        // 공통 필드
+        const commonFields = {
           product_id: productId,
           channel_id: channelId,
           date,
-          price_type: priceType,
           adult_price: productBasePrice.adult + priceAdjustmentAdult,
           child_price: productBasePrice.child + priceAdjustmentChild,
           infant_price: productBasePrice.infant + priceAdjustmentInfant,
@@ -1007,7 +1064,6 @@ export default function DynamicPricingManager({
           markup_amount: pricingConfig.markup_amount,
           coupon_percent: pricingConfig.coupon_percent,
           is_sale_available: pricingConfig.is_sale_available !== undefined ? pricingConfig.is_sale_available : true,
-          not_included_price: notIncludedPrice,
           markup_percent: ((pricingConfig as Record<string, unknown>).markup_percent as number) || 0,
           price_adjustment_adult: priceAdjustmentAdult,
           price_adjustment_child: priceAdjustmentChild,
@@ -1016,59 +1072,43 @@ export default function DynamicPricingManager({
           exclusions_ko: ((pricingConfig as Record<string, unknown>).exclusions_ko as string) || null,
           inclusions_en: ((pricingConfig as Record<string, unknown>).inclusions_en as string) || null,
           exclusions_en: ((pricingConfig as Record<string, unknown>).exclusions_en as string) || null,
-          choices_pricing: Object.keys(calculationConfig.choicePricing).length > 0 || (pricingConfig.choices_pricing && Object.keys(pricingConfig.choices_pricing).length > 0)
-            ? (() => {
-                // 조합별 가격 저장 구조
-                const choicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }> = {};
-                
-                // calculationConfig.choicePricing 우선 사용
-                Object.entries(calculationConfig.choicePricing).forEach(([choiceId, choice]) => {
-                  // choiceId는 조합 ID (예: "combination_0", "combination_1")
-                  const currentChoiceData = (pricingConfig.choices_pricing as any)?.[choiceId] || {};
-                  const otaSalePrice = currentChoiceData.ota_sale_price;
-                  const notIncludedPrice = currentChoiceData.not_included_price;
-                  
-                  choicesPricing[choiceId] = {
-                    adult_price: choice.adult_price,
-                    child_price: choice.child_price,
-                    infant_price: choice.infant_price,
-                    ...(otaSalePrice !== undefined && otaSalePrice > 0 ? { ota_sale_price: otaSalePrice } : {}),
-                    ...(notIncludedPrice !== undefined && notIncludedPrice !== null ? { not_included_price: notIncludedPrice } : {})
-                  };
-                });
-                
-                // pricingConfig.choices_pricing에서 ota_sale_price나 not_included_price가 있지만 calculationConfig에 없는 경우 추가
-                if (pricingConfig.choices_pricing) {
-                  Object.entries(pricingConfig.choices_pricing as Record<string, any>).forEach(([choiceId, choiceData]) => {
-                    const hasOtaSalePrice = choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price > 0;
-                    const hasNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price !== null;
-                    
-                    if (!choicesPricing[choiceId] && (hasOtaSalePrice || hasNotIncludedPrice)) {
-                      choicesPricing[choiceId] = {
-                        adult_price: choiceData.adult_price || choiceData.adult || 0,
-                        child_price: choiceData.child_price || choiceData.child || 0,
-                        infant_price: choiceData.infant_price || choiceData.infant || 0,
-                        ...(hasOtaSalePrice ? { ota_sale_price: choiceData.ota_sale_price } : {}),
-                        ...(hasNotIncludedPrice ? { not_included_price: choiceData.not_included_price } : {})
-                      };
-                    } else if (choicesPricing[choiceId]) {
-                      // 이미 있는 경우 ota_sale_price와 not_included_price 업데이트
-                      if (hasOtaSalePrice) {
-                        choicesPricing[choiceId].ota_sale_price = choiceData.ota_sale_price;
-                      }
-                      if (hasNotIncludedPrice) {
-                        choicesPricing[choiceId].not_included_price = choiceData.not_included_price;
-                      }
-                    }
-                  });
-                }
-                
-                return choicesPricing;
-              })()
-            : {} as Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }>
         };
         
-        rulesData.push(ruleData);
+        // 불포함 금액이 있는 초이스가 있으면 dynamic 레코드 생성
+        if (Object.keys(dynamicChoicesPricing).length > 0) {
+          const dynamicRuleData: SimplePricingRuleDto = {
+            ...commonFields,
+            price_type: 'dynamic',
+            not_included_price: ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0,
+            choices_pricing: dynamicChoicesPricing
+          };
+          rulesData.push(dynamicRuleData);
+        }
+        
+        // 불포함 금액이 없는 초이스가 있으면 base 레코드 생성
+        if (Object.keys(baseChoicesPricing).length > 0) {
+          const baseRuleData: SimplePricingRuleDto = {
+            ...commonFields,
+            price_type: 'base',
+            not_included_price: 0,
+            choices_pricing: baseChoicesPricing
+          };
+          rulesData.push(baseRuleData);
+        }
+        
+        // 초이스가 없는 경우 기본 레코드 하나만 생성 (기존 로직 유지)
+        if (Object.keys(allChoicesPricing).length === 0) {
+          const notIncludedPrice = ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0;
+          const priceType = notIncludedPrice > 0 ? 'dynamic' : 'base';
+          
+          const defaultRuleData: SimplePricingRuleDto = {
+            ...commonFields,
+            price_type: priceType,
+            not_included_price: notIncludedPrice,
+            choices_pricing: {}
+          };
+          rulesData.push(defaultRuleData);
+        }
       }
     }
 
@@ -2151,13 +2191,20 @@ export default function DynamicPricingManager({
                                 const currentPricing = pricingConfig.choices_pricing || {};
                                 const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
                                 
+                                // 기존 필드들을 모두 보존 (초이스 가격, 불포함 금액 등)
+                                const preservedData = {
+                                  ...currentChoiceData,
+                                  // 불포함 금액 보존
+                                  not_included_price: currentChoiceData.not_included_price !== undefined ? currentChoiceData.not_included_price : notIncludedPrice
+                                };
+                                
                                 if (value === '' || value === '-') {
-                                  // OTA 판매가만 0으로 설정, 초이스 가격은 유지
+                                  // OTA 판매가만 0으로 설정, 나머지는 모두 유지
                                   updatePricingConfig({
                                     choices_pricing: {
                                       ...currentPricing,
                                       [combination.id]: {
-                                        ...currentChoiceData,
+                                        ...preservedData,
                                         ota_sale_price: 0
                                       }
                                     }
@@ -2166,7 +2213,7 @@ export default function DynamicPricingManager({
                                 }
                                 const numValue = parseFloat(value);
                                 if (!isNaN(numValue)) {
-                                  // OTA 판매가만 업데이트, 초이스 가격은 유지
+                                  // OTA 판매가만 업데이트, 나머지는 모두 유지
                                   // 주의: homepagePricingConfig는 M00001 채널의 고정값이므로 업데이트하지 않음
                                   
                                   // 초이스 가격 가져오기 (유지하기 위해)
@@ -2192,15 +2239,19 @@ export default function DynamicPricingManager({
                                                     (homepageChoiceData.infant as number) ||
                                                     combination.infant_price || 0;
                                   
-                                  // OTA 판매가와 함께 초이스 가격도 유지하여 업데이트
+                                  // OTA 판매가와 함께 모든 필드(초이스 가격, 불포함 금액 등)를 유지하여 업데이트
                                   updatePricingConfig({
                                     choices_pricing: {
                                       ...currentPricing,
                                       [combination.id]: {
-                                        ...currentChoiceData,
+                                        ...preservedData,
                                         adult_price: adultPrice,
                                         child_price: childPrice,
                                         infant_price: infantPrice,
+                                        // adult, child, infant도 보존 (호환성)
+                                        adult: adultPrice,
+                                        child: childPrice,
+                                        infant: infantPrice,
                                         ota_sale_price: numValue
                                       }
                                     }
@@ -2221,11 +2272,16 @@ export default function DynamicPricingManager({
                                 if (value === '' || value === '-') {
                                   const currentPricing = pricingConfig.choices_pricing || {};
                                   const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                  // 기존 필드들을 모두 보존
+                                  const preservedData = {
+                                    ...currentChoiceData,
+                                    not_included_price: currentChoiceData.not_included_price !== undefined ? currentChoiceData.not_included_price : notIncludedPrice
+                                  };
                                   updatePricingConfig({
                                     choices_pricing: {
                                       ...currentPricing,
                                       [combination.id]: {
-                                        ...currentChoiceData,
+                                        ...preservedData,
                                         ota_sale_price: 0
                                       }
                                     }
@@ -2247,14 +2303,30 @@ export default function DynamicPricingManager({
                               onChange={(e) => {
                                 const value = e.target.value;
                                 const currentPricing = pricingConfig.choices_pricing || {};
+                                // 기존 데이터를 완전히 보존하기 위해 모든 필드를 가져옴
                                 const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                
+                                // 기존 필드들을 모두 보존 (OTA 판매가, 초이스 가격 등)
+                                const preservedData = {
+                                  ...currentChoiceData,
+                                  // OTA 판매가 보존
+                                  ota_sale_price: currentChoiceData.ota_sale_price !== undefined ? currentChoiceData.ota_sale_price : otaSalePrice,
+                                  // 초이스 가격 보존
+                                  adult_price: currentChoiceData.adult_price !== undefined ? currentChoiceData.adult_price : (currentChoiceData.adult !== undefined ? currentChoiceData.adult : (combination.adult_price || 0)),
+                                  child_price: currentChoiceData.child_price !== undefined ? currentChoiceData.child_price : (currentChoiceData.child !== undefined ? currentChoiceData.child : (combination.child_price || 0)),
+                                  infant_price: currentChoiceData.infant_price !== undefined ? currentChoiceData.infant_price : (currentChoiceData.infant !== undefined ? currentChoiceData.infant : (combination.infant_price || 0)),
+                                  // adult, child, infant도 보존 (호환성)
+                                  adult: currentChoiceData.adult !== undefined ? currentChoiceData.adult : (currentChoiceData.adult_price !== undefined ? currentChoiceData.adult_price : (combination.adult_price || 0)),
+                                  child: currentChoiceData.child !== undefined ? currentChoiceData.child : (currentChoiceData.child_price !== undefined ? currentChoiceData.child_price : (combination.child_price || 0)),
+                                  infant: currentChoiceData.infant !== undefined ? currentChoiceData.infant : (currentChoiceData.infant_price !== undefined ? currentChoiceData.infant_price : (combination.infant_price || 0))
+                                };
                                 
                                 if (value === '' || value === '-') {
                                   updatePricingConfig({
                                     choices_pricing: {
                                       ...currentPricing,
                                       [combination.id]: {
-                                        ...currentChoiceData,
+                                        ...preservedData,
                                         not_included_price: 0
                                       }
                                     }
@@ -2267,7 +2339,7 @@ export default function DynamicPricingManager({
                                     choices_pricing: {
                                       ...currentPricing,
                                       [combination.id]: {
-                                        ...currentChoiceData,
+                                        ...preservedData,
                                         not_included_price: numValue
                                       }
                                     }
