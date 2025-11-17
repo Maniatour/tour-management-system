@@ -30,9 +30,6 @@ interface Channel {
   manager_contact?: string
   contract_url?: string
   commission_base_price_only?: boolean
-  has_not_included_price?: boolean
-  not_included_type?: 'none' | 'amount_only' | 'amount_and_choice'
-  not_included_price?: number
   pricing_type?: 'separate' | 'single'
 }
 
@@ -121,9 +118,6 @@ export default function AdminChannels() {
         is_active: channel.status === 'active' || channel.is_active === true,
         commission_rate: channel.commission_percent || channel.commission || channel.commission_rate || 0,
         website: channel.website || channel.website_url || '',
-        has_not_included_price: channel.has_not_included_price || false,
-        not_included_type: channel.not_included_type || 'none',
-        not_included_price: channel.not_included_price || 0,
         pricing_type: channel.pricing_type || 'separate'
       }))
 
@@ -242,9 +236,6 @@ export default function AdminChannels() {
         manager_contact: (channel as any).manager_contact || '',
         contract_url: (channel as any).contract_url || '',
         commission_base_price_only: (channel as any).commission_base_price_only ?? false,
-        has_not_included_price: (channel as any).has_not_included_price !== undefined ? (channel as any).has_not_included_price : false,
-        not_included_type: (channel as any).not_included_type !== undefined ? (channel as any).not_included_type : 'none',
-        not_included_price: (channel as any).not_included_price !== undefined ? (channel as any).not_included_price : 0,
         pricing_type: (channel as any).pricing_type || 'separate'
       }
       
@@ -300,16 +291,11 @@ export default function AdminChannels() {
           manager_contact: channelAny.manager_contact || '',
           contract_url: channelAny.contract_url || '',
           commission_base_price_only: channelAny.commission_base_price_only ?? false,
-          has_not_included_price: channelAny.has_not_included_price !== undefined ? channelAny.has_not_included_price : false,
-          not_included_type: channelAny.not_included_type !== undefined && channelAny.not_included_type !== null && channelAny.not_included_type !== '' ? channelAny.not_included_type : 'none',
-          not_included_price: channelAny.not_included_price !== undefined ? channelAny.not_included_price : 0,
           pricing_type: channelAny.pricing_type || 'separate'
         }
         
         console.log('Saving channel data:', channelData);
         console.log('Original channel object:', channel);
-        console.log('not_included_type from channel:', channel.not_included_type);
-        console.log('has_not_included_price from channel:', channel.has_not_included_price);
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: updateData, error } = await (supabase as any)
@@ -383,9 +369,6 @@ export default function AdminChannels() {
         if (updates.manager_name !== undefined) updateData.manager_name = updates.manager_name
         if (updates.manager_contact !== undefined) updateData.manager_contact = updates.manager_contact
         if (updates.commission_base_price_only !== undefined) updateData.commission_base_price_only = updates.commission_base_price_only
-        if (updates.has_not_included_price !== undefined) updateData.has_not_included_price = updates.has_not_included_price
-        if (updates.not_included_type !== undefined) updateData.not_included_type = updates.not_included_type
-        if (updates.not_included_price !== undefined) updateData.not_included_price = updates.not_included_price
         if (updates.pricing_type !== undefined) updateData.pricing_type = updates.pricing_type
 
         if (Object.keys(updateData).length > 0) {
@@ -704,7 +687,6 @@ export default function AdminChannels() {
                 <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">수수료</th>
                 <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">가격</th>
                 <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">커미션</th>
-                <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">불포함</th>
                 <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">담당자</th>
                 <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">계약서</th>
                 <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
@@ -910,54 +892,6 @@ export default function AdminChannels() {
                     ) : (
                       channel.commission_base_price_only ? (
                         <span className="text-green-600 font-bold">✓</span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )
-                    )}
-                  </td>
-                  <td className="px-2 py-1.5 whitespace-nowrap text-xs">
-                    {bulkEditMode ? (
-                      <div className="space-y-1">
-                        <select
-                          value={bulkEditData[channel.id]?.not_included_type ?? channel.not_included_type ?? 'none'}
-                          onChange={(e) => {
-                            const newType = e.target.value as 'none' | 'amount_only' | 'amount_and_choice'
-                            handleBulkFieldChange(channel.id, 'not_included_type', newType)
-                            handleBulkFieldChange(channel.id, 'has_not_included_price', newType !== 'none')
-                          }}
-                          className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <option value="none">없음</option>
-                          <option value="amount_only">금액</option>
-                          <option value="amount_and_choice">금액+초이스</option>
-                        </select>
-                        {(bulkEditData[channel.id]?.not_included_type ?? channel.not_included_type) !== 'none' && (
-                          <input
-                            type="number"
-                            value={bulkEditData[channel.id]?.not_included_price ?? channel.not_included_price ?? 0}
-                            onChange={(e) => handleBulkFieldChange(channel.id, 'not_included_price', Number(e.target.value) || 0)}
-                            className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            onClick={(e) => e.stopPropagation()}
-                            min="0"
-                            step="0.01"
-                            placeholder="$"
-                          />
-                        )}
-                      </div>
-                    ) : (
-                      channel.has_not_included_price ? (
-                        <div>
-                          <div className="text-gray-600">
-                            {channel.not_included_type === 'amount_only' ? '금액' :
-                             channel.not_included_type === 'amount_and_choice' ? '금액+초이스' : '-'}
-                          </div>
-                          {channel.not_included_price && channel.not_included_price > 0 && (
-                            <div className="text-gray-900 font-medium">
-                              ${channel.not_included_price}
-                            </div>
-                          )}
-                        </div>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )

@@ -34,7 +34,7 @@ export default function CustomerSection({
 }: CustomerSectionProps) {
   
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="space-y-4">
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="block text-sm font-medium text-gray-700">{t('form.customer')}</label>

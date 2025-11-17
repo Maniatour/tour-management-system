@@ -96,6 +96,7 @@ export default function ReservationForm({
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
+  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
   const t = useTranslations('reservations')
   const tCommon = useTranslations('common')
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
@@ -109,6 +110,16 @@ export default function ReservationForm({
     customerId: string
     customerSearch: string
     showCustomerDropdown: boolean
+    // 고객 정보 필드 추가
+    customerName: string
+    customerPhone: string
+    customerEmail: string
+    customerAddress: string
+    customerLanguage: string
+    customerEmergencyContact: string
+    customerSpecialRequests: string
+    customerChannelId: string
+    customerStatus: string
     productId: string
     selectedProductCategory: string
     selectedProductSubCategory: string
@@ -212,6 +223,82 @@ export default function ReservationForm({
       return ''
     })(),
     showCustomerDropdown: false,
+    // 고객 정보 초기값
+    customerName: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return customer?.name || ''
+      }
+      return ''
+    })(),
+    customerPhone: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return customer?.phone || ''
+      }
+      return ''
+    })(),
+    customerEmail: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return customer?.email || ''
+      }
+      return ''
+    })(),
+    customerAddress: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return (customer as any)?.address || ''
+      }
+      return ''
+    })(),
+    customerLanguage: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        const lang = (customer as any)?.language
+        if (lang === 'EN' || lang === 'en' || lang === '영어') return 'EN'
+        if (lang === 'KR' || lang === 'ko' || lang === '한국어') return 'KR'
+        return lang || 'KR'
+      }
+      return 'KR'
+    })(),
+    customerEmergencyContact: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return (customer as any)?.emergency_contact || ''
+      }
+      return ''
+    })(),
+    customerSpecialRequests: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return (customer as any)?.special_requests || ''
+      }
+      return ''
+    })(),
+    customerChannelId: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return (customer as any)?.channel_id || ''
+      }
+      return ''
+    })(),
+    customerStatus: (() => {
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      if (customerId && customers.length > 0) {
+        const customer = customers.find(c => c.id === customerId)
+        return (customer as any)?.status || 'active'
+      }
+      return 'active'
+    })(),
     productId: reservation?.productId || rez.product_id || '',
     selectedProductCategory: '',
     selectedProductSubCategory: '',
@@ -301,6 +388,33 @@ export default function ReservationForm({
   const prevProductId = useRef<string | null>(null)
 
 
+
+  // 고객 선택 시 고객 정보 자동 로드
+  useEffect(() => {
+    if (formData.customerId && customers.length > 0) {
+      const customer = customers.find(c => c.id === formData.customerId)
+      if (customer) {
+        setShowNewCustomerForm(false) // 고객을 선택하면 새 고객 입력 모드 해제
+        setFormData(prev => ({
+          ...prev,
+          customerName: customer.name || '',
+          customerPhone: customer.phone || '',
+          customerEmail: customer.email || '',
+          customerAddress: (customer as any)?.address || '',
+          customerLanguage: (() => {
+            const lang = (customer as any)?.language
+            if (lang === 'EN' || lang === 'en' || lang === '영어') return 'EN'
+            if (lang === 'KR' || lang === 'ko' || lang === '한국어') return 'KR'
+            return lang || 'KR'
+          })(),
+          customerEmergencyContact: (customer as any)?.emergency_contact || '',
+          customerSpecialRequests: (customer as any)?.special_requests || '',
+          customerChannelId: (customer as any)?.channel_id || '',
+          customerStatus: (customer as any)?.status || 'active'
+        }))
+      }
+    }
+  }, [formData.customerId, customers])
 
   // 외부 클릭 감지하여 드롭다운 닫기
   useEffect(() => {
@@ -1982,6 +2096,17 @@ export default function ReservationForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    // 고객 정보 검증
+    if (!formData.customerId) {
+      alert('고객을 선택해주세요.')
+      return
+    }
+    
+    if (!formData.customerName) {
+      alert('고객 이름을 입력해주세요.')
+      return
+    }
+    
     // 새로운 간결한 초이스 시스템에서 필수 초이스 검증
     const missingRequiredChoices = formData.productChoices.filter(choice => {
       if (!choice.is_required) return false
@@ -2003,6 +2128,81 @@ export default function ReservationForm({
     const totalPeople = formData.adults + formData.child + formData.infant
     
     try {
+      // 고객 정보 저장/업데이트 또는 생성
+      let finalCustomerId = formData.customerId
+      
+      if (!formData.customerId || showNewCustomerForm) {
+        // 새 고객 생성
+        if (!formData.customerSearch || !formData.customerSearch.trim()) {
+          alert('고객 이름을 입력해주세요.')
+          return
+        }
+        
+        // 랜덤 ID 생성
+        const timestamp = Date.now().toString(36)
+        const randomStr = Math.random().toString(36).substring(2, 8)
+        const newCustomerId = `CUST_${timestamp}_${randomStr}`.toUpperCase()
+        
+        const customerData = {
+          id: newCustomerId,
+          name: formData.customerSearch.trim(), // 고객 검색 입력칸의 값을 이름으로 사용
+          phone: formData.customerPhone || null,
+          email: formData.customerEmail || null,
+          address: formData.customerAddress || null,
+          language: formData.customerLanguage || 'KR',
+          emergency_contact: formData.customerEmergencyContact || null,
+          special_requests: formData.customerSpecialRequests || null,
+          channel_id: formData.channelId || null, // 오른쪽 채널 선택기에서 선택한 값 사용
+          status: formData.customerStatus || 'active'
+        }
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: newCustomer, error: customerError } = await (supabase as any)
+          .from('customers')
+          .insert(customerData)
+          .select()
+          .single()
+        
+        if (customerError) {
+          console.error('고객 정보 생성 오류:', customerError)
+          alert('고객 정보 생성 중 오류가 발생했습니다: ' + customerError.message)
+          return
+        }
+        
+        finalCustomerId = newCustomer.id
+        setFormData(prev => ({ ...prev, customerId: finalCustomerId }))
+        
+        // 고객 목록 새로고침
+        await onRefreshCustomers()
+      } else if (formData.customerId) {
+        // 기존 고객 업데이트
+        const customerData = {
+          name: formData.customerSearch.trim() || formData.customerName, // 고객 검색 입력칸 또는 이름 사용
+          phone: formData.customerPhone || null,
+          email: formData.customerEmail || null,
+          address: formData.customerAddress || null,
+          language: formData.customerLanguage || 'KR',
+          emergency_contact: formData.customerEmergencyContact || null,
+          special_requests: formData.customerSpecialRequests || null,
+          channel_id: formData.channelId || null, // 오른쪽 채널 선택기에서 선택한 값 사용
+          status: formData.customerStatus || 'active'
+        }
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: customerError } = await (supabase as any)
+          .from('customers')
+          .update(customerData)
+          .eq('id', formData.customerId)
+        
+        if (customerError) {
+          console.error('고객 정보 업데이트 오류:', customerError)
+          alert('고객 정보 업데이트 중 오류가 발생했습니다: ' + customerError.message)
+          return
+        }
+        
+        // 고객 목록 새로고침
+        await onRefreshCustomers()
+      }
       // 새로운 간결한 초이스 시스템 사용
       const choicesData: any = {
         required: []
@@ -2034,9 +2234,10 @@ export default function ReservationForm({
         })
       }
       
-      // 예약 정보와 가격 정보를 함께 제출
+      // 예약 정보와 가격 정보를 함께 제출 (customerId 업데이트)
       onSubmit({
         ...formData,
+        customerId: finalCustomerId || formData.customerId,
         totalPeople,
         choices: choicesData,
         // 가격 정보를 포함하여 전달
@@ -2131,7 +2332,7 @@ export default function ReservationForm({
   return (
     <div className={isModal ? "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4" : "w-full"}>
       <div className={isModal 
-        ? "bg-white rounded-lg p-2 sm:p-4 w-full max-w-[95vw] sm:max-w-[80vw] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto"
+        ? "bg-white rounded-lg p-2 sm:p-4 w-[90vw] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto"
         : "bg-white rounded-lg p-2 sm:p-4 w-full"}
       >
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 space-y-3 sm:space-y-0">
@@ -2170,21 +2371,151 @@ export default function ReservationForm({
         
         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
           {/* 메인 레이아웃 - 모바일 최적화 */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:h-[940px]">
-            {/* 1열: 고객, 투어 정보, 가격 정보 - 모바일에서는 전체 너비 */}
-            <div className="col-span-1 lg:col-span-6 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 lg:h-[940px]">
+            {/* 1열: 고객 정보 수정 - 모바일에서는 전체 너비 */}
+            <div className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
               <div>
                 <h3 className="text-base font-semibold text-gray-900 mb-3">고객 정보</h3>
+                {/* 고객 검색 */}
                 <CustomerSection
                   formData={formData}
                   setFormData={setFormData}
                   customers={customers}
                   customerSearchRef={customerSearchRef}
-                  setShowCustomerForm={setShowCustomerForm}
+                  setShowCustomerForm={(show) => {
+                    if (show) {
+                      // + 버튼을 누르면 새 고객 입력 모드 활성화
+                      setShowNewCustomerForm(true)
+                      setFormData(prev => ({
+                        ...prev,
+                        customerId: '',
+                        customerSearch: '',
+                        customerName: '',
+                        customerPhone: '',
+                        customerEmail: '',
+                        customerAddress: '',
+                        customerLanguage: 'KR',
+                        customerEmergencyContact: '',
+                        customerSpecialRequests: '',
+                        customerChannelId: '',
+                        customerStatus: 'active'
+                      }))
+                    } else {
+                      setShowNewCustomerForm(false)
+                    }
+                  }}
                   t={t}
                 />
+                
+                {/* 고객 정보 입력/수정 폼 - 새 고객 입력 모드이거나 고객이 선택되었을 때 */}
+                {(showNewCustomerForm || formData.customerId) && (
+                  <div className="mt-4 space-y-3 pt-4 border-t border-gray-200">
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">전화번호</label>
+                        <input
+                          type="tel"
+                          value={formData.customerPhone}
+                          onChange={(e) => setFormData(prev => ({ ...prev, customerPhone: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">이메일</label>
+                        <input
+                          type="email"
+                          value={formData.customerEmail}
+                          onChange={(e) => setFormData(prev => ({ ...prev, customerEmail: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">언어</label>
+                        <select
+                          value={formData.customerLanguage}
+                          onChange={(e) => setFormData(prev => ({ ...prev, customerLanguage: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="KR">🇰🇷 한국어</option>
+                          <option value="EN">🇺🇸 English</option>
+                          <option value="JA">🇯🇵 日本語</option>
+                          <option value="ZH">🇨🇳 中文</option>
+                          <option value="ES">🇪🇸 Español</option>
+                          <option value="FR">🇫🇷 Français</option>
+                          <option value="DE">🇩🇪 Deutsch</option>
+                          <option value="IT">🇮🇹 Italiano</option>
+                          <option value="PT">🇵🇹 Português</option>
+                          <option value="RU">🇷🇺 Русский</option>
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">비상연락처</label>
+                        <input
+                          type="tel"
+                          value={formData.customerEmergencyContact}
+                          onChange={(e) => setFormData(prev => ({ ...prev, customerEmergencyContact: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">주소</label>
+                        <input
+                          type="text"
+                          value={formData.customerAddress}
+                          onChange={(e) => setFormData(prev => ({ ...prev, customerAddress: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">특별요청</label>
+                        <textarea
+                          value={formData.customerSpecialRequests}
+                          onChange={(e) => setFormData(prev => ({ ...prev, customerSpecialRequests: e.target.value }))}
+                          rows={3}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <label className="block text-sm font-medium text-gray-700">상태</label>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({
+                            ...prev,
+                            customerStatus: prev.customerStatus === 'active' ? 'inactive' : 'active'
+                          }))}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                            formData.customerStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              formData.customerStatus === 'active' ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                        <span className={`text-sm font-medium ${
+                          formData.customerStatus === 'active' ? 'text-blue-600' : 'text-gray-500'
+                        }`}>
+                          {formData.customerStatus === 'active' ? '활성' : '비활성'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-              
+            </div>
+
+            {/* 2열: 예약 정보 (투어 정보, 참가자, 가격) - 모바일에서는 전체 너비 */}
+            <div className="col-span-1 lg:col-span-2 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 mb-3">예약 정보</h3>
+              </div>
               <TourInfoSection
                 formData={formData}
                 setFormData={setFormData}
@@ -2199,7 +2530,7 @@ export default function ReservationForm({
                 t={t}
               />
 
-               <div className="space-y-2">
+              <div className="space-y-2">
                 <PricingSection
                   formData={formData}
                   setFormData={setFormData}
@@ -2273,8 +2604,8 @@ export default function ReservationForm({
               )}
             </div>
 
-            {/* 2열: 상품 선택 - 모바일에서는 전체 너비, 데스크톱에서는 25% */}
-            <div className={`col-span-1 lg:col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 ${productAccordionExpanded ? 'lg:h-full' : 'lg:h-auto'}`}>
+            {/* 3열: 상품 선택 - 모바일에서는 전체 너비, 데스크톱에서는 1/5 */}
+            <div className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
               <ProductSelectionSection
                 formData={formData}
                 setFormData={setFormData}
@@ -2289,8 +2620,8 @@ export default function ReservationForm({
               {/* 새로운 간결한 초이스 시스템이 ProductSelectionSection에서 처리됨 */}
             </div>
 
-            {/* 3열: 채널 선택 - 모바일에서는 전체 너비, 데스크톱에서는 25% */}
-            <div className={`col-span-1 lg:col-span-3 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 ${channelAccordionExpanded ? 'lg:h-full' : 'lg:h-auto'}`}>
+            {/* 4열: 채널 선택 - 모바일에서는 전체 너비, 데스크톱에서는 1/5 */}
+            <div className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
               <ChannelSection
                 formData={formData}
                 setFormData={setFormData}

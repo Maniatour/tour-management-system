@@ -154,6 +154,7 @@ export class NewDynamicPricingService {
     adult_price: number;
     child_price: number;
     infant_price: number;
+    price_type?: 'dynamic' | 'base';
     choices_pricing?: ChoicePricingData;
     additional_options_pricing?: AdditionalOptionsPricingData;
     price_calculation_method?: string;
@@ -163,10 +164,17 @@ export class NewDynamicPricingService {
     is_sale_available?: boolean;
   }): Promise<boolean> {
     try {
+      // price_type 기본값 설정
+      const priceType = pricingData.price_type || 'dynamic';
+      const upsertData = {
+        ...pricingData,
+        price_type: priceType
+      };
+      
       const { data, error } = await supabase
         .from('dynamic_pricing')
-        .upsert(pricingData, {
-          onConflict: 'product_id,channel_id,date'
+        .upsert(upsertData, {
+          onConflict: 'product_id,channel_id,date,price_type'
         })
         .select()
         .single();

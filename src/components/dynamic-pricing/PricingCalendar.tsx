@@ -268,11 +268,21 @@ export const PricingCalendar = memo(function PricingCalendar({
       }
     }
     
-    // 5. 불포함 금액 확인
-    const notIncludedType = channelInfo?.not_included_type || 'none';
-    const notIncludedPrice = (notIncludedType !== 'none' && channelInfo?.not_included_price) 
-      ? channelInfo.not_included_price 
-      : (rule.not_included_price || 0);
+    // 5. 불포함 금액 확인 (초이스별 불포함 금액 우선, 없으면 동적 가격의 기본 not_included_price 사용)
+    let notIncludedPrice = rule.not_included_price || 0;
+    if (rule.choices_pricing) {
+      try {
+        const choicesData = typeof rule.choices_pricing === 'string' 
+          ? JSON.parse(rule.choices_pricing) 
+          : rule.choices_pricing;
+        const choiceId = selectedChoice || Object.keys(choicesData)[0];
+        if (choiceId && choicesData[choiceId] && choicesData[choiceId].not_included_price !== undefined) {
+          notIncludedPrice = choicesData[choiceId].not_included_price || 0;
+        }
+      } catch (e) {
+        console.warn('choices_pricing에서 불포함 금액 파싱 오류:', e);
+      }
+    }
     
     // 6. 최대 판매가 계산
     // choices_pricing이 있으면 basePrice + choicePrice를 사용, 없으면 basePrice만 사용
@@ -298,18 +308,15 @@ export const PricingCalendar = memo(function PricingCalendar({
     const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false;
     
     if (isOTA && otaSalePrice > 0) {
-      // OTA 채널인 경우
-      if (commissionBasePriceOnly && notIncludedType === 'amount_and_choice') {
-        // 수수료가 기본 가격에만 적용되고, 불포함 금액과 초이스 값이 별도로 추가되는 경우
-        const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
-        netPrice = baseNetPrice + notIncludedPrice + choicePrice;
-      } else {
-        // 기본 계산: OTA 판매가 × (1 - 쿠폰 할인%) × (1 - 수수료%)
-        netPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
-      }
+      // OTA 채널인 경우: 기본 계산 후 불포함 금액 추가
+      const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
+      // 불포함 금액이 있으면 항상 Net Price에 추가
+      netPrice = baseNetPrice + notIncludedPrice;
     } else {
-      // 일반 채널: 할인 가격 × (1 - 수수료%)
-      netPrice = discountPrice * (1 - commissionPercent / 100);
+      // 일반 채널: 할인 가격 × (1 - 수수료%) + 불포함 금액
+      const baseNetPrice = discountPrice * (1 - commissionPercent / 100);
+      // 불포함 금액이 있으면 항상 Net Price에 추가
+      netPrice = baseNetPrice + notIncludedPrice;
     }
     
     // 9. 결과 반환 (소수점 2자리로 반올림)

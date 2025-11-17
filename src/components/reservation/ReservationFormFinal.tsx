@@ -381,7 +381,7 @@ export default function ReservationFormNew({
   }, [])
 
   // 기존 컴포넌트들 렌더링 (간소화)
-  return (
+  const formContent = (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* 고객 섹션 */}
       <CustomerSection
@@ -568,4 +568,18 @@ export default function ReservationFormNew({
       )}
     </form>
   )
+
+  // 모달 레이아웃인 경우 모달 래퍼 추가
+  if (layout === 'modal') {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+        <div className="bg-white rounded-lg p-2 sm:p-4 w-full max-w-[95vw] sm:max-w-[80vw] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+          {formContent}
+        </div>
+      </div>
+    )
+  }
+
+  // 페이지 레이아웃인 경우 그대로 반환
+  return formContent
 }

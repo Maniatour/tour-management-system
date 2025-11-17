@@ -134,6 +134,7 @@ export default function ProductDetailsTab({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [loadingChannelData, setLoadingChannelData] = useState(false)
   const [copyFromChannel, setCopyFromChannel] = useState<string | null>(null)
+  const [channelPricingStats, setChannelPricingStats] = useState<Record<string, Record<string, number>>>({})
 
   const supabase = createClientSupabase()
   const { user, loading: authLoading } = useAuth()
@@ -154,13 +155,43 @@ export default function ProductDetailsTab({
       if (error) throw error
       
       const channelsData = (data || []) as Channel[]
-      setChannels(channelsData)
+      
+      // 중복 제거: 같은 ID를 가진 채널이 있으면 첫 번째 것만 사용
+      const uniqueChannelsById = new Map<string, Channel>()
+      channelsData.forEach(channel => {
+        if (!uniqueChannelsById.has(channel.id)) {
+          uniqueChannelsById.set(channel.id, channel)
+        } else {
+          // 중복된 ID 발견 시 로그
+          console.warn(`중복된 채널 ID 발견: ${channel.id} (${channel.name})`)
+        }
+      })
+      
+      // 같은 이름을 가진 채널도 확인 (디버깅용)
+      const channelsByName = new Map<string, Channel[]>()
+      Array.from(uniqueChannelsById.values()).forEach(channel => {
+        if (!channelsByName.has(channel.name)) {
+          channelsByName.set(channel.name, [])
+        }
+        channelsByName.get(channel.name)!.push(channel)
+      })
+      
+      // 같은 이름을 가진 채널이 여러 개인 경우 로그
+      channelsByName.forEach((channels, name) => {
+        if (channels.length > 1) {
+          console.warn(`같은 이름을 가진 채널이 ${channels.length}개 있습니다: ${name}`, 
+            channels.map(c => ({ id: c.id, name: c.name, type: c.type })))
+        }
+      })
+      
+      const deduplicatedChannels = Array.from(uniqueChannelsById.values())
+      setChannels(deduplicatedChannels)
       
       // 채널을 타입별로 그룹화
       const groups: ChannelGroup[] = []
       const typeMap = new Map<string, Channel[]>()
       
-      channelsData.forEach(channel => {
+      deduplicatedChannels.forEach(channel => {
         if (!typeMap.has(channel.type)) {
           typeMap.set(channel.type, [])
         }
@@ -184,6 +215,153 @@ export default function ProductDetailsTab({
       console.error('채널 목록 로드 오류:', error)
     }
   }, [supabase])
+
+  // 채널별 가격 통계 로드 함수
+  const loadChannelPricingStats = useCallback(async () => {
+    if (!productId) return;
+
+    try {
+      // 모든 채널의 동적 가격 데이터 가져오기 (channels 테이블과 JOIN)
+      // JOIN이 실패할 수 있으므로 left join 사용
+      let { data, error } = await supabase
+        .from('dynamic_pricing')
+        .select(`
+          channel_id,
+          date,
+          channels(id, name)
+        `)
+        .eq('product_id', productId);
+
+      // JOIN이 실패하면 채널 정보 없이 시도
+      if (error) {
+        console.warn('채널 JOIN 실패, 채널 정보 없이 재시도:', error);
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('dynamic_pricing')
+          .select('channel_id, date')
+          .eq('product_id', productId);
+        
+        if (fallbackError) {
+          console.error('채널별 가격 통계 로드 오류:', fallbackError);
+          return;
+        }
+        data = fallbackData;
+      }
+
+      // 날짜 정규화 함수 (YYYY-MM-DD 형식으로 변환)
+      const normalizeDate = (dateStr: string | null | undefined): string | null => {
+        if (!dateStr) return null;
+        
+        const str = String(dateStr).trim();
+        // 이미 YYYY-MM-DD 형식인지 확인
+        if (str.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          return str;
+        }
+        
+        // 날짜 문자열에서 YYYY-MM-DD 추출
+        const dateMatch = str.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+        if (dateMatch) {
+          const year = dateMatch[1];
+          const month = String(parseInt(dateMatch[2], 10)).padStart(2, '0');
+          const day = String(parseInt(dateMatch[3], 10)).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        }
+        
+        // Date 객체로 파싱 시도
+        try {
+          const date = new Date(str);
+          if (!isNaN(date.getTime())) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          }
+        } catch (e) {
+          // 파싱 실패
+        }
+        
+        return null;
+      };
+
+      // 채널별로 그룹화하고 연도별 날짜 수 계산
+      // channel_id와 channel name 모두로 매칭 가능하도록 저장
+      const statsById: Record<string, Record<string, Set<string>>> = {};
+      const statsByName: Record<string, Record<string, Set<string>>> = {};
+      
+      if (data) {
+        data.forEach((item: any) => {
+          const channelId = item.channel_id;
+          const channelName = item.channels?.name;
+          const normalizedDate = normalizeDate(item.date);
+          
+          if (!normalizedDate) {
+            // 날짜가 유효하지 않으면 건너뛰기
+            return;
+          }
+          
+          const year = normalizedDate.split('-')[0];
+
+          // channel_id로 매칭
+          if (channelId) {
+            if (!statsById[channelId]) {
+              statsById[channelId] = {};
+            }
+            if (!statsById[channelId][year]) {
+              statsById[channelId][year] = new Set();
+            }
+            statsById[channelId][year].add(normalizedDate);
+          }
+
+          // channel name으로도 매칭 (같은 이름의 다른 ID 채널을 위해)
+          if (channelName) {
+            if (!statsByName[channelName]) {
+              statsByName[channelName] = {};
+            }
+            if (!statsByName[channelName][year]) {
+              statsByName[channelName][year] = new Set();
+            }
+            statsByName[channelName][year].add(normalizedDate);
+          }
+        });
+      }
+
+      // Set을 개수로 변환
+      const formattedStatsById: Record<string, Record<string, number>> = {};
+      Object.keys(statsById).forEach(channelId => {
+        formattedStatsById[channelId] = {};
+        Object.keys(statsById[channelId]).forEach(year => {
+          formattedStatsById[channelId][year] = statsById[channelId][year].size;
+        });
+      });
+
+      const formattedStatsByName: Record<string, Record<string, number>> = {};
+      Object.keys(statsByName).forEach(channelName => {
+        formattedStatsByName[channelName] = {};
+        Object.keys(statsByName[channelName]).forEach(year => {
+          formattedStatsByName[channelName][year] = statsByName[channelName][year].size;
+        });
+      });
+
+      // 통계를 ID와 이름 모두로 저장
+      const allStats: Record<string, Record<string, number>> = {
+        ...formattedStatsById,
+        // 이름으로도 접근 가능하도록 추가 (같은 이름의 채널이 여러 개일 경우)
+        ...formattedStatsByName
+      };
+
+      // 디버깅: 통계 데이터 확인
+      console.log('채널별 가격 통계 로드 결과:', {
+        totalRecords: data?.length || 0,
+        uniqueChannelIds: Object.keys(formattedStatsById),
+        uniqueChannelNames: Object.keys(formattedStatsByName),
+        statsById: formattedStatsById,
+        statsByName: formattedStatsByName
+      });
+
+      setChannelPricingStats(allStats);
+    } catch (error) {
+      console.error('채널별 가격 통계 로드 오류:', error);
+    }
+  }, [productId, supabase]);
 
   // 선택된 채널들의 세부 정보 로드
   const loadSelectedChannelData = useCallback(async () => {
@@ -1103,6 +1281,13 @@ export default function ProductDetailsTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // 의존성 배열을 비워서 한 번만 실행
 
+  // 채널 목록이 로드된 후 통계 로드
+  useEffect(() => {
+    if (channels.length > 0 && !isNewProduct && productId) {
+      loadChannelPricingStats()
+    }
+  }, [channels.length, isNewProduct, productId, loadChannelPricingStats])
+
   // 채널 선택 변경 시 데이터 로드
   useEffect(() => {
     const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
@@ -1976,23 +2161,62 @@ export default function ProductDetailsTab({
                             </p>
                           </div>
                         )}
-                        {group.channels.map((channel) => (
-                          <label
-                            key={channel.id}
-                            className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedChannels[channel.id] || false}
-                              onChange={() => toggleChannelSelection(channel.id)}
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
-                            <span className="text-sm text-gray-700">{channel.name}</span>
-                            {isSelfGroup && selectedChannels[channel.id] && (
-                              <span className="text-xs text-blue-600">(그룹)</span>
-                            )}
-                          </label>
-                        ))}
+                        {group.channels.map((channel) => {
+                          // 채널 통계 포맷팅 함수
+                          const formatPricingStats = (stats: Record<string, number> | undefined) => {
+                            if (!stats || Object.keys(stats).length === 0) return null;
+                            
+                            const sortedYears = Object.keys(stats).sort();
+                            return sortedYears.map(year => {
+                              const daysCount = stats[year];
+                              const isLeapYear = (parseInt(year) % 4 === 0 && parseInt(year) % 100 !== 0) || (parseInt(year) % 400 === 0);
+                              const totalDays = isLeapYear ? 366 : 365;
+                              return `${year} (${daysCount}/${totalDays})`;
+                            }).join(', ');
+                          };
+
+                          // 채널 ID로 먼저 찾고, 없으면 채널 이름으로 찾기
+                          let stats = channelPricingStats[channel.id];
+                          if (!stats || Object.keys(stats).length === 0) {
+                            // ID로 찾지 못하면 이름으로 찾기
+                            stats = channelPricingStats[channel.name];
+                          }
+                          const statsText = formatPricingStats(stats);
+                          
+                          // 디버깅: 통계가 없는 채널 확인
+                          if (!statsText && Object.keys(channelPricingStats).length > 0) {
+                            console.log(`채널 "${channel.name}" (ID: ${channel.id})에 대한 통계가 없습니다.`, {
+                              channelId: channel.id,
+                              channelName: channel.name,
+                              availableChannelIds: Object.keys(channelPricingStats).filter(k => k.includes(channel.id) || k.includes(channel.name)),
+                              hasStatsById: !!channelPricingStats[channel.id],
+                              hasStatsByName: !!channelPricingStats[channel.name]
+                            });
+                          }
+
+                          return (
+                            <label
+                              key={channel.id}
+                              className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedChannels[channel.id] || false}
+                                onChange={() => toggleChannelSelection(channel.id)}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              />
+                              <div className="flex flex-col flex-1">
+                                <span className="text-sm text-gray-700">{channel.name}</span>
+                                {statsText && (
+                                  <span className="text-xs text-gray-500 mt-0.5">{statsText}</span>
+                                )}
+                              </div>
+                              {isSelfGroup && selectedChannels[channel.id] && (
+                                <span className="text-xs text-blue-600">(그룹)</span>
+                              )}
+                            </label>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

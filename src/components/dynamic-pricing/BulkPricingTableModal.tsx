@@ -441,23 +441,22 @@ export default function BulkPricingTableModal({
       const baseInfantPrice = basePrice.infant;
       
       const notIncludedPrice = row.notIncludedPrice || 0;
-      const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
       
-      // not_included_type이 'amount_and_choice'일 때는 초이스 가격을 Net Price에 포함하지 않음
-      // (초이스 가격은 불포함 금액에 포함됨)
-      if (notIncludedType === 'amount_and_choice') {
-        // Net Price = 기본 가격 × (1 - 수수료%) (초이스 가격 제외)
-        netPrice = {
-          adult: baseAdultPrice * (1 - commissionRate),
-          child: baseChildPrice * (1 - commissionRate),
-          infant: baseInfantPrice * (1 - commissionRate)
-        };
-      } else {
+      // 불포함 금액이 있는 경우: Net Price = 기본 가격 × (1 - 수수료%) + 초이스 가격 + 불포함 가격
+      // 불포함 금액이 없는 경우: Net Price = 기본 가격 × (1 - 수수료%) + 초이스 가격
+      if (notIncludedPrice > 0) {
         // Net Price = 기본 가격 × (1 - 수수료%) + 초이스 가격 + 불포함 가격
         netPrice = {
           adult: baseAdultPrice * (1 - commissionRate) + choicePrice.adult + notIncludedPrice,
           child: baseChildPrice * (1 - commissionRate) + choicePrice.child + notIncludedPrice,
           infant: baseInfantPrice * (1 - commissionRate) + choicePrice.infant + notIncludedPrice
+        };
+      } else {
+        // Net Price = 기본 가격 × (1 - 수수료%) + 초이스 가격
+        netPrice = {
+          adult: baseAdultPrice * (1 - commissionRate) + choicePrice.adult,
+          child: baseChildPrice * (1 - commissionRate) + choicePrice.child,
+          infant: baseInfantPrice * (1 - commissionRate) + choicePrice.infant
         };
       }
     } else if (isOTAChannel) {

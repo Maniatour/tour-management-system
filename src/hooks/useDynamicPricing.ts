@@ -146,13 +146,17 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
     }
 
     try {
-      // 먼저 기존 레코드가 있는지 확인 (choices_pricing 포함)
+      // price_type 기본값 설정 (없으면 'dynamic')
+      const priceType = ruleData.price_type || 'dynamic';
+      
+      // 먼저 기존 레코드가 있는지 확인 (choices_pricing 포함, price_type 포함)
       const { data: existingData, error: selectError } = await supabase
         .from('dynamic_pricing')
         .select('id, choices_pricing')
         .eq('product_id', ruleData.product_id)
         .eq('channel_id', ruleData.channel_id)
         .eq('date', ruleData.date)
+        .eq('price_type', priceType)
         .maybeSingle();
 
       let result;
@@ -179,6 +183,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           product_id: ruleData.product_id,
           channel_id: ruleData.channel_id,
           date: ruleData.date,
+          price_type: priceType,
           
           // 전달된 필드만 업데이트, 전달되지 않은 필드는 기존 값 유지
           adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : fullExistingData.adult_price,
@@ -225,6 +230,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           product_id: ruleData.product_id,
           channel_id: ruleData.channel_id,
           date: ruleData.date,
+          price_type: priceType,
           adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : 0,
           child_price: ruleData.child_price !== undefined ? ruleData.child_price : 0,
           infant_price: ruleData.infant_price !== undefined ? ruleData.infant_price : 0,

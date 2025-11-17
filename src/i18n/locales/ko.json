@@ -1796,5 +1796,18 @@
     "saveReport": "리포트 저장",
     "noOptions": "선택사항 없음",
     "noOptionsSelected": "선택사항 없음"
+  },
+  "team": {
+    "title": "팀 관리",
+    "addMember": "팀원 추가",
+    "searchPlaceholder": "이름, 이메일, 직책으로 검색...",
+    "deleteConfirm": "정말로 이 팀원을 삭제하시겠습니까?",
+    "columns": {
+      "name": "이름",
+      "email": "이메일",
+      "phone": "전화번호",
+      "position": "직책",
+      "actions": "작업"
+    }
   }
 }

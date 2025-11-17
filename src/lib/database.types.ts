@@ -2286,6 +2286,7 @@ export interface Database {
           coupon_percent: number | null
           is_sale_available: boolean | null
           not_included_price: number | null
+          price_type: string
           created_at: string | null
           updated_at: string | null
         }
@@ -2304,6 +2305,7 @@ export interface Database {
           coupon_percent?: number | null
           is_sale_available?: boolean | null
           not_included_price?: number | null
+          price_type?: string
           created_at?: string | null
           updated_at?: string | null
         }
@@ -2322,6 +2324,7 @@ export interface Database {
           coupon_percent?: number | null
           is_sale_available?: boolean | null
           not_included_price?: number | null
+          price_type?: string
           created_at?: string | null
         }
       }

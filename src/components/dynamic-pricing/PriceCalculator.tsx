@@ -265,26 +265,20 @@ export const PriceCalculator = memo(function PriceCalculator({
              <div className="space-y-6">
                {/* 최대 판매가 (기본가격 + 초이스 가격 + 업차지) - OTA 채널이 아닐 때만 표시 */}
                {!isOTAChannel && (() => {
-                 // 동적 가격의 불포함 금액 우선, 없으면 채널의 불포함 금액 사용
-                 const dynamicNotIncludedPrice = (pricingConfig as any)?.not_included_price || 0;
-                 const channelNotIncludedPrice = (selectedChannel as any)?.not_included_price || 0;
-                 const notIncludedPrice = dynamicNotIncludedPrice > 0 ? dynamicNotIncludedPrice : channelNotIncludedPrice;
-                 
-                 const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
-                 const hasNotIncludedPrice = (selectedChannel as any)?.has_not_included_price || false;
+                 // 동적 가격의 불포함 금액 사용
+                 const notIncludedPrice = (pricingConfig as any)?.not_included_price || 0;
                  const pricingType = (selectedChannel as any)?.pricing_type || 'separate';
                  const isSinglePrice = pricingType === 'single';
                  const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
                  
-                 // 불포함 금액 입력값이거나 불포함 금액 입력값 + 초이스 값일 경우에만 불포함 금액/초이스 영역 표시
-                 // 동적 가격에 불포함 금액이 있으면 항상 표시
-                 const showNotIncludedColumn = dynamicNotIncludedPrice > 0 || (notIncludedType === 'amount_only' || notIncludedType === 'amount_and_choice');
+                 // 불포함 금액이 있으면 항상 표시
+                 const showNotIncludedColumn = notIncludedPrice > 0;
                  // 불포함 금액이 설정되어 있으면 항상 계산 과정 표시
                  const showCalculationProcess = showNotIncludedColumn;
                  
                  // 테이블 형식 결정: 조건에 맞으면 할인 가격처럼 가로 형식 (성인/아동/유아 별도 컬럼)
-                 // 조건: pricing_type === 'separate' && commission_base_price_only === false && not_included_type === 'none'
-                 const useColumnFormat = !isSinglePrice && !commissionBasePriceOnly && notIncludedType === 'none' && !showNotIncludedColumn;
+                 // 조건: pricing_type === 'separate' && commission_base_price_only === false && not_included_price === 0
+                 const useColumnFormat = !isSinglePrice && !commissionBasePriceOnly && !showNotIncludedColumn;
                  
                  return (
                    <div>

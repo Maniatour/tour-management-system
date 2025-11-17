@@ -14,6 +14,8 @@ export interface Product {
   base_price?: number | null;
   choices?: Record<string, unknown> | null;
   status?: string | null;
+  is_favorite?: boolean | null;
+  favorite_order?: number | null;
 }
 
 export interface Choice {
@@ -91,12 +93,35 @@ export default function ProductSelector({
       setLoading(true);
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, name_ko, name_en, category, sub_category, base_price, choices, status')
+        .select('id, name, name_ko, name_en, category, sub_category, base_price, choices, status, is_favorite, favorite_order')
         .eq('status', 'active')
         .order('name');
 
       if (error) throw error;
-      setProducts(data || []);
+      
+      // 즐겨찾기 상품을 먼저 배치하고, 그 다음 일반 상품을 배치
+      const sortedData = (data || []).sort((a, b) => {
+        const aIsFavorite = a.is_favorite === true;
+        const bIsFavorite = b.is_favorite === true;
+        
+        // 즐겨찾기 상품을 먼저 배치
+        if (aIsFavorite && !bIsFavorite) return -1;
+        if (!aIsFavorite && bIsFavorite) return 1;
+        
+        // 둘 다 즐겨찾기인 경우 favorite_order로 정렬
+        if (aIsFavorite && bIsFavorite) {
+          const aOrder = a.favorite_order ?? Infinity;
+          const bOrder = b.favorite_order ?? Infinity;
+          if (aOrder !== bOrder) return aOrder - bOrder;
+        }
+        
+        // 같은 그룹 내에서는 이름순 정렬
+        const aName = a.name_ko || a.name || '';
+        const bName = b.name_ko || b.name || '';
+        return aName.localeCompare(bName, 'ko');
+      });
+      
+      setProducts(sortedData);
     } catch (error) {
       console.error('상품 로드 오류:', error);
     } finally {
@@ -241,9 +266,9 @@ export default function ProductSelector({
     return nameMatches || categoryMatches || subCategoryMatches;
   }, [getInitialConsonants]);
 
-  // 필터링된 상품 목록
+  // 필터링된 상품 목록 (즐겨찾기 상품을 먼저 배치)
   const filteredProducts = useMemo(() => {
-    return products.filter(product => {
+    const filtered = products.filter(product => {
       // 검색어 필터 (한글, 영문, 초성 검색)
       if (searchTerm && !matchesSearch(product, searchTerm)) {
         return false;
@@ -260,6 +285,28 @@ export default function ProductSelector({
       }
 
       return true;
+    });
+    
+    // 즐겨찾기 상품을 먼저 배치하고, 그 다음 일반 상품을 배치
+    return filtered.sort((a, b) => {
+      const aIsFavorite = a.is_favorite === true;
+      const bIsFavorite = b.is_favorite === true;
+      
+      // 즐겨찾기 상품을 먼저 배치
+      if (aIsFavorite && !bIsFavorite) return -1;
+      if (!aIsFavorite && bIsFavorite) return 1;
+      
+      // 둘 다 즐겨찾기인 경우 favorite_order로 정렬
+      if (aIsFavorite && bIsFavorite) {
+        const aOrder = a.favorite_order ?? Infinity;
+        const bOrder = b.favorite_order ?? Infinity;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+      }
+      
+      // 같은 그룹 내에서는 이름순 정렬
+      const aName = a.name_ko || a.name || '';
+      const bName = b.name_ko || b.name || '';
+      return aName.localeCompare(bName, 'ko');
     });
   }, [products, searchTerm, selectedCategory, selectedSubCategory, matchesSearch]);
 
@@ -283,7 +330,7 @@ export default function ProductSelector({
     return categories;
   }, [products]);
 
-  // 카테고리별 상품 그룹화
+  // 카테고리별 상품 그룹화 (즐겨찾기 상품을 먼저 배치)
   const productsByCategory = useMemo(() => {
     const grouped: Record<string, Product[]> = {};
     filteredProducts.forEach(product => {
@@ -293,6 +340,31 @@ export default function ProductSelector({
       }
       grouped[category].push(product);
     });
+    
+    // 각 카테고리 내에서 즐겨찾기 상품을 먼저 배치
+    Object.keys(grouped).forEach(category => {
+      grouped[category].sort((a, b) => {
+        const aIsFavorite = a.is_favorite === true;
+        const bIsFavorite = b.is_favorite === true;
+        
+        // 즐겨찾기 상품을 먼저 배치
+        if (aIsFavorite && !bIsFavorite) return -1;
+        if (!aIsFavorite && bIsFavorite) return 1;
+        
+        // 둘 다 즐겨찾기인 경우 favorite_order로 정렬
+        if (aIsFavorite && bIsFavorite) {
+          const aOrder = a.favorite_order ?? Infinity;
+          const bOrder = b.favorite_order ?? Infinity;
+          if (aOrder !== bOrder) return aOrder - bOrder;
+        }
+        
+        // 같은 그룹 내에서는 이름순 정렬
+        const aName = a.name_ko || a.name || '';
+        const bName = b.name_ko || b.name || '';
+        return aName.localeCompare(bName, 'ko');
+      });
+    });
+    
     return grouped;
   }, [filteredProducts]);
 
@@ -309,7 +381,7 @@ export default function ProductSelector({
     return Array.from(subCategorySet).sort();
   }, [products, selectedCategory]);
 
-  // 서브카테고리별 상품 그룹화 (선택된 카테고리 내에서만)
+  // 서브카테고리별 상품 그룹화 (선택된 카테고리 내에서만, 즐겨찾기 상품을 먼저 배치)
   const productsBySubCategory = useMemo(() => {
     const grouped: Record<string, Product[]> = {};
     
@@ -325,6 +397,31 @@ export default function ProductSelector({
       }
       grouped[subCategory].push(product);
     });
+    
+    // 각 서브카테고리 내에서 즐겨찾기 상품을 먼저 배치
+    Object.keys(grouped).forEach(subCategory => {
+      grouped[subCategory].sort((a, b) => {
+        const aIsFavorite = a.is_favorite === true;
+        const bIsFavorite = b.is_favorite === true;
+        
+        // 즐겨찾기 상품을 먼저 배치
+        if (aIsFavorite && !bIsFavorite) return -1;
+        if (!aIsFavorite && bIsFavorite) return 1;
+        
+        // 둘 다 즐겨찾기인 경우 favorite_order로 정렬
+        if (aIsFavorite && bIsFavorite) {
+          const aOrder = a.favorite_order ?? Infinity;
+          const bOrder = b.favorite_order ?? Infinity;
+          if (aOrder !== bOrder) return aOrder - bOrder;
+        }
+        
+        // 같은 그룹 내에서는 이름순 정렬
+        const aName = a.name_ko || a.name || '';
+        const bName = b.name_ko || b.name || '';
+        return aName.localeCompare(bName, 'ko');
+      });
+    });
+    
     return grouped;
   }, [filteredProducts, selectedCategory]);
 

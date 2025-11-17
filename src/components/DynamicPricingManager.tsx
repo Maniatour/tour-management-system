@@ -114,9 +114,6 @@ export default function DynamicPricingManager({
     manager_contact?: string;
     contract_url?: string;
     commission_base_price_only?: boolean;
-    has_not_included_price?: boolean;
-    not_included_type?: 'none' | 'amount_only' | 'amount_and_choice';
-    not_included_price?: number;
     pricing_type?: 'separate' | 'single';
     created_at: string;
   } | null>(null);
@@ -991,10 +988,15 @@ export default function DynamicPricingManager({
         const priceAdjustmentInfant = (pricingConfig as Record<string, unknown>).price_adjustment_infant as number | undefined ?? 
           ((pricingConfig.infant_price ?? 0) - productBasePrice.infant);
 
+        // price_type 결정: not_included_price가 있으면 'dynamic', 없으면 'base'
+        const notIncludedPrice = ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0;
+        const priceType = notIncludedPrice > 0 ? 'dynamic' : 'base';
+        
         const ruleData: SimplePricingRuleDto = {
           product_id: productId,
           channel_id: channelId,
           date,
+          price_type: priceType,
           adult_price: productBasePrice.adult + priceAdjustmentAdult,
           child_price: productBasePrice.child + priceAdjustmentChild,
           infant_price: productBasePrice.infant + priceAdjustmentInfant,
@@ -1002,7 +1004,7 @@ export default function DynamicPricingManager({
           markup_amount: pricingConfig.markup_amount,
           coupon_percent: pricingConfig.coupon_percent,
           is_sale_available: pricingConfig.is_sale_available !== undefined ? pricingConfig.is_sale_available : true,
-          not_included_price: ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0,
+          not_included_price: notIncludedPrice,
           markup_percent: ((pricingConfig as Record<string, unknown>).markup_percent as number) || 0,
           price_adjustment_adult: priceAdjustmentAdult,
           price_adjustment_child: priceAdjustmentChild,
@@ -1176,9 +1178,6 @@ export default function DynamicPricingManager({
           commission_rate: data.commission_percent || data.commission || data.commission_rate || 0,
           is_active: data.status === 'active' || data.is_active === true,
           website: data.website || data.website_url || '',
-          has_not_included_price: data.has_not_included_price || false,
-          not_included_type: data.not_included_type || 'none',
-          not_included_price: data.not_included_price || 0,
           pricing_type: data.pricing_type || 'separate'
         };
         setEditingChannel(channelData as typeof editingChannel);
@@ -1210,9 +1209,6 @@ export default function DynamicPricingManager({
         manager_contact: channel.manager_contact || '',
         contract_url: channel.contract_url || '',
         commission_base_price_only: channelAny.commission_base_price_only ?? false,
-        has_not_included_price: channelAny.has_not_included_price !== undefined ? channelAny.has_not_included_price : false,
-        not_included_type: channelAny.not_included_type !== undefined && channelAny.not_included_type !== null && channelAny.not_included_type !== '' ? channelAny.not_included_type : 'none',
-        not_included_price: channelAny.not_included_price !== undefined ? channelAny.not_included_price : 0,
         pricing_type: channelAny.pricing_type || 'separate'
       };
       
@@ -1860,13 +1856,15 @@ export default function DynamicPricingManager({
                   
                   // 채널 설정 확인 (foundChannel 사용)
                   const commissionBasePriceOnly = (foundChannel as any)?.commission_base_price_only || false;
-                  const notIncludedType = (foundChannel as any)?.not_included_type || 'none';
-                  const notIncludedPrice = (pricingConfig as any)?.not_included_price || 
-                                          (foundChannel as any)?.not_included_price || 
-                                          0;
                   
                   // 초이스 가격 가져오기
                   const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                  
+                  // 초이스별 불포함 금액 사용 (없으면 동적 가격의 기본 not_included_price 사용)
+                  const choiceNotIncludedPrice = currentChoiceData.not_included_price;
+                  const notIncludedPrice = choiceNotIncludedPrice !== undefined && choiceNotIncludedPrice !== null 
+                    ? choiceNotIncludedPrice 
+                    : ((pricingConfig as any)?.not_included_price || 0);
                   
                   // 여러 소스에서 초이스 가격 가져오기
                   let choicePrice = currentChoiceData.adult_price || 
@@ -1893,41 +1891,30 @@ export default function DynamicPricingManager({
                     combinationDetails: combination.combination_details,
                     choicePrice,
                     commissionBasePriceOnly,
-                    notIncludedType
+                    notIncludedPrice
                   });
                   
                   // Net Price 계산
                   let netPrice = 0;
                   if (otaSalePrice > 0) {
-                    // 판매가격에만 커미션 & 쿠폰 적용이고, 불포함 금액 타입이 amount_and_choice인 경우
-                    if (commissionBasePriceOnly && notIncludedType === 'amount_and_choice') {
-                      // OTA 판매가에 수수료 및 쿠폰 적용 후, 불포함 금액 + 초이스 값 추가
-                      const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
-                      netPrice = baseNetPrice + notIncludedPrice + choicePrice;
-                      
-                      console.log('Net Price 계산 (조건 만족):', {
-                        otaSalePrice,
-                        couponPercent,
-                        commissionPercent,
-                        baseNetPrice,
-                        notIncludedPrice,
-                        choicePrice,
-                        netPrice
-                      });
+                    // 기본 계산: OTA 판매가 × (1 - 쿠폰 할인%) × (1 - 수수료%)
+                    const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
+                    
+                    // 불포함 금액이 있으면 항상 Net Price에 추가
+                    if (notIncludedPrice > 0) {
+                      netPrice = baseNetPrice + notIncludedPrice;
                     } else {
-                      // 기본 계산: OTA 판매가 × (1 - 쿠폰 할인%) × (1 - 수수료%)
-                      netPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
-                      
-                      console.log('Net Price 계산 (기본):', {
-                        otaSalePrice,
-                        couponPercent,
-                        commissionPercent,
-                        netPrice,
-                        commissionBasePriceOnly,
-                        notIncludedType,
-                        choicePrice
-                      });
+                      netPrice = baseNetPrice;
                     }
+                    
+                    console.log('Net Price 계산:', {
+                      otaSalePrice,
+                      couponPercent,
+                      commissionPercent,
+                      baseNetPrice,
+                      notIncludedPrice,
+                      netPrice
+                    });
                   }
                   
                   // 홈페이지 Net Price 계산 (고정값 사용)
@@ -2043,102 +2030,149 @@ export default function DynamicPricingManager({
                     {isOTAChannel ? (
                       // OTA 채널: OTA 판매가 입력 및 Net Price 표시
                       <div className="space-y-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            OTA 판매가 ($)
-                          </label>
-                          <input
-                            type="number"
-                            value={otaSalePrice === 0 ? '' : otaSalePrice}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              const currentPricing = pricingConfig.choices_pricing || {};
-                              const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
-                              
-                              if (value === '' || value === '-') {
-                                // OTA 판매가만 0으로 설정, 초이스 가격은 유지
-                                updatePricingConfig({
-                                  choices_pricing: {
-                                    ...currentPricing,
-                                    [combination.id]: {
-                                      ...currentChoiceData,
-                                      ota_sale_price: 0
-                                    }
-                                  }
-                                });
-                                return;
-                              }
-                              const numValue = parseFloat(value);
-                              if (!isNaN(numValue)) {
-                                // OTA 판매가만 업데이트, 초이스 가격은 유지
-                                // 주의: homepagePricingConfig는 M00001 채널의 고정값이므로 업데이트하지 않음
-                                
-                                // 초이스 가격 가져오기 (유지하기 위해)
-                                // homepagePricingConfig에서 M00001 채널의 고정 가격을 우선 사용
-                                const homepageChoiceData = homepagePricingConfig?.choices_pricing?.[combination.id] || 
-                                                          homepagePricingConfig?.choices_pricing?.[combination.combination_key || ''] || {};
-                                
-                                // 현재 pricingConfig의 가격이 있으면 사용, 없으면 homepagePricingConfig 사용
-                                // homepagePricingConfig는 M00001 채널의 고정값이므로 우선순위를 높임
-                                const adultPrice = (currentChoiceData.adult_price as number) || 
-                                                 (currentChoiceData.adult as number) || 
-                                                 (homepageChoiceData.adult_price as number) ||
-                                                 (homepageChoiceData.adult as number) ||
-                                                 combination.adult_price || 0;
-                                const childPrice = (currentChoiceData.child_price as number) || 
-                                                 (currentChoiceData.child as number) || 
-                                                 (homepageChoiceData.child_price as number) ||
-                                                 (homepageChoiceData.child as number) ||
-                                                 combination.child_price || 0;
-                                const infantPrice = (currentChoiceData.infant_price as number) || 
-                                                  (currentChoiceData.infant as number) || 
-                                                  (homepageChoiceData.infant_price as number) ||
-                                                  (homepageChoiceData.infant as number) ||
-                                                  combination.infant_price || 0;
-                                
-                                // OTA 판매가와 함께 초이스 가격도 유지하여 업데이트
-                                updatePricingConfig({
-                                  choices_pricing: {
-                                    ...currentPricing,
-                                    [combination.id]: {
-                                      ...currentChoiceData,
-                                      adult_price: adultPrice,
-                                      child_price: childPrice,
-                                      infant_price: infantPrice,
-                                      ota_sale_price: numValue
-                                    }
-                                  }
-                                });
-                                
-                                // 실시간 가격 계산을 위한 calculationConfig.choicePricing도 업데이트
-                                updateChoicePricing(combination.id, {
-                                  choiceId: combination.id,
-                                  choiceName: combination.combination_name,
-                                  adult_price: adultPrice,
-                                  child_price: childPrice,
-                                  infant_price: infantPrice
-                                });
-                              }
-                            }}
-                            onBlur={(e) => {
-                              const value = e.target.value;
-                              if (value === '' || value === '-') {
+                        {/* OTA 판매가와 불포함 금액을 같은 줄에 배치 */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              OTA 판매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={otaSalePrice === 0 ? '' : otaSalePrice}
+                              onChange={(e) => {
+                                const value = e.target.value;
                                 const currentPricing = pricingConfig.choices_pricing || {};
                                 const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
-                                updatePricingConfig({
-                                  choices_pricing: {
-                                    ...currentPricing,
-                                    [combination.id]: {
-                                      ...currentChoiceData,
-                                      ota_sale_price: 0
+                                
+                                if (value === '' || value === '-') {
+                                  // OTA 판매가만 0으로 설정, 초이스 가격은 유지
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        ota_sale_price: 0
+                                      }
                                     }
-                                  }
-                                });
-                              }
-                            }}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="예: 384"
-                          />
+                                  });
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  // OTA 판매가만 업데이트, 초이스 가격은 유지
+                                  // 주의: homepagePricingConfig는 M00001 채널의 고정값이므로 업데이트하지 않음
+                                  
+                                  // 초이스 가격 가져오기 (유지하기 위해)
+                                  // homepagePricingConfig에서 M00001 채널의 고정 가격을 우선 사용
+                                  const homepageChoiceData = homepagePricingConfig?.choices_pricing?.[combination.id] || 
+                                                            homepagePricingConfig?.choices_pricing?.[combination.combination_key || ''] || {};
+                                  
+                                  // 현재 pricingConfig의 가격이 있으면 사용, 없으면 homepagePricingConfig 사용
+                                  // homepagePricingConfig는 M00001 채널의 고정값이므로 우선순위를 높임
+                                  const adultPrice = (currentChoiceData.adult_price as number) || 
+                                                   (currentChoiceData.adult as number) || 
+                                                   (homepageChoiceData.adult_price as number) ||
+                                                   (homepageChoiceData.adult as number) ||
+                                                   combination.adult_price || 0;
+                                  const childPrice = (currentChoiceData.child_price as number) || 
+                                                   (currentChoiceData.child as number) || 
+                                                   (homepageChoiceData.child_price as number) ||
+                                                   (homepageChoiceData.child as number) ||
+                                                   combination.child_price || 0;
+                                  const infantPrice = (currentChoiceData.infant_price as number) || 
+                                                    (currentChoiceData.infant as number) || 
+                                                    (homepageChoiceData.infant_price as number) ||
+                                                    (homepageChoiceData.infant as number) ||
+                                                    combination.infant_price || 0;
+                                  
+                                  // OTA 판매가와 함께 초이스 가격도 유지하여 업데이트
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        adult_price: adultPrice,
+                                        child_price: childPrice,
+                                        infant_price: infantPrice,
+                                        ota_sale_price: numValue
+                                      }
+                                    }
+                                  });
+                                  
+                                  // 실시간 가격 계산을 위한 calculationConfig.choicePricing도 업데이트
+                                  updateChoicePricing(combination.id, {
+                                    choiceId: combination.id,
+                                    choiceName: combination.combination_name,
+                                    adult_price: adultPrice,
+                                    child_price: childPrice,
+                                    infant_price: infantPrice
+                                  });
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  const currentPricing = pricingConfig.choices_pricing || {};
+                                  const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        ota_sale_price: 0
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="예: 384"
+                            />
+                          </div>
+                          {/* 불포함 금액 입력 필드 */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              불포함 금액 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={notIncludedPrice === 0 ? '' : notIncludedPrice}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const currentPricing = pricingConfig.choices_pricing || {};
+                                const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                
+                                if (value === '' || value === '-') {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        not_included_price: 0
+                                      }
+                                    }
+                                  });
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue) && numValue >= 0) {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        not_included_price: numValue
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="0"
+                              step="0.01"
+                              min="0"
+                            />
+                          </div>
                         </div>
                         {otaSalePrice > 0 && (
                           <div className="bg-blue-50 border border-blue-200 rounded p-2">
@@ -2146,6 +2180,13 @@ export default function DynamicPricingManager({
                               <div>수수료: {commissionPercent}%</div>
                               <div>쿠폰 할인: {couponPercent}%</div>
                             </div>
+                            {/* 불포함 금액 표시 (Net Price 위로 이동) */}
+                            {notIncludedPrice > 0 && (
+                              <div className="text-sm font-semibold text-orange-600 mb-1">
+                                불포함 금액: 
+                                <span className="ml-2">${notIncludedPrice.toFixed(2)}</span>
+                              </div>
+                            )}
                             <div className="text-sm font-semibold text-blue-900 mb-1">
                               Net Price: ${netPrice.toFixed(2)}
                               {homepageNetPrice > 0 && (
@@ -2154,26 +2195,10 @@ export default function DynamicPricingManager({
                                 </span>
                               )}
                             </div>
-                            {/* 불포함 금액 표시 */}
-                            {(notIncludedType === 'amount_only' || notIncludedType === 'amount_and_choice') && (
-                              <div className="text-sm font-semibold text-orange-600 mb-1 border-t border-orange-200 pt-1">
-                                불포함 금액: 
-                                {notIncludedType === 'amount_only' ? (
-                                  <span className="ml-2">${notIncludedPrice.toFixed(2)}</span>
-                                ) : (
-                                  <span className="ml-2">
-                                    ${(notIncludedPrice + choicePrice).toFixed(2)}
-                                    <span className="text-xs text-gray-600 ml-1">
-                                      (불포함: ${notIncludedPrice.toFixed(2)} + 초이스: ${choicePrice.toFixed(2)})
-                                    </span>
-                                  </span>
-                                )}
-                              </div>
-                            )}
                             <div className="text-xs text-gray-500 mt-1">
-                              {commissionBasePriceOnly && notIncludedType === 'amount_and_choice' ? (
+                              {notIncludedPrice > 0 ? (
                                 <>
-                                  계산식: ${otaSalePrice.toFixed(2)} × (1 - {couponPercent}%) × (1 - {commissionPercent}%) + ${notIncludedPrice.toFixed(2)} (불포함) + ${choicePrice.toFixed(2)} (초이스) = ${netPrice.toFixed(2)}
+                                  계산식: ${otaSalePrice.toFixed(2)} × (1 - {couponPercent}%) × (1 - {commissionPercent}%) + ${notIncludedPrice.toFixed(2)} (불포함) = ${netPrice.toFixed(2)}
                                 </>
                               ) : (
                                 <>

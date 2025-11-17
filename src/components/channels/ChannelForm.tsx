@@ -22,11 +22,8 @@ interface Channel {
   manager_name?: string
   manager_contact?: string
   contract_url?: string
-  commission_base_price_only?: boolean
-  has_not_included_price?: boolean
-  not_included_type?: 'none' | 'amount_only' | 'amount_and_choice'
-  not_included_price?: number
-  pricing_type?: 'separate' | 'single'
+    commission_base_price_only?: boolean
+    pricing_type?: 'separate' | 'single'
   created_at: string
 }
 
@@ -56,9 +53,6 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
     manager_contact: channel?.manager_contact || '',
     contract_url: channel?.contract_url || '',
     commission_base_price_only: (channel as any)?.commission_base_price_only || false,
-    has_not_included_price: (channel as any)?.has_not_included_price || false,
-    not_included_type: (channel as any)?.not_included_type || 'none',
-    not_included_price: (channel as any)?.not_included_price || 0,
     pricing_type: (channel as any)?.pricing_type || 'separate'
   })
 
@@ -84,9 +78,6 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
         manager_contact: channel.manager_contact || '',
         contract_url: channel.contract_url || '',
         commission_base_price_only: (channel as any)?.commission_base_price_only || false,
-        has_not_included_price: (channel as any)?.has_not_included_price || false,
-        not_included_type: (channel as any)?.not_included_type || 'none',
-        not_included_price: (channel as any)?.not_included_price || 0,
         pricing_type: (channel as any)?.pricing_type || 'separate'
       })
     }
@@ -97,8 +88,6 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
     console.log('ChannelForm submitting:', formData)
     console.log('ChannelForm onSubmit function:', onSubmit)
     console.log('ChannelForm channel prop:', channel)
-    console.log('ChannelForm formData.not_included_type:', formData.not_included_type)
-    console.log('ChannelForm formData.has_not_included_price:', formData.has_not_included_price)
     onSubmit(formData)
   }
 
@@ -265,52 +254,6 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
             </p>
           </div>
           
-          {/* 불포함 금액 설정 */}
-          <div className="border-t pt-4">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">불포함 금액 설정</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">불포함 금액 타입</label>
-                <select
-                  value={formData.not_included_type}
-                  onChange={(e) => {
-                    const newType = e.target.value as 'none' | 'amount_only' | 'amount_and_choice';
-                    setFormData({ 
-                      ...formData, 
-                      not_included_type: newType,
-                      has_not_included_price: newType !== 'none',
-                      not_included_price: newType === 'none' ? 0 : formData.not_included_price
-                    });
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="none">불포함 금액 없음</option>
-                  <option value="amount_only">불포함 금액 입력값</option>
-                  <option value="amount_and_choice">불포함 금액 입력값 + 초이스 값</option>
-                </select>
-              </div>
-              
-              {(formData.not_included_type === 'amount_only' || formData.not_included_type === 'amount_and_choice') && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">불포함 금액 ($)</label>
-                  <input
-                    type="number"
-                    value={formData.not_included_price || 0}
-                    onChange={(e) => setFormData({ ...formData, not_included_price: Number(e.target.value) || 0 })}
-                    min="0"
-                    step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="0"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    {formData.not_included_type === 'amount_only' 
-                      ? '불포함 금액은 밸런스로 처리되어 투어 종료 후 현금으로 수금됩니다.'
-                      : '불포함 금액과 초이스 가격이 합산되어 밸런스로 처리되어 투어 종료 후 현금으로 수금됩니다.'}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.description')}</label>
             <textarea

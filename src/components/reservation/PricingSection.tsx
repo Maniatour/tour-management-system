@@ -189,6 +189,101 @@ export default function PricingSection({
   const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
   const isSinglePrice = pricingType === 'single'
 
+  // 초이스별 불포함 금액 계산
+  const calculateChoiceNotIncludedTotal = useCallback(async () => {
+    if (!formData.productId || !formData.tourDate || !formData.channelId) {
+      return 0
+    }
+
+    try {
+      // dynamic_pricing에서 choices_pricing 조회
+      const { data: pricingData, error } = await supabase
+        .from('dynamic_pricing')
+        .select('choices_pricing, not_included_price')
+        .eq('product_id', formData.productId)
+        .eq('date', formData.tourDate)
+        .eq('channel_id', formData.channelId)
+        .limit(1)
+
+      if (error || !pricingData || pricingData.length === 0) {
+        return 0
+      }
+
+      const pricing = pricingData[0] as any
+      const defaultNotIncludedPrice = pricing?.not_included_price || 0
+      
+      // choices_pricing 파싱
+      let choicesPricing: Record<string, any> = {}
+      if (pricing?.choices_pricing) {
+        try {
+          choicesPricing = typeof pricing.choices_pricing === 'string'
+            ? JSON.parse(pricing.choices_pricing)
+            : pricing.choices_pricing
+        } catch (e) {
+          console.warn('choices_pricing 파싱 오류:', e)
+          return defaultNotIncludedPrice * (formData.adults + formData.child + formData.infant)
+        }
+      }
+
+      // 선택된 초이스별 불포함 금액 계산
+      let totalNotIncluded = 0
+      
+      // 새로운 간결한 초이스 시스템 (selectedChoices가 배열인 경우)
+      if (Array.isArray(formData.selectedChoices)) {
+        formData.selectedChoices.forEach((choice: any) => {
+          // choices_pricing의 키는 choice_id 또는 option_id일 수 있음
+          const choiceId = choice.choice_id || choice.id
+          const optionId = choice.option_id
+          
+          // 먼저 option_id로 찾고, 없으면 choice_id로 찾기
+          let choiceData = null
+          if (optionId && choicesPricing[optionId]) {
+            choiceData = choicesPricing[optionId]
+          } else if (choiceId && choicesPricing[choiceId]) {
+            choiceData = choicesPricing[choiceId]
+          }
+          
+          if (choiceData) {
+            const choiceNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price !== null
+              ? choiceData.not_included_price
+              : defaultNotIncludedPrice
+            totalNotIncluded += choiceNotIncludedPrice * (choice.quantity || 1) * (formData.adults + formData.child + formData.infant)
+          }
+        })
+      } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
+        // 기존 객체 형태의 selectedChoices 처리
+        Object.entries(formData.selectedChoices).forEach(([choiceId, choiceData]: [string, any]) => {
+          if (choicesPricing[choiceId]) {
+            const choicePricing = choicesPricing[choiceId]
+            const choiceNotIncludedPrice = choicePricing.not_included_price !== undefined && choicePricing.not_included_price !== null
+              ? choicePricing.not_included_price
+              : defaultNotIncludedPrice
+            totalNotIncluded += choiceNotIncludedPrice * (formData.adults + formData.child + formData.infant)
+          }
+        })
+      }
+
+      // 선택된 초이스가 없으면 기본 불포함 금액 사용
+      if (totalNotIncluded === 0 && defaultNotIncludedPrice > 0) {
+        totalNotIncluded = defaultNotIncludedPrice * (formData.adults + formData.child + formData.infant)
+      }
+
+      return totalNotIncluded
+    } catch (error) {
+      console.error('초이스별 불포함 금액 계산 오류:', error)
+      return (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+    }
+  }, [formData.productId, formData.tourDate, formData.channelId, formData.selectedChoices, formData.adults, formData.child, formData.infant, formData.not_included_price])
+
+  const [choiceNotIncludedTotal, setChoiceNotIncludedTotal] = useState(0)
+
+  // 초이스별 불포함 금액 업데이트
+  useEffect(() => {
+    calculateChoiceNotIncludedTotal().then(total => {
+      setChoiceNotIncludedTotal(total)
+    })
+  }, [calculateChoiceNotIncludedTotal])
+
   // Net 가격 계산
   const calculateNetPrice = () => {
     // OTA 채널일 때는 단순 계산: OTA 판매가 - 쿠폰 할인 - 커미션
@@ -212,7 +307,10 @@ export default function PricingSection({
     if (commissionBasePriceOnly) {
       const baseProductPrice = calculateProductPriceTotal()
       const choicesTotal = formData.choicesTotal || formData.choiceTotal || 0
-      const notIncludedTotal = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+      // 초이스별 불포함 금액 사용 (없으면 기본 불포함 금액)
+      const notIncludedTotal = choiceNotIncludedTotal > 0 
+        ? choiceNotIncludedTotal 
+        : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
       
       // 판매가격만 계산 (초이스와 불포함 금액 제외)
       const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
@@ -884,6 +982,16 @@ export default function PricingSection({
                 </div>
               </div>
             </div>
+            
+            {/* 불포함 금액 */}
+            {choiceNotIncludedTotal > 0 && (
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-700">불포함 금액</span>
+                <span className="text-sm font-semibold text-gray-900">
+                  ${choiceNotIncludedTotal.toFixed(2)}
+                </span>
+              </div>
+            )}
             
             {/* Net 가격 */}
             <div className="flex justify-between items-center mb-2">
